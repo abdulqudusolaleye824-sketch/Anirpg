@@ -185,9 +185,9 @@ const hi = {
     const senderName = msg.pushName || sender.split('@')[0];
 
     // 👋 /hi is a SIMPLE greeting — no AI. Each present bot replies with a
-    // plain line: "Hi <player name> I'm <bot name>". Using AI here makes the
-    // bots sound chatty/off-topic when the user just wants a hello.
-    const greeting = args.length > 0 ? `Hi <${senderName}>! ${args.join(' ')}` : `Hi <${senderName}>!`;
+    // plain line: "Hi <player name> I'm <bot name> 🎭". No angle brackets,
+    // and each bot is tagged with its own distinguishing emoji.
+    const greeting = args.length > 0 ? `Hi ${senderName}! ${args.join(' ')}` : `Hi ${senderName}!`;
 
     let responses = [];
     try {
@@ -197,10 +197,11 @@ const hi = {
         if (!sock) continue;
         const info = PersonalityManager.getPersonalityInfo(key);
         const displayName = PersonalityManager.getDisplayName(key);
+        const emoji = info?.emoji || '🤖';
         responses.push({
           personalityKey: key,
           displayName,
-          text: `${greeting} — I'm ${displayName}!`,
+          text: `${greeting} — ${emoji} I'm ${displayName}!`,
           attachment: null,
         });
       }

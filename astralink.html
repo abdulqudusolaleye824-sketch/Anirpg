@@ -261,8 +261,30 @@ header{
   border-radius:50%;display:grid;place-items:center;
   font-size:0.65rem;font-weight:700;
 }
+/* Personality already linked to a number → greyed out & unclickable */
+.pcard.linked{
+  opacity:0.42;
+  cursor:not-allowed;
+  filter:grayscale(0.7);
+  pointer-events:none;
+  border-color:rgba(255,255,255,0.06);
+}
+.pcard.linked:hover{
+  transform:none;box-shadow:none;border-color:rgba(255,255,255,0.06);
+  background:rgba(255,255,255,0.02);
+}
+.pcard .plinkbadge{
+  position:absolute;top:9px;right:10px;
+  display:none;
+}
+.pcard.linked .plinkbadge{
+  display:grid;
+  width:auto;padding:2px 8px;height:auto;border-radius:12px;
+  background:var(--accent);color:var(--bg);
+  font-size:0.56rem;font-weight:800;letter-spacing:0.04em;
+  place-items:center;line-height:1;
+}
 .pemoji{font-size:1.9rem;margin-bottom:9px;display:block;line-height:1}
-.pname{font-weight:700;font-size:0.9rem;color:var(--text);margin-bottom:3px}
 .pdesc{font-size:0.74rem;color:var(--text-dim);line-height:1.5}
 .ptag{
   display:inline-block;margin-top:7px;
@@ -636,6 +658,7 @@ footer a:hover{opacity:1}
           <div class="code-box">
             <div class="pcode" id="pcode">---- ----</div>
             <div class="code-hint">Enter this in WhatsApp → Linked Devices → Link with phone number</div>
+            <button class="btn btn-ghost" style="margin:10px 0 0;width:100%" onclick="copyCode(this)">📋 Copy Pairing Code</button>
             <div class="timer-bar"><div class="timer-fill" id="timerFill"></div></div>
             <div class="timer-lbl" id="timerLbl">Expires in 2:00</div>
           </div>
@@ -742,11 +765,42 @@ let linkedCC = '';
       <div class="pname">${p.name}</div>
       <div class="pdesc">${p.desc}</div>
       <div class="ptag">${p.tag}</div>
+      <span class="plinkbadge" style="display:none">✓ LINKED</span>
     `;
     card.onclick = () => selectPersona(card);
     grid.appendChild(card);
   });
 })();
+
+// ══ MARK ALREADY-LINKED PERSONALITIES (greyed + unclickable) ══
+// A personality is "already linked" when it has a live socket (a number is
+// paired to it). We read this from /api/bot-status. Linked bots can't be
+// linked again — they're shown dark and unclickable so users pick a free one.
+async function markLinkedPersonas(){
+  try {
+    const resp = await fetch(`${BOT_API}/api/bot-status`);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const data = await resp.json();
+    const linkedIds = new Set(
+      (data && Array.isArray(data.bots) ? data.bots : [])
+        .filter(b => b.connected)
+        .map(b => b.key)
+    );
+    document.querySelectorAll('.pcard').forEach(card => {
+      const id = card.dataset.id;
+      if (linkedIds.has(id)) {
+        card.classList.add('linked');
+        card.querySelector('.plinkbadge') && (card.querySelector('.plinkbadge').style.display = 'grid');
+      } else {
+        card.classList.remove('linked');
+        card.querySelector('.plinkbadge') && (card.querySelector('.plinkbadge').style.display = 'none');
+      }
+    });
+  } catch(e) {
+    // Bot not reachable — leave grid as-is (all selectable).
+  }
+}
+markLinkedPersonas();
 
 // ══ CANVAS PARTICLE BG ══
 (function initCanvas(){
@@ -898,6 +952,36 @@ function genCode(){
   let code='';
   for(let i=0;i<8;i++){if(i===4)code+='-';code+=c[Math.floor(Math.random()*c.length)]}
   return code;
+}
+
+// ══ COPY PAIRING CODE ══
+function copyCode(btn){
+  const codeEl = document.getElementById('pcode');
+  const code = (codeEl.textContent || '').trim();
+  if(!code || code === 'EXPIRED' || code === '---- ----'){
+    if(btn){ btn.textContent = '⚠️ No code yet'; setTimeout(()=>btn.textContent='📋 Copy Pairing Code', 1600); }
+    return;
+  }
+  const raw = code.replace(/[^A-Za-z0-9]/g, '');
+  const done = () => {
+    if(btn){ const old=btn.textContent; btn.textContent='✅ Copied!'; setTimeout(()=>btn.textContent=old,1800); }
+  };
+  // Modern clipboard API (works on HTTPS/AstraLink)
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(raw).then(done).catch(()=>fallbackCopy(raw, done));
+  } else {
+    fallbackCopy(raw, done);
+  }
+}
+function fallbackCopy(text, done){
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.style.position='fixed'; ta.style.opacity='0';
+  document.body.appendChild(ta);
+  ta.select();
+  try { document.execCommand('copy'); } catch(e){}
+  document.body.removeChild(ta);
+  if(done) done();
 }
 
 function startTimer(){
