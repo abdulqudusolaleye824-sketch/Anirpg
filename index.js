@@ -973,6 +973,18 @@ async function startup() {
   GateKeyManager.loadFromDB(getDatabase());
   console.log('🚪 GateKeyManager loaded');
 
+  // Restore per-group active/present bot choices so a redeploy/restart does
+  // NOT silently reset which bot each group is on (the "bots switched on
+  // their own after redeploy" bug). Only /start or /switch changes a group's
+  // active bot; those choices persist in the DB.
+  try {
+    PersonalityManager.bindPersistence(getDatabase, saveDatabase);
+    PersonalityManager.loadPersisted();
+    console.log('👑 Active/present bot mappings restored from DB');
+  } catch (e) {
+    console.error('⚠️ Could not restore personality mappings:', e.message);
+  }
+
   setInterval(() => {
     try {
       GateKeyManager.checkExpiredKeys(null, getDatabase(), saveDatabase);

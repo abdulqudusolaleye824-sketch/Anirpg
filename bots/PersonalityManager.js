@@ -338,6 +338,56 @@ const activeBots = {};   // { chatId: personalityKey }
 const presentBots = {};  // { chatId: Set<personalityKey> }
 const botNames = {};     // { personalityKey: customName } — runtime overrides
 
+// ── Persistence hooks ────────────────────────────────────────────────────────
+// activeBots/presentBots live ONLY in memory by default, so every redeploy/
+// restart wiped them and the first command in any group would silently
+// re-activate a bot there (the "bots switched after redeploy" bug). These
+// bindings let us persist the per-group active/present mapping to the DB and
+// restore it on boot — so a group stays on the bot the owner chose.
+let _dbGet = null;
+let _dbSave = null;
+function bindPersistence(getDatabase, saveDatabase) {
+  _dbGet = getDatabase;
+  _dbSave = saveDatabase;
+}
+function _persistActive() {
+  try {
+    if (!_dbGet || !_dbSave) return;
+    const db = _dbGet();
+    if (!db) return;
+    const sa = {};
+    for (const [cid, key] of Object.entries(activeBots)) {
+      if (cid === '__lastTouch') continue;
+      sa[cid] = key;
+    }
+    db.botActive = sa;
+    const sp = {};
+    for (const [cid, s] of Object.entries(presentBots)) {
+      sp[cid] = [...s];
+    }
+    db.botPresent = sp;
+    _dbSave();
+  } catch (e) { /* best effort */ }
+}
+function loadPersisted() {
+  try {
+    if (!_dbGet) return;
+    const db = _dbGet();
+    if (!db) return;
+    if (db.botActive && typeof db.botActive === 'object') {
+      for (const [cid, key] of Object.entries(db.botActive)) {
+        activeBots[cid] = key;
+      }
+    }
+    if (db.botPresent && typeof db.botPresent === 'object') {
+      for (const [cid, arr] of Object.entries(db.botPresent)) {
+        if (Array.isArray(arr)) presentBots[cid] = new Set(arr);
+      }
+    }
+  } catch (e) { /* best effort */ }
+}
+
+
 // ── Linked bot numbers ────────────────────────────────────────────────────────
 const linkedNumbers = {}; // { '1234567890@s.whatsapp.net': 'hinata' }
 
@@ -361,11 +411,13 @@ function markPresent(chatId, personalityKey) {
   // Touch the chat so the periodic cleanup doesn't reap it
   if (!activeBots.__lastTouch) activeBots.__lastTouch = {};
   activeBots.__lastTouch[chatId] = Date.now();
+  _persistActive();
 }
 
 function markAbsent(chatId, personalityKey) {
   if (presentBots[chatId]) presentBots[chatId].delete(personalityKey);
   if (presentBots[chatId]?.size === 0) delete presentBots[chatId];
+  _persistActive();
 }
 
 function getActiveBot(chatId) {
@@ -388,6 +440,7 @@ function activateBot(chatId, nameOrKey) {
   if (!activeBots.__lastTouch) activeBots.__lastTouch = {};
   activeBots.__lastTouch[chatId] = Date.now();
   markPresent(chatId, key);
+  _persistActive();
   return { success: true, personalityKey: key, displayName: getDisplayName(key) };
 }
 
@@ -397,6 +450,7 @@ function switchBot(chatId, nameOrKey) {
 
 function deactivateAll(chatId) {
   delete activeBots[chatId];
+  _persistActive();
 }
 
 function getPresentBots(chatId) {
@@ -469,6 +523,8 @@ module.exports = {
   activateBot,
   switchBot,
   deactivateAll,
+  bindPersistence,
+  loadPersisted,
   getPresentBots,
   getDisplayName,
   setCustomName,

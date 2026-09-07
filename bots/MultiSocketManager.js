@@ -380,14 +380,13 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
     // so non-active bots must stay silent — otherwise THREE copies of every
     // AFK/notice are posted. For DMs, ANY connected bot can respond.
     let activeKey = isGroup ? PersonalityManager.getActiveBot(chatId) : null;
-    // Self-healing: if a group has NO active bot, auto-activate this bot on
-    // its first command so it always responds — no manual /start needed.
-    if (isGroup && !activeKey && isCommand) {
-      try {
-        const res = PersonalityManager.activateBot(chatId, personalityKey);
-        if (res.success) activeKey = res.personalityKey;
-      } catch (e) { /* best effort */ }
-    }
+    // EXPLICIT-ONLY: a bot becomes active in a group ONLY via /start or /switch
+    // (chosen by the owner and persisted in the DB). There is NO silent
+    // auto-activation here. That silent self-heal was the root cause of
+    // (a) bots switching to a new personality in every group after a redeploy
+    //     and (b) commands being "ignored" in some groups while the bot would
+    //     still chat — because the self-heal and the AI path disagreed on
+    //     whether this bot was active.
     const isActive = isGroup ? (activeKey === personalityKey) : true;
 
     // ── AFK MENTION CHECK (only the ACTIVE bot posts an AFK notice — otherwise
