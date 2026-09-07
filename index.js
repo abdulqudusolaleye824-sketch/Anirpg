@@ -637,18 +637,51 @@ http.createServer(async (req, res) => {
         // actually pair for THIS personality (its pending socket). Using an
         // unrelated already-connected bot generates a code for the wrong
         // account, which is why WhatsApp said "Couldn't link device".
-        const pending = MultiSocketManager.getPendingSocket(personality);
-        const allSockets = MultiSocketManager.getAllSockets();
-        const targetSock = pending || allSockets[personality];
-        if (!targetSock) {
-          res.writeHead(503, { 'Content-Type': 'application/json' });
-          return res.end(JSON.stringify({ success: false, error: `The ${personality} bot socket isn't ready yet. Start the bot and wait for it to appear, then try again.` }));
-        }
-
         const cleanNumber = phoneNumber.replace(/[^0-9]/g, '');
         if (cleanNumber.length < 7 || cleanNumber.length > 15) {
           res.writeHead(400, { 'Content-Type': 'application/json' });
           return res.end(JSON.stringify({ success: false, error: 'Invalid phone number length' }));
+        }
+
+        let pending = MultiSocketManager.getPendingSocket(personality);
+        const allSockets = MultiSocketManager.getAllSockets();
+        let targetSock = pending || allSockets[personality];
+
+        // No socket running yet → START one for this personality via AstraLink.
+        // AstraLink is the only way to link a number: it spawns a fresh Baileys
+        // socket and auto-requests the pairing code (pairingMode:'code'). For a
+        // brand-new bot there is no socket by default, so we create it here and
+        // wait for the pairing session to produce a code.
+        if (!targetSock) {
+          const { startAstraLink, getPairingSession } = MultiSocketManager;
+          const started = await startAstraLink(personality, AUTH_DIR, getDatabase, saveDatabase, {
+            pairingMode: 'code',
+            pairingPhone: cleanNumber,
+          });
+          if (!started || !started.success) {
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+            return res.end(JSON.stringify({ success: false, error: started?.error || 'Failed to start AstraLink for this personality.' }));
+          }
+          let session = null;
+          for (let t = 0; t < 40; t++) {          // up to ~20s for the socket + code
+            await new Promise(r => setTimeout(r, 500));
+            const s = getPairingSession(personality);
+            if (s && (s.status === 'code_ready' || s.status === 'connected')) { session = s; break; }
+            if (s && s.status === 'error') {
+              res.writeHead(500, { 'Content-Type': 'application/json' });
+              return res.end(JSON.stringify({ success: false, error: s.error || 'AstraLink pairing failed.' }));
+            }
+          }
+          const code = session?.code;
+          if (!code) {
+            res.writeHead(503, { 'Content-Type': 'application/json' });
+            return res.end(JSON.stringify({ success: false, error: 'Timed out waiting for the pairing code. Click Link again.' }));
+          }
+          const formatted = code.length === 8 ? `${code.slice(0, 4)}-${code.slice(4)}` : code;
+          const pInfo = PersonalityManager.getPersonalityInfo(personality);
+          console.log(`🔗 AstraLink pairing code issued: +${cleanNumber} → ${pInfo?.displayName || personality} | ${formatted}`);
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({ success: true, code: formatted, personality: pInfo }));
         }
 
         const code = await targetSock.requestPairingCode(cleanNumber);
