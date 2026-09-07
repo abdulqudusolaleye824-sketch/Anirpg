@@ -153,6 +153,26 @@ function getSocket(personalityKey) {
 }
 
 /**
+ * Get the socket that is (or will be) pairing for a personality.
+ * Used by AstraLink to request a pairing code on the CORRECT socket.
+ * Falls back to the socket already connected for that personality.
+ */
+function getPendingSocket(personalityKey) {
+  const s = botSockets[personalityKey];
+  return s || null;
+}
+
+/**
+ * Get the most recent QR for a personality from its pairing session,
+ * plus a base64 data-URL so the UI can render it without a terminal.
+ */
+function getLatestQr(personalityKey) {
+  const session = pairingSessions[personalityKey];
+  if (!session) return { qr: null, dataUri: null };
+  return { qr: session.qr || null, dataUri: session.qrDataUrl || null };
+}
+
+/**
  * Get all connected sockets keyed by personality.
  */
 function getAllSockets() {
@@ -653,6 +673,8 @@ module.exports = {
   getPairingSession,
   listPairingSessions,
   getSocket,
+  getPendingSocket,
+  getLatestQr,
   getAllSockets,
   getAnySocket,
   sendAs,
