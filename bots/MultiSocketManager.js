@@ -180,6 +180,20 @@ function getAllSockets() {
 }
 
 /**
+ * Decide whether THIS socket should handle a bootstrap/control command when
+ * the group has no active bot. Exactly one socket must dispatch, otherwise
+ * every connected bot replies (triple-spam). Deterministic tiebreak:
+ *   - if the group already has an active bot, that bot dispatches;
+ *   - otherwise the connected bot with the smallest personality key dispatches.
+ */
+function _bootstrapDispatcher(personalityKey, chatId) {
+  const active = PersonalityManager.getActiveBot(chatId);
+  if (active) return active === personalityKey;
+  const keys = Object.keys(getAllSockets()).sort();
+  return keys.length > 0 && keys[0] === personalityKey;
+}
+
+/**
  * Return any one connected socket (for AstraLink pairing code requests).
  */
 function getAnySocket() {
@@ -374,6 +388,21 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
     const config = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'config.json'), 'utf-8'));
     const isCommand = messageText.startsWith(config.prefix);
 
+    // ── Control / bootstrap commands ────────────────────────────────────────
+    // /start and /switch are the ONLY way to (re)set a group's active bot, so
+    // they MUST be able to run even when the group has no active bot (otherwise
+    // a brand-new group could never activate its first bot — the "deadlock"
+    // that made every bot go silent). These are dispatched from a single
+    // deterministic socket to avoid duplicate replies.
+    const commandName = isCommand
+      ? messageText.slice(config.prefix.length).trim().split(/\s+/)[0].toLowerCase()
+      : '';
+    const BOOTSTRAP_COMMANDS = new Set([
+      'start', 'switch', 'stopbot', 'bots', 'setainame', 'hi',
+      'link', 'unlink', 'help', 'menu',
+    ]);
+    const isBootstrap = BOOTSTRAP_COMMANDS.has(commandName);
+
     // ── Active-bot gate (resolved EARLY so AFK notices don't spam) ────────
     // In any group, only the active bot (set via /start or /switch) is
     // allowed to respond. Every bot in the group receives the same message,
@@ -442,7 +471,18 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
     // Only the active bot in a group handles commands. In DMs, the
     // receiving bot handles the command (mod-only via the handler's gate).
     if (isCommand && options.rpgCommandHandler) {
-      if (isActive && (isGroup || Perms.canAccessDM(db, sender))) {
+      let shouldHandle = false;
+      if (isGroup) {
+        // Commands are handled by the ACTIVE bot (set via /start or /switch,
+        // persisted in the DB). Bootstrap/control commands may also run when
+        // the group has no active bot yet — but only from ONE socket, so a
+        // control command can (re)activate a bot without triple-replying.
+        shouldHandle = isActive || (isBootstrap && _bootstrapDispatcher(personalityKey, chatId));
+      } else {
+        // DMs: any connected bot may handle it (permission enforced in handler).
+        shouldHandle = Perms.canAccessDM(db, sender);
+      }
+      if (shouldHandle) {
         try {
           await options.rpgCommandHandler(sock, msg, messageText, config, getDatabase, saveDatabase);
         } catch (e) {
@@ -473,7 +513,12 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
     // /switch, etc. get answered by the personality as if they were chat.
     if (isCommand) return;
     if (!isGroup || !messageText.trim()) return;
-    if (activeKey !== personalityKey) return;
+    // IMPORTANT: AI chat is NOT gated on this bot being the "active" one.
+    // Any LINKED bot may answer when it's directly addressed (mentioned,
+    // quoted, or its display name appears in the text) — the name/mention
+    // checks below already guarantee only the addressed bot replies. Gating
+    // this on active-bot was the reason calling a bot by name stopped working
+    // in groups where no /start had been run.
 
     const botDisplayName = PersonalityManager.getDisplayName(personalityKey);
     const botJid = sock.user?.id;

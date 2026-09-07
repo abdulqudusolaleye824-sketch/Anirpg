@@ -72,19 +72,26 @@ const start = {
     }
 
     const info = PersonalityManager.getPersonalityInfo(result.personalityKey);
-    return sock.sendMessage(chatId, {
-      text: [
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-        `✨ *${result.displayName}* is now active`,
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-        ``,
-        `🎭 Theme: ${info.theme}`,
-        `💬 Mention me or reply to chat with me!`,
-        `🔄 Use /switch <name> to change bots`,
-        ``,
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-      ].join('\n'),
-    }, { quoted: msg });
+    // Announce from the newly-active bot's OWN socket (like /switch) so the
+    // activation message comes from the right bot, not whichever socket
+    // happened to be the bootstrap dispatcher.
+    const text = [
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+      `✨ *${result.displayName}* is now active`,
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+      ``,
+      `🎭 Theme: ${info.theme}`,
+      `💬 Mention me or reply to chat with me!`,
+      `🔄 Use /switch <name> to change bots`,
+      ``,
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+    ].join('\n');
+    try {
+      const MSM = require('../../bots/MultiSocketManager');
+      const botSock = MSM.getSocket(result.personalityKey);
+      if (botSock) return botSock.sendMessage(chatId, { text }, { quoted: msg });
+    } catch (e) { /* fall through */ }
+    return sock.sendMessage(chatId, { text }, { quoted: msg });
   },
 };
 
