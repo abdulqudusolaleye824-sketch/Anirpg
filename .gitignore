@@ -20,7 +20,6 @@ data/auth/
 # Whole runtime folders — never commit these (contain real player data).
 database/
 /database
-data/
 /data
 rpg/server/
 # rpg/data has BOTH static code (recipes_*.js etc — KEEP) and live per-player
