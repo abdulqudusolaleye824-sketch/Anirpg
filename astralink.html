@@ -1,0 +1,1164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>AstraLink — Connect Your Bot</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400&family=Outfit:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet"/>
+<style>
+/* ══════════════════════════════════════════════════
+   RESET & ROOT
+══════════════════════════════════════════════════ */
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#04080d;
+  --surface:#080f19;
+  --surface2:#0d1927;
+  --border:#162030;
+  --border2:#1e2f45;
+  --accent:#00e5a0;
+  --accent2:#00b87a;
+  --accent3:#00ff6e;
+  --glow:rgba(0,229,160,0.15);
+  --glow2:rgba(0,229,160,0.08);
+  --text:#ddeeff;
+  --text-dim:#4a6a8a;
+  --text-mid:#7a9bbf;
+  --danger:#ff4060;
+  --gold:#ffd060;
+  --font:'Outfit',sans-serif;
+  --mono:'Space Mono',monospace;
+}
+html{scroll-behavior:smooth}
+body{
+  background:var(--bg);
+  color:var(--text);
+  font-family:var(--font);
+  min-height:100vh;
+  overflow-x:hidden;
+}
+
+/* ══ CANVAS BACKGROUND ══ */
+#bg-canvas{
+  position:fixed;
+  inset:0;
+  z-index:0;
+  pointer-events:none;
+  opacity:0.6;
+}
+
+/* ══ LAYOUT ══ */
+.wrap{position:relative;z-index:1;max-width:1060px;margin:0 auto;padding:0 20px}
+
+/* ══ HEADER ══ */
+header{
+  position:sticky;
+  top:0;
+  z-index:50;
+  border-bottom:1px solid var(--border);
+  background:rgba(4,8,13,0.88);
+  backdrop-filter:blur(16px);
+  -webkit-backdrop-filter:blur(16px);
+}
+.hdr{
+  max-width:1060px;margin:0 auto;padding:0 20px;
+  height:62px;display:flex;align-items:center;justify-content:space-between;
+}
+.logo{
+  display:flex;align-items:center;gap:11px;
+  font-weight:800;font-size:1.32rem;letter-spacing:-0.03em;
+  color:var(--text);text-decoration:none;
+}
+.logo-mark{
+  width:36px;height:36px;
+  background:linear-gradient(135deg,var(--accent),#007a55);
+  border-radius:9px;
+  display:grid;place-items:center;
+  font-size:1.1rem;
+  box-shadow:0 0 20px var(--glow);
+  position:relative;
+  overflow:hidden;
+}
+.logo-mark::after{
+  content:'';position:absolute;
+  width:100%;height:100%;
+  background:linear-gradient(135deg,rgba(255,255,255,0.15),transparent);
+}
+.logo em{font-style:normal;color:var(--accent)}
+.pill{
+  display:flex;align-items:center;gap:7px;
+  background:rgba(0,229,160,0.07);
+  border:1px solid rgba(0,229,160,0.18);
+  border-radius:100px;padding:5px 13px;
+  font-family:var(--mono);font-size:0.68rem;
+  color:var(--accent);letter-spacing:0.05em;
+}
+.dot{
+  width:6px;height:6px;background:var(--accent);
+  border-radius:50%;
+  animation:blink 1.6s ease-in-out infinite;
+}
+.dot.off{background:var(--danger);animation:none;opacity:0.9}
+.dot.warn{background:var(--gold);animation:none;opacity:0.95}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:0.15}}
+
+.hdr-right{display:flex;align-items:center;gap:10px}
+.pill{cursor:pointer;transition:background 0.2s,border-color 0.2s}
+.pill:hover{background:rgba(0,229,160,0.12);border-color:rgba(0,229,160,0.32)}
+
+/* ══ STATUS MODAL ══ */
+.status-modal{
+  display:none;position:fixed;inset:0;
+  background:rgba(4,8,13,0.78);
+  backdrop-filter:blur(8px);
+  z-index:100;align-items:flex-start;justify-content:center;
+  padding:80px 20px 20px;
+}
+.status-modal.show{display:flex}
+.status-box{
+  background:var(--surface);
+  border:1px solid var(--border2);
+  border-radius:14px;
+  max-width:520px;width:100%;
+  box-shadow:0 30px 80px rgba(0,0,0,0.7);
+  overflow:hidden;
+}
+.status-hdr{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:18px 22px;border-bottom:1px solid var(--border);
+}
+.status-hdr h2{font-size:1.05rem;font-weight:800;letter-spacing:-0.01em}
+.status-close{
+  background:none;border:none;color:var(--text-mid);
+  font-size:1.3rem;cursor:pointer;line-height:1;
+  width:30px;height:30px;border-radius:6px;
+  display:grid;place-items:center;transition:all 0.2s;
+}
+.status-close:hover{background:rgba(255,255,255,0.05);color:var(--text)}
+.status-body{padding:18px 22px;max-height:60vh;overflow-y:auto}
+.bot-row{
+  display:flex;align-items:center;gap:12px;
+  padding:11px 0;border-bottom:1px solid rgba(22,32,48,0.6);
+}
+.bot-row:last-child{border-bottom:none}
+.bot-row .bemoji{font-size:1.4rem;width:28px;text-align:center;flex-shrink:0}
+.bot-row .binfo{flex:1;min-width:0}
+.bot-row .bname{font-weight:700;font-size:0.92rem}
+.bot-row .btheme{font-family:var(--mono);font-size:0.66rem;color:var(--text-dim);letter-spacing:0.04em}
+.bot-row .bdot{
+  width:9px;height:9px;border-radius:50%;
+  background:var(--text-dim);flex-shrink:0;
+}
+.bot-row .bdot.on{background:var(--accent);box-shadow:0 0 8px rgba(0,229,160,0.6)}
+.bot-row .bdot.off{background:var(--danger)}
+.bot-row .blbl{font-family:var(--mono);font-size:0.66rem;color:var(--text-dim);min-width:62px;text-align:right}
+.bot-row .blbl.on{color:var(--accent)}
+.bot-row .blbl.off{color:var(--danger)}
+
+/* ══ HERO ══ */
+.hero{padding:72px 0 48px;text-align:center}
+.hero-badge{
+  display:inline-flex;align-items:center;gap:8px;
+  font-family:var(--mono);font-size:0.7rem;
+  color:var(--accent);letter-spacing:0.12em;text-transform:uppercase;
+  border:1px solid rgba(0,229,160,0.22);
+  border-radius:4px;padding:5px 14px;margin-bottom:26px;
+}
+.hero h1{
+  font-size:clamp(2.2rem,5.5vw,3.8rem);
+  font-weight:900;letter-spacing:-0.04em;line-height:1.05;
+  margin-bottom:16px;
+}
+.hero h1 em{font-style:normal;color:var(--accent)}
+.hero p{
+  font-size:1rem;color:var(--text-mid);
+  max-width:500px;margin:0 auto;line-height:1.75;
+  font-weight:400;
+}
+
+/* ══ STEP TRACK ══ */
+.steps{
+  display:flex;align-items:center;justify-content:center;
+  gap:0;flex-wrap:wrap;margin:38px 0 52px;
+}
+.step{
+  display:flex;align-items:center;gap:8px;
+  font-family:var(--mono);font-size:0.72rem;
+  color:var(--text-dim);letter-spacing:0.04em;
+}
+.step.active{color:var(--accent)}
+.step.done{color:var(--accent2)}
+.snum{
+  width:26px;height:26px;border-radius:50%;
+  border:1.5px solid currentColor;
+  display:grid;place-items:center;
+  font-size:0.68rem;font-weight:700;flex-shrink:0;
+}
+.step.active .snum{
+  background:var(--accent);color:var(--bg);
+  border-color:var(--accent);
+  box-shadow:0 0 16px var(--glow);
+}
+.step.done .snum{background:var(--accent2);color:var(--bg);border-color:var(--accent2)}
+.sarr{margin:0 10px;color:var(--border2);font-size:0.9rem}
+
+/* ══ CARD ══ */
+.card{
+  background:var(--surface);
+  border:1px solid var(--border2);
+  border-radius:18px;
+  overflow:hidden;position:relative;
+  box-shadow:0 0 80px rgba(0,0,0,0.6),0 0 0 1px rgba(0,229,160,0.04);
+}
+.card::before{
+  content:'';position:absolute;top:0;left:0;right:0;height:2px;
+  background:linear-gradient(90deg,transparent,var(--accent) 40%,var(--accent3) 60%,transparent);
+}
+
+/* ══ PANELS ══ */
+.panel{display:none;padding:40px;animation:fadeUp 0.3s ease}
+.panel.active{display:block}
+@keyframes fadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+.ptitle{font-size:1.2rem;font-weight:800;letter-spacing:-0.02em;margin-bottom:5px}
+.psub{font-size:0.875rem;color:var(--text-mid);margin-bottom:30px;line-height:1.65}
+
+/* ══ PERSONALITY GRID ══ */
+.pgrid{
+  display:grid;
+  grid-template-columns:repeat(auto-fill,minmax(178px,1fr));
+  gap:10px;margin-bottom:28px;
+  max-height:520px;overflow-y:auto;
+  padding-right:4px;
+}
+.pgrid::-webkit-scrollbar{width:4px}
+.pgrid::-webkit-scrollbar-track{background:var(--surface)}
+.pgrid::-webkit-scrollbar-thumb{background:var(--border2);border-radius:4px}
+
+.pcard{
+  background:rgba(255,255,255,0.02);
+  border:1px solid var(--border);
+  border-radius:12px;padding:16px;
+  cursor:pointer;transition:all 0.2s ease;
+  position:relative;overflow:hidden;user-select:none;
+}
+.pcard:hover{
+  border-color:var(--border2);
+  background:rgba(255,255,255,0.04);
+  transform:translateY(-2px);
+  box-shadow:0 6px 20px rgba(0,0,0,0.3);
+}
+.pcard.selected{
+  border-color:var(--accent);
+  background:rgba(0,229,160,0.05);
+  box-shadow:0 0 22px rgba(0,229,160,0.12);
+}
+.pcard.selected::after{
+  content:'✓';
+  position:absolute;top:9px;right:10px;
+  width:18px;height:18px;
+  background:var(--accent);color:var(--bg);
+  border-radius:50%;display:grid;place-items:center;
+  font-size:0.65rem;font-weight:700;
+}
+.pemoji{font-size:1.9rem;margin-bottom:9px;display:block;line-height:1}
+.pname{font-weight:700;font-size:0.9rem;color:var(--text);margin-bottom:3px}
+.pdesc{font-size:0.74rem;color:var(--text-dim);line-height:1.5}
+.ptag{
+  display:inline-block;margin-top:7px;
+  font-family:var(--mono);font-size:0.62rem;
+  color:var(--accent);letter-spacing:0.06em;opacity:0.65;
+}
+
+/* ══ INPUT FIELDS ══ */
+.field-lbl{
+  font-family:var(--mono);font-size:0.7rem;
+  color:var(--text-dim);letter-spacing:0.08em;
+  text-transform:uppercase;margin-bottom:7px;display:block;
+}
+.phone-row{display:flex;gap:10px;margin-bottom:10px}
+.ccsel{
+  background:rgba(255,255,255,0.03);
+  border:1px solid var(--border2);border-radius:10px;
+  color:var(--text);font-family:var(--mono);font-size:0.82rem;
+  padding:0 12px;height:50px;cursor:pointer;outline:none;
+  min-width:108px;appearance:none;-webkit-appearance:none;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='7' fill='none'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%234a6a8a' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;background-position:right 10px center;
+  padding-right:28px;transition:border-color 0.2s;
+}
+.ccsel:focus{border-color:var(--accent)}
+.phonein{
+  flex:1;background:rgba(255,255,255,0.03);
+  border:1px solid var(--border2);border-radius:10px;
+  color:var(--text);font-family:var(--mono);
+  font-size:1.05rem;letter-spacing:0.06em;
+  padding:0 16px;height:50px;outline:none;
+  transition:border-color 0.2s,box-shadow 0.2s;
+}
+.phonein:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(0,229,160,0.1)}
+.phonein::placeholder{color:var(--text-dim)}
+.note{
+  font-size:0.76rem;color:var(--text-dim);
+  margin-bottom:26px;display:flex;align-items:center;gap:5px;
+}
+.persona-pill{
+  display:inline-flex;align-items:center;gap:9px;
+  background:rgba(0,229,160,0.07);
+  border:1px solid rgba(0,229,160,0.18);
+  border-radius:8px;padding:8px 14px;
+  font-size:0.85rem;margin-bottom:26px;
+}
+.persona-pill strong{color:var(--accent)}
+
+/* ══ PAIRING PANEL ══ */
+.pair-area{display:flex;flex-direction:column;align-items:center;gap:22px}
+.tab-row{
+  display:flex;gap:0;
+  background:rgba(255,255,255,0.03);
+  border:1px solid var(--border);
+  border-radius:9px;padding:3px;width:100%;max-width:340px;
+}
+.tab-btn{
+  flex:1;background:none;border:none;
+  color:var(--text-dim);font-family:var(--font);
+  font-size:0.85rem;font-weight:600;
+  padding:8px 16px;border-radius:6px;cursor:pointer;
+  transition:all 0.2s;
+}
+.tab-btn.active{
+  background:var(--accent);color:var(--bg);
+  box-shadow:0 2px 12px rgba(0,229,160,0.28);
+}
+
+/* Code box */
+.code-box{
+  background:rgba(0,229,160,0.04);
+  border:1px solid rgba(0,229,160,0.18);
+  border-radius:14px;padding:28px 44px;text-align:center;
+  min-width:290px;
+}
+.pcode{
+  font-family:var(--mono);
+  font-size:2.4rem;font-weight:700;
+  letter-spacing:0.2em;color:var(--accent);
+  margin-bottom:8px;
+  text-shadow:0 0 24px rgba(0,229,160,0.45);
+}
+.code-hint{font-size:0.78rem;color:var(--text-mid);margin-top:8px;line-height:1.55}
+.timer-bar{width:100%;height:3px;background:var(--border);border-radius:2px;margin-top:14px;overflow:hidden}
+.timer-fill{
+  height:100%;background:linear-gradient(90deg,var(--accent2),var(--accent3));
+  border-radius:2px;
+  animation:countdown 120s linear forwards;
+}
+@keyframes countdown{from{width:100%}to{width:0%}}
+.timer-lbl{font-family:var(--mono);font-size:0.67rem;color:var(--text-dim);margin-top:5px;text-align:center}
+
+/* (QR styles removed — QR codes are disabled, pairing code only) */
+
+/* Instructions */
+.inst-box{
+  background:rgba(255,255,255,0.02);
+  border:1px solid var(--border);
+  border-radius:10px;padding:18px 20px;
+  width:100%;max-width:430px;
+}
+.inst-title{
+  font-family:var(--mono);font-size:0.67rem;
+  color:var(--text-dim);letter-spacing:0.1em;
+  text-transform:uppercase;margin-bottom:12px;
+}
+.inst-step{
+  display:flex;gap:11px;align-items:flex-start;
+  margin-bottom:9px;font-size:0.83rem;
+  color:var(--text-mid);line-height:1.55;
+}
+.inst-step:last-child{margin-bottom:0}
+.inum{
+  width:19px;height:19px;
+  background:rgba(0,229,160,0.1);
+  border:1px solid rgba(0,229,160,0.28);
+  border-radius:50%;display:grid;place-items:center;
+  font-family:var(--mono);font-size:0.62rem;
+  color:var(--accent);flex-shrink:0;margin-top:1px;
+}
+
+/* ══ SUCCESS ══ */
+.success-area{
+  display:flex;flex-direction:column;
+  align-items:center;text-align:center;gap:18px;padding:16px 0;
+}
+.sicon{
+  width:82px;height:82px;
+  background:linear-gradient(135deg,var(--accent),var(--accent2));
+  border-radius:50%;display:grid;place-items:center;
+  font-size:2.2rem;
+  box-shadow:0 0 48px rgba(0,229,160,0.38);
+  animation:popIn 0.5s cubic-bezier(0.34,1.56,0.64,1);
+}
+@keyframes popIn{from{transform:scale(0.2);opacity:0}to{transform:scale(1);opacity:1}}
+.stitle{font-size:1.7rem;font-weight:900;letter-spacing:-0.03em}
+.spersona{
+  display:flex;align-items:center;gap:10px;
+  background:rgba(0,229,160,0.06);
+  border:1px solid rgba(0,229,160,0.18);
+  border-radius:10px;padding:12px 20px;font-size:0.93rem;
+}
+.spersona strong{color:var(--accent)}
+.ssub{
+  font-size:0.88rem;color:var(--text-mid);
+  max-width:380px;line-height:1.75;
+}
+
+/* ══ BUTTONS ══ */
+.btn{
+  display:inline-flex;align-items:center;justify-content:center;
+  gap:8px;border:none;border-radius:10px;
+  font-family:var(--font);font-weight:700;font-size:0.92rem;
+  cursor:pointer;transition:all 0.2s;text-decoration:none;
+  white-space:nowrap;letter-spacing:-0.01em;
+}
+.btn-primary{
+  background:var(--accent);color:var(--bg);
+  padding:13px 26px;
+  box-shadow:0 4px 20px rgba(0,229,160,0.25);
+}
+.btn-primary:hover{background:#00ffc0;transform:translateY(-1px);box-shadow:0 6px 28px rgba(0,229,160,0.38)}
+.btn-primary:disabled{opacity:0.4;cursor:not-allowed;transform:none;box-shadow:none}
+.btn-ghost{
+  background:transparent;color:var(--text-mid);
+  border:1px solid var(--border2);padding:11px 20px;font-size:0.86rem;
+}
+.btn-ghost:hover{border-color:var(--text-mid);color:var(--text)}
+.btn-wa{
+  background:#25d366;color:#fff;padding:13px 26px;
+  box-shadow:0 4px 20px rgba(37,211,102,0.25);
+}
+.btn-wa:hover{background:#1fba58;transform:translateY(-1px)}
+.btn-row{display:flex;gap:9px;justify-content:flex-end;margin-top:26px}
+
+/* ══ ERROR ══ */
+.err{
+  background:rgba(255,64,96,0.1);
+  border:1px solid rgba(255,64,96,0.28);
+  border-radius:8px;padding:9px 13px;
+  font-size:0.8rem;color:#ff8090;
+  margin-bottom:14px;display:none;
+}
+.err.show{display:block}
+
+/* ══ LOADING OVERLAY ══ */
+.loading-overlay{
+  display:none;position:absolute;inset:0;
+  background:rgba(4,8,13,0.88);
+  backdrop-filter:blur(6px);
+  z-index:10;flex-direction:column;
+  align-items:center;justify-content:center;gap:16px;
+  border-radius:18px;
+}
+.loading-overlay.show{display:flex}
+.spinner{
+  width:38px;height:38px;
+  border:2px solid var(--border2);
+  border-top-color:var(--accent);
+  border-radius:50%;animation:spin 0.75s linear infinite;
+}
+@keyframes spin{to{transform:rotate(360deg)}}
+.loading-txt{font-family:var(--mono);font-size:0.75rem;color:var(--text-mid);letter-spacing:0.06em}
+
+/* ══ FOOTER ══ */
+footer{
+  position:relative;z-index:1;
+  border-top:1px solid var(--border);
+  padding:22px;text-align:center;
+  font-size:0.75rem;color:var(--text-dim);
+  margin-top:60px;font-family:var(--mono);
+}
+footer a{color:var(--accent);text-decoration:none;opacity:0.75}
+footer a:hover{opacity:1}
+
+/* ══ RESPONSIVE ══ */
+@media(max-width:600px){
+  .panel{padding:24px 18px}
+  .pgrid{grid-template-columns:1fr 1fr}
+  .hero h1{font-size:2rem}
+  .pcode{font-size:1.75rem;letter-spacing:0.12em}
+  .phone-row{flex-direction:column}
+  .ccsel{width:100%}
+}
+</style>
+</head>
+<body>
+
+<canvas id="bg-canvas"></canvas>
+
+<!-- HEADER -->
+<header>
+  <div class="hdr">
+    <a class="logo" href="#">
+      <div class="logo-mark">⚡</div>
+      Astra<em>Link</em>
+    </a>
+    <div class="hdr-right">
+      <div class="pill" id="botStatusPill" title="Click to view live status">
+        <div class="dot" id="botStatusDot"></div>
+        <span id="botStatusText">CHECKING…</span>
+      </div>
+    </div>
+  </div>
+</header>
+
+<!-- STATUS MODAL -->
+<div class="status-modal" id="statusModal" onclick="if(event.target===this)closeStatus()">
+  <div class="status-box">
+    <div class="status-hdr">
+      <h2>🛰️ Live Bot Status</h2>
+      <button class="status-close" onclick="closeStatus()">×</button>
+    </div>
+    <div class="status-body" id="statusBody">
+      <div style="text-align:center;padding:30px 0;color:var(--text-dim);font-family:var(--mono);font-size:0.78rem">Loading…</div>
+    </div>
+  </div>
+</div>
+
+<!-- HERO -->
+<div class="wrap">
+  <div class="hero">
+    <div class="hero-badge">⚡ WhatsApp Bot Linking</div>
+    <h1>Link Astra to<br/><em>Your WhatsApp</em></h1>
+    <p>Choose an anime personality, enter your number, get your pairing code — done in under a minute.</p>
+  </div>
+
+  <!-- STEPS -->
+  <div class="steps">
+    <div class="step active" id="s1"><div class="snum">1</div><span>Personality</span></div>
+    <div class="sarr">──</div>
+    <div class="step" id="s2"><div class="snum">2</div><span>Number</span></div>
+    <div class="sarr">──</div>
+    <div class="step" id="s3"><div class="snum">3</div><span>Link</span></div>
+    <div class="sarr">──</div>
+    <div class="step" id="s4"><div class="snum">4</div><span>Done</span></div>
+  </div>
+
+  <!-- CARD -->
+  <div class="card" id="card">
+
+    <!-- Loading overlay -->
+    <div class="loading-overlay" id="loadingOverlay">
+      <div class="spinner"></div>
+      <div class="loading-txt" id="loadingTxt">CONNECTING...</div>
+    </div>
+
+    <!-- ═══ PANEL 1: PERSONALITY ═══ -->
+    <div class="panel active" id="p1">
+      <div class="ptitle">Choose a Personality</div>
+      <div class="psub">Astra will take on this character across your WhatsApp session. All personas are anime-inspired.</div>
+
+      <div class="pgrid" id="pgrid">
+        <!-- populated by JS -->
+      </div>
+
+      <div class="err" id="err1">⚠️ Please select a personality to continue.</div>
+
+      <div class="btn-row">
+        <button class="btn btn-primary" onclick="goStep2()">Continue →</button>
+      </div>
+    </div>
+
+    <!-- ═══ PANEL 2: PHONE ═══ -->
+    <div class="panel" id="p2">
+      <div class="ptitle">Enter Your WhatsApp Number</div>
+      <div class="psub">We'll send a pairing request to this number. Use the number registered on WhatsApp, no + needed.</div>
+
+      <div class="persona-pill" id="selPill">
+        <span id="pillEmoji">⚡</span> Linking with <strong id="pillName">—</strong>
+      </div>
+
+      <label class="field-lbl">WhatsApp Number</label>
+      <div class="phone-row">
+        <select class="ccsel" id="cc">
+          <option value="1">🇺🇸 +1</option>
+          <option value="44">🇬🇧 +44</option>
+          <option value="234" selected>🇳🇬 +234</option>
+          <option value="233">🇬🇭 +233</option>
+          <option value="27">🇿🇦 +27</option>
+          <option value="254">🇰🇪 +254</option>
+          <option value="221">🇸🇳 +221</option>
+          <option value="91">🇮🇳 +91</option>
+          <option value="61">🇦🇺 +61</option>
+          <option value="49">🇩🇪 +49</option>
+          <option value="33">🇫🇷 +33</option>
+          <option value="55">🇧🇷 +55</option>
+          <option value="52">🇲🇽 +52</option>
+          <option value="7">🇷🇺 +7</option>
+          <option value="81">🇯🇵 +81</option>
+          <option value="20">🇪🇬 +20</option>
+          <option value="212">🇲🇦 +212</option>
+        </select>
+        <input class="phonein" id="phone" type="tel" placeholder="8012345678" maxlength="15"
+          oninput="this.value=this.value.replace(/[^0-9]/g,'')"/>
+      </div>
+      <div class="note">🔒 Your number is only used to generate the pairing code. It is not stored.</div>
+
+      <div class="err" id="err2">⚠️ Please enter a valid phone number (at least 7 digits).</div>
+
+      <div class="btn-row">
+        <button class="btn btn-ghost" onclick="goStep(1)">← Back</button>
+        <button class="btn btn-primary" onclick="goStep3()">Generate Code →</button>
+      </div>
+    </div>
+
+    <!-- ═══ PANEL 3: LINK ═══ -->
+    <div class="panel" id="p3">
+      <div class="ptitle">Link Your Device</div>
+
+      <div class="qr-code-toggle">
+        <button class="btn btn-ghost" id="qrToggle" onclick="enableQrMode(this)">📱 Scan QR instead</button>
+        <button class="btn btn-ghost" id="codeToggle" style="display:none" onclick="enableCodeMode(this)">🔢 Use pairing code</button>
+      </div>
+
+      <div class="psub" id="psubCode">Enter the code below in WhatsApp → Linked Devices → Link with phone number. The code expires in 2 minutes.</div>
+      <div class="psub" id="psubQr" style="display:none">Scan the QR below with WhatsApp → Linked Devices → Link a device. The bot will go live the moment you confirm.</div>
+
+      <div class="pair-area">
+        <!-- QR VIEW (scan-to-link) -->
+        <div id="qrView" style="display:none;text-align:center">
+          <div class="code-box" style="padding:22px">
+            <img id="qrImg" alt="QR code" style="width:280px;height:280px;image-rendering:pixelated;border-radius:12px;background:#fff;padding:8px"/>
+            <div class="code-hint">Scan this in WhatsApp → Linked Devices → Link a device.</div>
+            <div class="timer-lbl" style="margin-top:10px" id="qrStatus">Connecting…</div>
+          </div>
+        </div>
+
+        <!-- CODE VIEW (pairing code) -->
+        <div id="codeView">
+          <div class="code-box">
+            <div class="pcode" id="pcode">---- ----</div>
+            <div class="code-hint">Enter this in WhatsApp → Linked Devices → Link with phone number</div>
+            <div class="timer-bar"><div class="timer-fill" id="timerFill"></div></div>
+            <div class="timer-lbl" id="timerLbl">Expires in 2:00</div>
+          </div>
+        </div>
+
+        <div class="inst-box">
+          <div class="inst-title" id="instTitle">How to use Pairing Code</div>
+          <div id="instSteps">
+            <div class="inst-step"><div class="inum">1</div><div>Open <strong>WhatsApp</strong> on your phone</div></div>
+            <div class="inst-step"><div class="inum">2</div><div>Tap <strong>⋮ Menu → Linked Devices</strong></div></div>
+            <div class="inst-step"><div class="inum">3</div><div>Tap <strong>"Link with phone number"</strong></div></div>
+            <div class="inst-step"><div class="inum">4</div><div>Enter the <strong>8-digit code</strong> shown above</div></div>
+            <div class="inst-step"><div class="inum">5</div><div>Astra activates instantly once confirmed ✓</div></div>
+          </div>
+        </div>
+
+        <div class="btn-row" style="width:100%;justify-content:space-between">
+          <button class="btn btn-ghost" onclick="goStep(2)">← Back</button>
+          <button class="btn btn-ghost" onclick="refreshCode()">↺ Refresh</button>
+        </div>
+
+        <!-- Demo trigger note -->
+        <div style="font-family:var(--mono);font-size:0.67rem;color:var(--text-dim);text-align:center;margin-top:8px">
+          Double-click anywhere here to simulate a successful link (demo mode)
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ PANEL 4: SUCCESS ═══ -->
+    <div class="panel" id="p4">
+      <div class="success-area">
+        <div class="sicon">✓</div>
+        <div class="stitle">Astra is Live!</div>
+        <div class="spersona">
+          <span id="succEmoji">⚡</span>
+          <div>Personality active: <strong id="succName">—</strong></div>
+        </div>
+        <div class="ssub">
+          Your WhatsApp is now linked. Use <code style="background:rgba(0,229,160,0.1);padding:1px 6px;border-radius:4px;font-family:var(--mono);font-size:0.85em">/start <span id="succKey">—</span></code> in any group to activate <strong id="succName2">—</strong>.
+        </div>
+        <div class="ssub" style="opacity:0.65;font-size:0.8rem">
+          The bot has sent a confirmation DM to itself with your link details.
+        </div>
+        <button class="btn btn-wa" onclick="goStep(1)">Link Another Number</button>
+      </div>
+    </div>
+
+  </div><!-- /card -->
+</div><!-- /wrap -->
+
+<footer>
+  AstraLink · <a href="#">Docs</a> · <a href="#">Support</a> · <a href="#">Privacy</a>
+  <div style="margin-top:5px;opacity:0.45">Not affiliated with Meta or WhatsApp Inc.</div>
+</footer>
+
+<script>
+// ══ CONFIG ════════════════════════════════════════════════════════════════════
+// Change this to your bot's deployed URL
+const BOT_API = window.location.origin.includes('localhost')
+  ? 'http://localhost:3000'
+  : window.location.origin; // same origin if served from bot
+
+// ══ PERSONALITY DATA ══════════════════════════════════════════════════════════
+const PERSONAS = [
+  { id:'hinata',  emoji:'💜', name:'Hinata',  desc:'Shy, devoted, and deeply in love. Speaks softly and stutters when flustered.',       tag:'NARUTO',          theme:'Naruto' },
+  { id:'lunar',   emoji:'🔬', name:'Lunar',   desc:'Scientifically obsessed and warmly possessive. "10 billion percent mine."',          tag:'DR. STONE',       theme:'Dr. Stone' },
+  { id:'aria',    emoji:'✨', name:'Aria',    desc:'Graceful and refined. Speaks with crystal elegance and Final Fantasy poise.',        tag:'FINAL FANTASY',   theme:'Final Fantasy' },
+  { id:'kira',    emoji:'📓', name:'Kira',    desc:'Calculating and always three steps ahead. Justice has a price — he\'s paid it.',     tag:'DEATH NOTE',      theme:'Death Note' },
+  { id:'zephyr',  emoji:'⚓', name:'Zephyr',  desc:'Free-spirited and loyal. Chill vibes, crew-first, always sailing forward.',         tag:'ONE PIECE',       theme:'One Piece' },
+  { id:'nova',    emoji:'💥', name:'Nova',    desc:'PLUS ULTRA energy. Hype machine. Believes in everyone\'s potential. Caps optional.', tag:'MY HERO ACADEMIA',theme:'My Hero Academia' },
+  { id:'void',    emoji:'🌑', name:'Void',    desc:'Cold. Minimal. Born from the System. Words land like dungeon notifications.',        tag:'SOLO LEVELING',   theme:'Solo Leveling' },
+  { id:'seraph',  emoji:'🗡️', name:'Seraph',  desc:'Ancient and poetic. A guardian of digital worlds. Warm beneath the mysticism.',     tag:'SAO',             theme:'Sword Art Online' },
+  { id:'echo',    emoji:'⌛', name:'Echo',    desc:'Fascinated by human divergence. Asks questions back. Loves timelines and detail.',   tag:'STEINS;GATE',     theme:'Steins;Gate' },
+  { id:'raven',   emoji:'🖤', name:'Raven',   desc:'Theatrical and dark. Finds beauty in duality. "Existence is a beautiful tragedy."', tag:'TOKYO GHOUL',     theme:'Tokyo Ghoul' },
+  { id:'jinx',    emoji:'💣', name:'Jinx',    desc:'Chaotic, unhinged, and gloriously lovable. "This is fine. 🔥 (It\'s not.)"',        tag:'ARCANE',          theme:'Arcane' },
+  { id:'mikasa',  emoji:'🧣', name:'Mikasa',  desc:'Stoic and fiercely devoted. Words are few but each carries absolute resolve.',      tag:'ATTACK ON TITAN', theme:'Attack on Titan' },
+  { id:'nezuko',  emoji:'🌸', name:'Nezuko',  desc:'Warm, gentle, and quietly fierce. Believes in the good in everyone.',               tag:'DEMON SLAYER',    theme:'Demon Slayer' },
+  { id:'gojo',    emoji:'🔵', name:'Gojo',    desc:'The strongest, and he knows it. Playfully arrogant. Genuinely brilliant.',          tag:'JJK',             theme:'Jujutsu Kaisen' },
+  { id:'killua',  emoji:'⚡', name:'Killua',  desc:'Sharp, sarcastic, secretly loyal. "I wasn\'t worried about you. ...Fine, I was."',  tag:'HXH',             theme:'Hunter x Hunter' },
+  { id:'rukia',   emoji:'❄️', name:'Rukia',   desc:'Proud and warm beneath the surface. High standards, bigger heart. Soul Reaper.',    tag:'BLEACH',          theme:'Bleach' },
+  { id:'winry',   emoji:'🔧', name:'Winry',   desc:'Passionate engineer who expresses love through fixing things. Don\'t come back broken.', tag:'FMA',         theme:'Fullmetal Alchemist' },
+  { id:'rem',     emoji:'💙', name:'Rem',     desc:'Gentle, devoted, and terrifying when pushed. Serves wholeheartedly.',               tag:'RE:ZERO',         theme:'Re:Zero' },
+  { id:'power',   emoji:'🩸', name:'Power',   desc:'POWER is the greatest! Chaotic, boastful, and loyal beneath the bluster.',         tag:'CHAINSAW MAN',    theme:'Chainsaw Man' },
+  { id:'mob',     emoji:'💯', name:'Mob',     desc:'The most powerful esper. The most humble person. Still figuring it out. ???%.',     tag:'MOB PSYCHO',      theme:'Mob Psycho 100' },
+];
+
+// ══ STATE ══
+let selected = null;
+let currentStep = 1;
+let timerInterval = null;
+let timerSecs = 120;
+let linkedPhone = '';
+let linkedCC = '';
+
+// ══ BUILD GRID ══
+(function buildGrid(){
+  const grid = document.getElementById('pgrid');
+  PERSONAS.forEach(p => {
+    const card = document.createElement('div');
+    card.className = 'pcard';
+    card.dataset.id = p.id;
+    card.innerHTML = `
+      <span class="pemoji">${p.emoji}</span>
+      <div class="pname">${p.name}</div>
+      <div class="pdesc">${p.desc}</div>
+      <div class="ptag">${p.tag}</div>
+    `;
+    card.onclick = () => selectPersona(card);
+    grid.appendChild(card);
+  });
+})();
+
+// ══ CANVAS PARTICLE BG ══
+(function initCanvas(){
+  const canvas = document.getElementById('bg-canvas');
+  const ctx = canvas.getContext('2d');
+  let W, H, particles = [];
+
+  function resize(){
+    W = canvas.width = window.innerWidth;
+    H = canvas.height = window.innerHeight;
+  }
+  resize();
+  window.addEventListener('resize', resize);
+
+  class Particle{
+    constructor(){this.reset()}
+    reset(){
+      this.x = Math.random() * W;
+      this.y = Math.random() * H;
+      this.size = Math.random() * 1.5 + 0.3;
+      this.speedY = -(Math.random() * 0.4 + 0.1);
+      this.speedX = (Math.random() - 0.5) * 0.2;
+      this.opacity = Math.random() * 0.6 + 0.1;
+      this.life = 0;
+      this.maxLife = Math.random() * 200 + 100;
+    }
+    update(){
+      this.y += this.speedY;
+      this.x += this.speedX;
+      this.life++;
+      if(this.life > this.maxLife || this.y < 0) this.reset();
+    }
+    draw(){
+      ctx.save();
+      ctx.globalAlpha = this.opacity * (1 - this.life/this.maxLife);
+      ctx.fillStyle = '#00e5a0';
+      ctx.beginPath();
+      ctx.arc(this.x, this.y, this.size, 0, Math.PI*2);
+      ctx.fill();
+      ctx.restore();
+    }
+  }
+
+  for(let i=0;i<80;i++) particles.push(new Particle());
+
+  // Grid lines
+  function drawGrid(){
+    ctx.clearRect(0,0,W,H);
+    ctx.strokeStyle = 'rgba(0,229,160,0.04)';
+    ctx.lineWidth = 1;
+    const gs = 50;
+    for(let x=0;x<W;x+=gs){
+      ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,H);ctx.stroke();
+    }
+    for(let y=0;y<H;y+=gs){
+      ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke();
+    }
+  }
+
+  function loop(){
+    drawGrid();
+    particles.forEach(p=>{p.update();p.draw()});
+    requestAnimationFrame(loop);
+  }
+  loop();
+})();
+
+// ══ PERSONA SELECTION ══
+function selectPersona(card){
+  document.querySelectorAll('.pcard').forEach(c=>c.classList.remove('selected'));
+  card.classList.add('selected');
+  selected = card.dataset.id;
+  document.getElementById('err1').classList.remove('show');
+}
+
+// ══ NAVIGATION ══
+function goStep(n){
+  document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
+  document.getElementById('p'+n).classList.add('active');
+  ['s1','s2','s3','s4'].forEach((id,i)=>{
+    const el=document.getElementById(id);
+    el.className='step';
+    if(i+1<n) el.classList.add('done');
+    else if(i+1===n) el.classList.add('active');
+  });
+  currentStep=n;
+  window.scrollTo({top:0,behavior:'smooth'});
+}
+
+function goStep2(){
+  if(!selected){document.getElementById('err1').classList.add('show');return}
+  const p=PERSONAS.find(x=>x.id===selected);
+  document.getElementById('pillEmoji').textContent=p.emoji;
+  document.getElementById('pillName').textContent=p.name;
+  goStep(2);
+}
+
+async function goStep3(){
+  const phone = document.getElementById('phone').value.trim();
+  if(!phone||phone.length<7){document.getElementById('err2').classList.add('show');return}
+  document.getElementById('err2').classList.remove('show');
+
+  linkedCC = document.getElementById('cc').value;
+  linkedPhone = phone;
+  const fullNumber = linkedCC + linkedPhone;
+
+  showLoading('REQUESTING PAIRING CODE...');
+
+  try {
+    const resp = await fetch(`${BOT_API}/api/request-pairing-code`, {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ phoneNumber: fullNumber, personality: selected })
+    });
+    const data = await resp.json();
+
+    hideLoading();
+
+    if(data.success){
+      goStep(3);
+      // Show real code from bot
+      document.getElementById('pcode').textContent = data.code;
+      startTimer();
+    } else {
+      alert('❌ Error: ' + (data.error || 'Could not get pairing code. Make sure the bot is running.'));
+    }
+  } catch(err){
+    hideLoading();
+    // Fallback: show generated code (demo mode when bot not reachable)
+    console.warn('Bot API not reachable, using demo mode:', err.message);
+    goStep(3);
+    document.getElementById('pcode').textContent = genCode();
+    startTimer();
+  }
+}
+
+// ══ LOADING ══
+function showLoading(txt){
+  document.getElementById('loadingTxt').textContent = txt||'CONNECTING...';
+  document.getElementById('loadingOverlay').classList.add('show');
+}
+function hideLoading(){
+  document.getElementById('loadingOverlay').classList.remove('show');
+}
+
+// ══ TIMER ══
+function genCode(){
+  const c='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let code='';
+  for(let i=0;i<8;i++){if(i===4)code+='-';code+=c[Math.floor(Math.random()*c.length)]}
+  return code;
+}
+
+function startTimer(){
+  clearInterval(timerInterval);
+  timerSecs=120;
+  updateTimerLabel();
+  const fill=document.getElementById('timerFill');
+  fill.style.animation='none';
+  fill.offsetHeight;
+  fill.style.animation='countdown 120s linear forwards';
+  timerInterval=setInterval(()=>{
+    timerSecs--;
+    updateTimerLabel();
+    if(timerSecs<=0){
+      clearInterval(timerInterval);
+      document.getElementById('pcode').textContent='EXPIRED';
+      document.getElementById('timerLbl').textContent='Code expired — tap Refresh';
+    }
+  },1000);
+}
+
+function updateTimerLabel(){
+  const m=Math.floor(timerSecs/60);
+  const s=timerSecs%60;
+  document.getElementById('timerLbl').textContent=`Expires in ${m}:${String(s).padStart(2,'0')}`;
+}
+
+// ══ QR MODE (scan-to-link) ════════════════════════════════════════════════════
+let _qrTimer = null;
+let _qrMode  = false;
+
+function enableQrMode(btn){
+  _qrMode = true;
+  document.getElementById('qrView').style.display = 'block';
+  document.getElementById('codeView').style.display = 'none';
+  document.getElementById('psubCode').style.display = 'none';
+  document.getElementById('psubQr').style.display = 'block';
+  if (btn) btn.style.display = 'none';
+  document.getElementById('codeToggle').style.display = 'inline-block';
+  document.getElementById('qrStatus').textContent = 'Connecting…';
+  pollQr();
+}
+
+function enableCodeMode(btn){
+  _qrMode = false;
+  clearInterval(_qrTimer);
+  document.getElementById('qrView').style.display = 'none';
+  document.getElementById('codeView').style.display = 'block';
+  document.getElementById('psubQr').style.display = 'none';
+  document.getElementById('psubCode').style.display = 'block';
+  if (btn) btn.style.display = 'none';
+  document.getElementById('qrToggle').style.display = 'inline-block';
+  if (document.getElementById('pcode').textContent.startsWith('----') || document.getElementById('pcode').textContent === '---- ----') {
+    // coming back to code mode without a code — trigger one.
+    refreshCode();
+  }
+}
+
+function pollQr(){
+  if (!_qrMode) return;
+  clearInterval(_qrTimer);
+  _qrTimer = setInterval(async () => {
+    try {
+      const resp = await fetch(`${BOT_API}/api/qr?personality=${selected}`);
+      const data = await resp.json();
+      const img = document.getElementById('qrImg');
+      const st  = document.getElementById('qrStatus');
+      if (data.success && data.dataUri) {
+        img.src = data.dataUri;
+        img.style.opacity = '1';
+        st.textContent = 'Scan with WhatsApp to link. Refreshing every ~5s…';
+      } else if (data.success && data.qr && window.QRCode) {
+        // Fallback: render raw string client-side.
+        img.src = '';
+        const el = document.createElement('div');
+        el.innerHTML = '';
+        const c = document.createElement('canvas');
+        new QRCode(c, { text: data.qr, width: 280, height: 280 });
+        img.replaceWith(c);
+        c.style.imageRendering = 'pixelated';
+        c.style.background = '#fff'; c.style.padding = '8px'; c.style.borderRadius = '12px';
+        st.textContent = 'Scan with WhatsApp to link.';
+      } else {
+        st.textContent = data.error || 'No QR yet — is this bot waiting for a link?';
+      }
+    } catch (e) {
+      document.getElementById('qrStatus').textContent = 'Bot offline? ' + e.message;
+    }
+  }, 5000);
+  // immediate first fetch
+  pollQrOnce();
+}
+function pollQrOnce(){
+  fetch(`${BOT_API}/api/qr?personality=${selected}`)
+    .then(r=>r.json())
+    .then(data=>{
+      const img = document.getElementById('qrImg');
+      if (data.success && data.dataUri) { img.src = data.dataUri; img.style.opacity='1'; document.getElementById('qrStatus').textContent='Scan with WhatsApp to link.'; }
+      else document.getElementById('qrStatus').textContent = data.error || 'No QR yet.';
+    })
+    .catch(e=>{ document.getElementById('qrStatus').textContent = 'Bot offline? '+e.message; });
+}
+
+function refreshCode(){
+  showLoading('REFRESHING CODE...');
+  const fullNumber = linkedCC + linkedPhone;
+  fetch(`${BOT_API}/api/request-pairing-code`,{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({phoneNumber:fullNumber,personality:selected})
+  })
+  .then(r=>r.json())
+  .then(data=>{
+    hideLoading();
+    if(data.success){
+      document.getElementById('pcode').textContent=data.code;
+      startTimer();
+    } else {
+      document.getElementById('pcode').textContent=genCode();
+      startTimer();
+    }
+  })
+  .catch(()=>{
+    hideLoading();
+    document.getElementById('pcode').textContent=genCode();
+    startTimer();
+  });
+}
+
+// ══ BOT STATUS (live polling) ════════════════════════════════════════════════
+let _statusTimer = null;
+let _statusData  = null;
+
+async function fetchBotStatus(){
+  try {
+    const resp = await fetch(`${BOT_API}/api/bot-status`);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    _statusData = await resp.json();
+    updateStatusPill(_statusData);
+    return _statusData;
+  } catch (e) {
+    document.getElementById('botStatusDot').className = 'dot off';
+    document.getElementById('botStatusText').textContent = 'OFFLINE';
+    return null;
+  }
+}
+
+function updateStatusPill(data){
+  if (!data) return;
+  const dot  = document.getElementById('botStatusDot');
+  const text = document.getElementById('botStatusText');
+  const connectedCount = (data.primary.connected ? 1 : 0)
+                       + (data.bots?.filter(b => b.connected).length || 0);
+  const totalCount = 1 + (data.bots?.length || 0);
+  if (connectedCount === 0) {
+    dot.className = 'dot off';
+    text.textContent = 'NO BOTS';
+  } else if (connectedCount === totalCount) {
+    dot.className = 'dot';
+    text.textContent = `${connectedCount}/${totalCount} ONLINE`;
+  } else {
+    dot.className = 'dot warn';
+    text.textContent = `${connectedCount}/${totalCount} ONLINE`;
+  }
+}
+
+async function openStatus(){
+  document.getElementById('statusModal').classList.add('show');
+  await renderStatus();
+}
+function closeStatus(){
+  document.getElementById('statusModal').classList.remove('show');
+}
+
+async function renderStatus(){
+  const body = document.getElementById('statusBody');
+  if (!_statusData) await fetchBotStatus();
+  if (!_statusData) {
+    body.innerHTML = '<div style="text-align:center;padding:30px 0;color:var(--danger);font-family:var(--mono);font-size:0.78rem">⚠️ Could not reach bot</div>';
+    return;
+  }
+  const d = _statusData;
+  let html = '';
+
+  // Primary bot row
+  html += `
+    <div class="bot-row">
+      <div class="bemoji">🎮</div>
+      <div class="binfo">
+        <div class="bname">Primary Bot</div>
+        <div class="btheme">${d.primary.jid ? d.primary.jid.split(':')[0] : 'not linked'} · Astra</div>
+      </div>
+      <div class="blbl ${d.primary.connected ? 'on' : 'off'}">${d.primary.connected ? 'ONLINE' : 'OFFLINE'}</div>
+      <div class="bdot ${d.primary.connected ? 'on' : 'off'}"></div>
+    </div>
+  `;
+
+  // Secondary personality bots
+  for (const b of (d.bots || [])) {
+    html += `
+      <div class="bot-row">
+        <div class="bemoji">${b.emoji}</div>
+        <div class="binfo">
+          <div class="bname">${b.displayName}</div>
+          <div class="btheme">${b.jid.split('@')[0]} · ${b.theme}</div>
+        </div>
+        <div class="blbl ${b.connected ? 'on' : 'off'}">${b.connected ? 'ONLINE' : 'OFFLINE'}</div>
+        <div class="bdot ${b.connected ? 'on' : 'off'}"></div>
+      </div>
+    `;
+  }
+
+  if (!d.bots || d.bots.length === 0) {
+    html += `<div style="text-align:center;padding:18px 0;color:var(--text-dim);font-size:0.82rem">No secondary bots configured. Set <code>BOT_HINATA=…</code> in <code>.env</code> to add more.</div>`;
+  }
+
+  body.innerHTML = html;
+}
+
+// Hook pill click → open modal
+document.getElementById('botStatusPill').addEventListener('click', openStatus);
+// Poll every 8s
+fetchBotStatus();
+_statusTimer = setInterval(fetchBotStatus, 8000);
+
+// ══ SUCCESS (double-click to simulate in demo mode) ══
+document.getElementById('p3').addEventListener('dblclick', async function(e){
+  if(e.target.closest('.btn')) return;
+  clearInterval(timerInterval);
+  showLoading('VERIFYING LINK...');
+
+  // Call bot to send self-DM
+  const fullNumber = linkedCC + linkedPhone;
+  try {
+    await fetch(`${BOT_API}/api/link-success`, {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({ phoneNumber: fullNumber, personality: selected })
+    });
+  } catch(err) {
+    console.warn('Self-DM call failed (demo mode):', err.message);
+  }
+
+  setTimeout(()=>{
+    hideLoading();
+    const p = PERSONAS.find(x=>x.id===selected)||PERSONAS[0];
+    document.getElementById('succEmoji').textContent = p.emoji;
+    document.getElementById('succName').textContent = p.name;
+    document.getElementById('succName2').textContent = p.name;
+    document.getElementById('succKey').textContent = p.id;
+    goStep(4);
+  }, 1800);
+});
+
+// Reset on "Link Another Number"
+document.querySelector('.btn-wa').addEventListener('click',()=>{
+  selected=null;
+  document.querySelectorAll('.pcard').forEach(c=>c.classList.remove('selected'));
+  document.getElementById('phone').value='';
+  goStep(1);
+});
+</script>
+</body>
+</html>

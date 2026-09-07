@@ -1,0 +1,31 @@
+# fly.toml — Ani R.P.G WhatsApp Bot
+# Deploy with: fly deploy
+
+app = "ani-rpg-bot"
+primary_region = "iad"      # US East — change if you prefer another region
+                             # Other options: lhr (London), sin (Singapore), syd (Sydney)
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  NODE_ENV = "production"
+  DATA_DIR = "/data"
+  AUTH_DIR = "/data/auth"
+
+# Persistent volume — all bot data lives here (auth session, database, pets)
+[mounts]
+  source = "ani_rpg_data"
+  destination = "/data"
+
+[http_service]
+  internal_port = 3000
+  force_https = false
+  auto_stop_machines = false     # IMPORTANT: never auto-stop (bot must stay running)
+  auto_start_machines = true
+  min_machines_running = 1       # Always keep 1 machine alive
+
+[[vm]]
+  memory = "512mb"               # 512MB is enough for the bot
+  cpu_kind = "shared"
+  cpus = 1

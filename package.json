@@ -1,0 +1,25 @@
+{
+  "name": "ani-rpg-bot",
+  "version": "1.0.0",
+  "description": "WhatsApp RPG Bot using Baileys",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "ui:open": "node -e \"const {exec}=require('child_process');const url=process.env.ASTRALINK_URL||('http://localhost:'+(process.env.PORT||3000));const opener=process.platform==='win32'?'start':process.platform==='darwin'?'open':'xdg-open';exec(`${opener} ${url}`);\"",
+    "ui:dev": "node -e \"console.log('Open http://localhost:'+(process.env.PORT||3000)+' in your browser.\\nThe UI is served directly by the bot at that URL.');\""
+  },
+  "dependencies": {
+    "@whiskeysockets/baileys": "7.0.0-rc14",
+    "dotenv": "^16.4.5",
+    "imagemin-webp": "^8.0.0",
+    "mongodb": "^6.0.0",
+    "pino": "^8.21.0",
+    "sharp": "^0.34.5",
+    "canvas": "^2.11.2",
+    "qrcode-terminal": "^0.12.0",
+    "qrcode": "^1.5.3"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

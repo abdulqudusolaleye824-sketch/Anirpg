@@ -1,0 +1,8 @@
+node_modules
+.git
+database/database.json
+database/database.backup.json
+rpg/data/playerPets.json
+*.bak
+*.log
+.env
