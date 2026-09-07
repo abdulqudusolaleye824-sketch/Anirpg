@@ -467,6 +467,12 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
     }
 
     // ── AI personality chat (only when this bot is the active personality) ─
+    // Never let AI hijack a command: if the message is a bot command (starts
+    // with the prefix), the command handler owns it — AI must stay silent.
+    // This is a hard guard even if the command wasn't dispatched (e.g. the
+    // handler returned for a non-active bot). Without it, /start <name>,
+    // /switch, etc. get answered by the personality as if they were chat.
+    if (isCommand) return;
     if (!isGroup || !messageText.trim()) return;
     if (activeKey !== personalityKey) return;
 

@@ -121,8 +121,29 @@ const switchBot = {
     }
 
     const info = PersonalityManager.getPersonalityInfo(result.personalityKey);
-    const prevName = current ? PersonalityManager.getDisplayName(current) : null;
+    const newKey = result.personalityKey;
 
+    // 💬 Only the bot that was switched to speaks. It announces "I am active
+    // now" from ITS OWN socket, so the group sees exactly one reply — the
+    // newly-active bot — and no other bot chimes in.
+    try {
+      const MSM = require('../../bots/MultiSocketManager');
+      const newBotSock = MSM.getSocket(newKey);
+      if (newBotSock) {
+        const greeting =
+          `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+          `✨ I am active now!\n` +
+          `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+          `🎭 *${result.displayName}* — ${info.theme}\n` +
+          `💬 Mention me or reply to chat with me!\n` +
+          `🔄 Use /switch <name> to change bots\n` +
+          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+        await newBotSock.sendMessage(chatId, { text: greeting }, { quoted: msg });
+        return;
+      }
+    } catch (e) { /* fall through to socket send below */ }
+
+    const prevName = current ? PersonalityManager.getDisplayName(current) : null;
     return sock.sendMessage(chatId, {
       text: [
         `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
@@ -162,13 +183,32 @@ const hi = {
     }
 
     const senderName = msg.pushName || sender.split('@')[0];
-    const greeting = args.length > 0 ? args.join(' ') : `Hi everyone! ${senderName} says hi!`;
 
-    const responses = await AIHandler.generateAllResponses(chatId, greeting, senderName);
+    // 👋 /hi is a SIMPLE greeting — no AI. Each present bot replies with a
+    // plain line: "Hi <player name> I'm <bot name>". Using AI here makes the
+    // bots sound chatty/off-topic when the user just wants a hello.
+    const greeting = args.length > 0 ? `Hi <${senderName}>! ${args.join(' ')}` : `Hi <${senderName}>!`;
+
+    let responses = [];
+    try {
+      const MSM = require('../../bots/MultiSocketManager');
+      for (const key of bots) {
+        const sock = MSM.getSocket(key);
+        if (!sock) continue;
+        const info = PersonalityManager.getPersonalityInfo(key);
+        const displayName = PersonalityManager.getDisplayName(key);
+        responses.push({
+          personalityKey: key,
+          displayName,
+          text: `${greeting} — I'm ${displayName}!`,
+          attachment: null,
+        });
+      }
+    } catch (e) { /* best effort */ }
 
     if (responses.length === 0) {
       return sock.sendMessage(chatId, {
-        text: '⚠️ Bots are present but could not respond right now.',
+        text: '⚠️ Bots are present but their sockets aren\'t ready right now.',
       }, { quoted: msg });
     }
 
@@ -179,14 +219,8 @@ const hi = {
     } catch(e) {
       // Fallback: send all from primary socket (quoted so it looks like a normal reply)
       for (let i = 0; i < responses.length; i++) {
-        const { displayName, text, attachment } = responses[i];
+        const { displayName, text } = responses[i];
         if (text) await sock.sendMessage(chatId, { text: `*${displayName}:* ${text}` }, { quoted: msg });
-        if (attachment) {
-          try {
-            const MSM = require('../../bots/MultiSocketManager');
-            await MSM.sendAttachment(sock, chatId, attachment);
-          } catch(e2) {}
-        }
         if (i < responses.length - 1) await new Promise(r => setTimeout(r, 800));
       }
     }
@@ -261,21 +295,36 @@ const bots = {
   async execute(sock, msg, args, getDatabase, saveDatabase, sender) {
     const chatId = msg.key.remoteJid;
     const activeKey = PersonalityManager.getActiveBot(chatId);
-    const presentKeys = new Set(PersonalityManager.getPresentBots(chatId));
+
+    let presentKeys = new Set();
+    let linkedKeys = new Set();
+    let MSM = null;
+    try {
+      MSM = require('../../bots/MultiSocketManager');
+      linkedKeys = new Set(Object.keys(MSM.getAllSockets?.() || {}));
+      presentKeys = new Set(PersonalityManager.getPresentBots(chatId));
+    } catch (_) {}
 
     const lines = [
       `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
       `🤖 *Astra Bot Roster*`,
       `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+      `🟢 Active = active in this group`,
+      `🟡 Present = linked & connected`,
+      `⚫ Dormant = no number linked`,
       '',
     ];
 
     for (const key of PersonalityManager.getAllPersonalities()) {
       const info = PersonalityManager.getPersonalityInfo(key);
       const isActive = key === activeKey;
-      const isPresent = presentKeys.has(key);
+      // "Linked" = this personality has a live socket (a number is paired to it).
+      const isLinked = linkedKeys.has(key) || (MSM && !!MSM.getSocket?.(key));
 
-      const status = isActive ? '🟢 Active' : isPresent ? '🟡 Present' : '⚫ Dormant';
+      let status;
+      if (isActive) status = '🟢 Active';
+      else if (isLinked || presentKeys.has(key)) status = '🟡 Present';
+      else status = '⚫ Dormant';
       lines.push(`${status} *${info.displayName}* (${info.theme})`);
     }
 
