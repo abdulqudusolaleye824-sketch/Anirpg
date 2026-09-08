@@ -94,7 +94,7 @@ async function startAstraLink(personalityKey, authDir, getDatabase, saveDatabase
   if (method === 'code' && (phoneNumber.length < 7 || phoneNumber.length > 15)) {
     return { success: false, error: 'Enter a valid WhatsApp number with country code' };
   }
-  if (botSockets[personalityKey]?.user?.id) {
+  if (botSockets[personalityKey]?.user?.id && !options.pairingPhone && !options.forceRelink) {
     return { success: false, error: `${PersonalityManager.getDisplayName(personalityKey)} is already online.` };
   }
 
@@ -104,6 +104,7 @@ async function startAstraLink(personalityKey, authDir, getDatabase, saveDatabase
       try { botSockets[personalityKey].end(undefined); } catch (_) {}
       delete botSockets[personalityKey];
     }
+    // Clear old un-registered session state so pre-keys match fresh pairing code
     if (fs.existsSync(botAuthDir)) fs.rmSync(botAuthDir, { recursive: true, force: true });
   } catch (_) {}
 
