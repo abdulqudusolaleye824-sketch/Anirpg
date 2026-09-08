@@ -311,8 +311,6 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
     if (_isOwnBotNumber(bareSender, getDatabase)) return;
 
     const activeKey = isGroup ? PersonalityManager.getActiveBot(chatId) : null;
-    // Fix: If no bot has been explicitly set active via /start or /switch, fall back to default (_bootstrapDispatcher)
-    // so the bot NEVER stays silent in any group chat!
     const isActive = isGroup
       ? (activeKey ? activeKey === personalityKey : _bootstrapDispatcher(personalityKey, chatId))
       : true;
@@ -504,12 +502,31 @@ async function sendAttachment(sock, chatId, attachment, opts = {}) {
 }
 
 async function sendAs(personalityKey, chatId, content, opts = {}) {
-  const sock = botSockets[personalityKey];
-  if (!sock) return { dropped: true, reason: 'no-socket' };
-  if (!chatId?.endsWith?.('@g.us') && !opts.welcome) {
-    return safeSendDM(sock, chatId, content, opts);
+  const isGroup = chatId?.endsWith?.('@g.us');
+  if (isGroup) {
+    // Group chat: strictly use the active bot socket of that destination group chat
+    const activeKey = PersonalityManager.getActiveBot(chatId);
+    const targetKey = activeKey || personalityKey;
+    const sock = botSockets[targetKey] || getActiveSocket(chatId);
+    if (sock) return sock.sendMessage(chatId, content);
+    return { dropped: true, reason: 'no-socket' };
   }
-  return sock.sendMessage(chatId, content);
+
+  // DM: route via the recipient's assigned Serf bot socket
+  const db = opts.db || (typeof opts.getDatabase === 'function' ? opts.getDatabase() : null);
+  let targetSock = botSockets[personalityKey];
+
+  if (db && chatId) {
+    const serfKey = SerfManager.getSerfBotKey(db, chatId);
+    if (serfKey && botSockets[serfKey]) {
+      targetSock = botSockets[serfKey];
+    }
+  }
+
+  if (!targetSock) targetSock = getAnySocket();
+  if (!targetSock) return { dropped: true, reason: 'no-socket' };
+
+  return safeSendDM(targetSock, chatId, content, opts);
 }
 
 function canSendDM(db, playerJid, botJid, botKey) {
@@ -529,18 +546,27 @@ function canSendDM(db, playerJid, botJid, botKey) {
   return { allowed: false, reason: 'not-serf' };
 }
 
-const _serfReminderSent = new Set();
 async function safeSendDM(sock, playerJid, content, opts = {}) {
   if (opts.welcome) {
     return sock.sendMessage(playerJid, content);
   }
   const db = opts.db || (typeof opts.getDatabase === 'function' ? opts.getDatabase() : null);
-  const botJid = sock?.user?.id || null;
+
+  // Serf Bot Routing: If the user has an assigned Serf bot socket online, use that Serf bot!
+  let targetSock = sock;
+  if (db && playerJid) {
+    const serfKey = SerfManager.getSerfBotKey(db, playerJid);
+    if (serfKey && botSockets[serfKey]) {
+      targetSock = botSockets[serfKey];
+    }
+  }
+
+  const botJid = targetSock?.user?.id || null;
   const botKey = opts.botKey || null;
 
   const verdict = canSendDM(db, playerJid, botJid, botKey);
   if (verdict.allowed) {
-    return sock.sendMessage(playerJid, content);
+    return targetSock.sendMessage(playerJid, content);
   }
 
   return {

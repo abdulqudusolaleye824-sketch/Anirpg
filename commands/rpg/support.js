@@ -1,13 +1,15 @@
-// support.js — Sends user the ✦ 𝐀𝐬𝐭𝐫𝐚™ support group link via DM
-// Link is set by owner using: /setgroup support  (run inside ✦ 𝐀𝐬𝐭𝐫𝐚™ Arise)
+// support.js — Sends user all --main community group links via DM
+// (Excludes Mods GC; DM is delivered by the user's assigned Serf bot)
 
 const COOLDOWN = 5 * 60 * 1000; // 5 minutes
 const supportCooldown = new Map();
-const AutoRedirect = require('../../rpg/utils/AutoRedirect');
+const AstralGroups = require('../../rpg/utils/AstralGroups');
+const SerfManager = require('../../rpg/utils/SerfManager');
+const MultiSocketManager = require('../../bots/MultiSocketManager');
 
 module.exports = {
   name: 'support',
-  description: '📩 Get the ✦ 𝐀𝐬𝐭𝐫𝐚™ support group link in your DM',
+  description: '📩 Get main community group links in your DM',
 
   async execute(sock, msg, args, getDatabase, saveDatabase, sender) {
     const chatId = msg.key.remoteJid;
@@ -38,36 +40,53 @@ module.exports = {
       return;
     }
 
-    // Get support link from communityGroups config
-    let supportLink = AutoRedirect.getSupportLink(db);
+    // Get all --main tagged groups excluding mods GC
+    const allMain = AstralGroups.getAll(db).filter(g => g.isMain && g.type !== 'mods');
 
-    if (!supportLink) {
-      // Fallback: try to generate this group's invite code
-      if (chatId.endsWith('@g.us')) {
-        try {
-          const code = await sock.groupInviteCode(chatId);
-          supportLink = `https://chat.whatsapp.com/${code}`;
-        } catch(e) {}
-      }
-      if (!supportLink) {
-        return sock.sendMessage(chatId, {
-          text: `❌ Support group link not configured yet.\n\nAsk the owner to run */setgroup support* inside the ✦ 𝐀𝐬𝐭𝐫𝐚™ Arise group.`
-        }, { quoted: msg });
+    const groupLines = [];
+    for (const g of allMain) {
+      const info = AstralGroups.typeInfo(g.type);
+      const link = g.inviteLink ? `🔗 ${g.inviteLink}` : `📍 \`${g.groupId}\``;
+      groupLines.push(`${info.emoji} *${info.name}* (${g.type.toUpperCase()})\n   ${link}`);
+    }
+
+    if (groupLines.length === 0) {
+      const supportLink = AstralGroups.getSupportLink(db);
+      if (supportLink) {
+        groupLines.push(`🛡️ *✦ 𝐀𝐬𝐭𝐫𝐚™ Arise Support*\n   🔗 ${supportLink}`);
       }
     }
 
-    // Notify in group
+    const dmText = [
+      `━━━━━━━━━━━━━━━━━━━━━━━`,
+      `🛡️ *✦ 𝐀𝐬𝐭𝐫𝐚™ ARISE — COMMUNITY GROUPS*`,
+      `━━━━━━━━━━━━━━━━━━━━━━━`,
+      `Here are the official community groups:`,
+      ``,
+      ...(groupLines.length ? groupLines : ['⚠️ No main community groups configured yet. Ask the owner to set them using `/setgroup <type> --main`.']),
+      ``,
+      `━━━━━━━━━━━━━━━━━━━━━━━`,
+      `💡 Need direct assistance? Type \`/support owner\` to message staff.`,
+      `━━━━━━━━━━━━━━━━━━━━━━━`,
+    ].join('\n');
+
+    // Notify in group chat
     if (chatId.endsWith('@g.us')) {
       await sock.sendMessage(chatId, {
-        text: `📩 Support link sent to your DM, @${sender.split('@')[0]}!`,
+        text: `📩 Main community group links sent to your DM, @${sender.split('@')[0]}!`,
         mentions: [sender]
       }, { quoted: msg });
     }
 
-    // DM the user
-    await sock.sendMessage(sender, {
-      text: `━━━━━━━━━━━━━━━━━━━━━━━\n🛡️ *✦ 𝐀𝐬𝐭𝐫𝐚™ ARISE — SUPPORT*\n━━━━━━━━━━━━━━━━━━━━━━━\nNeed help? Questions? Bug reports?\nJoin our support group!\n\n🔗 ${supportLink}\n\n💡 You can also type:\n/support owner — message the owner directly\n━━━━━━━━━━━━━━━━━━━━━━━`
-    });
+    // DM user via their Serf bot (if user serf is Hinata, Hinata sends the DM even if active bot here is Kira!)
+    const serfKey = SerfManager.getSerfBotKey(db, sender);
+    const serfSock = serfKey ? MultiSocketManager.getSocket(serfKey) : null;
+
+    if (serfSock) {
+      await serfSock.sendMessage(sender, { text: dmText });
+    } else {
+      await MultiSocketManager.safeSendDM(sock, sender, { text: dmText }, { getDatabase });
+    }
 
     // Silent owner log
     try {
