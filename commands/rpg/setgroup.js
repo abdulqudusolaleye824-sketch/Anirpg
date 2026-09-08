@@ -35,27 +35,26 @@ module.exports = {
 
     // ── Listing / status ────────────────────────────────────────
     if (!sub || sub === 'show' || sub === 'list' || sub === 'status') {
-      const groups = AstralGroups.getAll(db);
+      const groups = AstralGroups.getAll(db) || [];
       let txt = `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🌐 *✦ 𝐀𝐬𝐭𝐫𝐚™ COMMUNITY GROUPS*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🎮 *Server:* ✦ 𝐀𝐬𝐭𝐫𝐚™\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
       const ordered = ['pvp', 'casino', 'dungeon', 'guild', 'support'];
-      // Show one entry per registered group (multiple groups can share a type)
-      const shown = groups.filter((g, i, a) => a.findIndex((x) => x.groupId === g.groupId) === i);
+      const shown = groups.filter((g, i, a) => g && g.groupId && a.findIndex((x) => x && x.groupId === g.groupId) === i);
       if (shown.length === 0) {
         txt += `⚠️ No groups registered yet.\n`;
       }
-      // Group by type for readability, in the ordered list
       for (const type of ordered) {
         const info = AstralGroups.typeInfo(type);
-        const list = groups.filter((g) => g.type === type);
+        const list = groups.filter((g) => g && g.type === type);
         if (list.length === 0) continue;
         txt += `${info.emoji} *${info.name}* [${type}]\n`;
         txt += `   ${info.desc}\n`;
         for (const g of list) {
+          if (!g || !g.groupId) continue;
           const st = AstralGroups.statusOf(db, g.groupId);
           const days = AstralGroups.daysLeft(db, g.groupId);
           const stTxt = st === 'main' ? '👑 Main' : st === 'active' ? `✅ ${days}d left` : st === 'expired' ? '⛔ Expired' : '⚠️ Awaiting /ssub';
-          const feats = g.features?.length ? `\n   ➕ Features: ${g.features.map((f) => AstralGroups.typeInfo(f)?.name || f).join(', ')}` : '';
-          txt += `   └ ID: ...${g.groupId.slice(-12)}${g.inviteLink ? `\n   └ Link: ${g.inviteLink}` : ''}\n   └ Status: ${stTxt}${feats}\n`;
+          const feats = Array.isArray(g.features) && g.features.length ? `\n   ➕ Features: ${g.features.map((f) => AstralGroups.typeInfo(f)?.name || f).join(', ')}` : '';
+          txt += `   └ ID: ...${String(g.groupId).slice(-12)}${g.inviteLink ? `\n   └ Link: ${g.inviteLink}` : ''}\n   └ Status: ${stTxt}${feats}\n`;
         }
         txt += `\n`;
       }
@@ -95,9 +94,10 @@ module.exports = {
 
     // ── /setgroup <type> [--main] [link] ────────────────────────
     const type = sub;
+    const validTypes = AstralGroups.TYPES || ['support', 'pvp', 'dungeon', 'casino', 'guild'];
     if (!AstralGroups.get(type)) {
       return sock.sendMessage(chatId, {
-        text: `❌ Unknown type: *${type}*\n\nValid types: ${AstralGroups.TYPES.join(', ')}\n\n/setgroup ${type} — register this group\n/setgroup ${type} --main — register as MAIN (never expires)`
+        text: `❌ Unknown type: *${type}*\n\nValid types: ${validTypes.join(', ')}\n\n/setgroup ${type} — register this group\n/setgroup ${type} --main — register as MAIN (never expires)`
       }, { quoted: msg });
     }
 
@@ -106,7 +106,7 @@ module.exports = {
     }
 
     // invite link: explicit, or auto-fetch
-    let inviteLink = args.find((a) => a.startsWith('https://'));
+    let inviteLink = args.find((a) => a && a.startsWith('https://'));
     if (!inviteLink) {
       try { inviteLink = `https://chat.whatsapp.com/${await sock.groupInviteCode(chatId)}`; } catch (e) {}
     }

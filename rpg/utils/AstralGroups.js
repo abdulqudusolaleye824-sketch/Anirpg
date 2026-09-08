@@ -29,6 +29,10 @@ const EXPIRED_MSG =
   '*(An owner / co-owner can run `/renew` to reactivate this group.)*';
 
 class AstralGroups {
+  static TYPES = TYPES;
+  static FEATURE_TYPES = FEATURE_TYPES;
+  static TYPES_WITHOUT_MAIN = TYPES_WITHOUT_MAIN;
+  static MAIN_ONLY_TYPES = MAIN_ONLY_TYPES;
 
   static _registry(db) {
     if (!db.astralGroups || typeof db.astralGroups !== 'object') db.astralGroups = {};
