@@ -1,7 +1,7 @@
 // ═══════════════════════════════════════════════════════════════
 // GATE MANAGER — Solo Leveling Edition
 // Gates spawn in group chats. Guilds buy them. Players raid them.
-// Low-tier (E, D, C) cost Nexus. High-tier (B, A, S) cost Mana Stones.
+// Low-tier (E, D, C) cost Nexus. High-tier (B, A, S) cost Nexus AND Mana Stones.
 // ═══════════════════════════════════════════════════════════════
 
 const path = require('path');
@@ -10,13 +10,13 @@ const fs   = require('fs');
 const { MONSTER_DROPS, BASE_MATERIALS, rollMonsterDrop, rollBossDrop, rollBaseMaterial, getRandomMonster, getRandomBoss } = require('../data/MonsterDrops');
 
 const GATE_RANKS = {
-  E: { emoji:'⚫', label:'E-Rank Gate', floors:3, monsterRange:[5,15], bossHp:800,  priceRange:[3000,6000],   currency:'nexus', currencySafe:[800,1400], lootTier:'common',    isFree:false, description:'Standard low-tier gate. Costs Nexus.' },
-  D: { emoji:'🟤', label:'D-Rank Gate', floors:4, monsterRange:[15,35], bossHp:2000, priceRange:[8000,16000],  currency:'nexus', currencySafe:[2000,3600], lootTier:'uncommon',  isFree:false, description:'Mid-low tier. Costs Nexus.' },
-  C: { emoji:'🔵', label:'C-Rank Gate', floors:5, monsterRange:[35,70], bossHp:5000, priceRange:[20000,40000], currency:'nexus', currencySafe:[5000,9000], lootTier:'rare',     isFree:false, description:'Mid tier. Costs Nexus.' },
-  B: { emoji:'🟢', label:'B-Rank Gate', floors:6, monsterRange:[70,120], bossHp:12000, priceRange:[100,300],   currency:'mana',  currencySafe:[12000,22000], lootTier:'rare',    isFree:false, description:'High tier. Costs Mana Stones.' },
-  A: { emoji:'🟡', label:'A-Rank Gate', floors:7, monsterRange:[120,200], bossHp:30000, priceRange:[500,1200],  currency:'mana',  currencySafe:[36000,68000], lootTier:'epic',   isFree:false, description:'Elite tier. Costs Mana Stones.' },
-  S: { emoji:'🔴', label:'S-Rank Gate', floors:8, monsterRange:[200,400], bossHp:80000, priceRange:[2000,5000], currency:'mana',  currencySafe:[120000,220000], lootTier:'legendary', isFree:false, description:'National-level threat. Costs Mana Stones.' },
-  DISASTER: { emoji:'🟣', label:'⚠️ DISASTER GATE', floors:10, monsterRange:[400,999], bossHp:250000, priceRange:[0,0], currency:'free', currencySafe:[400000,900000], lootTier:'mythic', isFree:true, description:'DISASTER LEVEL. Free entry.' },
+  E: { emoji:'⚫', label:'E-Rank Gate', floors:3, monsterRange:[5,15], bossHp:800,  priceRange:[3000,6000],      manaPriceRange:[0,0],        currency:'nexus', currencySafe:[800,1400], lootTier:'common',    isFree:false, description:'Standard low-tier gate. Costs Nexus.' },
+  D: { emoji:'🟤', label:'D-Rank Gate', floors:4, monsterRange:[15,35], bossHp:2000, priceRange:[8000,16000],     manaPriceRange:[0,0],        currency:'nexus', currencySafe:[2000,3600], lootTier:'uncommon',  isFree:false, description:'Mid-low tier. Costs Nexus.' },
+  C: { emoji:'🔵', label:'C-Rank Gate', floors:5, monsterRange:[35,70], bossHp:5000, priceRange:[20000,40000],    manaPriceRange:[0,0],        currency:'nexus', currencySafe:[5000,9000], lootTier:'rare',     isFree:false, description:'Mid tier. Costs Nexus.' },
+  B: { emoji:'🟢', label:'B-Rank Gate', floors:6, monsterRange:[70,120], bossHp:12000, priceRange:[50000,100000], manaPriceRange:[100,300],   currency:'both',  currencySafe:[12000,22000], lootTier:'rare',    isFree:false, description:'High tier. Requires Nexus AND Mana Stones.' },
+  A: { emoji:'🟡', label:'A-Rank Gate', floors:7, monsterRange:[120,200], bossHp:30000, priceRange:[150000,300000], manaPriceRange:[500,1200], currency:'both',  currencySafe:[36000,68000], lootTier:'epic',   isFree:false, description:'Elite tier. Requires Nexus AND Mana Stones.' },
+  S: { emoji:'🔴', label:'S-Rank Gate', floors:8, monsterRange:[200,400], bossHp:80000, priceRange:[500000,1000000], manaPriceRange:[2000,5000], currency:'both', currencySafe:[120000,220000], lootTier:'legendary', isFree:false, description:'National-level threat. Requires Nexus AND Mana Stones.' },
+  DISASTER: { emoji:'🟣', label:'⚠️ DISASTER GATE', floors:10, monsterRange:[400,999], bossHp:250000, priceRange:[0,0], manaPriceRange:[0,0], currency:'free', currencySafe:[400000,900000], lootTier:'mythic', isFree:true, description:'DISASTER LEVEL. Free entry.' },
 };
 
 const LOOT_TABLES = {};
@@ -50,8 +50,8 @@ class GateManager {
     if (isDisaster) rank = 'DISASTER';
     const rankData = GATE_RANKS[rank];
     const isFree = rank === 'DISASTER' || Math.random() < this.FREE_GATE_CHANCE;
-    const isMana = ['B','A','S'].includes(rank);
-    const currency = isFree ? 'free' : (isMana ? 'mana' : 'nexus');
+    const isBoth = ['B','A','S'].includes(rank) && !isFree;
+    const currency = isFree ? 'free' : (isBoth ? 'both' : 'nexus');
 
     const pool = MONSTER_DROPS[rank]?.monsters || MONSTER_DROPS['E'].monsters;
     const bossPool = MONSTER_DROPS[rank]?.bosses || MONSTER_DROPS['E'].bosses;
@@ -60,6 +60,9 @@ class GateManager {
 
     const [pMin, pMax] = rankData.priceRange || [0, 0];
     const purchasePrice = isFree ? 0 : Math.floor(pMin + Math.random() * (pMax - pMin));
+
+    const [mMin, mMax] = rankData.manaPriceRange || [0, 0];
+    const manaPrice = isFree ? 0 : Math.floor(mMin + Math.random() * (mMax - mMin));
 
     let totalLootPct;
     let lootMultiplier = 0;
@@ -90,7 +93,7 @@ class GateManager {
       breakTime: Date.now() + this.GATE_BREAK_TIME,
       currency,
       isFree, isDisaster: rank === 'DISASTER', owned: false, ownedBy: null, ownedByLeader: null,
-      purchasedAt: null, purchasePrice,
+      purchasedAt: null, purchasePrice, manaPrice,
       nexusLoot, crystalLoot, lootMultiplier,
       cleared: false, broken: false, active: true,
       raiders: [], guildRaiders: [], externalRaiders: [], pendingApplicants: [],
@@ -153,15 +156,22 @@ class GateManager {
     const guild = db.guilds?.[guildName];
     if (!guild) return { success:false, reason:'Guild not found.' };
 
-    const isMana = gate.currency === 'mana' || ['B','A','S'].includes(gate.rank);
-    if (isMana) {
-      if ((guild.manaTreasury || 0) < gate.purchasePrice) {
-        return { success:false, reason:`Not enough Mana Stones in treasury!\nNeed: ${gate.purchasePrice.toLocaleString()} 💎 Mana Stones\nHave: ${(guild.manaTreasury||0).toLocaleString()} 💎` };
+    const isBoth = gate.currency === 'both' || ['B','A','S'].includes(gate.rank);
+    if (isBoth) {
+      if ((guild.treasury || 0) < gate.purchasePrice || (guild.manaTreasury || 0) < (gate.manaPrice || 0)) {
+        return {
+          success: false,
+          reason: `Not enough guild treasury!\nNeed: ${gate.purchasePrice.toLocaleString()} 💠 Nexus AND ${gate.manaPrice.toLocaleString()} 💎 Mana Stones\nHave: ${(guild.treasury||0).toLocaleString()} 💠 Nexus & ${(guild.manaTreasury||0).toLocaleString()} 💎 Mana Stones`
+        };
       }
-      guild.manaTreasury -= gate.purchasePrice;
+      guild.treasury -= gate.purchasePrice;
+      guild.manaTreasury -= gate.manaPrice;
     } else {
       if ((guild.treasury || 0) < gate.purchasePrice) {
-        return { success:false, reason:`Not enough Nexus in treasury!\nNeed: ${gate.purchasePrice.toLocaleString()} 💠 Nexus\nHave: ${(guild.treasury||0).toLocaleString()} 💠` };
+        return {
+          success: false,
+          reason: `Not enough Nexus in treasury!\nNeed: ${gate.purchasePrice.toLocaleString()} 💠 Nexus\nHave: ${(guild.treasury||0).toLocaleString()} 💠 Nexus`
+        };
       }
       guild.treasury -= gate.purchasePrice;
     }
@@ -316,14 +326,16 @@ class GateManager {
     const timeLeft = Math.max(0, gate.breakTime - Date.now());
     const h = Math.floor(timeLeft / 3600000);
     const m = Math.floor((timeLeft % 3600000) / 60000);
-    const isMana = gate.currency === 'mana' || ['B','A','S'].includes(gate.rank);
-    const currTxt = isMana ? '💎 Mana Stones' : '💠 Nexus';
+    const isBoth = gate.currency === 'both' || ['B','A','S'].includes(gate.rank);
+    const priceTxt = gate.isFree ? 'FREE'
+      : isBoth ? `${gate.purchasePrice.toLocaleString()} 💠 Nexus + ${gate.manaPrice.toLocaleString()} 💎 Mana`
+      : `${gate.purchasePrice.toLocaleString()} 💠 Nexus`;
     return [
       `${rd.emoji} *${rd.label}* [${gate.id}]`,
       `🕐 Breaks in: ${h}h ${m}m`,
       gate.isFree ? `🆓 FREE GATE — Anyone can enter!` : ``,
       gate.isDisaster ? `⚠️ DISASTER LEVEL — S-Rank only!` : ``,
-      gate.owned ? `🏰 Owned by: *${gate.ownedBy}*` : `💰 Buy: ${gate.purchasePrice.toLocaleString()} ${currTxt}`,
+      gate.owned ? `🏰 Owned by: *${gate.ownedBy}*` : `💰 Buy: ${priceTxt}`,
       `🛒 Command: Reply with */gate buy*`,
       `👥 Raiders: ${gate.raiders.length}`,
       gate.raidStarted ? `⚔️ Raid in progress` : `📋 Accepting applications`,
@@ -335,8 +347,10 @@ GateManager.formatGateAnnouncement = function(gate) {
   const rd = GATE_RANKS[gate.rank] || GATE_RANKS['E'];
   const timeLeft = Math.floor((gate.breakTime - Date.now()) / 60000);
   const isRare = ['A','S','DISASTER'].includes(gate.rank);
-  const isMana = gate.currency === 'mana' || ['B','A','S'].includes(gate.rank);
-  const currencyLabel = isMana ? '💎 Mana Stones' : '💠 Nexus';
+  const isBoth = gate.currency === 'both' || ['B','A','S'].includes(gate.rank);
+  const priceTxt = gate.isFree ? 'FREE'
+    : isBoth ? `${gate.purchasePrice.toLocaleString()} 💠 Nexus + ${gate.manaPrice.toLocaleString()} 💎 Mana Stones`
+    : `${gate.purchasePrice.toLocaleString()} 💠 Nexus`;
 
   const caption = [
     `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
@@ -351,7 +365,7 @@ GateManager.formatGateAnnouncement = function(gate) {
     ``,
     `🔑 Gate ID: *${gate.id}*`,
     `${rd.emoji} Rank: *${rd.label}*`,
-    gate.isFree ? `🆓 *FREE GATE — No guild needed*` : `💰 Purchase: *${gate.purchasePrice.toLocaleString()} ${currencyLabel}*`,
+    gate.isFree ? `🆓 *FREE GATE — No guild needed*` : `💰 Purchase: *${priceTxt}*`,
     `⏰ Breaks in: *${timeLeft} minutes*`,
     ``,
     rd.description,

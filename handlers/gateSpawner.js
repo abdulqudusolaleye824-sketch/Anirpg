@@ -18,10 +18,14 @@ function gateImage(rank) {
 
 function gateCaption(gate) {
   const id = gate.id;
+  const isBoth = gate.currency === 'both' || ['B','A','S'].includes(gate.rank);
   const priceLine = gate.isFree
     ? `「GATE PRICE: FREE」`
-    : `「GATE PRICE: ${gate.purchasePrice.toLocaleString()} 💎」`;
+    : isBoth
+      ? `「GATE PRICE: ${gate.purchasePrice.toLocaleString()} 💠 Nexus + ${gate.manaPrice.toLocaleString()} 💎 Mana Stones」`
+      : `「GATE PRICE: ${gate.purchasePrice.toLocaleString()} 💠 Nexus」`;
   const gateIdLine = `「GATE ID: ${id}」`;
+  const buyInstruction = `🛒 BUY COMMAND: Reply to this message with /gate buy`;
 
   if (gate.rank === 'E' || gate.rank === 'D' || gate.rank === 'C') {
     const article = (gate.rank === 'E') ? 'An' : 'A';
@@ -37,6 +41,8 @@ function gateCaption(gate) {
       `「THREAT LEVEL: ${gate.rank}」`,
       gateIdLine,
       priceLine,
+      ``,
+      buyInstruction,
       `╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━╯`,
     ].join('\n');
   }
@@ -56,6 +62,8 @@ function gateCaption(gate) {
       `「THREAT LEVEL: B」`,
       gateIdLine,
       priceLine,
+      ``,
+      buyInstruction,
       `╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━╯`,
     ].join('\n');
   }
@@ -71,10 +79,12 @@ function gateCaption(gate) {
       ``,
       `Hunters are advised to exercise extreme caution.`,
       ``,
-      `「GATE STATUS: A」`,
+      `「GATE STATUS: ACTIVE」`,
       `「THREAT LEVEL: A」`,
       gateIdLine,
       priceLine,
+      ``,
+      buyInstruction,
       `╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━╯`,
     ].join('\n');
   }
@@ -98,6 +108,8 @@ function gateCaption(gate) {
     `「ANOMALY INDEX: ████████」`,
     gateIdLine,
     priceLine,
+    ``,
+    buyInstruction,
     ``,
     `**Whatever lies beyond this Gate...**`,
     `**is not something to be taken lightly.**`,
