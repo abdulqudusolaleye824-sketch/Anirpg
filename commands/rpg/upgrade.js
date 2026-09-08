@@ -158,7 +158,7 @@ Examples:
     // ═══════════════════════════════════════════════════════════════
     if (action === 'stats' || action === 'details') {
       const totalStats = StatAllocationSystem.getTotalStats(player);
-      const className = typeof player.class === 'object' ? player.class.name : player.class;
+      const className = (player.class && typeof player.class === 'object') ? player.class.name : (player.class || 'Unawakened');
       
       let display = `━━━━━━━━━━━━━━━━━━━━━━━━━━━
 📊 DETAILED STATS

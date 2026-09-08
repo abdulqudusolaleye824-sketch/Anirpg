@@ -95,14 +95,12 @@ module.exports = {
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━
 🧪 /shop potions    — Consumables (Nexus)
 ⚔️  /shop weapons   — Class weapons (Nexus)
-💎 /shop crystals   — Permanent buffs (Mana Stones)
 🎁 /shop bundles    — Value packs (Nexus)
 📜 /shop scrolls    — Recipe scrolls (Mana Stones)
 📦 /shop inventory  — Your items
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━
 💡 *HOW TO BUY*
 /shop buy potions [#] [amount]
-/shop buy crystals [#]
 /shop buy bundles [#]
 /shop weapon [#]
 /shop buy scroll [sc1-sc6]
@@ -117,16 +115,6 @@ module.exports = {
         txt+=`*${item.id}.* ${item.emoji} *${n}* — ${item.cost.toLocaleString()}g\n   ${item.desc}\n\n`;
       });
       txt+=`━━━━━━━━━━━━━━━━━━━━━━━━━━━\n/shop buy potions [#] [amount]`;
-      return sock.sendMessage(chatId,{text:txt},{quoted:msg});
-    }
-
-    if (action==='crystals'||action==='crystal') {
-      let txt=`━━━━━━━━━━━━━━━━━━━━━━━━━━━\n💎 *MANA STONE SHOP*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n💎 Mana Stones: *${crystals}*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
-      CRYSTAL_ITEMS.forEach(item=>{
-        const c=item.goldCost?`${item.goldCost.toLocaleString()} 💠`:`${item.cost}💎`;
-        txt+=`*${item.id}.* ${item.emoji} *${item.name}* — ${c}\n   ${item.desc}\n\n`;
-      });
-      txt+=`━━━━━━━━━━━━━━━━━━━━━━━━━━━\n/shop buy crystals [#]`;
       return sock.sendMessage(chatId,{text:txt},{quoted:msg});
     }
 

@@ -225,14 +225,25 @@ class PetManager {
     const foodKey = foodName.toLowerCase().replace(' ', '_');
     const food = PET_FOOD[foodKey] || Object.values(PET_FOOD).find(f => f.name.toLowerCase() === foodName.toLowerCase());
     if (!food) return { success: false, message: `❌ Unknown food: ${foodName}\nSee /pet foods` };
-    pet.hunger    = Math.max(0, pet.hunger    - food.hungerRestore);
-    pet.happiness = Math.min(100, pet.happiness + Math.floor(food.bondingBonus * 0.5));
-    pet.bonding   = Math.min(100, pet.bonding   + food.bondingBonus);
-    pet.exp      += food.xpBonus;
+
+    const isPreferred = Array.isArray(food.types) && food.types.includes((pet.type || '').toLowerCase());
+    const bondingGain = isPreferred ? food.bondingBonus * 2 : food.bondingBonus;
+    const xpGain      = isPreferred ? Math.floor(food.xpBonus * 1.5) : food.xpBonus;
+
+    pet.hunger    = Math.max(0, pet.hunger - food.hungerRestore);
+    pet.happiness = Math.min(100, pet.happiness + Math.floor(bondingGain * 0.5));
+    pet.bonding   = Math.min(100, pet.bonding + bondingGain);
+    pet.exp      += xpGain;
     pet.lastFed   = Date.now();
-    pet.isFainted = false; // feeding revives fainted pet
+    pet.isFainted = false;
+
     this.save();
-    return { success: true, message: `${pet.emoji} *${pet.nickname || pet.name}* enjoyed the ${food.name}!\n💕 Bonding +${food.bondingBonus} | 😊 Happiness up | 🍖 Hunger -${food.hungerRestore}\n✨ +${food.xpBonus} EXP` };
+
+    const prefNote = isPreferred ? '\n💖 *PREFERRED FOOD!* 2× Bonding & +50% EXP bonus!' : '';
+    return {
+      success: true,
+      message: `${pet.emoji} *${pet.nickname || pet.name}* enjoyed the ${food.name}!${prefNote}\n💕 Bonding +${bondingGain} (${pet.bonding}/100) | 😊 Happiness up | 🍖 Hunger -${food.hungerRestore}\n✨ +${xpGain} EXP`
+    };
   }
 
   // ── PLAY WITH PET ──────────────────────────────────────────

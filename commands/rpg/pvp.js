@@ -472,6 +472,34 @@ function calcMoveDamage(attacker, defender, act) {
 
   let rawDmg = Math.floor(atk * dmgMult * (0.9 + Math.random() * 0.20));
 
+  // ── CLASS INTERDEPENDENCY SYNERGIES ─────────────────────────
+  const attClass = String(attacker.class || '').toLowerCase();
+  const defClass = String(defender.class || '').toLowerCase();
+  const activeStatus = defender.statusEffects || [];
+
+  // Berserker vs Fear / DragonKnight target -> 3.0x Damage
+  if ((attClass.includes('berserker') || attClass.includes('warrior')) && (activeStatus.includes('fear') || defClass.includes('dragon'))) {
+    rawDmg = Math.floor(rawDmg * 3.0);
+    moveLabel += ' (😱 FEAR SYNERGY ×3.0!)';
+  }
+  // SpellBlade vs Frozen / Burning target -> 2.5x Damage
+  else if ((attClass.includes('spellblade') || attClass.includes('chronomancer')) && (activeStatus.includes('freeze') || activeStatus.includes('burn') || defClass.includes('elemental') || defClass.includes('mage'))) {
+    rawDmg = Math.floor(rawDmg * 2.5);
+    moveLabel += ' (❄️ ELEMENTAL SYNERGY ×2.5!)';
+  }
+  // BloodKnight / Devourer vs Bleeding target -> 2.0x Damage + Lifesteal
+  else if ((attClass.includes('blood') || attClass.includes('devourer')) && (activeStatus.includes('bleed') || activeStatus.includes('curse') || defClass.includes('necro') || defClass.includes('rogue'))) {
+    rawDmg = Math.floor(rawDmg * 2.0);
+    const heal = Math.floor(rawDmg * 0.5);
+    attacker.stats.hp = Math.min(attacker.stats.maxHp, (attacker.stats.hp || 0) + heal);
+    moveLabel += ` (🩸 BLOOD SYNERGY ×2.0 +${heal} HP!)`;
+  }
+  // Monk / Ranger vs Cursed / Marked target -> Ignores DEF
+  else if ((attClass.includes('monk') || attClass.includes('ranger')) && (activeStatus.includes('curse') || activeStatus.includes('mark'))) {
+    rawDmg = Math.floor(atk * dmgMult * 2.0); // True damage
+    moveLabel += ' (🎯 TRUE DAMAGE SYNERGY!)';
+  }
+
   const critChance = (attacker.stats?.critChance || 5) / 100;
   const isCrit = Math.random() < critChance;
   if (isCrit) {

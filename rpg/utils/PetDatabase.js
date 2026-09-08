@@ -379,13 +379,27 @@ const PET_DATABASE = {
 
 // ── PET FOOD DATABASE ─────────────────────────────────────────
 const PET_FOOD = {
-  meat:         { name: 'Meat',          emoji: '🥩', hungerRestore: 30, bondingBonus: 5,  xpBonus: 10, cost: 500 },
-  fish:         { name: 'Fish',          emoji: '🐟', hungerRestore: 25, bondingBonus: 8,  xpBonus: 15, cost: 400 },
-  herb:         { name: 'Herb',          emoji: '🌿', hungerRestore: 20, bondingBonus: 3,  xpBonus: 5,  cost: 200 },
-  magic_berry:  { name: 'Magic Berry',   emoji: '🫐', hungerRestore: 40, bondingBonus: 15, xpBonus: 30, cost: 2000 },
-  elixir:       { name: 'Pet Elixir',    emoji: '⚗️', hungerRestore: 60, bondingBonus: 20, xpBonus: 50, cost: 5000 },
-  bone:         { name: 'Bone',          emoji: '🦴', hungerRestore: 20, bondingBonus: 6,  xpBonus: 8,  cost: 300 },
-  crystal_shard:{ name: 'Mana Stone Shard', emoji: '💎', hungerRestore: 35, bondingBonus: 25, xpBonus: 60, cost: 8000 },
+  // General foods
+  kibble:        { name: 'Monster Kibble',     emoji: '🌾', hungerRestore: 30, bondingBonus: 5,  xpBonus: 10, cost: 300,  types: ['beast', 'basic'] },
+  meat:          { name: 'Raw Meat',           emoji: '🥩', hungerRestore: 35, bondingBonus: 6,  xpBonus: 15, cost: 500,  types: ['fire', 'beast'] },
+  fish:          { name: 'Fresh Fish',         emoji: '🐟', hungerRestore: 30, bondingBonus: 7,  xpBonus: 15, cost: 400,  types: ['ice', 'water'] },
+  herb:          { name: 'Healing Herb',       emoji: '🌿', hungerRestore: 25, bondingBonus: 5,  xpBonus: 10, cost: 200,  types: ['poison', 'basic'] },
+  bone:          { name: 'Dense Bone',         emoji: '🦴', hungerRestore: 25, bondingBonus: 6,  xpBonus: 12, cost: 300,  types: ['shadow', 'void'] },
+  magic_berry:   { name: 'Magic Berry',        emoji: '🫐', hungerRestore: 45, bondingBonus: 12, xpBonus: 35, cost: 1500, types: ['thunder', 'ancient'] },
+  royal_feed:    { name: 'Royal Monster Feed', emoji: '🍲', hungerRestore: 70, bondingBonus: 18, xpBonus: 60, cost: 3500, types: ['ancient', 'beast'] },
+
+  // Type-specific preferred foods
+  ember_meat:    { name: 'Ember Meat',         emoji: '🥩🔥', hungerRestore: 50, bondingBonus: 15, xpBonus: 40, cost: 2000, types: ['fire'] },
+  flame_berry:   { name: 'Flame Berry',        emoji: '🍓🔥', hungerRestore: 40, bondingBonus: 12, xpBonus: 30, cost: 1200, types: ['fire'] },
+  glacier_fish:  { name: 'Glacier Fish',       emoji: '🐟❄️', hungerRestore: 50, bondingBonus: 15, xpBonus: 40, cost: 2000, types: ['ice'] },
+  frost_fruit:   { name: 'Frost Fruit',        emoji: '🍎❄️', hungerRestore: 40, bondingBonus: 12, xpBonus: 30, cost: 1200, types: ['ice'] },
+  dark_marrow:   { name: 'Dark Marrow',        emoji: '🦴🌑', hungerRestore: 50, bondingBonus: 15, xpBonus: 40, cost: 2000, types: ['shadow', 'void'] },
+  void_nectar:   { name: 'Void Nectar',        emoji: '🏺🕳️', hungerRestore: 60, bondingBonus: 20, xpBonus: 50, cost: 3000, types: ['void', 'shadow'] },
+  venom_shroom:  { name: 'Venom Mushroom',     emoji: '🍄☣️', hungerRestore: 40, bondingBonus: 12, xpBonus: 30, cost: 1200, types: ['poison'] },
+  toxic_grub:    { name: 'Toxic Grub',         emoji: '🐛☣️', hungerRestore: 45, bondingBonus: 14, xpBonus: 35, cost: 1500, types: ['poison'] },
+  volt_beetle:   { name: 'Volt Beetle',        emoji: '🪲⚡', hungerRestore: 50, bondingBonus: 15, xpBonus: 40, cost: 2000, types: ['thunder'] },
+  spark_nut:     { name: 'Spark Nut',          emoji: '🌰⚡', hungerRestore: 40, bondingBonus: 12, xpBonus: 30, cost: 1200, types: ['thunder'] },
+  beast_feast:   { name: 'Beast Feast',        emoji: '🍖👑', hungerRestore: 80, bondingBonus: 25, xpBonus: 80, cost: 5000, types: ['ancient', 'beast'] },
 };
 
 // ── HELPER: roll a random egg type based on weights ───────────

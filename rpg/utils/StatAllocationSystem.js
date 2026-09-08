@@ -265,7 +265,7 @@ You can now re-allocate your points.
 
 function getStatAllocationDisplay(player) {
   initializeStatAllocations(player);
-  const className = typeof player.class === 'object' ? player.class.name : player.class;
+  const className = (player.class && typeof player.class === 'object') ? player.class.name : (player.class || 'Unawakened');
   
   let display = `━━━━━━━━━━━━━━━━━━━━━━━━━━━
 💎 STAT ALLOCATION SYSTEM
@@ -307,7 +307,7 @@ function getStatAllocationDisplay(player) {
 }
 
 function getStatGuide(playerClass) {
-  const className = typeof playerClass === 'object' ? playerClass.name : playerClass;
+  const className = (playerClass && typeof playerClass === 'object') ? playerClass.name : (playerClass || 'Unawakened');
   
   const guides = {
     Warrior: { priority: ['atk', 'hp', 'def', 'critDamage'], description: 'Focus on ATK and HP for sustained damage and survivability.' },
@@ -363,9 +363,9 @@ function getTotalStats(player) {
 
 function getRecommendations(player) {
   initializeStatAllocations(player);
-  
+
   const recommendations = [];
-  const className = typeof player.class === 'object' ? player.class.name : player.class;
+  const className = (player.class && typeof player.class === 'object') ? player.class.name : (player.class || 'Unawakened');
   const allocations = player.statAllocations || {};
   const upAvailable = player.upgradePoints || 0;
   

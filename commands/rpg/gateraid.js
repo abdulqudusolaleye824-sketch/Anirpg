@@ -323,9 +323,12 @@ module.exports = {
 
       target.hp = Math.max(0, target.hp - result.damage);
 
-      const lines = [
+      const msg1Lines = [
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        `⚔️ *PLAYER ATTACK*`,
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
         `⚔️ *${player.name}* → *${target.name}*`,
-        result.skillUsed ? `🔮 *${result.skillUsed.name}*` : ``,
+        result.skillUsed ? `🔮 Skill: *${result.skillUsed.name}*` : ``,
         `${result.isCrit ? '💥 *CRITICAL HIT!* ' : ''}Dealt *${result.damage}* damage`,
         `👾 ${target.name} HP: ${target.hp}/${target.maxHp}`,
       ];
@@ -337,56 +340,100 @@ module.exports = {
         player.stats_history.monstersKilled = (player.stats_history.monstersKilled || 0) + 1;
 
         awardXP(player, 'gate_complete', saveDatabase, sock, chatId);
-        lines.push(``, `💀 *${target.name}* defeated!`);
+        msg1Lines.push(``, `💀 *${target.name}* defeated!`);
 
         const heal = GR.lifeSteal(player, result.damage);
-        if (heal > 0) { player.stats.hp = Math.min(player.stats.maxHp, (player.stats.hp || 0) + heal); lines.push(`💚 Lifesteal: +${heal} HP`); }
+        if (heal > 0) { player.stats.hp = Math.min(player.stats.maxHp, (player.stats.hp || 0) + heal); msg1Lines.push(`💚 Lifesteal: +${heal} HP`); }
 
-        // Final-blow monster drop → the killer
         const dropLines = GR.monsterKilledBy(gate, target, sender, db);
-        if (dropLines.length) lines.push(...dropLines);
+        if (dropLines.length) msg1Lines.push(...dropLines);
 
         const remaining = floorMonsters.filter(mm => !mm.defeated).length - 1;
-        lines.push(``, `👾 *${Math.max(0, remaining)}* monsters remaining on Floor ${floor}`);
+        msg1Lines.push(``, `👾 *${Math.max(0, remaining)}* monsters remaining on Floor ${floor}`);
 
         if (remaining <= 0) {
-          if (floor >= gate.totalFloors) { lines.push(``, `🏆 *BOSS FLOOR REACHED!*`); lines.push(`/gateraid ${key} boss — Engage the boss!`); }
-          else { lines.push(``, `✅ *Floor ${floor} CLEARED!*`); lines.push(`/gateraid ${key} advance — Floor ${floor + 1}`); }
-        }
-      } else {
-        const def = (player.stats?.def || 5) + (player.equipped?.armor?.def || 0);
-        const dmg = GR.monsterDamage(target, def);
-        player.stats.hp = Math.max(0, (player.stats.hp || 0) - dmg);
-        lines.push(``, `💢 *${target.name}* counter-attacks!`, `Took *${dmg}* damage`);
-        lines.push(`❤️ Your HP: *${player.stats.hp}/${player.stats.maxHp}*`);
+          const fNexus = Math.floor((gate.nexusLoot || 1000) / (gate.totalFloors || 1));
+          const fCrystals = Math.floor((gate.crystalLoot || 100) / (gate.totalFloors || 1));
+          if (!gate.accumulatedTreasure) gate.accumulatedTreasure = { nexus: 0, crystals: 0 };
+          gate.accumulatedTreasure.nexus += fNexus;
+          gate.accumulatedTreasure.crystals += fCrystals;
 
-        if (player.stats.hp <= 0) {
-          const PetManager = require('../../rpg/utils/PetManager');
-          const sac = PetManager.checkPetSacrifice(sender, player);
-          if (sac && sac.sacrificed) {
-            lines.push(``, sac.message);
-          } else {
-            player.stats.hp = 1;
-            player.stats_history = player.stats_history || {};
-            player.stats_history.gateDeaths = (player.stats_history.gateDeaths || 0) + 1;
-            const loss = Math.floor((player.manaCrystals || 0) * 0.15);
-            player.manaCrystals = Math.max(0, (player.manaCrystals || 0) - loss);
-            lines.push(``, `💀 *YOU FELL IN THE GATE!*`, `Lost ${loss.toLocaleString()} 💎`, `You fled with 1 HP.`);
-            // Remove from raid
-            if (gate.raid) gate.raid.members = gate.raid.members.filter(m => m.id !== sender);
-            gate.raiders = (gate.raiders || []).filter(r => r !== sender);
-            saveDatabase();
-            return sock.sendMessage(chatId, { text: lines.join('\n') }, { quoted: msg });
+          msg1Lines.push(``, `💰 *Floor ${floor} Treasure Accumulated:* +${fNexus.toLocaleString()} 💠 Nexus & +${fCrystals.toLocaleString()} 💎 Mana Stones`);
+
+          if (floor >= gate.totalFloors) { msg1Lines.push(``, `🏆 *BOSS FLOOR REACHED!*`, `/gateraid ${key} boss — Engage the boss!`); }
+          else { msg1Lines.push(``, `✅ *Floor ${floor} CLEARED!*`, `/gateraid ${key} advance — Floor ${floor + 1}`); }
+        }
+
+        saveDatabase();
+        return sock.sendMessage(chatId, { text: msg1Lines.filter(Boolean).join('\n') }, { quoted: msg });
+      }
+
+      // Monster counter-attack
+      const def = (player.stats?.def || 5) + (player.equipped?.armor?.def || 0);
+      const dmg = GR.monsterDamage(target, def);
+      player.stats.hp = Math.max(0, (player.stats.hp || 0) - dmg);
+
+      const skillPool = [
+        { name: '🔥 Flame Spurt', effect: 'burn' },
+        { name: '⚡ Volt Shock', effect: 'stun' },
+        { name: '🩸 Savage Bite', effect: 'bleed' },
+        { name: '😱 Terror Howl', effect: 'fear' },
+        { name: '🌀 Void Crush', effect: 'weaken' }
+      ];
+      const monsterSkill = skillPool[Math.floor(Math.random() * skillPool.length)];
+
+      const msg2Lines = [
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        `💢 *MONSTER COUNTER-ATTACK*`,
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        `💢 *${target.name}* uses *${monsterSkill.name}*!`,
+        `⚡ Inflicted: *${monsterSkill.effect.toUpperCase()}*`,
+        `💥 Took *${dmg}* damage`,
+        `❤️ Your HP: *${player.stats.hp}/${player.stats.maxHp}*`,
+      ];
+
+      if (player.stats.hp <= 0) {
+        const PetManager = require('../../rpg/utils/PetManager');
+        const sac = PetManager.checkPetSacrifice(sender, player);
+        if (sac && sac.sacrificed) {
+          msg2Lines.push(``, sac.message);
+        } else {
+          player.stats.hp = 1;
+          player.stats_history = player.stats_history || {};
+          player.stats_history.gateDeaths = (player.stats_history.gateDeaths || 0) + 1;
+          const loss = Math.floor((player.manaCrystals || 0) * 0.15);
+          player.manaCrystals = Math.max(0, (player.manaCrystals || 0) - loss);
+
+          const retNexus = Math.floor((gate.accumulatedTreasure?.nexus || 0) * 0.50);
+          const retCrystals = Math.floor((gate.accumulatedTreasure?.crystals || 0) * 0.50);
+          if (retNexus > 0 || retCrystals > 0) {
+            player.gold = (player.gold || 0) + retNexus;
+            player.manaCrystals = (player.manaCrystals || 0) + retCrystals;
+            msg2Lines.push(``, `💰 *50% PARTY TREASURE SALVAGED:* +${retNexus.toLocaleString()} 💠 Nexus | +${retCrystals.toLocaleString()} 💎 Mana Stones`);
           }
+
+          msg2Lines.push(``, `💀 *YOU FELL IN THE GATE!*`, `Lost ${loss.toLocaleString()} 💎`, `You fled with 1 HP.`);
+          if (gate.raid) gate.raid.members = gate.raid.members.filter(m => m.id !== sender);
+          gate.raiders = (gate.raiders || []).filter(r => r !== sender);
+          saveDatabase();
+          return sock.sendMessage(chatId, { text: msg1Lines.concat([''], msg2Lines).filter(Boolean).join('\n') }, { quoted: msg });
         }
       }
 
-      // Sync HP to party view
-      const pm = gate.raid?.members?.find(m => m.id === sender);
-      if (pm) { pm.hp = player.stats.hp; pm.energy = player.stats.energy; }
+      const msg3Lines = [
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        `🎮 *NEXT TURN*`,
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        `⚔️ /gateraid ${key} attack`,
+        `🔮 /gateraid ${key} skill <name>`,
+        `🩹 /use heal`,
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+      ];
 
       saveDatabase();
-      return sock.sendMessage(chatId, { text: lines.join('\n') }, { quoted: msg });
+      return sock.sendMessage(chatId, {
+        text: msg1Lines.concat([''], msg2Lines, [''], msg3Lines).filter(Boolean).join('\n')
+      }, { quoted: msg });
     }
 
     // ── BOSS ────────────────────────────────────────────────────
