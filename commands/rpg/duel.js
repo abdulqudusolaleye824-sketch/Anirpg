@@ -168,7 +168,7 @@ function applyDeathPenalty(player, db) {
 
 module.exports = {
   name: 'duel',
-  aliases: ['pvp', 'fight', 'challenge'],
+  aliases: ['fight'],
   description: '⚔️ Challenge another hunter to a duel',
 
   async execute(sock, msg, args, getDatabase, saveDatabase, sender) {

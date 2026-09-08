@@ -268,7 +268,7 @@ module.exports = {
 
 📌 GET STARTED:
 • /guild list          - View all registered guilds
-• /guild create [name] - Create a guild (500,000💠 + 10,000💎 | Lv.20)
+• /guild create [name] - Create a guild (1,000,000💠 + 100,000💎 | Lv.20)
 • /guild join [name]   - Join an existing guild
 
 🏆 GUILD BENEFITS:
@@ -334,10 +334,10 @@ module.exports = {
       const isAuthorized = isOwner || db.authorizedGuildMasters.includes(sender);
 
       const LEVEL_REQ = 20;
-      const NEXUS_REQ = 500_000;
-      const MANA_REQ  = 10_000;
-      const START_NEXUS = 50_000;
-      const START_MANA  = 1_000;
+      const NEXUS_REQ = 1_000_000; // 1 Million Nexus
+      const MANA_REQ  = 100_000;   // 100,000 Mana Stones (100kms)
+      const START_NEXUS = 100_000;
+      const START_MANA  = 10_000;
 
       const playerLevel = player.level || 1;
       const playerNexus = player.gold || 0;
