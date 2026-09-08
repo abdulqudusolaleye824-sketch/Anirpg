@@ -310,12 +310,18 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
 
     if (_isOwnBotNumber(bareSender, getDatabase)) return;
 
+    const activeKey = isGroup ? PersonalityManager.getActiveBot(chatId) : null;
+    // Fix: If no bot has been explicitly set active via /start or /switch, fall back to default (_bootstrapDispatcher)
+    // so the bot NEVER stays silent in any group chat!
+    const isActive = isGroup
+      ? (activeKey ? activeKey === personalityKey : _bootstrapDispatcher(personalityKey, chatId))
+      : true;
+
     if (isGroup) {
       try {
         const Mod = require('../rpg/utils/ModerationUtils');
         if (Mod.isGroupMuted(db, chatId, sender)) {
-          const activeKey = PersonalityManager.getActiveBot(chatId);
-          if (activeKey === personalityKey) {
+          if (isActive) {
             try { await sock.sendMessage(chatId, { delete: msg.key }); } catch (e) { /* best effort */ }
           }
           return;
@@ -334,9 +340,6 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
       'link', 'unlink', 'help', 'menu',
     ]);
     const isBootstrap = BOOTSTRAP_COMMANDS.has(commandName);
-
-    let activeKey = isGroup ? PersonalityManager.getActiveBot(chatId) : null;
-    const isActive = isGroup ? (activeKey === personalityKey) : true;
 
     // ── AFK MENTION OR REPLY CHECK (Active bot only) ───────────────────
     if (isGroup && isActive && db.afkUsers) {
@@ -423,8 +426,7 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
     if (isCommand) return;
     if (!isGroup || !messageText.trim()) return;
 
-    // Strict Active Bot Gate: Non-active bots in a group stay SILENT
-    if (activeKey && !isActive) return;
+    if (!isActive) return;
 
     try {
       const AstralGroups = require('../rpg/utils/AstralGroups');

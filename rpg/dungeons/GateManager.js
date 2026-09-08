@@ -28,7 +28,7 @@ class GateManager {
   static gatesByChat = {};
   static gateCounter = 1;
   static GATE_BREAK_TIME = 26 * 60 * 60 * 1000;
-  static FREE_GATE_CHANCE = 0.20;
+  static FREE_GATE_CHANCE = 0.00;
   static DISASTER_CHANCE = 0.02;
 
   static getGateImage(rank) {
@@ -119,15 +119,13 @@ class GateManager {
   }
 
   static rollGateRank(groupAvgRank = 'E') {
-    const order = ['E','D','C','B','A','S'];
-    const idx = order.indexOf(groupAvgRank);
-    if (idx < 0) return 'E';
     const roll = Math.random();
-    if (roll < 0.30) return order[Math.max(0, idx - 1)];
-    if (roll < 0.60) return order[Math.max(0, idx)];
-    if (roll < 0.80) return order[Math.min(order.length - 1, idx + 1)];
-    if (roll < 0.92) return order[Math.max(0, idx - 2)];
-    return 'E';
+    if (roll < 0.05) return 'S';       // 5%
+    if (roll < 0.20) return 'A';       // 15%
+    if (roll < 0.45) return 'B';       // 25%
+    if (roll < 0.80) return 'C';       // 35%
+    if (roll < 0.90) return 'D';       // 10%
+    return 'E';                        // 10%
   }
 
   static generateBossLoot(rank, count = 5) {
