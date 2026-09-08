@@ -11,6 +11,38 @@ let sharp; try { sharp = require('sharp'); } catch(e) { sharp = null; }
 
 const cooldowns = new Map();
 
+function extractContextAndQuoted(msg) {
+  if (!msg || !msg.message) return { contextInfo: null, quoted: null };
+
+  const message = msg.message;
+  const contextInfo =
+    message.extendedTextMessage?.contextInfo ||
+    message.imageMessage?.contextInfo ||
+    message.videoMessage?.contextInfo ||
+    message.stickerMessage?.contextInfo ||
+    message.templateButtonReplyMessage?.contextInfo ||
+    message.buttonsResponseMessage?.contextInfo ||
+    message.interactiveResponseMessage?.contextInfo ||
+    message.ephemeralMessage?.message?.extendedTextMessage?.contextInfo ||
+    message.viewOnceMessage?.message?.imageMessage?.contextInfo ||
+    message.viewOnceMessageV2?.message?.imageMessage?.contextInfo;
+
+  if (!contextInfo || !contextInfo.quotedMessage) {
+    return { contextInfo: null, quoted: null };
+  }
+
+  let quoted = contextInfo.quotedMessage;
+  while (quoted) {
+    if (quoted.ephemeralMessage?.message) quoted = quoted.ephemeralMessage.message;
+    else if (quoted.viewOnceMessage?.message) quoted = quoted.viewOnceMessage.message;
+    else if (quoted.viewOnceMessageV2?.message) quoted = quoted.viewOnceMessageV2.message;
+    else if (quoted.documentWithCaptionMessage?.message) quoted = quoted.documentWithCaptionMessage.message;
+    else break;
+  }
+
+  return { contextInfo, quoted };
+}
+
 module.exports = {
   name: 'steal',
   aliases: ['s', 'ssteal', 'stickersteal', 'stealsticker'],
@@ -29,21 +61,21 @@ module.exports = {
       }, { quoted: msg });
     }
 
-    const contextInfo = msg.message?.extendedTextMessage?.contextInfo;
-    const quoted = contextInfo?.quotedMessage;
+    const { contextInfo, quoted } = extractContextAndQuoted(msg);
     const stickerMsg = quoted?.stickerMessage;
-    const imageMsg = quoted?.imageMessage || msg.message?.imageMessage;
+    const imageMsg   = quoted?.imageMessage || msg.message?.imageMessage;
+    const videoMsg   = quoted?.videoMessage || msg.message?.videoMessage;
 
-    if (!quoted && !imageMsg) {
+    if (!quoted && !imageMsg && !videoMsg) {
       return sock.sendMessage(chatId, {
-        text: '📌 *Reply to a sticker or image* with `/steal` or `/s` to steal it into your pack.\n\nUsage: `/s My Pack | My Author`\n*(To steal Nexus from a player, use `/rob @user`)*'
+        text: '📌 *Reply to a sticker, image, or GIF/video* with `/steal` or `/s` to steal it into your pack.\n\nUsage: `/s My Pack | My Author`\n*(To steal Nexus from a player, use `/rob @user`)*'
       }, { quoted: msg });
     }
 
     const db = getDatabase();
     const ownerName = db?.users?.[sender]?.name || msg.pushName || 'Senku';
 
-    const rawText = (msg.message?.conversation || msg.message?.extendedTextMessage?.text || '')
+    const rawText = (msg.message?.conversation || msg.message?.extendedTextMessage?.text || msg.message?.imageMessage?.caption || '')
       .replace(/^\/(steal|ssteal|stickersteal|stealsticker|s)\s*/i, '')
       .trim();
 
@@ -71,29 +103,34 @@ module.exports = {
           message: quoted,
           key: {
             remoteJid: chatId,
-            id: contextInfo.stanzaId,
-            participant: contextInfo.participant
+            id: contextInfo?.stanzaId,
+            participant: contextInfo?.participant
           }
         };
-        const downloadedBuf = await downloadMediaMessage(mediaMsg, 'buffer', {});
-        buffer = downloadedBuf;
-      } else if (imageMsg) {
+        buffer = await downloadMediaMessage(mediaMsg, 'buffer', {});
+      } else if (imageMsg || videoMsg) {
+        const targetNode = imageMsg ? imageMsg : videoMsg;
         const mediaMsg = quoted ? {
           message: quoted,
           key: {
             remoteJid: chatId,
-            id: contextInfo.stanzaId,
-            participant: contextInfo.participant
+            id: contextInfo?.stanzaId,
+            participant: contextInfo?.participant
           }
         } : msg;
-        const imgBuf = await downloadMediaMessage(mediaMsg, 'buffer', {});
-        if (imgBuf && sharp) {
-          buffer = await sharp(imgBuf)
-            .resize(512, 512, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } })
-            .webp({ quality: 95 })
-            .toBuffer();
+
+        const mediaBuf = await downloadMediaMessage(mediaMsg, 'buffer', {});
+        if (mediaBuf && sharp) {
+          try {
+            buffer = await sharp(mediaBuf, { animated: !!videoMsg })
+              .resize(512, 512, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } })
+              .webp({ quality: 90 })
+              .toBuffer();
+          } catch(e) {
+            buffer = mediaBuf;
+          }
         } else {
-          buffer = imgBuf;
+          buffer = mediaBuf;
         }
       }
 

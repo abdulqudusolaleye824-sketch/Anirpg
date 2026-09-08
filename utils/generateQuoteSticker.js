@@ -71,7 +71,7 @@ async function generateQuoteSticker(senderName, quoteText, outputPath, avatarPat
   const startY = Math.max(140, bodyTop + (availableH - totalTextHeight) / 2 + fontSize * 0.8);
 
   const textLinesSvg = textWrapped.map((line, idx) => {
-    return `<tspan x="256" y="${startY + (idx * lineHeight)}" text-anchor="middle">${escapeXml(line)}</tspan>`;
+    return `<tspan x="256" y="${startY + (idx * lineHeight)}" text-anchor="middle" font-weight="bold" fill="#f8fafc">${escapeXml(line)}</tspan>`;
   }).join('');
 
   let avatarSvg = '';
