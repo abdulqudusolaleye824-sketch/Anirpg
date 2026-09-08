@@ -1,99 +1,131 @@
-// setgroup.js — Admin command to configure Ani R.P.G community groups
-// Usage (run inside the target group):
-//   /setgroup pvp          → registers THIS group as the PvP group (auto-fetches link)
-//   /setgroup pvp [link]   → sets just the invite link for pvp
-//   /setgroup show         → shows current config for all groups
-//   /setgroup reset [cat]  → clears config for a category
+// setgroup.js — Consolidated community-group command (✦ 𝐀𝐬𝐭𝐫𝐚™)
+// Run INSIDE the target group. Aliases: /setgc
+//
+//   /setgroup                    → community listing / status
+//   /setgroup <type>             → register THIS group (support|pvp|dungeon|casino|guild)
+//   /setgroup <type> --main      → register as a MAIN group (never expires)
+//   /setgroup <type> <link>      → register + set invite link
+//   /setgroup link <url>         → update just the invite link
+//   /setgroup reset              → remove THIS group's registration
+//
+// Subscription lifecycle (owner/co-owner):
+//   /ssub | <subscriber name>    → start the 30-day window on a non-main group
+//   /renew                       → extend a non-main group by another 30 days
+//   /allowgc <pvp|dungeon>       → add a feature onto this group
 
-const AutoRedirect = require('../../rpg/utils/AutoRedirect');
+const AstralGroups = require('../../rpg/utils/AstralGroups');
 const Perms = require('../../utils/permissions');
-
-const VALID = ['pvp', 'casino', 'dungeon', 'guild', 'support'];
 
 module.exports = {
   name: 'setgroup',
-  description: '🔧 [Admin] Configure which groups host which commands',
+  aliases: ['setgc'],
+  description: '🔧 [Admin] Register/manage a ✦ 𝐀𝐬𝐭𝐫𝐚™ community group (with --main / subscription)',
 
   async execute(sock, msg, args, getDatabase, saveDatabase, sender) {
     const chatId = msg.key.remoteJid;
     const db = getDatabase();
 
-    // ── Perm check (owner or co-owner or configured mod) ─────────
     if (!Perms.isBotMod(db, sender)) {
       return sock.sendMessage(chatId, { text: '❌ Owner / Co-Owner only!' }, { quoted: msg });
     }
 
-    const sub = args[0]?.toLowerCase();
+    const raw = args[0];
+    const sub = raw?.toLowerCase();
+    const isMain = args.some((a) => a.toLowerCase() === '--main');
 
-    // ── /setgroup show ─────────────────────────────────────────
-    if (!sub || sub === 'show' || sub === 'list') {
-      const groups = AutoRedirect.getAllGroups(db);
-      let txt = `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🌐 *ALINRPG COMMUNITY GROUPS*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
-      for (const g of groups) {
-        const status = g.configured ? '✅' : '⚠️ Not set';
-        txt += `${g.emoji} *${g.groupName}* [${g.key}]\n`;
-        txt += `   ${g.desc}\n`;
-        txt += `   Status: ${status}\n`;
-        if (g.groupId) txt += `   ID: ...${g.groupId.slice(-12)}\n`;
-        if (g.inviteLink) txt += `   Link: ${g.inviteLink}\n`;
+    // ── Listing / status ────────────────────────────────────────
+    if (!sub || sub === 'show' || sub === 'list' || sub === 'status') {
+      const groups = AstralGroups.getAll(db);
+      let txt = `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🌐 *✦ 𝐀𝐬𝐭𝐫𝐚™ COMMUNITY GROUPS*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🎮 *Server:* ✦ 𝐀𝐬𝐭𝐫𝐚™\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
+      const ordered = ['pvp', 'casino', 'dungeon', 'guild', 'support'];
+      // Show one entry per registered group (multiple groups can share a type)
+      const shown = groups.filter((g, i, a) => a.findIndex((x) => x.groupId === g.groupId) === i);
+      if (shown.length === 0) {
+        txt += `⚠️ No groups registered yet.\n`;
+      }
+      // Group by type for readability, in the ordered list
+      for (const type of ordered) {
+        const info = AstralGroups.typeInfo(type);
+        const list = groups.filter((g) => g.type === type);
+        if (list.length === 0) continue;
+        txt += `${info.emoji} *${info.name}* [${type}]\n`;
+        txt += `   ${info.desc}\n`;
+        for (const g of list) {
+          const st = AstralGroups.statusOf(db, g.groupId);
+          const days = AstralGroups.daysLeft(db, g.groupId);
+          const stTxt = st === 'main' ? '👑 Main' : st === 'active' ? `✅ ${days}d left` : st === 'expired' ? '⛔ Expired' : '⚠️ Awaiting /ssub';
+          const feats = g.features?.length ? `\n   ➕ Features: ${g.features.map((f) => AstralGroups.typeInfo(f)?.name || f).join(', ')}` : '';
+          txt += `   └ ID: ...${g.groupId.slice(-12)}${g.inviteLink ? `\n   └ Link: ${g.inviteLink}` : ''}\n   └ Status: ${stTxt}${feats}\n`;
+        }
         txt += `\n`;
       }
-      txt += `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
-      txt += `📌 *Setup:* Go to the group, then:\n`;
-      txt += `/setgroup [type]         — register this group\n`;
-      txt += `/setgroup [type] [link]  — set invite link\n`;
-      txt += `\nTypes: ${VALID.join(', ')}\n`;
+      txt += `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n📌 *Setup:* Go to the group, then:\n`;
+      txt += `/setgroup <type>          — register (support|pvp|dungeon)\n`;
+      txt += `/setgroup <type> --main   — MAIN group (never expires)\n`;
+      txt += `/setgroup <type> <link>   — register + set link\n`;
+      txt += `/setgroup link <url>      — update link\n`;
+      txt += `/setgroup reset           — unregister this group\n`;
+      txt += `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n💳 *Subscription:*\n`;
+      txt += `/ssub | <name>   — start 30-day window (owner)\n`;
+      txt += `/renew           — extend 30 days (owner)\n`;
+      txt += `/allowgc <pvp|dungeon> — add a feature here\n`;
       txt += `━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
       return sock.sendMessage(chatId, { text: txt }, { quoted: msg });
     }
 
-    // ── /setgroup reset [cat] ──────────────────────────────────
-    if (sub === 'reset') {
-      const cat = args[1]?.toLowerCase();
-      if (!cat || !VALID.includes(cat)) {
-        return sock.sendMessage(chatId, { text: `❌ Specify category to reset.\nValid: ${VALID.join(', ')}` }, { quoted: msg });
+    // ── /setgroup link <url> ────────────────────────────────────
+    if (sub === 'link') {
+      const url = args[1];
+      const e = AstralGroups.getEntry(db, chatId);
+      if (!e) return sock.sendMessage(chatId, { text: '❌ This group is not registered yet. Use /setgroup <type>' }, { quoted: msg });
+      if (!url || !url.startsWith('http')) {
+        return sock.sendMessage(chatId, { text: '❌ Usage: /setgroup link <https://chat.whatsapp.com/...>' }, { quoted: msg });
       }
-      if (db.communityGroups) delete db.communityGroups[cat];
+      e.inviteLink = url;
       saveDatabase();
-      return sock.sendMessage(chatId, { text: `✅ *${cat}* group config cleared.` }, { quoted: msg });
+      return sock.sendMessage(chatId, { text: `✅ Invite link updated.` }, { quoted: msg });
     }
 
-    // ── /setgroup [type] or /setgroup [type] [link] ────────────
-    const category = sub;
-    if (!VALID.includes(category)) {
+    // ── /setgroup reset ─────────────────────────────────────────
+    if (sub === 'reset') {
+      if (db.astralGroups) { delete db.astralGroups[chatId]; }
+      saveDatabase();
+      return sock.sendMessage(chatId, { text: `✅ This group has been unregistered.` }, { quoted: msg });
+    }
+
+    // ── /setgroup <type> [--main] [link] ────────────────────────
+    const type = sub;
+    if (!AstralGroups.get(type)) {
       return sock.sendMessage(chatId, {
-        text: `❌ Unknown type: *${category}*\n\nValid types: ${VALID.join(', ')}\n\nExample:\n/setgroup pvp\n/setgroup casino\n/setgroup support`
+        text: `❌ Unknown type: *${type}*\n\nValid types: ${AstralGroups.TYPES.join(', ')}\n\n/setgroup ${type} — register this group\n/setgroup ${type} --main — register as MAIN (never expires)`
       }, { quoted: msg });
     }
 
-    // Must be in a group to register it
     if (!chatId.endsWith('@g.us')) {
-      return sock.sendMessage(chatId, { text: `❌ Run this command *inside* the group you want to register as *${category}*!` }, { quoted: msg });
+      return sock.sendMessage(chatId, { text: '❌ Run this *inside* the group you want to register!' }, { quoted: msg });
     }
 
-    const manualLink = args[1]?.startsWith('https://') ? args[1] : null;
-
-    // Auto-fetch invite link if not provided
-    let inviteLink = manualLink;
+    // invite link: explicit, or auto-fetch
+    let inviteLink = args.find((a) => a.startsWith('https://'));
     if (!inviteLink) {
-      try {
-        const code = await sock.groupInviteCode(chatId);
-        inviteLink = `https://chat.whatsapp.com/${code}`;
-      } catch(e) {
-        inviteLink = null;
-      }
+      try { inviteLink = `https://chat.whatsapp.com/${await sock.groupInviteCode(chatId)}`; } catch (e) {}
     }
 
-    const result = AutoRedirect.setGroup(db, category, chatId, inviteLink);
+    const result = AstralGroups.register(db, type, chatId, inviteLink, { main: isMain });
     if (!result.success) {
       return sock.sendMessage(chatId, { text: `❌ ${result.reason}` }, { quoted: msg });
     }
-
     saveDatabase();
 
-    const info = AutoRedirect.getAllGroups(db).find(g => g.key === category);
+    const info = AstralGroups.typeInfo(type);
+    const mainLine = result.status === 'main'
+      ? `👑 *MAIN GROUP* — the bot works here immediately and never expires.`
+      : result.status === 'pending'
+        ? `⏳ *Subscription pending.* An owner/co-owner must run:\n   /ssub | <subscriber name>\n   to start the 30-day window (the bot stays silent until then).`
+        : `✅ The bot is active in this group.`;
+
     return sock.sendMessage(chatId, {
-      text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n${info.emoji} *GROUP REGISTERED!*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n✅ This group is now the *${info.groupName}*\n\n📋 *Category:* ${category}\n🆔 *Group ID:* saved\n${inviteLink ? `🔗 *Invite link:* ${inviteLink}` : '⚠️ Could not auto-fetch link — run:\n/setgroup ${category} [paste_link_here]'}\n\n💡 Users who use /${category === 'dungeon' ? 'dungeon' : category} commands in other groups will now be redirected here.\n━━━━━━━━━━━━━━━━━━━━━━━━━━━`
+      text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n${info.emoji} *GROUP REGISTERED!*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n🎮 Server: ✦ 𝐀𝐬𝐭𝐫𝐚™\n📋 *Type:* ${type}${isMain ? ' 👑 (--main)' : ''}\n🆔 *Group ID:* saved\n${inviteLink ? `🔗 *Invite link:* ${inviteLink}` : ''}\n\n${mainLine}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━`
     }, { quoted: msg });
-  }
+  },
 };

@@ -142,6 +142,7 @@ console.log(`🎮 Total commands loaded: ${Object.keys(commands).length}`);
 // ── Astra Gate System ────────────────────────────────────────────────────────
 const GateCmds = require('../commands/rpg/gates');
 const GateRaidCmd = require('../commands/rpg/gateraid');
+const CaughtCmd = require('../commands/rpg/caught');
 const gateCmds = {
   gate:          GateCmds.gate,
   gates:         GateCmds.gate,
@@ -154,6 +155,9 @@ const gateCmds = {
   gateraid:      GateRaidCmd,
   raid:          GateRaidCmd,
   gr:            GateRaidCmd,
+  caught:        CaughtCmd,
+  capturepet:    CaughtCmd,
+  catchpet:      CaughtCmd,
 };
 
 // ── Astra Group Settings ─────────────────────────────────────────────────────
@@ -211,16 +215,23 @@ const ALIASES = {
   'artifacts': 'artifact',
   'unlock':    'lock',
   'inv':       'inventory',
-  'steal':     'ssteal',
+  'ssteal':    'steal',
+  'h':         'help',
+  'remove':    'kick',
+  'del':       'delete',
+  'pc':        'procoin',
+  'addpc':     'procoin',
+  'addprocoin':'procoin',
+  'wallet':    'balance',
+  'bal':       'balance',
   'wb':        'worldboss',
   'spawn':     'artifactspawn',
-  // Note: 'q' is declared as an alias in quest.js itself and will be registered below
 };
 
 // Commands that work even without bot being admin
 const NO_ADMIN_REQUIRED = new Set([
   'register','profile','stats','inventory','inv','help','achievements',
-  'quest','daily','find','gear','friend','leaderboard','pm','botid'
+  'daily','find','gear','friend','leaderboard','pm','botid'
 ]);
 
 // Also register any aliases declared on command modules themselves
@@ -302,12 +313,22 @@ if (db.mutedUsers && db.mutedUsers[Mod.bare(sender)]) {
     return; // 👇 silently drop — muted user gets no notice
   }
 }
-// 🔗 ANTI-LINK SYSTEM (WARN → MUTE → KICK)
+// 🔗 ANTI-LINK SYSTEM (WARN → MUTE → KICK) — auto-on for --main groups
 if (chatId.endsWith('@g.us')) {
   const settings = db.groupSettings?.[chatId];
   const admins = [OWNER_JID, ...(db.botMods || [])];
 
-  if (settings?.antiLink && !admins.includes(sender)) {
+  // MAIN groups are always anti-link enforced (co-owner spec: auto antilink).
+  let antiLinkOn = !!settings?.antiLink;
+  if (!antiLinkOn) {
+    try {
+      const AG = require('../rpg/utils/AstralGroups');
+      const entry = AG.getEntry(db, chatId);
+      if (entry && entry.isMain) antiLinkOn = true;
+    } catch (e) { /* ignore */ }
+  }
+
+  if (antiLinkOn && !admins.includes(sender)) {
     const text =
       msg.message?.conversation ||
       msg.message?.extendedTextMessage?.text ||
@@ -316,10 +337,14 @@ if (chatId.endsWith('@g.us')) {
       '';
 
     const anyLinkRegex = /(https?:\/\/|www\.)/i;
-    const whatsappLinkRegex = /(chat\.whatsapp\.com|wa\.me|whatsapp\.com)/i;
+    // Default-allowed socials + any group whitelisted domains.
+    const allowedDomains = (settings?.allowed && settings.allowed.length)
+      ? settings.allowed
+      : ['instagram.com', 'pinterest.', 'pinterest.com', 'youtube.com', 'youtu.be', 'tiktok.com', 'chat.whatsapp.com', 'wa.me'];
+    const whitelistRegex = new RegExp('(' + allowedDomains.map(d => d.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|') + ')', 'i');
 
-    // ❌ Non-WhatsApp link detected
-    if (anyLinkRegex.test(text) && !whatsappLinkRegex.test(text)) {
+    // ❌ Non-whitelisted link detected
+    if (anyLinkRegex.test(text) && !whitelistRegex.test(text)) {
       try {
         // 🗑️ Delete message
         await sock.sendMessage(chatId, { delete: msg.key });
@@ -333,15 +358,15 @@ if (chatId.endsWith('@g.us')) {
         const strikes = db.antiLinkStrikes[sender].count;
         saveDatabase();
 
-        // ⚠️ STRIKE 1 — WARN
+        // ⚠️ STRIKE 1 — WARN (quote-reply the offender, point to DM)
         if (strikes === 1) {
           await sock.sendMessage(chatId, {
             text:
               `⚠️ *@${sender.split('@')[0]} WARNING*\n` +
-              `Links are not allowed here.\n\n` +
+              `Links are not allowed here. Please send it to my DM instead.\n\n` +
               `⛔ Next: *Mute (5 mins)*`,
             mentions: [sender]
-          });
+          }, { quoted: msg });
         }
 
         // 🔇 STRIKE 2 — MUTE 5 MIN
@@ -541,6 +566,29 @@ if (chatId.endsWith('@g.us')) {
   }
 
   // ═══════════════════════════════════════════════════════════════
+  // 💳 SUBSCRIPTION GATE — ✦ 𝐀𝐬𝐭𝐫𝐚™ community groups
+  // A group registered without --main is SILENT until /ssub, and once its
+  // 30-day window lapses it replies to commands with a "subscription
+  // expired" notice. Management commands always pass so an owner can fix it.
+  // ═══════════════════════════════════════════════════════════════
+  const AstralGroups = require('../rpg/utils/AstralGroups');
+  const manageCmds = new Set(['setgroup', 'setgc', 'ssub', 'renew', 'allowgc', 'groupinfo', 'help', 'menu']);
+  if (chatId.endsWith('@g.us') && !manageCmds.has(commandName)) {
+    const gate = AstralGroups.gate(db, chatId);
+    if (!gate.allow) {
+      if (gate.silent) {
+        // Pending (registered, not yet /ssub) → bot stays fully silent.
+        return;
+      }
+      if (gate.expired) {
+        // Expired → reply with the subscription notice.
+        return sock.sendMessage(chatId, { text: gate.msg }, { quoted: msg });
+      }
+    }
+  }
+  // ═══════════════════════════════════════════════════════════════
+
+  // ═══════════════════════════════════════════════════════════════
   // ✅ AUTO REDIRECT SYSTEM - MUCH EASIER!
   // ═══════════════════════════════════════════════════════════════
   // Skip check for admin commands and DMs
@@ -709,7 +757,7 @@ if (chatId.endsWith('@g.us')) {
       if (db.users?.[sender]) {
         try {
           const { ensureTodayQuests } = require('../rpg/utils/QuestDispatcher');
-          // Silent — no DM spam; the user can /quest daily to see their quests
+          // Silent — daily quests auto-start and auto-claim; no /quest needed.
           ensureTodayQuests(db.users[sender]);
           saveDatabase();
         } catch(e) { /* non-critical */ }
@@ -751,7 +799,6 @@ if (chatId.endsWith('@g.us')) {
             feed:      'feed',
             train:     'pet',
             pet:       'pet',
-            quest:     'quest',
             dungeon:   'dungeon',
             worldboss: 'boss',
             gw:        'gw',

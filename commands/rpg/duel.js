@@ -1,6 +1,6 @@
 // ═══════════════════════════════════════════════════════════════
 // DUEL — Solo Leveling Style PvP
-// - Aura won/lost instead of gold
+// - Aura won/lost instead of Nexus
 // - Death mechanic: lose a level + some items on death
 // - Gear, pets, and skills factor into damage
 // - Realistic multi-round combat

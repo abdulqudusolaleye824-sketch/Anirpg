@@ -4,7 +4,7 @@
 // Tax: 5% of sale price goes to the system.
 
 const MARKET_TAX = 0.05;  // 5%
-const LISTING_FEE = 500;   // gold to post a listing
+const LISTING_FEE = 500;   // Nexus to post a listing
 const MAX_LISTINGS_PER_PLAYER = 5;
 const LISTING_EXPIRY = 24 * 60 * 60 * 1000; // 24 hours
 
@@ -130,7 +130,7 @@ module.exports = {
       if (!listing) return sock.sendMessage(chatId, { text: `❌ Listing #${id} not found or expired!` }, { quoted: msg });
       if (listing.sellerId === sender) return sock.sendMessage(chatId, { text: '❌ You cannot buy your own listing!' }, { quoted: msg });
       if ((player.gold || 0) < listing.price) {
-        return sock.sendMessage(chatId, { text: `❌ Not enough gold!\nNeed: ${listing.price.toLocaleString()} 💠 | Have: ${(player.gold||0).toLocaleString()} 💠` }, { quoted: msg });
+        return sock.sendMessage(chatId, { text: `❌ Not enough Nexus!\nNeed: ${listing.price.toLocaleString()} 💠 | Have: ${(player.gold||0).toLocaleString()} 💠` }, { quoted: msg });
       }
 
       // Transaction

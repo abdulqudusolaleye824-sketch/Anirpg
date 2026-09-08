@@ -93,7 +93,7 @@ module.exports = {
         const roleDesc = {
           attack:    '⚔️ *Attack* — Fights alongside you, dealing damage',
           support:   '💚 *Support* — Heals you and buffs your stats',
-          scavenger: '💠 *Scavenger* — Finds extra gold and items after fights (but is weak!)',
+          scavenger: '💠 *Scavenger* — Finds extra Nexus and items after fights (but is weak!)',
         }[pet.role] || '⚔️ Attack';
 
         let txt = `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n${statsStr}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n${roleDesc}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n⚡ *Abilities:*\n`;
@@ -188,7 +188,7 @@ module.exports = {
 
       // ── DEFAULT / HELP ───────────────────────────────────────
       return sock.sendMessage(chatId, {
-        text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🐾 *PET SYSTEM*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n🥚 Find eggs in dungeons\n🐣 Hatch them to get pets\n📈 Level pets up through battles\n🌟 Evolve at level 10\n\n*Pet Roles:*\n⚔️ Attack — fights with you\n💚 Support — heals & buffs you\n💠 Scavenger — finds extra gold/loot\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n📋 *COMMANDS*\n/pet list           — All pets\n/pet eggs           — Your eggs\n/pet hatch [#]      — Hatch egg\n/pet info [#]       — Pet details\n/pet active [#]     — Set active\n/pet feed [#] [food] — Feed pet\n/pet foods          — Food list\n/pet evolve [#]     — Evolve\n/pet rename [#] [name] — Rename\n/pet release [#]    — Release\n━━━━━━━━━━━━━━━━━━━━━━━━━━━`
+        text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🐾 *PET SYSTEM*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n🥚 Find eggs in dungeons\n🐣 Hatch them to get pets\n📈 Level pets up through battles\n🌟 Evolve at level 10\n\n*Pet Roles:*\n⚔️ Attack — fights with you\n💚 Support — heals & buffs you\n💠 Scavenger — finds extra Nexus/loot\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n📋 *COMMANDS*\n/pet list           — All pets\n/pet eggs           — Your eggs\n/pet hatch [#]      — Hatch egg\n/pet info [#]       — Pet details\n/pet active [#]     — Set active\n/pet feed [#] [food] — Feed pet\n/pet foods          — Food list\n/pet evolve [#]     — Evolve\n/pet rename [#] [name] — Rename\n/pet release [#]    — Release\n━━━━━━━━━━━━━━━━━━━━━━━━━━━`
       }, { quoted: msg });
 
     } catch(err) {

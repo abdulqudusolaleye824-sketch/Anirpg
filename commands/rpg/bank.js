@@ -49,10 +49,10 @@ module.exports = {
 
       menu += `\n📌 COMMANDS
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━
-${!ownedBank ? '🏦 /bank create [name] - Create bank\n   Requirements: Level 50 OR 20k gold\n   Cost: 10,000 gold\n\n' : ''}${!accountBank ? '💳 /bank register [bank] - Open account\n\n' : ''}`;
+${!ownedBank ? '🏦 /bank create [name] - Create bank\n   Requirements: Level 50 OR 20k Nexus\n   Cost: 10,000 Nexus\n\n' : ''}${!accountBank ? '💳 /bank register [bank] - Open account\n\n' : ''}`;
 
       if (accountBank) {
-        menu += `💠 /bank deposit [amount] - Deposit gold
+        menu += `💠 /bank deposit [amount] - Deposit Nexus
 💸 /bank withdraw [amount] - Withdraw
    (10% fee to bank owner)
    (1 hr cooldown)
@@ -71,9 +71,9 @@ ${!ownedBank ? '🏦 /bank create [name] - Create bank\n   Requirements: Level 5
 💡 HOW IT WORKS
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━
 1️⃣ High level players create banks
-2️⃣ Other players deposit gold safely
+2️⃣ Other players deposit Nexus safely
 3️⃣ Bank owner earns 10% on withdrawals
-4️⃣ Everyone's gold is protected!
+4️⃣ Everyone's Nexus is protected!
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
 
       return sock.sendMessage(chatId, { text: menu }, { quoted: msg });
@@ -96,7 +96,7 @@ ${!ownedBank ? '🏦 /bank create [name] - Create bank\n   Requirements: Level 5
         : BankingSystem.canCreateBank(player);
       if (!canCreate.canCreate) {
         return sock.sendMessage(chatId, {
-          text: `❌ Cannot create bank!\n\n${canCreate.reason}\n\n📌 Requirements:\n- Level 50 OR 20,000 gold\n- 10,000 gold creation fee unless you're Naruto`
+          text: `❌ Cannot create bank!\n\n${canCreate.reason}\n\n📌 Requirements:\n- Level 50 OR 20,000 Nexus\n- 10,000 Nexus creation fee unless you're Naruto`
         }, { quoted: msg });
       }
 
@@ -122,7 +122,7 @@ ${!ownedBank ? '🏦 /bank create [name] - Create bank\n   Requirements: Level 5
       const cost = BankingSystem.BANK_CREATION_REQUIREMENTS.creationCost;
       if (player.gold < cost) {
         return sock.sendMessage(chatId, {
-          text: `❌ Not enough gold!\n\nNeed: ${cost}\nHave: ${player.gold}`
+          text: `❌ Not enough Nexus!\n\nNeed: ${cost}\nHave: ${player.gold}`
         }, { quoted: msg });
       }
 
@@ -144,7 +144,7 @@ ${!ownedBank ? '🏦 /bank create [name] - Create bank\n   Requirements: Level 5
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━
 💠 BENEFITS
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━
-✅ Safe gold storage
+✅ Safe Nexus storage
 ✅ Protected from theft
 ✅ 10% interest to bank owner
 ✅ 1 hr withdrawal system
@@ -152,7 +152,7 @@ ${!ownedBank ? '🏦 /bank create [name] - Create bank\n   Requirements: Level 5
 📌 TO JOIN
 /bank register ${bankName}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━
-@everyone - Secure your gold now!
+@everyone - Secure your Nexus now!
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━`
       }, { quoted: msg });
 
@@ -202,14 +202,14 @@ ${!ownedBank ? '🏦 /bank create [name] - Create bank\n   Requirements: Level 5
       // Owner and co-owner always free, no minimum
       let initialDeposit = 0;
       if (!isSuperUser && !isBankOwner) {
-        // Normal hunter — must deposit minimum 100 gold
+        // Normal hunter — must deposit minimum 100 Nexus
         initialDeposit = player.gold || 0;
         if (initialDeposit < 100) {
           return sock.sendMessage(chatId, {
-            text: '❌ Minimum 100 gold required to open account!'
+            text: '❌ Minimum 100 Nexus required to open account!'
           }, { quoted: msg });
         }
-        // Transfer all gold to bank
+        // Transfer all Nexus to bank
         player.gold = 0;
         if (player.inventory) player.inventory.gold = 0;
       }
@@ -266,14 +266,14 @@ Use /bank deposit to add more!
         }, { quoted: msg });
       }
 
-      // ✅ FIX: Check if player has enough gold BEFORE depositing
+      // ✅ FIX: Check if player has enough Nexus BEFORE depositing
       if ((player.gold || 0) < amount) {
         return sock.sendMessage(chatId, {
-          text: `❌ Not enough gold!\n\nHave: ${player.gold || 0}\nNeed: ${amount}`
+          text: `❌ Not enough Nexus!\n\nHave: ${player.gold || 0}\nNeed: ${amount}`
         }, { quoted: msg });
       }
 
-      // ✅ FIX: Deduct gold FIRST, then deposit
+      // ✅ FIX: Deduct Nexus FIRST, then deposit
       player.gold -= amount;
       if (player.gold < 0) player.gold = 0; // Safety check
       if (player.inventory) player.inventory.gold = player.gold;
@@ -321,7 +321,7 @@ Use /bank deposit to add more!
         }, { quoted: msg });
       }
 
-      // Give player the gold (after 10% fee)
+      // Give player the Nexus (after 10% fee)
       player.gold = (player.gold || 0) + result.withdrawn;
       if (player.inventory) player.inventory.gold = player.gold;
 

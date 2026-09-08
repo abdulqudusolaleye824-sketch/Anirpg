@@ -7,7 +7,7 @@
  * thin compatibility layer so any file that historically did
  * `require('../../rpg/utils/NexusManager')` keeps working without edit.
  *
- * Consumers: send, casino, convert, rob, reset, shop, boss_original,
+ * Consumers: send, casino, convert, rob, reset, shop,
  * and rpg/utils/RamadanEvent all import `{ updatePlayerNexus }` from here.
  *
  * Key naming: players store their Nexus balance in `player.gold` (legacy

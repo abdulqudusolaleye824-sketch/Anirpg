@@ -8,7 +8,7 @@
  * Guild Points (GP):
  *   - Dungeon clear by guild member: +15 GP
  *   - Guild raid boss kill: +50 GP
- *   - Member donation: +1 GP per 5,000 gold donated
+ *   - Member donation: +1 GP per 5,000 Nexus donated
  *   - Daily quest completion: +5 GP
  *   - World boss contribution: +20 GP
  *
@@ -123,7 +123,7 @@ function formatGuildPoints(guild) {
     `📊 *HOW TO EARN GP:*`,
     `  +15 — Dungeon clear`,
     `  +50 — Guild raid boss kill`,
-    `  +1  — Per 5,000 gold donated`,
+    `  +1  — Per 5,000 Nexus donated`,
     `  +5  — Daily quest complete`,
     `  +20 — World boss contribution`,
     ``,

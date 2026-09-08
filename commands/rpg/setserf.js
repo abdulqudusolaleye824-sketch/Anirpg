@@ -122,6 +122,20 @@ module.exports = {
       }, { quoted: msg });
     }
 
+    // ── ONCE SET, IT'S PERMANENT ────────────────────────────────
+    // A player cannot change their serf after it's been approved.
+    if (SerfManager.hasApprovedSerf(db, sender)) {
+      const current = SerfManager.getSerf(db, sender);
+      const info = current?.botKey ? PersonalityManager.getPersonalityInfo(current.botKey) : null;
+      return sock.sendMessage(chatId, {
+        text:
+          '🙅 *You\u2019ve already set your serf.*\n\n' +
+          'Your serf is permanent and cannot be changed.\n' +
+          (info ? `\n🤖 Your serf: *${info.emoji || ''} ${info.displayName || current.botKey}*` : '') +
+          '\n\n_If this is a mistake, contact an admin._',
+      }, { quoted: msg });
+    }
+
     const bot = resolveBotKey(args, msg, db);
     if (!bot || !bot.key) {
       return sock.sendMessage(chatId, {

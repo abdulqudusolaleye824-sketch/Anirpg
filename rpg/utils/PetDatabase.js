@@ -55,7 +55,7 @@ const EGG_SPAWN_WEIGHTS = {
 // Each pet has a role: 'attack', 'support', or 'scavenger'
 // attack   — fights alongside player, deals damage
 // support  — buffs/heals the player
-// scavenger — finds extra loot/gold after fights (but weak/vulnerable)
+// scavenger — finds extra loot/Nexus after fights (but weak/vulnerable)
 
 const PET_DATABASE = {
 
@@ -242,7 +242,7 @@ const PET_DATABASE = {
 
   // ─── SCAVENGER PETS ─────────────────────────────────────────
   // Scavengers are WEAK and VULNERABLE — they die easily
-  // But they find extra gold/loot after every fight
+  // But they find extra Nexus/loot after every fight
 
   mud_crawler: {
     id: 'mud_crawler',
@@ -255,9 +255,9 @@ const PET_DATABASE = {
     baseStats: { hp: 100, atk: 5, def: 5, spd: 20, scavengeRate: 0.15 },
     growthRates: { hp: 8, atk: 1, def: 1, spd: 2, scavengeRate: 0.02 },
     abilities: [
-      { level: 1,  name: 'Dig',         desc: 'Finds 5-15% bonus gold after battle',  damage: 0, type: 'scavenge', goldBonus: 0.10 },
+      { level: 1,  name: 'Dig',         desc: 'Finds 5-15% bonus Nexus after battle',  damage: 0, type: 'scavenge', goldBonus: 0.10 },
       { level: 5,  name: 'Treasure Nose',desc: 'Chance to find rare item after fight', damage: 0, type: 'scavenge', itemChance: 0.10 },
-      { level: 10, name: 'Hoard Instinct',desc: '+25% gold from all sources',         damage: 0, type: 'scavenge', goldBonus: 0.25 },
+      { level: 10, name: 'Hoard Instinct',desc: '+25% Nexus from all sources',         damage: 0, type: 'scavenge', goldBonus: 0.25 },
     ],
     evolution: {
       level: 10,
@@ -282,7 +282,7 @@ const PET_DATABASE = {
     growthRates: { hp: 10, atk: 2, def: 1, spd: 12, scavengeRate: 0.03 },
     abilities: [
       { level: 1,  name: 'Echo Sense',   desc: '+20% item drop rate after fights',   damage: 0, type: 'scavenge', dropBonus: 0.20 },
-      { level: 5,  name: 'Shadow Loot',  desc: 'Chance to double gold drops',        damage: 0, type: 'scavenge', goldDouble: 0.15 },
+      { level: 5,  name: 'Shadow Loot',  desc: 'Chance to double Nexus drops',        damage: 0, type: 'scavenge', goldDouble: 0.15 },
       { level: 10, name: 'Void Harvest', desc: 'Find rare/epic items more often',    damage: 0, type: 'scavenge', rarityBoost: true },
     ],
     evolution: {
@@ -369,9 +369,9 @@ const PET_DATABASE = {
     baseStats: { hp: 200, atk: 8, def: 30, spd: 25, scavengeRate: 0.30 },
     growthRates: { hp: 15, atk: 1, def: 7, spd: 2, scavengeRate: 0.04 },
     abilities: [
-      { level: 1, name: 'Nexus Sense', desc: '+25% gold after every fight', damage: 0, type: 'scavenge', goldBonus: 0.25 },
+      { level: 1, name: 'Nexus Sense', desc: '+25% Nexus after every fight', damage: 0, type: 'scavenge', goldBonus: 0.25 },
       { level: 5, name: 'Beetle Dig', desc: 'Find materials and potions', damage: 0, type: 'scavenge', materialFind: true, potionFind: true },
-      { level: 10, name: 'Golden Hoard', desc: '+40% gold + rare item chance', damage: 0, type: 'scavenge', goldBonus: 0.40, itemChance: 0.20 },
+      { level: 10, name: 'Golden Hoard', desc: '+40% Nexus + rare item chance', damage: 0, type: 'scavenge', goldBonus: 0.40, itemChance: 0.20 },
     ],
     catchRate: 0, habitat: [], vulnerable: true,
   },

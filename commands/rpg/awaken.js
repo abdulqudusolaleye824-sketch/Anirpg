@@ -67,7 +67,7 @@ module.exports = {
 
     const sub = args[0]?.toLowerCase();
     const awakenTier = player.awakenTier || 0;
-    const className  = typeof player.class === 'string' ? player.class : player.class?.name || 'Warrior';
+    const className  = typeof player.class === 'string' ? player.class : player.class?.name  || 'Awaiting';
 
     // ── STATUS / INFO ──────────────────────────────────────
     if (!sub || sub === 'info' || sub === 'status') {

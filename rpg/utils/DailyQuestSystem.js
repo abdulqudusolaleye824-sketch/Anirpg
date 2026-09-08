@@ -88,9 +88,7 @@ const DAILY_QUEST_POOL = [
   { id: 'dq_guild5gp',    name: 'Guild Pillar',          desc: 'Earn 5 Guild Points',                      type: 'gp',       target: 5,   reward: { gold: 500,   crystals: 15  } },
   { id: 'dq_guildwar1',   name: 'War Veteran',           desc: 'Participate in 1 Guild War',               type: 'gw',       target: 1,   reward: { gold: 1300,  crystals: 35  } },
 
-  // ── Quests (3) ────────────────────────────────────────────────────────────
-  { id: 'dq_quest1',      name: 'Adventurer',            desc: 'Complete 1 quest',                         type: 'quest',    target: 1,   reward: { gold: 200,   crystals: 6  } },
-  { id: 'dq_quest3',      name: 'Quester',               desc: 'Complete 3 quests',                        type: 'quest',    target: 3,   reward: { gold: 390,  crystals: 20  } },
+  // ── Reputation (1) ────────────────────────────────────────────────────────
   { id: 'dq_questrep1',   name: 'Faction Friend',        desc: 'Gain faction reputation',                  type: 'rep',      target: 1,   reward: { gold: 200,   crystals: 8  } },
 ];
 
@@ -284,7 +282,7 @@ function formatDailyQuests(player) {
 
   const allDone = quests.length === 4 && quests.every(q => q.claimed);
   if (allDone) {
-    txt += `🎉 *ALL 4 COMPLETE!* +25% bonus gold on next dungeon clear!\n\n`;
+    txt += `🎉 *ALL 4 COMPLETE!* +25% bonus Nexus on next dungeon clear!\n\n`;
   } else {
     const completed = quests.filter(q => q.completed).length;
     txt += `Progress: ${completed}/4 for tomorrow's streak\n\n`;

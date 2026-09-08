@@ -141,6 +141,15 @@ function getSerf(db, playerJid) {
 }
 
 /**
+ * Whether the player already has an APPROVED serf assignment. Used to make
+ * /setserf effectively permanent — once you set your serf, you can't change it.
+ * (Direct key match on playerJid, same as getSerf.)
+ */
+function hasApprovedSerf(db, playerJid) {
+  return !!getSerf(db, playerJid);
+}
+
+/**
  * Get a pending request for a player, or null.
  */
 function getPendingRequest(db, playerJid) {
@@ -208,6 +217,7 @@ module.exports = {
   approveRequest,
   cancelRequest,
   getSerf,
+  hasApprovedSerf,
   getPendingRequest,
   isPlayerSerf,
   isJidPlayerSerf,

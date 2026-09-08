@@ -5,7 +5,7 @@ const { OWNER_JID, COOWNER_JID } = require('../../utils/constants');
 
 function validatePurchase(player, cost, currency) {
   if (currency === 'gold') {
-    if ((player.gold || 0) < cost) return { valid:false, message:`❌ *Not enough gold!*\nNeed: *${cost.toLocaleString()}* 💠\nHave: *${(player.gold||0).toLocaleString()}* 💠` };
+    if ((player.gold || 0) < cost) return { valid:false, message:`❌ *Not enough Nexus!*\nNeed: *${cost.toLocaleString()}* 💠\nHave: *${(player.gold||0).toLocaleString()}* 💠` };
   } else if (currency === 'crystals') {
     if ((player.manaCrystals || 0) < cost) return { valid:false, message:`❌ *Not enough crystals!*\nNeed: *${cost}* 💎\nHave: *${player.manaCrystals||0}* 💎` };
   }
@@ -72,7 +72,7 @@ module.exports = {
     if (!player.inventory.items) player.inventory.items = [];
 
     const action = args[0]?.toLowerCase();
-    const gold = (player.gold||0).toLocaleString();
+    const Nexus = (player.gold||0).toLocaleString();
     const crystals = (player.manaCrystals||0).toLocaleString();
 
     if (!action) {
@@ -220,7 +220,7 @@ module.exports = {
     }
 
     if (action==='weapons') {
-      const cn=typeof player.class==='string'?player.class:(player.class?.name||'Warrior');
+      const cn=typeof player.class==='string'?player.class:(player.class?.name || 'Awaiting');
       const cw=weaponUpgrades[cn]||[];
       if(!cw.length) return sock.sendMessage(chatId,{text:`❌ No weapons for *${cn}*!`},{quoted:msg});
       let txt=`━━━━━━━━━━━━━━━━━━━━━━━━━━━\n⚔️ *WEAPONS — ${cn.toUpperCase()}*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\nEquipped: *${player.weapon?.name||'None'}*\n💠 Nexus: *${gold}*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
@@ -237,7 +237,7 @@ module.exports = {
     if (action==='weapon') {
       const num=parseInt(args[1]);
       if(!num) return sock.sendMessage(chatId,{text:'❌ /shop weapons to see list'},{quoted:msg});
-      const cn=typeof player.class==='string'?player.class:(player.class?.name||'Warrior');
+      const cn=typeof player.class==='string'?player.class:(player.class?.name || 'Awaiting');
       const cw=weaponUpgrades[cn]||[];
       const w=cw[num-1];
       if(!w) return sock.sendMessage(chatId,{text:`❌ Choose 1-${cw.length}`},{quoted:msg});

@@ -2,10 +2,16 @@
 // PROFILE — Astra Hunter Profile
 // Clean card format — no battle stats
 // Shows: Name, Rank, Level, DOB, Skills, Money, Pro, Banned, etc.
+// Task 9: shipped as an IMAGE card (custom /seticon, default Astra logo).
 // ═══════════════════════════════════════════════════════════════
 
+const fs = require('fs');
+const path = require('path');
 const { AWAKENING_RANKS, calculatePowerRating, getPowerLabel } = require('../../rpg/utils/SoloLevelingCore');
 const { getQualityLabel } = require('../../rpg/utils/ClassSystem');
+
+// Default /profile image (WA0052 — Astra gold "A" logo).
+const DEFAULT_PROFILE_IMG = path.join(__dirname, '..', '..', 'assets', 'profile_default.jpg');
 
 // ── Nigerian Time (WAT = UTC+1) ───────────────────────────────────────────────
 function getNigerianDate() {
@@ -33,12 +39,98 @@ function getSkillsCount(player) {
 
 // ── Pets count ────────────────────────────────────────────────────────────────
 function getPetsCount(player) {
-  // player.pets = full collection array (includes active pet)
-  // player.pet  = reference to active pet (already in pets array)
-  // Count only the collection array to avoid double-counting
   if (Array.isArray(player.pets) && player.pets.length > 0) return player.pets.length;
-  // Legacy: no pets array but has active pet
   return player.pet ? 1 : 0;
+}
+
+// Build the text card (also used as the image caption).
+function buildCard(player, db, targetId, mentionedId, isOwnProfile) {
+  const rank     = player.awakenRank || 'E';
+  const rankData = AWAKENING_RANKS[rank] || { emoji: '⬜', label: `${rank}-Rank` };
+
+  const rankDisplay = player.awakenTier && player.awakenTier > 0
+    ? `${rankData.label} ✨ Tier ${player.awakenTier} Awakened`
+    : rankData.label;
+
+  let power = 0, powerLabel = { emoji: '⚪', label: 'Unknown' };
+  try {
+    power = calculatePowerRating(player.stats || {}, Object.values(player.equipped || {}).filter(Boolean), player.pet) || 0;
+    powerLabel = getPowerLabel(power) || powerLabel;
+  } catch (e) {}
+
+  const cls          = player.evolvedClass || player.class;
+  const classBase    = player.classBase || (typeof cls === 'string' ? cls : null);
+  const classQuality = player.classQuality || 0;
+  const qualLabel    = classBase && classQuality > 0 ? ' — ' + getQualityLabel(classQuality) : '';
+  const variantLore  = player.monsterVariant?.lore || null;
+  const classDisplay = cls
+    ? player.evolvedClass ? cls + ' *(Evolved)*' : cls + qualLabel
+    : 'Not assigned';
+
+  const skillsTotal = getSkillsCount(player);
+  const petsTotal   = getPetsCount(player);
+  const proLabel    = getProLabel(player);
+  const isBanned    = !!(player.banned || db.bannedUsers?.[targetId]);
+  const Nexus       = (player.gold || 0).toLocaleString();
+  const manaStones  = (player.manaCrystals || 0).toLocaleString();
+  const employmentStatus = player.guild ? `Employed 💼 *(${player.guild})*` : `Unemployed 😴`;
+
+  const petDisplay = player.pet
+    ? `${player.pet.emoji || '🐾'} ${player.pet.name || 'Unnamed'} Lv.${player.pet.level || 1}`
+    : 'None';
+
+  const skills = player.skills || {};
+  const activeSkills = Array.isArray(skills.active) ? skills.active : [];
+  const skillLines = activeSkills.length
+    ? activeSkills.map((s, i) => `  ${i+1}. *${s.name}* Lv${s.level || 1}`)
+    : ['  None equipped'];
+
+  const equippedTitle = player.equippedTitle || 'None';
+  const titlesOwned   = (player.titles || []).length;
+
+  const regDate = player.registeredAtWAT
+    ? player.registeredAtWAT.slice(0, 10)
+    : player.registeredAt
+      ? new Date(player.registeredAt + 3600000).toISOString().slice(0, 10)
+      : 'Unknown';
+
+  return [
+    `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+    `👤 *${player.name}*`,
+    equippedTitle !== 'None' ? `🎖️ "${equippedTitle}"` : null,
+    `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+    ``,
+    `${rankData.emoji} *Rank:* ${rankDisplay}`,
+    `⭐ *Level:* ${player.level || 1}`,
+    `⚡ *Power:* ${power.toLocaleString()} ${powerLabel.emoji} ${powerLabel.label}`,
+    `🎭 *Class:* ${classDisplay}`,
+    variantLore ? `_${variantLore}_` : null,
+    `🏢 *Status:* ${employmentStatus}`,
+    ``,
+    `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+    `💠 *WEALTH*`,
+    `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+    `💠 Nexus: *${Nexus}*`,
+    `💎 Mana Stones: *${manaStones}*`,
+    ``,
+    `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+    `⚡ *SKILLS (${skillsTotal} total)*`,
+    `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+    ...skillLines,
+    ``,
+    `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+    `📋 *HUNTER INFO*`,
+    `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+    player.dateOfBirth ? `📅 D.O.B: *${player.dateOfBirth}*` : null,
+    `🐾 Pets Owned: *${petsTotal}*`,
+    petDisplay !== 'None' ? `🐾 Active Pet: ${petDisplay}` : null,
+    `🎖️ Titles: *${titlesOwned}* | Equipped: *${equippedTitle}*`,
+    `⭐ Pro Status: *${proLabel}*`,
+    isBanned ? `🚫 Banned: *True*` : null,
+    `📆 Joined: *${regDate}*`,
+    ``,
+    `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+  ].filter(l => l !== null).join('\n');
 }
 
 module.exports = {
@@ -79,101 +171,21 @@ module.exports = {
       }
     }
 
-    // ── Data ───────────────────────────────────────────────────────────────
-    const rank     = player.awakenRank || 'E';
-    const rankData = AWAKENING_RANKS[rank] || { emoji: '⬜', label: `${rank}-Rank` };
+    const caption = buildCard(player, db, targetId, mentionedId, isOwnProfile);
 
-    const rankDisplay = player.awakenTier && player.awakenTier > 0
-      ? `${rankData.label} ✨ Tier ${player.awakenTier} Awakened`
-      : rankData.label;
-    let powerLabel = { emoji: '⚪', label: 'Unknown' };
-    try {
-      power      = calculatePowerRating(player.stats || {}, Object.values(player.equipped || {}).filter(Boolean), player.pet) || 0;
-      powerLabel = getPowerLabel(power) || powerLabel;
-    } catch(e) {}
+    // ── Task 9: profile is an IMAGE card ──────────────────────────────────
+    // Custom /seticon image if set, otherwise the default Astra logo.
+    let imageBuffer;
+    if (player.profileImage) {
+      try { imageBuffer = Buffer.from(player.profileImage, 'base64'); } catch (e) { imageBuffer = null; }
+    }
+    if (!imageBuffer || imageBuffer.length === 0) {
+      try { imageBuffer = fs.readFileSync(DEFAULT_PROFILE_IMG); } catch (e) { imageBuffer = null; }
+    }
 
-    const cls          = player.evolvedClass || player.class;
-    const classBase    = player.classBase || (typeof cls === 'string' ? cls : null);
-    const classQuality  = player.classQuality || 0;
-    const qualLabel     = classBase && classQuality > 0 ? ' — ' + getQualityLabel(classQuality) : '';
-    const variantLore   = player.monsterVariant?.lore || null;
-    const classDisplay  = cls
-      ? player.evolvedClass ? cls + ' *(Evolved)*' : cls + qualLabel
-      : 'Not assigned';
-
-    const skillsTotal = getSkillsCount(player);
-    const petsTotal   = getPetsCount(player);
-
-    const proLabel   = getProLabel(player);
-    const isBanned   = !!(player.banned || db.bannedUsers?.[targetId]);
-
-    // Nexus + mana stones
-    const gold        = (player.gold        || 0).toLocaleString();
-    const manaStones  = (player.manaCrystals || 0).toLocaleString();
-
-    const employmentStatus = player.guild ? `Employed 💼 *(${player.guild})*` : `Unemployed 😴`;
-
-    // Active pet
-    const petDisplay = player.pet
-      ? `${player.pet.emoji || '🐾'} ${player.pet.name || 'Unnamed'} Lv.${player.pet.level || 1}`
-      : 'None';
-
-    // Skills equipped
-    const skills = player.skills || {};
-    const activeSkills = Array.isArray(skills.active) ? skills.active : [];
-    const skillLines = activeSkills.length
-      ? activeSkills.map((s, i) => `  ${i+1}. *${s.name}* Lv${s.level || 1}`)
-      : ['  None equipped'];
-
-    // Titles
-    const equippedTitle = player.equippedTitle || 'None';
-    const titlesOwned   = (player.titles || []).length;
-
-    // Registered date (WAT)
-    const regDate = player.registeredAtWAT
-      ? player.registeredAtWAT.slice(0, 10)
-      : player.registeredAt
-        ? new Date(player.registeredAt + 3600000).toISOString().slice(0, 10)
-        : 'Unknown';
-
-    const lines = [
-      `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-      `👤 *${player.name}*`,
-      equippedTitle !== 'None' ? `🎖️ "${equippedTitle}"` : null,
-      `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-      ``,
-      `${rankData.emoji} *Rank:* ${rankDisplay}`,
-      `⭐ *Level:* ${player.level || 1}`,
-      `⚡ *Power:* ${power.toLocaleString()} ${powerLabel.emoji} ${powerLabel.label}`,
-      `🎭 *Class:* ${classDisplay}`,
-      variantLore ? `_${variantLore}_` : null,
-      `🏢 *Status:* ${employmentStatus}`,
-      ``,
-      `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-      `💠 *WEALTH*`,
-      `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-      `💠 Nexus: *${gold}*`,
-      `💎 Mana Stones: *${manaStones}*`,
-      ``,
-      `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-      `⚡ *SKILLS (${skillsTotal} total)*`,
-      `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-      ...skillLines,
-      ``,
-      `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-      `📋 *HUNTER INFO*`,
-      `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-      player.dateOfBirth ? `📅 D.O.B: *${player.dateOfBirth}*` : null,
-      `🐾 Pets Owned: *${petsTotal}*`,
-      petDisplay !== 'None' ? `🐾 Active Pet: ${petDisplay}` : null,
-      `🎖️ Titles: *${titlesOwned}* | Equipped: *${equippedTitle}*`,
-      `⭐ Pro Status: *${proLabel}*`,
-      isBanned ? `🚫 Banned: *True*` : null,
-      `📆 Joined: *${regDate}*`,
-      ``,
-      `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-    ].filter(l => l !== null).join('\n');
-
-    return sock.sendMessage(chatId, { text: lines }, { quoted: msg });
+    if (imageBuffer && imageBuffer.length > 0) {
+      return sock.sendMessage(chatId, { image: imageBuffer, caption }, { quoted: msg });
+    }
+    return sock.sendMessage(chatId, { text: caption }, { quoted: msg });
   },
 };

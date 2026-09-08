@@ -1,18 +1,27 @@
 /**
- * /mute — Silence a user from using bot commands (mods + owners only).
- * Like /ban but the bot silently ignores the muted user (no "you are banned"
- * notice to them). Optionally temporary:
- *   /mute @user [minutes]      → mute for N minutes
- *   /mute @user                → mute until unmuted
+ * /mute — MOD-LEVEL command. Works like /ban but GROUP-RESTRICTED:
+ *   - The muted player can't use commands in this group.
+ *   - EVERY message they send (including commands) is silently deleted
+ *     by the bot while muted.
+ *   - Bot must be a group admin to delete the messages.
+ *   - Optional duration in minutes; omit for indefinite (until /unmute).
+ *
+ *   /mute @user [minutes]   → mute for N minutes
+ *   /mute @user             → mute until /unmute
  */
 
 'use strict';
 
 const Mod = require('../../rpg/utils/ModerationUtils');
+const GroupAdmin = require('../../rpg/utils/GroupAdmin');
 
 module.exports = {
   name: 'mute',
-  description: '🔇 Silently ignore a user from bot commands',
+  description: '🔇 Group-restricted mute (mod level) — deletes the user\u2019s messages',
+  category: 'mod',
+  usage: '/mute @user [minutes]',
+  availability: 'Mods / Owners (bot must be group admin)',
+  where: 'Groups only',
 
   async execute(sock, msg, args, getDatabase, saveDatabase, sender) {
     const chatId = msg.key.remoteJid;
@@ -22,6 +31,15 @@ module.exports = {
       return sock.sendMessage(chatId, {
         text: '❌ *Mods / Owners only.*\n\nYou need mod permissions to use /mute.',
       }, { quoted: msg });
+    }
+    if (!chatId.endsWith('@g.us')) {
+      return sock.sendMessage(chatId, { text: '❌ This command only works in groups.' }, { quoted: msg });
+    }
+
+    // Confirm the bot is a group admin (needed to delete muted messages).
+    const gate = await GroupAdmin.requireGroupAdmin(sock, chatId, sender, db);
+    if (!gate.ok) {
+      return sock.sendMessage(chatId, { text: '❌ I need to be a *group admin* to mute + delete messages.' }, { quoted: msg });
     }
 
     const mentionedJid = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid?.[0];
@@ -36,9 +54,11 @@ module.exports = {
           '📌 Usage:',
           '  /mute @user [minutes]',
           '  /mute @user 60     (mute 60 min)',
-          '  /mute @user        (mute indefinitely)',
+          '  /mute @user        (mute until /unmute)',
           '',
           'Reply to their message and type /mute [minutes].',
+          '',
+          '_Muted users have all their messages deleted here._',
         ].join('\n'),
       }, { quoted: msg });
     }
@@ -46,7 +66,7 @@ module.exports = {
     if (Mod.bare(targetId) === Mod.bare(sender)) {
       return sock.sendMessage(chatId, { text: '❌ You cannot mute yourself!' }, { quoted: msg });
     }
-    if (Mod.isProtected(db, targetId)) {
+    if (GroupAdmin.isProtected(db, targetId)) {
       return sock.sendMessage(chatId, {
         text: '❌ That user is an *Owner/Co-Owner/Mod* — you cannot mute them.',
       }, { quoted: msg });
@@ -55,11 +75,11 @@ module.exports = {
     const duration = parseInt(args.find((a) => /^\d+$/.test(a)));
     const durationText = duration > 0 ? `${duration} min` : 'until /unmute';
 
-    Mod.muteUser(db, targetId, sender, duration || 0);
+    Mod.groupMute(db, chatId, targetId, sender, duration || 0);
     saveDatabase();
 
     const u = Mod.getUser(db, targetId);
-    await sock.sendMessage(chatId, {
+    return sock.sendMessage(chatId, {
       text: [
         '━━━━━━━━━━━━━━━━━━━━━━━━━━━',
         '🔇 *USER MUTED* 🔇',
@@ -68,12 +88,10 @@ module.exports = {
         `⏰ Duration: ${durationText}`,
         `👮 By: @${Mod.bare(sender)}`,
         '━━━━━━━━━━━━━━━━━━━━━━━━━━━',
-        '_Their commands will be silently ignored._',
+        '_Their messages here will be deleted silently._',
         '━━━━━━━━━━━━━━━━━━━━━━━━━━━',
       ].join('\n'),
       mentions: mentionedJid ? [targetId, sender] : [sender],
     }, { quoted: msg });
-
-    // No DM to the muted user (mute is SILENT by design)
   },
 };

@@ -6,7 +6,7 @@ const SkillManager = require('../../rpg/utils/SkillManager');
 // - Up to 5 equipped (7 for Scholars)
 // - All unlocked skills stored in "library" (player.availableSkills)
 // - /skills swap [equipped#] [library#] — instant hotswap
-// - /skills upgrade [#] — spend gold to level a skill (max Lv 5)
+// - /skills upgrade [#] — spend Nexus to level a skill (max Lv 5)
 // - /skills info [name or #] — full details
 // - Skill level visually shown: ⬜⬜⬜⬜⬜ → 🟦🟦🟦⬜⬜ etc
 // ═══════════════════════════════════════════════════════════════
@@ -159,7 +159,7 @@ ${nextUnlock<=90?`💡 Next skill unlocks at Lv *${nextUnlock}*`:''}\n${player.p
       if (lv > 1) txt += `⬆️ Level bonus: +${Math.round((bonuses.dmgMult-1)*100)}% DMG, -${bonuses.costReduction} cost\n`;
       if (info?.effect) txt += `\n💡 EFFECTS:\n${info.effect}\n`;
       if (info?.animation) txt += `\n🎬 ANIMATION:\n${info.animation.split('\n')[0]}\n`;
-      if (upgradeCost) txt += `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n⬆️ Upgrade to Lv ${lv+1}: 💠 ${upgradeCost.toLocaleString()} gold\n/skills upgrade [slot#]\n`;
+      if (upgradeCost) txt += `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n⬆️ Upgrade to Lv ${lv+1}: 💠 ${upgradeCost.toLocaleString()} Nexus\n/skills upgrade [slot#]\n`;
       txt += `━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
       return sock.sendMessage(chatId, { text: txt }, { quoted: msg });
     }
@@ -174,14 +174,14 @@ ${nextUnlock<=90?`💡 Next skill unlocks at Lv *${nextUnlock}*`:''}\n${player.p
       const max = skill.maxLevel || 5;
       if (lv >= max) return sock.sendMessage(chatId, { text: `❌ *${skill.name}* is already max level (${max})!` }, { quoted: msg });
       const cost = skillUpgradeCost(lv);
-      if ((player.gold||0) < cost) return sock.sendMessage(chatId, { text: `❌ Not enough gold!\nNeed: 💠 ${cost.toLocaleString()}\nHave: 💠 ${(player.gold||0).toLocaleString()}` }, { quoted: msg });
+      if ((player.gold||0) < cost) return sock.sendMessage(chatId, { text: `❌ Not enough Nexus!\nNeed: 💠 ${cost.toLocaleString()}\nHave: 💠 ${(player.gold||0).toLocaleString()}` }, { quoted: msg });
       player.gold -= cost;
       skill.level = lv + 1;
       const newBonuses = applySkillLevelBonus(skill);
       const bar = skillLevelBar(skill.level, max);
       saveDatabase();
       return sock.sendMessage(chatId, {
-        text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n⬆️ SKILL UPGRADED!\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n🔮 *${skill.name}*\nLevel ${lv} → *${skill.level}/${max}*\n${bar}\n\n💥 DMG: +${Math.round((newBonuses.dmgMult-1)*100)}% boost\n${player.energyColor||'💙'} Cost: -${newBonuses.costReduction}\n💠 Spent: ${cost.toLocaleString()} gold\n💠 Remaining: ${player.gold.toLocaleString()}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━`
+        text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n⬆️ SKILL UPGRADED!\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n🔮 *${skill.name}*\nLevel ${lv} → *${skill.level}/${max}*\n${bar}\n\n💥 DMG: +${Math.round((newBonuses.dmgMult-1)*100)}% boost\n${player.energyColor||'💙'} Cost: -${newBonuses.costReduction}\n💠 Spent: ${cost.toLocaleString()} Nexus\n💠 Remaining: ${player.gold.toLocaleString()}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━`
       }, { quoted: msg });
     }
 

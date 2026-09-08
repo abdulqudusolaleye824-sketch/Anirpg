@@ -17,7 +17,7 @@ const CHALLENGE_POOL = [
   { id:'casino_win_1', type:'casino_win',    target:1,  desc:'Win at casino once',     emoji:'💎',  rewards:{ gold:2500,  crystals:25 } },
   // Economy challenges
   { id:'rob_1',        type:'rob_attempt',   target:1,  desc:'Attempt to rob someone', emoji:'🦹',  rewards:{ gold:500,   crystals:10 } },
-  { id:'send_gold',    type:'send_gold',     target:1,  desc:'Send gold to a player',  emoji:'💸',  rewards:{ gold:300,   crystals:5  } },
+  { id:'send_gold',    type:'send_gold',     target:1,  desc:'Send Nexus to a player',  emoji:'💸',  rewards:{ gold:300,   crystals:5  } },
   // Boss challenges
   { id:'boss_1',       type:'boss_kill',     target:1,  desc:'Defeat a World Boss',    emoji:'👹',  rewards:{ gold:8000,  crystals:100} },
   { id:'skill_use_5',  type:'skill_use',     target:5,  desc:'Use skills 5 times',     emoji:'✨',  rewards:{ gold:500,   crystals:8  } },

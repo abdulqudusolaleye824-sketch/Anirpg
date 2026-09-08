@@ -4,7 +4,7 @@ const DC = require('../../rpg/utils/DailyChallenges');
 
 module.exports = {
   name: 'rob',
-  description: 'Attempt to steal gold from another player (RISKY!)',
+  description: 'Attempt to steal Nexus from another player (RISKY!)',
   
   async execute(sock, msg, args, getDatabase, saveDatabase, sender) {
     const chatId = msg.key.remoteJid;
@@ -40,9 +40,9 @@ module.exports = {
 📜 HOW IT WORKS
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━
 🎯 Success Rate: 40%
-💠 Steal: 5-15% of their gold
-❌ Fail: Lose 5-10% of YOUR gold (max 5,000)
-🏦 Bank gold is SAFE
+💠 Steal: 5-15% of their Nexus
+❌ Fail: Lose 5-10% of YOUR Nexus (max 5,000)
+🏦 Bank Nexus is SAFE
 ⏰ 5 minute cooldown
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━
 📌 USAGE
@@ -73,7 +73,7 @@ Or mention them:
       if (ownerPlayer) updatePlayerNexus(ownerPlayer, actualReverse, saveDatabase);
       saveDatabase();
       return sock.sendMessage(chatId, {
-        text: `⚠️ *BIG MISTAKE!* ⚠️\n\nYou tried to rob the Owner...\n\n👑 The Owner's guards caught you instantly!\n\n💸 They took *${actualReverse} gold* from YOU as punishment!\n💠 Your Nexus: ${thief.gold || 0}\n\n😂 Maybe rob someone... safer next time.`
+        text: `⚠️ *BIG MISTAKE!* ⚠️\n\nYou tried to rob the Owner...\n\n👑 The Owner's guards caught you instantly!\n\n💸 They took *${actualReverse} Nexus* from YOU as punishment!\n💠 Your Nexus: ${thief.gold || 0}\n\n😂 Maybe rob someone... safer next time.`
       }, { quoted: msg });
     }
 
@@ -93,14 +93,14 @@ Or mention them:
       }, { quoted: msg });
     }
 
-    // Check if thief has gold
+    // Check if thief has Nexus
     if ((thief.gold || 0) < 100) {
       return sock.sendMessage(chatId, { 
-        text: '❌ You need at least 100 gold to attempt a steal!\n\n(Risk: You might lose 20% if you fail)'
+        text: '❌ You need at least 100 Nexus to attempt a steal!\n\n(Risk: You might lose 20% if you fail)'
       }, { quoted: msg });
     }
 
-    // Check if target has gold (wallet only — banked gold is safe)
+    // Check if target has Nexus (wallet only — banked Nexus is safe)
     const targetNexus = target.gold || 0;
 
     // Get banked amount for flavour message
@@ -139,14 +139,14 @@ Or mention them:
     const success = roll < successChance;
 
     // ============================================
-    // SUCCESS - Steal gold
+    // SUCCESS - Steal Nexus
     // ============================================
     if (success) {
       const stealPercent = 5 + Math.random() * 10; // 5-15%
       const stolenNexus = Math.floor(targetNexus * (stealPercent / 100));
       const actualStolen = Math.min(stolenNexus, targetNexus); // Can't steal more than they have
 
-      // Transfer gold
+      // Transfer Nexus
       updatePlayerNexus(target, -actualStolen, saveDatabase);
       updatePlayerNexus(thief, actualStolen, saveDatabase);
 
@@ -163,7 +163,7 @@ Or mention them:
 
 You snuck into ${target.name}'s vault and made off with the loot!
 
-💠 Stolen: ${actualStolen} gold
+💠 Stolen: ${actualStolen} Nexus
 🎲 Success Rate: ${successChance.toFixed(1)}%
 🎯 Your Roll: ${roll.toFixed(1)}
 
@@ -178,7 +178,7 @@ You snuck into ${target.name}'s vault and made off with the loot!
 
 You picked ${target.name}'s pocket with incredible finesse!
 
-💠 Stolen: ${actualStolen} gold
+💠 Stolen: ${actualStolen} Nexus
 🎲 Success Rate: ${successChance.toFixed(1)}%
 🎯 Your Roll: ${roll.toFixed(1)}
 
@@ -192,7 +192,7 @@ You picked ${target.name}'s pocket with incredible finesse!
 
 ${target.name} didn't see it coming!
 
-💠 Stolen: ${actualStolen} gold
+💠 Stolen: ${actualStolen} Nexus
 🎲 Success Rate: ${successChance.toFixed(1)}%
 🎯 Your Roll: ${roll.toFixed(1)}
 
@@ -200,7 +200,7 @@ ${target.name} didn't see it coming!
 💼 Your Nexus: ${thief.gold || 0} (+${actualStolen})
 💔 ${target.name}'s Nexus: ${target.gold || 0} (-${actualStolen})
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🎯 You've stolen ${thief.crimes.totalStolen} total gold!`
+🎯 You've stolen ${thief.crimes.totalStolen} total Nexus!`
       ];
 
       const randomMessage = successMessages[Math.floor(Math.random() * successMessages.length)];
@@ -208,12 +208,12 @@ ${target.name} didn't see it coming!
     }
 
     // ============================================
-    // FAILURE - Lose gold as penalty (CAPPED!)
+    // FAILURE - Lose Nexus as penalty (CAPPED!)
     // ============================================
     else {
       const lossPercent = 5 + Math.random() * 5; // 5-10% loss
       const calculatedLoss = Math.floor((thief.gold || 0) * (lossPercent / 100));
-      const lostNexus = Math.min(calculatedLoss, 5000); // CAP at 5,000 gold max loss!
+      const lostNexus = Math.min(calculatedLoss, 5000); // CAP at 5,000 Nexus max loss!
 
       updatePlayerNexus(thief, -lostNexus, saveDatabase);
 
@@ -229,7 +229,7 @@ ${target.name} didn't see it coming!
 
 ${target.name} caught you red-handed!
 
-❌ Lost: ${lostNexus} gold (${lossPercent.toFixed(1)}% penalty, max 5k)
+❌ Lost: ${lostNexus} Nexus (${lossPercent.toFixed(1)}% penalty, max 5k)
 🎲 Success Rate: ${successChance.toFixed(1)}%
 🎯 Your Roll: ${roll.toFixed(1)}
 
@@ -244,13 +244,13 @@ ${target.name} caught you red-handed!
 
 The guards spotted you sneaking around!
 
-❌ Lost: ${lostNexus} gold (${lossPercent.toFixed(1)}% penalty, max 5k)
+❌ Lost: ${lostNexus} Nexus (${lossPercent.toFixed(1)}% penalty, max 5k)
 🎲 Success Rate: ${successChance.toFixed(1)}%
 🎯 Your Roll: ${roll.toFixed(1)}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━
 💸 Your Nexus: ${thief.gold || 0} (-${lostNexus})
-🛡️ ${target.name}'s gold is safe!
+🛡️ ${target.name}'s Nexus is safe!
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━
 📊 Failures: ${thief.crimes.failed}
 ⏰ Cooldown: 5 minutes`,
@@ -259,7 +259,7 @@ The guards spotted you sneaking around!
 
 You tripped over your own feet!
 
-❌ Lost: ${lostNexus} gold (${lossPercent.toFixed(1)}% penalty, max 5k)
+❌ Lost: ${lostNexus} Nexus (${lossPercent.toFixed(1)}% penalty, max 5k)
 🎲 Success Rate: ${successChance.toFixed(1)}%
 🎯 Your Roll: ${roll.toFixed(1)}
 

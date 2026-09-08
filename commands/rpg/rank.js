@@ -47,7 +47,7 @@ function calcPower(p) {
   const artifacts = Object.values(p.artifacts?.equipped || {})
     .filter(Boolean).length;
   const weapon    = p.weapon?.bonus || p.weapon?.attack || 0;
-  const gold      = p.gold || 0;
+  const Nexus      = p.gold || 0;
 
   const parts = {
     level:     lvl       * 50,

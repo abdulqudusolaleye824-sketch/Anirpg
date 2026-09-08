@@ -1,32 +1,29 @@
 /**
- * /kick — Remove a user from the group (mods + owners only). Bot must be admin.
- *   /kick @user   → target by mention
- *   /kick          → target the replied-to user
+ * /kick (alias /remove) — Remove a user from the group.
+ * Group-admin tier: the user AND the bot must both be group admins.
+ * Owners / Co-Owners may use it even if they're not a group admin.
  */
 
 'use strict';
 
 const Mod = require('../../rpg/utils/ModerationUtils');
+const GroupAdmin = require('../../rpg/utils/GroupAdmin');
 
 module.exports = {
   name: 'kick',
-  description: '👢 Kick user from the group',
+  aliases: ['remove'],
+  description: '👢 Kick a user from the group',
+  category: 'admin',
+  usage: '/kick @user    (or reply to their message)',
+  availability: 'Group admins (bot must be admin)',
+  where: 'Groups only',
 
   async execute(sock, msg, args, getDatabase, saveDatabase, sender) {
     const chatId = msg.key.remoteJid;
     const db = getDatabase();
 
-    if (!Mod.canModerate(db, sender)) {
-      return sock.sendMessage(chatId, {
-        text: '❌ *Mods / Owners only.*\n\nYou need mod permissions to use /kick.',
-      }, { quoted: msg });
-    }
-
-    if (!chatId.endsWith('@g.us')) {
-      return sock.sendMessage(chatId, {
-        text: '❌ This command only works in groups!',
-      }, { quoted: msg });
-    }
+    const gate = await GroupAdmin.requireGroupAdmin(sock, chatId, sender, db);
+    if (!gate.ok) return sock.sendMessage(chatId, { text: gate.err }, { quoted: msg });
 
     const mentionedJid = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid?.[0];
     const quotedParticipant = msg.message?.extendedTextMessage?.contextInfo?.participant;
@@ -34,20 +31,14 @@ module.exports = {
 
     if (!targetId) {
       return sock.sendMessage(chatId, {
-        text: [
-          '👢 *KICK A USER*',
-          '',
-          '📌 Usage: /kick @user',
-          '',
-          'Reply to their message and type /kick.',
-        ].join('\n'),
+        text: '👢 *KICK A USER*\n\n📌 Usage: /kick @user\n\nReply to their message and type /kick.',
       }, { quoted: msg });
     }
 
     if (Mod.bare(targetId) === Mod.bare(sender)) {
       return sock.sendMessage(chatId, { text: '❌ You cannot kick yourself!' }, { quoted: msg });
     }
-    if (Mod.isProtected(db, targetId)) {
+    if (GroupAdmin.isProtected(db, targetId)) {
       return sock.sendMessage(chatId, {
         text: '❌ That user is an *Owner/Co-Owner/Mod* — you cannot kick them.',
       }, { quoted: msg });
@@ -56,7 +47,7 @@ module.exports = {
     try {
       await sock.groupParticipantsUpdate(chatId, [targetId], 'remove');
       const u = Mod.getUser(db, targetId);
-      await sock.sendMessage(chatId, {
+      return sock.sendMessage(chatId, {
         text: [
           '━━━━━━━━━━━━━━━━━━━━━━━━━━━',
           '👢 *USER KICKED* 👢',

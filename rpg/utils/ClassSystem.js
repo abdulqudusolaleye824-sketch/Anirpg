@@ -267,13 +267,56 @@ const MIN_AWAKEN_XP = 50000;
 const MAX_AWAKEN_XP = 150000;
 
 function checkClassAwakening(player) {
-  if (player.class) return { shouldAwaken: false };
-  const totalXp = player.xp || 0;
+  if (!player || player.class) return { shouldAwaken: false };
+  // Use LIFETIME XP (player.totalXp) — level-progress `player.xp` resets every
+  // level-up, so a 50k–150k threshold would never trigger on the old counter.
+  const totalXp = player.totalXp || 0;
   if (!player.classAwakeningThreshold) {
     player.classAwakeningThreshold = MIN_AWAKEN_XP + Math.floor(Math.random() * (MAX_AWAKEN_XP - MIN_AWAKEN_XP));
   }
   if (totalXp >= player.classAwakeningThreshold) return { shouldAwaken: true };
   return { shouldAwaken: false };
+}
+
+// ── Awaken a class (if the player's lifetime XP crossed their threshold) ─────
+// Called from SilentXP.awardXP on every XP grant. Assigns a random class the
+// first time cumulative XP crosses the per-player 50k–150k threshold.
+function tryClassAwaken(player, sock, chatId) {
+  if (!player || player.class) return null;
+  const { shouldAwaken } = checkClassAwakening(player);
+  if (!shouldAwaken) return null;
+
+  const className = rollClassAwakening();
+  applyClassToPlayer(player, className);
+  player.class           = className;
+  player.classBase       = player.classBase || className;
+  player.classAssignedAt = Date.now();
+  player.classAwakenedAt = Date.now();
+
+  // Fire-and-forget aura bonus + announcement (never block XP award).
+  try {
+    const { AuraSystem } = require('./AuraSystem');
+    AuraSystem.addAura(player, 'classUnlock');
+  } catch (e) { /* non-fatal */ }
+
+  if (sock && chatId) {
+    const shown = player.monsterVariant?.name || className;
+    sock.sendMessage(chatId, {
+      text: [
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        `🌋 *CLASS AWAKENING!*`,
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        ``,
+        `${player.name}, you've been on a long grind. The gates within you now open.`,
+        ``,
+        `🎭 *Class:* **${shown}**`,
+        `${player.classQuality ? `✨ Quality: ${player.classQuality}%` : ''}`.trim().length ? `✨ Quality: ${player.classQuality}%` : '',
+        ``,
+        `You have awakened as a **${shown}** hunter. Your class skills are now active.`,
+      ].filter(l => l !== '').join('\n'),
+    }).catch(() => {});
+  }
+  return className;
 }
 
 // ── Format class info for display ────────────────────────────────────────────
@@ -333,6 +376,7 @@ module.exports = {
   rollMonsterVariant,
   applyClassToPlayer,
   checkClassAwakening,
+  tryClassAwaken,
   formatClassInfo,
   getTier,
   listByTier,

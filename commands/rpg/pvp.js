@@ -11,7 +11,6 @@ const LevelUpManager      = require('../../rpg/utils/LevelUpManager');
 const AchievementManager  = require('../../rpg/utils/AchievementManager');
 const PvpExtra = require('./pvp_additions');
 let GuildWar; try { GuildWar = require('./guildwar'); } catch(e) {}
-let QuestManager; try { QuestManager = require('../../rpg/utils/QuestManager'); } catch(e) {}
 let SeasonManager; try { SeasonManager = require('../../rpg/utils/SeasonManager'); } catch(e) {}
 
 // ═══════════════════════════════════════════════════════════════
@@ -248,7 +247,7 @@ function processBuffDurations(entity) {
 }
 
 function getClassName(player) {
-  return typeof player.class === 'object' ? player.class.name : (player.class || 'Warrior');
+  return typeof player.class === 'object' ? player.class.name : (player.class  || 'Awaiting');
 }
 
 function getTotalAtk(player) {
@@ -1170,7 +1169,7 @@ async function executeBothActions(sock, chatId, p1, p2, db, save, sender) {
 
     // ── DRAW: both dead simultaneously ──────────────────────
     if (p1.stats.hp<=0 && p2.stats.hp<=0) {
-      // Split gold reward, no ELO change, no win/loss recorded
+      // Split Nexus reward, no ELO change, no win/loss recorded
       const drawNexus = 50 + Math.floor((p1.level + p2.level) * 2);
       p1.gold = (p1.gold||0) + drawNexus;
       p2.gold = (p2.gold||0) + drawNexus;
@@ -1350,7 +1349,7 @@ async function handleVictory(sock, chatId, winner, loser, wId, lId, db, save, wS
   loser.stats.hp=Math.floor(loser.stats.maxHp*0.15);
 
   // ── GOLD SINK: 5% death penalty on loser ─────────────────
-  // Cap player gold at 100M first to prevent runaway numbers
+  // Cap player Nexus at 100M first to prevent runaway numbers
   if ((loser.gold || 0) > 100000000) loser.gold = 100000000;
   if ((winner.gold || 0) > 100000000) winner.gold = 100000000;
   const deathTax = Math.floor((loser.gold||0) * 0.05);
@@ -1389,16 +1388,6 @@ async function handleVictory(sock, chatId, winner, loser, wId, lId, db, save, wS
   if (loser.pvpHistory.length  > 10) loser.pvpHistory  = loser.pvpHistory.slice(0, 10);
 
   try { const pa=AchievementManager.track(winner,'pvp_wins',1); if(pa.length>0){const note=AchievementManager.buildNotification(pa);if(note)try{await sock.sendMessage(wId,{text:note});}catch(e){}} } catch(e){}
-
-  // ── Quest progress tracking (#2) ────────────────────────────
-  try {
-    if (QuestManager) {
-      QuestManager.updateProgress(wId, { type: 'pvp_win', count: 1 });
-      QuestManager.updateProgress(wId, { type: 'pvp_participate', count: 1 });
-      QuestManager.updateProgress(wId, { type: 'pvp_streak', streak: winner.pvpStreak });
-      QuestManager.updateProgress(lId, { type: 'pvp_participate', count: 1 });
-    }
-  } catch(e) {}
 
   // ── Battle Pass XP + Daily challenge tracking
   try { BP.addPassXP(winner,'pvp_win'); BP.addPassXP(loser,'pvp_participate'); } catch(e) {}
@@ -1439,7 +1428,7 @@ async function handleVictory(sock, chatId, winner, loser, wId, lId, db, save, wS
   } catch(e) {}
 
   const rankUpMsg=rankUp?`\n\n🎊 *RANK UP!*\n${rankBefore.emoji} ${rankBefore.name} → ${rankAfter.emoji} ${rankAfter.name}!`:'';
-  const wClass=typeof winner.class==='object'?winner.class.name:(winner.class||'Warrior');
+  const wClass=typeof winner.class==='object'?winner.class.name:(winner.class || 'Awaiting');
   const finisher=PvpExtra.getKillFinisher(wClass);
   const wTitleDisplay = TitleSystem ? TitleSystem.getTitleDisplay(winner) : '';
   const lTitleDisplay = TitleSystem ? TitleSystem.getTitleDisplay(loser) : '';
@@ -1810,7 +1799,7 @@ module.exports = {
     if (action==='bet') {
       const amount=parseInt(args[1]); const targetName=args[2]?.toLowerCase();
       if (isNaN(amount)||amount<10) return sock.sendMessage(chatId,{text:'❌ Usage: /pvp bet [amount] [name]\nMin: 10 Ne'},{quoted:msg});
-      if ((player.gold||0)<amount) return sock.sendMessage(chatId,{text:`❌ Not enough gold!`},{quoted:msg});
+      if ((player.gold||0)<amount) return sock.sendMessage(chatId,{text:`❌ Not enough Nexus!`},{quoted:msg});
       if (!targetName) return sock.sendMessage(chatId,{text:'❌ Specify who to bet on!'},{quoted:msg});
 
       const allBattles=Object.entries(db.users).filter(([id,p])=>p.pvpBattle).map(([id,p])=>({id,p}));

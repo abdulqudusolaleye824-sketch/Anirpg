@@ -104,8 +104,8 @@ Opened by: ${player.name}
 🎲 /casino dice [bet] [over/under] [#]
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━
-💠 Min bet: 50 gold
-💠 Max bet: 30,000 gold
+💠 Min bet: 50 Nexus
+💠 Max bet: 30,000 Nexus
 ⏱️ Cooldown: 3 seconds
 
 🎉 Good luck everyone! 🎉
@@ -255,8 +255,8 @@ Example: /casino open 30
 🏆 Biggest Win: ${player.casino.biggestWin}
 💎 Jackpots Hit: ${player.casino.jackpotsHit}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━
-⚠️ Min bet: 50 gold
-⚠️ Max bet: 30,000 gold
+⚠️ Min bet: 50 Nexus
+⚠️ Max bet: 30,000 Nexus
 ⏱️ Cooldowns: Slots 30s • Blackjack 15s • Roulette 20s • Dice 10s
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━`
       }, { quoted: msg });
@@ -281,19 +281,19 @@ Example: /casino open 30
     // Validate bet
     if (!betAmount || isNaN(betAmount) || betAmount < 50) {
       return sock.sendMessage(chatId, { 
-        text: '❌ Minimum bet is 50 gold!' 
+        text: '❌ Minimum bet is 50 Nexus!' 
       }, { quoted: msg });
     }
 
     if (betAmount > 30000) {
       return sock.sendMessage(chatId, { 
-        text: '❌ Maximum bet is 30,000 gold!' 
+        text: '❌ Maximum bet is 30,000 Nexus!' 
       }, { quoted: msg });
     }
 
     if ((player.gold || 0) < betAmount) {
       return sock.sendMessage(chatId, { 
-        text: `❌ Not enough gold!\n\nYou have: ${player.gold || 0}\nNeed: ${betAmount}` 
+        text: `❌ Not enough Nexus!\n\nYou have: ${player.gold || 0}\nNeed: ${betAmount}` 
       }, { quoted: msg });
     }
 
@@ -364,7 +364,7 @@ Example: /casino open 30
         message = `❌ No luck this time...`;
       }
 
-      // Update gold
+      // Update Nexus
       updatePlayerNexus(player, winAmount, saveDatabase);
       // Log casino transaction
       if (winAmount > 0) {
@@ -401,9 +401,9 @@ Example: /casino open 30
 ${message}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━
-💠 Bet: ${betAmount} gold
+💠 Bet: ${betAmount} Nexus
 ${winAmount >= 0 ? `💵 Won: ${winAmount} gold` : `💸 Lost: ${Math.abs(winAmount)} gold`}
-💼 Balance: ${player.gold || 0} gold
+💼 Balance: ${player.gold || 0} Nexus
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━${isJackpot ? '\n🏆 JACKPOT WINNER! 🏆' : ''}`;
 
       // ── Multi-message fan-out: header → spinning → reels → verdict ──
@@ -521,7 +521,7 @@ ${winAmount >= 0 ? `💵 Won: ${winAmount} gold` : `💸 Lost: ${Math.abs(winAmo
         winAmount = 0;
       }
 
-      // Update gold
+      // Update Nexus
       updatePlayerNexus(player, winAmount, saveDatabase);
       // Log casino transaction
       if (winAmount > 0) {
@@ -560,9 +560,9 @@ ${winAmount >= 0 ? `💵 Won: ${winAmount} gold` : `💸 Lost: ${Math.abs(winAmo
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ${result}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━
-💠 Bet: ${betAmount} gold
+💠 Bet: ${betAmount} Nexus
 ${winAmount > 0 ? `💵 Won: ${winAmount} gold` : winAmount < 0 ? `💸 Lost: ${Math.abs(winAmount)} gold` : `➖ No change`}
-💼 Balance: ${player.gold || 0} gold
+💼 Balance: ${player.gold || 0} Nexus
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
 
       // ── Multi-message fan-out: header → deal → reveal → verdict ──
@@ -672,7 +672,7 @@ even - Even numbers (2x)
 
       const winAmount = won ? betAmount * multiplier : -betAmount;
 
-      // Update gold
+      // Update Nexus
       updatePlayerNexus(player, winAmount, saveDatabase);
       // Log casino transaction
       if (winAmount > 0) {
@@ -714,9 +714,9 @@ Result: ${spin} (${spin === 0 ? 'Green' : isRed ? 'Red' : 'Black'})
 
 ${won ? `🎉 YOU WIN! ${multiplier}x payout! 🎉` : `❌ Better luck next time!`}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━
-💠 Bet: ${betAmount} gold
+💠 Bet: ${betAmount} Nexus
 ${winAmount > 0 ? `💵 Won: ${winAmount} gold` : `💸 Lost: ${Math.abs(winAmount)} gold`}
-💼 Balance: ${player.gold || 0} gold
+💼 Balance: ${player.gold || 0} Nexus
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
 
       // ── Multi-message fan-out: header → spin → ball drops → verdict ──
@@ -817,7 +817,7 @@ ${winAmount > 0 ? `💵 Won: ${winAmount} gold` : `💸 Lost: ${Math.abs(winAmou
       // Math.floor at target=1 or 99 produces ~0.99x which would lose money on a "win"
       const winAmount = won ? Math.max(betAmount + 1, Math.floor(betAmount * multiplier)) : -betAmount;
 
-      // Update gold
+      // Update Nexus
       updatePlayerNexus(player, winAmount, saveDatabase);
       // Log casino transaction
       if (winAmount > 0) {
@@ -856,10 +856,10 @@ ${winAmount > 0 ? `💵 Won: ${winAmount} gold` : `💸 Lost: ${Math.abs(winAmou
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ${won ? `✅ YOU WIN! Roll is ${prediction} ${target}!` : `❌ YOU LOSE! Roll is not ${prediction} ${target}!`}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━
-💠 Bet: ${betAmount} gold
+💠 Bet: ${betAmount} Nexus
 🎰 Multiplier: ${multiplier.toFixed(2)}x
 ${winAmount > 0 ? `💵 Won: ${winAmount} gold` : `💸 Lost: ${Math.abs(winAmount)} gold`}
-💼 Balance: ${player.gold || 0} gold
+💼 Balance: ${player.gold || 0} Nexus
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
 
       // ── Multi-message fan-out: header → roll suspense → result → payout ──

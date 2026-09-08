@@ -5,7 +5,7 @@ const { COOWNER_JID } = require('../../utils/constants');
 
 module.exports = {
   name: 'send',
-  description: 'Send gold or crystals to another hunter',
+  description: 'Send Nexus or crystals to another hunter',
 
   async execute(sock, msg, args, getDatabase, saveDatabase, sender) {
     const chatId = msg.key.remoteJid;
@@ -216,7 +216,7 @@ Or mention them:
           return;
         }
 
-        // Transfer gold
+        // Transfer Nexus
         player.gold = senderNexus - amount;
         recipient.gold = (recipient.gold || 0) + amountAfterFee;
         
@@ -287,8 +287,8 @@ Or mention them:
         player.manaCrystals -= amount;
         recipient.manaCrystals += amountAfterFee;
 
-        // ✅ FEE GOES TO YOU (converted to gold)!
-        const goldFee = fee * 2; // 1 crystal = 2 gold
+        // ✅ FEE GOES TO YOU (converted to Nexus)!
+        const goldFee = fee * 2; // 1 crystal = 2 Nexus
         
         if (!db.users[BOT_OWNER_ID]) {
           db.users[BOT_OWNER_ID] = {

@@ -1,5 +1,6 @@
 module.exports = {
   name: 'help',
+  aliases: ['h'],
   description: 'Display help and command list',
   usage: '/help [command]',
   category: 'system',
@@ -23,7 +24,9 @@ module.exports = {
             c.name
         );
 
-      const command = commandFiles.find(c => c.name === cmdName);
+      const command = commandFiles.find(
+        c => c.name === cmdName || (Array.isArray(c.aliases) && c.aliases.includes(cmdName))
+      );
 
       if (!command) {
         return sock.sendMessage(
@@ -33,6 +36,10 @@ module.exports = {
         );
       }
 
+      const aliases = Array.isArray(command.aliases) && command.aliases.length
+        ? command.aliases.map(a => '/' + a).join(', ')
+        : null;
+
       const detailMessage = `
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━
 📘 *COMMAND DETAILS*
@@ -41,11 +48,9 @@ module.exports = {
 🔹 *Name:* ${command.name}
 📝 *Description:* ${command.description || 'No description available'}
 📌 *Usage:* ${command.usage || `/${command.name}`}
-📂 *Category:* ${command.category || 'general'}
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-💡 Tip:
-Use this command wisely to survive the System.
+${aliases ? `🔁 *Aliases:* ${aliases}\n` : ''}📂 *Category:* ${command.category || 'general'}
+👥 *Who can use:* ${command.availability || 'Everyone'}
+📍 *Where:* ${command.where || 'Any chat'}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━
 `.trim();
 
@@ -83,7 +88,7 @@ Use this command wisely to survive the System.
 /pvp rank       — Your ELO rank & stats
 /pvp history    — Last 10 match results
 /pvp watch [@name] — Spectate an active battle
-/pvp bet [amt] [name] — Bet gold on a fighter
+/pvp bet [amt] [name] — Bet Nexus on a fighter
 
 🏆 *RANKINGS*
 /leaderboard pvp — Top ELO fighters
@@ -93,7 +98,7 @@ Use this command wisely to survive the System.
 • Pets give passive ATK/DEF/SPD bonus in battle
 • Chain same actions for combo bonuses
 • At ≤20% HP you enter RAGE MODE (+30% ATK)
-• Death = lose 5% of your gold
+• Death = lose 5% of your Nexus
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━` }, { quoted: msg });
     }
 
@@ -140,7 +145,7 @@ Use this command wisely to survive the System.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 💸 *SENDING RESOURCES*
-/send gold @user [amt]     — Send gold (5% fee)
+/send Nexus @user [amt]     — Send Nexus (5% fee)
 /send crystals @user [amt] — Send crystals (5% fee)
 /history                   — Your last 10 transactions
 
@@ -164,16 +169,16 @@ Use this command wisely to survive the System.
 /casino dice [bet] [over/under] [#] — 10s cooldown
 
 🏦 *BANK*
-/bank deposit [amt]  — Store gold safely
-/bank withdraw [amt] — Take gold out
+/bank deposit [amt]  — Store Nexus safely
+/bank withdraw [amt] — Take Nexus out
 /bank balance        — Check balance
 
 💡 *GOLD SINKS*
-• PvP death = lose 5% gold (winner gets half)
+• PvP death = lose 5% Nexus (winner gets half)
 • Casino fees, market fees, guild costs
 
 🌐 *COMMUNITY*
-/community — View all Ani R.P.G group links
+/community — View all ✦ 𝐀𝐬𝐭𝐫𝐚™ group links
 /support   — Get support group link
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━` }, { quoted: msg });
     }
@@ -396,34 +401,47 @@ A mysterious force has granted you a *SYSTEM* - a power to grow stronger, to lev
 💡 War Points earned from dungeons, PvP wins, and boss kills!
 
 🌟 *SOCIAL & ECONOMY*
-/send gold @user [amt]  — Send gold to a player
+/send Nexus @user [amt]  — Send Nexus to a player
 /trade                  — Trading system
 /history                — Your last 10 transactions
-/rob @user              — Try to steal gold (risky!)
+/rob @user              — Try to steal Nexus (risky!)
 /leaderboard [level/pvp/gate/boss/wealth] — Rankings
 /stats @user            — Compare stats side-by-side
 /afk [reason]           — Set AFK status (auto-expires 8h)
 /cooldowns              — Check all your active cooldowns
-/community              — View all Ani R.P.G group links
+/community              — View all ✦ 𝐀𝐬𝐭𝐫𝐚™ group links
 /support                — Get support group link in your DM
 
-👑 *ADMIN COMMANDS* (Admins Only)
-/admin - Admin control panel
-/admins - List all admins
-/promote @user - Promote to admin
-/demote @user - Demote admin
-/broadcast [message] - Broadcast to all
-/ban @user [reason] - Ban player
-/unban @user - Unban player
+👑 *GROUP ADMIN COMMANDS* (Group admin + bot admin)
+/kick @user | /remove @user  - Kick a user from the group
+/promote @user               - Promote a user to group admin
+/demote @user                - Demote a user from group admin
+/delete | /del               - Delete a message (reply to it)
+/open                        - Open the group (everyone can chat)
+/close                       - Close the group (admin-only chat)
+
+🔧 *MODERATION* (Mods / Owners)
+/mute @user [minutes]        - Group-restricted mute (deletes their messages)
+/unmute @user                - Unmute in this group
+/ban @user [reason]          - Ban player from the bot
+/unban @user                 - Unban player
+/admin                       - Admin control panel
+/broadcast [message]         - Broadcast to all
+
+💠 *ECONOMY* (Owner/Co-Owner)
+/addpc <amount> @user        - Grant Procoins to a player
+/pc                          - Check Procoin balance
 
 🌐 *COMMUNITY GROUP SETUP* (Owner Only)
-/setgroup show         — View all configured groups
-/setgroup support      — Register this group as support (Ani R.P.G Arise)
-/setgroup pvp          — Register this group as the PvP group
-/setgroup casino       — Register this group as the Casino group
-/setgroup dungeon      — Register this group as the Dungeon group
-/setgroup guild        — Register this group as the Guild group
+/setgroup                    — View all configured groups
+/setgroup <type>             — Register this group (support|pvp|dungeon|casino|guild)
+/setgroup <type> --main      — Register as MAIN group (never expires)
+/setgroup <type> <link>      — Register + set invite link
+/ssub | <name>               — Start 30-day subscription (non-main group)
+/renew                       — Extend subscription by 30 days
+/allowgc <pvp|dungeon>       — Add a feature to this group
 💡 Run each command *inside* the target group. Link auto-fetched!
+💡 /setgc is an alias for /setgroup.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━
 💡 *BEGINNER GUIDE*

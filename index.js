@@ -993,6 +993,24 @@ async function startup() {
     }
   }, 30 * 60 * 1000);
 
+  // ── Weekly guild-hire contract payouts ────────────────────────────────
+  // Auto-deducts each active contract's weekly wage from the guild treasury
+  // and pays the hired hunter once per elapsed week.
+  setInterval(() => {
+    try {
+      const CM = require('./rpg/utils/GuildContractManager');
+      const db = getDatabase();
+      let any = false;
+      for (const guildId of Object.keys(db.guilds || {})) {
+        const res = CM.processWeeklyPay(db, guildId, null);
+        if (res.length) any = true;
+      }
+      if (any) saveDatabase();
+    } catch(e) {
+      console.error('Guild contract payout error:', e.message);
+    }
+  }, 6 * 60 * 60 * 1000); // every 6h — idempotent, catches up elapsed weeks
+
   // ── Spawn ALL configured bots in parallel ─────────────────────
   // No "primary" or "secondary" — every bot is equal. We boot every bot that
   // is either (a) configured via a BOT_* env var OR (b) already linked through

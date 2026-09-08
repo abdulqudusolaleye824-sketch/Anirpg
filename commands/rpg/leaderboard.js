@@ -111,7 +111,7 @@ module.exports = {
 - level  — Top by level
 - gate   — Most gates cleared
 - boss   — Most bosses defeated
-- wealth — Most gold
+- wealth — Most Nexus
 - pvp    — Top ELO fighters
 
 Example: /leaderboard pvp`

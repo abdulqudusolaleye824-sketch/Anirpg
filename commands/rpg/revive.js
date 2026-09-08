@@ -26,7 +26,7 @@ module.exports = {
 You don't have any revive tokens!
 
 🛒 Buy them at /shop
-💠 Price: 200 gold each
+💠 Price: 200 Nexus each
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━`
       }, { quoted: msg });

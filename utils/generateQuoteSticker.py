@@ -30,7 +30,21 @@ def wrap_text(text, font, draw, max_width):
     if line: lines.append(line)
     return lines
 
-def generate(sender_name, quote_text, output_path):
+def load_circular_avatar(avatar_path, size):
+    """Load an image and crop it to a circle (transparent corners)."""
+    try:
+        av = Image.open(avatar_path).convert('RGBA')
+        av = av.resize((size, size), Image.LANCZOS)
+        mask = Image.new('L', (size, size), 0)
+        d = ImageDraw.Draw(mask)
+        d.ellipse((0, 0, size, size), fill=255)
+        out = Image.new('RGBA', (size, size), (0, 0, 0, 0))
+        out.paste(av, (0, 0), mask)
+        return out
+    except Exception:
+        return None
+
+def generate(sender_name, quote_text, output_path, avatar_path=None):
     img  = Image.new('RGBA', (W, H), COLORS['bg'])
     draw = ImageDraw.Draw(img)
     corner = 32
@@ -44,12 +58,27 @@ def generate(sender_name, quote_text, output_path):
         fnt_marks = ImageFont.truetype(FONT_BOLD, 160)
         draw.text((PAD+20, PAD-30), '\u201c', font=fnt_marks, fill=COLORS['marks'])
     except: pass
+
+    # ── Header row: avatar (if available) + name ─────────────────────────────
+    AV = 62
+    AV_X = PAD + 18
+    AV_Y = PAD + 8
+    avatar = load_circular_avatar(avatar_path, AV) if avatar_path else None
+    if avatar is not None:
+        img.paste(avatar, (AV_X, AV_Y), avatar)
+
     fnt_name = ImageFont.truetype(FONT_BOLD, 26)
     name_display = sender_name[:28] + ('...' if len(sender_name) > 28 else '')
-    draw.text((PAD+18, PAD+8), name_display, font=fnt_name, fill=COLORS['name'])
-    name_bbox = draw.textbbox((0,0), name_display, font=fnt_name)
-    div_y = PAD + (name_bbox[3]-name_bbox[1]) + 16
-    draw.line([(PAD+18, div_y), (W-PAD, div_y)], fill=(88,166,255,60), width=1)
+    name_x = AV_X + AV + 12 if avatar is not None else PAD + 18
+    name_y = AV_Y + (AV // 2) - 8  # vertically center name against avatar
+    draw.text((name_x, name_y), name_display, font=fnt_name, fill=COLORS['name'])
+
+    name_bbox = draw.textbbox((0, 0), name_display, font=fnt_name)
+    # Divider sits below whichever is taller: avatar or name text
+    header_bottom = max(AV_Y + AV, name_y + name_bbox[3])
+    div_y = header_bottom + 12
+    draw.line([(PAD, div_y), (W-PAD, div_y)], fill=(88,166,255,60), width=1)
+
     text_x = PAD + 18
     text_y = div_y + 14
     max_text_w = W - text_x - PAD
@@ -70,6 +99,8 @@ def generate(sender_name, quote_text, output_path):
     else:
         size_candidates = [16, 14, 12, 11]
 
+    lines = ['']
+    line_h = 24
     for size in size_candidates:
         fnt_quote = ImageFont.truetype(FONT_REG, size)
         lines = wrap_text(quote_text, fnt_quote, draw, max_text_w)
@@ -88,5 +119,6 @@ def generate(sender_name, quote_text, output_path):
 
 if __name__ == '__main__':
     if len(sys.argv) < 4:
-        print('Usage: script.py <name> <text> <outpath>'); sys.exit(1)
-    generate(sys.argv[1], sys.argv[2], sys.argv[3])
+        print('Usage: script.py <name> <text> <outpath> [avatar_path]'); sys.exit(1)
+    _av = sys.argv[4] if len(sys.argv) > 4 else None
+    generate(sys.argv[1], sys.argv[2], sys.argv[3], _av)

@@ -1,7 +1,7 @@
 // guildwar.js — Guild War System
 // Guilds declare war on each other. War lasts 48 hours.
 // Members earn WAR POINTS by doing dungeons, PvP, boss kills.
-// Winning guild gets gold bonus + exclusive title.
+// Winning guild gets Nexus bonus + exclusive title.
 
 const SeasonManager = require('../../rpg/utils/SeasonManager');
 

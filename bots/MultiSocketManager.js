@@ -194,6 +194,32 @@ function _bootstrapDispatcher(personalityKey, chatId) {
 }
 
 /**
+ * True if `bareNumber` (no device/domain, e.g. "2348012345678") belongs to one
+ * of our OWN connected bots. Used to make sure no bot ever replies to another
+ * bot — every socket receives every group message, so without this, kira's
+ * posts would trigger ryo/astra's handlers.
+ */
+function _isOwnBotNumber(bareNumber, getDatabase) {
+  for (const key of Object.keys(botSockets)) {
+    const sock = botSockets[key];
+    const jid = sock?.user?.id;
+    if (!jid) continue;
+    if (String(jid).split(':')[0].split('@')[0] === bareNumber) return true;
+  }
+  // Also match any bot that was previously linked (e.g. a socket being
+  // re-established during a restart).
+  try {
+    const db = getDatabase?.();
+    if (db && db.linkedBots) {
+      for (const entry of Object.values(db.linkedBots)) {
+        if (entry?.jid && String(entry.jid).split(':')[0].split('@')[0] === bareNumber) return true;
+      }
+    }
+  } catch (e) { /* best effort */ }
+  return false;
+}
+
+/**
  * Return any one connected socket (for AstraLink pairing code requests).
  */
 function getAnySocket() {
@@ -385,6 +411,30 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
     const bareSender = String(sender).split(':')[0].split('@')[0];
     if (db.bannedUsers?.[bareSender] || db.banlist?.[sender] || db.bannedUsers?.[sender]) return;
 
+    // ── BOTS NEVER REPLY TO ANOTHER BOT ─────────────────────────────────────
+    // Every socket receives every group message, so without this a message
+    // posted by one of our own bots would be picked up by the other bots'
+    // handlers and answered. Skip any message sent by one of our own bots.
+    if (_isOwnBotNumber(bareSender, getDatabase)) return;
+
+    // ── GROUP MUTE ENFORCEMENT ──────────────────────────────────────────────
+    // A group-muted user has EVERY message they send (including commands)
+    // silently deleted by the bot, and their commands are ignored. Only the
+    // active bot deletes (so a single copy is removed), but ALL sockets ignore
+    // the muted user so no bot ever responds to them.
+    if (isGroup) {
+      try {
+        const Mod = require('../rpg/utils/ModerationUtils');
+        if (Mod.isGroupMuted(db, chatId, sender)) {
+          const activeKey = PersonalityManager.getActiveBot(chatId);
+          if (activeKey === personalityKey) {
+            try { await sock.sendMessage(chatId, { delete: msg.key }); } catch (e) { /* best effort */ }
+          }
+          return; // never respond to a muted user
+        }
+      } catch (e) { /* best effort */ }
+    }
+
     const config = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'config.json'), 'utf-8'));
     const isCommand = messageText.startsWith(config.prefix);
 
@@ -519,6 +569,15 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
     // checks below already guarantee only the addressed bot replies. Gating
     // this on active-bot was the reason calling a bot by name stopped working
     // in groups where no /start had been run.
+
+    // 💳 Subscription gate (✦ 𝐀𝐬𝐭𝐫𝐚™ groups): a pending or expired group is
+    // silent — including for AI name-calls. (Command replies are handled by
+    // rpgCommandHandler / setgroup flow.)
+    try {
+      const AstralGroups = require('../rpg/utils/AstralGroups');
+      const g = AstralGroups.gate(getDatabase(), chatId);
+      if (!g.allow) return;
+    } catch (e) { /* best effort */ }
 
     const botDisplayName = PersonalityManager.getDisplayName(personalityKey);
     const botJid = sock.user?.id;

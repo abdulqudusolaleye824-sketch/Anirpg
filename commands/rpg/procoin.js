@@ -39,6 +39,7 @@ function initProcoin(player) {
 
 module.exports = {
   name: 'procoin',
+  aliases: ['pc', 'addpc', 'addprocoin'],
   description: '💠 Procoin (PC) — premium currency granted by owner/co-owner only',
   usage: '/pc | /addpc <amount> @user',
   category: 'economy',

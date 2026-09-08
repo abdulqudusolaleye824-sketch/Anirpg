@@ -77,16 +77,6 @@ module.exports = {
     casinoLines.push(`🎰 *Casino:* Slots 30s • Blackjack 15s • Roulette 20s • Dice 10s`);
     lines.push(...casinoLines);
 
-    // ── Quest check ───────────────────────────────────────────
-    const activeQuests = (() => {
-      try {
-        const QM = require('../../rpg/utils/QuestManager');
-        const qdata = QM.getPlayerData ? QM.getPlayerData(sender) : null;
-        return qdata?.active?.length || 0;
-      } catch(e) { return 0; }
-    })();
-    if (activeQuests > 0) lines.push(`📋 *Active Quests:* ${activeQuests} — /quest active`);
-
     return sock.sendMessage(chatId, {
       text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n⏱️ *YOUR COOLDOWNS*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n${lines.join('\n')}\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n❤️ HP: ${player.stats.hp}/${player.stats.maxHp} | 💠 Nexus: ${player.gold || 0}`
     }, { quoted: msg });

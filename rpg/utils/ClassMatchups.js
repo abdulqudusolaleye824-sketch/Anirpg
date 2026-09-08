@@ -122,7 +122,7 @@ function checkEffectResistance(defenderClass, effectType) {
 // Get class name from player object
 function getClassName(player) {
   if (typeof player.class === 'string') return player.class;
-  return player.class?.name || 'Warrior';
+  return player.class?.name  || 'Awaiting';
 }
 
 module.exports = { CLASS_MATCHUPS, getMatchupMultiplier, checkEffectResistance, getClassName };

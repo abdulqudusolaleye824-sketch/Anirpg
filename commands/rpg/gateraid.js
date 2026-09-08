@@ -1,68 +1,35 @@
 // ═══════════════════════════════════════════════════════════════
-// GATERAID — Floor-by-floor combat inside a gate
-// Usage:
-//   /gateraid [GATE-ID] attack        — attack current monster
-//   /gateraid [GATE-ID] skill [name]  — use a skill
-//   /gateraid [GATE-ID] status        — see floor status
-//   /gateraid [GATE-ID] advance       — move to next floor
-//   /gateraid [GATE-ID] boss          — engage the boss
+// GATERAID — Gate code raid (party or solo), floor-by-floor
+//
+//   /gateraid <CODE>                 — enter (auto party/solo)
+//   /gateraid <CODE> join            — join party (guild member/affiliate)
+//   /gateraid <CODE> ready           — mark yourself ready (party)
+//   /gateraid <CODE> start           — leader starts when all ready (party)
+//   /gateraid <CODE> status          — view raid / floor status
+//   /gateraid <CODE> attack          — attack current monster
+//   /gateraid <CODE> skill <name>    — use a skill
+//   /gateraid <CODE> advance         — move to next floor
+//   /gateraid <CODE> boss            — engage the boss
 // ═══════════════════════════════════════════════════════════════
+'use strict';
 
+const GR = require('../../rpg/dungeons/GateRaid');
 const { GateManager, GATE_RANKS } = require('../../rpg/dungeons/GateManager');
 const { AuraSystem } = require('../../rpg/utils/AuraSystem');
-const { AWAKENING_RANKS, calculatePowerRating } = require('../../rpg/utils/SoloLevelingCore');
 const LevelUpManager = require('../../rpg/utils/LevelUpManager');
 const { awardXP } = require('../../rpg/utils/SilentXP');
-const GKM = require('../../rpg/dungeons/GateKeyManager');
 
 const XP_PER_MONSTER = { F:200, E:600, D:1800, C:6000, B:20000, A:70000, S:250000, DISASTER:1000000 };
 const XP_BOSS_MULT = 5;
 
-function getPlayerDamage(player, skillName = null) {
-  const atk = (player.stats?.atk || 10) + (player.equipped?.weapon?.atk || player.equipped?.weapon?.bonus || 0);
-  const magicPower = player.stats?.magicPower || 0;
-
-  if (skillName) {
-    const skill = (player.skills?.active || []).find(s => s.name === skillName);
-    if (skill) {
-      const cd = player.skills?.cooldowns?.[skillName] || 0;
-      if (Date.now() < cd) return { damage: 0, blocked: true, reason: `*${skillName}* is on cooldown!` };
-      if ((player.stats?.energy || 0) < (skill.energyCost || 0)) return { damage: 0, blocked: true, reason: `Not enough energy for *${skillName}*!` };
-
-      let dmg = (skill.damage || 20) + Math.floor((atk + magicPower) * 0.5);
-      const isCrit = Math.random() < (player.stats?.critChance || 2) / 100;
-      if (isCrit) dmg = Math.floor(dmg * (player.stats?.critDamage || 150) / 100);
-      // Deduct energy & set cooldown
-      player.stats.energy = Math.max(0, (player.stats.energy || 0) - (skill.energyCost || 0));
-      if (!player.skills.cooldowns) player.skills.cooldowns = {};
-      player.skills.cooldowns[skillName] = Date.now() + (skill.cooldown || 3) * 1000;
-      return { damage: dmg, isCrit, skillUsed: skill };
-    }
-    return { damage: 0, blocked: true, reason: `Skill *${skillName}* not found.` };
-  }
-
-  // Normal attack
-  let dmg = Math.max(5, atk - 0) * (0.85 + Math.random() * 0.30);
-  const isCrit = Math.random() < (player.stats?.critChance || 2) / 100;
-  if (isCrit) dmg = Math.floor(dmg * (player.stats?.critDamage || 150) / 100);
-  return { damage: Math.floor(dmg), isCrit };
-}
-
-function getMonsterDamage(monster, player) {
-  const def = (player.stats?.def || 5) + (player.equipped?.armor?.def || 0);
-  const raw = Math.max(3, (monster.atk || 10) - Math.floor(def * 0.5));
-  return Math.floor(raw * (0.8 + Math.random() * 0.4));
-}
-
-function getLifestealHeal(player, damage) {
-  const ls = (player.stats?.lifesteal || 0) / 100;
-  return ls > 0 ? Math.floor(damage * ls) : 0;
+function bare(sender) {
+  return GR.GKM.normaliseJid(sender);
 }
 
 module.exports = {
   name: 'gateraid',
   aliases: ['raid', 'gr'],
-  description: '⚔️ Fight inside an active gate raid',
+  description: '⚔️ Run a gate raid with a gate code (party or solo)',
 
   async execute(sock, msg, args, getDatabase, saveDatabase, sender) {
     const chatId = msg.key?.remoteJid;
@@ -70,128 +37,207 @@ module.exports = {
     const player = db.users[sender];
     if (!player) return sock.sendMessage(chatId, { text: '❌ Register first.' }, { quoted: msg });
 
-    // Redirect if not in a dungeon GC
-    if (chatId.endsWith('@g.us') && !GKM.isDungeonGC(chatId)) {
-      const allGCs = GKM.getAllDungeonGCs();
+    // ── Must be in a registered dungeon GC ───────────────────────
+    if (chatId.endsWith('@g.us') && !GR.GKM.isDungeonGC(chatId)) {
+      const allGCs = GR.GKM.getAllDungeonGCs();
       const gcList = Object.values(allGCs);
       if (gcList.length > 0) {
         return sock.sendMessage(chatId, {
-          text: [
-            `❌ *Gate raids must be started in a dungeon GC.*`,
-            ``,
-            `Use this command in your dungeon group instead.`,
-            `Group ID: \`${gcList[0].chatId}\``,
-          ].join('\n'),
+          text: `❌ *Gate raids must be started in a dungeon GC.*\n\nUse this command in your dungeon group instead.\nGroup ID: \`${gcList[0].chatId}\``,
         }, { quoted: msg });
       }
       return sock.sendMessage(chatId, {
-        text: `❌ No dungeon GC registered.\nAsk the owner: */set dungeon --true*`,
+        text: `❌ No dungeon GC registered.\nAsk the owner: */setdungeon*`,
       }, { quoted: msg });
     }
 
-    const gateId = args[0]?.toUpperCase();
-    const action = args[1]?.toLowerCase() || 'status';
+    const code = (args[0] || '').toUpperCase().replace(/^--/, '').trim();
+    const action = (args[1] || '').toLowerCase() || 'enter';
     const skillArg = args.slice(2).join(' ');
 
-    if (!gateId) return sock.sendMessage(chatId, { text: '❌ Usage: /gateraid [GATE-ID] [action]\n\nActions: attack, skill [name], status, advance, boss' }, { quoted: msg });
-
-    const gate = GateManager.getGate(gateId);
-    if (!gate || gate.chatId !== chatId) return sock.sendMessage(chatId, { text: '❌ Gate not found in this chat.' }, { quoted: msg });
-    if (gate.cleared || gate.broken) return sock.sendMessage(chatId, { text: '❌ This gate is no longer active.' }, { quoted: msg });
-    if (!gate.raidStarted) return sock.sendMessage(chatId, { text: `❌ The raid hasn't started yet.\nUse /gates start ${gateId}` }, { quoted: msg });
-    if (!gate.raiders.includes(sender)) return sock.sendMessage(chatId, { text: `❌ You are not part of this raid. Use /gates apply ${gateId}` }, { quoted: msg });
-
-    const rd = GATE_RANKS[gate.rank];
-
-    // ── STATUS ────────────────────────────────────────────────
-    if (action === 'status' || action === 'info') {
-      const floor = gate.currentFloor;
-      const floorMonsters = (gate.monsters || []).filter(m => m.floor === floor && !m.defeated);
-      const totalMonsters = (gate.monsters || []).filter(m => m.floor === floor).length;
-      const bossReady = floor >= gate.totalFloors && floorMonsters.length === 0 && !gate.boss.defeated;
-
-      const lines = [
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-        `${rd.emoji} *${rd.label}* [${gateId}]`,
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-        `🗺️ Floor: *${floor}/${gate.totalFloors}*`,
-        `👾 Monsters: ${totalMonsters - floorMonsters.length}/${totalMonsters} cleared`,
-        bossReady ? `🏆 *BOSS READY — /gateraid ${gateId} boss*` : ``,
-        ``,
-        floorMonsters.length > 0 ? `*Current floor monsters:*` : `✅ Floor cleared!`,
-        ...floorMonsters.slice(0, 5).map(m => `  💀 ${m.name} — HP: ${m.hp}/${m.maxHp}`),
-        floorMonsters.length > 5 ? `  ...and ${floorMonsters.length - 5} more` : ``,
-        ``,
-        `❤️ Your HP: ${player.stats?.hp || 0}/${player.stats?.maxHp || 100}`,
-        `💙 Energy:  ${player.stats?.energy || 0}/${player.stats?.maxEnergy || 100}`,
-        ``,
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-        `⚔️ /gateraid ${gateId} attack`,
-        `🔮 /gateraid ${gateId} skill [name]`,
-        floorMonsters.length === 0 && !bossReady ? `➡️ /gateraid ${gateId} advance` : ``,
-        bossReady ? `🏆 /gateraid ${gateId} boss` : ``,
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-      ].filter(l => l !== null && l !== '').join('\n');
-
-      return sock.sendMessage(chatId, { text: lines }, { quoted: msg });
+    if (!code) {
+      return sock.sendMessage(chatId, {
+        text: [
+          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          `⚔️ *GATE RAID*`,
+          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          `Use your gate code to start a raid.`,
+          ``,
+          `📌 *COMMANDS:*`,
+          `/gateraid <CODE>          — enter (auto party/solo)`,
+          `/gateraid <CODE> join     — join party`,
+          `/gateraid <CODE> ready    — mark ready`,
+          `/gateraid <CODE> start    — start (party leader)`,
+          `/gateraid <CODE> attack   — attack`,
+          `/gateraid <CODE> skill <n>— use skill`,
+          `/gateraid <CODE> advance  — next floor`,
+          `/gateraid <CODE> boss     — boss fight`,
+          `/gateraid <CODE> status   — status`,
+          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          `💡 Guild member → party raid.\n   No-guild hunter → solo raid.\n   Affiliate key → open to everyone.`,
+          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        ].join('\n'),
+      }, { quoted: msg });
     }
 
-    // ── ADVANCE FLOOR ─────────────────────────────────────────
-    if (action === 'advance') {
-      const floor = gate.currentFloor;
-      const floorMonsters = (gate.monsters || []).filter(m => m.floor === floor && !m.defeated);
-      if (floorMonsters.length > 0) return sock.sendMessage(chatId, { text: `❌ Clear all monsters on Floor ${floor} first!` }, { quoted: msg });
-      if (floor >= gate.totalFloors) return sock.sendMessage(chatId, { text: `⚠️ You are on the final floor.\nEngage the boss with /gateraid ${gateId} boss` }, { quoted: msg });
+    // ── Resolve the gate by code ────────────────────────────────
+    const resolved = GR.resolveCode(code);
+    if (!resolved.ok) return sock.sendMessage(chatId, { text: resolved.error }, { quoted: msg });
+    const { key, keyData, gate } = resolved;
 
-      gate.currentFloor++;
-      const nextFloorMonsters = (gate.monsters || []).filter(m => m.floor === gate.currentFloor && !m.defeated);
+    // Bind the raid to this dungeon GC
+    keyData.dungeonChatId = chatId;
+    const gc = GR.GKM.getDungeonGC(chatId);
+    if (gc && gc.activeKeyId && gc.activeKeyId !== key) {
+      return sock.sendMessage(chatId, { text: '❌ This dungeon GC already has an active gate raid. Clear it first.' }, { quoted: msg });
+    }
+    if (gc) gc.activeKeyId = key;
+
+    const rd = GATE_RANKS[gate.rank] || GATE_RANKS['E'];
+
+    // ── ENTER (default) ─────────────────────────────────────────
+    if (action === 'enter' || action === 'open' || action === 'start-raid') {
+      const res = GR.enter(sender, player.name, key, keyData, gate, db);
+      if (!res.ok) return sock.sendMessage(chatId, { text: `❌ ${res.error}` }, { quoted: msg });
       saveDatabase();
 
+      const isOpenKey = !!keyData.isAffiliate;
+      const solo = res.raid.members.length <= 1;
+      return sock.sendMessage(chatId, {
+        text: [
+          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          `${rd.emoji} *${solo ? 'SOLO' : 'PARTY'} RAID — RECRUITING*`,
+          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          `${rd.label} [${gate.id}]`,
+          ``,
+          isOpenKey
+            ? `🔓 *Affiliate key* — open to everyone, no guild required.`
+            : `🏰 *Guild key* — open to the owning guild's members.`,
+          `👑 Leader: *${player.name} (you)*`,
+          ``,
+          `📌 *STEPS:*`,
+          isOpenKey
+            ? `1️⃣ Anyone: /gateraid ${key} join`
+            : `1️⃣ Guild members: /gateraid ${key} join`,
+          `2️⃣ Everyone: /gateraid ${key} ready`,
+          `3️⃣ Leader: /gateraid ${key} start`,
+          ``,
+          `📊 /gateraid ${key} status — see who's ready`,
+          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          `💡 A gate instantly opens when you use a code.`,
+          `   Add friends above, or start solo with just you.`,
+          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        ].join('\n'),
+      }, { quoted: msg });
+    }
+
+    // ── JOIN ────────────────────────────────────────────────────
+    if (action === 'join') {
+      if (!gate.raid) return sock.sendMessage(chatId, { text: '❌ Start the raid first: /gateraid ' + key }, { quoted: msg });
+      const res = GR.join(sender, player.name, gate, db);
+      if (!res.ok) return sock.sendMessage(chatId, { text: `❌ ${res.error}` }, { quoted: msg });
+      saveDatabase();
+      return sock.sendMessage(chatId, {
+        text: `✅ *${player.name}* joined the party!\n👥 Members: ${res.raid.members.length}\n\nMark ready: /gateraid ${key} ready`,
+        mentions: [sender],
+      }, { quoted: msg });
+    }
+
+    // ── READY ───────────────────────────────────────────────────
+    if (action === 'ready') {
+      const res = GR.ready(sender, gate);
+      if (!res.ok) return sock.sendMessage(chatId, { text: `❌ ${res.error}` }, { quoted: msg });
+      saveDatabase();
+      const raid = gate.raid;
+      let txt = `✅ *${player.name}* is ready!\n\n`;
+      raid.members.forEach(m => { txt += `  ${m.id === raid.leader ? '👑' : '⚔️'} ${m.name} ${m.ready ? '✅' : '⏳'}\n`; });
+      if (res.allReadied) txt += `\n🎉 *ALL READY!* Leader: /gateraid ${key} start`;
+      return sock.sendMessage(chatId, { text: txt }, { quoted: msg });
+    }
+
+    // ── START (party) ───────────────────────────────────────────
+    if (action === 'start') {
+      const res = GR.start(sender, keyData, gate, db);
+      if (!res.ok) return sock.sendMessage(chatId, { text: `❌ ${res.error}` }, { quoted: msg });
+      saveDatabase();
+      const raid = res.raid;
+      return sock.sendMessage(chatId, {
+        text: [
+          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          `${rd.emoji} *RAID STARTED!*`,
+          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          `${rd.label} [${gate.id}]`,
+          `🗺️ Floor 1/${gate.totalFloors}`,
+          ``,
+          `👥 *Party (${raid.members.length}):*`,
+          ...raid.members.map(m => `  ${m.id === raid.leader ? '👑' : '⚔️'} ${m.name}`),
+          ``,
+          `⚔️ /gateraid ${key} attack`,
+          `🔮 /gateraid ${key} skill <name>`,
+          `📊 /gateraid ${key} status`,
+          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        ].join('\n'),
+      }, { quoted: msg });
+    }
+
+    // ── STATUS ──────────────────────────────────────────────────
+    if (action === 'status' || action === 'info') {
+      const m = gate.raid?.members?.find(x => x.id === sender);
+      if (!gate.raid && !gate.raiders?.includes(sender)) {
+        return sock.sendMessage(chatId, { text: '❌ Start a raid first with your code.' }, { quoted: msg });
+      }
+      if (gate.raid && !gate.raid.members.some(x => x.id === sender) && !gate.raiders?.includes(sender)) {
+        return sock.sendMessage(chatId, { text: '❌ You are not part of this raid.' }, { quoted: msg });
+      }
+      return sock.sendMessage(chatId, { text: GR.statusOf(gate, db) }, { quoted: msg });
+    }
+
+    // ── ADVANCE ─────────────────────────────────────────────────
+    if (action === 'advance') {
+      if (!inRaid(gate, sender)) return sock.sendMessage(chatId, { text: '❌ You are not in this raid.' }, { quoted: msg });
+      const floor = gate.currentFloor;
+      const floorMonsters = (gate.monsters || []).filter(mm => mm.floor === floor && !mm.defeated);
+      if (floorMonsters.length > 0) return sock.sendMessage(chatId, { text: `❌ Clear all monsters on Floor ${floor} first!` }, { quoted: msg });
+      if (floor >= gate.totalFloors) return sock.sendMessage(chatId, { text: `⚠️ Final floor. Engage the boss with /gateraid ${key} boss` }, { quoted: msg });
+      gate.currentFloor++;
+      const next = (gate.monsters || []).filter(mm => mm.floor === gate.currentFloor && !mm.defeated);
+      saveDatabase();
       return sock.sendMessage(chatId, {
         text: [
           `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
           `➡️ *FLOOR ${gate.currentFloor}*`,
           `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-          ``,
           `「System」 Entering Floor ${gate.currentFloor} of ${gate.totalFloors}...`,
           ``,
-          `👾 *${nextFloorMonsters.length} monsters* on this floor:`,
-          ...nextFloorMonsters.slice(0, 5).map(m => `  💀 ${m.name} — HP: ${m.hp}`),
-          nextFloorMonsters.length > 5 ? `  ...and ${nextFloorMonsters.length - 5} more` : ``,
+          `👾 *${next.length} monsters*:`,
+          ...next.slice(0, 6).map(mm => `  💀 ${mm.name} — HP ${mm.hp}`),
+          next.length > 6 ? `  ...and ${next.length - 6} more` : ``,
           ``,
+          `⚔️ /gateraid ${key} attack`,
           `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-          `⚔️ /gateraid ${gateId} attack`,
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-        ].filter(l => l !== '').join('\n')
+        ].filter(l => l !== '').join('\n'),
       }, { quoted: msg });
     }
 
-    // ── ATTACK / SKILL ────────────────────────────────────────
+    // ── ATTACK / SKILL ──────────────────────────────────────────
     if (action === 'attack' || action === 'skill') {
+      if (!inRaid(gate, sender)) return sock.sendMessage(chatId, { text: '❌ You are not in this raid.' }, { quoted: msg });
       const floor = gate.currentFloor;
-      const floorMonsters = (gate.monsters || []).filter(m => m.floor === floor && !m.defeated);
+      const floorMonsters = (gate.monsters || []).filter(mm => mm.floor === floor && !mm.defeated);
 
       if (floorMonsters.length === 0) {
-        if (floor >= gate.totalFloors) {
-          return sock.sendMessage(chatId, { text: `⚠️ All monsters cleared! Engage the boss:\n/gateraid ${gateId} boss` }, { quoted: msg });
-        }
-        return sock.sendMessage(chatId, { text: `✅ Floor ${floor} cleared!\nAdvance with: /gateraid ${gateId} advance` }, { quoted: msg });
+        if (floor >= gate.totalFloors) return sock.sendMessage(chatId, { text: `⚠️ All monsters cleared! Engage the boss:\n/gateraid ${key} boss` }, { quoted: msg });
+        return sock.sendMessage(chatId, { text: `✅ Floor ${floor} cleared!\nAdvance: /gateraid ${key} advance` }, { quoted: msg });
       }
 
-      // Target first living monster
       const target = floorMonsters[0];
-
-      // Calc damage
       const useSkill = action === 'skill' ? skillArg : null;
-      const result = getPlayerDamage(player, useSkill);
-
+      const result = GR.playerDamage(player, useSkill);
       if (result.blocked) return sock.sendMessage(chatId, { text: `❌ ${result.reason}` }, { quoted: msg });
 
-      // Track damage dealt by this player
       if (!gate.damageDealt) gate.damageDealt = {};
       gate.damageDealt[sender] = (gate.damageDealt[sender] || 0) + result.damage;
 
-      // Apply player damage to monster
       target.hp = Math.max(0, target.hp - result.damage);
 
       const lines = [
@@ -201,93 +247,74 @@ module.exports = {
         `👾 ${target.name} HP: ${target.hp}/${target.maxHp}`,
       ];
 
-      // Monster dies
       if (target.hp <= 0) {
         target.defeated = true;
         gate.monstersKilled = (gate.monstersKilled || 0) + 1;
         if (!player.stats_history) player.stats_history = {};
         player.stats_history.monstersKilled = (player.stats_history.monstersKilled || 0) + 1;
 
-        // XP reward
-        // XP silent
         awardXP(player, 'gate_complete', saveDatabase, sock, chatId);
         lines.push(``, `💀 *${target.name}* defeated!`);
 
-        // Lifesteal
-        const heal = getLifestealHeal(player, result.damage);
-        if (heal > 0) {
-          player.stats.hp = Math.min(player.stats.maxHp, (player.stats.hp || 0) + heal);
-          lines.push(`💚 Lifesteal: +${heal} HP`);
-        }
+        const heal = GR.lifeSteal(player, result.damage);
+        if (heal > 0) { player.stats.hp = Math.min(player.stats.maxHp, (player.stats.hp || 0) + heal); lines.push(`💚 Lifesteal: +${heal} HP`); }
 
-        if (levelResult.leveledUp) {
-          lines.push(`⭐ *LEVEL UP!* → Level ${player.level}`);
-          if (levelResult.classAssigned) lines.push(`🎭 *CLASS ASSIGNED: ${levelResult.classAssigned}*`);
-        }
+        // Final-blow monster drop → the killer
+        const dropLines = GR.monsterKilledBy(gate, target, sender, db);
+        if (dropLines.length) lines.push(...dropLines);
 
-        const remaining = floorMonsters.filter(m => !m.defeated).length - 1;
+        const remaining = floorMonsters.filter(mm => !mm.defeated).length - 1;
         lines.push(``, `👾 *${Math.max(0, remaining)}* monsters remaining on Floor ${floor}`);
 
         if (remaining <= 0) {
-          if (floor >= gate.totalFloors) {
-            lines.push(``, `🏆 *BOSS FLOOR REACHED!*`);
-            lines.push(`/gateraid ${gateId} boss — Engage the boss!`);
-          } else {
-            lines.push(``, `✅ *Floor ${floor} CLEARED!*`);
-            lines.push(`/gateraid ${gateId} advance — Move to Floor ${floor + 1}`);
-          }
+          if (floor >= gate.totalFloors) { lines.push(``, `🏆 *BOSS FLOOR REACHED!*`); lines.push(`/gateraid ${key} boss — Engage the boss!`); }
+          else { lines.push(``, `✅ *Floor ${floor} CLEARED!*`); lines.push(`/gateraid ${key} advance — Floor ${floor + 1}`); }
         }
       } else {
-        // Monster counter-attacks
-        const monsterDmg = getMonsterDamage(target, player);
-        player.stats.hp = Math.max(0, (player.stats.hp || 0) - monsterDmg);
-        lines.push(``, `💢 *${target.name}* counter-attacks!`);
-        lines.push(`Took *${monsterDmg}* damage`);
+        const def = (player.stats?.def || 5) + (player.equipped?.armor?.def || 0);
+        const dmg = GR.monsterDamage(target, def);
+        player.stats.hp = Math.max(0, (player.stats.hp || 0) - dmg);
+        lines.push(``, `💢 *${target.name}* counter-attacks!`, `Took *${dmg}* damage`);
         lines.push(`❤️ Your HP: *${player.stats.hp}/${player.stats.maxHp}*`);
 
-        // Player dies in gate
         if (player.stats.hp <= 0) {
           player.stats.hp = 1;
           player.stats_history = player.stats_history || {};
           player.stats_history.gateDeaths = (player.stats_history.gateDeaths || 0) + 1;
-          // Lose some crystals
-          const crystalLoss = Math.floor((player.manaCrystals || 0) * 0.15);
-          player.manaCrystals = Math.max(0, (player.manaCrystals || 0) - crystalLoss);
-          AuraSystem.removeAura(player, 'deathInGate');
-          lines.push(``, `💀 *YOU FELL IN THE GATE!*`);
-          lines.push(`Lost ${crystalLoss.toLocaleString()} 💎 Mana Stones`);
-          lines.push(`-30 ✨ Aura`);
-          lines.push(`You fled from the gate with 1 HP.`);
+          const loss = Math.floor((player.manaCrystals || 0) * 0.15);
+          player.manaCrystals = Math.max(0, (player.manaCrystals || 0) - loss);
+          lines.push(``, `💀 *YOU FELL IN THE GATE!*`, `Lost ${loss.toLocaleString()} 💎`, `You fled with 1 HP.`);
           // Remove from raid
-          gate.raiders = gate.raiders.filter(r => r !== sender);
-          gate.externalRaiders = gate.externalRaiders.filter(r => r !== sender);
+          if (gate.raid) gate.raid.members = gate.raid.members.filter(m => m.id !== sender);
+          gate.raiders = (gate.raiders || []).filter(r => r !== sender);
           saveDatabase();
           return sock.sendMessage(chatId, { text: lines.join('\n') }, { quoted: msg });
         }
       }
 
+      // Sync HP to party view
+      const pm = gate.raid?.members?.find(m => m.id === sender);
+      if (pm) { pm.hp = player.stats.hp; pm.energy = player.stats.energy; }
+
       saveDatabase();
       return sock.sendMessage(chatId, { text: lines.join('\n') }, { quoted: msg });
     }
 
-    // ── BOSS ──────────────────────────────────────────────────
+    // ── BOSS ────────────────────────────────────────────────────
     if (action === 'boss') {
+      if (!inRaid(gate, sender)) return sock.sendMessage(chatId, { text: '❌ You are not in this raid.' }, { quoted: msg });
       const floor = gate.currentFloor;
-      const floorMonsters = (gate.monsters || []).filter(m => m.floor === floor && !m.defeated);
+      const floorMonsters = (gate.monsters || []).filter(mm => mm.floor === floor && !mm.defeated);
       if (floorMonsters.length > 0) return sock.sendMessage(chatId, { text: `❌ Clear all floor ${floor} monsters first!` }, { quoted: msg });
       if (floor < gate.totalFloors) return sock.sendMessage(chatId, { text: `❌ Reach Floor ${gate.totalFloors} before engaging the boss.` }, { quoted: msg });
       if (gate.boss.defeated) return sock.sendMessage(chatId, { text: '✅ Boss already defeated!' }, { quoted: msg });
 
       const boss = gate.boss;
-      const useSkill = skillArg || null;
-      const result = getPlayerDamage(player, useSkill || null);
-
+      const result = GR.playerDamage(player, skillArg || null);
       if (result.blocked) return sock.sendMessage(chatId, { text: `❌ ${result.reason}` }, { quoted: msg });
 
-      // Track damage
       if (!gate.damageDealt) gate.damageDealt = {};
       gate.damageDealt[sender] = (gate.damageDealt[sender] || 0) + result.damage;
-
       boss.hp = Math.max(0, boss.hp - result.damage);
 
       const lines = [
@@ -300,88 +327,83 @@ module.exports = {
         `${result.isCrit ? '💥 CRITICAL! ' : ''}Dealt *${result.damage}* damage`,
         ``,
         `👁️ Boss HP: ${boss.hp.toLocaleString()} / ${boss.maxHp.toLocaleString()}`,
-        `[${'█'.repeat(Math.round(boss.hp/boss.maxHp*10))}${'░'.repeat(10 - Math.round(boss.hp/boss.maxHp*10))}]`,
       ];
 
       if (boss.hp <= 0) {
-        // BOSS KILLED
         boss.defeated = true;
         AuraSystem.addAura(player, 'bossKill');
 
-        // Find top raider
         const damageDealt = gate.damageDealt || {};
         const topRaider = Object.entries(damageDealt).sort((a, b) => b[1] - a[1])[0];
-        if (topRaider && topRaider[0] === sender) {
-          AuraSystem.addAura(player, 'topRaider');
-        }
+        if (topRaider && topRaider[0] === sender) AuraSystem.addAura(player, 'topRaider');
 
-        // XP for boss
-        // XP silent
         awardXP(player, 'gate_boss', saveDatabase, sock, chatId);
-        AuraSystem.addAura(player, AuraSystem.getGateClearEvent(gate.rank));
 
-        // Clear gate
-        GateManager.clearGate(gate.id, db);
-
-        // Distribute loot
-        // Route loot through GateKeyManager if a key was used
-        let lootResult = null;
-        if (gate.keyId) {
-          const bossLoot = gate.bossLoot || [];
-          const totalCrystals = bossLoot.filter(i => i.type === 'currency').reduce((s, i) => s + (i.amount || 0), 0);
-          lootResult = GKM.distributeLoot(gate.keyId, { gold: gate.goldReward || 0, crystals: totalCrystals, items: bossLoot.filter(i => i.type !== 'currency') }, db, saveDatabase);
-        } else {
-          GateManager.distributeLoot(gate.id, db);
+        // Final-blow boss loot → the killer
+        const bossDropLines = [];
+        const bossDrop = GateManager.rollMonsterKillDrop(gate.rank, boss.name);
+        if (bossDrop) {
+          if (!player.inventory) player.inventory = { materials: [] };
+          if (!player.inventory.materials) player.inventory.materials = [];
+          player.inventory.materials.push({ ...bossDrop, obtainedAt: Date.now(), fromGate: gate.id });
+          bossDropLines.push(`🎁 *BOSS DROP → ${player.name}* (final blow): *${bossDrop.name}*`);
         }
 
+        // Distribute full loot: gold→guild treasury, drops→final-blow, recovery
+        const loot = GR.clearGate(gate, key, keyData, db, saveDatabase);
 
-        lines.push(``, `━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
-        lines.push(`💀 *${boss.name}* HAS BEEN DEFEATED!`);
-        lines.push(`━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
-        lines.push(``);
-
+        lines.push(``, `💀 *${boss.name}* HAS BEEN DEFEATED!`, ``);
         lines.push(`🔥 Aura gained!`);
+        if (bossDropLines.length) lines.push(...bossDropLines);
+        lines.push(``, `🎁 *LOOT → ${loot.destinationText}*`);
+        lines.push(`💠 ${loot.nexus.toLocaleString()} Nexus | 💎 ${loot.crystals.toLocaleString()} Mana Stones`);
+        if (loot.affiliatePayouts && Object.keys(loot.affiliatePayouts).length) {
+          lines.push(``, `🤝 *Affiliate / recruiter payouts:*`);
+          for (const [jid, p] of Object.entries(loot.affiliatePayouts)) {
+            const nm = db.users?.[jid]?.name || jid.split('@')[0];
+            lines.push(`  • *${nm}* — ${p.percent}% → ${p.gold.toLocaleString()} 💠 + ${p.crystals} 💎`);
+          }
+        }
+        if (loot.contractPayouts && Object.keys(loot.contractPayouts).length) lines.push(`📋 Contracts paid out automatically.`);
 
-
-        if (lootResult) {
-          const dest = lootResult.isAffiliate ? 'Key holder' : `${lootResult.guild || 'Guild'} Treasury`;
-          lines.push(``, `🎁 *LOOT → ${dest}*`);
-          lines.push(`💠 ${(lootResult.gold||0).toLocaleString()} Nexus | 💎 ${lootResult.crystals||0} Mana Stones`);
-          if (Object.keys(lootResult.contractPayouts||{}).length > 0)
-            lines.push(`📋 Contracts paid out automatically.`);
+        if (loot.wildPet && loot.wildPet.token) {
+          lines.push(``, `🐾 *WILD PET APPEARED!*`);
+          lines.push(`${loot.wildPet.emoji} *${loot.wildPet.name}* [${loot.wildPet.rarity.toUpperCase()}]`);
+          lines.push(`🪤 /caught ${loot.wildPet.token} — hurry, it flees in 60s!`);
         }
 
-        lines.push(``);
+        lines.push(``, `💚 *All members: 50% recovery + no cooldown.*`);
         lines.push(`🚪 *GATE ${gate.id} CLEARED!*`);
         lines.push(`━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
       } else {
-        // Boss counter-attack
-        const bossAtk = Math.floor(rd.monsterRange[1] * 0.20);
-        const playerDef = (player.stats?.def || 5) + (player.equipped?.armor?.def || 0);
-        const bossDmg = Math.max(10, bossAtk - Math.floor(playerDef * 0.4));
-        player.stats.hp = Math.max(1, (player.stats.hp || 0) - bossDmg);
-
-        const heal = getLifestealHeal(player, result.damage);
+        const def = (player.stats?.def || 5) + (player.equipped?.armor?.def || 0);
+        const bossAtk = Math.floor(GATE_RANKS[gate.rank].monsterRange[1] * 0.20);
+        const dmg = Math.max(10, bossAtk - Math.floor(def * 0.4));
+        player.stats.hp = Math.max(1, (player.stats.hp || 0) - dmg);
+        const heal = GR.lifeSteal(player, result.damage);
         if (heal > 0) player.stats.hp = Math.min(player.stats.maxHp, player.stats.hp + heal);
-
-        lines.push(``);
-        lines.push(`💢 *${boss.name}* retaliates!`);
-        lines.push(`Took *${bossDmg}* damage`);
+        lines.push(``, `💢 *${boss.name}* retaliates!`, `Took *${dmg}* damage`);
         if (heal > 0) lines.push(`💚 Lifesteal: +${heal} HP`);
         lines.push(`❤️ Your HP: *${player.stats.hp}/${player.stats.maxHp}*`);
-        lines.push(``);
-        lines.push(`━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
-        lines.push(`⚔️ /gateraid ${gateId} boss — Attack again`);
-        lines.push(`🔮 /gateraid ${gateId} boss skill [name] — Use a skill`);
-        lines.push(`━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+        lines.push(``, `⚔️ /gateraid ${key} boss — Attack again`);
       }
+
+      const pm = gate.raid?.members?.find(m => m.id === sender);
+      if (pm) { pm.hp = player.stats.hp; pm.energy = player.stats.energy; }
 
       saveDatabase();
       return sock.sendMessage(chatId, { text: lines.join('\n') }, { quoted: msg });
     }
 
     return sock.sendMessage(chatId, {
-      text: `Usage: /gateraid ${gateId} [attack|skill [name]|status|advance|boss]`
+      text: `Usage: /gateraid ${key} [join|ready|start|attack|skill <name>|status|advance|boss]`,
     }, { quoted: msg });
-  }
+  },
 };
+
+// Helper: is the sender an active raider of this gate?
+function inRaid(gate, sender) {
+  if (gate.raid && gate.raid.members.some(m => m.id === sender)) return true;
+  if ((gate.raiders || []).includes(sender)) return true;
+  return false;
+}

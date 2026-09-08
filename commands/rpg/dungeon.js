@@ -15,7 +15,6 @@ const BarSystem         = require('../../rpg/utils/BarSystem');
 const LevelUpManager    = require('../../rpg/utils/LevelUpManager');
 const ArtifactSystem    = require('../../rpg/utils/ArtifactSystem');
 const PetManager        = require('../../rpg/utils/PetManager');
-const QuestManager      = require('../../rpg/utils/QuestManager');
 const AchievementManager = require('../../rpg/utils/AchievementManager');
 const StatAllocationSystem = require('../../rpg/utils/StatAllocationSystem');
 const SeasonManager = require('../../rpg/utils/SeasonManager');
@@ -256,18 +255,9 @@ module.exports = {
       const partyAction = args[1]?.toLowerCase();
 
       if (partyAction === 'create') {
-        if (player.dungeonCooldown && Date.now() < player.dungeonCooldown) {
-          const left = Math.ceil((player.dungeonCooldown - Date.now()) / 60000);
-          return sock.sendMessage(chatId, { text: `⏰ Dungeon cooldown: *${left} minutes* remaining.\nRest up before the next run!` }, { quoted: msg });
-        }
-        const existing = DungeonPartyManager.getPartyByPlayer(sender);
-        if (existing) return sock.sendMessage(chatId, { text: `❌ Already in party ${existing.id}!\nLeave first: /dungeon party leave` }, { quoted: msg });
-
-        const party = DungeonPartyManager.createParty(sender, player.name);
-        player.dungeonCooldown = Date.now() + 30 * 60 * 1000;
-        saveDatabase();
-
-        return sock.sendMessage(chatId, { text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🎉 *PARTY CREATED!*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n📋 Party ID: *${party.id}*\n👑 Leader: ${player.name}\n👥 Members: 1/5\n\n📌 *NEXT STEPS:*\n1️⃣ Friends join: /dungeon party join ${party.id}\n2️⃣ Buy items: /dungeon shop\n3️⃣ All mark ready: /dungeon ready\n4️⃣ Leader picks dungeon: /dungeon start [#]\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n💡 Min 2 players required!\n━━━━━━━━━━━━━━━━━━━━━━━━━━━` }, { quoted: msg });
+        return sock.sendMessage(chatId, {
+          text: `🚫 */dungeon party create has been removed.*\n\nGate raids no longer use the old party system.\nUse a gate code instead:\n\n⚔️ /gateraid <CODE>  — auto-creates your raid\n   • Guild members → party raid\n   • Outsiders → instant solo raid\n\nGet a code by buying a gate (*/gate buy*).`,
+        }, { quoted: msg });
       }
 
       if (partyAction === 'join') {
@@ -336,7 +326,7 @@ module.exports = {
 
       const qty  = parseInt(args[2]) || 1;
       const cost = item.cost * qty;
-      if ((player.gold || 0) < cost) return sock.sendMessage(chatId, { text: `❌ Not enough gold!\nNeed: ${cost.toLocaleString()} 💠 | Have: ${(player.gold||0).toLocaleString()} 💠` }, { quoted: msg });
+      if ((player.gold || 0) < cost) return sock.sendMessage(chatId, { text: `❌ Not enough Nexus!\nNeed: ${cost.toLocaleString()} 💠 | Have: ${(player.gold||0).toLocaleString()} 💠` }, { quoted: msg });
 
       player.gold -= cost;
       if (item.shared) {
@@ -691,7 +681,7 @@ module.exports = {
             text: [
               '━━━━━━━━━━━━━━━━━━━━━━━━━━━',
               `💀 *You were defeated!*`,
-              `50% of dungeon gold kept.`,
+              `50% of dungeon Nexus kept.`,
               `/use — recover`,
               '━━━━━━━━━━━━━━━━━━━━━━━━━━━',
             ].join('\n'),
@@ -973,7 +963,7 @@ module.exports = {
         if (fx.messages.length) log += fx.messages.join('\n') + '\n\n';
         if (!fx.canAct) { log += `❌ ${player.name} cannot act!`; return sock.sendMessage(chatId, { text: log }, { quoted: msg }); }
 
-        const className = typeof player.class === 'string' ? player.class : player.class?.name || 'Warrior';
+        const className = typeof player.class === 'string' ? player.class : player.class?.name  || 'Awaiting';
         // Build player entity with artifact bonuses applied
         const _artStats = ArtifactSystem?.getEquippedArtifactStats ? ArtifactSystem.getEquippedArtifactStats(player) : {};
         const _atkBoost = BuffManager?.getAtkBoost ? BuffManager.getAtkBoost(player) : 0;
@@ -1087,7 +1077,7 @@ module.exports = {
       if (fx.messages.length) log += fx.messages.join('\n') + '\n\n';
       if (!fx.canAct) { log += `❌ ${player.name} cannot act!`; return sock.sendMessage(chatId, { text: log }, { quoted: msg }); }
 
-      const className = typeof player.class === 'string' ? player.class : player.class?.name || 'Warrior';
+      const className = typeof player.class === 'string' ? player.class : player.class?.name  || 'Awaiting';
       const pEnt = { name: player.name, stats: player.stats, skills: player.skills, class: { name: className }, energyType: player.energyType || 'Energy', statusEffects: player.statusEffects || [] };
       const mEnt = { name: monster.name, stats: monster.stats, skills: {}, abilities: monster.abilities || [], statusEffects: monster.statusEffects || [] };
 

@@ -89,7 +89,7 @@ const RAMADAN_ARTIFACTS = {
       },
       {
         name: 'Divine Favor',
-        description: '+20% gold gain',
+        description: '+20% Nexus gain',
         effect: 'gold_boost',
         value: 20
       }
@@ -116,7 +116,7 @@ const RAMADAN_QUESTS = {
     objectives: [
       {
         type: 'donate_gold',
-        desc: 'Donate 1000 gold to charity',
+        desc: 'Donate 1000 Nexus to charity',
         count: 1000,
         current: 0
       }
@@ -298,15 +298,15 @@ function claimIftar(player) {
   const baseCrystals = 10;
   
   const exp = Math.floor(baseExp * RAMADAN_CONFIG.xpMultiplier);
-  const gold = Math.floor(baseNexus * RAMADAN_CONFIG.goldMultiplier);
+  const Nexus = Math.floor(baseNexus * RAMADAN_CONFIG.goldMultiplier);
   const crystals = baseCrystals;
   
   // Apply rewards
   player.xp = (player.xp || 0) + exp;
   player.manaCrystals = (player.manaCrystals || 0) + crystals;
   
-  // ✅ Use NexusManager for gold (will be saved by command, not here)
-  updatePlayerNexus(player, gold, null);
+  // ✅ Use NexusManager for Nexus (will be saved by command, not here)
+  updatePlayerNexus(player, Nexus, null);
   
   // Update data
   ramadanData.iftarsClaimed++;
@@ -314,7 +314,7 @@ function claimIftar(player) {
   
   return {
     success: true,
-    rewards: { exp, gold, crystals },
+    rewards: { exp, Nexus, crystals },
     totalClaimed: ramadanData.iftarsClaimed
   };
 }
@@ -334,11 +334,11 @@ function donateCharity(player, amount) {
   if ((player.gold || 0) < amount) {
     return {
       success: false,
-      message: `❌ Not enough gold!\n\nYou have: ${player.gold || 0}g\nNeed: ${amount} 💠`
+      message: `❌ Not enough Nexus!\n\nYou have: ${player.gold || 0}g\nNeed: ${amount} 💠`
     };
   }
   
-  // ✅ Deduct gold using NexusManager
+  // ✅ Deduct Nexus using NexusManager
   updatePlayerNexus(player, -amount, null);
   
   // Track donation

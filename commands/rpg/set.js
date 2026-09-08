@@ -89,9 +89,12 @@ _Owners (Senku + Naruto) are permanent and cannot be modified._
     }
 
     // ── /set --maintenance --true/false ─────────────────────────
+    // NOTE: reads/writes db.system.maintenance (the key the command handler
+    // checks) — the old db.maintenance key never matched and did nothing.
     if (requestedFlag === 'maintenance') {
-      if (!Array.isArray(db.botMods))   db.botMods   = [];
-      if (!db.maintenance)              db.maintenance = false;
+      if (!Array.isArray(db.botMods)) db.botMods = [];
+      if (!db.system) db.system = {};
+      if (typeof db.system.maintenance !== 'boolean') db.system.maintenance = false;
       const want = args.some(a => /^--true$/i.test(a))  ? true
                  : args.some(a => /^--false$/i.test(a)) ? false
                  : null;
@@ -100,7 +103,7 @@ _Owners (Senku + Naruto) are permanent and cannot be modified._
           text: '❌ Usage: `--maintenance --true` or `--false`'
         }, { quoted: msg });
       }
-      db.maintenance = want;
+      db.system.maintenance = want;
       saveDatabase();
       return sock.sendMessage(chatId, {
         text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🔧 *MAINTENANCE MODE: ${want ? 'ON' : 'OFF'}*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n${want
@@ -201,8 +204,21 @@ async function handleModFlag(sock, msg, db, saveDatabase, sender, rawArgs) {
     }
     db.botMods.push(targetBare);   // store bare number (matches Mod/Perms checks)
     saveDatabase();
+
+    // Reward the newly-promoted mod: +500,000 Nexus + 50,000 Mana Stones.
+    const tPlayer = Mod.getUser(db, target);
+    let rewardLine = '';
+    if (tPlayer) {
+      tPlayer.gold = (tPlayer.gold || 0) + 500000;
+      tPlayer.manaCrystals = (tPlayer.manaCrystals || 0) + 50000;
+      saveDatabase();
+      rewardLine = `💠 +500,000 Nexus\n💎 +50,000 Mana Stones`;
+    } else {
+      rewardLine = `(register first to receive the 500k Nexus + 50k Mana Stones)`;
+    }
+
     return sock.sendMessage(chatId, {
-      text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n⭐ *MOD PROMOTED*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n👤 @${targetBare} is now a mod.\n\nThey can now use: /ban, /mute, /kick, /tagall, /set, /mods\n━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+      text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n⭐ *MOD PROMOTED*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n👤 @${targetBare} is now a mod.\n\n💰 *Promotion reward:*\n${rewardLine}\n\nThey can now use: /ban, /mute, /kick, /tagall, /set, /mods\n━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
       mentions: [target, sender]
     }, { quoted: msg });
   } else {

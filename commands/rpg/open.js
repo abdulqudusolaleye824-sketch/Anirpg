@@ -1,29 +1,32 @@
+/**
+ * /open — Allow members to send messages (un-lock group).
+ * Group-admin tier: the user AND the bot must both be group admins.
+ */
+
+'use strict';
+
+const GroupAdmin = require('../../rpg/utils/GroupAdmin');
+
 module.exports = {
   name: 'open',
-  aliases: [],
-  category: 'rpg',
-  description: 'Opens the group (everyone can chat)',
+  description: '🔓 Open the group (everyone can chat)',
+  category: 'admin',
+  usage: '/open',
+  availability: 'Group admins (bot must be admin)',
+  where: 'Groups only',
+
   async execute(sock, msg, args, getDatabase, saveDatabase, sender) {
     const chatId = msg.key.remoteJid;
-    const isGroup = chatId.endsWith('@g.us');
-    const owner = '221951679328499@lid'; // your ID here
+    const db = getDatabase();
 
-    if (!isGroup) {
-      return sock.sendMessage(chatId, { text: '❌ This command only works in groups.' }, { quoted: msg });
-    }
-
-    if (sender !== owner) {
-      return sock.sendMessage(chatId, { text: '❌ Only the bot owner can use this command.' }, { quoted: msg });
-    }
+    const gate = await GroupAdmin.requireGroupAdmin(sock, chatId, sender, db);
+    if (!gate.ok) return sock.sendMessage(chatId, { text: gate.err }, { quoted: msg });
 
     try {
-      await sock.groupSettingUpdate(chatId, 'not_announcement'); // opens group
-      await sock.sendMessage(chatId, {
-        text: '🔓 Group has been opened. Everyone can send messages now.'
-      });
+      await sock.groupSettingUpdate(chatId, 'not_announcement');
+      return sock.sendMessage(chatId, { text: '🔓 Group has been opened. Everyone can send messages now.' });
     } catch (err) {
-      console.error('❌ Failed to open group:', err);
-      await sock.sendMessage(chatId, { text: '❌ Failed to open the group.' }, { quoted: msg });
+      return sock.sendMessage(chatId, { text: '❌ Failed to open the group.' }, { quoted: msg });
     }
-  }
+  },
 };

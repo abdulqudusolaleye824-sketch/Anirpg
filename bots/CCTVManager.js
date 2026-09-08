@@ -338,7 +338,7 @@ const statusreport = {
 
     const lines = [
       `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-      `📡 *ANIRPG STATUS REPORT*`,
+      `📡 *✦ 𝐀𝐬𝐭𝐫𝐚™ STATUS REPORT*`,
       `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
       ``,
       `🕒 ${new Date().toLocaleString('en-GB')}`,

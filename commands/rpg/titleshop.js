@@ -46,7 +46,7 @@ module.exports = {
       const price = def.shop.price;
       if ((player.gold || 0) < price.gold) {
         return sock.sendMessage(chatId, {
-          text: `❌ Not enough gold!\nNeed: ${price.gold.toLocaleString()}g\nHave: ${(player.gold||0).toLocaleString()} 💠`
+          text: `❌ Not enough Nexus!\nNeed: ${price.gold.toLocaleString()}g\nHave: ${(player.gold||0).toLocaleString()} 💠`
         }, { quoted: msg });
       }
       if ((player.manaCrystals || 0) < (price.crystals || 0)) {

@@ -58,7 +58,7 @@ function expectedBonus(item, player) {
 function getClassBaseStats(player) {
   const className = typeof player.class === 'string'
     ? player.class
-    : (player.class?.name || 'Warrior');
+    : (player.class?.name  || 'Awaiting');
 
   const classDef = PlayerManager.classDefinitions[className];
   if (!classDef) return null;

@@ -3,18 +3,21 @@
 // Gates spawn in group chats. Guilds buy them. Players raid them.
 // ═══════════════════════════════════════════════════════════════
 
-const { canEnterGate } = require('../utils/SoloLevelingCore');
+// NOTE: canEnterGate is intentionally not imported — Task 9 removed all rank
+// blocks, so any awakened rank may enter/raid any gate.
 const { MONSTER_DROPS, BASE_MATERIALS, rollMonsterDrop, rollBossDrop, rollBaseMaterial, getRandomMonster, getRandomBoss } = require('../data/MonsterDrops');
 
+// No F-rank gates (removed by request). Ranks: E, D, C, B, A, S (+ special DISASTER).
+// Each rank has a purchase PRICE RANGE (rolled per-spawn) and the total loot
+// (Nexus + Mana Stones) in a gate is 2–4× its purchase price.
 const GATE_RANKS = {
-  F: { emoji:'⬛', label:'F-Rank Gate', floors:2, monsterRange:[1,5], bossHp:300, crystalReward:[100,300], lootTier:'common', purchasePrice:500, isFree:false, description:'Weakest gate. Good for starters.' },
-  E: { emoji:'⚫', label:'E-Rank Gate', floors:3, monsterRange:[5,15], bossHp:800, crystalReward:[300,800], lootTier:'common', purchasePrice:1200, isFree:false, description:'Standard low-tier gate.' },
-  D: { emoji:'🟤', label:'D-Rank Gate', floors:4, monsterRange:[15,35], bossHp:2000, crystalReward:[800,2000], lootTier:'uncommon', purchasePrice:3000, isFree:false, description:'Mid-low tier. D-rank access.' },
-  C: { emoji:'🔵', label:'C-Rank Gate', floors:5, monsterRange:[35,70], bossHp:5000, crystalReward:[2000,5000], lootTier:'rare', purchasePrice:8000, isFree:false, description:'Mid tier. Real money starts here.' },
-  B: { emoji:'🟢', label:'B-Rank Gate', floors:6, monsterRange:[70,120], bossHp:12000, crystalReward:[5000,12000], lootTier:'rare', purchasePrice:20000, isFree:false, description:'High tier. Guild raids required.' },
-  A: { emoji:'🟡', label:'A-Rank Gate', floors:7, monsterRange:[120,200], bossHp:30000, crystalReward:[12000,30000], lootTier:'epic', purchasePrice:60000, isFree:false, description:'Elite tier.' },
-  S: { emoji:'🔴', label:'S-Rank Gate', floors:8, monsterRange:[200,400], bossHp:80000, crystalReward:[30000,100000], lootTier:'legendary', purchasePrice:200000, isFree:false, description:'National-level threat.' },
-  DISASTER: { emoji:'🟣', label:'⚠️ DISASTER GATE', floors:10, monsterRange:[400,999], bossHp:250000, crystalReward:[100000,500000], lootTier:'mythic', purchasePrice:0, isFree:true, description:'DISASTER LEVEL. Must be cleared or world suffers.' },
+  E: { emoji:'⚫', label:'E-Rank Gate', floors:3, monsterRange:[5,15], bossHp:800,  priceRange:[3000,6000],   currencySafe:[800,1400], lootTier:'common',    isFree:false, description:'Standard low-tier gate.' },
+  D: { emoji:'🟤', label:'D-Rank Gate', floors:4, monsterRange:[15,35], bossHp:2000, priceRange:[8000,16000],  currencySafe:[2000,3600], lootTier:'uncommon',  isFree:false, description:'Mid-low tier.' },
+  C: { emoji:'🔵', label:'C-Rank Gate', floors:5, monsterRange:[35,70], bossHp:5000, priceRange:[20000,40000], currencySafe:[5000,9000], lootTier:'rare',     isFree:false, description:'Mid tier. Real money starts here.' },
+  B: { emoji:'🟢', label:'B-Rank Gate', floors:6, monsterRange:[70,120], bossHp:12000, priceRange:[50000,100000], currencySafe:[12000,22000], lootTier:'rare',    isFree:false, description:'High tier. Guild raids required.' },
+  A: { emoji:'🟡', label:'A-Rank Gate', floors:7, monsterRange:[120,200], bossHp:30000, priceRange:[150000,300000], currencySafe:[36000,68000], lootTier:'epic',   isFree:false, description:'Elite tier.' },
+  S: { emoji:'🔴', label:'S-Rank Gate', floors:8, monsterRange:[200,400], bossHp:80000, priceRange:[500000,1000000], currencySafe:[120000,220000], lootTier:'legendary', isFree:false, description:'National-level threat.' },
+  DISASTER: { emoji:'🟣', label:'⚠️ DISASTER GATE', floors:10, monsterRange:[400,999], bossHp:250000, priceRange:[0,0], currencySafe:[400000,900000], lootTier:'mythic', isFree:true, description:'DISASTER LEVEL. Must be cleared or world suffers.' },
 };
 
 // GATE_MONSTERS and GATE_BOSSES are now driven by MonsterDrops.js
@@ -27,21 +30,45 @@ class GateManager {
   static activeGates = {};
   static gatesByChat = {};
   static gateCounter = 1;
-  static GATE_BREAK_TIME = 2 * 60 * 60 * 1000;
+  // Gates persist for ~26h (Task 9: an unbought gate blocks spawns for 24h and
+  // triggers a −70% EXP penalty at the 23h mark, so the display must span that).
+  static GATE_BREAK_TIME = 26 * 60 * 60 * 1000;
   static FREE_GATE_CHANCE = 0.20;
   static DISASTER_CHANCE = 0.02;
 
   static spawnGate(chatId, groupAverageRank = 'E') {
     const gateId = `G-${Date.now()}-${this.gateCounter++}`;
     let rank = this.rollGateRank(groupAverageRank);
-    const isFree = GATE_RANKS[rank]?.isFree || Math.random() < this.FREE_GATE_CHANCE;
-    const isDisaster = !isFree && Math.random() < this.DISASTER_CHANCE;
+    const isDisaster = Math.random() < this.DISASTER_CHANCE;
     if (isDisaster) rank = 'DISASTER';
     const rankData = GATE_RANKS[rank];
-    const pool = MONSTER_DROPS[rank]?.monsters || MONSTER_DROPS['F'].monsters;
-    const bossPool = MONSTER_DROPS[rank]?.bosses || MONSTER_DROPS['F'].bosses;
+    // Gates are bought (never free) except a random free gate to be friendly.
+    const isFree = rank === 'DISASTER' || Math.random() < this.FREE_GATE_CHANCE;
+    const pool = MONSTER_DROPS[rank]?.monsters || MONSTER_DROPS['E'].monsters;
+    const bossPool = MONSTER_DROPS[rank]?.bosses || MONSTER_DROPS['E'].bosses;
     const bossData = bossPool[Math.floor(Math.random() * bossPool.length)];
     const bossName = bossData.name;
+
+    // Roll a purchase price within the rank's price range.
+    const [pMin, pMax] = rankData.priceRange || [0, 0];
+    const purchasePrice = isFree ? 0 : Math.floor(pMin + Math.random() * (pMax - pMin));
+
+    // Total gate loot (Nexus + Mana Stones).
+    //   Bought gate  → 2–4× the purchase price (Task 9).
+    //   Free/Disaster→ the rank's currencySafe pool (price is 0, so no ×).
+    let totalLootPct;
+    let lootMultiplier = 0;
+    if (isFree) {
+      const [cMin, cMax] = (rankData.currencySafe && rankData.currencySafe.length === 2)
+        ? rankData.currencySafe : [1000, 2000];
+      totalLootPct = Math.floor(cMin + Math.random() * (cMax - cMin));
+    } else {
+      lootMultiplier = 2 + Math.random() * 2; // 2.0 – 4.0
+      totalLootPct = Math.floor(purchasePrice * lootMultiplier);
+    }
+    // Split: ~75% Nexus, ~25% Mana Stones.
+    const nexusLoot   = Math.floor(totalLootPct * 0.75);
+    const crystalLoot = Math.floor(totalLootPct * 0.25);
 
     const monsters = [];
     const count = rankData.floors * 3;
@@ -57,8 +84,9 @@ class GateManager {
     const gate = {
       id: gateId, chatId, rank, rankData, spawnTime: Date.now(),
       breakTime: Date.now() + this.GATE_BREAK_TIME,
-      isFree, isDisaster, owned: false, ownedBy: null, ownedByLeader: null,
-      purchasedAt: null, purchasePrice: rankData.purchasePrice,
+      isFree, isDisaster: rank === 'DISASTER', owned: false, ownedBy: null, ownedByLeader: null,
+      purchasedAt: null, purchasePrice,
+      nexusLoot, crystalLoot, lootMultiplier,
       cleared: false, broken: false, active: true,
       raiders: [], guildRaiders: [], externalRaiders: [], pendingApplicants: [],
       raidStarted: false, raidStartTime: null,
@@ -85,14 +113,16 @@ class GateManager {
   }
 
   static rollGateRank(groupAvgRank = 'E') {
-    const order = ['F','E','D','C','B','A','S'];
+    // F-rank is removed; the weakest gate is now E-rank.
+    const order = ['E','D','C','B','A','S'];
     const idx = order.indexOf(groupAvgRank);
+    if (idx < 0) return 'E';
     const roll = Math.random();
     if (roll < 0.30) return order[Math.max(0, idx - 1)];
     if (roll < 0.60) return order[Math.max(0, idx)];
     if (roll < 0.80) return order[Math.min(order.length - 1, idx + 1)];
     if (roll < 0.92) return order[Math.max(0, idx - 2)];
-    return 'F';
+    return 'E';
   }
 
   static generateBossLoot(rank, count = 5) {
@@ -106,8 +136,8 @@ class GateManager {
       const mat = rollBaseMaterial(rank);
       if (mat) loot.push({ name: mat, type: 'material', source: 'base' });
     }
-    const [minC, maxC] = GATE_RANKS[rank]?.crystalReward || [100, 300];
-    loot.push({ name: 'Mana Stones', type: 'currency', amount: Math.floor(minC + Math.random() * (maxC - minC)) });
+    // NOTE: currency rewards (Nexus + Mana Stones) are pre-rolled on the gate
+    // at spawn (2–4× the gate price) and distributed on clear — not rolled here.
     return loot;
   }
 
@@ -136,7 +166,7 @@ class GateManager {
     if (!gate) return { success:false, reason:'Gate not found.' };
     if (gate.cleared || gate.broken) return { success:false, reason:'Gate no longer active.' };
     if (gate.raidStarted) return { success:false, reason:'Raid already started.' };
-    if (!canEnterGate(playerRank, gate.rank)) return { success:false, reason:`Your rank (${playerRank}) cannot enter a ${gate.rank}-Rank gate.` };
+    // No rank blocks: any awakened hunter may raid any rank of gate.
     if (gate.raiders.includes(playerJid)) return { success:false, reason:'Already applied.' };
     if (gate.isFree || !gate.owned) {
       gate.raiders.push(playerJid); gate.externalRaiders.push(playerJid);

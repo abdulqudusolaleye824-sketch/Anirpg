@@ -13,7 +13,7 @@ const SEASONS = {
     bonuses: {
       monsterHpMult:  1.4,   // monsters 40% more HP
       monsterAtkMult: 1.25,  // monsters 25% more ATK
-      goldMult:       2.0,   // 2× gold from all sources
+      goldMult:       2.0,   // 2× Nexus from all sources
       xpMult:         1.5,   // 50% more XP
       dropRateBoost:  0.15,  // +15% artifact/loot drop chance
     },
@@ -31,7 +31,7 @@ const SEASONS = {
     theme: 'wealth',
     duration: 5,
     bonuses: {
-      goldMult:      3.0,   // 3× gold from everything
+      goldMult:      3.0,   // 3× Nexus from everything
       shopDiscount:  0.30,  // 30% off all shop prices
       bankInterest:  0.05,  // +5% bank interest per day
       casinoLuckBoost: 0.10, // +10% casino win rate
@@ -163,7 +163,7 @@ const SEASONS = {
     duration: 7,
     bonuses: {
       xpMult:           3.0,   // 3× XP — catch up fast
-      goldMult:         3.0,   // 3× gold
+      goldMult:         3.0,   // 3× Nexus
       dailyBonusMult:   5.0,   // 5× daily rewards
       dropRateBoost:    0.40,  // +40% drop rate
       shopDiscount:     0.50,  // 50% off shop
@@ -260,7 +260,7 @@ class SeasonManager {
     return was;
   }
 
-  // Apply event bonuses to a gold/xp reward object
+  // Apply event bonuses to a Nexus/xp reward object
   static applyBonuses(rewards, type = 'general') {
     if (!activeEvent) return rewards;
     const b = activeEvent.bonuses;

@@ -15,12 +15,12 @@ const COMMAND_CATEGORIES = {
 
 // ── Default display info per category ───────────────────────────
 const CATEGORY_INFO = {
-  pvp:     { emoji: '⚔️',  groupName: 'Ani R.P.G PvP',     desc: 'PvP battles & ELO ranking' },
-  casino:  { emoji: '🎰',  groupName: 'Ani R.P.G Casino',   desc: 'Slots, Blackjack, Roulette & Dice' },
-  dungeon: { emoji: '🏰',  groupName: 'Ani R.P.G Dungeon',  desc: 'Tower dungeons & World Boss raids' },
-  guild:   { emoji: '👑',  groupName: 'Ani R.P.G Guild',    desc: 'Guild wars, raids & alliances' },
-  support: { emoji: '🛡️', groupName: 'Ani R.P.G Arise',    desc: 'General support & announcements' },
-  mods:    { emoji: '🔧',  groupName: 'Ani R.P.G Mods',     desc: 'Moderator-only GC for serf approvals & admin actions' },
+  pvp:     { emoji: '⚔️',  groupName: '✦ 𝐀𝐬𝐭𝐫𝐚™ PvP',     desc: 'PvP battles & ELO ranking' },
+  casino:  { emoji: '🎰',  groupName: '✦ 𝐀𝐬𝐭𝐫𝐚™ Casino',   desc: 'Slots, Blackjack, Roulette & Dice' },
+  dungeon: { emoji: '🏰',  groupName: '✦ 𝐀𝐬𝐭𝐫𝐚™ Dungeon',  desc: 'Tower dungeons & World Boss raids' },
+  guild:   { emoji: '👑',  groupName: '✦ 𝐀𝐬𝐭𝐫𝐚™ Guild',    desc: 'Guild wars, raids & alliances' },
+  support: { emoji: '🛡️', groupName: '✦ 𝐀𝐬𝐭𝐫𝐚™ Arise',    desc: 'General support & announcements' },
+  mods:    { emoji: '🔧',  groupName: '✦ 𝐀𝐬𝐭𝐫𝐚™ Mods',     desc: 'Moderator-only GC for serf approvals & admin actions' },
 };
 
 class AutoRedirect {
@@ -38,16 +38,22 @@ class AutoRedirect {
   }
 
   // Returns { allowed: true } or { allowed: false, ...redirectInfo }
+  // Now backed by the AstralGroups registry (multi-group, subscription-aware).
   static checkCommand(chatId, commandName, db) {
     if (!chatId.endsWith('@g.us')) return { allowed: true };
     const category = this.getCategory(commandName);
     if (!category) return { allowed: true };
 
-    const cfg = db ? this._getCfg(db) : {};
-    const groupCfg = cfg[category];
-    if (!groupCfg?.groupId) return { allowed: true }; // not configured yet
+    const AG = require('./AstralGroups');
+    // If this group is a registered astral group hosting the category and is
+    // currently active → allow here. Otherwise fall back to redirecting to the
+    // type's primary group (if configured).
+    if (AG.hostsActive(db, chatId, category)) return { allowed: true };
 
-    if (chatId === groupCfg.groupId) return { allowed: true };
+    const primary = AG.primaryOf(db, category);
+    if (!primary) return { allowed: true }; // no group configured yet
+
+    if (chatId === primary.groupId) return { allowed: true };
 
     const info = CATEGORY_INFO[category];
     return {
@@ -55,8 +61,8 @@ class AutoRedirect {
       redirect:   true,
       category,
       emoji:      info.emoji,
-      groupName:  groupCfg.groupName || info.groupName,
-      inviteLink: groupCfg.inviteLink || null,
+      groupName:  primary.inviteLink ? (info.groupName) : info.groupName,
+      inviteLink: primary.inviteLink || null,
       command:    commandName,
     };
   }
@@ -100,7 +106,8 @@ class AutoRedirect {
   }
 
   static getSupportLink(db) {
-    return this._getCfg(db).support?.inviteLink || null;
+    const AG = require('./AstralGroups');
+    return AG.getSupportLink(db) || this._getCfg(db).support?.inviteLink || null;
   }
 
   static getAllGroups(db) {

@@ -1,5 +1,5 @@
-// support.js — Sends user the Ani R.P.G support group link via DM
-// Link is set by owner using: /setgroup support  (run inside Ani R.P.G Arise)
+// support.js — Sends user the ✦ 𝐀𝐬𝐭𝐫𝐚™ support group link via DM
+// Link is set by owner using: /setgroup support  (run inside ✦ 𝐀𝐬𝐭𝐫𝐚™ Arise)
 
 const COOLDOWN = 5 * 60 * 1000; // 5 minutes
 const supportCooldown = new Map();
@@ -7,7 +7,7 @@ const AutoRedirect = require('../../rpg/utils/AutoRedirect');
 
 module.exports = {
   name: 'support',
-  description: '📩 Get the Ani R.P.G Arise support group link in your DM',
+  description: '📩 Get the ✦ 𝐀𝐬𝐭𝐫𝐚™ support group link in your DM',
 
   async execute(sock, msg, args, getDatabase, saveDatabase, sender) {
     const chatId = msg.key.remoteJid;
@@ -51,7 +51,7 @@ module.exports = {
       }
       if (!supportLink) {
         return sock.sendMessage(chatId, {
-          text: `❌ Support group link not configured yet.\n\nAsk the owner to run */setgroup support* inside the Ani R.P.G Arise group.`
+          text: `❌ Support group link not configured yet.\n\nAsk the owner to run */setgroup support* inside the ✦ 𝐀𝐬𝐭𝐫𝐚™ Arise group.`
         }, { quoted: msg });
       }
     }
@@ -66,7 +66,7 @@ module.exports = {
 
     // DM the user
     await sock.sendMessage(sender, {
-      text: `━━━━━━━━━━━━━━━━━━━━━━━\n🛡️ *ALINRPG ARISE — SUPPORT*\n━━━━━━━━━━━━━━━━━━━━━━━\nNeed help? Questions? Bug reports?\nJoin our support group!\n\n🔗 ${supportLink}\n\n💡 You can also type:\n/support owner — message the owner directly\n━━━━━━━━━━━━━━━━━━━━━━━`
+      text: `━━━━━━━━━━━━━━━━━━━━━━━\n🛡️ *✦ 𝐀𝐬𝐭𝐫𝐚™ ARISE — SUPPORT*\n━━━━━━━━━━━━━━━━━━━━━━━\nNeed help? Questions? Bug reports?\nJoin our support group!\n\n🔗 ${supportLink}\n\n💡 You can also type:\n/support owner — message the owner directly\n━━━━━━━━━━━━━━━━━━━━━━━`
     });
 
     // Silent owner log

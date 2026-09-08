@@ -8,7 +8,6 @@ const BarSystem           = require('../../rpg/utils/BarSystem');
 const LevelUpManager      = require('../../rpg/utils/LevelUpManager');
 const ArtifactSystem      = require('../../rpg/utils/ArtifactSystem');
 const PetManager          = require('../../rpg/utils/PetManager');
-const QuestManager        = require('../../rpg/utils/QuestManager');
 const AchievementManager  = require('../../rpg/utils/AchievementManager');
 const ImprovedCombat      = require('../../rpg/utils/ImprovedCombat');
 const SkillDescriptions   = require('../../rpg/utils/SkillDescriptions');
@@ -76,7 +75,7 @@ const WORLD_BOSSES = [
     baseMult: 1.25,
     phases: [
       { threshold: 1.0, name: 'Contemptuous', atkMult: 1.0,  msg: '🐉 The Dragon Emperor lands. The ground shatters. He does not consider you a threat.' },
-      { threshold: 0.6, name: 'Furious',      atkMult: 1.45, msg: '🐉 PHASE 2: You hurt him. HIM. His eyes burn gold. "INSOLENT WORMS! I WILL TURN YOU TO ASH!"' },
+      { threshold: 0.6, name: 'Furious',      atkMult: 1.45, msg: '🐉 PHASE 2: You hurt him. HIM. His eyes burn Nexus. "INSOLENT WORMS! I WILL TURN YOU TO ASH!"' },
       { threshold: 0.3, name: 'World Burner', atkMult: 1.90, msg: '🔥 FINAL PHASE: DRACONIC ASCENSION! His scales glow white-hot. This is how worlds end.' }
     ],
     abilities: ['Dragon Emperor Flame', 'Wing Tempest', 'Scale Shatter', 'Ancient Roar', 'Draco Meteor']
@@ -634,7 +633,6 @@ async function handleRaidVictory(sock, chatId, party, db, saveDatabase, log) {
     try { if (TitleSystem) TitleSystem.checkAndAwardTitles(member); } catch(e) {}
     // Fix #4: use memberId directly instead of broken member._id lookup
     try { const BP2=require('../../rpg/utils/BattlePass'); BP2.addPassXP(member,'world_boss'); } catch(e) {}
-    try { QuestManager.updateProgress(memberId, { type: 'boss_kill', count: 1, target: boss.name }); } catch(e) {}
     // #7: Guild War points for world boss kill (+50 per the guildwar description)
     try { if (GuildWar) GuildWar.addWarPoints(db, memberId, 50, null); } catch(e) {}
   });

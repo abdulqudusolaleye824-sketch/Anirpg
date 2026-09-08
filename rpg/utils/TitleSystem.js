@@ -16,7 +16,7 @@ const RARITIES = {
 };
 
 // ── 30+ titles — every entry has: id, display, desc, rarity, condition (auto)
-//                OR shop: { price: { gold, crystals } } for buy-only titles
+//                OR shop: { price: { Nexus, crystals } } for buy-only titles
 //                OR grant: 'owner-only' for titles only owners can hand out
 //                Each title has a stat boost in `boost` and `boostDesc` ──────
 const TITLES = {

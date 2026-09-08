@@ -1,10 +1,10 @@
 const BOT_OWNER_ID = '221951679328499@lid'; // ✅ YOUR ID HERE!
 
 class TaxSystem {
-  static TAX_RATE = 0.05; // 5% tax on gold purchases
+  static TAX_RATE = 0.05; // 5% tax on Nexus purchases
 
   static applyTax(db, cost, currency, saveDatabase) {
-    if (currency !== 'gold') return 0; // Only tax gold
+    if (currency !== 'gold') return 0; // Only tax Nexus
     
     const taxAmount = Math.floor(cost * this.TAX_RATE);
     

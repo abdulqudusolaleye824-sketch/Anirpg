@@ -39,7 +39,7 @@ Trade resources with other hunters!
 📌 COMMANDS
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━
 /trade offer @user [amount] [type]
-  Example: /trade offer @1234567890 100 gold
+  Example: /trade offer @1234567890 100 Nexus
 
 /trade accept - Accept pending trade
 /trade reject - Reject pending trade
@@ -48,7 +48,7 @@ Trade resources with other hunters!
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━
 💠 TRADEABLE RESOURCES
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━
-• gold - Currency
+• Nexus - Currency
 • crystals - Mana Stones
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -85,7 +85,7 @@ Trade resources with other hunters!
 
       if (!['gold', 'crystals'].includes(resourceType)) {
         return sock.sendMessage(chatId, { 
-          text: '❌ Invalid resource!\n\nChoose: gold or crystals' 
+          text: '❌ Invalid resource!\n\nChoose: Nexus or crystals' 
         }, { quoted: msg });
       }
 
@@ -271,7 +271,7 @@ Trade resources with other hunters!
           recipient.manaCrystals = (recipient.manaCrystals || 0) + trade.amount;
         }
         
-        // ✅ Convert crystal fee to gold for owner (1 crystal = 2 gold)
+        // ✅ Convert crystal fee to Nexus for owner (1 crystal = 2 Nexus)
         const goldFee = trade.fee * 2;
         
         if (!db.users[BOT_OWNER_ID]) {

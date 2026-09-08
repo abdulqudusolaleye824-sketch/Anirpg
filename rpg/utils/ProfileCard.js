@@ -123,7 +123,7 @@ async function generateProfileCard(player) {
   const ctx = c.getContext('2d');
 
   const className = typeof player.class === 'string'
-    ? player.class : (player.class?.name || 'Warrior');
+    ? player.class : (player.class?.name  || 'Awaiting');
   const rarity = typeof player.class === 'object'
     ? (player.class?.rarity || 'Common') : 'Common';
   const theme = CLASS_THEMES[className] || CLASS_THEMES.Warrior;

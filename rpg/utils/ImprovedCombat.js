@@ -23,7 +23,7 @@ class ImprovedCombat {
 
     // Get SkillDescriptions entry (animation, effect text, costs)
     const className = typeof attacker.class === 'string'
-      ? attacker.class : (attacker.class?.name || 'Warrior');
+      ? attacker.class : (attacker.class?.name  || 'Awaiting');
     const skillInfo = SkillDescriptions.getSkillDescription(className, skill.name);
 
     if (!skillInfo) {
@@ -251,7 +251,7 @@ class ImprovedCombat {
     if (!skill) return { ready: false, message: `❌ Skill not found!` };
 
     const className = typeof player.class === 'string'
-      ? player.class : (player.class?.name || 'Warrior');
+      ? player.class : (player.class?.name  || 'Awaiting');
     const skillInfo = SkillDescriptions.getSkillDescription(className, skillName);
     const cooldownMs = ((skillInfo?.cooldown) || skill.cooldown || 3) * 1000;
 
@@ -280,7 +280,7 @@ class ImprovedCombat {
     }
 
     const className = typeof player.class === 'string'
-      ? player.class : (player.class?.name || 'Warrior');
+      ? player.class : (player.class?.name  || 'Awaiting');
 
     player.skills.active.forEach((skill, i) => {
       const skillInfo = SkillDescriptions.getSkillDescription(className, skill.name);

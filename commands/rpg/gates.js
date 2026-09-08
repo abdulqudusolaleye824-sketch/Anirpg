@@ -74,7 +74,7 @@ const gate = {
       const rankData = AWAKENING_RANKS[player.awakenRank || 'E'];
       let txt = `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n「System」 *ACTIVE GATES*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
       txt += `${rankData.emoji} Your rank: *${rankData.label}*\n`;
-      txt += `🚪 Accessible: ${rankData.gateAccess.join(', ')}-Rank\n\n`;
+      txt += `🚪 No rank restriction — any rank can raid any gate.\n\n`;
 
       for (const g of active) {
         txt += GateManager.formatGate(g) + '\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n';
@@ -164,10 +164,11 @@ const gate = {
           `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
           `📌 *HOW TO USE:*`,
           `1. Go to your dungeon GC`,
-          `2. Use: /gate enter --${result.key}`,
-          `3. Party up and start the raid`,
+          `2. Use: /gateraid ${result.key}`,
+          `3. Guild members ride together (party).`,
+          `   Outsiders raid solo.`,
           ``,
-          `⚠️ Keep this key safe. If the gate expires`,
+          `⚠️ Keep this code safe. If the gate expires`,
           `   before use, the purchase is non-refundable.`,
           `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
         ].join('\n'),
@@ -387,7 +388,7 @@ const contract = {
         `📋 *CONTRACT SET*`,
         ``,
         `Hunter: *${target?.name || targetJid.split('@')[0]}*`,
-        `Cut: *${percentArg}%* of gold & crystals`,
+        `Cut: *${percentArg}%* of Nexus & crystals`,
         ``,
         `Paid out automatically after gate is cleared.`,
       ].join('\n'),
@@ -409,10 +410,14 @@ const affiliate = {
 
     const sub       = (args[0] || '').toLowerCase();
     const targetJid = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid?.[0];
+    // Parse: /affiliate grant @user | 60  → pct after '|'
+    const pipes = msg.message?.conversation || msg.message?.extendedTextMessage?.text || '';
+    const pctMatch = pipes.match(/\|\s*(\d{1,3})/i);
+    const pct = pctMatch ? parseInt(pctMatch[1], 10) : NaN;
 
-    if (!['grant', 'revoke', 'list'].includes(sub)) {
+    if (!['grant', 'request', 'revoke', 'list'].includes(sub)) {
       return sock.sendMessage(chatId, {
-        text: `❌ Usage:\n/affiliate grant @user\n/affiliate revoke @user\n/affiliate list`,
+        text: `❌ Usage:\n/affiliate grant @user | <pct>\n/affiliate request <CODE> @user | <pct>\n/affiliate revoke @user\n/affiliate list`,
       }, { quoted: msg });
     }
 
@@ -425,7 +430,7 @@ const affiliate = {
 
       const lines = affs.map((a, i) => {
         const p = db.users?.[a.jid];
-        return `  ${i+1}. *${p?.name || a.jid.split('@')[0]}*`;
+        return `  ${i+1}. *${p?.name || a.jid.split('@')[0]}* — ${a.pct || 0}% loot share`;
       });
 
       return sock.sendMessage(chatId, {
@@ -444,7 +449,7 @@ const affiliate = {
     if (!target) return sock.sendMessage(chatId, { text: `❌ That hunter is not registered.` }, { quoted: msg });
 
     if (sub === 'grant') {
-      const result = GKM.grantAffiliate(sender, targetJid, guildName, db, saveDatabase);
+      const result = GKM.grantAffiliate(sender, targetJid, guildName, pct, db, saveDatabase);
       if (!result.success) return sock.sendMessage(chatId, { text: `❌ ${result.error}` }, { quoted: msg });
 
       return sock.sendMessage(chatId, {
@@ -453,10 +458,40 @@ const affiliate = {
           ``,
           `*${target.name}* is now an affiliate of *${guildName}*.`,
           ``,
+          `📊 Loot share: *${pct}%* of gate loot to the affiliate party`,
+          `   (shared equally among participating affiliates)`,
+          `💠 Guild treasury keeps the remaining *${100 - pct}%*.`,
+          ``,
           `They can now:`,
           `• Buy gates using personal funds`,
-          `• Keep all loot from gates they purchase`,
-          `• Participate in guild gate raids`,
+          `• Participate in the affiliate party on guild raids`,
+        ].join('\n'),
+        mentions: [targetJid],
+      }, { quoted: msg });
+    }
+
+    if (sub === 'request') {
+      // /affiliate request <CODE> @user | <pct>  → one-off hire for that raid
+      const gateCode = (args[1] || '').toUpperCase().replace(/^--/, '').trim();
+      if (!gateCode || gateCode.length !== 8) {
+        return sock.sendMessage(chatId, { text: `❌ Usage: /affiliate request <CODE> @user | <pct>\nExample: /affiliate request 2K7SN2N8 @user | 60` }, { quoted: msg });
+      }
+      if (!targetJid) {
+        return sock.sendMessage(chatId, { text: `❌ Tag the hunter you want to recruit.` }, { quoted: msg });
+      }
+      const result = GKM.requestAffiliate(sender, targetJid, guildName, gateCode, pct, db, saveDatabase);
+      if (!result.success) return sock.sendMessage(chatId, { text: `❌ ${result.error}` }, { quoted: msg });
+
+      return sock.sendMessage(chatId, {
+        text: [
+          `🛡️ *AFFILIATE REQUESTED (one-off hire)*`,
+          ``,
+          `*${target.name}* has been recruited to help raid the gate.`,
+          ``,
+          `🎯 Gate: \`${gateCode}\``,
+          `📊 Paid: *${pct}%* of that gate's loot (one-off)`,
+          ``,
+          `They can now join the raid with /gateraid ${gateCode} join.`,
         ].join('\n'),
         mentions: [targetJid],
       }, { quoted: msg });

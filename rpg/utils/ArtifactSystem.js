@@ -1531,7 +1531,7 @@ function enhanceArtifact(player, artifactName) {
   if ((player.gold || 0) < cost.gold) {
     return {
       success: false,
-      message: `❌ Not enough gold! Need ${cost.gold} 💠 (you have ${player.gold || 0} 💠)`
+      message: `❌ Not enough Nexus! Need ${cost.gold} 💠 (you have ${player.gold || 0} 💠)`
     };
   }
   

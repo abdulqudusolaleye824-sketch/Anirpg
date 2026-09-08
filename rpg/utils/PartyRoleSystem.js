@@ -28,7 +28,7 @@ const ROLE_BONUSES = {
   DragonKnight: { type: 'defShred',       value: 0.15, desc: 'Reduces all enemy DEF by 15%' },
   Necromancer:  { type: 'partyLifesteal', value: 0.10, desc: '+10% lifesteal for whole party' },
   Devourer:     { type: 'atkSteal',       value: 0.05, desc: 'Steals 5% enemy ATK and adds to party pool' },
-  Senku:        { type: 'expBoost',       value: 0.20, desc: '+20% XP and gold for party after clear' }
+  Senku:        { type: 'expBoost',       value: 0.20, desc: '+20% XP and Nexus for party after clear' }
 };
 
 // Combo synergies — checked at dungeon/boss start
@@ -84,7 +84,7 @@ const COMBOS = [
 function getPartyBonuses(members) {
   const classes = members.map(m => {
     const c = m.class;
-    return typeof c === 'string' ? c : c?.name || 'Warrior';
+    return typeof c === 'string' ? c : c?.name  || 'Awaiting';
   });
 
   const bonuses = {

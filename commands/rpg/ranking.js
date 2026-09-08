@@ -23,7 +23,7 @@ module.exports = {
 
     const lvl   = rankIn((a,b) => b.level - a.level || b.xp - a.xp);
     const elo   = rankIn((a,b) => (b.pvpElo||1000) - (a.pvpElo||1000));
-    const gold  = rankIn((a,b) => (b.gold||0) - (a.gold||0));
+    const Nexus  = rankIn((a,b) => (b.gold||0) - (a.gold||0));
     const gates = rankIn((a,b) => (b.dungeon?.gatesCleared||0) - (a.dungeon?.gatesCleared||0));
     const boss  = rankIn((a,b) => (b.bossesDefeated||0) - (a.bossesDefeated||0));
 

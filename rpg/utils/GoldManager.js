@@ -5,14 +5,14 @@ function updatePlayerNexus(player, amount, saveDatabase) {
     return false;
   }
 
-  // Initialize gold
+  // Initialize Nexus
   if (player.gold === undefined) player.gold = 0;
   if (typeof amount !== 'number' || isNaN(amount)) {
     console.error('❌ updatePlayerNexus: amount is not a number:', amount);
     return false;
   }
 
-  // Update gold
+  // Update Nexus
   player.gold += amount;
 
   // Prevent negative

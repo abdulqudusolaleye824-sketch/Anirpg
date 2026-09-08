@@ -90,27 +90,16 @@ class LevelUpManager {
         const upReward = StatAllocationSystem.awardUpgradePoints(player, 'levelUp');
         totalUPAwarded += upReward.awarded;
 
-        // ── Check for class assignment (if no class yet) ──────────
+        // ── Class assignment is now XP-driven (50k–150k lifetime XP), not
+        //    level/chance-based. Handled in SilentXP.awardXP via
+        //    ClassSystem.tryClassAwaken — nothing to do here. ──────────────
         if (!player.class) {
-          const assignedClass = checkClassAssignment(player);
-          if (assignedClass) {
-            player.class = assignedClass;
-            player.classAssignedAt = Date.now();
-            classAssigned = assignedClass;
-            // Aura bonus for getting a class
-            AuraSystem.addAura(player, 'classUnlock');
-
-            // ✅ Apply the class's stat bonuses + skills to the player
-            // (was previously defined but never called — players got a class
-            //  NAME but never the actual benefits)
-            try {
-              const { applyClassToPlayer } = require('./ClassSystem');
-              applyClassToPlayer(player, assignedClass);
-            } catch (e) {
-              console.warn('[SILENT] LevelUpManager: applyClassToPlayer failed:', e.message);
-            }
-          }
+          try {
+            const { tryClassAwaken } = require('./ClassSystem');
+            tryClassAwaken(player, null, null);
+          } catch (e) { /* non-fatal */ }
         }
+        // ── (classAssigned/classUnlock aura handled in tryClassAwaken) ─────
 
         // Check for skill unlock at level 5, 10, 15, 20, 25, etc.
         if (player.level % 5 === 0) {

@@ -25,7 +25,7 @@ const RANK_EMOJI_TEXT = { E:'E', D:'D', C:'C', B:'B', A:'A', S:'S' };
 // ── Quality colour ────────────────────────────────────────────────────────────
 function qualityColor(q) {
   if (q >= 95) return '#ff9800'; // Mythic — orange
-  if (q >= 85) return '#ffd600'; // Legendary — gold
+  if (q >= 85) return '#ffd600'; // Legendary — Nexus
   if (q >= 70) return '#ab47bc'; // Epic — purple
   if (q >= 50) return '#42a5f5'; // Rare — blue
   if (q >= 30) return '#66bb6a'; // Uncommon — green

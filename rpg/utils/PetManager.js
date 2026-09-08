@@ -288,7 +288,7 @@ class PetManager {
     return { success: true, ability: scaled, pet, message: `${pet.emoji} *${pet.nickname || pet.name}* used *${ability.name}*!` };
   }
 
-  // Get scavenger gold/loot bonus after a fight
+  // Get scavenger Nexus/loot bonus after a fight
   getScavengeReward(playerId, baseNexus) {
     const pb = this.getPetBattleBonus(playerId);
     if (!pb?.isScavenger) return { goldBonus: 0, findItem: false };
@@ -369,7 +369,7 @@ class PetManager {
     s += `❤️ HP: ${pet.stats.hp} | ⚔️ ATK: ${pet.stats.atk}\n`;
     s += `🛡️ DEF: ${pet.stats.def} | ⚡ SPD: ${pet.stats.spd}\n`;
     if (pet.stats.healPower) s += `💚 Heal Power: ${pet.stats.healPower}\n`;
-    if (pet.stats.scavengeRate) s += `🔍 Scavenge: +${Math.floor(pet.stats.scavengeRate * 100)}% gold\n`;
+    if (pet.stats.scavengeRate) s += `🔍 Scavenge: +${Math.floor(pet.stats.scavengeRate * 100)}% Nexus\n`;
     s += `\n📊 EXP: ${pet.exp}/${expReq} (${expPct}%)\n`;
     s += `💕 Bonding: ${pet.bonding}/100 | 😊 ${pet.happiness}/100 | 🍖 ${pet.hunger}/100\n`;
     if (pet.evolution) s += `\n🌟 Evolves at Lv.${pet.evolution.level}`;

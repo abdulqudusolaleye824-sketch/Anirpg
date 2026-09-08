@@ -14,7 +14,7 @@ module.exports = {
     const action = args[0]?.toLowerCase();
     const amount = parseInt(args[1]);
 
-    if (!action || !['gold','crystal','crystals','g','c','up','fromup'].includes(action)) {
+    if (!action || !['gold','nexus','g','n','crystal','crystals','c','up','fromup'].includes(action)) {
       return sock.sendMessage(chatId, { text:
         SEP + '\n💱 CURRENCY EXCHANGE 💱\n' + SEP + '\n' +
         '💠 Nexus: ' + (player.gold||0).toLocaleString() + '\n' +
@@ -25,15 +25,15 @@ module.exports = {
         '💠→💎  100 Nexus = 1 Mana Stone\n' +
         '💎→⬆️  1000 Mana Stones = 1 UP\n' +
         '⬆️→💎  1 UP = 1000 Mana Stones\n' +
-        SEP + '\n📌 /convert gold [n]    crystals→gold\n' +
-        '📌 /convert crystal [n] gold→crystals\n' +
+        SEP + '\n📌 /convert Nexus [n]    crystals→Nexus\n' +
+        '📌 /convert crystal [n] Nexus→crystals\n' +
         '📌 /convert up [n]      crystals→UP\n' +
         '📌 /convert fromup [n]  UP→crystals\n' + SEP
       }, { quoted: msg });
     }
 
-    if (action === 'gold' || action === 'g') {
-      if (!amount||amount<=0) return sock.sendMessage(chatId,{text:'❌ Specify amount! e.g. /convert gold 100'},{quoted:msg});
+    if (action === 'gold' || action === 'g' || action === 'nexus' || action === 'n') {
+      if (!amount||amount<=0) return sock.sendMessage(chatId,{text:'❌ Specify amount! e.g. /convert Nexus 100'},{quoted:msg});
       if ((player.manaCrystals||0)<amount) return sock.sendMessage(chatId,{text:'❌ Not enough crystals! Have: '+(player.manaCrystals||0)},{quoted:msg});
       const totalNexus = amount*10;
       const taxAmount = TaxSystem.applyTax(db,totalNexus,'gold',saveDatabase);
@@ -46,7 +46,7 @@ module.exports = {
     if (action === 'crystal' || action === 'crystals' || action === 'c') {
       if (!amount||amount<=0) return sock.sendMessage(chatId,{text:'❌ Specify amount! e.g. /convert crystal 500'},{quoted:msg});
       if (amount%100!==0) return sock.sendMessage(chatId,{text:'❌ Must be multiples of 100!'},{quoted:msg});
-      if ((player.gold||0)<amount) return sock.sendMessage(chatId,{text:'❌ Not enough gold!'},{quoted:msg});
+      if ((player.gold||0)<amount) return sock.sendMessage(chatId,{text:'❌ Not enough Nexus!'},{quoted:msg});
       const crystalsGained = Math.floor(amount/100);
       TaxSystem.applyTax(db,amount,'gold',saveDatabase);
       updatePlayerNexus(player,-amount,saveDatabase);

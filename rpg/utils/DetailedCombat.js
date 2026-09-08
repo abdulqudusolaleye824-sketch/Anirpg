@@ -221,7 +221,7 @@ function generateSkillNarrative(attacker, defender, skill, damage, isCrit = fals
   const skillInfo = getSkillInfo(skill.name);
   
   // ✅ FIX: Get className and pass it to getSkillDescription
-  const className = attacker.class?.name || attacker.class || 'Warrior';
+  const className = attacker.class?.name || attacker.class  || 'Awaiting';
   const skillData = SkillDescriptions.getSkillDescription(className, skill.name);
   
   let narrative = `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;

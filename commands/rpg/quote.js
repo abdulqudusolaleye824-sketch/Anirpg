@@ -76,11 +76,25 @@ module.exports = {
     // 4. Fall back to phone number
     if (senderName === 'Unknown' && quotedNumStr) senderName = '+' + quotedNumStr;
 
+    // ── Try to fetch the quoted sender's profile picture ────────────────
+    // If available, it's composited next to their name on the sticker.
+    let avatarPath = null;
+    try {
+      const profileUrl = await sock.profilePictureUrl(quotedParticipant, 'image');
+      if (profileUrl) {
+        const res = await fetch(profileUrl);
+        if (res && res.ok) {
+          avatarPath = path.join(os.tmpdir(), `quote_av_${Date.now()}.jpg`);
+          fs.writeFileSync(avatarPath, Buffer.from(await res.arrayBuffer()));
+        }
+      }
+    } catch (e) { avatarPath = null; }
+
     const tmpPath = path.join(os.tmpdir(), `quote_${Date.now()}.png`);
     await sock.sendMessage(chatId, { react: { text: '🎨', key: msg.key } });
 
     try {
-      await generateQuoteSticker(senderName, quoteText, tmpPath);
+      await generateQuoteSticker(senderName, quoteText, tmpPath, avatarPath);
     } catch (err) {
       console.error('Quote sticker error:', err.message);
       await sock.sendMessage(chatId, { text: '❌ Failed to generate sticker. Make sure `canvas` is installed.' }, { quoted: msg });
@@ -97,5 +111,6 @@ module.exports = {
     await sock.sendMessage(chatId, { sticker: stickerBuffer }, { quoted: msg });
 
     try { fs.unlinkSync(tmpPath); } catch (e) {}
+    if (avatarPath) { try { fs.unlinkSync(avatarPath); } catch (e) {} }
   }
 };

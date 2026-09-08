@@ -69,7 +69,7 @@ Ramadan Mubarak to all!
 📜 COMMANDS:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━
 /ramadan iftar - Claim Iftar reward (${iftarHour}:${iftarMinute.toString().padStart(2, '0')})
-/ramadan charity <amount> - Donate gold
+/ramadan charity <amount> - Donate Nexus
 /ramadan quests - View Ramadan quests
 /ramadan artifacts - View special artifacts
 /ramadan leaderboard - Top contributors
@@ -135,7 +135,7 @@ Example: /ramadan charity 1000
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━
 🎁 BLESSINGS:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━
-For every gold donated, you receive:
+For every Nexus donated, you receive:
 • 20% returned as blessing
 • Progress toward "The Generous" title
 • Barakah (divine blessings)

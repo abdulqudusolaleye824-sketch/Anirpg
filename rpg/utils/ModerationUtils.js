@@ -23,11 +23,21 @@ function bare(jid) {
   return String(jid).split(':')[0].split('@')[0];
 }
 
-/** Try to resolve a stored user object by any JID form. */
+/** Try to resolve a stored user object by any JID form (full @lid / @s.whatsapp.net /
+ * device-suffixed / bare number). Mirrors Perms.isRegistered so @lid-keyed users
+ * are always found regardless of the @lid vs @s.whatsapp.net domain mismatch. */
 function getUser(db, jid) {
   if (!jid) return null;
-  if (db.users?.[jid]) return db.users[jid];
-  if (db.users?.[bare(jid)]) return db.users[bare(jid)];
+  if (!db.users) return null;
+  if (db.users[jid]) return db.users[jid];
+  const b = bare(jid);
+  if (db.users[b]) return db.users[b];
+  if (db.users[`${b}@s.whatsapp.net`]) return db.users[`${b}@s.whatsapp.net`];
+  if (db.users[`${b}@lid`]) return db.users[`${b}@lid`];
+  // Last resort: any key whose bare number matches (handles device-suffixed keys).
+  for (const k of Object.keys(db.users)) {
+    if (k.split('@')[0].split(':')[0] === b) return db.users[k];
+  }
   return null;
 }
 
@@ -111,6 +121,63 @@ function isMuted(db, jid) {
   return !!(db.mutedUsers && db.mutedUsers[bare(jid)]);
 }
 
+/* ── GROUP-SCOPED MUTE ─────────────────────────────────────────────
+ * /mute is group-restricted (not global): it only silences a user in
+ * THIS group, and the bot silently deletes every message they send.
+ * Stored at db.groupMutes[groupId][bareNumber] = { mutedBy, mutedAt,
+ * duration, endsAt }.
+ */
+function groupMute(db, groupId, targetJid, mutedBy, durationMinutes) {
+  if (!db.groupMutes) db.groupMutes = {};
+  if (!db.groupMutes[groupId]) db.groupMutes[groupId] = {};
+  const key = bare(targetJid);
+  const durMs = (durationMinutes || 0) * 60 * 1000;
+  const rec = {
+    mutedBy,
+    mutedAt: Date.now(),
+    duration: durMs,
+    endsAt: durMs > 0 ? Date.now() + durMs : null,
+  };
+  db.groupMutes[groupId][key] = rec;
+  return { key, rec };
+}
+
+function groupUnmute(db, groupId, targetJid) {
+  if (!db.groupMutes?.[groupId]) return false;
+  const key = bare(targetJid);
+  if (!db.groupMutes[groupId][key]) return false;
+  delete db.groupMutes[groupId][key];
+  return true;
+}
+
+function isGroupMuted(db, groupId, jid) {
+  if (!db.groupMutes?.[groupId]) return false;
+  const rec = db.groupMutes[groupId][bare(jid)];
+  if (!rec) return false;
+  // Purge on read if expired
+  if (rec.endsAt && Date.now() > rec.endsAt) {
+    delete db.groupMutes[groupId][bare(jid)];
+    return false;
+  }
+  return true;
+}
+
+function purgeExpiredGroupMutes(db) {
+  let count = 0;
+  if (!db.groupMutes) return count;
+  const now = Date.now();
+  for (const gid of Object.keys(db.groupMutes)) {
+    for (const key of Object.keys(db.groupMutes[gid])) {
+      const m = db.groupMutes[gid][key];
+      if (m?.endsAt && now > m.endsAt) {
+        delete db.groupMutes[gid][key];
+        count++;
+      }
+    }
+  }
+  return count;
+}
+
 /** Expire any temporary mutes whose time is up. Returns array of expired keys. */
 function purgeExpiredMutes(db) {
   const expired = [];
@@ -139,5 +206,9 @@ module.exports = {
   muteUser,
   unmuteUser,
   isMuted,
+  groupMute,
+  groupUnmute,
+  isGroupMuted,
+  purgeExpiredGroupMutes,
   purgeExpiredMutes,
 };

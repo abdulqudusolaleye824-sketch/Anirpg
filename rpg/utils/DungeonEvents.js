@@ -18,13 +18,13 @@ const EVENT_TYPES = {
       const rank = dungeon.rank || 'F';
       const goldMult = { F:1, E:1.5, D:2.5, C:4, B:6, A:9, S:14 };
       const base = 60 + Math.floor(Math.random() * 80);
-      const gold = Math.floor(base * (goldMult[rank] || 1));
+      const Nexus = Math.floor(base * (goldMult[rank] || 1));
       const xp   = Math.floor(gold * 1.5);
-      players.forEach(p => { p.gold = (p.gold||0)+gold; p.xp = (p.xp||0)+xp; });
+      players.forEach(p => { p.gold = (p.gold||0)+Nexus; p.xp = (p.xp||0)+xp; });
       return {
         type:'positive',
         title:'💠 TREASURE CHEST!',
-        message:`🗝️ You find a dusty chest in an alcove!\nThe lock breaks open easily...\n\n💠 Found *${gold}* gold!\n✨ Gained *${xp}* XP!\n\nEach party member receives the reward.`
+        message:`🗝️ You find a dusty chest in an alcove!\nThe lock breaks open easily...\n\n💠 Found *${gold}* Nexus!\n✨ Gained *${xp}* XP!\n\nEach party member receives the reward.`
       };
     }
   },
@@ -107,13 +107,13 @@ const EVENT_TYPES = {
     weight: 6,
     name: 'Bone Pile',
     trigger: (dungeon, players) => {
-      // Small bonus gold from looting fallen adventurers
-      const gold = 30 + Math.floor(Math.random()*50);
-      players.forEach(p => { p.gold=(p.gold||0)+gold; });
+      // Small bonus Nexus from looting fallen adventurers
+      const Nexus = 30 + Math.floor(Math.random()*50);
+      players.forEach(p => { p.gold=(p.gold||0)+Nexus; });
       return {
         type:'positive',
         title:'💀 BONE PILE!',
-        message:`🦴 You rummage through fallen adventurers' remains...\nSomewhat macabre, but effective!\n\n💠 Found *${gold}* gold in scattered pouches!\n\n*A note reads: "If you found this, I'm sorry."*`
+        message:`🦴 You rummage through fallen adventurers' remains...\nSomewhat macabre, but effective!\n\n💠 Found *${gold}* Nexus in scattered pouches!\n\n*A note reads: "If you found this, I'm sorry."*`
       };
     }
   },

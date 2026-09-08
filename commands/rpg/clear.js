@@ -81,7 +81,7 @@ module.exports = {
 ✅ ALL player profiles
 ✅ ALL stats & levels
 ✅ ALL inventory & equipment
-✅ ALL gold & crystals
+✅ ALL Nexus & crystals
 ✅ ALL bank accounts & deposits
 ✅ ALL skills & artifacts
 ✅ ALL casino & crime records
@@ -161,8 +161,6 @@ To cancel, just don't type anything.
       // both the memory Map and the file (would be redundant otherwise).
       try { require('../../rpg/utils/PetManager').clearAll(); }
       catch (e) { console.error('PetManager clearAll failed:', e.message); }
-      try { require('../../rpg/utils/QuestManager').clearAll(); }
-      catch (e) { console.error('QuestManager clearAll failed:', e.message); }
 
       // ── Restore caller's account ──────────────────────────
       if (callerData) db.users[sender] = callerData;

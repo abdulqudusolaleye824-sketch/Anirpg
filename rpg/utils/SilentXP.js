@@ -85,10 +85,38 @@ function awardXP(player, action = 'command', saveDatabase, sock, chatId, extraMu
 
   const range    = XP_RANGES[action] || XP_RANGES.command;
   const rankMult = RANK_XP_MULT[player.awakenRank || 'E'] || 1.0;
+
+  // ── Gate-abandon debuff ────────────────────────────────────────────────
+  // A group that let a gate sit unbought for 23h gets −70% XP for 48h
+  // (applied only to members present at spawn; previously farmed XP is
+  // unaffected). Here we simply cut the multiplier to 0.3 → 100 XP ⇒ 30.
+  if (player.xpPenaltyUntil && player.xpPenaltyUntil > Date.now()) {
+    extraMult *= 0.3;
+  }
   const amount   = Math.floor(rand(range[0], range[1]) * rankMult * extraMult);
 
   // Add XP immediately — synchronous
   player.xp = (player.xp || 0) + amount;
+  player.totalXp = (player.totalXp || 0) + amount; // lifetime XP (never resets at level-up)
+
+  // ── Class awakening (50k–150k lifetime XP, per-player random point) ──────
+  // Fires as soon as cumulative XP crosses the player's threshold. Uses
+  // player.totalXp (level-progress `player.xp` resets each level-up and would
+  // never reach 50k — this was the old bug).
+  if (!player.class) {
+    try {
+      // Backfill lifetime XP for players registered before this counter existed:
+      // seed it with the cumulative XP needed to reach their current level.
+      if (player.totalXp == null) {
+        const SLC = require('./SoloLevelingCore');
+        player.totalXp = (SLC.getTotalXpToLevel && SLC.getTotalXpToLevel(player.level || 1)) || 0;
+      }
+      const { tryClassAwaken } = require('./ClassSystem');
+      tryClassAwaken(player, sock, chatId);
+    } catch (e) {
+      console.warn('[SILENT] Class awaken check failed:', e.message);
+    }
+  }
 
   // Delegate entirely to LevelUpManager which has its own while(true) loop
   // that handles multiple level ups in one call. Do NOT add another loop here.

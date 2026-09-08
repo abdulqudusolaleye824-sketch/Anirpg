@@ -163,7 +163,7 @@ module.exports = {
       if (!areFriends(player, targetId)) return sock.sendMessage(chatId, { text: '❌ You can only gift friends.' }, { quoted: msg });
 
       // Cost check
-      if ((player.gold || 0) < GIFT_COST.gold) return sock.sendMessage(chatId, { text: `❌ Not enough gold! Need ${GIFT_COST.gold.toLocaleString()} gold to send a gift.` }, { quoted: msg });
+      if ((player.gold || 0) < GIFT_COST.gold) return sock.sendMessage(chatId, { text: `❌ Not enough Nexus! Need ${GIFT_COST.gold.toLocaleString()} Nexus to send a gift.` }, { quoted: msg });
       if ((player.manaCrystals || 0) < GIFT_COST.crystals) return sock.sendMessage(chatId, { text: `❌ Not enough crystals! Need ${GIFT_COST.crystals} crystals.` }, { quoted: msg });
 
       // Cooldown check (24hr per friend)
@@ -215,7 +215,7 @@ module.exports = {
       saveDatabase();
 
       await sock.sendMessage(chatId, {
-        text: `🎁 Gift sent to *${target.name}*!\n\n${giftDesc}\n\n💠 Cost: ${GIFT_COST.gold.toLocaleString()} gold + ${GIFT_COST.crystals} crystals`
+        text: `🎁 Gift sent to *${target.name}*!\n\n${giftDesc}\n\n💠 Cost: ${GIFT_COST.gold.toLocaleString()} Nexus + ${GIFT_COST.crystals} crystals`
       }, { quoted: msg });
 
       try {
@@ -253,7 +253,7 @@ module.exports = {
           '',
           '📋 Rules:',
           '• No rank loss',
-          '• No gold penalty',
+          '• No Nexus penalty',
           '• Pure honor — just for fun',
           '• Bond XP gained win or lose',
           '',

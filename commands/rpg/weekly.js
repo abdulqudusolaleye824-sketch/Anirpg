@@ -12,7 +12,7 @@ const WEEKLY_POOL = [
   { id:'streak_5', type:'daily_streak',   target:5,  desc:'Claim daily 5 days in a row',  emoji:'🔥', rewards:{ gold:30000, crystals:70 } },
   { id:'summon_20',type:'summon_pull',    target:20, desc:'Do 20 summon pulls',            emoji:'🎲', rewards:{ gold:30000, crystals:0, ticket:1 } },
   { id:'pvp_s',    type:'pvp_streak',     target:3,  desc:'Win 3 PvP battles in a row',   emoji:'🔥', rewards:{ gold:50000, crystals:100, ticket:1 } },
-  { id:'gold_1m',  type:'earn_gold',      target:1000000, desc:'Earn 1M gold this week',  emoji:'💰', rewards:{ gold:100000, crystals:100 } },
+  { id:'gold_1m',  type:'earn_gold',      target:1000000, desc:'Earn 1M Nexus this week',  emoji:'💰', rewards:{ gold:100000, crystals:100 } },
 ];
 
 // Seed by year+week number in the player's timezone (default Africa/Lagos).

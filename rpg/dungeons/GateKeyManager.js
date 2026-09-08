@@ -53,9 +53,9 @@ function generateUniqueKey() {
   return key;
 }
 
-// ── Gate stability timer (3 days to 2 weeks) ──────────────────────────────────
+// ── Gate stability timer (Task 9: keys valid up to ONE week) ─────────────────
 const MIN_STABILITY = 3  * 24 * 60 * 60 * 1000;  // 3 days
-const MAX_STABILITY = 14 * 24 * 60 * 60 * 1000;  // 14 days
+const MAX_STABILITY = 7  * 24 * 60 * 60 * 1000;  // 7 days (capped at a week)
 
 function rollStabilityTimer() {
   return Math.floor(MIN_STABILITY + Math.random() * (MAX_STABILITY - MIN_STABILITY));
@@ -66,17 +66,43 @@ function normaliseJid(jid) {
   return jid?.split('@')[0]?.split(':')[0]?.replace(/[^0-9]/g, '') || '';
 }
 
+// Resolve a guild by id, key, or .name (guilds are keyed by id with a .name)
+function findGuild(db, guildName) {
+  if (!db?.guilds) return null;
+  const gn = String(guildName || '');
+  if (db.guilds[gn]) return db.guilds[gn];
+  const lower = gn.toLowerCase();
+  return Object.values(db.guilds).find(g =>
+    (g.id && String(g.id).toLowerCase() === lower) ||
+    (g.name && String(g.name).toLowerCase() === lower)
+  ) || null;
+}
+
+// Roles allowed to buy gates: Guild Master, Vice Guild Master, Officer.
 function isGuildLeaderOrOfficer(sender, guildName, db) {
-  const guild = db.guilds?.[guildName];
+  const guild = findGuild(db, guildName);
   if (!guild) return false;
   const sNum = normaliseJid(sender);
+  // Guild Master (leader)
   if (normaliseJid(guild.leader) === sNum) return true;
+  // Dedicated officers list
   if ((guild.officers || []).some(o => normaliseJid(o) === sNum)) return true;
+  // Rank-based check across memberData / members (handles Vice Guild Master, etc.)
+  const ROLE_RANKS = new Set(['guild master', 'vice guild master', 'vice', 'vice gm', 'officer']);
+  const rankArrays = [guild.memberData, guild.members];
+  for (const arr of rankArrays) {
+    for (const m of (arr || [])) {
+      const id = typeof m === 'object' ? m.id : m;
+      if (normaliseJid(id) !== sNum) continue;
+      const rank = String((typeof m === 'object' ? m.rank : null) || '').toLowerCase().replace(/[_-]/g, ' ');
+      if (ROLE_RANKS.has(rank)) return true;
+    }
+  }
   return false;
 }
 
 function isGuildMember(sender, guildName, db) {
-  const guild = db.guilds?.[guildName];
+  const guild = findGuild(db, guildName);
   if (!guild) return false;
   const sNum = normaliseJid(sender);
   if (normaliseJid(guild.leader) === sNum) return true;
@@ -144,7 +170,7 @@ function purchaseGateKey(sender, gate, db, saveDatabase) {
     if (!isGuildLeaderOrOfficer(sender, guildName, db)) {
       return { success: false, error: 'Only the guild leader or an officer can buy gates.' };
     }
-    guild = db.guilds[guildName];
+    guild = findGuild(db, guildName);
     if ((guild.treasury || 0) < price) {
       return { success: false, error: `Guild treasury insufficient.\nNeed: ${price.toLocaleString()} 💎\nTreasury: ${(guild.treasury||0).toLocaleString()} 💎` };
     }
@@ -261,16 +287,24 @@ function enterGate(key, sender, chatId, db) {
   return { success: true, keyData };
 }
 
-// ── Grant affiliate ───────────────────────────────────────────────────────────
-function grantAffiliate(grantorJid, targetJid, guildName, db, saveDatabase) {
-  const guild = db.guilds?.[guildName];
+// ── Grant affiliate (Guild = grants affiliate status with a loot %) ──────────
+//   grantAffiliate(grantorJid, targetJid, guildName, pct, db, save)
+//   pct = the total % of the gate's loot that goes to the AFFILIATE PARTY
+//         (shared equally among the granted affiliates who participated).
+//         Guild treasury keeps the remainder.
+function grantAffiliate(grantorJid, targetJid, guildName, pct, db, saveDatabase) {
+  const guild = findGuild(db, guildName);
   if (!guild) return { success: false, error: 'Guild not found.' };
-  if (normaliseJid(guild.leader) !== normaliseJid(grantorJid)) {
-    return { success: false, error: 'Only the guild master can grant affiliate status.' };
+  const CM = require('../utils/GuildContractManager');
+  if (!CM.isGuildMasterOrVice(db, guildName, grantorJid)) {
+    return { success: false, error: 'Only the guild master or vice guild master can grant affiliate status.' };
   }
   if (isGuildMember(targetJid, guildName, db)) {
     return { success: false, error: 'That hunter is already a guild member.' };
   }
+  pct = Number(pct);
+  if (!pct || pct < 1 || pct > 100) return { success: false, error: 'You must specify the affiliate loot % (1-100).\nExample: /affiliate grant @user | 60' };
+  if (isAffiliate(targetJid, db)) return { success: false, error: 'That hunter is already an affiliate of a guild.' };
 
   if (!db.affiliates) db.affiliates = {};
   const affId = `aff_${normaliseJid(targetJid)}`;
@@ -279,17 +313,50 @@ function grantAffiliate(grantorJid, targetJid, guildName, db, saveDatabase) {
     guildName,
     grantedBy:  grantorJid,
     grantedAt:  Date.now(),
+    pct,              // standing affiliate loot % (shared equally among affiliate party)
   };
   affiliates[affId] = db.affiliates[affId];
   saveDatabase();
   return { success: true };
 }
 
-function revokeAffiliate(revokerJid, targetJid, guildName, db, saveDatabase) {
-  const guild = db.guilds?.[guildName];
+// ── Request an affiliate for a ONE-OFF raid hire ─────────────────────────────
+//   requestAffiliate(grantorJid, targetJid, guildName, key, pct, db, save)
+//   A guild "recruits" a specific powerful hunter to help with a SPECIFIC raid
+//   (identified by its gate key). They are paid pct% of that raid's loot, once.
+function requestAffiliate(grantorJid, targetJid, guildName, key, pct, db, saveDatabase) {
+  const guild = findGuild(db, guildName);
   if (!guild) return { success: false, error: 'Guild not found.' };
-  if (normaliseJid(guild.leader) !== normaliseJid(revokerJid)) {
-    return { success: false, error: 'Only the guild master can revoke affiliate status.' };
+  const CM = require('../utils/GuildContractManager');
+  if (!CM.isGuildMasterOrVice(db, guildName, grantorJid)) {
+    return { success: false, error: 'Only the guild master or vice guild master can request an affiliate.' };
+  }
+  const keyData = activeKeys?.[key] || db.gateKeys?.[key];
+  if (!keyData) return { success: false, error: 'Gate code not found.' };
+  if (keyData.guildName !== guildName) return { success: false, error: 'That gate does not belong to your guild.' };
+  pct = Number(pct);
+  if (!pct || pct < 1 || pct > 100) return { success: false, error: 'You must specify the loot % (1-100).\nExample: /affiliate request @user | 60' };
+
+  if (!db.requests) db.requests = {};
+  const reqId = `req_${key}_${normaliseJid(targetJid)}`;
+  db.requests[reqId] = {
+    jid:       targetJid,
+    guildName,
+    key,
+    requestedBy: grantorJid,
+    requestedAt: Date.now(),
+    pct,           // one-off % of THIS raid's loot paid to the recruited hunter
+  };
+  saveDatabase();
+  return { success: true };
+}
+
+function revokeAffiliate(revokerJid, targetJid, guildName, db, saveDatabase) {
+  const guild = findGuild(db, guildName);
+  if (!guild) return { success: false, error: 'Guild not found.' };
+  const CM = require('../utils/GuildContractManager');
+  if (!CM.isGuildMasterOrVice(db, guildName, revokerJid)) {
+    return { success: false, error: 'Only the guild master or vice guild master can revoke affiliate status.' };
   }
   if (!db.affiliates) return { success: false, error: 'No affiliates found.' };
   const affId = `aff_${normaliseJid(targetJid)}`;
@@ -332,13 +399,13 @@ function distributeLoot(key, lootBundle, db, saveDatabase) {
   const keyData = activeKeys[key] || db.gateKeys?.[key];
   if (!keyData) return null;
 
-  const { gold = 0, crystals = 0, items = [] } = lootBundle;
+  const { Nexus = 0, crystals = 0, items = [] } = lootBundle;
 
   // Process contracts first — deduct from totals before awarding
-  const contractPayouts = processContracts(key, gold, crystals, db);
+  const contractPayouts = processContracts(key, Nexus, crystals, db);
   const contractGold     = Object.values(contractPayouts).reduce((s, p) => s + p.gold,    0);
   const contractCrystals = Object.values(contractPayouts).reduce((s, p) => s + p.crystals, 0);
-  const remainingGold     = Math.max(0, gold    - contractGold);
+  const remainingGold     = Math.max(0, Nexus    - contractGold);
   const remainingCrystals = Math.max(0, crystals - contractCrystals);
 
   if (keyData.isAffiliate) {
@@ -352,7 +419,7 @@ function distributeLoot(key, lootBundle, db, saveDatabase) {
 
   } else {
     // Guild gets the remainder after contracts
-    const guild = db.guilds?.[keyData.guildName];
+    const guild = findGuild(db, keyData.guildName);
     if (guild) {
       if (!guild.gold) guild.gold = 0;
       guild.gold     += remainingGold;
@@ -486,11 +553,14 @@ module.exports = {
   loadFromDB,
   grantAffiliate,
   revokeAffiliate,
+  requestAffiliate,
   setContract,
   distributeLoot,
   checkExpiredKeys,
   getKey,
   formatStability,
+  normaliseJid,
+  findGuild,
   isGuildLeaderOrOfficer,
   isGuildMember,
   isAffiliate,

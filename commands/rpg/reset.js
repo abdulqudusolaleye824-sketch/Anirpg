@@ -148,7 +148,7 @@ Type again to confirm: /reset full
     if (action === 'class') {
       if ((player.gold || 0) < RESET_COST) {
         return sock.sendMessage(chatId, {
-          text: `❌ Not enough gold!\n\nNeed: ${RESET_COST} 💠\nHave: ${player.gold || 0} 💠`
+          text: `❌ Not enough Nexus!\n\nNeed: ${RESET_COST} 💠\nHave: ${player.gold || 0} 💠`
         }, { quoted: msg });
       }
 
@@ -241,7 +241,7 @@ Example: /reset mage
 
       if ((player.gold || 0) < RESET_COST) {
         return sock.sendMessage(chatId, {
-          text: `❌ Not enough gold!\n\nNeed: ${RESET_COST} 💠\nHave: ${player.gold || 0} 💠`
+          text: `❌ Not enough Nexus!\n\nNeed: ${RESET_COST} 💠\nHave: ${player.gold || 0} 💠`
         }, { quoted: msg });
       }
 

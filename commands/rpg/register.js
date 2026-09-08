@@ -85,8 +85,11 @@ function buildPlayer(sender, name, rank, stats, bonus, dob) {
     awakenRank:      rank,
     level:           1,
     xp:              0,
+    totalXp:         0,   // lifetime XP (never reset) — drives the class-awaken threshold
+    classAwakeningThreshold: 50000 + Math.floor(Math.random() * 100000), // random 50k–150k
     class:           null,
     classAssignedAt: null,
+    classAwakenedAt: null,
     evolvedClass:    null,
     dateOfBirth:     dob.formatted,
     age:             dob.age,
@@ -177,7 +180,7 @@ function buildWelcomeDM(name, rank) {
     ``,
     `*🎮 GETTING STARTED*`,
     `→ \`/profile\` — view your stats, level & class`,
-    `→ \`/daily\`   — claim daily gold & crystals`,
+    `→ \`/daily\`   — claim daily Nexus & crystals`,
     `→ \`/dungeon\` — fight monsters for XP & loot`,
     `→ \`/pvp\`     — challenge other players`,
     `→ \`/shop\`    — buy potions & gear`,

@@ -345,7 +345,7 @@ function scanPotions() {
 
 function scanCurrency() {
   return [
-    { name: 'Nexus',         description: 'Shining gold coins stacked, warm yellow glow, premium currency feel' },
+    { name: 'Nexus',         description: 'Shining Nexus coins stacked, warm yellow glow, premium currency feel' },
     { name: 'Mana Stones',  description: 'Blue crystalline stones, magical inner light, floating slightly' },
     { name: 'Mana Stones',     description: 'Purple Mana Stones, premium currency, elegant faceted gems, glowing purple' },
   ].map(c => buildCurrencyPrompt(c.name, c.description));

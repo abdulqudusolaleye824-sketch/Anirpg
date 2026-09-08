@@ -315,7 +315,7 @@ const ACHIEVEMENTS = {
   },
   big_spender: {
     id: 'big_spender', name: '💸 Big Spender', category: 'Casino',
-    desc: 'Bet 100,000 gold total in the casino', condition: { type: 'casino_bet_total', count: 100000 },
+    desc: 'Bet 100,000 Nexus total in the casino', condition: { type: 'casino_bet_total', count: 100000 },
     reward: { gold: 10000, xp: 2000, crystals: 30 }
   },
   near_death: {
@@ -420,7 +420,7 @@ const ACHIEVEMENTS = {
   },
   richer_than_rich: {
     id: 'richer_than_rich', name: '🏦 Bank Tycoon', category: 'Wealth',
-    desc: 'Have 500,000 gold in the bank', condition: { type: 'bank_gold', count: 500000 },
+    desc: 'Have 500,000 Nexus in the bank', condition: { type: 'bank_gold', count: 500000 },
     reward: { gold: 25000, xp: 5000, crystals: 75 }
   },
   pet_happy: {

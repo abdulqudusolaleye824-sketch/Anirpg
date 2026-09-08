@@ -1,7 +1,8 @@
 // ═══════════════════════════════════════════════════════════════
 // GUILDMASTER — Admin command to manage authorized guild masters
 // Only the bot owner / super admins can use this.
-// Only 5 authorized guild masters allowed at once.
+// NOTE: there is NO cap on the number of authorized guild masters
+// (the old 5-master limit that throttled guild creation is removed).
 //
 // /guildmaster authorize @user — give someone guild creation rights
 // /guildmaster revoke @user   — take away guild creation rights
@@ -9,8 +10,6 @@
 // ═══════════════════════════════════════════════════════════════
 
 const Perms = require('../../utils/permissions');
-
-const MAX_GUILD_MASTERS = 5;
 
 module.exports = {
   name: 'guildmaster',
@@ -35,9 +34,6 @@ module.exports = {
     if (sub === 'authorize' || sub === 'add') {
       if (!mentionedId) return sock.sendMessage(chatId, { text: '❌ Mention a user: /guildmaster authorize @user' }, { quoted: msg });
       if (db.authorizedGuildMasters.includes(mentionedId)) return sock.sendMessage(chatId, { text: '⚠️ Already authorized.' }, { quoted: msg });
-      if (db.authorizedGuildMasters.length >= MAX_GUILD_MASTERS) {
-        return sock.sendMessage(chatId, { text: `❌ Max ${MAX_GUILD_MASTERS} guild masters already authorized.\nRevoke one first.` }, { quoted: msg });
-      }
       db.authorizedGuildMasters.push(mentionedId);
       saveDatabase();
       const target = db.users[mentionedId];
@@ -71,7 +67,7 @@ module.exports = {
           ``,
           list.length > 0 ? list.join('\n') : 'None authorized yet.',
           ``,
-          `${db.authorizedGuildMasters.length}/${MAX_GUILD_MASTERS} slots used`,
+          `${db.authorizedGuildMasters.length} authorized (no cap)`,
           `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
           `📌 /guildmaster authorize @user`,
           `📌 /guildmaster revoke @user`,

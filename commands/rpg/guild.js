@@ -5,8 +5,8 @@ const { GEAR_CATALOG, getRandomGear } = require('../../rpg/utils/GearCatalog');
 const { PET_FOOD } = require('../../rpg/utils/PetDatabase');
 const StatusEffectManager = require('../../rpg/utils/StatusEffectManager');
 const StatAllocationSystem = require('../../rpg/utils/StatAllocationSystem');
-const QuestManager = require('../../rpg/utils/QuestManager');
 const AchievementManager = require('../../rpg/utils/AchievementManager');
+const CM = require('../../rpg/utils/GuildContractManager');
 
 module.exports = {
   name: 'guild',
@@ -30,7 +30,7 @@ module.exports = {
     // string (members: [sender]) while joined users are objects {id,rank}.
     // Every membership check reads m.id / m.rank, so a bare string always
     // fails — that's why freshly-created guilds replied "You are not in a
-    // guild!" to /guild invite/info/members. Convert strings -> objects
+    // guild!" to /guild info/members. Convert strings -> objects
     // (idempotent, safe to run on every call) so all subcommands agree.
     for (const g of Object.values(db.guilds)) {
       if (!Array.isArray(g.members)) continue;
@@ -80,14 +80,17 @@ Build the strongest guild!
 📌 COMMANDS
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━
 /guild create [name] - Create (500,000💠 + 10,000💎 | Lv.20)
-/guild invite @user - Invite member
 /guild join [name] - Join guild
 /guild leave - Leave guild
 /guild info - Guild details
 /guild members - Member list
 /guild kick @user - Kick member
-/guild donate [amount] - Donate gold
-/guild promote @user - Make officer
+/guild deposit N|M [amount] - Deposit to treasury
+/guild withdraw N|M [amount] - Withdraw (GM/Vice)
+/guild promote <vice|officer> @user - Promote (GM)
+/guild demote @user - Demote (GM)
+/guild hire <n|x>|<m|y>||<weeks> - Hire a hunter (GM/Vice)
+/guild kickapprove @user - Approve a kick (GM/Vice)
 /guild disband - Delete guild
 /guild raid - Guild raid boss!
 /guild shop - Guild shop
@@ -123,28 +126,58 @@ Build the strongest guild!
         });
       }
 
-      // ── SL GUILD CREATION — AUTHORIZED MASTERS ONLY ──────────
-      // Only players in db.authorizedGuildMasters (set by bot owner) can create guilds.
-      // Bot owner can also always create.
+      // ── GUILD CREATION ─────────────────────────────────────────
+      //   • Owners (Naruto / Senku) always create normally.
+      //   • ONE additional player the owner authorizes via /guildmaster authorize.
+      //   • Everyone else: Level 25 + 3,000,000 Nexus + 500,000 Mana Stones.
+      // Each new guild starts with 1,000,000 Nexus + 100,000 Mana Stones.
       if (!db.authorizedGuildMasters) db.authorizedGuildMasters = [];
-      // Single source of truth for owner identity (matches guildmaster.js + /set).
       const isOwner = Perms.isBotOwner(db, sender);
       const isAuthorized = isOwner || db.authorizedGuildMasters.includes(sender);
 
+      const LEVEL_REQ = 25;
+      const NEXUS_REQ = 3_000_000;
+      const MANA_REQ  = 500_000;
+      const NEXUS_TO_TREASURY  = 1_000_000;
+      const MANA_TO_TREASURY   = 100_000;
+      const START_NEXUS = 1_000_000;
+      const START_MANA  = 100_000;
+
+      const playerLevel = player.level || 1;
+      const playerNexus = player.gold || 0;
+      const playerMana  = player.manaCrystals || 0;
+
       if (!isAuthorized) {
-        return sock.sendMessage(chatId, {
-          text: [
-            `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-            `🏰 *GUILD CREATION RESTRICTED*`,
-            `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-            ``,
-            `Guild creation is restricted to *authorized guild masters* only.`,
-            `Only 5 guild masters can exist at a time.`,
-            ``,
-            `Contact the server admin if you believe you should be authorized.`,
-            `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-          ].join('\n')
-        });
+        const missing = [];
+        if (playerLevel < LEVEL_REQ) missing.push(`📈 Level ${LEVEL_REQ}`);
+        if (playerNexus < NEXUS_REQ) missing.push(`💠 ${NEXUS_REQ.toLocaleString()} Nexus`);
+        if (playerMana < MANA_REQ) missing.push(`💎 ${MANA_REQ.toLocaleString()} Mana Stones`);
+        if (missing.length) {
+          return sock.sendMessage(chatId, {
+            text: [
+              `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+              `🏰 *GUILD CREATION*`,
+              `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+              ``,
+              `Guilds are created by:`,
+              `• An *owner* (Naruto / Senku), or`,
+              `• An *authorized guild master* (/guildmaster authorize), or`,
+              `• Any player who meets the requirements:`,
+              ``,
+              `🎯 *Level ${LEVEL_REQ}*`,
+              `💠 *${NEXUS_REQ.toLocaleString()} Nexus*`,
+              `💎 *${MANA_REQ.toLocaleString()} Mana Stones*`,
+              ``,
+              `📊 You currently have:`,
+              `   📈 Level ${playerLevel}${playerLevel >= LEVEL_REQ ? ' ✅' : ''}`,
+              `   💠 ${playerNexus.toLocaleString()} Nexus${playerNexus >= NEXUS_REQ ? ' ✅' : ''}`,
+              `   💎 ${playerMana.toLocaleString()} Mana Stones${playerMana >= MANA_REQ ? ' ✅' : ''}`,
+              ``,
+              `_Upon creation: 1,000,000 Nexus + 100,000 Mana Stones go to guild treasury._`,
+              `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+            ].join('\n')
+          });
+        }
       }
 
       // Check if player is already in a guild
@@ -167,14 +200,12 @@ Build the strongest guild!
         return sock.sendMessage(chatId, { text: '❌ Guild name already taken!' });
       }
 
-      // Mana Stone cost (no gold)
-      const crystalCost = isOwner ? 0 : 5000;
-      if (!isOwner && (player.manaCrystals || 0) < crystalCost) {
-        return sock.sendMessage(chatId, {
-          text: `❌ Not enough Mana Stones!\nNeed: ${crystalCost.toLocaleString()} 💎\nHave: ${(player.manaCrystals || 0).toLocaleString()} 💎`
-        });
+      // ── Pay creation cost (owners / authorized masters pay nothing) ──
+      if (!isAuthorized) {
+        player.gold = playerNexus - NEXUS_REQ;
+        player.manaCrystals = playerMana - MANA_REQ;
+        if (player.inventory) player.inventory.gold = player.gold;
       }
-      if (!isOwner) player.manaCrystals = (player.manaCrystals || 0) - crystalCost;
 
       // Create guild
       const guildId = `guild_${Date.now()}`;
@@ -184,7 +215,8 @@ Build the strongest guild!
         leader: sender,
         members: [sender],
         memberData: [{ id: sender, name: player.name || 'Unknown', rank: 'Guild Master', joinedAt: Date.now() }],
-        treasury: 0,
+        treasury: START_NEXUS,          // Nexus in guild treasury
+        manaTreasury: START_MANA,       // Mana Stones in guild treasury
         level: 1,
         xp: 0,
         createdAt: Date.now(),
@@ -193,6 +225,7 @@ Build the strongest guild!
         wins: 0,
         buffs: [],
         gatesOwned: [],
+        createdByIsOwner: isOwner,
       };
 
       // Update player
@@ -212,110 +245,13 @@ Build the strongest guild!
 🏰 Name: ${guildName}
 👑 Leader: ${player.name}
 👥 Members: 1/20
-💠 Treasury: 0 gold
+💠 Treasury: ${START_NEXUS.toLocaleString()} Nexus
+💎 Treasury: ${START_MANA.toLocaleString()} Mana Stones
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━
 📌 Next Steps:
-/guild invite @user
 /guild raid - Start raiding!
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━`
       });
-    }
-
-    // ═══════════════════════════════════════════════════════════════════
-    // INVITE MEMBER
-    // ═══════════════════════════════════════════════════════════════════
-    if (action === 'invite') {
-      const playerGuild = Object.values(db.guilds).find(g => 
-        g.members && g.members.some(m => m.id === sender)
-      );
-
-      if (!playerGuild) {
-        return sock.sendMessage(chatId, {
-          text: '❌ You are not in a guild!'
-        });
-      }
-
-      const member = playerGuild.members.find(m => m.id === sender);
-      if (!member || (member.rank !== 'Leader' && member.rank !== 'Officer')) {
-        return sock.sendMessage(chatId, {
-          text: '❌ Only Leader/Officers can invite!'
-        });
-      }
-
-      if (playerGuild.members.length >= 20) {
-        return sock.sendMessage(chatId, {
-          text: '❌ Guild is full! (Max 20 members)'
-        });
-      }
-
-      // Get recipient ID
-      const mentionedJid = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid?.[0];
-      const quotedParticipant = msg.message?.extendedTextMessage?.contextInfo?.participant;
-      const recipientId = mentionedJid || quotedParticipant;
-
-      if (!recipientId) {
-        return sock.sendMessage(chatId, {
-          text: '❌ Tag a user or reply to invite!\n\nExample: Reply to their message and type /guild invite\nOr: /guild invite @user'
-        });
-      }
-
-      const recipient = db.users[recipientId];
-      if (!recipient) {
-        return sock.sendMessage(chatId, {
-          text: '❌ That user is not registered!'
-        });
-      }
-
-      // Check if recipient is already in a guild
-      const recipientGuild = Object.values(db.guilds).find(g => 
-        g.members && g.members.some(m => m.id === recipientId)
-      );
-
-      if (recipientGuild) {
-        return sock.sendMessage(chatId, {
-          text: '❌ They are already in a guild!'
-        });
-      }
-
-      // Create invite
-      const guildId = Object.keys(db.guilds).find(id => db.guilds[id] === playerGuild);
-      
-      db.guildInvites[recipientId] = {
-        from: sender,
-        guildId: guildId,
-        guildName: playerGuild.name,
-        timestamp: Date.now()
-      };
-
-      saveDatabase();
-
-      await sock.sendMessage(chatId, {
-        text: `✅ Invite sent to @${recipientId.split('@')[0]}!`,
-        mentions: [recipientId]
-      });
-
-      try {
-        await sock.sendMessage(recipientId, {
-          text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🏰 GUILD INVITE! 🏰
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-${player.name} invited you to:
-🏰 ${playerGuild.name}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-👥 Members: ${playerGuild.members.length}/20
-💠 Treasury: ${playerGuild.treasury} gold
-🏆 Level: ${playerGuild.level}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-📌 ACTIONS
-/guild join ${playerGuild.name}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-          mentions: [sender]
-        });
-      } catch (e) {
-        console.log('Could not send invite to recipient');
-      }
-
-      return;
     }
 
     // ═══════════════════════════════════════════════════════════════════
@@ -380,7 +316,7 @@ ${player.name} invited you to:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━
 🏰 ${guild.name}
 👥 Members: ${guild.members.length}/20
-💠 Treasury: ${guild.treasury || 0} gold
+💠 Treasury: ${guild.treasury || 0} Nexus
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Welcome to the guild! 🎉
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━`
@@ -424,7 +360,7 @@ Welcome to the guild! 🎉
 👥 Members: ${playerGuild.members.length}/20
 🏆 Level: ${playerGuild.level || 1}
 ✨ XP: ${playerGuild.xp || 0}
-💠 Treasury: ${playerGuild.treasury || 0} gold
+💠 Treasury: ${playerGuild.treasury || 0} Nexus
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━
 📊 STATS
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -553,11 +489,47 @@ Use /guild members to see all members!
         });
       }
 
+      // ── KICK APPROVAL ──
+      // Officers may kick a normal member, but targeting another officer (or a
+      // member with a contract) requires Guild Master / Vice approval.
+      // Guild Master & Vice always act immediately.
+      const kickerIsMasterOrVice = CM.isGuildMasterOrVice(db, playerGuild.name, sender);
+      const targetIsOfficer = (targetMember.rank || '').toLowerCase() === 'officer';
+      const targetHasContract = !!CM.getContract(db, Object.keys(db.guilds).find(id => db.guilds[id] === playerGuild), targetId);
+      const needsApproval = !kickerIsMasterOrVice && (targetIsOfficer || targetHasContract);
+      if (needsApproval) {
+        const guildId = Object.keys(db.guilds).find(id => db.guilds[id] === playerGuild);
+        if (!db.kickApprovals) db.kickApprovals = {};
+        db.kickApprovals[guildId] = db.kickApprovals[guildId] || [];
+        if (!db.kickApprovals[guildId].some(a => a.targetId === targetId)) {
+          db.kickApprovals[guildId].push({ targetId, requestedBy: sender, requestedAt: Date.now() });
+          saveDatabase();
+          return sock.sendMessage(chatId, {
+            text: `⏳ *Kick request pending.*\n\nOfficers need a *Guild Master / Vice* to approve.\n\n👤 ${targetMember.name}${targetHasContract ? ' (has an active contract)' : ''}\n📌 A Guild Master/Vice must run:\n/guild kickapprove @${targetId.split('@')[0]}`,
+            mentions: [targetId],
+          }, { quoted: msg });
+        }
+        return sock.sendMessage(chatId, { text: '⏳ A kick request for that member is already pending.' });
+      }
+
+      const guildId = Object.keys(db.guilds).find(id => db.guilds[id] === playerGuild);
+
+      // ── CONTRACT PAYOUT (×2 remaining balance) ──
+      const payout = CM.kickPayout(db, guildId, targetId, saveDatabase);
+      let payoutLine = '';
+      if (payout.success) {
+        const rem = CM.remainingBalance(db, guildId, targetId);
+        payoutLine = `\n💠 *Contract payout (×2 remaining):*\n   💠 ${payout.payout.nexus.toLocaleString()} Nexus\n   💎 ${payout.payout.mana.toLocaleString()} Mana Stones`;
+        // Only pay if the guild treasury can cover it (best effort)
+        if ((playerGuild.treasury || 0) >= payout.payout.nexus) playerGuild.treasury -= payout.payout.nexus;
+      }
+
       playerGuild.members = playerGuild.members.filter(m => m.id !== targetId);
+      if (playerGuild.memberData) playerGuild.memberData = playerGuild.memberData.filter(m => m.id !== targetId);
       saveDatabase();
 
       await sock.sendMessage(chatId, {
-        text: `✅ ${targetMember.name} has been kicked from the guild!`,
+        text: `✅ ${targetMember.name} has been kicked from the guild!${payoutLine}`,
         mentions: [targetId]
       });
 
@@ -571,7 +543,161 @@ Use /guild members to see all members!
     }
 
     // ═══════════════════════════════════════════════════════════════════
-    // DONATE TO GUILD
+    // HIRE MEMBER (formal contract — Guild Master / Vice only)
+    //   /guild hire <weeklyNexus> | <weeklyMana> || <weeks>
+    // Weekly wage auto-deducted from guild treasury each week.
+    // ═══════════════════════════════════════════════════════════════════
+    if (action === 'hire') {
+      const playerGuild = Object.values(db.guilds).find(g =>
+        g.members && g.members.some(m => m.id === sender)
+      );
+      if (!playerGuild) return sock.sendMessage(chatId, { text: '❌ You are not in a guild!' });
+
+      if (!CM.isGuildMasterOrVice(db, playerGuild.name, sender)) {
+        return sock.sendMessage(chatId, { text: '❌ Only the Guild Master or Vice Guild Master can hire hunters.' });
+      }
+
+      const guildId = Object.keys(db.guilds).find(id => db.guilds[id] === playerGuild);
+      const mentionedJid = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid?.[0];
+      const quotedParticipant = msg.message?.extendedTextMessage?.contextInfo?.participant;
+      const targetId = mentionedJid || quotedParticipant;
+      if (!targetId) return sock.sendMessage(chatId, { text: '❌ Tag the hunter you want to hire (or reply to them).' });
+
+      // Parse "/guild hire 500 | 20 || 4"
+      //  weeklyNexus = first number  | weeklyMana = second number  | weeks = third
+      const text = (msg.message?.conversation || msg.message?.extendedTextMessage?.text || '');
+      const nums = (text.match(/\d+/g) || []).map(Number);
+      const weeklyNexus = nums[0] || 0;
+      const weeklyMana  = nums[1] || 0;
+      const weeks       = nums[2] || 0;
+
+      const res = CM.hire(db, guildId, sender, targetId, weeklyNexus, weeklyMana, weeks);
+      if (!res.success) return sock.sendMessage(chatId, { text: `❌ ${res.error}\n\nUsage: /guild hire <weeklyNexus> | <weeklyMana> || <weeks>` });
+
+      // First week's wage is paid immediately up-front (first pay).
+      const pay = CM.processWeeklyPay(db, guildId, saveDatabase);
+      const t = db.users?.[targetId] || {};
+      return sock.sendMessage(chatId, {
+        text: [
+          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          `🤝 *HUNTER HIRED*`,
+          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          `👤 ${t.name || '@' + targetId.split('@')[0]}`,
+          `🏰 Guild: ${playerGuild.name}`,
+          `💠 Weekly: ${weeklyNexus.toLocaleString()} Nexus`,
+          `💎 Weekly: ${weeklyMana.toLocaleString()} Mana Stones`,
+          `⏳ Duration: ${weeks} week${weeks > 1 ? 's' : ''}`,
+          ``,
+          `_Weekly wage is auto-deducted from the guild treasury._`,
+          `_Kicking a contracted hunter pays them ×2 the remaining balance._`,
+          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        ].join('\n'),
+        mentions: [targetId],
+      }, { quoted: msg });
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // KICK APPROVE — Guild Master / Vice approves a pending officer kick
+    // ═══════════════════════════════════════════════════════════════════
+    if (action === 'kickapprove') {
+      const playerGuild = Object.values(db.guilds).find(g =>
+        g.members && g.members.some(m => m.id === sender)
+      );
+      if (!playerGuild) return sock.sendMessage(chatId, { text: '❌ You are not in a guild!' });
+      if (!CM.isGuildMasterOrVice(db, playerGuild.name, sender)) {
+        return sock.sendMessage(chatId, { text: '❌ Only the Guild Master or Vice Guild Master can approve kicks.' });
+      }
+      const guildId = Object.keys(db.guilds).find(id => db.guilds[id] === playerGuild);
+      const mentionedJid = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid?.[0];
+      const quotedParticipant = msg.message?.extendedTextMessage?.contextInfo?.participant;
+      const targetId = mentionedJid || quotedParticipant;
+      if (!targetId) return sock.sendMessage(chatId, { text: '❌ Tag the member to approve the kick for.' });
+
+      if (!db.kickApprovals) db.kickApprovals = {};
+      const list = db.kickApprovals[guildId] || [];
+      const idx = list.findIndex(a => a.targetId === targetId);
+      if (idx === -1) return sock.sendMessage(chatId, { text: 'ℹ️ No pending kick request for that member.' });
+
+      db.kickApprovals[guildId].splice(idx, 1);
+      const targetMember = playerGuild.members.find(m => m.id === targetId);
+      const payout = CM.kickPayout(db, guildId, targetId, saveDatabase);
+      let payoutLine = '';
+      if (payout.success) {
+        payoutLine = `\n💠 *Contract payout (×2):* ${payout.payout.nexus.toLocaleString()} Nexus / ${payout.payout.mana.toLocaleString()} 💎`;
+        if ((playerGuild.treasury || 0) >= payout.payout.nexus) playerGuild.treasury -= payout.payout.nexus;
+      }
+      playerGuild.members = playerGuild.members.filter(m => m.id !== targetId);
+      if (playerGuild.memberData) playerGuild.memberData = playerGuild.memberData.filter(m => m.id !== targetId);
+      saveDatabase();
+      return sock.sendMessage(chatId, {
+        text: `✅ Kick approved. ${targetMember?.name || '@' + targetId.split('@')[0]} has been kicked.${payoutLine}`,
+        mentions: [targetId],
+      });
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // DEPOSIT / WITHDRAW — guild treasury (GM/Vice, officers deposit only)
+    //   /guild deposit N <nexus>   |   /guild deposit M <mana>
+    //   /guild withdraw N <nexus>  |   /guild withdraw M <mana>
+    // ═══════════════════════════════════════════════════════════════════
+    if (action === 'deposit' || action === 'withdraw') {
+      const playerGuild = Object.values(db.guilds).find(g =>
+        g.members && g.members.some(m => m.id === sender)
+      );
+      if (!playerGuild) return sock.sendMessage(chatId, { text: '❌ You are not in a guild!' });
+
+      const isWithdraw = action === 'withdraw';
+      // Officers cannot withdraw (deposit only).
+      const memberRank = CM.rankOf(playerGuild, sender);
+      const canWithdraw = CM.isGuildMasterOrVice(db, playerGuild.name, sender);
+      if (isWithdraw && !canWithdraw) {
+        return sock.sendMessage(chatId, { text: '❌ Only the Guild Master or Vice Guild Master can withdraw from the treasury.' });
+      }
+
+      const cur = (args[1] || '').toUpperCase();
+      const amount = parseInt(args[2]);
+      if (!['N', 'M'].includes(cur) || !amount || amount <= 0) {
+        return sock.sendMessage(chatId, { text: '❌ Usage:\n/guild deposit N <nexus>\n/guild deposit M <mana>\n/guild withdraw N <nexus>\n/guild withdraw M <mana>' });
+      }
+
+      if (cur === 'N') {
+        if (isWithdraw) {
+          const avail = playerGuild.treasury || 0;
+          if (avail < amount) return sock.sendMessage(chatId, { text: `❌ Treasury only has ${avail.toLocaleString()} Nexus.` });
+          playerGuild.treasury -= amount;
+          player.gold = (player.gold || 0) + amount;
+          if (player.inventory) player.inventory.gold = player.gold;
+          saveDatabase();
+          return sock.sendMessage(chatId, { text: `✅ *Withdrew* 💠 ${amount.toLocaleString()} Nexus to your balance.\n🏰 Treasury now: ${(playerGuild.treasury || 0).toLocaleString()} Nexus` });
+        }
+        const bal = player.gold || 0;
+        if (bal < amount) return sock.sendMessage(chatId, { text: `❌ You have ${bal.toLocaleString()} Nexus.` });
+        player.gold = bal - amount;
+        if (player.inventory) player.inventory.gold = player.gold;
+        playerGuild.treasury = (playerGuild.treasury || 0) + amount;
+        saveDatabase();
+        return sock.sendMessage(chatId, { text: `✅ *Deposited* 💠 ${amount.toLocaleString()} Nexus to the guild.\n🏰 Treasury now: ${(playerGuild.treasury || 0).toLocaleString()} Nexus` });
+      }
+
+      // Mana Stones
+      if (isWithdraw) {
+        const avail = playerGuild.manaTreasury || 0;
+        if (avail < amount) return sock.sendMessage(chatId, { text: `❌ Treasury only has ${avail.toLocaleString()} Mana Stones.` });
+        playerGuild.manaTreasury -= amount;
+        player.manaCrystals = (player.manaCrystals || 0) + amount;
+        saveDatabase();
+        return sock.sendMessage(chatId, { text: `✅ *Withdrew* 💎 ${amount.toLocaleString()} Mana Stones.\n🏰 Treasury now: ${(playerGuild.manaTreasury || 0).toLocaleString()} 💎` });
+      }
+      const bal = player.manaCrystals || 0;
+      if (bal < amount) return sock.sendMessage(chatId, { text: `❌ You have ${bal.toLocaleString()} Mana Stones.` });
+      player.manaCrystals = bal - amount;
+      playerGuild.manaTreasury = (playerGuild.manaTreasury || 0) + amount;
+      saveDatabase();
+      return sock.sendMessage(chatId, { text: `✅ *Deposited* 💎 ${amount.toLocaleString()} Mana Stones.\n🏰 Treasury now: ${(playerGuild.manaTreasury || 0).toLocaleString()} 💎` });
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // DONATE (deposit Nexus — legacy, all members)
     // ═══════════════════════════════════════════════════════════════════
     if (action === 'donate') {
       const playerGuild = Object.values(db.guilds).find(g => 
@@ -588,7 +714,7 @@ Use /guild members to see all members!
 
       if (!amount || amount < 100) {
         return sock.sendMessage(chatId, {
-          text: '❌ Minimum donation: 100 gold\n\nExample: /guild donate 500'
+          text: '❌ Minimum donation: 100 Nexus\n\nExample: /guild donate 500'
         });
       }
 
@@ -596,7 +722,7 @@ Use /guild members to see all members!
 
       if (playerNexus < amount) {
         return sock.sendMessage(chatId, {
-          text: `❌ Not enough gold!\n\nNeed: ${amount} 💠\nHave: ${playerNexus} 💠`
+          text: `❌ Not enough Nexus!\n\nNeed: ${amount} 💠\nHave: ${playerNexus} 💠`
         });
       }
 
@@ -612,10 +738,10 @@ Use /guild members to see all members!
         text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ✅ DONATION SUCCESSFUL! ✅
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━
-💠 Donated: ${amount} gold
+💠 Donated: ${amount} Nexus
 🏰 Guild: ${playerGuild.name}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🏰 Guild Treasury: ${playerGuild.treasury} gold
+🏰 Guild Treasury: ${playerGuild.treasury} Nexus
 💠 Your Nexus: ${player.gold}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Thank you for supporting the guild! 🎉
@@ -624,46 +750,67 @@ Thank you for supporting the guild! 🎉
     }
 
     // ═══════════════════════════════════════════════════════════════════
-    // PROMOTE MEMBER
+    // PROMOTE MEMBER — /guild promote <rank> @user
+    //   rank = vicemaster | vice | officer
+    //   Vice GM capped at 2, Officers capped at 10. GM (leader) promotes.
+    //   /guild demote @user removes rank (GM only).
     // ═══════════════════════════════════════════════════════════════════
-    if (action === 'promote') {
-      const playerGuild = Object.values(db.guilds).find(g => 
+    if (action === 'promote' || action === 'demote') {
+      const playerGuild = Object.values(db.guilds).find(g =>
         g.members && g.members.some(m => m.id === sender)
       );
-
-      if (!playerGuild) {
-        return sock.sendMessage(chatId, { text: '❌ You are not in a guild!' });
-      }
-
-      if (playerGuild.leader !== sender) {
-        return sock.sendMessage(chatId, { text: '❌ Only the guild leader can promote members!' });
-      }
+      if (!playerGuild) return sock.sendMessage(chatId, { text: '❌ You are not in a guild!' });
+      if (playerGuild.leader !== sender) return sock.sendMessage(chatId, { text: '❌ Only the guild leader can promote/demote!' });
 
       const mentionedJid = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid?.[0];
       const quotedParticipant = msg.message?.extendedTextMessage?.contextInfo?.participant;
       const targetId = mentionedJid || quotedParticipant;
-
-      if (!targetId) {
-        return sock.sendMessage(chatId, { text: '❌ Tag a user or reply to promote!\n\nExample: /guild promote @user' });
-      }
+      if (!targetId) return sock.sendMessage(chatId, { text: '❌ Tag a user or reply.\n\nExample: /guild promote vice @user\n       /guild demote @user' });
 
       const targetMember = playerGuild.members.find(m => m.id === targetId);
+      if (!targetMember) return sock.sendMessage(chatId, { text: '❌ That user is not in your guild!' });
 
-      if (!targetMember) {
-        return sock.sendMessage(chatId, { text: '❌ That user is not in your guild!' });
+      // ── DEMOTE ──
+      if (action === 'demote') {
+        if (targetMember.rank === 'Guild Master' || targetMember.rank === 'Leader') {
+          return sock.sendMessage(chatId, { text: '❌ Cannot demote the guild leader.' });
+        }
+        const oldRank = targetMember.rank;
+        targetMember.rank = 'Member';
+        // Also sync memberData
+        const md = playerGuild.memberData?.find(m => m.id === targetId);
+        if (md) md.rank = 'Member';
+        saveDatabase();
+        return sock.sendMessage(chatId, { text: `✅ ${targetMember.name} demoted from ${oldRank || 'rank'} to Member.`, mentions: [targetId] });
       }
 
-      if (targetMember.rank === 'Officer') {
-        return sock.sendMessage(chatId, { text: '❌ That member is already an Officer!' });
+      // ── PROMOTE ──
+      const rankArg = (args[1] || '').toLowerCase();
+      const isVice = ['vicemaster', 'vice master', 'vice', 'vicegm', 'gm2'].includes(rankArg);
+      const newRank = isVice ? 'Vice Guild Master' : 'Officer';
+
+      // Caps
+      if (isVice) {
+        const viceCount = (playerGuild.members || []).filter(m => (m.rank || '').toLowerCase() === 'vice guild master').length;
+        if (viceCount >= 2) return sock.sendMessage(chatId, { text: '❌ Vice Guild Master is capped at *2*.' });
+      } else {
+        const officerCount = (playerGuild.members || []).filter(m => (m.rank || '').toLowerCase() === 'officer').length;
+        if (officerCount >= 10) return sock.sendMessage(chatId, { text: '❌ Officer is capped at *10*.' });
       }
 
-      targetMember.rank = 'Officer';
+      if ((targetMember.rank || '').toLowerCase() === newRank.toLowerCase()) {
+        return sock.sendMessage(chatId, { text: `❌ ${targetMember.name} is already a ${newRank}!` });
+      }
+
+      targetMember.rank = newRank;
+      const md = playerGuild.memberData?.find(m => m.id === targetId);
+      if (md) md.rank = newRank;
       saveDatabase();
 
-      await sock.sendMessage(chatId, { text: `✅ ${targetMember.name} promoted to Officer!`, mentions: [targetId] });
+      await sock.sendMessage(chatId, { text: `✅ ${targetMember.name} promoted to ${newRank}!`, mentions: [targetId] });
 
       try {
-        await sock.sendMessage(targetId, { text: `🎉 You've been promoted to Officer in ${playerGuild.name}!` });
+        await sock.sendMessage(targetId, { text: `🎉 You've been promoted to ${newRank} in ${playerGuild.name}!` });
       } catch (e) {}
 
       return;
@@ -982,14 +1129,8 @@ Use /revive to rejoin.`
         if (!player.inventory)       player.inventory = {};
         if (!player.inventory.items) player.inventory.items = [];
 
-        // Track boss kill for quests and achievements
+        // Track boss kill for achievements + auto daily/weekly quests
         try {
-          const bossRaidUpdates = QuestManager.updateProgress(sender, { type: 'boss_kill', target: 'any', count: 1 });
-          if (bossRaidUpdates.length > 0) {
-            bossRaidUpdates.forEach(u => {
-              if (u.type === 'completed') QuestManager.completeQuest(sender, u.questId, player);
-            });
-          }
           const raidAchi = AchievementManager.track(player, 'boss_kill', 1);
           if (raidAchi.length > 0) {
             await sock.sendMessage(chatId, { text: AchievementManager.buildNotification(raidAchi) }, { quoted: msg });
@@ -1075,7 +1216,7 @@ ${dropText}
     }
 
     // ═══════════════════════════════════════════════════════════════════
-    // GUILD CONTRIBUTE — donate gold to guild treasury, earn GP
+    // GUILD CONTRIBUTE — donate Nexus to guild treasury, earn GP
     // ═══════════════════════════════════════════════════════════════════
     if (action === 'contribute' || action === 'donate') {
       const GPS = require('../../rpg/utils/GuildPointsSystem');
@@ -1118,17 +1259,17 @@ ${dropText}
 🏰 GUILD SHOP 🏰
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━
 🏰 ${playerGuild.name}
-💠 Treasury: ${playerGuild.treasury || 0} gold
+💠 Treasury: ${playerGuild.treasury || 0} Nexus
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━
 🛡️ GUILD BUFFS
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━
-1. XP Boost - 1000 gold
+1. XP Boost - 1000 Nexus
    +10% XP for all members (24h)
    
-2. Nexus Boost - 1000 gold
+2. Nexus Boost - 1000 Nexus
    +10% Nexus for all members (24h)
    
-3. Raid Power - 2000 gold
+3. Raid Power - 2000 Nexus
    +15% Damage in raids (24h)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━
 📌 USAGE (Leader/Officer only)
@@ -1172,7 +1313,7 @@ Example: /guild buy 1
       const treasury = playerGuild.treasury || 0;
 
       if (treasury < item.cost) {
-        return sock.sendMessage(chatId, { text: `❌ Not enough gold in treasury!\n\nNeed: ${item.cost} 💠\nHave: ${treasury} 💠\n\nUse /guild donate to add gold!` });
+        return sock.sendMessage(chatId, { text: `❌ Not enough Nexus in treasury!\n\nNeed: ${item.cost} 💠\nHave: ${treasury} 💠\n\nUse /guild donate to add Nexus!` });
       }
 
       // Deduct from treasury
@@ -1205,10 +1346,10 @@ Example: /guild buy 1
 ✅ BUFF PURCHASED! ✅
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ✨ ${item.name}
-💠 Cost: ${item.cost} gold
+💠 Cost: ${item.cost} Nexus
 ⏰ Duration: 24 hours
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🏰 Treasury Left: ${playerGuild.treasury} gold
+🏰 Treasury Left: ${playerGuild.treasury} Nexus
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━
 All guild members have been notified! 🎉
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━`

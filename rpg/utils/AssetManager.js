@@ -140,7 +140,7 @@ const LORE = {
     king_slime:      'A regal slime with a tiny golden crown. Rules all slime-kind from atop a mossy throne. Loyal to its bonded hunter only.',
     nine_tail_fox:   'A white fox with nine flowing tails, each one a different elemental affinity. Watches its bonded with ancient, knowing eyes.',
     ancient_treant:  'A small sapling that walks on tiny roots. Old beyond its appearance — has memories from the first forests. Sleeps standing up.',
-    gold_beetle:     'A beetle with a carapace of pure gold. When frightened, it buries itself and plays dead. Collects shiny things in a hidden burrow.',
+    gold_beetle:     'A beetle with a carapace of pure Nexus. When frightened, it buries itself and plays dead. Collects shiny things in a hidden burrow.',
   },
 
   // Monsters (short origin blurbs)

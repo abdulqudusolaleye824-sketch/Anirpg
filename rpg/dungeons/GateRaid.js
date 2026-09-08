@@ -1,0 +1,498 @@
+/**
+ * ═══════════════════════════════════════════════════════════════
+ *   GateRaid — party / solo gate raid engine (code-driven)
+ * ═══════════════════════════════════════════════════════════════
+ *  Flow:
+ *   1. Owner/guild buys a gate  → /gate buy  → bot DMs the GATE CODE.
+ *   2. In a registered dungeon GC, members use /gateraid <CODE>.
+ *   3. Guild members (or affiliates) of the owning guild get an
+ *      AUTO-CREATED PARTY (creator = leader). Others /gateraid join,
+ *      all /gateraid ready, then leader /gateraid start.
+ *   4. A non-member / non-affiliate instantly gets a SOLO raid.
+ *   5. Combat proceeds floor-by-floor with /gateraid attack|skill|
+ *      status|advance|boss.
+ *   6. On clear: gold+Nexus → guild treasury, monster drops → the
+ *      player who landed the final blow, wild pets spawn (catchable
+ *      with /caught), and all surviving members get 50% recovery +
+ *      NO cooldown on the next clear.
+ * ═══════════════════════════════════════════════════════════════
+ */
+
+'use strict';
+
+const GKM = require('./GateKeyManager');
+const { GateManager, GATE_RANKS } = require('./GateManager');
+const AuraSystem = require('../utils/AuraSystem').AuraSystem;
+const PetManager = require('../utils/PetManager');
+const LevelUpManager = require('../utils/LevelUpManager');
+const { awardXP } = require('../utils/SilentXP');
+
+const MAX_PARTY = 10;
+
+// ── Combat math (shared with the command for consistent damage) ──
+function playerDamage(player, skillName = null) {
+  const atk = (player.stats?.atk || 10) + (player.equipped?.weapon?.atk || player.equipped?.weapon?.bonus || 0);
+  const magicPower = player.stats?.magicPower || 0;
+  if (skillName) {
+    const skill = (player.skills?.active || []).find(s => s.name === skillName);
+    if (!skill) return { damage: 0, blocked: true, reason: `Skill *${skillName}* not found.` };
+    const cd = player.skills?.cooldowns?.[skillName] || 0;
+    if (Date.now() < cd) return { damage: 0, blocked: true, reason: `*${skillName}* is on cooldown!` };
+    if ((player.stats?.energy || 0) < (skill.energyCost || 0)) return { damage: 0, blocked: true, reason: `Not enough energy for *${skillName}*!` };
+    let dmg = (skill.damage || 20) + Math.floor((atk + magicPower) * 0.5);
+    const isCrit = Math.random() < (player.stats?.critChance || 2) / 100;
+    if (isCrit) dmg = Math.floor(dmg * (player.stats?.critDamage || 150) / 100);
+    player.stats.energy = Math.max(0, (player.stats.energy || 0) - (skill.energyCost || 0));
+    if (!player.skills.cooldowns) player.skills.cooldowns = {};
+    player.skills.cooldowns[skillName] = Date.now() + (skill.cooldown || 3) * 1000;
+    return { damage: dmg, isCrit, skillUsed: skill };
+  }
+  let dmg = Math.max(5, atk * (0.85 + Math.random() * 0.30));
+  const isCrit = Math.random() < (player.stats?.critChance || 2) / 100;
+  if (isCrit) dmg = Math.floor(dmg * (player.stats?.critDamage || 150) / 100);
+  return { damage: Math.floor(dmg), isCrit };
+}
+
+function monsterDamage(monster, def) {
+  const raw = Math.max(3, (monster.atk || 10) - Math.floor((def || 5) * 0.5));
+  return Math.floor(raw * (0.8 + Math.random() * 0.4));
+}
+
+function lifeSteal(player, dmg) {
+  const ls = (player.stats?.lifesteal || 0) / 100;
+  return ls > 0 ? Math.floor(dmg * ls) : 0;
+}
+
+// ── Resolve a gate code → gate + keyData ─────────────────────────
+function resolveCode(code) {
+  const key = String(code || '').toUpperCase().replace(/^--/, '').trim();
+  if (!key || key.length !== 8) return { ok: false, error: 'Invalid gate code. Format: 8 characters (e.g. 2K7SN2N8).' };
+  const keyData = GKM.getKey(key) || null;
+  if (!keyData) return { ok: false, error: '❌ Gate code not found. Check the code and try again.' };
+  if (keyData.expired || Date.now() > keyData.expiresAt) return { ok: false, error: '⚠️ This gate code has expired. The gate has collapsed.' };
+  if (keyData.raidComplete) return { ok: false, error: 'This gate has already been cleared.' };
+  const gate = GateManager.getGate(keyData.gateId);
+  if (!gate || gate.cleared || gate.broken) return { ok: false, error: '❌ This gate is no longer active.' };
+  return { ok: true, key, keyData, gate };
+}
+
+// ── Relationship of a sender to an owning guild ─────────────────
+// Returns 'member' | 'affiliate' | 'outsider'. Outsiders raid solo.
+function relationOf(sender, keyData, db) {
+  const guildName = keyData.guildName;
+  if (keyData.isAffiliate) {
+    if (GKM.normaliseJid(sender) === GKM.normaliseJid(keyData.ownedBy)) return 'affiliate';
+    return 'outsider'; // affiliate key, but this sender is not the owner
+  }
+  if (guildName) {
+    if (GKM.isGuildMember(sender, guildName, db)) return 'member';
+    const aff = GKM.getAffiliateData(sender, db);
+    if (aff && aff.guildName === guildName) return 'affiliate';
+    if (keyData.contracts && keyData.contracts[sender]) return 'affiliate'; // contracted hunter counts as partnered
+    return 'outsider';
+  }
+  return 'outsider';
+}
+
+// ── Get / create the raid object on a gate ──────────────────────
+function raidOf(gate, key, keyData) {
+  if (!gate.raid) {
+    gate.raid = {
+      key,
+      mode: null,
+      leader: null,
+      status: 'recruiting', // recruiting | active | done
+      members: [],          // [{ id, name, hp, maxHp, energy, maxEnergy, ready }]
+      guildName: keyData.guildName || null,
+      isAffiliate: !!keyData.isAffiliate,
+      ownedBy: keyData.ownedBy,
+      startedAt: null,
+      clearedAt: null,
+      loot: null,
+    };
+  }
+  return gate.raid;
+}
+
+function ensureMember(gate, sender, db) {
+  const player = db.users?.[sender];
+  const raid = gate.raid;
+  let m = raid.members.find(x => x.id === sender);
+  if (!m) {
+    m = {
+      id: sender,
+      name: (player && player.name) || sender.split('@')[0],
+      maxHp: (player?.stats?.maxHp || 100),
+      hp: (player?.stats?.hp ?? (player?.stats?.maxHp || 100)),
+      energy: (player?.stats?.energy ?? (player?.stats?.maxEnergy || 100)),
+      maxEnergy: (player?.stats?.maxEnergy || 100),
+      ready: false,
+    };
+    raid.members.push(m);
+  }
+  return m;
+}
+
+// ── ENTRY ───────────────────────────────────────────────────────
+//   • Guild member of the owning guild uses the key → opens a PARTY
+//     (leader = key-user) for the guild's members / affiliates.
+//   • A hunter NOT in any guild uses a key → SOLO raid.
+//   • Affiliates can join a party (they're part of the affiliate pool).
+function enter(sender, name, key, keyData, gate, db) {
+  const raid = raidOf(gate, key, keyData);
+  const rel = relationOf(sender, keyData, db);
+
+  // No-guild hunter (not a member of the owning guild, not an affiliate)
+  // → instant SOLO raid.
+  if (rel === 'outsider') {
+    raid.mode = 'solo';
+    raid.leader = sender;
+    raid.status = 'active';
+    raid.startedAt = Date.now();
+    raid.members = [];
+    ensureMember(gate, sender, db);
+    gate.raiders = gate.raiders || [];
+    if (!gate.raiders.includes(sender)) gate.raiders.push(sender);
+    return { ok: true, mode: 'solo', raid, rel };
+  }
+
+  // member / affiliate → open a party (creator = leader)
+  if (!raid.leader || raid.status === 'done') {
+    raid.mode = 'party';
+    raid.status = 'recruiting';
+    raid.leader = sender;
+    raid.members = [];
+  }
+  ensureMember(gate, sender, db);
+  gate.raiders = gate.raiders || [];
+  if (!gate.raiders.includes(sender)) gate.raiders.push(sender);
+  return { ok: true, mode: 'party', raid, rel };
+}
+
+function join(sender, name, gate, db) {
+  const raid = gate.raid;
+  if (!raid) return { ok: false, error: 'No gate raid in progress. Use /gateraid <CODE> first.' };
+  if (raid.status !== 'recruiting') return { ok: false, error: 'The raid has already started.' };
+  if (raid.members.length >= MAX_PARTY) return { ok: false, error: `Party is full! (${MAX_PARTY} max)` };
+
+  if (raid.isAffiliate) {
+    // Affiliate key → anyone may join (non-guild / no-guild players included).
+    ensureMember(gate, sender, db);
+    return { ok: true, raid, open: true };
+  }
+
+  // Guild key → owners' members, granted affiliates, or recruited hunters may join.
+  const guildName = raid.guildName;
+  if (!guildName) {
+    return { ok: false, error: 'This key is not linked to a guild. Use /gateraid <CODE> to open the raid.' };
+  }
+  const isGuildMember = GKM.isGuildMember(sender, guildName, db);
+  const isAffiliate  = (db.affiliates && Object.values(db.affiliates).some(a => a.jid === sender && a.guildName === guildName));
+  const isRecruited  = (db.requests && Object.values(db.requests).some(r => r.key === raid.key && r.jid === sender));
+  if (!isGuildMember && !isAffiliate && !isRecruited) {
+    return { ok: false, error: 'This is a guild raid — only owning-guild members, granted affiliates, or recruited hunters can join.\nUse an affiliate key to raid without a guild.' };
+  }
+  ensureMember(gate, sender, db);
+  return { ok: true, raid, open: false };
+}
+
+function ready(sender, gate) {
+  const raid = gate.raid;
+  if (!raid) return { ok: false, error: 'No gate raid in progress.' };
+  const m = raid.members.find(x => x.id === sender);
+  if (!m) return { ok: false, error: 'You are not in this raid.' };
+  m.ready = true;
+  const allReadied = raid.members.length > 0 && raid.members.every(x => x.ready);
+  return { ok: true, allReadied };
+}
+
+function start(sender, keyData, gate, db) {
+  const raid = gate.raid;
+  if (!raid) return { ok: false, error: 'No gate raid in progress.' };
+  if (raid.status !== 'recruiting') return { ok: false, error: 'The raid has already started.' };
+  if (raid.leader !== sender) return { ok: false, error: 'Only the party leader can start the raid.' };
+  if (raid.members.length === 0) return { ok: false, error: 'The party is empty.' };
+  if (!raid.members.every(x => x.ready)) return { ok: false, error: 'All members must be /gateraid ready before you can start.' };
+
+  raid.status = 'active';
+  raid.startedAt = Date.now();
+  // Sync raiders onto the gate for compatibility + readiness
+  gate.raidStarted = true;
+  gate.raidStartTime = Date.now();
+  gate.currentFloor = 1;
+  gate.raiders = gate.raiders || [];
+  raid.members.forEach(m => { if (!gate.raiders.includes(m.id)) gate.raiders.push(m.id); });
+  return { ok: true, raid };
+}
+
+// ── Status ──────────────────────────────────────────────────────
+function statusOf(gate, db) {
+  const raid = gate.raid;
+  const rd = GATE_RANKS[gate.rank] || GATE_RANKS['E'];
+  const floor = gate.currentFloor;
+  const floorMonsters = (gate.monsters || []).filter(m => m.floor === floor && !m.defeated);
+  const totalMonsters = (gate.monsters || []).filter(m => m.floor === floor).length;
+  const bossReady = floor >= gate.totalFloors && floorMonsters.length === 0 && !gate.boss.defeated;
+
+  const lines = [
+    `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+    `${rd.emoji} *${rd.label}* [${gate.id}]`,
+    `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+  ];
+  if (raid) {
+    const solo = raid.members.length <= 1;
+    lines.push(solo ? `🎮 *SOLO RAID* (you opened it)` : `👥 *PARTY RAID*`);
+    if (!solo && raid.status === 'recruiting') {
+      lines.push(`📌 Status: *Recruiting* — leader: *${raid.leader}*`);
+      lines.push(raid.isAffiliate
+        ? `🔓 *Affiliate key — open to everyone (no guild required)*`
+        : `🏰 *Guild key — open to owning-guild members only*`);
+      lines.push(`👥 *READY (${raid.members.filter(m=>m.ready).length}/${raid.members.length})*:`);
+      raid.members.forEach(m => lines.push(`  ${m.id === raid.leader ? '👑' : '⚔️'} ${m.name} ${m.ready ? '✅' : '⏳'}`));
+      lines.push(``, `📌 Next: leader uses */gateraid start* when all are ready.`);
+      return lines.join('\n');
+    }
+  }
+  lines.push(`🗺️ Floor: *${floor}/${gate.totalFloors}*`);
+  lines.push(`👾 Monsters: ${totalMonsters - floorMonsters.length}/${totalMonsters} cleared`);
+  if (bossReady) lines.push(`🏆 *BOSS READY — /gateraid boss*`);
+  lines.push(``);
+  lines.push(raid && raid.members.length > 1 ? `*Party members (${raid.members.length}):*` : `*Your status:*`);
+  (raid ? raid.members : [])
+    .slice(0, 12)
+    .forEach(m => lines.push(`  ${m.id === raid.leader ? '👑' : '⚔️'} *${m.name}* ${m.hp}/${m.maxHp}❤️ ${m.energy}/${m.maxEnergy}💙`));
+  lines.push(``);
+  lines.push(`💀 Floor ${floor} monsters:`);
+  floorMonsters.slice(0, 6).forEach(m => lines.push(`  ${m.name} — HP ${m.hp}/${m.maxHp}`));
+  if (floorMonsters.length > 6) lines.push(`  ...and ${floorMonsters.length - 6} more`);
+  lines.push(``, `━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+  lines.push(`⚔️ /gateraid attack | 🔮 /gateraid skill <name>`);
+  if (floorMonsters.length === 0 && !bossReady) lines.push(`➡️ /gateraid advance`);
+  if (bossReady) lines.push(`🏆 /gateraid boss`);
+  lines.push(`━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+  return lines.join('\n');
+}
+
+// ── Final-blow monster drops ─────────────────────────────────────
+function monsterKilledBy(gate, monster, sender, db) {
+  // The killer (final blow player) receives the monster material drop.
+  const drop = GateManager.rollMonsterKillDrop(gate.rank, monster.name);
+  const lines = [];
+  if (drop) {
+    const player = db.users?.[sender];
+    if (player) {
+      if (!player.inventory) player.inventory = { materials: [] };
+      if (!player.inventory.materials) player.inventory.materials = [];
+      player.inventory.materials.push({ ...drop, obtainedAt: Date.now(), fromGate: gate.id });
+      lines.push(`🎁 *DROP → ${player.name}* (final blow): *${drop.name}*`);
+    }
+  }
+  return lines;
+}
+
+// ── On full clear (boss defeated) — distribute loot ─────────────
+function clearGate(gate, key, keyData, db, saveDatabase) {
+  const raid = gate.raid || {};
+  const raiders = raid.members?.length ? raid.members : [];
+
+  // Loot totals (Nexus + Mana Stones) were fixed at spawn to 2–4× the
+  // gate's purchase price and stored on the gate. Distribute those.
+  const nexus   = Math.floor(gate.nexusLoot || 0);
+  const crystals = Math.floor(gate.crystalLoot || 0);
+
+  // A granted affiliate buys a gate UNDER THE GUILD'S NAME, so the gate
+  // always belongs to a guild (keyData.guildName is set for both guild-bought
+  // and affiliate-bought keys). The AFFILIATE PARTY gets its pooled % and the
+  // GUILD keeps the remainder.
+  const guild = GKM.findGuild(db, keyData.guildName);
+
+  // ── Affiliate loot model ─────────────────────────────────────
+  //   Grant  (/affiliate grant @u | P): the affiliate PARTY gets P%
+  //          of the loot, split equally; the guild keeps the remainder.
+  //   Request (/affiliate request @u | P): a recruited hunter is paid
+  //          P% of THIS raid's loot (one-off hire).
+  //   Contract (/contract @u | P): existing mechanism, paid from loot.
+  const participantIds = new Set(raiders.map(m => m.id));
+  const guildName = keyData.guildName;
+
+  // Resolve participating granted affiliates of the owning guild
+  const affPool = Object.values(db.affiliates || {}).filter(a =>
+    a.guildName === guildName && participantIds.has(a.jid) && (a.pct || 0) > 0
+  );
+  // Affiliate pool % — the pool share among participating affiliates
+  let affPoolPct = 0;
+  if (affPool.length) affPoolPct = Math.max(...affPool.map(a => Number(a.pct) || 0));
+
+  // One-off recruits (request) for this specific key
+  const recruited = Object.values(db.requests || {}).filter(r =>
+    r.key === key && participantIds.has(r.jid) && Number(r.pct) > 0
+  );
+
+  const payouts = {};      // { jid: { gold, crystals, kind, percent } }
+  let allocatedPct = 0;
+
+  // Affiliate pool → split equally among participating granted affiliates
+  if (affPoolPct > 0 && affPool.length) {
+    const perAff = affPoolPct / affPool.length;
+    for (const aff of affPool) {
+      payouts[aff.jid] = payouts[aff.jid] || { gold: 0, crystals: 0, kind: 'affiliate', percent: 0 };
+      payouts[aff.jid].gold   += Math.floor(nexus * (perAff / 100));
+      payouts[aff.jid].crystals += Math.floor(crystals * (perAff / 100));
+      payouts[aff.jid].percent += perAff;
+    }
+    allocatedPct += affPoolPct;
+  }
+
+  // Recruited (one-off) hunters
+  for (const r of recruited) {
+    payouts[r.jid] = payouts[r.jid] || { gold: 0, crystals: 0, kind: 'request', percent: 0 };
+    payouts[r.jid].gold   += Math.floor(nexus * (r.pct / 100));
+    payouts[r.jid].crystals += Math.floor(crystals * (r.pct / 100));
+    payouts[r.jid].percent += Number(r.pct);
+    allocatedPct += Number(r.pct);
+  }
+
+  // Contracts (existing)
+  const contractPayouts = {};
+  if (keyData.contracts) {
+    for (const [jid, pct] of Object.entries(keyData.contracts)) {
+      if (!participantIds.has(jid)) continue;
+      payouts[jid] = payouts[jid] || { gold: 0, crystals: 0, kind: 'contract', percent: 0 };
+      payouts[jid].gold   += Math.floor(nexus * (pct / 100));
+      payouts[jid].crystals += Math.floor(crystals * (pct / 100));
+      payouts[jid].percent += Number(pct);
+      allocatedPct += Number(pct);
+    }
+  }
+
+  // Clamp: if over-committed, scale payouts down proportionally
+  const totalPct = Math.max(allocatedPct, 0);
+  const scale = totalPct > 100 ? 100 / totalPct : 1;
+
+  let guildNexus = nexus, guildCrystals = crystals;
+  const affiliatePayouts = {};
+  for (const [jid, p] of Object.entries(payouts)) {
+    const goldCut = Math.floor(p.gold * scale);
+    const crystalCut = Math.floor(p.crystals * scale);
+    const hunter = db.users?.[jid];
+    if (hunter) {
+      hunter.gold = (hunter.gold || 0) + goldCut;
+      hunter.manaCrystals = (hunter.manaCrystals || 0) + crystalCut;
+    }
+    affiliatePayouts[jid] = { gold: goldCut, crystals: crystalCut, kind: p.kind, percent: Number((p.percent * scale).toFixed(1)) };
+    guildNexus -= goldCut;
+    guildCrystals -= crystalCut;
+    if (p.kind === 'contract') contractPayouts[jid] = { gold: goldCut, crystals: crystalCut, percent: p.percent };
+  }
+  guildNexus = Math.max(0, guildNexus);
+  guildCrystals = Math.max(0, guildCrystals);
+
+  // The GUILD would own the gate always (affiliates buy under the guild's name),
+  // so the guild treasury receives the remainder after the affiliate party.
+  let dest, destinationText;
+  if (guild) {
+    guild.treasury = (guild.treasury || 0) + guildNexus;
+    guild.manaTreasury = (guild.manaTreasury || 0) + guildCrystals;
+    dest = guild.name || 'Guild';
+    destinationText = `🏰 *${dest}* Treasury`;
+  } else {
+    dest = 'Guild';
+    destinationText = `🏰 *${dest}* Treasury`;
+  }
+
+  // Wild pet spawns (catchable with /caught)
+  const wildPet = spawnWildPet(gate);
+  let wildToken = null;
+  if (wildPet && db) {
+    wildToken = `WP-${Date.now()}-${Math.floor(Math.random() * 999)}`;
+    if (!db.wildPets) db.wildPets = [];
+    db.wildPets.push({
+      token: wildToken,
+      petId: wildPet.petId,
+      name: wildPet.name,
+      emoji: wildPet.emoji,
+      rarity: wildPet.rarity,
+      gate: gate.id,
+      spawnedAt: Date.now(),
+      expiresAt: Date.now() + 60 * 1000, // 60s to catch
+      caughtBy: null,
+      forJids: raiders.map(m => m.id),
+    });
+    wildPet.token = wildToken;
+  }
+
+  // 50% recovery + NO cooldown for all members
+  let recovered = 0;
+  for (const m of raiders) {
+    const p = db.users?.[m.id];
+    if (p) {
+      if (!p.stats_history) p.stats_history = {};
+      p.stats_history.gatesCleared = (p.stats_history.gatesCleared || 0) + 1;
+      // 50% recovery
+      p.stats.hp = Math.min(p.stats.maxHp, Math.floor((p.stats.maxHp || 100) * 0.5));
+      if (p.stats.maxEnergy) p.stats.energy = Math.min(p.stats.maxEnergy, Math.floor(p.stats.maxEnergy * 0.5));
+      // No cooldown on next clear
+      if (p.dungeonCooldown) p.dungeonCooldown = 0;
+      recovered++;
+    }
+    // Sync HP into the party member view
+    const pm = raid.members?.find(x => x.id === m.id);
+    if (pm && p) { pm.hp = p.stats.hp; pm.energy = p.stats.energy; }
+  }
+
+  // Mark cleared
+  GateManager.clearGate(gate.id, db);
+  if (keyData) {
+    keyData.raidComplete = true;
+    if (db.gateKeys?.[key]) db.gateKeys[key].raidComplete = true;
+    const gc = GKM.getDungeonGC(keyData.dungeonChatId);
+    if (gc) gc.activeKeyId = null;
+  }
+  if (!gate.raid) gate.raid = { members: [], mode: 'solo', leader: null, status: 'done' };
+  gate.raid.status = 'done';
+  gate.raid.clearedAt = Date.now();
+  gate.raid.loot = { nexus, crystals, destinationText, dest, contractPayouts, affiliatePayouts, wildPet, recovered };
+  if (saveDatabase) saveDatabase();
+
+  return {
+    nexus, crystals, destinationText, dest, guild,
+    contractPayouts, affiliatePayouts, wildPet, recovered, raiders, wildToken,
+  };
+}
+
+// ── Wild pets after a clear ──────────────────────────────────────
+function spawnWildPet(gate) {
+  const chance = 0.45; // 45% a wild pet appears after a clear
+  if (Math.random() > chance) return null;
+  const { PET_DATABASE, rollEggType } = require('../utils/PetDatabase');
+  const pool = Object.values(PET_DATABASE);
+  // Bias toward rarer pets on higher-tier gates
+  const weights = pool.map((p, i) => ({ p, w: 2 + Math.random() * (gate.rank === 'S' || gate.rank === 'DISASTER' ? 5 : 1) }));
+  const total = weights.reduce((s, w) => s + w.w, 0);
+  let r = Math.random() * total;
+  let chosen = pool[0];
+  for (const { p, w } of weights) { r -= w; if (r <= 0) { chosen = p; break; } }
+  return { petId: chosen.id, name: chosen.name, emoji: chosen.emoji, rarity: chosen.rarity };
+}
+
+module.exports = {
+  MAX_PARTY,
+  playerDamage,
+  monsterDamage,
+  lifeSteal,
+  resolveCode,
+  relationOf,
+  raidOf,
+  ensureMember,
+  enter,
+  join,
+  ready,
+  start,
+  statusOf,
+  monsterKilledBy,
+  clearGate,
+  spawnWildPet,
+  GKM,
+  GateManager,
+  GATE_RANKS,
+};

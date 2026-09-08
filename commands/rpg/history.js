@@ -2,7 +2,7 @@ const { buildHistoryText } = require('../../rpg/utils/TransactionLog');
 
 module.exports = {
   name: 'history',
-  description: '📜 View your last 10 gold/crystal transactions',
+  description: '📜 View your last 10 Nexus/crystal transactions',
 
   async execute(sock, msg, args, getDatabase, saveDatabase, sender) {
     const chatId = msg.key.remoteJid;

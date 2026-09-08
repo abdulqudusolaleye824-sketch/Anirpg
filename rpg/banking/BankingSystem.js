@@ -21,7 +21,7 @@ class BankingSystem {
     if ((player.gold || 0) < minGold) {
       return { 
         canCreate: false, 
-        reason: `Need ${minGold} gold (You: ${player.gold || 0})` 
+        reason: `Need ${minGold} Nexus (You: ${player.gold || 0})` 
       };
     }
     
