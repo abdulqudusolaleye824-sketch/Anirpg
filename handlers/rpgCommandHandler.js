@@ -317,9 +317,11 @@ module.exports = async (sock, msg, messageText, config, getDatabase, saveDatabas
     }
   }
 
+  const Perms = require('../utils/permissions');
+  const isPrivilegedUser = Perms.isBotOwner(db, sender) || Perms.isBotMod(db, sender);
+
   if (chatId.endsWith('@g.us')) {
     const settings = db.groupSettings?.[chatId];
-    const admins = [OWNER_JID, ...(db.botMods || [])];
 
     let antiLinkOn = !!settings?.antiLink;
     if (!antiLinkOn) {
@@ -330,7 +332,7 @@ module.exports = async (sock, msg, messageText, config, getDatabase, saveDatabas
       } catch (e) { /* ignore */ }
     }
 
-    if (antiLinkOn && !admins.includes(sender)) {
+    if (antiLinkOn && !isPrivilegedUser) {
       const text =
         msg.message?.conversation ||
         msg.message?.extendedTextMessage?.text ||
@@ -392,9 +394,8 @@ module.exports = async (sock, msg, messageText, config, getDatabase, saveDatabas
 
   if (chatId.endsWith('@g.us')) {
     const settings = db.groupSettings?.[chatId];
-    const admins = [OWNER_JID, ...(db.botMods || [])];
 
-    if (settings?.slowmode && !admins.includes(sender)) {
+    if (settings?.slowmode && !isPrivilegedUser) {
       if (!db.userCooldowns) db.userCooldowns = {};
 
       const key = `${chatId}_${sender}`;
@@ -431,6 +432,7 @@ module.exports = async (sock, msg, messageText, config, getDatabase, saveDatabas
   }
   if (
     db.system.maintenance &&
+    !isPrivilegedUser &&
     commandName !== 'maintenance' &&
     commandName !== 'help'
   ) {
@@ -438,9 +440,9 @@ module.exports = async (sock, msg, messageText, config, getDatabase, saveDatabas
       chatId,
       {
         text:
-          '🛠️ *Bot is currently under maintenance*\n\n' +
-          'Senku is currently working on the bot.\n' +
-          'Only *help* and *maintenance* commands are available. Baka',
+          '🔧 *MAINTENANCE MODE: ON*\n\n' +
+          '🚧 Non-mod commands will be silently ignored.\n' +
+          'Mods/owners can still use all commands.',
       },
       { quoted: msg }
     );
@@ -457,9 +459,7 @@ module.exports = async (sock, msg, messageText, config, getDatabase, saveDatabas
 
   if (!db.disabledCommands) db.disabledCommands = [];
 
-  const admins = [OWNER_JID];
-
-  if (commandName === 'disable' && admins.includes(sender)) {
+  if (commandName === 'disable' && isPrivilegedUser) {
     const target = args[0]?.toLowerCase();
     if (!target) {
       return sock.sendMessage(chatId, { text: '❌ Usage: /disable <command>' }, { quoted: msg });
@@ -490,7 +490,7 @@ module.exports = async (sock, msg, messageText, config, getDatabase, saveDatabas
     );
   }
 
-  if (commandName === 'enable' && admins.includes(sender)) {
+  if (commandName === 'enable' && isPrivilegedUser) {
     const target = args[0]?.toLowerCase();
     if (!target) {
       return sock.sendMessage(chatId, { text: '❌ Usage: /enable <command>' }, { quoted: msg });
