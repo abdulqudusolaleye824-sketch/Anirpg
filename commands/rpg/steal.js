@@ -1,8 +1,8 @@
 // ═══════════════════════════════════════════════════════════════
 // STEAL COMMAND — Sticker Theft & Rebranding
-// Reply to a sticker with /steal or /s to steal it into your own pack.
+// Reply to a sticker or image with /steal or /s to steal it into your own pack.
 // Default: Pack Name: ✦ 𝐀𝐬𝐭𝐫𝐚™ | Author: owner/user name
-// Custom: /steal mee | and youu  or /s mee | and youu
+// Custom: /steal My Pack | My Author  or /s My Pack | My Author
 // ═══════════════════════════════════════════════════════════════
 
 const { downloadMediaMessage } = require('@whiskeysockets/baileys');
@@ -75,7 +75,20 @@ module.exports = {
             participant: contextInfo.participant
           }
         };
-        buffer = await downloadMediaMessage(mediaMsg, 'buffer', {});
+        const downloadedBuf = await downloadMediaMessage(mediaMsg, 'buffer', {});
+        // Re-process WebP with sharp to strip previous EXIF/author metadata before injecting new EXIF
+        if (downloadedBuf && sharp) {
+          try {
+            buffer = await sharp(downloadedBuf)
+              .resize(512, 512, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } })
+              .webp({ quality: 95 })
+              .toBuffer();
+          } catch(e) {
+            buffer = downloadedBuf;
+          }
+        } else {
+          buffer = downloadedBuf;
+        }
       } else if (imageMsg) {
         const mediaMsg = quoted ? {
           message: quoted,
