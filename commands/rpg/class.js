@@ -1,20 +1,81 @@
 // ═══════════════════════════════════════════════════════════════
-// /class — View your class, quality, skills & in-battle activation guide
+// /class — View your class, class descriptions, skills & activation guide
 // ═══════════════════════════════════════════════════════════════
 
 'use strict';
 
 const { CLASS_DATA, formatClassInfo, getQualityLabel, ALL_CLASSES } = require('../../rpg/utils/ClassSystem');
 const { getClassCmdName } = require('../../rpg/utils/classcmd');
+const { getSkillDescription } = require('../../rpg/utils/SkillDescriptions');
 
 module.exports = {
   name: 'class',
   aliases: ['myclass', 'cls'],
-  description: 'View your class info, skills, and in-battle skill command guide',
+  description: 'View your class info, class guide, skills, and activation guide',
 
   async execute(sock, msg, args, getDatabase, saveDatabase, sender) {
     const chatId = msg.key?.remoteJid;
     const db     = getDatabase();
+
+    const firstArg = (args[0] || '').toLowerCase().trim();
+
+    // ── LIST ALL CLASSES (/class list) ──────────────────────────────────────
+    if (firstArg === 'list' || firstArg === 'all') {
+      const classList = ALL_CLASSES.map(clsName => {
+        const d = CLASS_DATA[clsName] || {};
+        const cmd = getClassCmdName(clsName);
+        return `${d.emoji || '🎭'} *${clsName}* (/${cmd})\n   _${d.lore || d.description || 'No description available.'}_`;
+      });
+
+      return sock.sendMessage(chatId, {
+        text: [
+          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          `🎭 *HUNTER CLASS DIRECTORY (${ALL_CLASSES.length} CLASSES)*`,
+          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          ``,
+          ...classList,
+          ``,
+          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          `💡 Use */class <ClassName>* to view specific class details & skills!`,
+          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        ].join('\n'),
+      }, { quoted: msg });
+    }
+
+    // ── VIEW SPECIFIC CLASS BY NAME (/class Mage) ───────────────────────────
+    const matchedClass = ALL_CLASSES.find(c => c.toLowerCase() === firstArg || c.toLowerCase() === args.slice(1).join(' ').toLowerCase());
+    if (matchedClass) {
+      const data = CLASS_DATA[matchedClass] || {};
+      const cmd = getClassCmdName(matchedClass);
+      const skills = data.skills || [];
+
+      const skillDetails = skills.map((s, i) => {
+        const sd = getSkillDescription(matchedClass, s.name) || {};
+        const desc = sd.description || s.desc || 'No description.';
+        const eff = sd.effect ? `\n     ✨ *Effect:* ${sd.effect.replace(/\n/g, '\n     ')}` : '';
+        const cost = sd.energyCost ? ` | ⚡ Cost: ${sd.energyCost}` : '';
+        const cd = sd.cooldown ? ` | ⌛ CD: ${sd.cooldown}t` : '';
+        return `  ${i + 1}. *${s.name}*${cost}${cd}\n     ${desc}${eff}`;
+      });
+
+      return sock.sendMessage(chatId, {
+        text: [
+          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          `${data.emoji || '🎭'} *${matchedClass.toUpperCase()} CLASS GUIDE*`,
+          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          ``,
+          `📜 *Description:*`,
+          `_${data.lore || data.description || 'A powerful awakener class.'}_`,
+          ``,
+          `📌 *In-Battle Command:* */${cmd} <skill_name>*`,
+          ``,
+          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          `⚡ *CLASS SKILLS:*`,
+          ...skillDetails,
+          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        ].join('\n'),
+      }, { quoted: msg });
+    }
 
     // Allow viewing another player's class
     const mentionedJid = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid?.[0];
@@ -30,7 +91,7 @@ module.exports = {
     // ── No class yet ──────────────────────────────────────────────────────────
     if (!player.class) {
       const threshold = player.classAwakeningThreshold;
-      const currentXp = player.xp || 0;
+      const currentXp = player.totalXp || player.xp || 0;
       const remaining = threshold ? Math.max(0, threshold - currentXp) : null;
 
       return sock.sendMessage(chatId, {
@@ -48,14 +109,17 @@ module.exports = {
           `There are *${ALL_CLASSES.length}* possible classes.`,
           `The pull is random. Quality is random.`,
           `Neither can be changed.`,
+          ``,
+          `💡 Use */class list* to view all available classes!`,
           `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
         ].join('\n'),
       }, { quoted: msg });
     }
 
     // ── Has class ─────────────────────────────────────────────────────────────
-    const data    = CLASS_DATA[player.class] || {};
-    const quality = player.classQuality || 0;
+    const baseClass = player.classBase || player.class;
+    const data      = CLASS_DATA[baseClass] || CLASS_DATA[player.class] || {};
+    const quality   = player.classQuality || 0;
     const qualLabel = getQualityLabel(quality);
     const playerCmd = getClassCmdName(player.class);
 
@@ -66,9 +130,12 @@ module.exports = {
                 : '⭐';
 
     const rawSkills = (player.classSkills || data.skills || []);
-    const skillLines = rawSkills.map((s, i) =>
-      `  ${i+1}. *${s.name}*\n     ${s.desc || ''}`
-    );
+    const skillLines = rawSkills.map((s, i) => {
+      const sd = getSkillDescription(player.class, s.name) || {};
+      const desc = s.desc || sd.description || 'No description.';
+      const eff = sd.effect ? `\n     ✨ ${sd.effect.replace(/\n/g, '\n     ')}` : '';
+      return `  ${i+1}. *${s.name}*\n     ${desc}${eff}`;
+    });
 
     // Stat bonuses at this quality
     const bonusLines = Object.entries(data.maxBonuses || {}).map(([stat, max]) => {
@@ -87,11 +154,11 @@ module.exports = {
     return sock.sendMessage(chatId, {
       text: [
         `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-        `${data.emoji || '🎭'} *${player.name}'s CLASS*`,
+        `${data.emoji || '🎭'} *${player.name}'s CLASS GUIDE*`,
         `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
         ``,
-        `*${player.class}*`,
-        `_${data.lore || ''}_`,
+        `🎭 Class: *${player.class}*`,
+        `📜 Description: _${data.lore || data.description || 'A unique awakener class.'}_`,
         ``,
         `✨ Quality: *${quality}%* ${stars}`,
         `   ${qualLabel}`,

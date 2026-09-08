@@ -130,11 +130,9 @@ module.exports = {
       player.inventory.items.splice(luckIdx, 1);
     }
 
-    // Privileged / Paladin check
-    const OWNER_ID = '221951679328499@lid';
-    const COOWNER_ID = '194592469209292@lid';
+    // Paladin class gets guaranteed catch
     const playerClass = typeof player.class === 'string' ? player.class : player.class?.name;
-    const isGuaranteed = sender === OWNER_ID || sender === COOWNER_ID || playerClass === 'Paladin';
+    const isGuaranteed = playerClass === 'Paladin';
 
     const finalRate = Math.min(95, baseRate + luckBonus);
 

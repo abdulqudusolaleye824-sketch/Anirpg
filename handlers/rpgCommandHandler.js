@@ -251,6 +251,10 @@ module.exports = async (sock, msg, messageText, config, getDatabase, saveDatabas
   }
 
   const db = getDatabase();
+  const { applyPassiveRegen } = require('../rpg/utils/RegenManager');
+  if (db?.users?.[sender]) {
+    applyPassiveRegen(db.users[sender], db);
+  }
   const OWNER_ID = OWNER_JID;
   const isOwner = sender === OWNER_ID;
 

@@ -192,6 +192,89 @@ module.exports = {
       return sock.sendMessage(chatId, { text: GR.statusOf(gate, db) }, { quoted: msg });
     }
 
+    // ── HEAL (HEALTH POTION) ───────────────────────────────────
+    if (action === 'heal' || action === 'item') {
+      if (!inRaid(gate, sender)) return sock.sendMessage(chatId, { text: '❌ You are not in this raid.' }, { quoted: msg });
+
+      // Party potion cap: max 5 health potions per gate raid collectively
+      if ((gate.potionsUsed || 0) >= 5) {
+        return sock.sendMessage(chatId, {
+          text: `❌ *Gate Raid Health Potion Cap Reached!*\n\nCollective party cap: *5/5 Health Potions used* in this raid.`
+        }, { quoted: msg });
+      }
+
+      // Find best available potion
+      let tierUsed = null;
+      if ((player.inventory?.higherHealthPotions || 0) > 0) tierUsed = 'higher';
+      else if ((player.inventory?.mediumHealthPotions || 0) > 0) tierUsed = 'medium';
+      else if ((player.inventory?.lowerHealthPotions || 0) > 0 || (player.inventory?.healthPotions || 0) > 0) tierUsed = 'lower';
+
+      if (!tierUsed) {
+        return sock.sendMessage(chatId, { text: '❌ You have no Health Potions left in your inventory!' }, { quoted: msg });
+      }
+
+      const pct = tierUsed === 'lower' ? 0.10 : tierUsed === 'medium' ? 0.25 : 0.50;
+      const tierName = tierUsed === 'lower' ? 'Lower HP Potion' : tierUsed === 'medium' ? 'Medium HP Potion' : 'Higher HP Potion';
+      const healAmount = Math.floor((player.stats?.maxHp || 100) * pct);
+      const oldHp = player.stats.hp || 0;
+      player.stats.hp = Math.min(player.stats.maxHp, oldHp + healAmount);
+      const actualHeal = player.stats.hp - oldHp;
+
+      if (tierUsed === 'lower') {
+        if ((player.inventory.lowerHealthPotions || 0) > 0) player.inventory.lowerHealthPotions--;
+        else if ((player.inventory.healthPotions || 0) > 0) player.inventory.healthPotions--;
+      } else if (tierUsed === 'medium') {
+        player.inventory.mediumHealthPotions--;
+      } else if (tierUsed === 'higher') {
+        player.inventory.higherHealthPotions--;
+      }
+
+      gate.potionsUsed = (gate.potionsUsed || 0) + 1;
+      const pm = gate.raid?.members?.find(m => m.id === sender);
+      if (pm) pm.hp = player.stats.hp;
+
+      saveDatabase();
+      return sock.sendMessage(chatId, {
+        text: `🩹 *${player.name}* used ${tierName}!\n💚 Restored +${actualHeal} HP (${player.stats.hp}/${player.stats.maxHp})\n🎒 Party Potions Used: ${gate.potionsUsed}/5`
+      }, { quoted: msg });
+    }
+
+    // ── REVIVE (REVIVE TOKEN) ──────────────────────────────────
+    if (action === 'revive') {
+      if ((player.inventory?.reviveTokens || 0) <= 0) {
+        return sock.sendMessage(chatId, { text: '❌ You have no Revive Tokens!' }, { quoted: msg });
+      }
+
+      // Party revive cap: max 1 revive per gate raid collectively
+      if ((gate.revivesUsed || 0) >= 1) {
+        return sock.sendMessage(chatId, {
+          text: `❌ *Gate Raid Revive Cap Reached!*\n\nOnly *1 Revive Token* can be used collectively across the entire party in a Gate Raid.`
+        }, { quoted: msg });
+      }
+
+      gate.revivesUsed = 1;
+      player.inventory.reviveTokens--;
+      player.stats.hp = Math.floor((player.stats?.maxHp || 100) * 0.5);
+
+      if (gate.raid) {
+        if (!gate.raid.members.some(m => m.id === sender)) {
+          gate.raid.members.push({ id: sender, name: player.name, hp: player.stats.hp, energy: player.stats.energy || 100, ready: true });
+        } else {
+          const pm = gate.raid.members.find(m => m.id === sender);
+          if (pm) pm.hp = player.stats.hp;
+        }
+      }
+      if (!gate.raiders?.includes(sender)) {
+        gate.raiders = gate.raiders || [];
+        gate.raiders.push(sender);
+      }
+
+      saveDatabase();
+      return sock.sendMessage(chatId, {
+        text: `💫 *REVIVE USED!* *${player.name}* was revived with ${player.stats.hp}/${player.stats.maxHp} HP!\n⚠️ Party Revive Cap Reached (1/1 used).`
+      }, { quoted: msg });
+    }
+
     // ── ADVANCE ─────────────────────────────────────────────────
     if (action === 'advance') {
       if (!inRaid(gate, sender)) return sock.sendMessage(chatId, { text: '❌ You are not in this raid.' }, { quoted: msg });
@@ -379,12 +462,27 @@ module.exports = {
         const def = (player.stats?.def || 5) + (player.equipped?.armor?.def || 0);
         const bossAtk = Math.floor(GATE_RANKS[gate.rank].monsterRange[1] * 0.20);
         const dmg = Math.max(10, bossAtk - Math.floor(def * 0.4));
-        player.stats.hp = Math.max(1, (player.stats.hp || 0) - dmg);
+        player.stats.hp = Math.max(0, (player.stats.hp || 0) - dmg);
         const heal = GR.lifeSteal(player, result.damage);
         if (heal > 0) player.stats.hp = Math.min(player.stats.maxHp, player.stats.hp + heal);
         lines.push(``, `💢 *${boss.name}* retaliates!`, `Took *${dmg}* damage`);
         if (heal > 0) lines.push(`💚 Lifesteal: +${heal} HP`);
         lines.push(`❤️ Your HP: *${player.stats.hp}/${player.stats.maxHp}*`);
+
+        if (player.stats.hp <= 0) {
+          player.stats.hp = 1;
+          player.stats_history = player.stats_history || {};
+          player.stats_history.gateDeaths = (player.stats_history.gateDeaths || 0) + 1;
+          const loss = Math.floor((player.manaCrystals || 0) * 0.15);
+          player.manaCrystals = Math.max(0, (player.manaCrystals || 0) - loss);
+          lines.push(``, `💀 *YOU FELL BEFORE THE BOSS!*`, `Lost ${loss.toLocaleString()} 💎`, `You fled with 1 HP.`);
+          // Remove from raid
+          if (gate.raid) gate.raid.members = gate.raid.members.filter(m => m.id !== sender);
+          gate.raiders = (gate.raiders || []).filter(r => r !== sender);
+          saveDatabase();
+          return sock.sendMessage(chatId, { text: lines.join('\n') }, { quoted: msg });
+        }
+
         lines.push(``, `⚔️ /gateraid ${key} boss — Attack again`);
       }
 

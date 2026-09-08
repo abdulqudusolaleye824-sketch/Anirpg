@@ -2,6 +2,7 @@ const TaxSystem = require('../../rpg/utils/TaxSystem');
 const { updatePlayerNexus } = require('../../rpg/utils/NexusManager');
 const { SCROLL_SHOP_ITEMS, buyScroll } = require('../../rpg/utils/CraftingSystem');
 const { OWNER_JID, COOWNER_JID } = require('../../utils/constants');
+const { checkInBattle } = require('../../rpg/utils/RegenManager');
 
 function validatePurchase(player, cost, currency) {
   if (currency === 'gold') {
@@ -30,14 +31,16 @@ const weaponUpgrades = {
 };
 
 const CONSUMABLES = [
-  {id:1,name:'Health Potion',emoji:'🩹',desc:'Restores 50% HP',cost:800,key:'healthPotions'},
-  {id:2,name:'Energy Potion',emoji:'⚡',desc:'Restores 50% Energy',cost:600,key:'energyPotions'},
-  {id:3,name:'Revive Token',emoji:'🎫',desc:'Auto-revive once in dungeon',cost:3000,key:'reviveTokens'},
-  {id:4,name:'Luck Potion',emoji:'🍀',desc:'+25% catch rate & casino odds',cost:2000,key:'luckPotion'},
-  {id:5,name:'XP Booster',emoji:'✨',desc:'+50% XP for 3 battles',cost:5000,key:'xpBooster'},
-  {id:6,name:'Nexus Multiplier',emoji:'💰',desc:'Next 3 wins give 2x gold',cost:8000,key:'goldMult'},
-  {id:7,name:'Shield Scroll',emoji:'🛡️',desc:'Absorbs one hit in next fight',cost:4000,key:'shieldScroll'},
-  {id:8,name:'Elixir of Might',emoji:'💪',desc:'+20 ATK for next 5 battles',cost:12000,key:'mightElixir'},
+  {id:1,name:'Lower Health Potion',emoji:'🩹',desc:'Restores 10% HP',cost:800,key:'lowerHealthPotions'},
+  {id:2,name:'Medium Health Potion',emoji:'🧪',desc:'Restores 25% HP',cost:5000,key:'mediumHealthPotions'},
+  {id:3,name:'Higher Health Potion',emoji:'🍷',desc:'Restores 50% HP',cost:7000,key:'higherHealthPotions'},
+  {id:4,name:'Energy Potion',emoji:'⚡',desc:'Restores 50% Energy',cost:600,key:'energyPotions'},
+  {id:5,name:'Revive Token',emoji:'🎫',desc:'Auto-revive once in dungeon',cost:3000,key:'reviveTokens'},
+  {id:6,name:'Luck Potion',emoji:'🍀',desc:'+25% catch rate & casino odds',cost:2000,key:'luckPotion'},
+  {id:7,name:'XP Booster',emoji:'✨',desc:'+50% XP for 3 battles',cost:5000,key:'xpBooster'},
+  {id:8,name:'Nexus Multiplier',emoji:'💰',desc:'Next 3 wins give 2x gold',cost:8000,key:'goldMult'},
+  {id:9,name:'Shield Scroll',emoji:'🛡️',desc:'Absorbs one hit in next fight',cost:4000,key:'shieldScroll'},
+  {id:10,name:'Elixir of Might',emoji:'💪',desc:'+20 ATK for next 5 battles',cost:12000,key:'mightElixir'},
 ];
 
 const CRYSTAL_ITEMS = [
@@ -68,7 +71,12 @@ module.exports = {
     const db = getDatabase();
     const player = db.users[sender];
     if (!player) return sock.sendMessage(chatId, { text: '❌ Register first! /register' }, { quoted: msg });
-    if (!player.inventory) player.inventory = {healthPotions:0,energyPotions:0,manaPotions:0,reviveTokens:0,items:[]};
+
+    if (checkInBattle(player, db)) {
+      return sock.sendMessage(chatId, { text: '❌ You cannot access the shop while in battle!' }, { quoted: msg });
+    }
+
+    if (!player.inventory) player.inventory = {lowerHealthPotions:0,mediumHealthPotions:0,higherHealthPotions:0,healthPotions:0,energyPotions:0,manaPotions:0,reviveTokens:0,items:[]};
     if (!player.inventory.items) player.inventory.items = [];
 
     const action = args[0]?.toLowerCase();
@@ -292,8 +300,14 @@ module.exports = {
         if(!val.valid) return sock.sendMessage(chatId,{text:val.message},{quoted:msg});
         const tax=TaxSystem.applyTax(db,cost,'gold',saveDatabase);
         updatePlayerNexus(player,-cost,null);
-        if(item.key==='healthPotions') player.inventory.healthPotions=(player.inventory.healthPotions||0)+amount;
-        else if(item.key==='energyPotions'){if(player.inventory.energyPotions!==undefined)player.inventory.energyPotions=(player.inventory.energyPotions||0)+amount;else player.inventory.manaPotions=(player.inventory.manaPotions||0)+amount;}
+        if(item.key==='lowerHealthPotions' || item.key==='healthPotions') {
+          player.inventory.lowerHealthPotions = (player.inventory.lowerHealthPotions || 0) + amount;
+          player.inventory.healthPotions = (player.inventory.healthPotions || 0) + amount;
+        } else if(item.key==='mediumHealthPotions') {
+          player.inventory.mediumHealthPotions = (player.inventory.mediumHealthPotions || 0) + amount;
+        } else if(item.key==='higherHealthPotions') {
+          player.inventory.higherHealthPotions = (player.inventory.higherHealthPotions || 0) + amount;
+        } else if(item.key==='energyPotions'){if(player.inventory.energyPotions!==undefined)player.inventory.energyPotions=(player.inventory.energyPotions||0)+amount;else player.inventory.manaPotions=(player.inventory.manaPotions||0)+amount;}
         else if(item.key==='reviveTokens') player.inventory.reviveTokens=(player.inventory.reviveTokens||0)+amount;
         else if(item.key==='luckPotion'){for(let i=0;i<amount;i++)player.inventory.items.push({name:'Luck Potion',type:'Consumable',rarity:'uncommon',isLuckPotion:true});}
         else if(item.key==='xpBooster'){for(let i=0;i<amount;i++)player.inventory.items.push({name:'XP Booster',type:'Consumable',isXpBooster:true,charges:3});}

@@ -10,12 +10,12 @@ const fs   = require('fs');
 const { MONSTER_DROPS, BASE_MATERIALS, rollMonsterDrop, rollBossDrop, rollBaseMaterial, getRandomMonster, getRandomBoss } = require('../data/MonsterDrops');
 
 const GATE_RANKS = {
-  E: { emoji:'⚫', label:'E-Rank Gate', floors:3, monsterRange:[5,15], bossHp:800,  priceRange:[3000,6000],      manaPriceRange:[0,0],        currency:'nexus', currencySafe:[800,1400], lootTier:'common',    isFree:false, description:'Standard low-tier gate. Costs Nexus.' },
-  D: { emoji:'🟤', label:'D-Rank Gate', floors:4, monsterRange:[15,35], bossHp:2000, priceRange:[8000,16000],     manaPriceRange:[0,0],        currency:'nexus', currencySafe:[2000,3600], lootTier:'uncommon',  isFree:false, description:'Mid-low tier. Costs Nexus.' },
-  C: { emoji:'🔵', label:'C-Rank Gate', floors:5, monsterRange:[35,70], bossHp:5000, priceRange:[20000,40000],    manaPriceRange:[0,0],        currency:'nexus', currencySafe:[5000,9000], lootTier:'rare',     isFree:false, description:'Mid tier. Costs Nexus.' },
-  B: { emoji:'🟢', label:'B-Rank Gate', floors:6, monsterRange:[70,120], bossHp:12000, priceRange:[50000,100000], manaPriceRange:[100,300],   currency:'both',  currencySafe:[12000,22000], lootTier:'rare',    isFree:false, description:'High tier. Requires Nexus AND Mana Stones.' },
-  A: { emoji:'🟡', label:'A-Rank Gate', floors:7, monsterRange:[120,200], bossHp:30000, priceRange:[150000,300000], manaPriceRange:[500,1200], currency:'both',  currencySafe:[36000,68000], lootTier:'epic',   isFree:false, description:'Elite tier. Requires Nexus AND Mana Stones.' },
-  S: { emoji:'🔴', label:'S-Rank Gate', floors:8, monsterRange:[200,400], bossHp:80000, priceRange:[500000,1000000], manaPriceRange:[2000,5000], currency:'both', currencySafe:[120000,220000], lootTier:'legendary', isFree:false, description:'National-level threat. Requires Nexus AND Mana Stones.' },
+  E: { emoji:'⚫', label:'E-Rank Gate', floors:3, monsterRange:[15,45], bossHp:400,   priceRange:[3000,6000],      manaPriceRange:[0,0],        currency:'nexus', currencySafe:[800,1400], lootTier:'common',    isFree:false, description:'Standard low-tier gate. Costs Nexus.' },
+  D: { emoji:'🟤', label:'D-Rank Gate', floors:4, monsterRange:[45,105], bossHp:1000,  priceRange:[8000,16000],     manaPriceRange:[0,0],        currency:'nexus', currencySafe:[2000,3600], lootTier:'uncommon',  isFree:false, description:'Mid-low tier. Costs Nexus.' },
+  C: { emoji:'🔵', label:'C-Rank Gate', floors:5, monsterRange:[105,210], bossHp:2500, priceRange:[20000,40000],    manaPriceRange:[0,0],        currency:'nexus', currencySafe:[5000,9000], lootTier:'rare',     isFree:false, description:'Mid tier. Costs Nexus.' },
+  B: { emoji:'🟢', label:'B-Rank Gate', floors:6, monsterRange:[210,360], bossHp:6000, priceRange:[50000,100000], manaPriceRange:[100,300],   currency:'both',  currencySafe:[12000,22000], lootTier:'rare',    isFree:false, description:'High tier. Requires Nexus AND Mana Stones.' },
+  A: { emoji:'🟡', label:'A-Rank Gate', floors:7, monsterRange:[360,600], bossHp:15000, priceRange:[150000,300000], manaPriceRange:[500,1200], currency:'both',  currencySafe:[36000,68000], lootTier:'epic',   isFree:false, description:'Elite tier. Requires Nexus AND Mana Stones.' },
+  S: { emoji:'🔴', label:'S-Rank Gate', floors:8, monsterRange:[600,1200], bossHp:40000, priceRange:[500000,1000000], manaPriceRange:[2000,5000], currency:'both', currencySafe:[120000,220000], lootTier:'legendary', isFree:false, description:'National-level threat. Requires Nexus AND Mana Stones.' },
 };
 
 const LOOT_TABLES = {};

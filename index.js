@@ -851,6 +851,15 @@ setInterval(() => {
   }
 }, 60 * 1000);
 
+// Out-of-battle passive HP regeneration (E:1, D:3, C:5, B:7, A:10, S:20 HP/sec)
+setInterval(() => {
+  if (!database?.users) return;
+  const { applyPassiveRegen } = require('./rpg/utils/RegenManager');
+  for (const uId in database.users) {
+    applyPassiveRegen(database.users[uId], database);
+  }
+}, 5000);
+
 setTimeout(() => {
   const count = _wipeAndReseedAllDailyQuests();
   if (count > 0) console.log(`📋 Initial daily quest re-seed on startup: ${count} players`);

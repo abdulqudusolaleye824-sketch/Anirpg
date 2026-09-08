@@ -39,7 +39,10 @@ const SHOP_UPGRADE_COSTS = {
 // Master Regular Shop Pool for Guild Shop daily rotation
 const REGULAR_SHOP_POOL = [
   // Potions & Consumables (Nexus)
-  { id: 'health_potion', name: 'Health Potion', category: 'Potions', type: 'potion', currency: 'gold', basePrice: 800, description: 'Restores 50% HP', key: 'healthPotions' },
+  { id: 'lower_health_potion', name: 'Lower Health Potion', category: 'Potions', type: 'potion', currency: 'gold', basePrice: 800, description: 'Restores 10% HP', key: 'lowerHealthPotions' },
+  { id: 'medium_health_potion', name: 'Medium Health Potion', category: 'Potions', type: 'potion', currency: 'gold', basePrice: 5000, description: 'Restores 25% HP', key: 'mediumHealthPotions' },
+  { id: 'higher_health_potion', name: 'Higher Health Potion', category: 'Potions', type: 'potion', currency: 'gold', basePrice: 7000, description: 'Restores 50% HP', key: 'higherHealthPotions' },
+  { id: 'health_potion', name: 'Health Potion', category: 'Potions', type: 'potion', currency: 'gold', basePrice: 800, description: 'Restores 10% HP', key: 'lowerHealthPotions' },
   { id: 'energy_potion', name: 'Energy Potion', category: 'Potions', type: 'potion', currency: 'gold', basePrice: 600, description: 'Restores 50% Energy', key: 'energyPotions' },
   { id: 'revive_token', name: 'Revive Token', category: 'Potions', type: 'potion', currency: 'gold', basePrice: 3000, description: 'Auto-revives once in dungeon', key: 'reviveTokens' },
   { id: 'luck_potion', name: 'Luck Potion', category: 'Potions', type: 'potion', currency: 'gold', basePrice: 2000, description: '+25% catch rate & casino odds', key: 'luckPotion' },
@@ -713,8 +716,14 @@ module.exports = {
         if (!player.inventory.items) player.inventory.items = [];
 
         if (item.type === 'potion') {
-          if (item.key === 'healthPotions') player.inventory.healthPotions = (player.inventory.healthPotions || 0) + 1;
-          else if (item.key === 'energyPotions') player.inventory.energyPotions = (player.inventory.energyPotions || 0) + 1;
+          if (item.key === 'lowerHealthPotions' || item.key === 'healthPotions') {
+            player.inventory.lowerHealthPotions = (player.inventory.lowerHealthPotions || 0) + 1;
+            player.inventory.healthPotions = (player.inventory.healthPotions || 0) + 1;
+          } else if (item.key === 'mediumHealthPotions') {
+            player.inventory.mediumHealthPotions = (player.inventory.mediumHealthPotions || 0) + 1;
+          } else if (item.key === 'higherHealthPotions') {
+            player.inventory.higherHealthPotions = (player.inventory.higherHealthPotions || 0) + 1;
+          } else if (item.key === 'energyPotions') player.inventory.energyPotions = (player.inventory.energyPotions || 0) + 1;
           else if (item.key === 'reviveTokens') player.inventory.reviveTokens = (player.inventory.reviveTokens || 0) + 1;
           else if (item.key === 'luckPotion') player.inventory.items.push({ name: 'Luck Potion', type: 'Consumable', isLuckPotion: true });
           else if (item.key === 'xpBooster') player.inventory.items.push({ name: 'XP Booster', type: 'Consumable', isXpBooster: true, charges: 3 });
