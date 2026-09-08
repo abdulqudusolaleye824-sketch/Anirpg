@@ -13,11 +13,7 @@ function levelToRank(avgLevel) {
 }
 
 function gateImage(rank) {
-  const r = (rank || 'E').toUpperCase();
-  const file = r === 'S' || r === 'DISASTER' ? 's_rank.jpg'
-             : (r === 'A' || r === 'B')      ? 'ab_rank.jpg'
-             :                                'cde_rank.jpg';
-  return path.join(__dirname, '..', 'assets', 'gates', file);
+  return GateManager.getGateImage(rank);
 }
 
 function gateCaption(gate) {
@@ -75,7 +71,7 @@ function gateCaption(gate) {
       ``,
       `Hunters are advised to exercise extreme caution.`,
       ``,
-      `「GATE STATUS: ACTIVE」`,
+      `「GATE STATUS: A」`,
       `「THREAT LEVEL: A」`,
       gateIdLine,
       priceLine,
@@ -129,7 +125,7 @@ class GateSpawner {
     const gates = GateManager.gatesByChat?.[chatId] || [];
     for (const gid of gates) {
       const g = GateManager.activeGates?.[gid];
-      if (g && g.chatId === chatId && !g.owned && !g.isFree && !g.cleared && !g.broken) return g;
+      if (g && g.chatId === chatId && !g.owned && !g.purchased && !g.isFree && !g.cleared && !g.broken && g.active) return g;
     }
     return null;
   }
@@ -161,6 +157,7 @@ class GateSpawner {
       return true;
     }
     unbought.broken = true;
+    unbought.active = false;
     return false;
   }
 

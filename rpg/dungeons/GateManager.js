@@ -32,6 +32,10 @@ class GateManager {
 
   static getGateImage(rank) {
     const r = (rank || 'E').toUpperCase();
+    const rankFile = `${r.toLowerCase()}_rank.jpg`;
+    const specificPath = path.join(__dirname, '..', '..', 'assets', 'gates', rankFile);
+    if (fs.existsSync(specificPath)) return specificPath;
+
     const file = r === 'S' || r === 'DISASTER' ? 's_rank.jpg'
                : (r === 'A' || r === 'B')      ? 'ab_rank.jpg'
                :                                'cde_rank.jpg';
