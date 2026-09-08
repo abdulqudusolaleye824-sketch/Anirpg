@@ -256,10 +256,25 @@ module.exports = async (sock, msg, messageText, config, getDatabase, saveDatabas
     const player = db.users[sender];
     applyPassiveRegen(player, db);
 
-    if (player.customEmoji && (player.isPro || player.proStatus) && player.proExpiresAt && player.proExpiresAt > Date.now()) {
-      try {
-        sock.sendMessage(chatId, { react: { text: player.customEmoji, key: msg.key } }).catch(() => {});
-      } catch (_) {}
+    const isPro = !!((player.isPro || player.proStatus) && player.proExpiresAt && player.proExpiresAt > Date.now());
+
+    if (isPro) {
+      if (player.customEmoji) {
+        try {
+          sock.sendMessage(chatId, { react: { text: player.customEmoji, key: msg.key } }).catch(() => {});
+        } catch (_) {}
+      }
+
+      // Random 25% chance for 🌟 star reaction (triggers 100% /aurafarm for the next 5s!)
+      if (Math.random() < 0.25) {
+        player.auraFarmBoostUntil = Date.now() + 5000;
+        try {
+          sock.sendMessage(chatId, { react: { text: '🌟', key: msg.key } }).catch(() => {});
+          setTimeout(() => {
+            sock.sendMessage(chatId, { react: { text: '', key: msg.key } }).catch(() => {});
+          }, 2000);
+        } catch (_) {}
+      }
     }
   }
   const OWNER_ID = OWNER_JID;
