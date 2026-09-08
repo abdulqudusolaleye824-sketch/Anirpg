@@ -59,7 +59,7 @@ const gate = {
       const rankData = AWAKENING_RANKS[player.awakenRank || 'E'];
       let txt = `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n「System」 *ACTIVE GATES*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
       txt += `${rankData.emoji} Your rank: *${rankData.label}*\n`;
-      txt += `🚪 No rank restriction — any rank can raid any gate.\n\n`;
+      txt += `🚪 Gates can be purchased by Guild Officers or Granted Affiliates.\n\n`;
 
       for (const g of active) {
         txt += GateManager.formatGate(g) + '\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n';
@@ -68,7 +68,7 @@ const gate = {
       txt += `\n📌 Reply to a gate announcement with */gate buy* to purchase.`;
 
       const topGate = active.sort((a,b) => {
-        const order = ['DISASTER','S','A','B','C','D','E'];
+        const order = ['S','A','B','C','D','E'];
         return order.indexOf(a.rank) - order.indexOf(b.rank);
       })[0];
 
@@ -142,7 +142,7 @@ const gate = {
 
       const result = GKM.purchaseGateKey(sender, gateObj, db, saveDatabase);
       if (!result.success) {
-        return sock.sendMessage(chatId, { text: `❌ ${result.error}` }, { quoted: msg });
+        return sock.sendMessage(chatId, { text: result.error }, { quoted: msg });
       }
 
       gateObj.purchased   = true;
@@ -185,10 +185,12 @@ const gate = {
         `📅 Remaining: *${stability}*`,
         ``,
         `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-        `📌 *HOW TO USE:*`,
+        `📌 *FLOW: Gate → Party → Dungeon*`,
         `1. Go to your dungeon GC`,
         `2. Use: /gate enter --${result.key}`,
-        `3. Guild members ride together (party).`,
+        `3. Form party: /party`,
+        `4. Members ready: /party ready`,
+        `5. Launch raid: /party raid`,
         `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
       ].join('\n');
 
@@ -242,12 +244,10 @@ const gate = {
         `⏳ Gate collapses in: *${timeLeft}*`,
         ``,
         `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-        `📌 *NEXT STEPS:*`,
-        `/gate apply --${keyArg}  — add party members`,
-        `/contract <x%> @hunter  — set payout deals`,
-        `/gateraid ${keyArg}      — begin the raid`,
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-        `💡 Use /gateraid ${keyArg} when your party is ready.`,
+        `📌 *FLOW: Gate → Party → Dungeon*`,
+        `/party                 — view raid party`,
+        `/party ready           — mark ready for raid`,
+        `/party raid            — launch dungeon raid`,
         `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
       ].join('\n');
 
@@ -261,62 +261,6 @@ const gate = {
       }
 
       return sock.sendMessage(chatId, { text: captionText }, { quoted: msg });
-    }
-
-    // ── /gate apply --<KEY> ───────────────────────────────────────────────────
-    if (sub === 'apply' || sub === 'join') {
-      const keyArg = (args[1] || '').replace(/^--/, '').toUpperCase().trim();
-      if (!keyArg) {
-        return sock.sendMessage(chatId, { text: `❌ Usage: /gate apply --<KEY>` }, { quoted: msg });
-      }
-
-      const keyData = GKM.getKey(keyArg);
-      if (!keyData) return sock.sendMessage(chatId, { text: `❌ Key not found.` }, { quoted: msg });
-      if (keyData.expired) return sock.sendMessage(chatId, { text: `❌ This gate has expired.` }, { quoted: msg });
-
-      if (!GKM.canUseKey(sender, keyData, db)) {
-        return sock.sendMessage(chatId, {
-          text: `❌ You are not authorized to join this raid.\n\nYou must be a guild member, affiliate, or have a contract.`,
-        }, { quoted: msg });
-      }
-
-      if (!keyData.raidParty.includes(sender)) keyData.raidParty.push(sender);
-      saveDatabase();
-
-      return sock.sendMessage(chatId, {
-        text: `✅ *${player.name}* joined the raid party!\n🔑 Key: \`${keyArg}\`\n👥 Party size: ${keyData.raidParty.length}`,
-      }, { quoted: msg });
-    }
-
-    // ── /gate party --<KEY> ───────────────────────────────────────────────────
-    if (sub === 'party') {
-      const keyArg = (args[1] || '').replace(/^--/, '').toUpperCase().trim();
-      if (!keyArg) return sock.sendMessage(chatId, { text: `❌ Usage: /gate party --<KEY>` }, { quoted: msg });
-
-      const keyData = GKM.getKey(keyArg);
-      if (!keyData) return sock.sendMessage(chatId, { text: `❌ Key not found.` }, { quoted: msg });
-
-      const rd = GATE_RANKS[keyData.gateRank] || {};
-      const partyLines = keyData.raidParty.map((jid, i) => {
-        const p = db.users?.[jid];
-        const isOwner = jid === keyData.ownedBy;
-        const contractPct = keyData.contracts?.[jid];
-        return `  ${i+1}. *${p?.name || jid.split('@')[0]}* ${isOwner ? '👑' : ''}${contractPct ? ` (${contractPct}% contract)` : ''}`;
-      });
-
-      return sock.sendMessage(chatId, {
-        text: [
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-          `👥 *RAID PARTY*`,
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-          `${rd.emoji || '🚪'} ${rd.label || keyData.gateRank}-Rank Gate`,
-          `Key: \`${keyArg}\``,
-          ``,
-          ...partyLines,
-          ``,
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-        ].join('\n'),
-      }, { quoted: msg });
     }
 
     // ── /gate status --<KEY> ──────────────────────────────────────────────────
@@ -362,14 +306,11 @@ const gate = {
         `🚪 *GATE COMMANDS*`,
         `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
         `/gate               — list active gates`,
-        `/gate buy           — reply to spawn to buy`,
+        `/gate buy           — reply to spawn to buy (Guild Officers/Affiliates)`,
         `/gate enter --<KEY> — open gate in dungeon GC`,
-        `/gate apply --<KEY> — join raid party`,
-        `/gate party --<KEY> — view party`,
-        `/gate status --<KEY>— key info`,
-        ``,
-        `/contract <x%> @user — set payout contract`,
-        `/affiliate grant @user — grant affiliate`,
+        `/party              — view party & ready status`,
+        `/party ready        — mark ready`,
+        `/party raid         — start raid once ready`,
         `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
       ].join('\n'),
     }, { quoted: msg });
@@ -485,7 +426,6 @@ const affiliate = {
           `*${target.name}* is now an affiliate of *${guildName}*.`,
           ``,
           `📊 Loot share: *${pct}%* of gate loot to the affiliate party`,
-          `   (shared equally among participating affiliates)`,
           `💠 Guild treasury keeps the remaining *${100 - pct}%*.`,
           ``,
           `They can now:`,
@@ -516,7 +456,7 @@ const affiliate = {
           `🎯 Gate: \`${gateCode}\``,
           `📊 Paid: *${pct}%* of that gate's loot (one-off)`,
           ``,
-          `They can now join the raid with /gateraid ${gateCode} join.`,
+          `They can now join the raid with /party join ${gateCode}.`,
         ].join('\n'),
         mentions: [targetJid],
       }, { quoted: msg });

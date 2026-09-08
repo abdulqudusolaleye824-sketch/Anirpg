@@ -2,7 +2,7 @@
  * ╔══════════════════════════════════════════════════════╗
  * ║         Astra — GateKeyManager                      ║
  * ║  Manages gate keys, dungeon GCs, affiliates,         ║
- * ║  contracts, and raid access control                  ║
+ * ║  and raid access control                             ║
  * ╚══════════════════════════════════════════════════════╝
  */
 
@@ -68,7 +68,7 @@ function isGuildLeaderOrOfficer(sender, guildName, db) {
       const id = typeof m === 'object' ? m.id : m;
       if (normaliseJid(id) !== sNum) continue;
       const rank = String((typeof m === 'object' ? m.rank : null) || '').toLowerCase().replace(/[_-]/g, ' ');
-      if (['leader', 'guild master', 'master', 'vice', 'vice gm', 'officer'].some(r => rank.includes(r))) {
+      if (['leader', 'guild master', 'master', 'vice', 'vice gm', 'officer', 'co-leader', 'coleader'].some(r => rank.includes(r))) {
         return true;
       }
     }
@@ -98,36 +98,59 @@ function getAffiliateData(sender, db) {
 }
 
 function canUseKey(sender, keyData, db) {
-  if (keyData.guildName && isGuildMember(sender, keyData.guildName, db)) return true;
-  if (keyData.isAffiliate && normaliseJid(sender) === normaliseJid(keyData.ownedBy)) return true;
+  if (!keyData) return false;
+
+  // Exception: Affiliate-led raids
+  if (keyData.isAffiliate) {
+    if (normaliseJid(sender) === normaliseJid(keyData.ownedBy)) return true;
+    if (isAffiliate(sender, db)) return true;
+    if (keyData.guildName && isGuildMember(sender, keyData.guildName, db)) return true;
+    return false;
+  }
+
+  // Guild-led raid: Only members of the party leader's guild can join
   if (keyData.guildName) {
+    if (isGuildMember(sender, keyData.guildName, db)) return true;
     const aff = getAffiliateData(sender, db);
     if (aff && aff.guildName === keyData.guildName) return true;
+    if (keyData.contracts && keyData.contracts[sender]) return true;
+    return false;
   }
-  if (keyData.contracts && keyData.contracts[sender]) return true;
+
   return false;
 }
 
 /**
- * @returns {{ success, key?, keyData?, error? }}
+ * Gate Purchasing Rule:
+ * Gates can ONLY be bought by Guilds — either an Officer of a guild or a granted Affiliate.
  */
 function purchaseGateKey(sender, gate, db, saveDatabase) {
   const player = db.users?.[sender];
   if (!player) return { success: false, error: 'You are not registered.' };
 
+  const guildName = player.guild;
+  const affData   = getAffiliateData(sender, db);
+  const isAff     = !!affData;
+
+  const isLeaderOrOfficer = guildName && isGuildLeaderOrOfficer(sender, guildName, db);
+
+  // Must be either a Guild Officer or a Granted Affiliate
+  if (!isLeaderOrOfficer && !isAff) {
+    return {
+      success: false,
+      error: `❌ *Gates can only be purchased by Guild Officers (Guildmaster / Co-Leader / Officer) or Granted Affiliates!*\n\nIf you belong to a guild, ask an officer to buy it or grant you affiliate status.`
+    };
+  }
+
   const nexusPrice = gate.purchasePrice || 0;
   const manaPrice  = gate.manaPrice || 0;
-  const guildName  = player.guild;
-  const affData    = getAffiliateData(sender, db);
-  const isAff      = !!affData;
   const isBoth     = gate.currency === 'both' || ['B','A','S'].includes(gate.rank);
 
   let paymentSource = null; // 'guild' | 'personal'
   let guild = guildName ? findGuild(db, guildName) : null;
-  const isLeader = guildName && isGuildLeaderOrOfficer(sender, guildName, db);
 
-  // 1. Try Guild Treasury if buyer is Guild Leader/Officer
-  if (isLeader && guild) {
+  // Try Guild Treasury first if buyer is a Guild Officer
+  if (isLeaderOrOfficer && guild) {
     const gNexus = guild.treasury || 0;
     const gMana  = guild.manaTreasury || 0;
     const canGuildPay = isBoth
@@ -145,7 +168,7 @@ function purchaseGateKey(sender, gate, db, saveDatabase) {
     }
   }
 
-  // 2. Fallback to Personal Balance if Guild Treasury isn't used or insufficient
+  // Fallback to Personal Balance for granted affiliates or if treasury insufficient
   if (!paymentSource) {
     const pNexus = player.gold || 0;
     const pMana  = player.manaCrystals || 0;
@@ -264,7 +287,7 @@ function enterGate(key, sender, chatId, db) {
     return { success: false, error: 'This dungeon GC already has an active gate raid. Clear it first.' };
   }
   if (!canUseKey(sender, keyData, db)) {
-    return { success: false, error: 'You are not authorized to use this key.' };
+    return { success: false, error: 'You are not authorized to use this key. Only members of the party leader\'s guild or granted affiliates can join.' };
   }
 
   keyData.dungeonChatId = chatId;

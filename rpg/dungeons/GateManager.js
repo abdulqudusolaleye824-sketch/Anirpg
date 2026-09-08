@@ -16,7 +16,6 @@ const GATE_RANKS = {
   B: { emoji:'🟢', label:'B-Rank Gate', floors:6, monsterRange:[70,120], bossHp:12000, priceRange:[50000,100000], manaPriceRange:[100,300],   currency:'both',  currencySafe:[12000,22000], lootTier:'rare',    isFree:false, description:'High tier. Requires Nexus AND Mana Stones.' },
   A: { emoji:'🟡', label:'A-Rank Gate', floors:7, monsterRange:[120,200], bossHp:30000, priceRange:[150000,300000], manaPriceRange:[500,1200], currency:'both',  currencySafe:[36000,68000], lootTier:'epic',   isFree:false, description:'Elite tier. Requires Nexus AND Mana Stones.' },
   S: { emoji:'🔴', label:'S-Rank Gate', floors:8, monsterRange:[200,400], bossHp:80000, priceRange:[500000,1000000], manaPriceRange:[2000,5000], currency:'both', currencySafe:[120000,220000], lootTier:'legendary', isFree:false, description:'National-level threat. Requires Nexus AND Mana Stones.' },
-  DISASTER: { emoji:'🟣', label:'⚠️ DISASTER GATE', floors:10, monsterRange:[400,999], bossHp:250000, priceRange:[0,0], manaPriceRange:[0,0], currency:'free', currencySafe:[400000,900000], lootTier:'mythic', isFree:true, description:'DISASTER LEVEL. Free entry.' },
 };
 
 const LOOT_TABLES = {};
@@ -29,7 +28,7 @@ class GateManager {
   static gateCounter = 1;
   static GATE_BREAK_TIME = 26 * 60 * 60 * 1000;
   static FREE_GATE_CHANCE = 0.00;
-  static DISASTER_CHANCE = 0.02;
+  static DISASTER_CHANCE = 0.00; // Disaster rank gates disabled
 
   static getGateImage(rank) {
     const r = (rank || 'E').toUpperCase();
@@ -37,21 +36,19 @@ class GateManager {
     const specificPath = path.join(__dirname, '..', '..', 'assets', 'gates', rankFile);
     if (fs.existsSync(specificPath)) return specificPath;
 
-    const file = r === 'S' || r === 'DISASTER' ? 's_rank.jpg'
-               : (r === 'A' || r === 'B')      ? 'ab_rank.jpg'
-               :                                'cde_rank.jpg';
+    const file = r === 'S'                ? 's_rank.jpg'
+               : (r === 'A' || r === 'B') ? 'ab_rank.jpg'
+               :                            'cde_rank.jpg';
     return path.join(__dirname, '..', '..', 'assets', 'gates', file);
   }
 
   static spawnGate(chatId, groupAverageRank = 'E') {
     const gateId = `G-${Date.now()}-${this.gateCounter++}`;
-    let rank = this.rollGateRank(groupAverageRank);
-    const isDisaster = Math.random() < this.DISASTER_CHANCE;
-    if (isDisaster) rank = 'DISASTER';
-    const rankData = GATE_RANKS[rank];
-    const isFree = rank === 'DISASTER' || Math.random() < this.FREE_GATE_CHANCE;
-    const isBoth = ['B','A','S'].includes(rank) && !isFree;
-    const currency = isFree ? 'free' : (isBoth ? 'both' : 'nexus');
+    const rank = this.rollGateRank(groupAverageRank);
+    const rankData = GATE_RANKS[rank] || GATE_RANKS['E'];
+    const isFree = false;
+    const isBoth = ['B','A','S'].includes(rank);
+    const currency = isBoth ? 'both' : 'nexus';
 
     const pool = MONSTER_DROPS[rank]?.monsters || MONSTER_DROPS['E'].monsters;
     const bossPool = MONSTER_DROPS[rank]?.bosses || MONSTER_DROPS['E'].bosses;
@@ -59,21 +56,13 @@ class GateManager {
     const bossName = bossData.name;
 
     const [pMin, pMax] = rankData.priceRange || [0, 0];
-    const purchasePrice = isFree ? 0 : Math.floor(pMin + Math.random() * (pMax - pMin));
+    const purchasePrice = Math.floor(pMin + Math.random() * (pMax - pMin));
 
     const [mMin, mMax] = rankData.manaPriceRange || [0, 0];
-    const manaPrice = isFree ? 0 : Math.floor(mMin + Math.random() * (mMax - mMin));
+    const manaPrice = Math.floor(mMin + Math.random() * (mMax - mMin));
 
-    let totalLootPct;
-    let lootMultiplier = 0;
-    if (isFree) {
-      const [cMin, cMax] = (rankData.currencySafe && rankData.currencySafe.length === 2)
-        ? rankData.currencySafe : [1000, 2000];
-      totalLootPct = Math.floor(cMin + Math.random() * (cMax - cMin));
-    } else {
-      lootMultiplier = 2 + Math.random() * 2;
-      totalLootPct = Math.floor(purchasePrice * lootMultiplier);
-    }
+    const lootMultiplier = 2 + Math.random() * 2;
+    const totalLootPct = Math.floor(purchasePrice * lootMultiplier);
     const nexusLoot   = Math.floor(totalLootPct * 0.75);
     const crystalLoot = Math.floor(totalLootPct * 0.25);
 
@@ -92,7 +81,7 @@ class GateManager {
       id: gateId, chatId, rank, rankData, spawnTime: Date.now(),
       breakTime: Date.now() + this.GATE_BREAK_TIME,
       currency,
-      isFree, isDisaster: rank === 'DISASTER', owned: false, ownedBy: null, ownedByLeader: null,
+      isFree, isDisaster: false, owned: false, ownedBy: null, ownedByLeader: null,
       purchasedAt: null, purchasePrice, manaPrice,
       nexusLoot, crystalLoot, lootMultiplier,
       cleared: false, broken: false, active: true,
@@ -107,13 +96,6 @@ class GateManager {
     this.activeGates[gateId] = gate;
     if (!this.gatesByChat[chatId]) this.gatesByChat[chatId] = [];
     this.gatesByChat[chatId].push(gateId);
-
-    if (gate.isDisaster) {
-      try {
-        const DisasterGateEvent = require('../utils/DisasterGateEvent');
-        gate._disasterEventPending = true;
-      } catch(e) { console.warn('[SILENT] GateManager: DisasterGateEvent load failed:', e.message); }
-    }
 
     return gate;
   }
@@ -148,7 +130,6 @@ class GateManager {
   static purchaseGate(gateId, guildName, leaderJid, db) {
     const gate = this.activeGates[gateId];
     if (!gate) return { success:false, reason:'Gate not found.' };
-    if (gate.isFree) return { success:false, reason:'Free gate — no purchase needed.' };
     if (gate.owned) return { success:false, reason:`Already purchased by *${gate.ownedBy}*.` };
     if (gate.broken || gate.cleared) return { success:false, reason:'Gate is no longer active.' };
     const guild = db.guilds?.[guildName];
@@ -181,107 +162,6 @@ class GateManager {
     gate.ownedByLeader = leaderJid;
     gate.purchasedAt = Date.now();
     return { success:true, gate };
-  }
-
-  static applyToRaid(gateId, playerJid, playerRank, db) {
-    const gate = this.activeGates[gateId];
-    if (!gate) return { success:false, reason:'Gate not found.' };
-    if (gate.cleared || gate.broken) return { success:false, reason:'Gate no longer active.' };
-    if (gate.raidStarted) return { success:false, reason:'Raid already started.' };
-    if (gate.raiders.includes(playerJid)) return { success:false, reason:'Already applied.' };
-    if (gate.isFree || !gate.owned) {
-      gate.raiders.push(playerJid); gate.externalRaiders.push(playerJid);
-      return { success:true, autoAccepted:true, gate };
-    }
-    gate.pendingApplicants.push({ jid:playerJid, appliedAt:Date.now() });
-    return { success:true, autoAccepted:false, gate };
-  }
-
-  static acceptRaider(gateId, applicantJid, leaderJid) {
-    const gate = this.activeGates[gateId];
-    if (!gate) return { success:false, reason:'Gate not found.' };
-    if (gate.ownedByLeader !== leaderJid) return { success:false, reason:'Only the gate owner can accept raiders.' };
-    const idx = (gate.pendingApplicants||[]).findIndex(a => a.jid === applicantJid);
-    if (idx === -1) return { success:false, reason:'Player has not applied.' };
-    gate.pendingApplicants.splice(idx, 1);
-    gate.raiders.push(applicantJid); gate.externalRaiders.push(applicantJid);
-    return { success:true };
-  }
-
-  static startRaid(gateId, leaderJid) {
-    const gate = this.activeGates[gateId];
-    if (!gate) return { success:false, reason:'Gate not found.' };
-    if (gate.raidStarted) return { success:false, reason:'Already started.' };
-    if (gate.owned && gate.ownedByLeader !== leaderJid) return { success:false, reason:'Only gate owner can start.' };
-    if (gate.raiders.length === 0) return { success:false, reason:'No raiders joined.' };
-    gate.raidStarted = true; gate.raidStartTime = Date.now(); gate.currentFloor = 1;
-    return { success:true, gate };
-  }
-
-  static distributeLoot(gateId, db) {
-    const gate = this.activeGates[gateId];
-    if (!gate || !gate.boss?.defeated) return null;
-    const raiders = gate.raiders;
-    if (raiders.length === 0) return null;
-    const loot = [...gate.bossLoot];
-    const distribution = {};
-    const currencyItems = loot.filter(i => i.type === 'currency');
-    const otherItems = loot.filter(i => i.type !== 'currency');
-    const shuffled = otherItems.sort(() => Math.random() - 0.5);
-    let idx = 0;
-    for (const item of shuffled) {
-      const recipient = raiders[idx % raiders.length];
-      if (!distribution[recipient]) distribution[recipient] = [];
-      distribution[recipient].push(item);
-      idx++;
-    }
-    const totalCrystals = currencyItems.reduce((s, i) => s + (i.amount || 0), 0);
-    const guild = gate.ownedBy ? db.guilds?.[gate.ownedBy] : null;
-    const guildShare = guild ? Math.floor(totalCrystals * 0.30) : 0;
-    if (guild && guild.manaTreasury !== undefined) guild.manaTreasury += guildShare;
-    const playerPool = totalCrystals - guildShare;
-    const gMembers = gate.guildRaiders.filter(j => raiders.includes(j));
-    const extRaiders = gate.externalRaiders.filter(j => raiders.includes(j));
-    const gMemberPool = guild ? Math.floor(playerPool * 0.50) : playerPool;
-    const extPool = guild ? Math.floor(playerPool * 0.20) : 0;
-    const perGuildMember = gMembers.length > 0 ? Math.floor(gMemberPool / gMembers.length) : 0;
-    const perExternal = extRaiders.length > 0 ? Math.floor(extPool / extRaiders.length) : 0;
-    for (const jid of gMembers) { if (!distribution[jid]) distribution[jid] = []; distribution[jid].push({ type:'currency', name:'Mana Stones', amount:perGuildMember }); if (db.users[jid]) db.users[jid].manaCrystals = (db.users[jid].manaCrystals||0) + perGuildMember; }
-    for (const jid of extRaiders) { if (!distribution[jid]) distribution[jid] = []; distribution[jid].push({ type:'currency', name:'Mana Stones', amount:perExternal }); if (db.users[jid]) db.users[jid].manaCrystals = (db.users[jid].manaCrystals||0) + perExternal; }
-    for (const [jid, items] of Object.entries(distribution)) {
-      const player = db.users[jid]; if (!player) continue;
-      if (!player.inventory) player.inventory = { weapons:[], armor:[], potions:[], artifacts:[], accessories:[], materials:[], keyStones:[] };
-      for (const item of items) {
-        if (item.type === 'currency') continue;
-        if (!player.inventory.materials) player.inventory.materials = [];
-        player.inventory.materials.push({ name: item.name, source: item.source || 'gate', obtainedAt: Date.now() });
-      }
-    }
-    gate.lootDistributed = true; gate.distribution = distribution;
-    return distribution;
-  }
-
-  static clearGate(gateId, db) {
-    const gate = this.activeGates[gateId]; if (!gate) return null;
-    gate.cleared = true; gate.active = false; gate.clearedAt = Date.now();
-    for (const jid of gate.raiders) { const p = db.users[jid]; if (p) { if (!p.stats_history) p.stats_history = {}; p.stats_history.gatesCleared = (p.stats_history.gatesCleared || 0) + 1; } }
-    return gate;
-  }
-
-  static checkGateBreaks(chatId, sock) {
-    for (const gateId of (this.gatesByChat[chatId] || [])) {
-      const gate = this.activeGates[gateId];
-      if (!gate || gate.cleared || gate.broken) continue;
-      if (Date.now() >= gate.breakTime) {
-        gate.broken = true; gate.active = false;
-        if (sock) {
-          const txt = gate.isDisaster
-            ? `🌑 *DISASTER GATE BREAK!*\nThe ${gate.rank}-Rank gate was left uncleared.\nMonsters are pouring out. Catastrophic event active!`
-            : `💥 *GATE BREAK!*\nThe ${gate.rank}-Rank gate [${gate.id}] was not cleared in time and has shattered.`;
-          sock.sendMessage(chatId, { text: txt });
-        }
-      }
-    }
   }
 
   static getActiveGatesForChat(chatId) {
@@ -319,24 +199,41 @@ class GateManager {
 
   static getGate(gateId) { return this.activeGates[gateId] || null; }
 
+  static checkGateBreaks(chatId, sock) {
+    for (const gateId of (this.gatesByChat[chatId] || [])) {
+      const gate = this.activeGates[gateId];
+      if (!gate || gate.cleared || gate.broken) continue;
+      if (Date.now() >= gate.breakTime) {
+        gate.broken = true; gate.active = false;
+        if (sock) {
+          const txt = `💥 *GATE BREAK!*\nThe ${gate.rank}-Rank gate [${gate.id}] was not cleared in time and has shattered.`;
+          sock.sendMessage(chatId, { text: txt });
+        }
+      }
+    }
+  }
+
+  static clearGate(gateId, db) {
+    const gate = this.activeGates[gateId]; if (!gate) return null;
+    gate.cleared = true; gate.active = false; gate.clearedAt = Date.now();
+    for (const jid of gate.raiders) { const p = db.users[jid]; if (p) { if (!p.stats_history) p.stats_history = {}; p.stats_history.gatesCleared = (p.stats_history.gatesCleared || 0) + 1; } }
+    return gate;
+  }
+
   static formatGate(gate) {
     const rd = gate.rankData || GATE_RANKS[gate.rank];
     const timeLeft = Math.max(0, gate.breakTime - Date.now());
     const h = Math.floor(timeLeft / 3600000);
     const m = Math.floor((timeLeft % 3600000) / 60000);
     const isBoth = gate.currency === 'both' || ['B','A','S'].includes(gate.rank);
-    const priceTxt = gate.isFree ? 'FREE'
-      : isBoth ? `${gate.purchasePrice.toLocaleString()} 💠 Nexus + ${gate.manaPrice.toLocaleString()} 💎 Mana`
-      : `${gate.purchasePrice.toLocaleString()} 💠 Nexus`;
+    const priceTxt = `${gate.purchasePrice.toLocaleString()} 💠 Nexus` + (isBoth ? ` + ${gate.manaPrice.toLocaleString()} 💎 Mana` : '');
     return [
       `${rd.emoji} *${rd.label}* [${gate.id}]`,
       `🕐 Breaks in: ${h}h ${m}m`,
-      gate.isFree ? `🆓 FREE GATE — Anyone can enter!` : ``,
-      gate.isDisaster ? `⚠️ DISASTER LEVEL — S-Rank only!` : ``,
-      gate.owned ? `🏰 Owned by: *${gate.ownedBy}*` : `💰 Buy: ${priceTxt}`,
+      gate.owned ? `🏰 Owned by: *${gate.ownedBy}*` : `💰 Price: ${priceTxt}`,
       `🛒 Command: Reply with */gate buy*`,
       `👥 Raiders: ${gate.raiders.length}`,
-      gate.raidStarted ? `⚔️ Raid in progress` : `📋 Accepting applications`,
+      gate.raidStarted ? `⚔️ Raid in progress` : `📋 Guild / Affiliate Gate`,
     ].filter(Boolean).join('\n');
   }
 }
@@ -344,35 +241,29 @@ class GateManager {
 GateManager.formatGateAnnouncement = function(gate) {
   const rd = GATE_RANKS[gate.rank] || GATE_RANKS['E'];
   const timeLeft = Math.floor((gate.breakTime - Date.now()) / 60000);
-  const isRare = ['A','S','DISASTER'].includes(gate.rank);
+  const isRare = ['A','S'].includes(gate.rank);
   const isBoth = gate.currency === 'both' || ['B','A','S'].includes(gate.rank);
-  const priceTxt = gate.isFree ? 'FREE'
-    : isBoth ? `${gate.purchasePrice.toLocaleString()} 💠 Nexus + ${gate.manaPrice.toLocaleString()} 💎 Mana Stones`
-    : `${gate.purchasePrice.toLocaleString()} 💠 Nexus`;
+  const priceTxt = `${gate.purchasePrice.toLocaleString()} 💠 Nexus` + (isBoth ? ` + ${gate.manaPrice.toLocaleString()} 💎 Mana Stones` : '');
 
   const caption = [
     `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-    gate.isDisaster
-      ? `⚠️ ‼️ *DISASTER GATE APPEARED* ‼️ ⚠️`
-      : isRare
-        ? `‼️ *RARE GATE DETECTED* ‼️`
-        : `${rd.emoji} *GATE HAS APPEARED*`,
+    isRare ? `‼️ *RARE GATE DETECTED* ‼️` : `${rd.emoji} *GATE HAS APPEARED*`,
     `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
     ``,
-    `「System」 A ${gate.isDisaster ? 'Disaster-class' : `${gate.rank}-Rank`} gate has opened in this area.`,
+    `「System」 A ${gate.rank}-Rank gate has opened in this area.`,
     ``,
     `🔑 Gate ID: *${gate.id}*`,
     `${rd.emoji} Rank: *${rd.label}*`,
-    gate.isFree ? `🆓 *FREE GATE — No guild needed*` : `💰 Purchase: *${priceTxt}*`,
+    `💰 Guild Purchase: *${priceTxt}*`,
     `⏰ Breaks in: *${timeLeft} minutes*`,
     ``,
     rd.description,
     ``,
     `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-    !gate.isFree ? `🛒 *BUY COMMAND:* Reply to this message with */gate buy*` : ``,
-    `/gates apply ${gate.id} — Apply to join the raid`,
+    `🛒 *BUY COMMAND:* Reply to this message with */gate buy*`,
+    `🛡️ *(Guild Officers or Granted Affiliates only)*`,
     `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-  ].filter(l => l !== null && l !== '').join('\n');
+  ].filter(Boolean).join('\n');
 
   const imagePath = GateManager.getGateImage(gate.rank);
   if (fs.existsSync(imagePath)) {

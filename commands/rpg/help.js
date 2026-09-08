@@ -63,7 +63,7 @@ const KNOWN_SUBCOMMANDS = {
   steal: ['pack | author', 'reply_sticker'],
   s: ['pack | author', 'reply_sticker'],
   sticker: ['pack | author', 'reply_image'],
-  party: ['create', 'invite', 'join', 'leave', 'info'],
+  party: ['status', 'ready', 'raid', 'join', 'leave', 'kick'],
   friend: ['add', 'remove', 'list'],
   setserf: ['@bot'],
   approveserf: ['accept', 'decline'],

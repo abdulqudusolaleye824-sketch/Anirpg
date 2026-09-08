@@ -1,507 +1,295 @@
-const monsterTemplates = require('../../rpg/monsters/MonsterTemplates');
-const LevelUpManager = require('../../rpg/utils/LevelUpManager');
-const ImprovedCombat = require('../../rpg/utils/ImprovedCombat');
+// ═══════════════════════════════════════════════════════════════
+// PARTY COMMAND — Revamped Gate Party System
+// Flow: gate -> party -> dungeon
+//
+// Commands:
+//   /party                     — view active party status & ready states
+//   /party ready               — mark yourself ready for the raid
+//   /party raid (or start)     — leader launches raid once everyone is ready
+//   /party join <CODE>         — join a gate party (guild/affiliate only)
+//   /party leave               — leave current party
+//   /party kick @user          — leader kicks a member from party
+// ═══════════════════════════════════════════════════════════════
+
+'use strict';
+
+const GR = require('../../rpg/dungeons/GateRaid');
+const GKM = require('../../rpg/dungeons/GateKeyManager');
+const { GATE_RANKS } = require('../../rpg/dungeons/GateManager');
+
+function normaliseJid(jid) {
+  return GKM.normaliseJid(jid);
+}
 
 module.exports = {
   name: 'party',
-  description: '🎉 Pokemon-style party dungeons',
-  
+  aliases: ['praid', 'raidparty'],
+  description: '👥 Gate raid party manager — view, ready, join & launch raid',
+
   async execute(sock, msg, args, getDatabase, saveDatabase, sender) {
-    const chatId = msg.key.remoteJid;
-    const db = getDatabase();
-    const player = db.users[sender];
+    const chatId = msg.key?.remoteJid;
+    const db     = getDatabase();
+    const player = db.users?.[sender];
 
     if (!player) {
-      return sock.sendMessage(chatId, { text: '❌ You are not registered!' }, { quoted: msg });
+      return sock.sendMessage(chatId, { text: '❌ You are not registered! Use /register' }, { quoted: msg });
     }
 
-    if (!db.partyDungeons) db.partyDungeons = {};
+    const action = (args[0] || 'status').toLowerCase();
+    const subArg = (args[1] || '').toUpperCase().replace(/^--/, '').trim();
 
-    const action = args[0]?.toLowerCase();
+    // ── Find active gate in current chat ──────────────────────────
+    const gc = GKM.getDungeonGC(chatId);
+    let activeKey = gc?.activeKeyId || null;
 
-    // ═══════════════════════════════════════════════════════════════
-    // PARTY MENU
-    // ═══════════════════════════════════════════════════════════════
-    if (!action) {
-      return sock.sendMessage(chatId, {
-        text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🎉 PARTY DUNGEON SYSTEM 🎉
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Clear dungeons with friends!
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-📌 COMMANDS
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-/party create - Create party (2-4 players)
-/party join - Join active party
-/party start - Start dungeon run
-/party attack - Basic attack
-/party skills - View your skills
-/party use [#] - Use skill by number
-/party items - View items
-/party item [#] - Use item
-/party leave - Leave party
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🏆 Complete floors for rewards!
-━━━━━━━━━━━━━━━━━━━━━━━━━━━`
-      }, { quoted: msg });
+    if (!activeKey && subArg && subArg.length === 8) {
+      activeKey = subArg;
     }
 
     // ═══════════════════════════════════════════════════════════════
-    // CREATE PARTY
+    // /party (status)
     // ═══════════════════════════════════════════════════════════════
-    if (action === 'create') {
-      if (db.partyDungeons[chatId]) {
+    if (action === 'status' || action === 'info' || action === 'list' || (!args[0] && activeKey)) {
+      if (!activeKey) {
         return sock.sendMessage(chatId, {
-          text: '❌ A party already exists in this chat!'
+          text: [
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+            `👥 *GATE RAID PARTY MANAGER*`,
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+            `Flow: *Gate → Party → Dungeon*`,
+            ``,
+            `📌 *COMMANDS:*`,
+            `/party                 — view active party status`,
+            `/party ready           — mark yourself ready for raid`,
+            `/party raid            — leader launches raid (all ready required)`,
+            `/party join <CODE>     — join gate party`,
+            `/party leave           — leave current party`,
+            `/party kick @user      — kick member (leader only)`,
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+            `💡 *Gate Access Rule:*`,
+            `• Guild-led raids: Members of the party leader's guild only.`,
+            `• Affiliate-led raids: Granted affiliates & guild members.`,
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          ].join('\n'),
         }, { quoted: msg });
       }
 
-      db.partyDungeons[chatId] = {
-        leader: sender,
-        members: {
-          [sender]: {
-            name: player.name,
-            level: player.level,
-            hp: player.stats.maxHp,
-            energy: player.stats.maxEnergy
-          }
-        },
-        status: 'recruiting', // recruiting, active
-        floor: 0,
-        createdAt: Date.now()
-      };
+      const keyData = GKM.getKey(activeKey) || db.gateKeys?.[activeKey];
+      if (!keyData) return sock.sendMessage(chatId, { text: '❌ Gate party not found.' }, { quoted: msg });
 
-      saveDatabase();
+      const resolved = GR.resolveCode(activeKey);
+      if (!resolved.ok) return sock.sendMessage(chatId, { text: resolved.error }, { quoted: msg });
+      const { gate } = resolved;
+
+      const raid = GR.raidOf(gate, activeKey, keyData);
+      const rd   = GATE_RANKS[keyData.gateRank] || GATE_RANKS['E'];
+      const owner = db.users?.[keyData.ownedBy];
+
+      const membersList = (raid.members || []).map((m, i) => {
+        const p = db.users?.[m.id];
+        const isLeader = m.id === raid.leader;
+        const readyIcon = m.ready ? '✅ Ready' : '⏳ Not Ready';
+        return `  ${i+1}. ${isLeader ? '👑' : '⚔️'} *${m.name}* (Lv.${p?.level || 1}) — ${readyIcon}`;
+      });
+
+      const totalReady = (raid.members || []).filter(m => m.ready).length;
+      const totalMembers = (raid.members || []).length;
+      const allReady = totalMembers > 0 && totalReady === totalMembers;
 
       return sock.sendMessage(chatId, {
-        text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🎉 PARTY CREATED! 🎉
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-👑 Leader: ${player.name}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-👥 MEMBERS (1/4)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-1️⃣ ${player.name} (Lv.${player.level})
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-⚔️ Join with /party join
-🚀 Start with /party start (2+ players)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━`
+        text: [
+          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          `${rd.emoji} *GATE RAID PARTY STATUS*`,
+          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          `🆔 Gate: *${rd.label}* [${activeKey}]`,
+          `👑 Leader: *${owner?.name || keyData.ownedBy.split('@')[0]}*`,
+          `🏰 Guild: *${keyData.guildName || 'Affiliate'}*`,
+          `📊 Status: *${raid.status.toUpperCase()}*`,
+          ``,
+          `👥 *HUNTERS IN PARTY (${totalMembers}/${GR.MAX_PARTY}):*`,
+          ...(membersList.length ? membersList : ['  _(No members in party yet)_']),
+          ``,
+          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          allReady && totalMembers >= 1
+            ? `🎉 *ALL MEMBERS READY!* Leader can run */party raid*`
+            : `⏰ *Ready Count:* ${totalReady}/${totalMembers} ready. Members run */party ready*`,
+          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          `📌 Leader: */party raid* to enter dungeon`,
+          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        ].join('\n'),
       }, { quoted: msg });
     }
 
     // ═══════════════════════════════════════════════════════════════
-    // JOIN PARTY
+    // /party ready
+    // ═══════════════════════════════════════════════════════════════
+    if (action === 'ready') {
+      if (!activeKey) return sock.sendMessage(chatId, { text: '❌ No active gate party in this chat. Enter a gate code first with /gate enter --<CODE>' }, { quoted: msg });
+
+      const resolved = GR.resolveCode(activeKey);
+      if (!resolved.ok) return sock.sendMessage(chatId, { text: resolved.error }, { quoted: msg });
+      const { gate } = resolved;
+
+      const res = GR.ready(sender, gate);
+      if (!res.ok) return sock.sendMessage(chatId, { text: `❌ ${res.error}` }, { quoted: msg });
+
+      saveDatabase();
+
+      const raid = gate.raid;
+      const totalReady = raid.members.filter(m => m.ready).length;
+      const totalMembers = raid.members.length;
+
+      let responseText = `✅ *${player.name}* is now **READY** for the raid! (${totalReady}/${totalMembers} ready)`;
+      if (res.allReadied) {
+        responseText += `\n\n🎉 *ALL MEMBERS ARE READY!* Leader can run */party raid* to launch the raid!`;
+      }
+
+      return sock.sendMessage(chatId, {
+        text: responseText,
+        mentions: [sender]
+      }, { quoted: msg });
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // /party raid (or start)
+    // ═══════════════════════════════════════════════════════════════
+    if (action === 'raid' || action === 'start') {
+      if (!activeKey) return sock.sendMessage(chatId, { text: '❌ No active gate party in this chat.' }, { quoted: msg });
+
+      const keyData = GKM.getKey(activeKey) || db.gateKeys?.[activeKey];
+      if (!keyData) return sock.sendMessage(chatId, { text: '❌ Gate party not found.' }, { quoted: msg });
+
+      const resolved = GR.resolveCode(activeKey);
+      if (!resolved.ok) return sock.sendMessage(chatId, { text: resolved.error }, { quoted: msg });
+      const { gate } = resolved;
+
+      const raid = gate.raid;
+      if (!raid) return sock.sendMessage(chatId, { text: '❌ No raid in progress.' }, { quoted: msg });
+      if (raid.leader !== sender && normaliseJid(keyData.ownedBy) !== normaliseJid(sender)) {
+        return sock.sendMessage(chatId, { text: '❌ Only the party leader can launch the raid!' }, { quoted: msg });
+      }
+
+      const notReady = raid.members.filter(m => !m.ready);
+      if (notReady.length > 0) {
+        const names = notReady.map(m => m.name).join(', ');
+        return sock.sendMessage(chatId, {
+          text: `❌ *Cannot start raid!* The following members are not ready:\n⚠️ ${names}\n\nAll members must run */party ready* before launching!`
+        }, { quoted: msg });
+      }
+
+      const res = GR.start(sender, keyData, gate, db);
+      if (!res.ok) return sock.sendMessage(chatId, { text: `❌ ${res.error}` }, { quoted: msg });
+
+      saveDatabase();
+
+      const rd = GATE_RANKS[keyData.gateRank] || GATE_RANKS['E'];
+      return sock.sendMessage(chatId, {
+        text: [
+          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          `${rd.emoji} *DUNGEON RAID LAUNCHED!*`,
+          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          `📍 Gate: *${rd.label}* [${activeKey}]`,
+          `🗺️ Entering Floor 1/${gate.totalFloors}`,
+          ``,
+          `👥 *RAID TEAM (${raid.members.length}):*`,
+          ...raid.members.map(m => `  ${m.id === raid.leader ? '👑' : '⚔️'} ${m.name}`),
+          ``,
+          `⚔️ *COMBAT COMMANDS:*`,
+          `/gateraid ${activeKey} attack    — attack monster`,
+          `/gateraid ${activeKey} skill <n> — use active skill`,
+          `/gateraid ${activeKey} status   — view floor status`,
+          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        ].join('\n'),
+      }, { quoted: msg });
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // /party join <CODE>
     // ═══════════════════════════════════════════════════════════════
     if (action === 'join') {
-      const party = db.partyDungeons[chatId];
+      const code = subArg || (args[0] && args[0] !== 'join' ? args[0].toUpperCase() : '');
+      if (!code) {
+        return sock.sendMessage(chatId, { text: '❌ Usage: /party join <CODE>\nExample: /party join 2K7SN2N8' }, { quoted: msg });
+      }
 
-      if (!party) {
+      const resolved = GR.resolveCode(code);
+      if (!resolved.ok) return sock.sendMessage(chatId, { text: resolved.error }, { quoted: msg });
+      const { gate, keyData } = resolved;
+
+      // Access Check: Guild Officer Raid vs Affiliate-Led Raid
+      if (!GKM.canUseKey(sender, keyData, db)) {
         return sock.sendMessage(chatId, {
-          text: '❌ No party in this chat!\n\nUse /party create to start one.'
+          text: `❌ *Access Denied!* Only members of the party leader's guild (*${keyData.guildName || 'Guild'}*) or granted affiliates can join this party.`
         }, { quoted: msg });
       }
 
-      if (party.status !== 'recruiting') {
-        return sock.sendMessage(chatId, {
-          text: '❌ Party is already in dungeon!'
-        }, { quoted: msg });
-      }
-
-      if (party.members[sender]) {
-        return sock.sendMessage(chatId, {
-          text: '❌ You already joined this party!'
-        }, { quoted: msg });
-      }
-
-      if (Object.keys(party.members).length >= 4) {
-        return sock.sendMessage(chatId, {
-          text: '❌ Party is full! (Max 4 players)'
-        }, { quoted: msg });
-      }
-
-      party.members[sender] = {
-        name: player.name,
-        level: player.level,
-        hp: player.stats.maxHp,
-        energy: player.stats.maxEnergy
-      };
-
-      saveDatabase();
-
-      const memberList = Object.entries(party.members)
-        .map(([id, m], i) => `${i + 1}️⃣ ${m.name} (Lv.${m.level})`)
-        .join('\n');
-
-      return sock.sendMessage(chatId, {
-        text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━
-✅ ${player.name} JOINED THE PARTY!
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-👥 MEMBERS (${Object.keys(party.members).length}/4)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-${memberList}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-${Object.keys(party.members).length >= 2 ? '🚀 Ready! Leader can /party start' : '⏰ Need 2+ players to start'}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━`
-      }, { quoted: msg });
-    }
-
-    // Get party
-    const party = db.partyDungeons[chatId];
-
-    if (!party) {
-      return sock.sendMessage(chatId, {
-        text: '❌ No party!\n\nUse /party create or /party join'
-      }, { quoted: msg });
-    }
-
-    if (!party.members[sender]) {
-      return sock.sendMessage(chatId, {
-        text: '❌ You are not in this party!\n\nUse /party join to participate.'
-      }, { quoted: msg });
-    }
-
-    // ═══════════════════════════════════════════════════════════════
-    // START DUNGEON
-    // ═══════════════════════════════════════════════════════════════
-    if (action === 'start') {
-      if (party.leader !== sender) {
-        return sock.sendMessage(chatId, {
-          text: '❌ Only the party leader can start!'
-        }, { quoted: msg });
-      }
-
-      if (Object.keys(party.members).length < 2) {
-        return sock.sendMessage(chatId, {
-          text: '❌ Need at least 2 players to start!'
-        }, { quoted: msg });
-      }
-
-      if (party.status === 'active') {
-        return sock.sendMessage(chatId, {
-          text: '❌ Party is already in a dungeon!'
-        }, { quoted: msg });
-      }
-
-      // Generate first floor monster
-      const avgLevel = Math.floor(
-        Object.values(party.members).reduce((sum, m) => sum + m.level, 0) / Object.keys(party.members).length
-      );
-
-      const monster = monsterTemplates.generateMonster(avgLevel + 2);
-
-      party.status = 'active';
-      party.floor = 1;
-      party.currentMonster = monster;
-      party.monsterHP = monster.maxHp;
+      const res = GR.join(sender, player.name, gate, db);
+      if (!res.ok) return sock.sendMessage(chatId, { text: `❌ ${res.error}` }, { quoted: msg });
 
       saveDatabase();
 
       return sock.sendMessage(chatId, {
-        text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🏰 DUNGEON STARTED! 🏰
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-📍 Floor: ${party.floor}
-👹 ${monster.name} (Lv.${monster.level})
-❤️ HP: ${party.monsterHP}/${monster.maxHp}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-⚔️ Everyone can attack now!
-━━━━━━━━━━━━━━━━━━━━━━━━━━━`
+        text: `✅ *${player.name}* joined the gate party!\n🔑 Gate Code: \`${code}\`\n👥 Members: ${res.raid.members.length}\n\n📌 Run */party ready* when ready.`,
+        mentions: [sender],
       }, { quoted: msg });
     }
 
-    if (party.status !== 'active') {
-      return sock.sendMessage(chatId, {
-        text: '❌ Dungeon not started!\n\nLeader must use /party start'
-      }, { quoted: msg });
-    }
-
-    const memberData = party.members[sender];
-    const monster = party.currentMonster;
-
     // ═══════════════════════════════════════════════════════════════
-    // PARTY ATTACK
-    // ═══════════════════════════════════════════════════════════════
-    if (action === 'attack') {
-      if (memberData.hp <= 0) {
-        return sock.sendMessage(chatId, {
-          text: '❌ You are defeated! Wait for floor to clear.'
-        }, { quoted: msg });
-      }
-
-      const weaponBonus = player.weapon?.bonus || 0;
-      let damage = Math.max(1, (player.stats.atk + weaponBonus) - Math.floor(monster.def / 2));
-
-      const isCrit = Math.random() < 0.1;
-      if (isCrit) damage = Math.floor(damage * 2);
-
-      party.monsterHP -= damage;
-
-      let narrative = `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
-      narrative += `⚔️ ${player.name} attacked!\n`;
-      if (isCrit) narrative += `💥 CRITICAL HIT!\n`;
-      narrative += `💥 Dealt ${damage} damage to ${monster.name}!\n`;
-      narrative += `👹 ${monster.name}: ❤️ ${Math.max(0, party.monsterHP)}/${monster.maxHp}\n`;
-      narrative += `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
-
-      // Check if monster defeated
-      if (party.monsterHP <= 0) {
-        party.floor += 1;
-
-        // Restore some HP/Energy
-        for (const [id, m] of Object.entries(party.members)) {
-          const p = db.users[id];
-          if (p && m.hp > 0) {
-            m.hp = Math.min(m.hp + Math.floor(p.stats.maxHp * 0.3), p.stats.maxHp);
-            m.energy = Math.min(m.energy + Math.floor(p.stats.maxEnergy * 0.3), p.stats.maxEnergy);
-          }
-        }
-
-        narrative += `\n✅ FLOOR ${party.floor - 1} CLEARED!\n\n`;
-        narrative += `💚 All members restored 30% HP & Energy!\n`;
-
-        // Check if reached floor 10 (dungeon complete)
-        if (party.floor > 10) {
-          narrative += `\n🎉 DUNGEON COMPLETE! 🎉\n\n`;
-          narrative += `🎁 REWARDS FOR ALL:\n`;
-          narrative += `✨ XP: +1000\n`;
-          narrative += `💎 Mana Stones: +100\n`;
-          narrative += `💠 Nexus: +500\n`;
-
-          for (const memberId of Object.keys(party.members)) {
-            const p = db.users[memberId];
-            if (p) {
-              p.xp += 1000;
-              p.manaCrystals += 100;
-              p.gold = (p.gold || 0) + 500;
-              LevelUpManager.checkAndApplyLevelUps(p, saveDatabase, sock, chatId);
-            }
-          }
-
-          delete db.partyDungeons[chatId];
-          saveDatabase();
-
-          return sock.sendMessage(chatId, { text: narrative }, { quoted: msg });
-        }
-
-        // Generate next monster
-        const avgLevel = Math.floor(
-          Object.values(party.members).reduce((sum, m) => sum + m.level, 0) / Object.keys(party.members).length
-        );
-
-        const nextMonster = monsterTemplates.generateMonster(avgLevel + party.floor);
-        party.currentMonster = nextMonster;
-        party.monsterHP = nextMonster.maxHp;
-
-        narrative += `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
-        narrative += `📍 FLOOR ${party.floor}\n`;
-        narrative += `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
-        narrative += `👹 ${nextMonster.name} (Lv.${nextMonster.level})\n`;
-        narrative += `❤️ HP: ${party.monsterHP}/${nextMonster.maxHp}\n`;
-        narrative += `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
-
-        saveDatabase();
-        return sock.sendMessage(chatId, { text: narrative }, { quoted: msg });
-      }
-
-      // Monster counter-attack (random member)
-      const aliveMembers = Object.entries(party.members).filter(([id, m]) => m.hp > 0);
-      
-      if (aliveMembers.length === 0) {
-        narrative += `\n💀 ALL MEMBERS DEFEATED!\n\n`;
-        narrative += `❌ Party wiped on Floor ${party.floor}`;
-
-        delete db.partyDungeons[chatId];
-        saveDatabase();
-
-        return sock.sendMessage(chatId, { text: narrative }, { quoted: msg });
-      }
-
-      const [targetId, targetMember] = aliveMembers[Math.floor(Math.random() * aliveMembers.length)];
-      const targetPlayer = db.users[targetId];
-
-      let monsterDamage = Math.max(1, monster.atk - Math.floor(targetPlayer.stats.def / 2));
-
-      const monsterCrit = Math.random() < 0.1;
-      if (monsterCrit) {
-        monsterDamage = Math.floor(monsterDamage * 2);
-        narrative += `\n💥 ${monster.name} CRITICAL HIT!\n`;
-      } else {
-        narrative += `\n👹 ${monster.name} attacked!\n`;
-      }
-
-      targetMember.hp -= monsterDamage;
-      narrative += `💥 ${targetMember.name} took ${monsterDamage} damage!\n`;
-      narrative += `👤 ${targetMember.name}: ❤️ ${Math.max(0, targetMember.hp)}/${targetPlayer.stats.maxHp}\n`;
-
-      if (targetMember.hp <= 0) {
-        narrative += `💀 ${targetMember.name} was defeated!\n`;
-      }
-
-      saveDatabase();
-      return sock.sendMessage(chatId, { text: narrative }, { quoted: msg });
-    }
-
-    // ═══════════════════════════════════════════════════════════════
-    // PARTY SKILLS MENU
-    // ═══════════════════════════════════════════════════════════════
-    if (action === 'skills') {
-      const menu = ImprovedCombat.getSkillsMenu(player);
-      return sock.sendMessage(chatId, { text: menu }, { quoted: msg });
-    }
-
-    // ═══════════════════════════════════════════════════════════════
-    // PARTY USE SKILL
-    // ═══════════════════════════════════════════════════════════════
-    if (action === 'use') {
-      if (memberData.hp <= 0) {
-        return sock.sendMessage(chatId, {
-          text: '❌ You are defeated! Wait for floor to clear.'
-        }, { quoted: msg });
-      }
-
-      const skillNum = parseInt(args[1]);
-
-      if (!skillNum || skillNum < 1 || !player.skills?.active) {
-        return sock.sendMessage(chatId, {
-          text: '❌ Invalid skill number!\n\nUse /party skills to see your skills.'
-        }, { quoted: msg });
-      }
-
-      const skill = player.skills.active[skillNum - 1];
-
-      if (!skill) {
-        return sock.sendMessage(chatId, {
-          text: `❌ Skill ${skillNum} not found!`
-        }, { quoted: msg });
-      }
-
-      // Check cooldown
-      const cooldownCheck = ImprovedCombat.checkCooldown(player, skill.name);
-      if (!cooldownCheck.ready) {
-        return sock.sendMessage(chatId, { text: cooldownCheck.message }, { quoted: msg });
-      }
-
-      // Check energy
-      if (memberData.energy < skill.energyCost) {
-        return sock.sendMessage(chatId, {
-          text: `❌ Not enough ${player.energyType}!\nNeed: ${skill.energyCost}\nHave: ${memberData.energy}`
-        }, { quoted: msg });
-      }
-
-      // Use skill
-      memberData.energy -= skill.energyCost;
-      player.lastSkillUse[skill.name] = Date.now();
-
-      const weaponBonus = player.weapon?.bonus || 0;
-      let damage = Math.max(1, (skill.damage + weaponBonus) - Math.floor(monster.def / 2));
-
-      const isCrit = Math.random() < 0.15;
-      if (isCrit) damage = Math.floor(damage * 2);
-
-      party.monsterHP -= damage;
-
-      let narrative = `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
-      narrative += `✨ ${player.name} used ${skill.name}!\n`;
-      if (isCrit) narrative += `💥 CRITICAL HIT!\n`;
-      narrative += `💥 Dealt ${damage} damage to ${monster.name}!\n`;
-      narrative += `💙 ${player.energyType}: ${memberData.energy}/${player.stats.maxEnergy}\n`;
-      narrative += `👹 ${monster.name}: ❤️ ${Math.max(0, party.monsterHP)}/${monster.maxHp}\n`;
-      narrative += `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
-
-      // Check if monster defeated
-      if (party.monsterHP <= 0) {
-        party.floor += 1;
-
-        for (const [id, m] of Object.entries(party.members)) {
-          const p = db.users[id];
-          if (p && m.hp > 0) {
-            m.hp = Math.min(m.hp + Math.floor(p.stats.maxHp * 0.3), p.stats.maxHp);
-            m.energy = Math.min(m.energy + Math.floor(p.stats.maxEnergy * 0.3), p.stats.maxEnergy);
-          }
-        }
-
-        narrative += `\n✅ FLOOR ${party.floor - 1} CLEARED!\n\n`;
-        narrative += `💚 All members restored 30% HP & Energy!\n`;
-
-        if (party.floor > 10) {
-          narrative += `\n🎉 DUNGEON COMPLETE! 🎉\n\n`;
-          narrative += `🎁 REWARDS FOR ALL:\n`;
-          narrative += `✨ XP: +1000\n`;
-          narrative += `💎 Mana Stones: +100\n`;
-          narrative += `💠 Nexus: +500\n`;
-
-          for (const memberId of Object.keys(party.members)) {
-            const p = db.users[memberId];
-            if (p) {
-              p.xp += 1000;
-              p.manaCrystals += 100;
-              p.gold = (p.gold || 0) + 500;
-              LevelUpManager.checkAndApplyLevelUps(p, saveDatabase, sock, chatId);
-            }
-          }
-
-          delete db.partyDungeons[chatId];
-          saveDatabase();
-
-          return sock.sendMessage(chatId, { text: narrative }, { quoted: msg });
-        }
-
-        const avgLevel = Math.floor(
-          Object.values(party.members).reduce((sum, m) => sum + m.level, 0) / Object.keys(party.members).length
-        );
-
-        const nextMonster = monsterTemplates.generateMonster(avgLevel + party.floor);
-        party.currentMonster = nextMonster;
-        party.monsterHP = nextMonster.maxHp;
-
-        narrative += `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
-        narrative += `📍 FLOOR ${party.floor}\n`;
-        narrative += `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
-        narrative += `👹 ${nextMonster.name} (Lv.${nextMonster.level})\n`;
-        narrative += `❤️ HP: ${party.monsterHP}/${nextMonster.maxHp}\n`;
-        narrative += `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
-
-        saveDatabase();
-        return sock.sendMessage(chatId, { text: narrative }, { quoted: msg });
-      }
-
-      saveDatabase();
-      return sock.sendMessage(chatId, { text: narrative }, { quoted: msg });
-    }
-
-    // ═══════════════════════════════════════════════════════════════
-    // PARTY LEAVE
+    // /party leave
     // ═══════════════════════════════════════════════════════════════
     if (action === 'leave') {
-      delete party.members[sender];
+      if (!activeKey) return sock.sendMessage(chatId, { text: '❌ No active party in this chat.' }, { quoted: msg });
 
-      if (Object.keys(party.members).length === 0) {
-        delete db.partyDungeons[chatId];
-        saveDatabase();
-        return sock.sendMessage(chatId, {
-          text: '❌ Party disbanded! (No members remaining)'
-        }, { quoted: msg });
-      }
+      const resolved = GR.resolveCode(activeKey);
+      if (!resolved.ok) return sock.sendMessage(chatId, { text: resolved.error }, { quoted: msg });
+      const { gate } = resolved;
 
-      // If leader left, assign new leader
-      if (party.leader === sender) {
-        party.leader = Object.keys(party.members)[0];
-        const newLeader = db.users[party.leader];
-        
-        saveDatabase();
-        return sock.sendMessage(chatId, {
-          text: `✅ ${player.name} left!\n\n👑 ${newLeader.name} is the new leader!`
-        }, { quoted: msg });
-      }
+      const raid = gate.raid;
+      if (!raid) return sock.sendMessage(chatId, { text: '❌ No active party.' }, { quoted: msg });
+
+      raid.members = (raid.members || []).filter(m => m.id !== sender);
+      gate.raiders = (gate.raiders || []).filter(r => r !== sender);
 
       saveDatabase();
+
       return sock.sendMessage(chatId, {
-        text: `✅ ${player.name} left the party!\n\n${Object.keys(party.members).length} members remaining.`
+        text: `✅ *${player.name}* left the party.\nRemaining members: ${raid.members.length}`
+      }, { quoted: msg });
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // /party kick @user
+    // ═══════════════════════════════════════════════════════════════
+    if (action === 'kick') {
+      if (!activeKey) return sock.sendMessage(chatId, { text: '❌ No active party.' }, { quoted: msg });
+
+      const targetJid = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid?.[0];
+      if (!targetJid) return sock.sendMessage(chatId, { text: '❌ Usage: /party kick @user' }, { quoted: msg });
+
+      const resolved = GR.resolveCode(activeKey);
+      if (!resolved.ok) return sock.sendMessage(chatId, { text: resolved.error }, { quoted: msg });
+      const { gate, keyData } = resolved;
+
+      const raid = gate.raid;
+      if (!raid) return sock.sendMessage(chatId, { text: '❌ No active party.' }, { quoted: msg });
+
+      if (raid.leader !== sender && normaliseJid(keyData.ownedBy) !== normaliseJid(sender)) {
+        return sock.sendMessage(chatId, { text: '❌ Only the party leader can kick members!' }, { quoted: msg });
+      }
+
+      raid.members = (raid.members || []).filter(m => m.id !== targetJid);
+      gate.raiders = (gate.raiders || []).filter(r => r !== targetJid);
+
+      saveDatabase();
+
+      const targetPlayer = db.users?.[targetJid];
+      return sock.sendMessage(chatId, {
+        text: `🪓 *${targetPlayer?.name || targetJid.split('@')[0]}* was kicked from the party by leader.`
       }, { quoted: msg });
     }
 
     return sock.sendMessage(chatId, {
-      text: '❌ Invalid command!\n\nUse /party for options.'
+      text: '❌ Usage: /party [ready|raid|join|leave|kick]'
     }, { quoted: msg });
   }
 };
