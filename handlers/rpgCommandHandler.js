@@ -64,7 +64,7 @@ const commands = {};
 
 const rpgPath = path.join(__dirname, '..', 'commands', 'rpg');
 fs.readdirSync(rpgPath).forEach(file => {
-  if (!file.endsWith('.js')) return;
+  if (!file.endsWith('.js') || file.includes('backup') || file.includes('original') || file.endsWith('.bak')) return;
   const commandName = file.replace('.js', '');
   try {
     const mod = require(path.join(rpgPath, file));

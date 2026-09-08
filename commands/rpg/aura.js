@@ -45,6 +45,21 @@ module.exports = {
 
     // ── AURAFARM ──────────────────────────────────────────────
     if (sub === 'farm' || sub === 'aurafarm') {
+      if (!player.cooldowns) player.cooldowns = {};
+      const COOLDOWN_MS = 10 * 60 * 60 * 1000; // 10 Hours
+      const lastFarm = player.cooldowns.auraFarm || 0;
+      const now = Date.now();
+
+      if (now - lastFarm < COOLDOWN_MS) {
+        const { formatDuration } = require('../../rpg/utils/NigerianTime');
+        const remaining = COOLDOWN_MS - (now - lastFarm);
+        return sock.sendMessage(chatId, {
+          text: `⏳ *AURA FARM COOLDOWN*\n\nYou must wait *${formatDuration(remaining)}* before farming aura again!`
+        }, { quoted: msg });
+      }
+
+      player.cooldowns.auraFarm = now;
+
       const isPro = !!((player.isPro || player.proStatus) && player.proExpiresAt && player.proExpiresAt > Date.now());
       const has100Pct = isPro && player.auraFarmBoostUntil && Date.now() <= player.auraFarmBoostUntil;
       const success = has100Pct || Math.random() < 0.35;
@@ -58,6 +73,7 @@ module.exports = {
           text: `✨ *AURA HARVEST SUCCESSFUL!* ${has100Pct ? '(🌟 100% PRO STAR BOOST ACTIVE!)' : ''}\n\nGained +*${gained}* Aura! Total: *${player.aura.toLocaleString()}*`
         }, { quoted: msg });
       } else {
+        saveDatabase();
         return sock.sendMessage(chatId, {
           text: `💨 *Aura farm failed!* The wild energy dispersed.\n💡 Pro players get random 🌟 reactions granting 5-second 100% success rate windows! (/prostore)`
         }, { quoted: msg });

@@ -99,6 +99,36 @@ function awardXP(player, action = 'command', saveDatabase, sock, chatId, extraMu
   player.xp = (player.xp || 0) + amount;
   player.totalXp = (player.totalXp || 0) + amount; // lifetime XP (never resets at level-up)
 
+  // ── Astra Pass XP (ALL activities) ───────────────────────────────────
+  if (!player.astraPass) {
+    player.astraPass = { level: 1, xp: 0, claimedFree: [], claimedPremium: [] };
+  }
+  const astraXpGained = Math.max(10, Math.floor(amount * 0.15));
+  player.astraPass.xp = (player.astraPass.xp || 0) + astraXpGained;
+  while (player.astraPass.xp >= 1000 && player.astraPass.level < 50) {
+    player.astraPass.xp -= 1000;
+    player.astraPass.level++;
+  }
+
+  // ── Battle Pass XP (BATTLE ACTIVITIES ONLY) ──────────────────────────
+  const BATTLE_ACTIONS = new Set([
+    'pvp_win', 'pvp_loss', 'duel_win',
+    'dungeon_floor', 'dungeon_boss', 'dungeon_complete',
+    'gate_complete', 'gate_boss',
+    'worldboss_hit', 'worldboss_kill'
+  ]);
+  if (BATTLE_ACTIONS.has(action)) {
+    if (!player.battlePass) {
+      player.battlePass = { level: 1, xp: 0, claimed: [], premium: false };
+    }
+    const bpXpGained = Math.max(15, Math.floor(amount * 0.20));
+    player.battlePass.xp = (player.battlePass.xp || 0) + bpXpGained;
+    while (player.battlePass.xp >= 500 && player.battlePass.level < 40) {
+      player.battlePass.xp -= 500;
+      player.battlePass.level++;
+    }
+  }
+
   // ── Class awakening (50k–150k lifetime XP, per-player random point) ──────
   // Fires as soon as cumulative XP crosses the player's threshold. Uses
   // player.totalXp (level-progress `player.xp` resets each level-up and would

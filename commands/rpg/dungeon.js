@@ -797,6 +797,9 @@ module.exports = {
           sd.totalNexus    += goldGain;
           sd.totalCrystals += crystalGain;
 
+          // Award Guild Points for Guild War (defeating dungeon monster)
+          try { require('../../rpg/utils/WeeklyGuildWar').addGP(db, sender, 5, saveDatabase); } catch(e) {}
+
           log += `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
           log += `💀 *${monster.name}* has been defeated!\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
           log += `💠 +${goldGain} Nexus | 💎 +${crystalGain} Mana Stones\n`;
@@ -1207,6 +1210,14 @@ async function handleMonsterDefeat(sock, chatId, party, monster, dungeon, db, sa
     if (!dungeon.floorsCleared.includes(dungeon.currentFloor)) {
       dungeon.floorsCleared.push(dungeon.currentFloor);
     }
+
+    // Award Guild Points for Guild War to party members
+    try {
+      party.members.forEach(m => {
+        const memberId = typeof m === 'object' ? m.id : m;
+        require('../../rpg/utils/WeeklyGuildWar').addGP(db, memberId, 5, saveDatabase);
+      });
+    } catch(e) {}
     saveDatabase();
 
     // ── Quest tracking for party kill ─────────────────────────────────

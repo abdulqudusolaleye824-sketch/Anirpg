@@ -14,6 +14,21 @@ function isProPlayer(player) {
   return !!((player.isPro || player.proStatus) && player.proExpiresAt && player.proExpiresAt > Date.now());
 }
 
+function getTierRewards(t) {
+  const freeNexus = t * 1000;
+  const premStones = t * 50;
+  if (t === 50) {
+    return {
+      free: `+${freeNexus.toLocaleString()} 💠 Nexus`,
+      prem: `+${premStones.toLocaleString()} 💎 Mana Stones + 🗡️✨ *Astra's Sovereign Blade* (Legendary Weapon)`,
+    };
+  }
+  return {
+    free: `+${freeNexus.toLocaleString()} 💠 Nexus`,
+    prem: `+${premStones.toLocaleString()} 💎 Mana Stones`,
+  };
+}
+
 module.exports = {
   name: 'pass',
   aliases: ['astrapass'],
@@ -111,33 +126,67 @@ module.exports = {
       return sock.sendMessage(chatId, { text: `✅ *Tier ${tier} Claimed!*\n\n${gained.join('\n')}` }, { quoted: msg });
     }
 
-    // Default Pass view
+    // Default Pass view: Header + Full Tier & Reward List
     const xpReq = 1000;
     const xpPct = Math.min(100, Math.floor(((ap.xp || 0) / xpReq) * 100));
     const xpBar = '█'.repeat(Math.floor(xpPct / 5)) + '░'.repeat(20 - Math.floor(xpPct / 5));
 
+    const overviewHeader = [
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+      `🏛️ *ASTRA PASS (SEASON 1 — 40 DAYS)*`,
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+      `👤 Hunter: *${player.name}*`,
+      `⭐ Pass Level: *Tier ${ap.level}/${TOTAL_TIERS}*`,
+      `[${xpBar}] ${ap.xp || 0}/${xpReq} XP`,
+      ``,
+      hasPremium
+        ? `👑 *PREMIUM UNLOCKED* (Included with PRO / Activated)`
+        : `🆓 *FREE TIER* — Upgrade to PRO (/prostore) to automatically unlock Premium!`,
+      ``,
+      `🎁 *TIER 50 HIGHLIGHT:*`,
+      `🗡️✨ *Astra's Sovereign Blade* (Legendary Weapon)`,
+      ``,
+      `📌 *HOW TO EARN ASTRA PASS XP:*`,
+      `Earn XP from *ALL ACTIVITIES* — Daily claims, Quests, Battles, Crafting, & Commands!`,
+      ``,
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+      `📌 /pass claim       — Claim all unlocked rewards`,
+      `📌 /pass claim [num] — Claim specific tier reward`,
+      `📌 /prostore         — Buy PRO card to get Auto-Premium!`,
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+    ].join('\n');
+
+    // Build levels breakdown in 2 chunks (Tiers 1-25 and Tiers 26-50)
+    let chunk1 = `📜 *ASTRA PASS — TIERS 1 TO 25*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+    for (let t = 1; t <= 25; t++) {
+      const isUnlocked = t <= ap.level;
+      const statusIcon = isUnlocked ? '🔓' : '🔒';
+      const freeClaimed = ap.claimedFree.includes(t) ? ' [✅ Free Claimed]' : '';
+      const premClaimed = ap.claimedPremium.includes(t) ? ' [✅ Prem Claimed]' : '';
+      const rewards = getTierRewards(t);
+      chunk1 += `${statusIcon} *Tier ${t}*${freeClaimed}${premClaimed}\n`;
+      chunk1 += `  🆓 Free: ${rewards.free}\n`;
+      chunk1 += `  👑 Prem: ${rewards.prem}\n\n`;
+    }
+
+    let chunk2 = `📜 *ASTRA PASS — TIERS 26 TO 50*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+    for (let t = 26; t <= 50; t++) {
+      const isUnlocked = t <= ap.level;
+      const statusIcon = isUnlocked ? '🔓' : '🔒';
+      const freeClaimed = ap.claimedFree.includes(t) ? ' [✅ Free Claimed]' : '';
+      const premClaimed = ap.claimedPremium.includes(t) ? ' [✅ Prem Claimed]' : '';
+      const rewards = getTierRewards(t);
+      chunk2 += `${statusIcon} *Tier ${t}*${freeClaimed}${premClaimed}\n`;
+      chunk2 += `  🆓 Free: ${rewards.free}\n`;
+      chunk2 += `  👑 Prem: ${rewards.prem}\n\n`;
+    }
+
     return sock.sendMessage(chatId, {
-      text: [
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-        `🏛️ *ASTRA PASS (SEASON 1 — 40 DAYS)*`,
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-        `👤 Hunter: *${player.name}*`,
-        `⭐ Pass Level: *Tier ${ap.level}/${TOTAL_TIERS}*`,
-        `[${xpBar}] ${ap.xp || 0}/${xpReq} XP`,
-        ``,
-        hasPremium
-          ? `👑 *PREMIUM UNLOCKED* (Included with PRO / Activated)`
-          : `🆓 *FREE TIER* — Upgrade to PRO (/prostore) to automatically unlock Premium!`,
-        ``,
-        `🎁 *TIER 50 HIGHLIGHT:*`,
-        `🗡️✨ *Astra's Sovereign Blade* (Legendary Weapon)`,
-        ``,
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-        `📌 /pass claim       — Claim all unlocked rewards`,
-        `📌 /pass claim [num] — Claim specific tier reward`,
-        `📌 /prostore         — Buy PRO card to get Auto-Premium!`,
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-      ].join('\n'),
-    }, { quoted: msg });
+      sections: [
+        { text: overviewHeader },
+        { text: chunk1 },
+        { text: chunk2 },
+      ]
+    });
   }
 };

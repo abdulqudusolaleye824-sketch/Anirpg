@@ -15,6 +15,15 @@ const PC_REWARD_TIERS = [8, 16, 24, 32, 40];
 // The 20 tiers that are locked to Premium BP:
 const LOCKED_TIERS = [2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32, 34, 36, 38, 40];
 
+function getBPTierRewards(t) {
+  if (PC_REWARD_TIERS.includes(t)) {
+    return `💼 +200 PC (Procoin Refund Track!)`;
+  }
+  const goldAmt = t * 1500;
+  const stoneAmt = t * 20;
+  return `+${goldAmt.toLocaleString()} 💠 Nexus | +${stoneAmt} 💎 Mana Stones`;
+}
+
 module.exports = {
   name: 'battlepass',
   aliases: ['bp'],
@@ -130,29 +139,65 @@ module.exports = {
     const xpPct = Math.min(100, Math.floor(((bp.xp || 0) / xpReq) * 100));
     const xpBar = '█'.repeat(Math.floor(xpPct / 5)) + '░'.repeat(20 - Math.floor(xpPct / 5));
 
+    const overviewHeader = [
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+      `🎖️ *SEASONAL BATTLE PASS (40 TIERS)*`,
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+      `👤 Hunter: *${player.name}*`,
+      `⭐ BP Level: *Tier ${bp.level}/${TOTAL_TIERS}*`,
+      `[${xpBar}] ${bp.xp || 0}/${xpReq} XP`,
+      ``,
+      bp.premium
+        ? `👑 *PREMIUM PASS UNLOCKED ✅*`
+        : `🆓 Free Pass — /bp buy to unlock Premium (${BP_COST_PC} PC)`,
+      ``,
+      `📌 *HOW TO EARN BATTLE PASS XP:*`,
+      `Earn XP strictly from *BATTLE COMMANDS* — PvP wins, Gate Raids, Dungeon Clears, & Boss Fights!`,
+      ``,
+      `💡 *INFO & REFUND TRACK:*`,
+      `• 20 Tiers locked to Premium BP`,
+      `• Tiers 8, 16, 24, 32 & 40 award *200 PC each* (+1,000 PC total refund at Tier 40!)`,
+      ``,
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+      `📌 /bp claim       — Claim all available rewards`,
+      `📌 /bp claim [num] — Claim specific tier reward`,
+      `📌 /bp buy         — Unlock Premium BP (1,000 PC)`,
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+    ].join('\n');
+
+    // Build levels breakdown in 2 chunks (Tiers 1-20 and Tiers 21-40)
+    let chunk1 = `🎖️ *BATTLE PASS — TIERS 1 TO 20*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+    for (let t = 1; t <= 20; t++) {
+      const isUnlocked = t <= bp.level;
+      const isPremiumLocked = LOCKED_TIERS.includes(t);
+      const isClaimed = bp.claimed.includes(t);
+
+      const statusIcon = isUnlocked ? (isClaimed ? '✅' : '🔓') : (isPremiumLocked ? '🔒' : '⏳');
+      const lockLabel = isPremiumLocked ? ' [👑 Premium Locked]' : ' [🆓 Free Track]';
+      const rewards = getBPTierRewards(t);
+
+      chunk1 += `${statusIcon} *Tier ${t}*${lockLabel}\n  🎁 Reward: ${rewards}\n\n`;
+    }
+
+    let chunk2 = `🎖️ *BATTLE PASS — TIERS 21 TO 40*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+    for (let t = 21; t <= 40; t++) {
+      const isUnlocked = t <= bp.level;
+      const isPremiumLocked = LOCKED_TIERS.includes(t);
+      const isClaimed = bp.claimed.includes(t);
+
+      const statusIcon = isUnlocked ? (isClaimed ? '✅' : '🔓') : (isPremiumLocked ? '🔒' : '⏳');
+      const lockLabel = isPremiumLocked ? ' [👑 Premium Locked]' : ' [🆓 Free Track]';
+      const rewards = getBPTierRewards(t);
+
+      chunk2 += `${statusIcon} *Tier ${t}*${lockLabel}\n  🎁 Reward: ${rewards}\n\n`;
+    }
+
     return sock.sendMessage(chatId, {
-      text: [
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-        `🎖️ *SEASONAL BATTLE PASS (40 TIERS)*`,
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-        `👤 Hunter: *${player.name}*`,
-        `⭐ BP Level: *Tier ${bp.level}/${TOTAL_TIERS}*`,
-        `[${xpBar}] ${bp.xp || 0}/${xpReq} XP`,
-        ``,
-        bp.premium
-          ? `👑 *PREMIUM PASS UNLOCKED ✅*`
-          : `🆓 Free Pass — /bp buy to unlock Premium (${BP_COST_PC} PC)`,
-        ``,
-        `💡 *INFO & REFUND TRACK:*`,
-        `• 20 Tiers locked to Premium BP`,
-        `• Tiers 8, 16, 24, 32 & 40 award *200 PC each* (+1,000 PC total refund at Tier 40!)`,
-        ``,
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-        `📌 /bp claim       — Claim all available rewards`,
-        `📌 /bp claim [num] — Claim specific tier reward`,
-        `📌 /bp buy         — Unlock Premium BP (1,000 PC)`,
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-      ].join('\n'),
-    }, { quoted: msg });
+      sections: [
+        { text: overviewHeader },
+        { text: chunk1 },
+        { text: chunk2 },
+      ]
+    });
   }
 };
