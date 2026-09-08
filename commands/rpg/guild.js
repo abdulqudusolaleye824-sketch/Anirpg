@@ -172,6 +172,9 @@ module.exports = {
       CM.hire(db, offer.guildId, offer.gmId, sender, offer.weeklyNexus, offer.weeklyMana, offer.weeks);
       delete db.pendingGuildHires[sender];
 
+      // Award Weekly GP for signing
+      try { require('../../rpg/utils/WeeklyGuildWar').addGP(db, sender, 200, saveDatabase); } catch(e) {}
+
       saveDatabase();
 
       return sock.sendMessage(chatId, {
@@ -417,6 +420,9 @@ module.exports = {
         delete db.guildInvites[sender];
       }
 
+      // Award Weekly GP for joining guild
+      try { require('../../rpg/utils/WeeklyGuildWar').addGP(db, sender, 200, saveDatabase); } catch(e) {}
+
       saveDatabase();
 
       await sock.sendMessage(chatId, {
@@ -505,6 +511,9 @@ module.exports = {
         playerGuild.manaTreasury -= cost.mana;
         playerGuild.sizeLevel = currentSizeLvl + 1;
 
+        // Award Weekly GP for guild upgrade
+        try { require('../../rpg/utils/WeeklyGuildWar').addGP(db, sender, 150, saveDatabase); } catch(e) {}
+
         saveDatabase();
 
         return sock.sendMessage(chatId, {
@@ -539,6 +548,9 @@ module.exports = {
         playerGuild.treasury -= cost.nexus;
         playerGuild.manaTreasury -= cost.mana;
         playerGuild.shopLevel = currentShopLvl + 1;
+
+        // Award Weekly GP for guild upgrade
+        try { require('../../rpg/utils/WeeklyGuildWar').addGP(db, sender, 150, saveDatabase); } catch(e) {}
 
         saveDatabase();
 
@@ -697,6 +709,60 @@ module.exports = {
       memberList += `Total: ${playerGuild.members.length}/${maxM}`;
 
       return sock.sendMessage(chatId, { text: memberList });
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // PROMOTE MEMBER
+    // ═══════════════════════════════════════════════════════════════════
+    if (action === 'promote') {
+      if (!playerGuild) {
+        return sock.sendMessage(chatId, { text: '❌ You are not in a guild!' }, { quoted: msg });
+      }
+
+      const senderRank = playerGuild.members?.find(m => (typeof m === 'object' ? m.id : m) === sender)?.rank || (playerGuild.leader === sender ? 'Leader' : 'Member');
+      const isLeader = playerGuild.leader === sender || senderRank === 'Leader' || senderRank === 'Guild Master';
+      const isVice   = senderRank === 'Vice' || senderRank === 'Vice GM';
+
+      if (!isLeader && !isVice) {
+        return sock.sendMessage(chatId, { text: '❌ Only the Guild Master or Vice GM can promote guild members!' }, { quoted: msg });
+      }
+
+      const targetId = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid?.[0] ||
+                       msg.message?.extendedTextMessage?.contextInfo?.participant;
+
+      if (!targetId) {
+        return sock.sendMessage(chatId, {
+          text: '❌ Tag or reply to the member you want to promote!\nUsage: /guild promote @user <officer|vice>'
+        }, { quoted: msg });
+      }
+
+      const newRole = (args[2] || args[1] || 'officer').toLowerCase();
+      let targetRank = 'Officer';
+      if (newRole.includes('vice') || newRole.includes('co')) {
+        if (!isLeader) {
+          return sock.sendMessage(chatId, { text: '❌ Only the Guild Master can promote someone to Vice Guildmaster!' }, { quoted: msg });
+        }
+        targetRank = 'Vice';
+      }
+
+      const memberObj = playerGuild.members?.find(m => (typeof m === 'object' ? m.id : m) === targetId);
+      if (!memberObj) {
+        return sock.sendMessage(chatId, { text: '❌ That hunter is not a member of your guild!' }, { quoted: msg });
+      }
+
+      if (typeof memberObj === 'object') {
+        memberObj.rank = targetRank;
+      } else {
+        const idx = playerGuild.members.indexOf(memberObj);
+        playerGuild.members[idx] = { id: targetId, rank: targetRank, joinedAt: Date.now() };
+      }
+
+      saveDatabase();
+
+      return sock.sendMessage(chatId, {
+        text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🎉 *GUILD PROMOTION!*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🏰 Guild: *${playerGuild.name}*\n👤 Hunter: *@${targetId.split('@')[0]}*\n⭐ New Rank: *${targetRank}*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        mentions: [targetId]
+      }, { quoted: msg });
     }
 
     // ═══════════════════════════════════════════════════════════════════

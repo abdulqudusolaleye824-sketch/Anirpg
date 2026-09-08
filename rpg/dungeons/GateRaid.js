@@ -363,6 +363,7 @@ function clearGate(gate, key, keyData, db, saveDatabase) {
   }
 
   let recovered = 0;
+  const WeeklyGuildWar = require('../utils/WeeklyGuildWar');
   for (const m of raiders) {
     const p = db.users?.[m.id];
     if (p) {
@@ -375,6 +376,9 @@ function clearGate(gate, key, keyData, db, saveDatabase) {
     }
     const pm = raid.members?.find(x => x.id === m.id);
     if (pm && p) { pm.hp = p.stats.hp; pm.energy = p.stats.energy; }
+
+    // Award Weekly GP for gate clear
+    try { WeeklyGuildWar.addGP(db, m.id, 100, saveDatabase); } catch(e) {}
   }
 
   GateManager.clearGate(gate.id, db);

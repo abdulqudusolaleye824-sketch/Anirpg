@@ -256,6 +256,12 @@ module.exports = {
       if (!loserPlayer.stats_history) loserPlayer.stats_history = {};
       winnerPlayer.stats_history.pvpWins = (winnerPlayer.stats_history.pvpWins || 0) + 1;
       loserPlayer.stats_history.pvpLosses = (loserPlayer.stats_history.pvpLosses || 0) + 1;
+
+      // Award Weekly GP for duel win
+      try {
+        const WeeklyGuildWar = require('../../rpg/utils/WeeklyGuildWar');
+        WeeklyGuildWar.addGP(db, winnerId, 75, saveDatabase);
+      } catch(e) {}
     }
 
     // Death penalty if HP hit 0

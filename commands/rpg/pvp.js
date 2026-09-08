@@ -1402,12 +1402,10 @@ async function handleVictory(sock, chatId, winner, loser, wId, lId, db, save, wS
   // ── Title check after PvP win ──────────────────────────────
   try { if (TitleSystem) { const nt=TitleSystem.checkAndAwardTitles(winner); if (nt.length && sock && chatId) { const tnames=nt.map(id=>TitleSystem.TITLES[id]?.display||id).join(', '); sock.sendMessage(wId, { text: `🎖️ *NEW TITLE UNLOCKED!*\n${tnames}\n\n/title to equip it!` }); } } } catch(e) {}
 
-  // ── Guild War points for PvP win (#3) ───────────────────────
+  // ── Guild War points for PvP win ───────────────────────
   try {
-    if (GuildWar) {
-      GuildWar.addWarPoints(db, wId, 5, save);   // +5 WP for winner
-      GuildWar.addWarPoints(db, lId, 1, null);   // +1 WP for participating
-    }
+    const WeeklyGuildWar = require('../../rpg/utils/WeeklyGuildWar');
+    WeeklyGuildWar.addGP(db, wId, 75, save);
   } catch(e) {}
 
   // ── XP level progress for victory message ───────────────────

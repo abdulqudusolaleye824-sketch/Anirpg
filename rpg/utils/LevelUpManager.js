@@ -129,6 +129,11 @@ class LevelUpManager {
       if (saveDatabase) saveDatabase();
       console.log(`✨ ${player.name} leveled up ${levelsGained} time(s) to Level ${player.level}`);
       
+      try {
+        const WeeklyGuildWar = require('./WeeklyGuildWar');
+        WeeklyGuildWar.addGP(db, player.id || player.jid || player._id, 50 * levelsGained, saveDatabase);
+      } catch(e) {}
+      
       if (sock && chatId) {
         this.sendLevelUpNotification(player, levelsGained, newSkills, skillUnlockLevels, totalUPAwarded, classAssigned, sock, chatId);
 
