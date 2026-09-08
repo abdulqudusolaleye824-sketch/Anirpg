@@ -15,7 +15,6 @@
 'use strict';
 
 const DB = require('../../rpg/utils/AttackPatternDB');
-const { getClassCmdName } = require('../../rpg/utils/classcmd');
 
 function bare(jid) {
   return String(jid || '').split(':')[0].split('@')[0].replace(/[^0-9]/g, '');
@@ -27,6 +26,18 @@ function getTargetJid(msg) {
   const quotedParticipant = msg.message?.extendedTextMessage?.contextInfo?.participant;
   if (quotedParticipant) return quotedParticipant;
   return null;
+}
+
+function getClassName(player) {
+  if (!player || !player.class) return 'No Class';
+  if (typeof player.class === 'string') return player.class;
+  if (typeof player.class === 'object') return player.class.name || 'No Class';
+  return 'No Class';
+}
+
+function getPlayerName(player, fallback = 'Hunter') {
+  if (!player) return fallback;
+  return player.name || fallback;
 }
 
 const PVP_RANKS = [
@@ -100,7 +111,7 @@ module.exports = {
         `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
         `⚔️ *PVP CHALLENGE ISSUED!*`,
         `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-        `👤 *Challenger:* ${challengerRank.emoji} ${player.name} [${player.class || 'No Class'} Lv.${player.level || 1}]`,
+        `👤 *Challenger:* ${challengerRank.emoji} ${getPlayerName(player)} [${getClassName(player)} Lv.${player.level || 1}]`,
         `🎯 *Target:* ${targetRank.emoji} @${targetJid.split('@')[0]}`,
         ``,
         `📖 *HOW PVP COMBAT WORKS:*`,
@@ -154,11 +165,11 @@ module.exports = {
         `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
         `⚔️ *FIGHTER 1 BATTLE STATS*`,
         `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-        `👤 Name: *${challenger.name}*`,
-        `🎭 Class: *${challenger.class || 'None'}* (Lv.${challenger.level || 1})`,
+        `👤 Name: *${getPlayerName(challenger)}*`,
+        `🎭 Class: *${getClassName(challenger)}* (Lv.${challenger.level || 1})`,
         `⭐ ELO: ${challenger.pvpElo || 1000}`,
-        `❤️ HP: ${challenger.stats.hp}/${challenger.stats.maxHp}`,
-        `⚔️ ATK: ${challenger.stats.atk || 10} | 🛡️ DEF: ${challenger.stats.def || 5}`,
+        `❤️ HP: ${challenger.stats?.hp || 100}/${challenger.stats?.maxHp || 100}`,
+        `⚔️ ATK: ${challenger.stats?.atk || 10} | 🛡️ DEF: ${challenger.stats?.def || 5}`,
         `⚡ Speed: ${p1Spd}`,
         `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
       ].join('\n');
@@ -167,11 +178,11 @@ module.exports = {
         `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
         `⚔️ *FIGHTER 2 BATTLE STATS*`,
         `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-        `👤 Name: *${player.name}*`,
-        `🎭 Class: *${player.class || 'None'}* (Lv.${player.level || 1})`,
+        `👤 Name: *${getPlayerName(player)}*`,
+        `🎭 Class: *${getClassName(player)}* (Lv.${player.level || 1})`,
         `⭐ ELO: ${player.pvpElo || 1000}`,
-        `❤️ HP: ${player.stats.hp}/${player.stats.maxHp}`,
-        `⚔️ ATK: ${player.stats.atk || 10} | 🛡️ DEF: ${player.stats.def || 5}`,
+        `❤️ HP: ${player.stats?.hp || 100}/${player.stats?.maxHp || 100}`,
+        `⚔️ ATK: ${player.stats?.atk || 10} | 🛡️ DEF: ${player.stats?.def || 5}`,
         `⚡ Speed: ${p2Spd}`,
         `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
       ].join('\n');
@@ -208,7 +219,7 @@ module.exports = {
       saveDatabase();
 
       return sock.sendMessage(chatId, {
-        text: `❌ *${player.name}* declined the PvP challenge.`
+        text: `❌ *${getPlayerName(player)}* declined the PvP challenge.`
       }, { quoted: msg });
     }
 
@@ -229,8 +240,8 @@ module.exports = {
           `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
           `📌 Your Move: *${locked}*`,
           ``,
-          `👤 *${player.name}*: ${player.stats.hp}/${player.stats.maxHp} ❤️`,
-          `👤 *${opp?.name || 'Opponent'}*: ${opp?.stats?.hp || 0}/${opp?.stats?.maxHp || 100} ❤️`,
+          `👤 *${getPlayerName(player)}*: ${player.stats?.hp || 0}/${player.stats?.maxHp || 100} ❤️`,
+          `👤 *${getPlayerName(opp, 'Opponent')}*: ${opp?.stats?.hp || 0}/${opp?.stats?.maxHp || 100} ❤️`,
           `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
         ].join('\n'),
       }, { quoted: msg });
@@ -251,7 +262,7 @@ module.exports = {
       saveDatabase();
 
       return sock.sendMessage(chatId, {
-        text: `🏳️ *${player.name}* surrendered! *${opp?.name || 'Opponent'}* wins the match!`
+        text: `🏳️ *${getPlayerName(player)}* surrendered! *${getPlayerName(opp, 'Opponent')}* wins the match!`
       }, { quoted: msg });
     }
 
@@ -264,7 +275,7 @@ module.exports = {
           `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
           `${rank.emoji} *PVP RANK & STATS*`,
           `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-          `👤 Hunter: *${player.name}*`,
+          `👤 Hunter: *${getPlayerName(player)}*`,
           `⭐ ELO Rating: *${elo}* (${rank.name})`,
           `📊 Record: ✅ ${player.pvpWins || 0} Wins | ❌ ${player.pvpLosses || 0} Losses`,
           `🔥 Win Streak: ${player.pvpStreak || 0}`,
@@ -352,6 +363,9 @@ async function resolveTurn(sock, chatId, p1, p2, db, saveDatabase) {
   const fasterId = p1First ? p1Id : p2Id;
   const slowerId = p1First ? p2Id : p1Id;
 
+  const fasterName = getPlayerName(faster, 'Fighter 1');
+  const slowerName = getPlayerName(slower, 'Fighter 2');
+
   const fasterAct = p1First ? p1.pvpBattle.pendingAction : p2.pvpBattle.pendingAction;
   const slowerAct = p1First ? p2.pvpBattle.pendingAction : p1.pvpBattle.pendingAction;
 
@@ -359,22 +373,22 @@ async function resolveTurn(sock, chatId, p1, p2, db, saveDatabase) {
 
   // 1. Faster player's move
   const fasterRes = calcMoveDamage(faster, slower, fasterAct);
-  slower.stats.hp = Math.max(0, (slower.stats.hp || 0) - fasterRes.damage);
+  slower.stats.hp = Math.max(0, (slower.stats?.hp || 0) - fasterRes.damage);
 
-  const msg1 = [
+  let msg1 = [
     `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
     `⚔️ *TURN ${turnNum}: FASTER PLAYER STRIKES FIRST!*`,
     `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-    `⚡ *${faster.name}* (Speed ${p1First ? p1Spd : p2Spd}) acts first!`,
+    `⚡ *${fasterName}* (Speed ${p1First ? p1Spd : p2Spd}) acts first!`,
     `📜 *Action:* ${fasterRes.moveLabel}`,
-    `${fasterRes.isCrit ? '💥 *CRITICAL HIT!* ' : ''}Dealt *${fasterRes.damage.toLocaleString()}* damage to *${slower.name}*!`,
+    `${fasterRes.isCrit ? '💥 *CRITICAL HIT!* ' : ''}Dealt *${fasterRes.damage.toLocaleString()}* damage to *${slowerName}*!`,
     ``,
-    `❤️ *${slower.name}* HP: ${slower.stats.hp.toLocaleString()}/${slower.stats.maxHp.toLocaleString()}`,
+    `❤️ *${slowerName}* HP: ${(slower.stats?.hp || 0).toLocaleString()}/${(slower.stats?.maxHp || 100).toLocaleString()}`,
     `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
   ].join('\n');
 
   // Check if slower player was defeated
-  if (slower.stats.hp <= 0) {
+  if ((slower.stats?.hp || 0) <= 0) {
     const PetManager = require('../../rpg/utils/PetManager');
     const sac = PetManager.checkPetSacrifice(slowerId, slower);
     if (sac && sac.sacrificed) {
@@ -386,22 +400,22 @@ async function resolveTurn(sock, chatId, p1, p2, db, saveDatabase) {
 
   // 2. Slower player's move (since slower is still alive)
   const slowerRes = calcMoveDamage(slower, faster, slowerAct);
-  faster.stats.hp = Math.max(0, (faster.stats.hp || 0) - slowerRes.damage);
+  faster.stats.hp = Math.max(0, (faster.stats?.hp || 0) - slowerRes.damage);
 
-  const msg2 = [
+  let msg2 = [
     `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
     `⚔️ *SECOND PLAYER COUNTERS!*`,
     `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-    `🛡️ *${slower.name}* counters!`,
+    `🛡️ *${slowerName}* counters!`,
     `📜 *Action:* ${slowerRes.moveLabel}`,
-    `${slowerRes.isCrit ? '💥 *CRITICAL HIT!* ' : ''}Dealt *${slowerRes.damage.toLocaleString()}* damage to *${faster.name}*!`,
+    `${slowerRes.isCrit ? '💥 *CRITICAL HIT!* ' : ''}Dealt *${slowerRes.damage.toLocaleString()}* damage to *${fasterName}*!`,
     ``,
-    `❤️ *${faster.name}* HP: ${faster.stats.hp.toLocaleString()}/${faster.stats.maxHp.toLocaleString()}`,
+    `❤️ *${fasterName}* HP: ${(faster.stats?.hp || 0).toLocaleString()}/${(faster.stats?.maxHp || 100).toLocaleString()}`,
     `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
   ].join('\n');
 
   // Check if faster player was defeated
-  if (faster.stats.hp <= 0) {
+  if ((faster.stats?.hp || 0) <= 0) {
     const PetManager = require('../../rpg/utils/PetManager');
     const sac = PetManager.checkPetSacrifice(fasterId, faster);
     if (sac && sac.sacrificed) {
@@ -423,8 +437,8 @@ async function resolveTurn(sock, chatId, p1, p2, db, saveDatabase) {
     `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
     `🎮 *ADVANCING TO TURN ${turnNum + 1}*`,
     `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-    `👤 *${p1.name}*: ${p1.stats.hp.toLocaleString()}/${p1.stats.maxHp.toLocaleString()} ❤️`,
-    `👤 *${p2.name}*: ${p2.stats.hp.toLocaleString()}/${p2.stats.maxHp.toLocaleString()} ❤️`,
+    `👤 *${getPlayerName(p1)}*: ${(p1.stats?.hp || 0).toLocaleString()}/${(p1.stats?.maxHp || 100).toLocaleString()} ❤️`,
+    `👤 *${getPlayerName(p2)}*: ${(p2.stats?.hp || 0).toLocaleString()}/${(p2.stats?.maxHp || 100).toLocaleString()} ❤️`,
     ``,
     `📌 Both players, select your next move:`,
     `• /attack or /attack <pattern_id>`,
@@ -448,22 +462,23 @@ function calcMoveDamage(attacker, defender, act) {
   let dmgMult = 1.0;
   let moveLabel = 'Basic Attack';
 
-  const patternId = parseInt(act.patternId || act.arg);
+  const patternId = parseInt(act?.patternId || act?.arg);
   if (!isNaN(patternId) && patternId >= 1 && patternId <= 750) {
     const pattern = DB.generateAttack(patternId);
-    if (pattern) {
+    if (pattern && pattern.name) {
       dmgMult = pattern.dmgMult || 1.2;
-      moveLabel = `Attack Pattern #${pattern.id} (${pattern.name})`;
+      moveLabel = `Attack Pattern #${pattern.id || patternId} (${pattern.name})`;
     }
   }
 
-  if (act.type === 'skill') {
+  if (act && act.type === 'skill') {
     const skillName = act.skillName;
-    const skill = (attacker.classSkills || []).find(s => s.name?.toLowerCase() === skillName?.toLowerCase())
-               || (attacker.skills?.active || []).find(s => s.name?.toLowerCase() === skillName?.toLowerCase());
+    const skill = (attacker.classSkills || []).find(s => s && (typeof s === 'string' ? s === skillName : s.name?.toLowerCase() === skillName?.toLowerCase()))
+               || (attacker.skills?.active || []).find(s => s && (typeof s === 'string' ? s === skillName : s.name?.toLowerCase() === skillName?.toLowerCase()));
     if (skill) {
+      const sName = typeof skill === 'string' ? skill : skill.name || skillName || 'Ability';
       dmgMult = (skill.potency ? skill.potency / 100 + 1 : 1.5);
-      moveLabel = `Class Skill: ${skill.name}`;
+      moveLabel = `Class Skill: ${sName}`;
     } else {
       dmgMult = 1.4;
       moveLabel = `Class Skill: ${skillName || 'Ability'}`;
@@ -473,8 +488,8 @@ function calcMoveDamage(attacker, defender, act) {
   let rawDmg = Math.floor(atk * dmgMult * (0.9 + Math.random() * 0.20));
 
   // ── CLASS INTERDEPENDENCY SYNERGIES ─────────────────────────
-  const attClass = String(attacker.class || '').toLowerCase();
-  const defClass = String(defender.class || '').toLowerCase();
+  const attClass = String(getClassName(attacker)).toLowerCase();
+  const defClass = String(getClassName(defender)).toLowerCase();
   const activeStatus = defender.statusEffects || [];
 
   // Berserker vs Fear / DragonKnight target -> 3.0x Damage
@@ -491,7 +506,8 @@ function calcMoveDamage(attacker, defender, act) {
   else if ((attClass.includes('blood') || attClass.includes('devourer')) && (activeStatus.includes('bleed') || activeStatus.includes('curse') || defClass.includes('necro') || defClass.includes('rogue'))) {
     rawDmg = Math.floor(rawDmg * 2.0);
     const heal = Math.floor(rawDmg * 0.5);
-    attacker.stats.hp = Math.min(attacker.stats.maxHp, (attacker.stats.hp || 0) + heal);
+    if (!attacker.stats) attacker.stats = { hp: 100, maxHp: 100 };
+    attacker.stats.hp = Math.min(attacker.stats.maxHp || 100, (attacker.stats.hp || 0) + heal);
     moveLabel += ` (🩸 BLOOD SYNERGY ×2.0 +${heal} HP!)`;
   }
   // Monk / Ranger vs Cursed / Marked target -> Ignores DEF
@@ -513,6 +529,9 @@ function calcMoveDamage(attacker, defender, act) {
 }
 
 function handlePvpVictory(sock, chatId, winner, loser, wId, lId, db, saveDatabase, turns, lastTurnText) {
+  const winnerName = getPlayerName(winner, 'Winner');
+  const loserName  = getPlayerName(loser, 'Loser');
+
   const wElo = winner.pvpElo || 1000;
   const lElo = loser.pvpElo || 1000;
   const change = Math.round(32 * (1 - 1 / (1 + Math.pow(10, (lElo - wElo) / 400))));
@@ -542,12 +561,12 @@ function handlePvpVictory(sock, chatId, winner, loser, wId, lId, db, saveDatabas
     `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
     `🏆 *PVP BATTLE OVER — VICTORY!*`,
     `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-    `👑 *${winner.name}* HAS DEFEATED *${loser.name}*!`,
+    `👑 *${winnerName}* HAS DEFEATED *${loserName}*!`,
     `⏱️ Total Turns: ${turns}`,
     ``,
     `📊 *ELO CHANGES:*`,
-    `🥇 ${winner.name}: ${wElo} → *${winner.pvpElo}* (+${change})`,
-    `🥈 ${loser.name}: ${lElo} → *${loser.pvpElo}* (−${loss})`,
+    `🥇 ${winnerName}: ${wElo} → *${winner.pvpElo}* (+${change})`,
+    `🥈 ${loserName}: ${lElo} → *${loser.pvpElo}* (−${loss})`,
     ``,
     `🎁 *REWARDS:*`,
     `💠 Nexus: +${rewardNexus.toLocaleString()}`,
