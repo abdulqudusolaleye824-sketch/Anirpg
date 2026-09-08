@@ -15,6 +15,7 @@
     "dotenv": "^16.4.5",
     "imagemin-webp": "^8.0.0",
     "mongodb": "^6.0.0",
+    "node-webpmux": "^3.2.1",
     "pino": "^8.21.0",
     "play-dl": "^1.9.7",
     "qrcode": "^1.5.3",

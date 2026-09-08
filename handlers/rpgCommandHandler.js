@@ -5,7 +5,6 @@ const AutoRedirect = require('../rpg/utils/AutoRedirect');
 const { OWNER_JID, stripDevice } = require('../utils/constants');
 const Mod = require('../rpg/utils/ModerationUtils');
 
-// ── Astra Personality Commands ───────────────────────────────────────────────
 const BotPersonality = require('../commands/rpg/botpersonality');
 const personalityCmds = {
   start:      BotPersonality.start,
@@ -16,7 +15,6 @@ const personalityCmds = {
   stopbot:    BotPersonality.stopbot,
 };
 
-// ── Astra Utility Commands ───────────────────────────────────────────────────
 const Utility = require('../commands/rpg/utility');
 const utilityCmds = {
   imagine:    Utility.imagine,
@@ -28,7 +26,6 @@ const utilityCmds = {
   search:     Utility.search,
 };
 
-// ── Astra CCTV & Status ──────────────────────────────────────────────────────
 const CCTVManager = require('../bots/CCTVManager');
 const { awardCommandXP } = require('../rpg/utils/SilentXP');
 const cctvCmds = {
@@ -36,7 +33,6 @@ const cctvCmds = {
   statusreport: CCTVManager.statusreport,
 };
 
-// ── Message chunking — split long messages into multiple sends ────────────────
 const CHUNK_SIZE = 3500;
 
 async function sendChunked(sock, chatId, text, options = {}) {
@@ -185,6 +181,7 @@ console.log(`⚓ Serf commands registered: /setserf, /approveserf`);
 // ── Static alias map ──────────────────────────────────────────
 const ALIASES = {
   'p':         'profile',
+  'q':         'quote',
   'stat':      'stats',
   'artifacts': 'artifact',
   'unlock':    'lock',

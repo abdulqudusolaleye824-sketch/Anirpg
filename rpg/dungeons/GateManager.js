@@ -145,7 +145,12 @@ class GateManager {
     if (!guild) return { success:false, reason:'Guild not found.' };
     if ((guild.treasury || 0) < gate.purchasePrice) return { success:false, reason:`Not enough treasury!\nNeed: ${gate.purchasePrice.toLocaleString()} 💎\nHave: ${(guild.treasury||0).toLocaleString()} 💎` };
     guild.treasury -= gate.purchasePrice;
-    gate.owned = true; gate.ownedBy = guildName; gate.ownedByLeader = leaderJid; gate.purchasedAt = Date.now();
+    gate.owned = true;
+    gate.purchased = true;
+    gate.active = false;
+    gate.ownedBy = guildName;
+    gate.ownedByLeader = leaderJid;
+    gate.purchasedAt = Date.now();
     return { success:true, gate };
   }
 
@@ -251,7 +256,36 @@ class GateManager {
   }
 
   static getActiveGatesForChat(chatId) {
-    return (this.gatesByChat[chatId] || []).map(id => this.activeGates[id]).filter(g => g && g.active && !g.cleared && !g.broken);
+    return (this.gatesByChat[chatId] || [])
+      .map(id => this.activeGates[id])
+      .filter(g => g && g.active && !g.cleared && !g.broken && !g.owned && !g.purchased);
+  }
+
+  static killActiveGates(chatId) {
+    let count = 0;
+    if (chatId && chatId.endsWith('@g.us')) {
+      const gateIds = this.gatesByChat[chatId] || [];
+      for (const id of gateIds) {
+        const g = this.activeGates[id];
+        if (g && g.active && !g.cleared && !g.owned) {
+          g.active = false;
+          g.broken = true;
+          count++;
+        }
+      }
+      this.gatesByChat[chatId] = [];
+    } else {
+      for (const g of Object.values(this.activeGates)) {
+        if (g && g.active && !g.cleared) {
+          g.active = false;
+          g.broken = true;
+          count++;
+        }
+      }
+      this.activeGates = {};
+      this.gatesByChat = {};
+    }
+    return count;
   }
 
   static getGate(gateId) { return this.activeGates[gateId] || null; }

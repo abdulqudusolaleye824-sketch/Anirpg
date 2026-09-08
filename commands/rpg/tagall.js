@@ -1,12 +1,7 @@
 /**
- * /tagall — @mention every member in the group (mods + owners only).
+ * /tagall — @mention every member in the group (Group Admins + Mods + Owners).
  *
- * The message TEXT stays clean (no visible list of @numbers) — everyone is
- * pinged via the `mentions` array, so WhatsApp notifies them but the bubble
- * shows only the announcement. The message/reason is shown at the top so the
- * announcement text is clear.
- *
- *   /tagall [message]
+ * Pings all participants via the `mentions` array.
  */
 
 'use strict';
@@ -15,22 +10,35 @@ const Mod = require('../../rpg/utils/ModerationUtils');
 
 module.exports = {
   name: 'tagall',
-  description: '📢 Tag all members in the group',
+  description: '📢 Tag all members in the group (Group Admins / Mods / Owners)',
   aliases: ['mentionall', 'tag', 'all'],
 
   async execute(sock, msg, args, getDatabase, saveDatabase, sender) {
     const chatId = msg.key.remoteJid;
     const db = getDatabase();
 
-    if (!Mod.canModerate(db, sender)) {
+    if (!chatId.endsWith('@g.us')) {
       return sock.sendMessage(chatId, {
-        text: '❌ *Mods / Owners only.*\n\nYou need mod permissions to use /tagall.',
+        text: '❌ This command only works in group chats!',
       }, { quoted: msg });
     }
 
-    if (!chatId.endsWith('@g.us')) {
+    // Check if sender is Bot Mod/Owner OR a Group Admin in this group
+    let isAuthorized = Mod.canModerate(db, sender);
+    if (!isAuthorized) {
+      try {
+        const meta = await sock.groupMetadata(chatId);
+        const senderBare = Mod.bare(sender);
+        const participant = meta.participants.find(p => p.id === sender || Mod.bare(p.id) === senderBare);
+        if (participant && (participant.admin === 'admin' || participant.admin === 'superadmin')) {
+          isAuthorized = true;
+        }
+      } catch (e) { /* ignore metadata errors */ }
+    }
+
+    if (!isAuthorized) {
       return sock.sendMessage(chatId, {
-        text: '❌ This command only works in groups!',
+        text: '❌ *Group Admins / Mods / Owners only.*\n\nYou need to be a group admin or bot mod to use /tagall.',
       }, { quoted: msg });
     }
 
@@ -46,7 +54,6 @@ module.exports = {
         }, { quoted: msg });
       }
 
-      // Clean text — mention EVERYONE silently via `mentions`, no visible tags.
       const text = [
         '📢 *GROUP ANNOUNCEMENT* 📢',
         '',
