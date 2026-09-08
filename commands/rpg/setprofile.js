@@ -20,7 +20,6 @@ function getDownloader() {
 function bare(sender) { return sender.split('@')[0].split(':')[0]; }
 
 module.exports = {
-  // ── /seticon ────────────────────────────────────────────────────────────
   seticon: {
     name: 'seticon',
     aliases: ['setprofileicon', 'spic'],
@@ -36,7 +35,6 @@ module.exports = {
         return sock.sendMessage(chatId, { text: '❌ Media download module not available.' }, { quoted: msg });
       }
 
-      // Try the image attached to THIS message, then any quoted image.
       const currentImg = msg.message?.imageMessage;
       const quoted = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage;
       const quotedImg = quoted?.imageMessage || quoted?.videoMessage;
@@ -81,7 +79,6 @@ module.exports = {
     },
   },
 
-  // ── /setname ────────────────────────────────────────────────────────────
   setname: {
     name: 'setname',
     aliases: ['setdisplayname', 'sname'],
@@ -98,8 +95,8 @@ module.exports = {
           text: `❌ Usage: */setname <new name>*\n\nCurrent name: *${player.name}*`,
         }, { quoted: msg });
       }
-      if (name.length > 24) {
-        return sock.sendMessage(chatId, { text: '❌ Name too long (max 24 characters).' }, { quoted: msg });
+      if (name.length > 50) {
+        return sock.sendMessage(chatId, { text: '❌ Name too long (max 50 characters).' }, { quoted: msg });
       }
 
       const oldName = player.name;

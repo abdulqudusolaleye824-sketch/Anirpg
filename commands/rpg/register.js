@@ -16,14 +16,11 @@ const {
 } = require('../../rpg/utils/SoloLevelingCore');
 const MultiSocketManager = require('../../bots/MultiSocketManager');
 
-// ── Nigerian Time (WAT = UTC+1) ───────────────────────────────────────────────
 function getNigerianTimestamp() {
   return new Date(Date.now() + 3600000)
     .toISOString().replace('T', ' ').slice(0, 19) + ' WAT';
 }
 
-// ── Date of birth parser ──────────────────────────────────────────────────────
-// Accepts DD/MM/YYYY or DD-MM-YYYY
 function parseDOB(str) {
   if (!str) return null;
   const parts = str.replace(/-/g, '/').split('/');
@@ -51,10 +48,8 @@ function parseDOB(str) {
   };
 }
 
-// ── Pending registrations ─────────────────────────────────────────────────────
 const pendingReg = {};
 
-// Periodic cleanup of expired pending registrations (memory hygiene)
 setInterval(() => {
   const now = Date.now();
   let pruned = 0;
@@ -65,7 +60,7 @@ setInterval(() => {
     }
   }
   if (pruned > 0) console.log(`🧹 Pruned ${pruned} expired pending registrations`);
-}, 5 * 60 * 1000); // check every 5 minutes
+}, 5 * 60 * 1000);
 
 const RANK_BONUSES = {
   E: { manaStones: 500,   upgradePoints: 3  },
@@ -85,8 +80,8 @@ function buildPlayer(sender, name, rank, stats, bonus, dob) {
     awakenRank:      rank,
     level:           1,
     xp:              0,
-    totalXp:         0,   // lifetime XP (never reset) — drives the class-awaken threshold
-    classAwakeningThreshold: 50000 + Math.floor(Math.random() * 100000), // random 50k–150k
+    totalXp:         0,
+    classAwakeningThreshold: 50000 + Math.floor(Math.random() * 100000),
     class:           null,
     classAssignedAt: null,
     classAwakenedAt: null,
@@ -122,7 +117,7 @@ function buildPlayer(sender, name, rank, stats, bonus, dob) {
     lastMonthly:     null,
     lastRegen:       Date.now(),
     lastActive:      Date.now(),
-    proStatus:       null,   // null | 'weekly' | 'monthly' | 'yearly'
+    proStatus:       null,
     proExpiresAt:    null,
     banned:          false,
     afk:             false,
@@ -166,9 +161,6 @@ function buildSuccessMsg(name, dob, rank, power, bonus) {
   ].filter(l => l !== null).join('\n');
 }
 
-// Welcome DM — sent to the player right after /register completes.
-// Bypasses the serf gate (the only DM that does). Sent by the active
-// bot that processed the registration, from its own socket.
 function buildWelcomeDM(name, rank) {
   const rankData = AWAKENING_RANKS[rank];
   return [
@@ -206,9 +198,6 @@ function buildWelcomeDM(name, rank) {
   ].join('\n');
 }
 
-// Send the welcome DM to the player. The caller passes the bot's
-// own socket — that's the active bot in the group where the user
-// just ran /register. The DM bypasses the serf gate.
 async function sendWelcomeDM(sock, sender, name, rank) {
   try {
     const dmJid = sender.endsWith('@lid')
@@ -230,7 +219,6 @@ module.exports = {
     const chatId = msg.key?.remoteJid;
     const db     = getDatabase();
 
-    // ── Already registered ─────────────────────────────────────────────────
     if (db.users[sender]) {
       const p        = db.users[sender];
       const rankData = AWAKENING_RANKS[p.awakenRank || 'E'] || { emoji:'⬜', label:'E-Rank' };
@@ -250,14 +238,11 @@ module.exports = {
       }, { quoted: msg });
     }
 
-    // ── Check if completing a pending registration (user sent DOB) ─────────
     const pending = pendingReg[sender];
     if (pending) {
       if (Date.now() > pending.expiresAt) {
         delete pendingReg[sender];
-        // Fall through to re-initiate
       } else {
-        // They're replying with DOB — first arg should be the DOB
         const dobArg = args[0];
         if (!dobArg) {
           return sock.sendMessage(chatId, {
@@ -277,14 +262,12 @@ module.exports = {
           }, { quoted: msg });
         }
 
-        // Complete
         const { name, rank, stats, bonus, power } = pending;
         delete pendingReg[sender];
 
         db.users[sender] = buildPlayer(sender, name, rank, stats, bonus, dob);
         saveDatabase();
 
-        // Welcome DM (only DM that bypasses the serf gate)
         await sendWelcomeDM(sock, sender, name, rank);
 
         return sock.sendMessage(chatId, {
@@ -293,7 +276,6 @@ module.exports = {
       }
     }
 
-    // ── Parse args — name and optional DOB in one command ─────────────────
     let nameArgs = [];
     let dobArg   = null;
 
@@ -306,14 +288,13 @@ module.exports = {
     }
 
     const name = (nameArgs.join(' ').trim() || msg.pushName || 'Hunter')
-      .substring(0, 20).replace(/[<>]/g, '');
+      .substring(0, 50).replace(/[<>]/g, '');
 
     const rank  = rollAwakeningRank();
     const stats = buildStartingStats(rank);
     const bonus = RANK_BONUSES[rank];
     const power = calculatePowerRating(stats);
 
-    // ── If DOB provided in same command — register immediately ─────────────
     if (dobArg) {
       const dob = parseDOB(dobArg);
       if (!dob) {
@@ -330,7 +311,6 @@ module.exports = {
       db.users[sender] = buildPlayer(sender, name, rank, stats, bonus, dob);
       saveDatabase();
 
-      // Welcome DM (only DM that bypasses the serf gate)
       await sendWelcomeDM(sock, sender, name, rank);
 
       return sock.sendMessage(chatId, {
@@ -338,7 +318,6 @@ module.exports = {
       }, { quoted: msg });
     }
 
-    // ── No DOB — prompt for it ─────────────────────────────────────────────
     pendingReg[sender] = { name, rank, stats, bonus, power, expiresAt: Date.now() + 300000 };
 
     return sock.sendMessage(chatId, {

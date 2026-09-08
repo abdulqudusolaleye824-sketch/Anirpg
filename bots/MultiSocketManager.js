@@ -279,6 +279,19 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
         code: pairingSessions[personalityKey]?.code || null,
       };
       persistLinkedBot(getDatabase, saveDatabase, personalityKey, sock, pairingPhone);
+
+      // Deliver pending restart completion notice if present in DB
+      try {
+        const db = getDatabase?.();
+        if (db && db.pendingRestartNotice) {
+          const { chatId, text } = db.pendingRestartNotice;
+          delete db.pendingRestartNotice;
+          if (saveDatabase) saveDatabase();
+          setTimeout(() => {
+            sock.sendMessage(chatId, { text }).catch(() => {});
+          }, 1200);
+        }
+      } catch (e) {}
     }
   });
 

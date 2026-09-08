@@ -48,6 +48,8 @@ module.exports = {
         text: `🔄 *Restarting 1 bot:* ${displayName} (\`${pKey}\`)…`
       }, { quoted: msg });
 
+      const completionText = `✨ *Successfully restarted ${displayName}!* 🤖⚡`;
+
       try {
         const existingSock = MultiSocketManager.getSocket(pKey);
         if (existingSock) {
@@ -61,9 +63,9 @@ module.exports = {
           rpgCommandHandler
         });
 
-        return sock.sendMessage(chatId, {
-          text: `✨ *Successfully restarted ${displayName}!* 🤖⚡`
-        }, { quoted: msg });
+        // Send completion message via active socket
+        const newSock = MultiSocketManager.getSocket(pKey) || sock;
+        return await newSock.sendMessage(chatId, { text: completionText }, { quoted: msg });
       } catch (err) {
         console.error(`❌ Error restarting bot ${pKey}:`, err.message);
         return sock.sendMessage(chatId, {
@@ -76,6 +78,12 @@ module.exports = {
     const allSockets = MultiSocketManager.getAllSockets();
     const activeKeys = Object.keys(allSockets);
     const count = activeKeys.length || 1;
+
+    const completionText = `✨ *Successfully restarted ${count} bot(s)!* 🚀⚡\n\nAll ${count} linked bot sockets are back online and ready.`;
+
+    // Save pending notice to DB in case PM2 process restart interrupts socket
+    db.pendingRestartNotice = { chatId, text: completionText };
+    saveDatabase();
 
     await sock.sendMessage(chatId, {
       text: `🔄 *Restarting ${count} bot(s)…*\n\nRe-establishing connections for all linked bot personalities.`
@@ -93,8 +101,15 @@ module.exports = {
         await MultiSocketManager.connectBot(key, AUTH_DIR, getDatabase, saveDatabase, {
           rpgCommandHandler
         });
-        await new Promise(r => setTimeout(r, 800));
+        await new Promise(r => setTimeout(r, 600));
       }
+
+      // Deliver completion message directly
+      const activeSock = MultiSocketManager.getAnySocket() || sock;
+      await activeSock.sendMessage(chatId, { text: completionText }, { quoted: msg });
+
+      delete db.pendingRestartNotice;
+      saveDatabase();
 
       // Check if running under PM2 for process-level restart fallback
       if (process.env.pm_id !== undefined || process.env.PM2_HOME) {
@@ -110,9 +125,7 @@ module.exports = {
         } catch (e) {}
       }
 
-      return sock.sendMessage(chatId, {
-        text: `✨ *Successfully restarted ${count} bot(s)!* 🚀⚡\n\nAll ${count} linked bot sockets are back online and ready.`
-      }, { quoted: msg });
+      return;
 
     } catch (err) {
       console.error('❌ Error restarting all bots:', err.message);
