@@ -140,9 +140,10 @@ function getAllSockets() {
 
 function _bootstrapDispatcher(personalityKey, chatId) {
   const active = PersonalityManager.getActiveBot(chatId);
-  if (active) return active === personalityKey;
+  if (active && botSockets[active]?.user?.id) return active === personalityKey;
+
   const sockets = getAllSockets();
-  const keys = Object.keys(sockets).sort();
+  const keys = Object.keys(sockets).filter(k => !!sockets[k]?.user?.id).sort();
   if (keys.length === 0) return false;
   const chosenKey = keys[0];
   try {
@@ -328,7 +329,11 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
 
     if (_isOwnBotNumber(bareSender, getDatabase)) return;
 
-    const activeKey = isGroup ? PersonalityManager.getActiveBot(chatId) : null;
+    // Active bot check with automatic offline fallback
+    const rawActiveKey = isGroup ? PersonalityManager.getActiveBot(chatId) : null;
+    const isOnlineActive = rawActiveKey && !!botSockets[rawActiveKey]?.user?.id;
+    const activeKey = isOnlineActive ? rawActiveKey : null;
+
     const isActive = isGroup
       ? (activeKey ? activeKey === personalityKey : _bootstrapDispatcher(personalityKey, chatId))
       : true;
@@ -353,7 +358,7 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
       : '';
     const BOOTSTRAP_COMMANDS = new Set([
       'start', 'switch', 'stopbot', 'bots', 'setainame', 'hi',
-      'link', 'unlink', 'help', 'menu',
+      'link', 'unlink', 'help', 'menu', 'restart', 'groupstatus', 'gstatus', 'set', 'setgroup'
     ]);
     const isBootstrap = BOOTSTRAP_COMMANDS.has(commandName);
 
@@ -617,7 +622,7 @@ async function sendHiChorus(chatId, responses, quotedMsg) {
 function getActiveSocket(chatId) {
   const PersonalityManager = require('./PersonalityManager');
   const activeKey = PersonalityManager.getActiveBot(chatId);
-  if (activeKey && botSockets[activeKey]) return botSockets[activeKey];
+  if (activeKey && botSockets[activeKey]?.user?.id) return botSockets[activeKey];
   return getAnySocket();
 }
 

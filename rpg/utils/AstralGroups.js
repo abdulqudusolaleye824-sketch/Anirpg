@@ -65,8 +65,8 @@ class AstralGroups {
       inviteLink: inviteLink || existing?.inviteLink || null,
       setAt: Date.now(),
       isMain,
-      status: isMain ? 'main' : 'pending',
-      startsAt: existing?.startsAt || null,
+      status: isMain ? 'main' : 'active',
+      startsAt: existing?.startsAt || Date.now(),
       expiresAt: existing?.expiresAt || null,
       subscriber: existing?.subscriber || null,
       features: Array.from(new Set([...(existing?.features || [])])),
@@ -122,7 +122,7 @@ class AstralGroups {
     if (!e) return true;
     if (e.isMain) return true;
     if (e.status === 'active') return !(e.expiresAt && now >= e.expiresAt);
-    return false;
+    return true;
   }
 
   static gate(db, groupId, now = Date.now()) {
@@ -133,11 +133,8 @@ class AstralGroups {
       return { allow: false, silent: false, expired: true, msg: EXPIRED_MSG };
     }
     if (e.status === 'pending') {
-      if (e.type === 'dungeon' || e.type === 'pvp' || e.type === 'support' || db?.dungeonGCs?.[groupId]) {
-        e.status = 'active';
-        return { allow: true, silent: false, expired: false };
-      }
-      return { allow: false, silent: true, expired: false };
+      e.status = 'active';
+      return { allow: true, silent: false, expired: false };
     }
     if (e.status === 'active' && e.expiresAt && now >= e.expiresAt) {
       return { allow: false, silent: false, expired: true, msg: EXPIRED_MSG };
