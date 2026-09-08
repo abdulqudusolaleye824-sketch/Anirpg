@@ -13,10 +13,11 @@
 const Perms = require('../../utils/permissions');
 const { stripDevice, OWNER_JID, COOWNER_JID } = require('../../utils/constants');
 const Mod = require('../../rpg/utils/ModerationUtils');
+
 module.exports = {
   name: 'set',
   aliases: ['config', 'toggle'],
-  description: '⚙️ Set bot flags (mod/maintenance/title)',
+  description: '⚙️ Set bot flags (mod/maintenance/title/spawn)',
 
   async execute(sock, msg, args, getDatabase, saveDatabase, sender) {
     const chatId = msg.key.remoteJid;
@@ -29,9 +30,6 @@ module.exports = {
       }, { quoted: msg });
     }
 
-    // Parse flags. Accept both forms:
-    //   /set --mod @user --true    (--flag [value] [--bool])
-    //   /set spawn --true           (flag as a bare first word)
     const flags = {};
     for (let i = 0; i < args.length; i++) {
       const a = args[i];
@@ -42,12 +40,10 @@ module.exports = {
         flags[key] = next;
         i++;
       } else {
-        flags[key] = 'true'; // bare --flag means toggle to true
+        flags[key] = 'true';
       }
     }
 
-    // If the flag was given as a bare first word (e.g. `/set spawn --true`),
-    // use that as the requested flag instead of a `--spawn` token.
     let requestedFlag = (args[0] && !args[0].startsWith('--'))
       ? args[0].toLowerCase()
       : null;
@@ -89,8 +85,6 @@ _Owners (Senku + Naruto) are permanent and cannot be modified._
     }
 
     // ── /set --maintenance --true/false ─────────────────────────
-    // NOTE: reads/writes db.system.maintenance (the key the command handler
-    // checks) — the old db.maintenance key never matched and did nothing.
     if (requestedFlag === 'maintenance') {
       if (!Array.isArray(db.botMods)) db.botMods = [];
       if (!db.system) db.system = {};
@@ -101,6 +95,11 @@ _Owners (Senku + Naruto) are permanent and cannot be modified._
       if (want === null) {
         return sock.sendMessage(chatId, {
           text: '❌ Usage: `--maintenance --true` or `--false`'
+        }, { quoted: msg });
+      }
+      if (db.system.maintenance === want) {
+        return sock.sendMessage(chatId, {
+          text: `⚠️ Maintenance mode is already set to ${want ? 'ON' : 'OFF'}!`
         }, { quoted: msg });
       }
       db.system.maintenance = want;
@@ -127,8 +126,15 @@ _Owners (Senku + Naruto) are permanent and cannot be modified._
         return sock.sendMessage(chatId, { text: '❌ Usage: `/set spawn --true` or `--false`' }, { quoted: msg });
       }
       if (!db.gateSpawns) db.gateSpawns = {};
+
+      const current = db.gateSpawns[chatId];
+      if (current === want) {
+        return sock.sendMessage(chatId, {
+          text: `⚠️ *Gate spawn is already set to ${want ? 'TRUE' : 'FALSE'} in this group!*`
+        }, { quoted: msg });
+      }
+
       db.gateSpawns[chatId] = want;
-      // If enabling, kick off the spawner for this chat (idempotent — won't double-schedule).
       if (want) {
         try {
           const GateSpawner = require('../../handlers/gateSpawner');
@@ -164,21 +170,16 @@ _Owners (Senku + Naruto) are permanent and cannot be modified._
   }
 };
 
-// ── Handlers ────────────────────────────────────────────────
-
 async function handleModFlag(sock, msg, db, saveDatabase, sender, rawArgs) {
   const chatId = msg.key.remoteJid;
   const args   = rawArgs || [];
 
-  // Determine the boolean from an explicit --true / --false token.
-  // (The generic flag parser consumes a mentioned @user as --mod's value, so we
-  //  must look for the boolean token separately, not read flags.mod.)
-  let value = true; // default: promote
+  let value = true;
   if (args.some(a => /^--true$/i.test(a)))       value = true;
   else if (args.some(a => /^--false$/i.test(a))) value = false;
 
-  const target = extractTarget(msg)            // mention OR reply
-    || args.find(a => /^@/.test(a))            // raw @mention in text
+  const target = extractTarget(msg)
+    || args.find(a => /^@/.test(a))
     || null;
 
   if (!target) {
@@ -202,10 +203,9 @@ async function handleModFlag(sock, msg, db, saveDatabase, sender, rawArgs) {
     if (alreadyMod) {
       return sock.sendMessage(chatId, { text: '⚠️ That user is already a mod.' }, { quoted: msg });
     }
-    db.botMods.push(targetBare);   // store bare number (matches Mod/Perms checks)
+    db.botMods.push(targetBare);
     saveDatabase();
 
-    // Reward the newly-promoted mod: +500,000 Nexus + 50,000 Mana Stones.
     const tPlayer = Mod.getUser(db, target);
     let rewardLine = '';
     if (tPlayer) {
@@ -234,23 +234,12 @@ async function handleModFlag(sock, msg, db, saveDatabase, sender, rawArgs) {
   }
 }
 
-// ── helpers ─────────────────────────────────────────────────
-
-function parseBool(v) {
-  if (v === undefined || v === null) return null;
-  const s = String(v).toLowerCase();
-  if (['true', '1', 'yes', 'on', 'enable'].includes(s))  return true;
-  if (['false', '0', 'no', 'off', 'disable'].includes(s)) return false;
-  return null;
-}
-
 function extractTarget(msg) {
   return msg.message?.extendedTextMessage?.contextInfo?.mentionedJid?.[0]
       || msg.message?.extendedTextMessage?.contextInfo?.participant
       || null;
 }
 
-// ── Title grant handler (owner-only) ────────────────────────
 async function handleTitleGrant(sock, msg, db, saveDatabase, sender, args) {
   const chatId = msg.key.remoteJid;
   const { TITLES, RARITIES } = require('../../rpg/utils/TitleSystem');

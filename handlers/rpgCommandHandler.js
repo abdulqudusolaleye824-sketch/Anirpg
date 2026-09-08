@@ -178,24 +178,25 @@ console.log(`⚒️  Progress commands registered: ${Object.keys(progressCmds).j
 console.log(`⚙️  Settings commands registered: ${Object.keys(settingsCmds).join(', ')}`);
 console.log(`⚓ Serf commands registered: /setserf, /approveserf`);
 
-// ── Static alias map ──────────────────────────────────────────
 const ALIASES = {
-  'p':         'profile',
-  'q':         'quote',
-  'stat':      'stats',
-  'artifacts': 'artifact',
-  'unlock':    'lock',
-  'inv':       'inventory',
-  'h':         'help',
-  'remove':    'kick',
-  'del':       'delete',
-  'pc':        'procoin',
-  'addpc':     'procoin',
-  'addprocoin':'procoin',
-  'wallet':    'balance',
-  'bal':       'balance',
-  'wb':        'worldboss',
-  'spawn':     'artifactspawn',
+  'p':           'profile',
+  'q':           'quote',
+  'stat':        'stats',
+  'artifacts':   'artifact',
+  'unlock':      'lock',
+  'inv':         'inventory',
+  'h':           'help',
+  'remove':      'kick',
+  'del':         'delete',
+  'pc':          'procoin',
+  'addpc':       'procoin',
+  'addprocoin':  'procoin',
+  'wallet':      'balance',
+  'bal':         'balance',
+  'wb':          'worldboss',
+  'spawn':       'artifactspawn',
+  'groupstatus': 'spawnstatus',
+  'gstatus':     'spawnstatus',
 };
 
 const NO_ADMIN_REQUIRED = new Set([
@@ -482,10 +483,13 @@ module.exports = async (sock, msg, messageText, config, getDatabase, saveDatabas
 
   const AstralGroups = require('../rpg/utils/AstralGroups');
   const manageCmds = new Set([
-    'setgroup', 'setgc', 'ssub', 'renew', 'allowgc', 'groupinfo', 'help', 'menu',
-    'reset', 'spawnstatus', 'killspawn', 'cctv', 'statusreport', 'botid', 'disable', 'enable', 'restart'
+    'start', 'switch', 'stopbot', 'bots', 'hi', 'setainame',
+    'setgroup', 'setgc', 'ssub', 'renew', 'allowgc', 'groupinfo', 'groupstatus',
+    'setdungeon', 'removedungeon', 'dungeons', 'set', 'settings', 'gcset',
+    'help', 'menu', 'reset', 'spawnstatus', 'spawnsstatus', 'killspawn',
+    'cctv', 'statusreport', 'botid', 'disable', 'enable', 'restart'
   ]);
-  if (chatId.endsWith('@g.us') && !manageCmds.has(commandName)) {
+  if (chatId.endsWith('@g.us') && !manageCmds.has(commandName) && !manageCmds.has(resolvedCommand)) {
     const gate = AstralGroups.gate(db, chatId);
     if (!gate.allow) {
       if (gate.silent) return;

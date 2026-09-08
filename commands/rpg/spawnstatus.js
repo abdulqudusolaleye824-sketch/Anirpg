@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════════════
-// /spawnstatus — Check gate spawn status (Mods/Owners)
+// /spawnstatus / /groupstatus — Check gate spawn status (Mods/Owners)
 //
 // In GC: Displays last spawn, current active spawn, and spawn status.
 // In DM: Displays all group chats where spawn status is set & their status.
@@ -23,9 +23,9 @@ function formatAgo(timestamp) {
 
 module.exports = {
   name: 'spawnstatus',
-  aliases: ['spawnsstatus', 'spawnstate', 'gcspawn'],
+  aliases: ['groupstatus', 'gstatus', 'spawnsstatus', 'spawnstate', 'gcspawn'],
   description: '📡 Check gate spawn status for group chats (Mod/Owner)',
-  usage: '/spawnstatus',
+  usage: '/spawnstatus or /groupstatus',
 
   async execute(sock, msg, args, getDatabase, saveDatabase, sender) {
     const chatId = msg.key.remoteJid;
@@ -73,7 +73,6 @@ module.exports = {
       return sock.sendMessage(chatId, { text }, { quoted: msg });
     }
 
-    // ── In DM: Show all groups with active spawn status ─────────────────────
     const knownGroups = new Set([
       ...Object.keys(db.gateSpawns || {}),
       ...Object.keys(db.gateSpawnMeta || {}),
