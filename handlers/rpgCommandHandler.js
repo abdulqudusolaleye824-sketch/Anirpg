@@ -43,7 +43,6 @@ async function sendChunked(sock, chatId, text, options = {}) {
   if (!text || text.length <= CHUNK_SIZE) {
     return sock.sendMessage(chatId, { text, ...options });
   }
-  // Split on double-newlines where possible to avoid cutting mid-section
   const parts = [];
   let remaining = text;
   while (remaining.length > CHUNK_SIZE) {
@@ -64,19 +63,9 @@ async function sendChunked(sock, chatId, text, options = {}) {
     if (i < parts.length - 1) await new Promise(r => setTimeout(r, 600));
   }
 }
-// ─────────────────────────────────────────────────────────────────────────────
 
 const commands = {};
 
-
-// ✅ Load RPG commands
-// A "command module" can be either:
-//   (a) a single command object with top-level `name` + `execute`, OR
-//   (b) a multi-command bundle: an object whose VALUES are all valid
-//       command objects (e.g. botpersonality.js exports { start, switch,
-//       hi, setainame, bots, stopbot }). Each value is auto-registered
-//       under its own `name`.
-// Anything else is genuinely non-command and is logged as skipped.
 const rpgPath = path.join(__dirname, '..', 'commands', 'rpg');
 fs.readdirSync(rpgPath).forEach(file => {
   if (!file.endsWith('.js')) return;
@@ -87,12 +76,7 @@ fs.readdirSync(rpgPath).forEach(file => {
       console.log(`⏭️ Skipped non-command module: ${commandName}`);
       return;
     }
-    // Case (a): single command with top-level name + execute
     if (mod.name && typeof mod.execute === 'function') {
-      // Register under BOTH the filename and the command's own `name`
-      // (e.g. download.js has name="ytmp4"). Without this, /ytmp4 and
-      // /ytmp3 etc. would be unreachable because some files register by
-      // filename only.
       commands[commandName] = mod;
       if (mod.name.toLowerCase() !== commandName) {
         commands[mod.name.toLowerCase()] = mod;
@@ -100,7 +84,6 @@ fs.readdirSync(rpgPath).forEach(file => {
       console.log(`✅ Loaded RPG command: ${commandName}${mod.name.toLowerCase() !== commandName ? ` (as ${mod.name})` : ''}`);
       return;
     }
-    // Case (b): multi-command bundle — every value is a valid command
     const values = Object.values(mod).filter(v => v && typeof v === 'object');
     const allAreCommands = values.length > 0 && values.every(
       v => v.name && typeof v.execute === 'function'
@@ -121,7 +104,6 @@ fs.readdirSync(rpgPath).forEach(file => {
   }
 });
 
-// ✅ Load admin commands
 const adminPath = path.join(__dirname, '..', 'commands');
 fs.readdirSync(adminPath).forEach(file => {
   const filePath = path.join(adminPath, file);
@@ -139,7 +121,6 @@ fs.readdirSync(adminPath).forEach(file => {
 
 console.log(`🎮 Total commands loaded: ${Object.keys(commands).length}`);
 
-// ── Astra Gate System ────────────────────────────────────────────────────────
 const GateCmds = require('../commands/rpg/gates');
 const GateRaidCmd = require('../commands/rpg/gateraid');
 const CaughtCmd = require('../commands/rpg/caught');
@@ -151,7 +132,6 @@ const gateCmds = {
   setdungeon:    GateCmds.setdungeon,
   removedungeon: GateCmds.removedungeon,
   dungeons:      GateCmds.dungeons,
-  // Standalone gateraid command (partner's combat system)
   gateraid:      GateRaidCmd,
   raid:          GateRaidCmd,
   gr:            GateRaidCmd,
@@ -160,7 +140,6 @@ const gateCmds = {
   catchpet:      CaughtCmd,
 };
 
-// ── Astra Group Settings ─────────────────────────────────────────────────────
 const SetCmd = require('../commands/rpg/set');
 const settingsCmds = {
   set:      SetCmd,
@@ -186,19 +165,14 @@ const progressCmds = {
   cls:      ClassCmd,
 };
 
-// ── Merge all command groups ──────────────────────────────────────────────────
 Object.assign(commands, personalityCmds, utilityCmds, cctvCmds, gateCmds, progressCmds, settingsCmds);
 
-// ── Serf system (must be loaded here so /setserf + /approveserf are top-level) ──
 const setserf    = require('../commands/rpg/setserf');
 const approveserf = require('../commands/rpg/approveserf');
 commands.setserf     = setserf;
 commands.approveserf = approveserf;
-commands.serf        = setserf;       // alias
-commands.approve     = approveserf;   // alias
-
-// Lazy cleanup of expired serf codes happens inside approveRequest()
-// and getPendingRequest(), so we don't need a separate setInterval here.
+commands.serf        = setserf;
+commands.approve     = approveserf;
 
 console.log(`🤖 Personality commands registered: ${Object.keys(personalityCmds).join(', ')}`);
 console.log(`🛠️  Utility commands registered: ${Object.keys(utilityCmds).join(', ')}`);
@@ -215,7 +189,6 @@ const ALIASES = {
   'artifacts': 'artifact',
   'unlock':    'lock',
   'inv':       'inventory',
-  'ssteal':    'steal',
   'h':         'help',
   'remove':    'kick',
   'del':       'delete',
@@ -228,15 +201,13 @@ const ALIASES = {
   'spawn':     'artifactspawn',
 };
 
-// Commands that work even without bot being admin
 const NO_ADMIN_REQUIRED = new Set([
   'register','profile','stats','inventory','inv','help','achievements',
   'daily','find','gear','friend','leaderboard','pm','botid'
 ]);
 
-// Also register any aliases declared on command modules themselves
 for (const [cmdName, cmd] of Object.entries(commands)) {
-  if (!cmd || typeof cmd !== 'object') continue;  // guard: never crash on bad module
+  if (!cmd || typeof cmd !== 'object') continue;
   if (Array.isArray(cmd.aliases)) {
     cmd.aliases.forEach(alias => {
       if (!ALIASES[alias]) ALIASES[alias] = cmdName;
@@ -263,160 +234,121 @@ module.exports = async (sock, msg, messageText, config, getDatabase, saveDatabas
   console.log(`[COMMAND] ${resolvedCommand}${resolvedCommand !== commandName ? ` (alias: ${commandName})` : ''} | Sender: ${sender} | Chat: ${chatId}`);
 
   const db = getDatabase();
-
-  // Bot admin status is only needed for mod commands (kick/mute/ban)
-  // RPG commands work for ALL users regardless of bot admin status
   const OWNER_ID = OWNER_JID;
   const isOwner = sender === OWNER_ID;
 
-  // 🔗 AntiLink strike system
-if (!db.antiLinkStrikes) db.antiLinkStrikes = {};
+  if (!db.antiLinkStrikes) db.antiLinkStrikes = {};
 
-  // ✅ Ensure group settings exist
-if (!db.groupSettings) db.groupSettings = {};
-if (!db.groupSettings[chatId]) {
-  db.groupSettings[chatId] = {
-    antiLink: false,
-    slowmode: 0
-  };
-  saveDatabase();
-}
-
-  // 💤 AFK SYSTEM INIT
-if (!db.afkUsers) db.afkUsers = {};
-
-  // 🚫 GLOBAL BAN CHECK (keyed by bare number so it matches /ban regardless
-  //    of device suffix / @lid vs @s.whatsapp.net)
-if (db.bannedUsers?.[Mod.bare(sender)]) {
-  const rec = db.bannedUsers[Mod.bare(sender)] || db.bannedUsers[sender];
-  return sock.sendMessage(
-    chatId,
-    {
-      text:
-        `🚫 *You are banned from using this bot.*\n\n` +
-        `📝 Reason: ${rec.reason || 'No reason provided'}\n\n` +
-        `_Contact a mod to appeal._`
-    },
-    { quoted: msg }
-  );
-}
-  // 🔄 (AFK welcome-back moved into MultiSocketManager so it fires on ANY
-  //    group message — command or not — not just commands.)
-  // 🔇 MUTE CHECK (SILENT — the bot just ignores the muted user's commands.
-  //    Keyed by bare number; auto-expires temporary mutes.)
-if (db.mutedUsers && db.mutedUsers[Mod.bare(sender)]) {
-  const muteData = db.mutedUsers[Mod.bare(sender)];
-  if (muteData.endsAt && Date.now() > muteData.endsAt) {
-    delete db.mutedUsers[Mod.bare(sender)];
+  if (!db.groupSettings) db.groupSettings = {};
+  if (!db.groupSettings[chatId]) {
+    db.groupSettings[chatId] = {
+      antiLink: false,
+      slowmode: 0
+    };
     saveDatabase();
-  } else {
-    return; // 👇 silently drop — muted user gets no notice
-  }
-}
-// 🔗 ANTI-LINK SYSTEM (WARN → MUTE → KICK) — auto-on for --main groups
-if (chatId.endsWith('@g.us')) {
-  const settings = db.groupSettings?.[chatId];
-  const admins = [OWNER_JID, ...(db.botMods || [])];
-
-  // MAIN groups are always anti-link enforced (co-owner spec: auto antilink).
-  let antiLinkOn = !!settings?.antiLink;
-  if (!antiLinkOn) {
-    try {
-      const AG = require('../rpg/utils/AstralGroups');
-      const entry = AG.getEntry(db, chatId);
-      if (entry && entry.isMain) antiLinkOn = true;
-    } catch (e) { /* ignore */ }
   }
 
-  if (antiLinkOn && !admins.includes(sender)) {
-    const text =
-      msg.message?.conversation ||
-      msg.message?.extendedTextMessage?.text ||
-      msg.message?.imageMessage?.caption ||
-      msg.message?.videoMessage?.caption ||
-      '';
+  if (!db.afkUsers) db.afkUsers = {};
 
-    const anyLinkRegex = /(https?:\/\/|www\.)/i;
-    // Default-allowed socials + any group whitelisted domains.
-    const allowedDomains = (settings?.allowed && settings.allowed.length)
-      ? settings.allowed
-      : ['instagram.com', 'pinterest.', 'pinterest.com', 'youtube.com', 'youtu.be', 'tiktok.com', 'chat.whatsapp.com', 'wa.me'];
-    const whitelistRegex = new RegExp('(' + allowedDomains.map(d => d.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|') + ')', 'i');
+  if (db.bannedUsers?.[Mod.bare(sender)]) {
+    const rec = db.bannedUsers[Mod.bare(sender)] || db.bannedUsers[sender];
+    return sock.sendMessage(
+      chatId,
+      {
+        text:
+          `🚫 *You are banned from using this bot.*\n\n` +
+          `📝 Reason: ${rec.reason || 'No reason provided'}\n\n` +
+          `_Contact a mod to appeal._`
+      },
+      { quoted: msg }
+    );
+  }
 
-    // ❌ Non-whitelisted link detected
-    if (anyLinkRegex.test(text) && !whitelistRegex.test(text)) {
+  if (db.mutedUsers && db.mutedUsers[Mod.bare(sender)]) {
+    const muteData = db.mutedUsers[Mod.bare(sender)];
+    if (muteData.endsAt && Date.now() > muteData.endsAt) {
+      delete db.mutedUsers[Mod.bare(sender)];
+      saveDatabase();
+    } else {
+      return;
+    }
+  }
+
+  if (chatId.endsWith('@g.us')) {
+    const settings = db.groupSettings?.[chatId];
+    const admins = [OWNER_JID, ...(db.botMods || [])];
+
+    let antiLinkOn = !!settings?.antiLink;
+    if (!antiLinkOn) {
       try {
-        // 🗑️ Delete message
-        await sock.sendMessage(chatId, { delete: msg.key });
+        const AG = require('../rpg/utils/AstralGroups');
+        const entry = AG.getEntry(db, chatId);
+        if (entry && entry.isMain) antiLinkOn = true;
+      } catch (e) { /* ignore */ }
+    }
 
-        // Init strike
-        if (!db.antiLinkStrikes[sender]) {
-          db.antiLinkStrikes[sender] = { count: 0 };
-        }
+    if (antiLinkOn && !admins.includes(sender)) {
+      const text =
+        msg.message?.conversation ||
+        msg.message?.extendedTextMessage?.text ||
+        msg.message?.imageMessage?.caption ||
+        msg.message?.videoMessage?.caption ||
+        '';
 
-        db.antiLinkStrikes[sender].count++;
-        const strikes = db.antiLinkStrikes[sender].count;
-        saveDatabase();
+      const anyLinkRegex = /(https?:\/\/|www\.)/i;
+      const allowedDomains = (settings?.allowed && settings.allowed.length)
+        ? settings.allowed
+        : ['instagram.com', 'pinterest.', 'pinterest.com', 'youtube.com', 'youtu.be', 'tiktok.com', 'chat.whatsapp.com', 'wa.me'];
+      const whitelistRegex = new RegExp('(' + allowedDomains.map(d => d.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|') + ')', 'i');
 
-        // ⚠️ STRIKE 1 — WARN (quote-reply the offender, point to DM)
-        if (strikes === 1) {
-          await sock.sendMessage(chatId, {
-            text:
-              `⚠️ *@${sender.split('@')[0]} WARNING*\n` +
-              `Links are not allowed here. Please send it to my DM instead.\n\n` +
-              `⛔ Next: *Mute (5 mins)*`,
-            mentions: [sender]
-          }, { quoted: msg });
-        }
+      if (anyLinkRegex.test(text) && !whitelistRegex.test(text)) {
+        try {
+          await sock.sendMessage(chatId, { delete: msg.key });
 
-        // 🔇 STRIKE 2 — MUTE 5 MIN
-        else if (strikes === 2) {
-          if (!db.mutedUsers) db.mutedUsers = {};
+          if (!db.antiLinkStrikes[sender]) {
+            db.antiLinkStrikes[sender] = { count: 0 };
+          }
 
-          db.mutedUsers[sender] = {
-            endsAt: Date.now() + 5 * 60 * 1000
-          };
+          db.antiLinkStrikes[sender].count++;
+          const strikes = db.antiLinkStrikes[sender].count;
           saveDatabase();
 
-          await sock.sendMessage(chatId, {
-            text:
-              `🔇 *@${sender.split('@')[0]} muted for 5 minutes*\n` +
-              `Reason: Repeated links`,
-            mentions: [sender]
-          });
+          if (strikes === 1) {
+            await sock.sendMessage(chatId, {
+              text:
+                `⚠️ *@${sender.split('@')[0]} WARNING*\n` +
+                `Links are not allowed here. Please send it to my DM instead.\n\n` +
+                `⛔ Next: *Mute (5 mins)*`,
+              mentions: [sender]
+            }, { quoted: msg });
+          } else if (strikes === 2) {
+            if (!db.mutedUsers) db.mutedUsers = {};
+            db.mutedUsers[sender] = { endsAt: Date.now() + 5 * 60 * 1000 };
+            saveDatabase();
+            await sock.sendMessage(chatId, {
+              text: `🔇 *@${sender.split('@')[0]} muted for 5 minutes*\nReason: Repeated links`,
+              mentions: [sender]
+            });
+          } else if (strikes >= 3) {
+            await sock.groupParticipantsUpdate(chatId, [sender], 'remove');
+            delete db.antiLinkStrikes[sender];
+            saveDatabase();
+            await sock.sendMessage(chatId, {
+              text: `🪓 *@${sender.split('@')[0]} kicked*\nReason: Repeated link spam`,
+              mentions: [sender]
+            });
+          }
+          console.log(`🔗 AntiLink strike ${strikes} → ${sender}`);
+          return;
+        } catch (err) {
+          console.error('❌ AntiLink failed:', err);
         }
-
-        // 🪓 STRIKE 3 — KICK
-        else if (strikes >= 3) {
-          await sock.groupParticipantsUpdate(chatId, [sender], 'remove');
-
-          delete db.antiLinkStrikes[sender];
-          saveDatabase();
-
-          await sock.sendMessage(chatId, {
-            text:
-              `🪓 *@${sender.split('@')[0]} kicked*\n` +
-              `Reason: Repeated link spam`,
-            mentions: [sender]
-          });
-        }
-
-        console.log(`🔗 AntiLink strike ${strikes} → ${sender}`);
-        return; // ⛔ HARD STOP
-      } catch (err) {
-        console.error('❌ AntiLink failed:', err);
       }
     }
   }
-}
 
-
-
-
-  // ⏳ SLOWMODE CHECK
   if (chatId.endsWith('@g.us')) {
     const settings = db.groupSettings?.[chatId];
-    const BOT_OWNER = OWNER_JID;
     const admins = [OWNER_JID, ...(db.botMods || [])];
 
     if (settings?.slowmode && !admins.includes(sender)) {
@@ -437,14 +369,10 @@ if (chatId.endsWith('@g.us')) {
     }
   }
 
-  // 🧹 Prune stale userCooldowns (memory leak guard)
-  // Runs occasionally to keep the map small. Only happens on a command invocation
-  // in a group chat with slowmode enabled (the only context where the map is used).
   if (chatId.endsWith('@g.us') && db.userCooldowns && Math.random() < 0.01) {
     const now = Date.now();
     let pruned = 0;
     for (const k of Object.keys(db.userCooldowns)) {
-      // 1 hour is the largest sensible slowmode value; prune anything older
       if (now - (db.userCooldowns[k] || 0) > 60 * 60 * 1000) {
         delete db.userCooldowns[k];
         pruned++;
@@ -453,15 +381,11 @@ if (chatId.endsWith('@g.us')) {
     if (pruned > 0) console.log(`🧹 Pruned ${pruned} stale userCooldown entries`);
   }
 
-
-
-  // ✅ Ensure system object exists
   if (!db.system) db.system = {};
   if (typeof db.system.maintenance !== 'boolean') {
     db.system.maintenance = false;
     saveDatabase();
   }
-  // 🛠️ MAINTENANCE MODE CHECK (CORE FIX)
   if (
     db.system.maintenance &&
     commandName !== 'maintenance' &&
@@ -479,7 +403,6 @@ if (chatId.endsWith('@g.us')) {
     );
   }
 
-  // ⭐ Auto-migrate player
   if (db.users?.[sender]) {
     try {
       db.users[sender] = PlayerMigration.migratePlayer(db.users[sender]);
@@ -489,13 +412,10 @@ if (chatId.endsWith('@g.us')) {
     }
   }
 
-  // ✅ Initialize disabledCommands array
   if (!db.disabledCommands) db.disabledCommands = [];
 
-  // ⭐ Admin list
   const admins = [OWNER_JID];
 
-  // /disable <cmd>
   if (commandName === 'disable' && admins.includes(sender)) {
     const target = args[0]?.toLowerCase();
     if (!target) {
@@ -527,7 +447,6 @@ if (chatId.endsWith('@g.us')) {
     );
   }
 
-  // /enable <cmd>
   if (commandName === 'enable' && admins.includes(sender)) {
     const target = args[0]?.toLowerCase();
     if (!target) {
@@ -552,7 +471,6 @@ if (chatId.endsWith('@g.us')) {
     );
   }
 
-  // ⭐ Check if command is disabled
   const disabled = db.disabledCommands.find(c => c.name === commandName);
   if (disabled) {
     return sock.sendMessage(
@@ -565,33 +483,18 @@ if (chatId.endsWith('@g.us')) {
     );
   }
 
-  // ═══════════════════════════════════════════════════════════════
-  // 💳 SUBSCRIPTION GATE — ✦ 𝐀𝐬𝐭𝐫𝐚™ community groups
-  // A group registered without --main is SILENT until /ssub, and once its
-  // 30-day window lapses it replies to commands with a "subscription
-  // expired" notice. Management commands always pass so an owner can fix it.
-  // ═══════════════════════════════════════════════════════════════
   const AstralGroups = require('../rpg/utils/AstralGroups');
   const manageCmds = new Set(['setgroup', 'setgc', 'ssub', 'renew', 'allowgc', 'groupinfo', 'help', 'menu']);
   if (chatId.endsWith('@g.us') && !manageCmds.has(commandName)) {
     const gate = AstralGroups.gate(db, chatId);
     if (!gate.allow) {
-      if (gate.silent) {
-        // Pending (registered, not yet /ssub) → bot stays fully silent.
-        return;
-      }
+      if (gate.silent) return;
       if (gate.expired) {
-        // Expired → reply with the subscription notice.
         return sock.sendMessage(chatId, { text: gate.msg }, { quoted: msg });
       }
     }
   }
-  // ═══════════════════════════════════════════════════════════════
 
-  // ═══════════════════════════════════════════════════════════════
-  // ✅ AUTO REDIRECT SYSTEM - MUCH EASIER!
-  // ═══════════════════════════════════════════════════════════════
-  // Skip check for admin commands and DMs
   const adminOnlyCommands = ['disable', 'enable', 'maintenance', 'groupinfo'];
   const isDM = !chatId.endsWith('@g.us');
   
@@ -603,9 +506,7 @@ if (chatId.endsWith('@g.us')) {
       return sock.sendMessage(chatId, { text: message }, { quoted: msg });
     }
   }
-  // ═══════════════════════════════════════════════════════════════
 
-  // 🐾 Pet hunger tick — active pet gets hungrier with every command the owner uses
   if (db.users?.[sender]) {
     try {
       const PetManager = require('../rpg/utils/PetManager');
@@ -613,11 +514,9 @@ if (chatId.endsWith('@g.us')) {
       if (petData?.activePet && petData.pets?.length) {
         const now = Date.now();
         const minutesPassed = (now - (petData.lastHungerCheck || now)) / (1000 * 60);
-        // Tick once per minute max, but register every command
         if (minutesPassed >= 1) {
           const activePet = petData.pets.find(p => p.instanceId === petData.activePet);
           if (activePet) {
-            // +1 hunger per minute of activity (commands accelerate it vs passive hourly regen)
             activePet.hunger = Math.min(100, (activePet.hunger || 0) + Math.floor(minutesPassed * 1));
             if (activePet.hunger > 70) {
               activePet.happiness = Math.max(0, (activePet.happiness || 100) - 1);
@@ -627,101 +526,72 @@ if (chatId.endsWith('@g.us')) {
           }
         }
       }
-    } catch (petErr) {
-      // Non-critical — never block commands over pet hunger
-    }
+    } catch (petErr) {}
   }
 
-  // ── GROUP ROUTING — redirect restricted commands to correct group ──────────
-  // Only applies in group chats. If a command belongs to a specific group type
-  // and the user is NOT in that group, DM them the correct group link.
   if (chatId.endsWith('@g.us') && db.community) {
-
-    // Map command names to their required group type
     const COMMAND_GROUP_MAP = {
-      // PvP group
       pvp:       'pvp',
-      // Casino group
       casino:    'casino',
-      // Dungeon group
       dungeon:   'dungeon',
       worldboss: 'dungeon',
       wb:        'dungeon',
       coop:      'dungeon',
       gate:      'dungeon',
-      // Trading group
       market:    'trading',
       trade:     'trading',
       send:      'trading',
-      rob:       'trading',
       bank:      'trading',
-      casino_r:  'trading', // alias guard
+      casino_r:  'trading',
     };
 
     const GROUP_DISPLAY = {
       pvp:     { emoji: '⚔️',  name: 'AlinRPG PvP',    desc: 'Challenge players, check ELO, and battle!' },
       casino:  { emoji: '🎰',  name: 'AlinRPG Casino',  desc: 'Slots, blackjack, roulette & more!' },
       dungeon: { emoji: '🏰',  name: 'AlinRPG Dungeon', desc: 'Gate runs, world boss raids & co-op!' },
-      trading: { emoji: '💰',  name: 'AlinRPG Market',  desc: 'Trade, market listings, bank & rob!' },
+      trading: { emoji: '💰',  name: 'AlinRPG Market',  desc: 'Trade, market listings & bank!' },
     };
 
     const requiredType = COMMAND_GROUP_MAP[resolvedCommand] || COMMAND_GROUP_MAP[commandName];
 
     if (requiredType) {
       const groupLink = db.community[requiredType];
-
-      // Check if this chat is the designated group for this command type
       const designatedGroupId = db.community[`${requiredType}_groupId`];
 
-      // If we have a designated group ID set and we're NOT in it, redirect
       if (groupLink && designatedGroupId && chatId !== designatedGroupId) {
         const info = GROUP_DISPLAY[requiredType];
-        const player = db.users[sender];
-        const playerName = player?.name || `@${sender.split('@')[0]}`;
 
-        // Reply in the current group
         await sock.sendMessage(chatId, {
           text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n${info.emoji} *WRONG GROUP!*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n@${sender.split('@')[0]}, */${commandName}* is only available in the *${info.name}* group!\n\n🔗 Join here → sent to your DM!\n━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
           mentions: [sender]
         }, { quoted: msg });
 
-        // DM the user the correct group link
         try {
           await sock.sendMessage(sender, {
             text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n${info.emoji} *${info.name}*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n${info.desc}\n\n🔗 *Join here:*\n${groupLink}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\nYou tried to use */${commandName}* in the wrong group.\nUse it there and it'll work! 🎮`
           });
         } catch(e) {
-          // DMs blocked — append link to group message as fallback
           await sock.sendMessage(chatId, {
             text: `🔗 ${info.name}: ${groupLink}`,
             mentions: [sender]
           });
         }
 
-        return; // Block the command from executing in wrong group
+        return;
       }
     }
   }
-  // ────────────────────────────────────────────────────────────────────────────
 
-  // ⭐ Execute command — wrap sock so long messages auto-chunk
   if (commands[resolvedCommand] && typeof commands[resolvedCommand].execute === 'function') {
-    // ── Track lastActive per player ──────────────────────────────────────────
     if (db.users?.[sender]) {
       db.users[sender].lastActive = Date.now();
     }
 
-    // ── CCTV: record this command if tracking is on for this group ────────────
     if (chatId.endsWith('@g.us')) {
       const senderName = db.users?.[sender]?.name || sender.split('@')[0];
       CCTVManager.recordCommand(chatId, sender, senderName, resolvedCommand, db);
     }
 
-    // ── Chunked socket proxy ───────────────────────────────────────────────
-    // All bots are equal. The response comes from the SAME socket that
-    // received the message (i.e. the bot already in this group). For
-    // group chats that's whichever bot is present; for DMs that's the
-    // specific bot the user messaged.
     const { sendMulti } = require('../utils/multiMessage');
     const chunkedSock = new Proxy(sock, {
       get(target, prop) {
@@ -730,17 +600,12 @@ if (chatId.endsWith('@g.us')) {
             if (!content || typeof content !== 'object') {
               return target.sendMessage(jid, content, opts);
             }
-            // Auto-detect { sections: [...] } — multi-message fan-out
             if (Array.isArray(content.sections)) {
               return sendMulti(target, jid, content, {
                 quoted: opts?.quoted,
                 ...content,
               });
             }
-            // Long text: chunk into multiple messages (existing behaviour).
-            // IMPORTANT: never chunk content that includes MEDIA (image/video/audio/
-            // sticker/document/etc). Chunking rebuilds the message as { text, ...media }
-            // and Baileys rejects that with "Invalid media type".
             const MEDIA_KEYS = ['image','video','audio','sticker','document','ptt'];
             const hasMedia = MEDIA_KEYS.some(k => content[k] !== undefined);
             if (!hasMedia && content.text && content.text.length > CHUNK_SIZE) {
@@ -753,14 +618,12 @@ if (chatId.endsWith('@g.us')) {
       }
     });
     try {
-      // ── PRE-COMMAND: ensure today's daily quests exist (auto-start) ──
       if (db.users?.[sender]) {
         try {
           const { ensureTodayQuests } = require('../rpg/utils/QuestDispatcher');
-          // Silent — daily quests auto-start and auto-claim; no /quest needed.
           ensureTodayQuests(db.users[sender]);
           saveDatabase();
-        } catch(e) { /* non-critical */ }
+        } catch(e) {}
       }
 
       await commands[resolvedCommand].execute(
@@ -772,16 +635,10 @@ if (chatId.endsWith('@g.us')) {
         sender
       );
 
-      // ── Silent XP trickle — random 1-100 per command ─────────────────────
-      // Only for registered players. Never displayed.
       const _db = getDatabase();
       if (_db.users?.[sender]) {
         awardCommandXP(_db.users[sender], saveDatabase, chunkedSock, chatId);
 
-        // ── POST-COMMAND: track quest progress by command name ───────────
-        // Maps known commands to quest types. This catches the simple cases
-        // (e.g. /daily → type 'daily'). In-battle events (kills during a
-        // /dungeon attack) are tracked inside dungeon.js itself.
         try {
           const { trackAndNotify } = require('../rpg/utils/QuestDispatcher');
           const player = _db.users[sender];
@@ -794,7 +651,7 @@ if (chatId.endsWith('@g.us')) {
             craft:     'craft',
             forge:     'craft',
             pvp:       'pvp',
-            attack:    'pattern',  // /attacks N uses an attack pattern
+            attack:    'pattern',
             attacks:   'pattern',
             feed:      'feed',
             train:     'pet',
@@ -809,17 +666,14 @@ if (chatId.endsWith('@g.us')) {
           };
           const qType = questTypeByCommand[resolvedCommand];
           if (qType) {
-            // Floor / gold progress for goldEarn is special — set by shop/summon
             const note = trackAndNotify(player, qType, 1);
             if (note) {
-              // Send the celebration in-chat (not DM — keeps it visible)
               await chunkedSock.sendMessage(chatId, { text: note });
             }
             saveDatabase();
           }
-        } catch(e) { /* non-critical */ }
+        } catch(e) {}
       }
-      // ─────────────────────────────────────────────────────────────────────
 
     } catch (error) {
       console.error(`❌ Error executing ${resolvedCommand}:`, error);
@@ -836,7 +690,6 @@ if (chatId.endsWith('@g.us')) {
       );
     }
   } else {
-    // Suggest closest command
     const allCmds = Object.keys(commands);
     let bestMatch = null;
     let bestScore = 0;
@@ -845,13 +698,10 @@ if (chatId.endsWith('@g.us')) {
         let score = 0;
         const a = commandName.toLowerCase();
         const b = cmd.toLowerCase();
-        // Common prefix
         for (let i = 0; i < Math.min(a.length, b.length); i++) {
           if (a[i] === b[i]) score += 2; else break;
         }
-        // Shared characters
         for (const ch of a) if (b.includes(ch)) score++;
-        // Length similarity
         score -= Math.abs(a.length - b.length);
         if (score > bestScore) { bestScore = score; bestMatch = cmd; }
       }

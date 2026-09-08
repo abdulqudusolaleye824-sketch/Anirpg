@@ -2,7 +2,41 @@
 // ROB / STEAL COMMAND — Attempt to steal Nexus from another player
 // ═══════════════════════════════════════════════════════════════
 
-const { updatePlayerNexus } = require('../../rpg/utils/TaxSystem');
+const { updatePlayerNexus } = require('../../rpg/utils/NexusManager');
+
+function findVictim(db, targetJid, argsText) {
+  if (!db || !db.users) return null;
+
+  if (targetJid) {
+    if (db.users[targetJid]) return { jid: targetJid, user: db.users[targetJid] };
+    const targetBare = targetJid.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
+    for (const [jid, user] of Object.entries(db.users)) {
+      const userBare = jid.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
+      if (userBare === targetBare) return { jid, user };
+    }
+  }
+
+  if (argsText) {
+    const cleaned = argsText.trim();
+    const digits = cleaned.replace(/[^0-9]/g, '');
+    if (digits.length >= 7) {
+      for (const [jid, user] of Object.entries(db.users)) {
+        const userBare = jid.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
+        if (userBare === digits) return { jid, user };
+      }
+      const directJid = digits + '@s.whatsapp.net';
+      if (db.users[directJid]) return { jid: directJid, user: db.users[directJid] };
+    }
+
+    for (const [jid, user] of Object.entries(db.users)) {
+      if (user?.name && user.name.toLowerCase() === cleaned.toLowerCase()) {
+        return { jid, user };
+      }
+    }
+  }
+
+  return null;
+}
 
 module.exports = {
   name: 'rob',
@@ -22,33 +56,29 @@ module.exports = {
         }, { quoted: msg });
       }
 
-      // Check mentioned user
       const contextInfo = msg.message?.extendedTextMessage?.contextInfo;
       const mentionedJids = contextInfo?.mentionedJid || [];
       const quotedParticipant = contextInfo?.participant;
-      const targetJid = mentionedJids[0] || quotedParticipant;
+      const initialTarget = mentionedJids[0] || quotedParticipant;
+      const argsText = args.join(' ');
 
-      if (!targetJid) {
+      const found = findVictim(db, initialTarget, argsText);
+
+      if (!found) {
         return await sock.sendMessage(chatId, {
-          text: '📌 *Usage:* `/rob @user` or `/steal @user` (reply or tag a player)\n\n⚠️ *Risk:* You might lose Nexus if caught!'
+          text: '📌 *Usage:* `/steal @user` or `/rob @user` (reply, tag, or type a player\'s name/number)\n\n⚠️ *Risk:* You might lose Nexus if caught!'
         }, { quoted: msg });
       }
 
-      // Can't steal from yourself
+      const targetJid = found.jid;
+      const victim = found.user;
+
       if (targetJid === sender) {
         return await sock.sendMessage(chatId, {
           text: '❌ You cannot steal from yourself! 🤦'
         }, { quoted: msg });
       }
 
-      const victim = db.users[targetJid];
-      if (!victim) {
-        return await sock.sendMessage(chatId, {
-          text: '❌ That player is not registered in the system.'
-        }, { quoted: msg });
-      }
-
-      // Check cooldown (30 mins)
       const cooldownTime = 30 * 60 * 1000;
       if (thief.stealCooldown && Date.now() < thief.stealCooldown) {
         const remaining = Math.ceil((thief.stealCooldown - Date.now()) / 60000);
@@ -71,20 +101,19 @@ module.exports = {
         }, { quoted: msg });
       }
 
-      // Calculate success chance (base 50% + speed advantage)
       thief.stealCooldown = Date.now() + cooldownTime;
 
       const thiefSpeed = thief.stats?.speed || 10;
       const victimSpeed = victim.stats?.speed || 10;
       const speedDiff = thiefSpeed - victimSpeed;
       let successChance = 50 + (speedDiff * 1.5);
-      successChance = Math.max(20, Math.min(80, successChance)); // Clamp 20-80%
+      successChance = Math.max(20, Math.min(80, successChance));
 
       const roll = Math.random() * 100;
       const success = roll < successChance;
 
       if (success) {
-        const stealPercent = 5 + Math.random() * 15; // 5-20%
+        const stealPercent = 5 + Math.random() * 15;
         const stolenAmount = Math.max(10, Math.floor(targetNexus * (stealPercent / 100)));
         const actualStolen = Math.min(stolenAmount, targetNexus);
 
@@ -106,7 +135,6 @@ You stealthily robbed *@${targetJid.split('@')[0]}*!
           mentions: [targetJid]
         }, { quoted: msg });
       } else {
-        // Failed - caught penalty (lose 15% of own wallet to victim)
         const penalty = Math.max(20, Math.floor(thiefNexus * 0.15));
         const actualPenalty = Math.min(penalty, thiefNexus);
 
@@ -130,9 +158,9 @@ You were caught trying to rob *@${targetJid.split('@')[0]}*!
       }
 
     } catch (error) {
-      console.error('Error in rob command:', error);
+      console.error('Error in rob/steal command:', error);
       await sock.sendMessage(msg.key.remoteJid, {
-        text: '❌ An error occurred while executing the steal command.'
+        text: `❌ An error occurred while executing the steal command: ${error.message}`
       }, { quoted: msg });
     }
   }
