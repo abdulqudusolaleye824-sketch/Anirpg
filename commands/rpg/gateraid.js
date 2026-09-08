@@ -361,17 +361,23 @@ module.exports = {
         lines.push(`❤️ Your HP: *${player.stats.hp}/${player.stats.maxHp}*`);
 
         if (player.stats.hp <= 0) {
-          player.stats.hp = 1;
-          player.stats_history = player.stats_history || {};
-          player.stats_history.gateDeaths = (player.stats_history.gateDeaths || 0) + 1;
-          const loss = Math.floor((player.manaCrystals || 0) * 0.15);
-          player.manaCrystals = Math.max(0, (player.manaCrystals || 0) - loss);
-          lines.push(``, `💀 *YOU FELL IN THE GATE!*`, `Lost ${loss.toLocaleString()} 💎`, `You fled with 1 HP.`);
-          // Remove from raid
-          if (gate.raid) gate.raid.members = gate.raid.members.filter(m => m.id !== sender);
-          gate.raiders = (gate.raiders || []).filter(r => r !== sender);
-          saveDatabase();
-          return sock.sendMessage(chatId, { text: lines.join('\n') }, { quoted: msg });
+          const PetManager = require('../../rpg/utils/PetManager');
+          const sac = PetManager.checkPetSacrifice(sender, player);
+          if (sac && sac.sacrificed) {
+            lines.push(``, sac.message);
+          } else {
+            player.stats.hp = 1;
+            player.stats_history = player.stats_history || {};
+            player.stats_history.gateDeaths = (player.stats_history.gateDeaths || 0) + 1;
+            const loss = Math.floor((player.manaCrystals || 0) * 0.15);
+            player.manaCrystals = Math.max(0, (player.manaCrystals || 0) - loss);
+            lines.push(``, `💀 *YOU FELL IN THE GATE!*`, `Lost ${loss.toLocaleString()} 💎`, `You fled with 1 HP.`);
+            // Remove from raid
+            if (gate.raid) gate.raid.members = gate.raid.members.filter(m => m.id !== sender);
+            gate.raiders = (gate.raiders || []).filter(r => r !== sender);
+            saveDatabase();
+            return sock.sendMessage(chatId, { text: lines.join('\n') }, { quoted: msg });
+          }
         }
       }
 
@@ -470,17 +476,23 @@ module.exports = {
         lines.push(`❤️ Your HP: *${player.stats.hp}/${player.stats.maxHp}*`);
 
         if (player.stats.hp <= 0) {
-          player.stats.hp = 1;
-          player.stats_history = player.stats_history || {};
-          player.stats_history.gateDeaths = (player.stats_history.gateDeaths || 0) + 1;
-          const loss = Math.floor((player.manaCrystals || 0) * 0.15);
-          player.manaCrystals = Math.max(0, (player.manaCrystals || 0) - loss);
-          lines.push(``, `💀 *YOU FELL BEFORE THE BOSS!*`, `Lost ${loss.toLocaleString()} 💎`, `You fled with 1 HP.`);
-          // Remove from raid
-          if (gate.raid) gate.raid.members = gate.raid.members.filter(m => m.id !== sender);
-          gate.raiders = (gate.raiders || []).filter(r => r !== sender);
-          saveDatabase();
-          return sock.sendMessage(chatId, { text: lines.join('\n') }, { quoted: msg });
+          const PetManager = require('../../rpg/utils/PetManager');
+          const sac = PetManager.checkPetSacrifice(sender, player);
+          if (sac && sac.sacrificed) {
+            lines.push(``, sac.message);
+          } else {
+            player.stats.hp = 1;
+            player.stats_history = player.stats_history || {};
+            player.stats_history.gateDeaths = (player.stats_history.gateDeaths || 0) + 1;
+            const loss = Math.floor((player.manaCrystals || 0) * 0.15);
+            player.manaCrystals = Math.max(0, (player.manaCrystals || 0) - loss);
+            lines.push(``, `💀 *YOU FELL BEFORE THE BOSS!*`, `Lost ${loss.toLocaleString()} 💎`, `You fled with 1 HP.`);
+            // Remove from raid
+            if (gate.raid) gate.raid.members = gate.raid.members.filter(m => m.id !== sender);
+            gate.raiders = (gate.raiders || []).filter(r => r !== sender);
+            saveDatabase();
+            return sock.sendMessage(chatId, { text: lines.join('\n') }, { quoted: msg });
+          }
         }
 
         lines.push(``, `⚔️ /gateraid ${key} boss — Attack again`);

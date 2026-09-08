@@ -375,7 +375,13 @@ async function resolveTurn(sock, chatId, p1, p2, db, saveDatabase) {
 
   // Check if slower player was defeated
   if (slower.stats.hp <= 0) {
-    return handlePvpVictory(sock, chatId, faster, slower, fasterId, slowerId, db, saveDatabase, turnNum, msg1);
+    const PetManager = require('../../rpg/utils/PetManager');
+    const sac = PetManager.checkPetSacrifice(slowerId, slower);
+    if (sac && sac.sacrificed) {
+      msg1 += `\n\n${sac.message}`;
+    } else {
+      return handlePvpVictory(sock, chatId, faster, slower, fasterId, slowerId, db, saveDatabase, turnNum, msg1);
+    }
   }
 
   // 2. Slower player's move (since slower is still alive)
@@ -396,7 +402,13 @@ async function resolveTurn(sock, chatId, p1, p2, db, saveDatabase) {
 
   // Check if faster player was defeated
   if (faster.stats.hp <= 0) {
-    return handlePvpVictory(sock, chatId, slower, faster, slowerId, fasterId, db, saveDatabase, turnNum, msg1 + '\n\n' + msg2);
+    const PetManager = require('../../rpg/utils/PetManager');
+    const sac = PetManager.checkPetSacrifice(fasterId, faster);
+    if (sac && sac.sacrificed) {
+      msg2 += `\n\n${sac.message}`;
+    } else {
+      return handlePvpVictory(sock, chatId, slower, faster, slowerId, fasterId, db, saveDatabase, turnNum, msg1 + '\n\n' + msg2);
+    }
   }
 
   // 3. Advance to next turn

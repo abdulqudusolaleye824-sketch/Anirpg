@@ -230,8 +230,58 @@ class PetManager {
     pet.bonding   = Math.min(100, pet.bonding   + food.bondingBonus);
     pet.exp      += food.xpBonus;
     pet.lastFed   = Date.now();
+    pet.isFainted = false; // feeding revives fainted pet
     this.save();
     return { success: true, message: `${pet.emoji} *${pet.nickname || pet.name}* enjoyed the ${food.name}!\n💕 Bonding +${food.bondingBonus} | 😊 Happiness up | 🍖 Hunger -${food.hungerRestore}\n✨ +${food.xpBonus} EXP` };
+  }
+
+  // ── PLAY WITH PET ──────────────────────────────────────────
+  playWithPet(playerId, petInstanceId) {
+    const pd = this.getPlayerData(playerId);
+    const pet = pd.pets.find(p => p.instanceId === petInstanceId);
+    if (!pet) return { success: false, message: '❌ Pet not found!' };
+    if ((pet.hunger || 0) >= 80) return { success: false, message: `❌ ${pet.name} is too hungry to play! Feed it first.` };
+    const gain = 3 + Math.floor(Math.random() * 4);
+    pet.bonding = Math.min(100, (pet.bonding || 0) + gain);
+    pet.happiness = Math.min(100, (pet.happiness || 0) + 10);
+    pet.hunger = Math.min(100, (pet.hunger || 0) + 5);
+    this.save();
+    return { success: true, message: `🎾 You played with ${pet.emoji} *${pet.nickname || pet.name}*!\n💕 Bonding +${gain} (${pet.bonding}/100) | 😊 Happiness +10` };
+  }
+
+  // ── TRAIN PET ─────────────────────────────────────────────
+  trainPet(playerId, petInstanceId) {
+    const pd = this.getPlayerData(playerId);
+    const pet = pd.pets.find(p => p.instanceId === petInstanceId);
+    if (!pet) return { success: false, message: '❌ Pet not found!' };
+    if ((pet.hunger || 0) >= 80) return { success: false, message: `❌ ${pet.name} is too hungry to train!` };
+    const xpGain = 100 + Math.floor(Math.random() * 100);
+    pet.hunger = Math.min(100, (pet.hunger || 0) + 15);
+    pet.happiness = Math.max(0, (pet.happiness || 0) - 5);
+    const res = this.addPetExp(playerId, petInstanceId, xpGain, true);
+    return { success: true, message: `🥊 Trained ${pet.emoji} *${pet.nickname || pet.name}*!\n✨ +${xpGain} Pet EXP ${res.levelsGained.length ? `\n🎉 Level Up! Now Lv.${pet.level}` : ''}` };
+  }
+
+  // ── PET SACRIFICE MECHANISM ────────────────────────────────
+  checkPetSacrifice(playerId, player) {
+    const pet = this.getActivePet(playerId);
+    if (!pet || pet.isFainted || (pet.bonding || 0) < 80 || (pet.hunger || 0) >= 80) return null;
+
+    pet.isFainted = true;
+    pet.faintedAt = Date.now();
+    pet.happiness = Math.max(0, (pet.happiness || 0) - 30);
+    this.save();
+
+    const restoredHp = Math.max(1, Math.floor((player.stats?.maxHp || 100) * 0.25));
+    player.stats.hp = restoredHp;
+
+    return {
+      sacrificed: true,
+      petName: pet.nickname || pet.name,
+      petEmoji: pet.emoji || '🐾',
+      restoredHp,
+      message: `🛡️ *PET SACRIFICE!* Your loyal pet ${pet.emoji || '🐾'} *${pet.nickname || pet.name}* leaped in front of you and took the fatal strike! You survive with ${restoredHp}/${player.stats.maxHp} HP!`
+    };
   }
 
   // ── BATTLE BONUSES ────────────────────────────────────────

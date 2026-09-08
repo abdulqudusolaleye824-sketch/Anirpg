@@ -243,17 +243,50 @@ function statusOf(gate, db) {
 
 // ── Final-blow monster drops ─────────────────────────────────────
 function monsterKilledBy(gate, monster, sender, db) {
-  const drop = GateManager.rollMonsterKillDrop(gate.rank, monster.name);
   const lines = [];
+  const player = db.users?.[sender];
+  if (!player) return lines;
+
+  if (!player.inventory) player.inventory = { materials: [], items: [], petFood: {} };
+  if (!player.inventory.materials) player.inventory.materials = [];
+  if (!player.inventory.items) player.inventory.items = [];
+
+  // Material drop from monster
+  const drop = GateManager.rollMonsterKillDrop(gate.rank, monster.name);
   if (drop) {
-    const player = db.users?.[sender];
-    if (player) {
-      if (!player.inventory) player.inventory = { materials: [] };
-      if (!player.inventory.materials) player.inventory.materials = [];
-      player.inventory.materials.push({ ...drop, obtainedAt: Date.now(), fromGate: gate.id });
-      lines.push(`🎁 *DROP → ${player.name}* (final blow): *${drop.name}*`);
+    player.inventory.materials.push({ ...drop, obtainedAt: Date.now(), fromGate: gate.id });
+    player.inventory.items.push({ name: drop.name, type: 'Material', rarity: gate.rank === 'S' || gate.rank === 'A' ? 'rare' : 'common', obtainedAt: Date.now() });
+    lines.push(`🎁 *DROP → ${player.name}* (final blow): *${drop.name}*`);
+  } else {
+    const { rollBaseMaterial } = require('../data/MonsterDrops');
+    const baseMat = rollBaseMaterial(gate.rank || 'E');
+    if (baseMat) {
+      player.inventory.materials.push({ name: baseMat, type: 'material', obtainedAt: Date.now(), fromGate: gate.id });
+      player.inventory.items.push({ name: baseMat, type: 'Material', rarity: 'common', obtainedAt: Date.now() });
+      lines.push(`🎁 *DROP → ${player.name}*: *${baseMat}*`);
     }
   }
+
+  // 50% chance to drop Pet Food
+  if (Math.random() <= 0.50) {
+    const foodList = [
+      { name: 'Monster Kibble', restore: 30, rarity: 'common' },
+      { name: 'Royal Monster Feed', restore: 100, rarity: 'uncommon' }
+    ];
+    const food = foodList[Math.floor(Math.random() * foodList.length)];
+    player.inventory.items.push({ name: food.name, type: 'PetFood', isPetFood: true, restore: food.restore, rarity: food.rarity });
+    if (!player.inventory.petFood) player.inventory.petFood = {};
+    player.inventory.petFood[food.name] = (player.inventory.petFood[food.name] || 0) + 1;
+    lines.push(`🍖 *PET FOOD DROP → ${player.name}*: *${food.name}*`);
+  }
+
+  // 30% chance to drop a Health Potion
+  if (Math.random() <= 0.30) {
+    player.inventory.lowerHealthPotions = (player.inventory.lowerHealthPotions || 0) + 1;
+    player.inventory.healthPotions = (player.inventory.healthPotions || 0) + 1;
+    lines.push(`🩹 *POTION DROP → ${player.name}*: *Lower Health Potion*`);
+  }
+
   return lines;
 }
 
@@ -378,8 +411,27 @@ function clearGate(gate, key, keyData, db, saveDatabase) {
     const pm = raid.members?.find(x => x.id === m.id);
     if (pm && p) { pm.hp = p.stats.hp; pm.energy = p.stats.energy; }
 
-    // Award Weekly GP for gate clear
-    try { WeeklyGuildWar.addGP(db, m.id, 100, saveDatabase); } catch(e) {}
+  // Award Weekly GP: goes to party leader if alive; if not, shared equally among survivors
+  const leaderId = raid.leader || raiders[0]?.id;
+  const leaderUser = db.users?.[leaderId];
+  const leaderMember = raid.members?.find(m => m.id === leaderId);
+  const leaderAlive = (leaderUser?.stats?.hp || 0) > 0 || (leaderMember?.hp || 0) > 0;
+
+  const survivors = raiders.filter(m => {
+    const u = db.users?.[m.id];
+    return (u?.stats?.hp || 0) > 0 || (m.hp || 0) > 0;
+  });
+
+  const totalGP = 300;
+
+  if (leaderAlive && leaderId) {
+    try { WeeklyGuildWar.addGP(db, leaderId, totalGP, saveDatabase); } catch(e) {}
+  } else if (survivors.length > 0) {
+    const shareGP = Math.max(1, Math.floor(totalGP / survivors.length));
+    for (const surv of survivors) {
+      try { WeeklyGuildWar.addGP(db, surv.id, shareGP, saveDatabase); } catch(e) {}
+    }
+  }
   }
 
   GateManager.clearGate(gate.id, db);

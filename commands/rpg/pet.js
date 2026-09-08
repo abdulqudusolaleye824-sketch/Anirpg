@@ -120,6 +120,26 @@ module.exports = {
         return sock.sendMessage(chatId, { text: `▶️ Active pet:\n${PetManager.getPetStatsString(pet)}` }, { quoted: msg });
       }
 
+      // ── PLAY ────────────────────────────────────────────────
+      if (sub === 'play') {
+        const idx = parseInt(args[1]) - 1;
+        const pets = PetManager.getPlayerPets(sender);
+        const targetPet = isNaN(idx) ? PetManager.getActivePet(sender) : pets[idx];
+        if (!targetPet) return sock.sendMessage(chatId, { text: '❌ No pet selected! Choose a pet: /pet play [#]' }, { quoted: msg });
+        const result = PetManager.playWithPet(sender, targetPet.instanceId);
+        return sock.sendMessage(chatId, { text: result.message }, { quoted: msg });
+      }
+
+      // ── TRAIN ───────────────────────────────────────────────
+      if (sub === 'train') {
+        const idx = parseInt(args[1]) - 1;
+        const pets = PetManager.getPlayerPets(sender);
+        const targetPet = isNaN(idx) ? PetManager.getActivePet(sender) : pets[idx];
+        if (!targetPet) return sock.sendMessage(chatId, { text: '❌ No pet selected! Choose a pet: /pet train [#]' }, { quoted: msg });
+        const result = PetManager.trainPet(sender, targetPet.instanceId);
+        return sock.sendMessage(chatId, { text: result.message }, { quoted: msg });
+      }
+
       // ── FEED ────────────────────────────────────────────────
       if (sub === 'feed') {
         const idx = parseInt(args[1]) - 1;

@@ -234,8 +234,9 @@ module.exports = {
       CM.hire(db, offer.guildId, offer.gmId, sender, offer.weeklyNexus, offer.weeklyMana, offer.weeks);
       delete db.pendingGuildHires[sender];
 
-      // Award Weekly GP for signing
-      try { require('../../rpg/utils/WeeklyGuildWar').addGP(db, sender, 200, saveDatabase); } catch(e) {}
+      // Award Weekly GP to the recruiter (not the recruit)
+      const recruiterId = offer.gmId || offer.by || guild.leader;
+      try { require('../../rpg/utils/WeeklyGuildWar').addGP(db, recruiterId, 200, saveDatabase); } catch(e) {}
 
       saveDatabase();
 
@@ -482,8 +483,9 @@ module.exports = {
         delete db.guildInvites[sender];
       }
 
-      // Award Weekly GP for joining guild
-      try { require('../../rpg/utils/WeeklyGuildWar').addGP(db, sender, 200, saveDatabase); } catch(e) {}
+      // Award Weekly GP to the recruiter (not the recruit)
+      const recruiterId = db.guildInvites?.[sender]?.invitedBy || guild.leader;
+      try { require('../../rpg/utils/WeeklyGuildWar').addGP(db, recruiterId, 200, saveDatabase); } catch(e) {}
 
       saveDatabase();
 

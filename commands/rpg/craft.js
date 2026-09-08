@@ -60,6 +60,11 @@ module.exports = {
     }
 
     const item = result.item;
+
+    // Award Weekly GP and Battle Pass XP for crafting
+    try { require('../../rpg/utils/WeeklyGuildWar').addGP(db, sender, 75, saveDatabase); } catch(e) {}
+    try { require('../../rpg/utils/BattlePass').addPassXP(player, 'craft_item'); } catch(e) {}
+
     saveDatabase();
 
     // Notify original owner if someone else used their key

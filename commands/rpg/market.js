@@ -222,6 +222,9 @@ module.exports = {
         expiresAt:  Date.now() + LISTING_EXPIRY,
       };
 
+      // Award Weekly GP for listing on market
+      try { require('../../rpg/utils/WeeklyGuildWar').addGP(db, sender, 50, saveDatabase); } catch(e) {}
+
       saveDatabase();
       return sock.sendMessage(chatId, {
         text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n✅ *LISTING CREATED!*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n📦 *${item.name}*\n💠 Price: ${price.toLocaleString()}g\n📋 Listing #${id}\n⏰ Expires in 24 hours\n💸 Listing fee paid: ${LISTING_FEE}g\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n💡 Buyers: /market buy ${id}`

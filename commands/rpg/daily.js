@@ -131,6 +131,10 @@ module.exports = {
     const AchMgr = AchievementManager;
     const achUnlocks = AchMgr.track(player, 'daily_quests', 1);
 
+    // Award Weekly GP and Battle Pass XP for claiming daily
+    try { require('../../rpg/utils/WeeklyGuildWar').addGP(db, sender, 100, saveDatabase); } catch(e) {}
+    try { require('../../rpg/utils/BattlePass').addPassXP(player, 'daily_claim'); } catch(e) {}
+
     saveDatabase();
 
     // Build the message
