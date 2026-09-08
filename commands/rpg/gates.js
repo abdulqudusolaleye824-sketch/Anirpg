@@ -86,20 +86,47 @@ const gate = {
 
     // ── /gate buy ─────────────────────────────────────────────────────────────
     if (sub === 'buy' || sub === 'purchase') {
-      const quotedText = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage?.conversation
-        || msg.message?.extendedTextMessage?.contextInfo?.quotedMessage?.extendedTextMessage?.text
-        || '';
+      const contextInfo = msg.message?.extendedTextMessage?.contextInfo;
+      const quotedMsg = contextInfo?.quotedMessage;
 
-      const gateIdMatch = quotedText.match(/ID:\s*\*?(G-[\w-]+)\*?/i)
-        || quotedText.match(/(G-\d+-\d+)/);
+      const quotedText =
+        quotedMsg?.imageMessage?.caption ||
+        quotedMsg?.conversation ||
+        quotedMsg?.extendedTextMessage?.text ||
+        quotedMsg?.videoMessage?.caption ||
+        '';
 
-      if (!gateIdMatch) {
+      let gateId = null;
+
+      if (quotedText) {
+        const match = quotedText.match(/GATE\s*ID:\s*\*?([Gg]-[\w-]+)\*?/i)
+                   || quotedText.match(/ID:\s*\*?([Gg]-[\w-]+)\*?/i)
+                   || quotedText.match(/([Gg]-\d+-\d+)/i);
+        if (match) {
+          gateId = match[1];
+        }
+      }
+
+      // Fallback: If no quote or no ID in quote, auto-select single active unbought gate in this GC
+      if (!gateId) {
+        const activeGates = GateManager.getActiveGatesForChat(chatId);
+        const unboughtGates = activeGates.filter(g => g.active && !g.owned && !g.purchased && !g.cleared && !g.broken);
+        if (unboughtGates.length === 1) {
+          gateId = unboughtGates[0].id;
+        } else if (unboughtGates.length > 1) {
+          const gateList = unboughtGates.map(g => `${g.rank}-Rank [${g.id}]`).join(', ');
+          return sock.sendMessage(chatId, {
+            text: `❌ Multiple active gates detected in this chat: ${gateList}.\n\nReply directly to the gate image you want to buy with */gate buy*.`
+          }, { quoted: msg });
+        }
+      }
+
+      if (!gateId) {
         return sock.sendMessage(chatId, {
-          text: `❌ Reply to a gate spawn announcement to buy it.\n\nExample: Reply to the gate message with */gate buy*`,
+          text: `❌ Reply to a gate spawn announcement image with */gate buy* to purchase it.\n\n(No active unbought gate detected in this chat).`
         }, { quoted: msg });
       }
 
-      const gateId = gateIdMatch[1];
       GateManager.checkGateBreaks(chatId, sock);
 
       const gateObj = GateManager.getGate(gateId);
@@ -109,7 +136,7 @@ const gate = {
       if (gateObj.cleared || gateObj.broken) {
         return sock.sendMessage(chatId, { text: '❌ That gate is no longer active.' }, { quoted: msg });
       }
-      if (gateObj.purchased) {
+      if (gateObj.purchased || gateObj.owned) {
         return sock.sendMessage(chatId, { text: `❌ This gate has already been purchased.` }, { quoted: msg });
       }
 
@@ -119,12 +146,13 @@ const gate = {
       }
 
       gateObj.purchased   = true;
+      gateObj.owned       = true;
       gateObj.purchasedBy = sender;
       gateObj.keyId       = result.key;
 
       const rd          = GATE_RANKS[gateObj.rank];
       const stability   = GKM.formatStability(result.stabilityMs);
-      const paidFrom    = result.keyData.isAffiliate ? 'your personal funds' : `*${result.keyData.guildName}* guild treasury`;
+      const paidFrom    = result.keyData.paymentSource === 'guild' ? `*${result.keyData.guildName}* guild treasury` : 'your personal balance';
 
       await sock.sendMessage(chatId, {
         text: [
@@ -132,7 +160,7 @@ const gate = {
           `🔑 *GATE PURCHASED*`,
           `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
           ``,
-          `${rd.emoji} *${rd.label}*`,
+          `${rd.emoji} *${rd.label}* [${gateId}]`,
           `💠 Paid from: ${paidFrom}`,
           `⏳ Gate stable for: *${stability}*`,
           ``,
@@ -142,32 +170,30 @@ const gate = {
       }, { quoted: msg });
 
       const expiresDate = new Date(result.keyData.expiresAt).toUTCString().replace(' GMT', ' WAT');
-      await sock.sendMessage(sender, {
-        text: [
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-          `🔑 *YOUR GATE KEY*`,
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-          ``,
-          `${rd.emoji} Gate: *${rd.label}*`,
-          `🆔 Gate ID: \`${gateId}\``,
-          ``,
-          `🔑 *Key: \`${result.key}\`*`,
-          ``,
-          `⏳ Stable until: *${expiresDate}*`,
-          `📅 Remaining: *${stability}*`,
-          ``,
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-          `📌 *HOW TO USE:*`,
-          `1. Go to your dungeon GC`,
-          `2. Use: /gateraid ${result.key}`,
-          `3. Guild members ride together (party).`,
-          `   Outsiders raid solo.`,
-          ``,
-          `⚠️ Keep this code safe. If the gate expires`,
-          `   before use, the purchase is non-refundable.`,
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-        ].join('\n'),
-      });
+      
+      const keyDmText = [
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        `🔑 *YOUR GATE KEY*`,
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        ``,
+        `${rd.emoji} Gate: *${rd.label}*`,
+        `🆔 Gate ID: \`${gateId}\``,
+        ``,
+        `🔑 *Key: \`${result.key}\`*`,
+        ``,
+        `⏳ Stable until: *${expiresDate}*`,
+        `📅 Remaining: *${stability}*`,
+        ``,
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        `📌 *HOW TO USE:*`,
+        `1. Go to your dungeon GC`,
+        `2. Use: /gate enter --${result.key}`,
+        `3. Guild members ride together (party).`,
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+      ].join('\n');
+
+      const MultiSocketManager = require('../../bots/MultiSocketManager');
+      await MultiSocketManager.sendAs('system', sender, { text: keyDmText }, { getDatabase });
 
       return;
     }

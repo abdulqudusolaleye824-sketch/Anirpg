@@ -4,14 +4,6 @@
  * ║  Manages gate keys, dungeon GCs, affiliates,         ║
  * ║  contracts, and raid access control                  ║
  * ╚══════════════════════════════════════════════════════╝
- *
- * Flow:
- *  1. Gate spawns in main GC
- *  2. Guild leader/officer replies: /gate buy
- *  3. Key generated (8 chars), DM'd to buyer with timer
- *  4. In registered dungeon GC: /gate enter --<key>
- *  5. Raid proceeds floor by floor
- *  6. Clear → loot distributed by ownership type
  */
 
 'use strict';
@@ -68,16 +60,17 @@ function isGuildLeaderOrOfficer(sender, guildName, db) {
   const guild = findGuild(db, guildName);
   if (!guild) return false;
   const sNum = normaliseJid(sender);
-  if (normaliseJid(guild.leader) === sNum) return true;
+  if (guild.leader && normaliseJid(guild.leader) === sNum) return true;
   if ((guild.officers || []).some(o => normaliseJid(o) === sNum)) return true;
-  const ROLE_RANKS = new Set(['guild master', 'vice guild master', 'vice', 'vice gm', 'officer']);
   const rankArrays = [guild.memberData, guild.members];
   for (const arr of rankArrays) {
     for (const m of (arr || [])) {
       const id = typeof m === 'object' ? m.id : m;
       if (normaliseJid(id) !== sNum) continue;
       const rank = String((typeof m === 'object' ? m.rank : null) || '').toLowerCase().replace(/[_-]/g, ' ');
-      if (ROLE_RANKS.has(rank)) return true;
+      if (['leader', 'guild master', 'master', 'vice', 'vice gm', 'officer'].some(r => rank.includes(r))) {
+        return true;
+      }
     }
   }
   return false;
@@ -87,7 +80,7 @@ function isGuildMember(sender, guildName, db) {
   const guild = findGuild(db, guildName);
   if (!guild) return false;
   const sNum = normaliseJid(sender);
-  if (normaliseJid(guild.leader) === sNum) return true;
+  if (guild.leader && normaliseJid(guild.leader) === sNum) return true;
   return (guild.members || []).some(m => {
     const id = typeof m === 'object' ? m.id : m;
     return normaliseJid(id) === sNum;
@@ -130,61 +123,57 @@ function purchaseGateKey(sender, gate, db, saveDatabase) {
   const isBoth     = gate.currency === 'both' || ['B','A','S'].includes(gate.rank);
 
   let paymentSource = null; // 'guild' | 'personal'
-  let guild = null;
+  let guild = guildName ? findGuild(db, guildName) : null;
+  const isLeader = guildName && isGuildLeaderOrOfficer(sender, guildName, db);
 
-  if (isAff) {
-    if (isBoth) {
-      const nexus = player.gold || 0;
-      const crystals = player.manaCrystals || 0;
-      if (nexus < nexusPrice || crystals < manaPrice) {
-        return {
-          success: false,
-          error: `Not enough funds.\nNeed: ${nexusPrice.toLocaleString()} 💠 Nexus AND ${manaPrice.toLocaleString()} 💎 Mana Stones\nYou have: ${nexus.toLocaleString()} 💠 Nexus & ${crystals.toLocaleString()} 💎 Mana Stones`,
-        };
-      }
-      player.gold -= nexusPrice;
-      player.manaCrystals -= manaPrice;
-    } else {
-      const nexus = player.gold || 0;
-      if (nexus < nexusPrice) {
-        return {
-          success: false,
-          error: `Not enough Nexus.\nNeed: ${nexusPrice.toLocaleString()} 💠 Nexus\nYou have: ${nexus.toLocaleString()} 💠`,
-        };
-      }
-      player.gold -= nexusPrice;
-    }
-    paymentSource = 'personal';
-  } else if (guildName) {
-    if (!isGuildLeaderOrOfficer(sender, guildName, db)) {
-      return { success: false, error: 'Only the guild leader or an officer can buy gates.' };
-    }
-    guild = findGuild(db, guildName);
+  // 1. Try Guild Treasury if buyer is Guild Leader/Officer
+  if (isLeader && guild) {
+    const gNexus = guild.treasury || 0;
+    const gMana  = guild.manaTreasury || 0;
+    const canGuildPay = isBoth
+      ? (gNexus >= nexusPrice && gMana >= manaPrice)
+      : (gNexus >= nexusPrice);
 
-    if (isBoth) {
-      const gNexus = guild.treasury || 0;
-      const gMana  = guild.manaTreasury || 0;
-      if (gNexus < nexusPrice || gMana < manaPrice) {
-        return {
-          success: false,
-          error: `Guild treasury insufficient.\nNeed: ${nexusPrice.toLocaleString()} 💠 Nexus AND ${manaPrice.toLocaleString()} 💎 Mana Stones\nTreasury: ${gNexus.toLocaleString()} 💠 Nexus & ${gMana.toLocaleString()} 💎 Mana Stones`,
-        };
+    if (canGuildPay) {
+      if (isBoth) {
+        guild.treasury -= nexusPrice;
+        guild.manaTreasury -= manaPrice;
+      } else {
+        guild.treasury -= nexusPrice;
       }
-      guild.treasury -= nexusPrice;
-      guild.manaTreasury -= manaPrice;
-    } else {
-      const gNexus = guild.treasury || 0;
-      if (gNexus < nexusPrice) {
-        return {
-          success: false,
-          error: `Guild treasury insufficient.\nNeed: ${nexusPrice.toLocaleString()} 💠 Nexus\nTreasury: ${gNexus.toLocaleString()} 💠 Nexus`,
-        };
-      }
-      guild.treasury -= nexusPrice;
+      paymentSource = 'guild';
     }
-    paymentSource = 'guild';
-  } else {
-    return { success: false, error: 'You must be in a guild or be a registered affiliate to buy gates.' };
+  }
+
+  // 2. Fallback to Personal Balance if Guild Treasury isn't used or insufficient
+  if (!paymentSource) {
+    const pNexus = player.gold || 0;
+    const pMana  = player.manaCrystals || 0;
+    const canPersonalPay = isBoth
+      ? (pNexus >= nexusPrice && pMana >= manaPrice)
+      : (pNexus >= nexusPrice);
+
+    if (canPersonalPay) {
+      if (isBoth) {
+        player.gold -= nexusPrice;
+        player.manaCrystals -= manaPrice;
+      } else {
+        player.gold -= nexusPrice;
+      }
+      if (player.inventory) player.inventory.gold = player.gold;
+      paymentSource = 'personal';
+    } else {
+      const needTxt = isBoth
+        ? `${nexusPrice.toLocaleString()} 💠 Nexus AND ${manaPrice.toLocaleString()} 💎 Mana Stones`
+        : `${nexusPrice.toLocaleString()} 💠 Nexus`;
+      const haveTxt = isBoth
+        ? `${pNexus.toLocaleString()} 💠 Nexus & ${pMana.toLocaleString()} 💎 Mana Stones`
+        : `${pNexus.toLocaleString()} 💠 Nexus`;
+      return {
+        success: false,
+        error: `Insufficient funds to purchase gate.\nNeed: ${needTxt}\nYou have: ${haveTxt}`
+      };
+    }
   }
 
   const key          = generateUniqueKey();
@@ -217,7 +206,7 @@ function purchaseGateKey(sender, gate, db, saveDatabase) {
   if (!db.gateKeys) db.gateKeys = {};
   db.gateKeys[key] = keyData;
 
-  saveDatabase();
+  if (saveDatabase) saveDatabase();
   return { success: true, key, keyData, stabilityMs };
 }
 
