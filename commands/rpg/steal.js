@@ -1,19 +1,20 @@
 // ═══════════════════════════════════════════════════════════════
 // STEAL COMMAND — Sticker Theft
 // Reply to a sticker with /steal to steal it into your own pack.
-// Pack Name: ✦ 𝐀𝐬𝐭𝐫𝐚™ | Author: owner/user name
+// Default: Pack Name: ✦ 𝐀𝐬𝐭𝐫𝐚™ | Author: owner/user name
+// Custom: /steal mee | and youu → Pack: mee, Author: and youu
 // ═══════════════════════════════════════════════════════════════
 
 const { downloadMediaMessage } = require('@whiskeysockets/baileys');
-const { writeStickerMetadata, injectStickerMetadata } = require('../../utils/stickerMetadata');
+const { injectStickerMetadata } = require('../../utils/stickerMetadata');
 
 const cooldowns = new Map();
 
 module.exports = {
   name: 'steal',
   aliases: ['ssteal', 'stickersteal'],
-  description: 'Reply to a sticker with /steal to steal it.',
-  usage: '/steal',
+  description: 'Reply to a sticker with /steal [pack | author] to steal it.',
+  usage: '/steal [packName | authorName]',
 
   async execute(sock, msg, args, getDatabase, saveDatabase, sender) {
     const chatId = msg.key.remoteJid;
@@ -41,10 +42,20 @@ module.exports = {
     const ownerName = db?.users?.[sender]?.name || msg.pushName || 'Senku';
 
     const rawText = (msg.message?.conversation || msg.message?.extendedTextMessage?.text || '').replace(/^\/(steal|ssteal)\s*/i, '').trim();
-    const parts = rawText.split('|').map(p => p.trim()).filter(Boolean);
 
-    let packName = parts[0] || '✦ 𝐀𝐬𝐭𝐫𝐚™';
-    let author   = parts[1] || ownerName;
+    let packName = '✦ 𝐀𝐬𝐭𝐫𝐚™';
+    let author   = ownerName;
+
+    if (rawText) {
+      if (rawText.includes('|')) {
+        const parts = rawText.split('|').map(p => p.trim());
+        packName = parts[0] || '✦ 𝐀𝐬𝐭𝐫𝐚™';
+        author   = parts[1] || ownerName;
+      } else {
+        packName = rawText;
+        author   = ownerName;
+      }
+    }
 
     try {
       cooldowns.set(sender, now);
@@ -66,8 +77,7 @@ module.exports = {
         }, { quoted: msg });
       }
 
-      const stickerFunction = writeStickerMetadata || injectStickerMetadata;
-      const rebrandedWebp = await stickerFunction(buffer, packName, author);
+      const rebrandedWebp = await injectStickerMetadata(buffer, packName, author);
 
       await sock.sendMessage(chatId, { sticker: rebrandedWebp }, { quoted: msg });
 

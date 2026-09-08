@@ -28,19 +28,26 @@ async function injectStickerMetadata(webpBuf, packName, packAuthor) {
   });
 
   const jsonBuf = Buffer.from(json, 'utf-8');
-  const exifHeader = Buffer.from([
-    0x49, 0x49, 0x2A, 0x00, 0x08, 0x00, 0x00, 0x00,
-    0x01, 0x00, 0x41, 0x57, 0x07, 0x00
+
+  // Standard TIFF EXIF Header
+  const tiffHeader = Buffer.from([
+    0x49, 0x49, 0x2A, 0x00, // Little Endian "II", Magic 42
+    0x08, 0x00, 0x00, 0x00  // Offset to IFD0 (8)
   ]);
-  const lengthBuf = Buffer.alloc(4);
-  lengthBuf.writeUInt32LE(jsonBuf.length, 0);
-  const offsetBuf = Buffer.from([0x16, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
+
+  // IFD0: 1 tag entry (Tag 0x4157 'WA')
+  const ifd0 = Buffer.alloc(2 + 12 + 4);
+  ifd0.writeUInt16LE(1, 0);               // Count of tags (1)
+  ifd0.writeUInt16LE(0x4157, 2);          // Tag 0x4157 ('WA')
+  ifd0.writeUInt16LE(7, 4);               // Type UNDEFINED
+  ifd0.writeUInt32LE(jsonBuf.length, 6);  // Length of json
+  ifd0.writeUInt32LE(26, 10);             // Value offset from TIFF header start (26)
+  ifd0.writeUInt32LE(0, 14);              // Next IFD offset (0)
 
   const exifPayload = Buffer.concat([
-    Buffer.from([0x45, 0x78, 0x69, 0x66, 0x00, 0x00]),
-    exifHeader,
-    lengthBuf,
-    offsetBuf,
+    Buffer.from('Exif\x00\x00', 'binary'),
+    tiffHeader,
+    ifd0,
     jsonBuf
   ]);
 

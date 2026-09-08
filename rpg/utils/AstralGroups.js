@@ -8,9 +8,9 @@
 
 const SUB_DAYS = 30; // length of one subscription window
 
-const TYPES = ['support', 'pvp', 'dungeon', 'casino', 'guild'];
+const TYPES = ['support', 'pvp', 'dungeon', 'casino', 'guild', 'mods'];
 const FEATURE_TYPES = ['pvp', 'dungeon'];
-const TYPES_WITHOUT_MAIN = ['support', 'pvp', 'dungeon'];
+const TYPES_WITHOUT_MAIN = ['support', 'pvp', 'dungeon', 'mods'];
 const MAIN_ONLY_TYPES = ['casino', 'guild'];
 
 const TYPE_INFO = {
@@ -19,6 +19,7 @@ const TYPE_INFO = {
   dungeon: { emoji: '🏰', name: '✦ 𝐀𝐬𝐭𝐫𝐚™ Dungeon',  desc: 'Tower dungeons & World Boss raids' },
   guild:   { emoji: '👑', name: '✦ 𝐀𝐬𝐭𝐫𝐚™ Guild',    desc: 'Guild wars, raids & alliances' },
   support: { emoji: '🛡️', name: '✦ 𝐀𝐬𝐭𝐫𝐚™ Arise',   desc: 'General support & announcements' },
+  mods:    { emoji: '🛡️', name: '✦ 𝐀𝐬𝐭𝐫𝐚™ Mods',    desc: 'Moderation & staff GC' },
 };
 
 const EXPIRED_MSG =
@@ -40,7 +41,9 @@ class AstralGroups {
   }
 
   static get(type) {
-    return TYPES.includes(type) ? type : null;
+    const t = (type || '').toLowerCase();
+    if (t === 'mod') return 'mods';
+    return TYPES.includes(t) ? t : null;
   }
 
   static typeInfo(type) { return TYPE_INFO[type] || { emoji: '🌐', name: type, desc: '' }; }
@@ -51,7 +54,7 @@ class AstralGroups {
 
     const isMain = !!opts.main;
     if (!isMain && !TYPES_WITHOUT_MAIN.includes(cat)) {
-      return { success: false, reason: `*${TYPE_INFO[cat].name}* must be set with the *--main* tag (only support, pvp and dungeon can be set without it).` };
+      return { success: false, reason: `*${TYPE_INFO[cat].name}* must be set with the *--main* tag (only support, pvp, dungeon and mods can be set without it).` };
     }
 
     const reg = this._registry(db);
