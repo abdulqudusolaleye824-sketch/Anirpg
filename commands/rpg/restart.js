@@ -45,7 +45,7 @@ module.exports = {
       const displayName = PersonalityManager.getDisplayName(pKey);
 
       await sock.sendMessage(chatId, {
-        text: `🔄 *Restarting bot:* ${displayName} (\`${pKey}\`)…`
+        text: `🔄 *Restarting 1 bot:* ${displayName} (\`${pKey}\`)…`
       }, { quoted: msg });
 
       try {
@@ -62,7 +62,7 @@ module.exports = {
         });
 
         return sock.sendMessage(chatId, {
-          text: `✅ *Bot restarted successfully:* ${displayName} (\`${pKey}\`) is online!`
+          text: `✨ *Successfully restarted ${displayName}!* 🤖⚡`
         }, { quoted: msg });
       } catch (err) {
         console.error(`❌ Error restarting bot ${pKey}:`, err.message);
@@ -73,18 +73,18 @@ module.exports = {
     }
 
     // ── 2. Restart ALL Linked Bots ──────────────────────────────────────────
+    const allSockets = MultiSocketManager.getAllSockets();
+    const activeKeys = Object.keys(allSockets);
+    const count = activeKeys.length || 1;
+
     await sock.sendMessage(chatId, {
-      text: `🔄 *Restarting all linked bots…*\n\nRe-establishing connection for all active personalities.`
+      text: `🔄 *Restarting ${count} bot(s)…*\n\nRe-establishing connections for all linked bot personalities.`
     }, { quoted: msg });
 
     try {
-      const allSockets = MultiSocketManager.getAllSockets();
-      const activeKeys = Object.keys(allSockets);
-
       const AUTH_DIR = process.env.AUTH_DIR || path.join(process.cwd(), 'auth');
       const rpgCommandHandler = require('../../handlers/rpgCommandHandler');
 
-      // Reconnect all currently connected bots
       for (const key of activeKeys) {
         const s = allSockets[key];
         if (s) {
@@ -93,7 +93,7 @@ module.exports = {
         await MultiSocketManager.connectBot(key, AUTH_DIR, getDatabase, saveDatabase, {
           rpgCommandHandler
         });
-        await new Promise(r => setTimeout(r, 1000));
+        await new Promise(r => setTimeout(r, 800));
       }
 
       // Check if running under PM2 for process-level restart fallback
@@ -111,7 +111,7 @@ module.exports = {
       }
 
       return sock.sendMessage(chatId, {
-        text: `✅ *All linked bots restarted successfully!* (${activeKeys.length || 'all'} bots reconnected)`
+        text: `✨ *Successfully restarted ${count} bot(s)!* 🚀⚡\n\nAll ${count} linked bot sockets are back online and ready.`
       }, { quoted: msg });
 
     } catch (err) {

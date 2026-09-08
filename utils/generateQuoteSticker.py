@@ -2,7 +2,6 @@
 import sys, os, textwrap, unicodedata
 from PIL import Image, ImageDraw, ImageFont
 
-# Try loading Noto Sans CJK first (supports English + Japanese Kanji + CJK + Symbols)
 FONT_CJK_BOLD = '/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc'
 FONT_CJK_REG  = '/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc'
 FONT_DEJAVU_BOLD = '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf'
@@ -27,7 +26,6 @@ COLORS = {
 def normalize_text(text):
     if not text:
         return ""
-    # Map mathematical/gothic alphanumeric code points to standard letters while preserving CJK / Emojis
     res = []
     for char in text:
         cp = ord(char)
@@ -43,7 +41,6 @@ def normalize_text(text):
         elif 0xFF41 <= cp <= 0xFF5A: res.append(chr(ord('a') + (cp - 0xFF41)))
         else: res.append(char)
     cleaned = ''.join(res)
-    # Use NFC so Japanese Kanji (e.g. 忍道) and Emojis stay intact
     return unicodedata.normalize('NFC', cleaned)
 
 def is_emoji(char):
@@ -105,8 +102,22 @@ def wrap_text(text, font, draw, max_width):
         if bbox[2] <= max_width:
             line = test
         else:
-            if line: lines.append(line)
-            line = word
+            if line:
+                lines.append(line)
+                line = ''
+            word_bbox = draw.textbbox((0, 0), word, font=font)
+            if word_bbox[2] > max_width:
+                sub_line = ''
+                for ch in word:
+                    sub_test = sub_line + ch
+                    if draw.textbbox((0, 0), sub_test, font=font)[2] <= max_width:
+                        sub_line = sub_test
+                    else:
+                        if sub_line: lines.append(sub_line)
+                        sub_line = ch
+                line = sub_line
+            else:
+                line = word
     if line: lines.append(line)
     return lines
 
@@ -150,7 +161,7 @@ def generate(sender_name, quote_text, output_path, avatar_path=None):
     if avatar is not None:
         img.paste(avatar, (AV_X, AV_Y), avatar)
 
-    fnt_name = ImageFont.truetype(FONT_BOLD, 26)
+    fnt_name = ImageFont.truetype(FONT_BOLD, 26, index=0) if FONT_BOLD.endswith('.ttc') else ImageFont.truetype(FONT_BOLD, 26)
     font_emoji = ImageFont.truetype(FONT_EMOJI, 109) if os.path.exists(FONT_EMOJI) else None
 
     name_display = sender_name[:28] + ('...' if len(sender_name) > 28 else '')
@@ -186,7 +197,7 @@ def generate(sender_name, quote_text, output_path, avatar_path=None):
     lines = ['']
     line_h = 24
     for size in size_candidates:
-        fnt_quote = ImageFont.truetype(FONT_REG, size)
+        fnt_quote = ImageFont.truetype(FONT_REG, size, index=0) if FONT_REG.endswith('.ttc') else ImageFont.truetype(FONT_REG, size)
         lines = wrap_text(quote_text, fnt_quote, draw, max_text_w)
         line_h = draw.textbbox((0,0),'Ag', font=fnt_quote)[3] + 6
         if len(lines) * line_h <= max_text_h: break
@@ -199,7 +210,7 @@ def generate(sender_name, quote_text, output_path, avatar_path=None):
         draw_text_hybrid(draw, img, (text_x, cy), line, fnt_quote, font_emoji, COLORS['quote'], size)
         cy += line_h
 
-    fnt_footer = ImageFont.truetype(FONT_REG, 15)
+    fnt_footer = ImageFont.truetype(FONT_REG, 15, index=0) if FONT_REG.endswith('.ttc') else ImageFont.truetype(FONT_REG, 15)
     draw_text_hybrid(draw, img, (PAD+18, H-PAD-2), 'via QuoteBot \u2726', fnt_footer, font_emoji, COLORS['footer'], 15)
     img.save(output_path, 'WEBP', quality=92)
     print(f'OK:{output_path}')

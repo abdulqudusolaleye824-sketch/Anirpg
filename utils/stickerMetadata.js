@@ -1,6 +1,6 @@
 /**
  * stickerMetadata.js
- * Injects WhatsApp sticker metadata into a WebP buffer using node-webpmux (or sharp).
+ * Injects WhatsApp sticker metadata into a WebP buffer using node-webpmux.
  * Preserves original image data (static or animated) and adds valid TIFF EXIF.
  */
 
@@ -27,26 +27,20 @@ async function injectStickerMetadata(webpBuf, packName, packAuthor) {
 
   const jsonBuf = Buffer.from(json, 'utf-8');
 
-  // Standard TIFF EXIF Header
-  const tiffHeader = Buffer.from([
+  // Exact 22-byte WhatsApp TIFF EXIF Header
+  const exifHeader = Buffer.from([
     0x49, 0x49, 0x2A, 0x00, // Little Endian "II", Magic 42
-    0x08, 0x00, 0x00, 0x00  // Offset to IFD0 (8)
+    0x08, 0x00, 0x00, 0x00, // Offset to IFD0 (8)
+    0x01, 0x00,             // Tag count = 1
+    0x41, 0x57,             // Tag 0x4157 ('WA')
+    0x07, 0x00,             // Type UNDEFINED (7)
+    0x00, 0x00, 0x00, 0x00, // Offset 14: Placeholder for json length LE
+    0x16, 0x00, 0x00, 0x00  // Offset 18: Value offset = 22 bytes LE
   ]);
 
-  // IFD0: 1 tag entry (Tag 0x4157 'WA')
-  const ifd0 = Buffer.alloc(18);
-  ifd0.writeUInt16LE(1, 0);               // Count of tags (1)
-  ifd0.writeUInt16LE(0x4157, 2);          // Tag 0x4157 ('WA')
-  ifd0.writeUInt16LE(7, 4);               // Type UNDEFINED
-  ifd0.writeUInt32LE(jsonBuf.length, 6);  // Length of json
-  ifd0.writeUInt32LE(26, 10);             // Value offset from TIFF header start (26)
-  ifd0.writeUInt32LE(0, 14);              // Next IFD offset (0)
+  exifHeader.writeUInt32LE(jsonBuf.length, 14);
 
-  const exifPayload = Buffer.concat([
-    tiffHeader,
-    ifd0,
-    jsonBuf
-  ]);
+  const exifPayload = Buffer.concat([exifHeader, jsonBuf]);
 
   try {
     const webpmux = require('node-webpmux');

@@ -141,8 +141,14 @@ function getAllSockets() {
 function _bootstrapDispatcher(personalityKey, chatId) {
   const active = PersonalityManager.getActiveBot(chatId);
   if (active) return active === personalityKey;
-  const keys = Object.keys(getAllSockets()).sort();
-  return keys.length > 0 && keys[0] === personalityKey;
+  const sockets = getAllSockets();
+  const keys = Object.keys(sockets).sort();
+  if (keys.length === 0) return false;
+  const chosenKey = keys[0];
+  try {
+    PersonalityManager.activateBot(chatId, chosenKey);
+  } catch (e) {}
+  return chosenKey === personalityKey;
 }
 
 function _isOwnBotNumber(bareNumber, getDatabase) {
@@ -180,7 +186,6 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
 
   const pairingMode  = options.pairingMode || null;
   const pairingPhone = (options.pairingPhone || '').replace(/[^0-9]/g, '') || null;
-  const isPairing    = pairingMode === 'code' || pairingMode === 'qr';
 
   const sock = makeWASocket({
     version,
@@ -504,7 +509,6 @@ async function sendAttachment(sock, chatId, attachment, opts = {}) {
 async function sendAs(personalityKey, chatId, content, opts = {}) {
   const isGroup = chatId?.endsWith?.('@g.us');
   if (isGroup) {
-    // Group chat: strictly use the active bot socket of that destination group chat
     const activeKey = PersonalityManager.getActiveBot(chatId);
     const targetKey = activeKey || personalityKey;
     const sock = botSockets[targetKey] || getActiveSocket(chatId);
@@ -512,7 +516,6 @@ async function sendAs(personalityKey, chatId, content, opts = {}) {
     return { dropped: true, reason: 'no-socket' };
   }
 
-  // DM: route via the recipient's assigned Serf bot socket
   const db = opts.db || (typeof opts.getDatabase === 'function' ? opts.getDatabase() : null);
   let targetSock = botSockets[personalityKey];
 
@@ -552,7 +555,6 @@ async function safeSendDM(sock, playerJid, content, opts = {}) {
   }
   const db = opts.db || (typeof opts.getDatabase === 'function' ? opts.getDatabase() : null);
 
-  // Serf Bot Routing: If the user has an assigned Serf bot socket online, use that Serf bot!
   let targetSock = sock;
   if (db && playerJid) {
     const serfKey = SerfManager.getSerfBotKey(db, playerJid);
