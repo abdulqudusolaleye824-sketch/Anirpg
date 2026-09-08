@@ -483,7 +483,7 @@ module.exports = async (sock, msg, messageText, config, getDatabase, saveDatabas
   const AstralGroups = require('../rpg/utils/AstralGroups');
   const manageCmds = new Set([
     'setgroup', 'setgc', 'ssub', 'renew', 'allowgc', 'groupinfo', 'help', 'menu',
-    'reset', 'spawnstatus', 'killspawn', 'cctv', 'statusreport', 'botid', 'disable', 'enable'
+    'reset', 'spawnstatus', 'killspawn', 'cctv', 'statusreport', 'botid', 'disable', 'enable', 'restart'
   ]);
   if (chatId.endsWith('@g.us') && !manageCmds.has(commandName)) {
     const gate = AstralGroups.gate(db, chatId);
