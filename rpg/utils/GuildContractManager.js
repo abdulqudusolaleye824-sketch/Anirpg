@@ -20,8 +20,18 @@ const Week = 7 * 24 * 60 * 60 * 1000;
 function normaliseJid(jid) {
   const base = String(jid).split('@')[0].split(':')[0];
   const digits = base.replace(/[^0-9]/g, '');
-  // Real WhatsApp JIDs are numeric; fall back to the full base if not (safety).
   return digits.length ? digits : base;
+}
+
+function findUserInDb(db, bare) {
+  if (!db?.users || !bare) return null;
+  const digits = String(bare).replace(/[^0-9]/g, '');
+  if (db.users[bare]) return db.users[bare];
+  if (db.users[`${digits}@s.whatsapp.net`]) return db.users[`${digits}@s.whatsapp.net`];
+  for (const [k, u] of Object.entries(db.users)) {
+    if (k.replace(/[^0-9]/g, '') === digits) return u;
+  }
+  return null;
 }
 
 // Guilds are stored keyed by guild id (e.g. 'guild_123') with a separate
@@ -34,7 +44,7 @@ function findGuild(db, ref) {
 }
 
 // Roles allowed to run /guild hire + sign formal contracts.
-const MANAGE_ROLES = new Set(['guild master', 'vice guild master', 'vice gm', 'vice']);
+const MANAGE_ROLES = new Set(['guild master', 'vice guild master', 'vice gm', 'vice', 'leader']);
 
 function rankOf(guild, jid) {
   if (!guild) return '';
@@ -53,6 +63,7 @@ function rankOf(guild, jid) {
 function isGuildMasterOrVice(db, guildName, jid) {
   const guild = findGuild(db, guildName);
   if (!guild) return false;
+  if (guild.leader && normaliseJid(guild.leader) === normaliseJid(jid)) return true;
   const rank = rankOf(guild, jid).toLowerCase().replace(/[_-]/g, ' ');
   return MANAGE_ROLES.has(rank);
 }
@@ -77,17 +88,21 @@ function _contracts(db, guildId) {
 }
 
 function getContract(db, guildId, playerJid) {
-  return _contracts(db, guildId)[normaliseJid(playerJid)] || null;
+  const g = findGuild(db, guildId);
+  const realId = g?.id || guildId;
+  return _contracts(db, realId)[normaliseJid(playerJid)] || null;
 }
 
 // Sign a new contract. Returns { success, error?, contract? }
 function hire(db, guildId, operatorJid, targetJid, weeklyNexus, weeklyMana, weeks) {
-  if (!(weeklyNexus >= 0) || !(weeklyMana >= 0) || weeklyNexus <= 0 && weeklyMana <= 0) {
+  if (!(weeklyNexus >= 0) || !(weeklyMana >= 0) || (weeklyNexus <= 0 && weeklyMana <= 0)) {
     return { success: false, error: 'Weekly wage must include Nexus or Mana Stones.' };
   }
   if (!(weeks >= 1)) return { success: false, error: 'Contract must last at least 1 week.' };
-  const recs = _contracts(db, guildId);
-  if (recs[normaliseJid(targetJid)]) {
+  const g = findGuild(db, guildId);
+  const realId = g?.id || guildId;
+  const recs = _contracts(db, realId);
+  if (recs[normaliseJid(targetJid)]?.active) {
     return { success: false, error: 'This hunter already has an active contract.' };
   }
   const now = Date.now();
@@ -111,8 +126,8 @@ function hire(db, guildId, operatorJid, targetJid, weeklyNexus, weeklyMana, week
 function remainingBalance(db, guildId, playerJid) {
   const c = getContract(db, guildId, playerJid);
   if (!c) return null;
-  const weeksLeft = Math.max(0, c.weeks - c.weeksPaid);
-  return { nexus: c.weeklyNexus * weeksLeft, mana: c.weeklyMana * weeksLeft, weeksLeft };
+  const weeksLeft = Math.max(0, c.weeks - (c.weeksPaid || 0));
+  return { nexus: (c.weeklyNexus || 0) * weeksLeft, mana: (c.weeklyMana || 0) * weeksLeft, weeksLeft };
 }
 
 // Terminate a contract, paying the member ×2 their remaining balance.
@@ -122,48 +137,81 @@ function kickPayout(db, guildId, playerJid, saveDatabase) {
   if (!c) return { success: false, error: 'No contract on file.' };
   const rem = remainingBalance(db, guildId, playerJid);
   const payout = { nexus: rem.nexus * 2, mana: rem.mana * 2 };
-  delete _contracts(db, guildId)[normaliseJid(playerJid)];
+  const g = findGuild(db, guildId);
+  const realId = g?.id || guildId;
+  delete _contracts(db, realId)[normaliseJid(playerJid)];
   if (saveDatabase) saveDatabase();
   return { success: true, payout, contract: c };
 }
 
-// Process weekly payouts. Deducts weekly wage from guild treasury (if they
-// don't have enough, pay what's available). Called on a timer + on gate use.
-// Returns array of pay summaries.
-function processWeeklyPay(db, guildId, saveDatabase) {
-  const guild = db.guilds?.[guildId];
-  const recs = db.guildContracts?.[guildId];
-  if (!guild || !recs) return [];
+// Process weekly payouts. Deducts weekly wage (Nexus AND Mana Stones) from guild treasury.
+// Pays the hired hunter in full. Called on a timer + on gate use.
+function processWeeklyPay(db, guildRef, saveDatabase) {
+  const guild = findGuild(db, guildRef);
+  if (!guild) return [];
+  const guildId = guild.id || guildRef;
+  const recs = db.guildContracts?.[guildId] || db.guildContracts?.[guild.name] || db.guildContracts?.[guildRef];
+  if (!recs) return [];
+
   const now = Date.now();
   const summaries = [];
+
   for (const [bare, c] of Object.entries(recs)) {
     if (!c.active) continue;
-    let paid = 0;
+    let totalNexusPaid = 0;
+    let totalManaPaid = 0;
+
     // Pay any elapsed weeks (catch up if overdue)
     while (c.active && now >= c.nextPayAt) {
-      let avail = { nexus: guild.treasury || 0, mana: guild.manaTreasury || 0 };
-      let payNexus = Math.min(c.weeklyNexus, avail.nexus);
-      let payMana = Math.min(c.weeklyMana, avail.mana);
-      if (payNexus <= 0 && payMana <= 0) {
-        // Cannot pay this week → contract defaults (deactivate)
+      const availNexus = guild.treasury || 0;
+      const availMana = guild.manaTreasury || 0;
+      const reqNexus = c.weeklyNexus || 0;
+      const reqMana = c.weeklyMana || 0;
+
+      // Require full funds for weekly payment
+      if (availNexus < reqNexus || availMana < reqMana) {
         c.active = false;
         c.defaultedAt = now;
+        c.defaultReason = `Insufficient guild treasury (Need: ${reqNexus} Nexus, ${reqMana} Mana Stones; Have: ${availNexus} Nexus, ${availMana} Mana Stones)`;
         break;
       }
-      guild.treasury -= payNexus;
-      if (guild.manaTreasury != null) guild.manaTreasury -= payMana;
-      if (db.users?.[bare]) {
-        db.users[bare].gold = (db.users[bare].gold || 0) + payNexus;
-        db.users[bare].manaCrystals = (db.users[bare].manaCrystals || 0) + payMana;
+
+      // Deduct from guild treasury
+      guild.treasury = availNexus - reqNexus;
+      guild.manaTreasury = availMana - reqMana;
+
+      // Credit player (both Nexus and Mana Stones)
+      const user = findUserInDb(db, bare);
+      if (user) {
+        user.gold = (user.gold || 0) + reqNexus;
+        user.manaCrystals = (user.manaCrystals || 0) + reqMana;
+        if (user.inventory) user.inventory.gold = user.gold;
       }
-      c.weeksPaid++;
+
+      c.weeksPaid = (c.weeksPaid || 0) + 1;
       c.lastPayAt = now;
-      paid += payNexus + payMana;
-      if (c.weeksPaid >= c.weeks) { c.active = false; c.completedAt = now; }
-      else c.nextPayAt = c.nextPayAt + Week;
+      totalNexusPaid += reqNexus;
+      totalManaPaid += reqMana;
+
+      if (c.weeksPaid >= c.weeks) {
+        c.active = false;
+        c.completedAt = now;
+      } else {
+        c.nextPayAt = c.nextPayAt + Week;
+      }
     }
-    if (paid || !c.active) summaries.push({ bare, nexusPaid: paid, active: c.active, contract: c });
+
+    if (totalNexusPaid > 0 || totalManaPaid > 0 || !c.active) {
+      summaries.push({
+        bare,
+        nexusPaid: totalNexusPaid,
+        manaPaid: totalManaPaid,
+        active: c.active,
+        contract: c
+      });
+    }
   }
+
   if (saveDatabase) saveDatabase();
   return summaries;
 }
