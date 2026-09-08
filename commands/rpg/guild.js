@@ -36,23 +36,82 @@ const SHOP_UPGRADE_COSTS = {
   4: { nexus: 1500000, mana: 75000, targetDiscount: 25 },
 };
 
-// Guild Shop Exclusive Catalog
-const GUILD_SHOP_CATALOG = [
-  // Pet Food
-  { id: 'pet_food_royal', name: 'Royal Monster Feed', type: 'pet_food', category: 'Pet Food', basePrice: 5000, description: 'Restores 100 pet hunger and +20 happiness' },
-  { id: 'pet_food_beast', name: 'Beast Feast', type: 'pet_food', category: 'Pet Food', basePrice: 12000, description: 'Restores 100 pet hunger and +50 happiness' },
-  { id: 'pet_food_elixir', name: 'Elixir of Growth', type: 'pet_food', category: 'Pet Food', basePrice: 25000, description: 'Gives pet massive XP bonus' },
+// Master Regular Shop Pool for Guild Shop daily rotation
+const REGULAR_SHOP_POOL = [
+  // Potions & Consumables (Nexus)
+  { id: 'health_potion', name: 'Health Potion', category: 'Potions', type: 'potion', currency: 'gold', basePrice: 800, description: 'Restores 50% HP', key: 'healthPotions' },
+  { id: 'energy_potion', name: 'Energy Potion', category: 'Potions', type: 'potion', currency: 'gold', basePrice: 600, description: 'Restores 50% Energy', key: 'energyPotions' },
+  { id: 'revive_token', name: 'Revive Token', category: 'Potions', type: 'potion', currency: 'gold', basePrice: 3000, description: 'Auto-revives once in dungeon', key: 'reviveTokens' },
+  { id: 'luck_potion', name: 'Luck Potion', category: 'Potions', type: 'potion', currency: 'gold', basePrice: 2000, description: '+25% catch rate & casino odds', key: 'luckPotion' },
+  { id: 'xp_booster', name: 'XP Booster', category: 'Potions', type: 'potion', currency: 'gold', basePrice: 5000, description: '+50% XP for 3 battles', key: 'xpBooster' },
+  { id: 'nexus_mult', name: 'Nexus Multiplier', category: 'Potions', type: 'potion', currency: 'gold', basePrice: 8000, description: 'Next 3 wins give 2x gold', key: 'goldMult' },
+  { id: 'shield_scroll', name: 'Shield Scroll', category: 'Potions', type: 'potion', currency: 'gold', basePrice: 4000, description: 'Absorbs one hit in next fight', key: 'shieldScroll' },
+  { id: 'might_elixir', name: 'Elixir of Might', category: 'Potions', type: 'potion', currency: 'gold', basePrice: 12000, description: '+20 ATK for next 5 battles', key: 'mightElixir' },
 
-  // Attack Patterns
-  { id: 'pattern_dragon', name: 'Dragon\'s Breath', type: 'pattern', category: 'Attack Pattern', basePrice: 50000, description: 'High-damage fire AOE attack pattern' },
-  { id: 'pattern_shadow', name: 'Shadow Strike', type: 'pattern', category: 'Attack Pattern', basePrice: 100000, description: 'Critical lethal shadow assassination pattern' },
-  { id: 'pattern_celestial', name: 'Celestial Slash', type: 'pattern', category: 'Attack Pattern', basePrice: 250000, description: 'Ultimate divine slash attack pattern' },
+  // Pet Food (Nexus)
+  { id: 'pet_food_kibble', name: 'Monster Kibble', category: 'Pet Food', type: 'pet_food', currency: 'gold', basePrice: 500, description: 'Restores 30 pet hunger' },
+  { id: 'pet_food_royal', name: 'Royal Monster Feed', category: 'Pet Food', type: 'pet_food', currency: 'gold', basePrice: 5000, description: 'Restores 100 pet hunger and +20 happiness' },
+  { id: 'pet_food_beast', name: 'Beast Feast', category: 'Pet Food', type: 'pet_food', currency: 'gold', basePrice: 12000, description: 'Restores 100 pet hunger and +50 happiness' },
+  { id: 'pet_food_elixir', name: 'Elixir of Growth', category: 'Pet Food', type: 'pet_food', currency: 'gold', basePrice: 25000, description: 'Gives pet massive XP bonus' },
 
-  // Potions
-  { id: 'potion_supreme_hp', name: 'Supreme Health Elixir', type: 'potion', category: 'Potion', basePrice: 10000, description: 'Restores 100% max HP in battle' },
-  { id: 'potion_mega_mana', name: 'Mega Mana Potion', type: 'potion', category: 'Potion', basePrice: 10000, description: 'Restores 100% energy in battle' },
-  { id: 'potion_full_rec', name: 'Full Recovery Tonic', type: 'potion', category: 'Potion', basePrice: 25000, description: 'Full HP + Energy recovery + cleanse debuffs' }
+  // Stat Orbs & Special (Mana Stones)
+  { id: 'power_ring', name: 'Power Ring', category: 'Stat Orbs', type: 'stat', currency: 'crystals', basePrice: 500, description: '+5 ATK permanently', stat: 'atk', amount: 5 },
+  { id: 'guardian_amulet', name: 'Guardian Amulet', category: 'Stat Orbs', type: 'stat', currency: 'crystals', basePrice: 500, description: '+5 DEF permanently', stat: 'def', amount: 5 },
+  { id: 'vitality_orb', name: 'Vitality Orb', category: 'Stat Orbs', type: 'stat', currency: 'crystals', basePrice: 600, description: '+20 Max HP permanently', stat: 'hp', amount: 20 },
+  { id: 'swift_boots', name: 'Swift Boots', category: 'Stat Orbs', type: 'stat', currency: 'crystals', basePrice: 700, description: '+8 SPD permanently', stat: 'spd', amount: 8 },
+  { id: 'crit_gem', name: 'Crit Gem', category: 'Stat Orbs', type: 'stat', currency: 'crystals', basePrice: 800, description: '+3% Crit permanently', stat: 'crit', amount: 3 },
+  { id: 'summon_ticket', name: 'Summon Ticket', category: 'Special', type: 'ticket', currency: 'crystals', basePrice: 120, description: '1 gacha summon pull', amount: 1 },
+
+  // Bundles (Nexus)
+  { id: 'starter_pack', name: 'Starter Pack', category: 'Bundles', type: 'bundle', currency: 'gold', basePrice: 5000, description: '5 HP Pots + 5 Energy Pots + 1 Revive Token', bundleId: 1 },
+  { id: 'dungeon_kit', name: 'Dungeon Kit', category: 'Bundles', type: 'bundle', currency: 'gold', basePrice: 18000, description: '10 HP Pots + 5 Revives + 1 XP Booster', bundleId: 2 },
+  { id: 'pvp_bundle', name: 'PvP Bundle', category: 'Bundles', type: 'bundle', currency: 'gold', basePrice: 20000, description: 'Elixir of Might + Shield Scroll + 2 Luck Potions', bundleId: 3 },
+
+  // Attack Patterns (Nexus)
+  { id: 'pattern_dragon', name: 'Dragon\'s Breath', category: 'Attack Patterns', type: 'pattern', currency: 'gold', basePrice: 50000, description: 'High-damage fire AOE attack pattern' },
+  { id: 'pattern_shadow', name: 'Shadow Strike', category: 'Attack Patterns', type: 'pattern', currency: 'gold', basePrice: 100000, description: 'Critical lethal shadow assassination pattern' },
+
+  // Recipe Scrolls (Mana Stones)
+  { id: 'scroll_common', name: 'Common Recipe Scroll', category: 'Scrolls', type: 'scroll', currency: 'crystals', basePrice: 500, description: 'Unlocks Common craft recipe', rarity: 'common' },
+  { id: 'scroll_rare', name: 'Rare Recipe Scroll', category: 'Scrolls', type: 'scroll', currency: 'crystals', basePrice: 2000, description: 'Unlocks Rare craft recipe', rarity: 'rare' }
 ];
+
+function ensureGuildShopFresh(guild) {
+  const todayKey = new Date(Date.now() + 3600000).toISOString().slice(0, 10);
+  if (guild.dailyShop && guild.dailyShop.dateKey === todayKey && Array.isArray(guild.dailyShop.items) && guild.dailyShop.items.length === 10) {
+    return guild.dailyShop.items;
+  }
+
+  let seed = 0;
+  const str = todayKey + (guild.name || 'guild');
+  for (let i = 0; i < str.length; i++) {
+    seed = (seed * 31 + str.charCodeAt(i)) % 2147483647;
+  }
+
+  function seededRandom() {
+    seed = (seed * 16807) % 2147483647;
+    return (seed - 1) / 2147483646;
+  }
+
+  const poolCopy = [...REGULAR_SHOP_POOL];
+  for (let i = poolCopy.length - 1; i > 0; i--) {
+    const j = Math.floor(seededRandom() * (i + 1));
+    [poolCopy[i], poolCopy[j]] = [poolCopy[j], poolCopy[i]];
+  }
+
+  const selected = poolCopy.slice(0, 10).map(item => ({
+    ...item,
+    unitsLeft: 5,
+    maxUnits: 5
+  }));
+
+  guild.dailyShop = {
+    dateKey: todayKey,
+    items: selected
+  };
+
+  return selected;
+}
 
 module.exports = {
   name: 'guild',
@@ -572,7 +631,7 @@ module.exports = {
     }
 
     // ═══════════════════════════════════════════════════════════════════
-    // GUILD EXCLUSIVE SHOP
+    // GUILD SHOP (10 items everyday from Regular Shop Pool, 5 units each)
     // ═══════════════════════════════════════════════════════════════════
     if (action === 'shop') {
       if (!playerGuild) {
@@ -598,83 +657,145 @@ module.exports = {
       }
 
       const discountPct = shopLvl * 5; // 5%, 10%, 15%, 20%, 25%
-      const sub = (args[1] || 'list').toLowerCase();
+      const todayItems  = ensureGuildShopFresh(playerGuild);
+      const sub         = (args[1] || 'list').toLowerCase();
 
-      // /guild shop buy <item_id>
+      // /guild shop buy <# or item_id>
       if (sub === 'buy') {
-        const itemId = (args[2] || '').toLowerCase();
-        const item = GUILD_SHOP_CATALOG.find(i => i.id.toLowerCase() === itemId || i.name.toLowerCase().includes(itemId));
+        const query = (args[2] || '').toLowerCase();
+        let itemIdx = parseInt(query) - 1;
+        let item = null;
+
+        if (!isNaN(itemIdx) && itemIdx >= 0 && itemIdx < todayItems.length) {
+          item = todayItems[itemIdx];
+        } else if (query) {
+          item = todayItems.find(i => i.id.toLowerCase() === query || i.name.toLowerCase().includes(query));
+        }
 
         if (!item) {
           return sock.sendMessage(chatId, {
-            text: `❌ Item not found! Usage: /guild shop buy <item_id>\nExample: /guild shop buy pet_food_royal`
+            text: `❌ Item not found! Usage: /guild shop buy <1-10 or item_id>\nExample: /guild shop buy 1`
           }, { quoted: msg });
         }
 
-        const finalPrice = Math.floor(item.basePrice * (1 - discountPct / 100));
-        const playerGold = player.gold || 0;
-
-        if (playerGold < finalPrice) {
+        if (item.unitsLeft <= 0) {
           return sock.sendMessage(chatId, {
-            text: `❌ Insufficient Nexus balance!\nItem Cost: 💠 ${finalPrice.toLocaleString()} Nexus (${discountPct}% OFF)\nYou have: 💠 ${playerGold.toLocaleString()} Nexus`
+            text: `❌ *${item.name}* is sold out for today! (0/5 units remaining)`
           }, { quoted: msg });
         }
 
-        player.gold = playerGold - finalPrice;
-        if (player.inventory) player.inventory.gold = player.gold;
+        const discountedPrice = Math.floor(item.basePrice * (1 - discountPct / 100));
 
-        // Add item to player inventory
-        if (!player.inventory) player.inventory = {};
-        if (item.type === 'pet_food') {
+        if (item.currency === 'gold') {
+          const playerGold = player.gold || 0;
+          if (playerGold < discountedPrice) {
+            return sock.sendMessage(chatId, {
+              text: `❌ Insufficient Nexus balance!\nPrice: 💠 ${discountedPrice.toLocaleString()} Nexus (${discountPct}% OFF)\nYou have: 💠 ${playerGold.toLocaleString()} Nexus`
+            }, { quoted: msg });
+          }
+          player.gold = playerGold - discountedPrice;
+          if (player.inventory) player.inventory.gold = player.gold;
+        } else {
+          const playerMana = player.manaCrystals || 0;
+          if (playerMana < discountedPrice) {
+            return sock.sendMessage(chatId, {
+              text: `❌ Insufficient Mana Stones!\nPrice: 💎 ${discountedPrice.toLocaleString()} Mana Stones (${discountPct}% OFF)\nYou have: 💎 ${playerMana.toLocaleString()} Mana Stones`
+            }, { quoted: msg });
+          }
+          player.manaCrystals = playerMana - discountedPrice;
+        }
+
+        // Decrement stock unit
+        item.unitsLeft -= 1;
+
+        // Grant item to player inventory
+        if (!player.inventory) player.inventory = { healthPotions:0, energyPotions:0, reviveTokens:0, items:[] };
+        if (!player.inventory.items) player.inventory.items = [];
+
+        if (item.type === 'potion') {
+          if (item.key === 'healthPotions') player.inventory.healthPotions = (player.inventory.healthPotions || 0) + 1;
+          else if (item.key === 'energyPotions') player.inventory.energyPotions = (player.inventory.energyPotions || 0) + 1;
+          else if (item.key === 'reviveTokens') player.inventory.reviveTokens = (player.inventory.reviveTokens || 0) + 1;
+          else if (item.key === 'luckPotion') player.inventory.items.push({ name: 'Luck Potion', type: 'Consumable', isLuckPotion: true });
+          else if (item.key === 'xpBooster') player.inventory.items.push({ name: 'XP Booster', type: 'Consumable', isXpBooster: true, charges: 3 });
+          else if (item.key === 'goldMult') player.inventory.items.push({ name: 'Nexus Multiplier', type: 'Consumable', isNexusMult: true, charges: 3 });
+          else if (item.key === 'shieldScroll') player.inventory.items.push({ name: 'Shield Scroll', type: 'Consumable', isShieldScroll: true });
+          else if (item.key === 'mightElixir') player.inventory.items.push({ name: 'Elixir of Might', type: 'Consumable', isMightElixir: true, charges: 5, atkBonus: 20 });
+        } else if (item.type === 'pet_food') {
           if (!player.inventory.petFood) player.inventory.petFood = {};
           player.inventory.petFood[item.id] = (player.inventory.petFood[item.id] || 0) + 1;
+        } else if (item.type === 'stat') {
+          if (!player.stats) player.stats = {};
+          if (item.stat === 'atk') player.stats.atk = (player.stats.atk || 10) + item.amount;
+          else if (item.stat === 'def') player.stats.def = (player.stats.def || 5) + item.amount;
+          else if (item.stat === 'hp') { player.stats.maxHp = (player.stats.maxHp || 100) + item.amount; player.stats.hp = Math.min(player.stats.hp + item.amount, player.stats.maxHp); }
+          else if (item.stat === 'spd') player.stats.speed = (player.stats.speed || 10) + item.amount;
+          else if (item.stat === 'crit') player.stats.critChance = (player.stats.critChance || 0) + item.amount;
+        } else if (item.type === 'ticket') {
+          player.summonTickets = (player.summonTickets || 0) + item.amount;
+        } else if (item.type === 'bundle') {
+          if (item.bundleId === 1) { player.inventory.healthPotions = (player.inventory.healthPotions||0)+5; player.inventory.energyPotions = (player.inventory.energyPotions||0)+5; player.inventory.reviveTokens = (player.inventory.reviveTokens||0)+1; }
+          else if (item.bundleId === 2) { player.inventory.healthPotions = (player.inventory.healthPotions||0)+10; player.inventory.reviveTokens = (player.inventory.reviveTokens||0)+5; player.inventory.items.push({ name: 'XP Booster', type: 'Consumable', isXpBooster: true, charges: 3 }); }
+          else if (item.bundleId === 3) { player.inventory.items.push({ name: 'Elixir of Might', type: 'Consumable', isMightElixir: true, charges: 5, atkBonus: 20 }, { name: 'Shield Scroll', type: 'Consumable', isShieldScroll: true }, { name: 'Luck Potion', type: 'Consumable', isLuckPotion: true }); }
         } else if (item.type === 'pattern') {
           if (!player.inventory.patterns) player.inventory.patterns = [];
           player.inventory.patterns.push({ ...item, boughtAt: Date.now() });
-        } else {
-          if (!player.inventory.potions) player.inventory.potions = [];
-          player.inventory.potions.push({ ...item, boughtAt: Date.now() });
+        } else if (item.type === 'scroll') {
+          const { buyScroll } = require('../../rpg/utils/CraftingSystem');
+          if (!player.inventory.scrolls) player.inventory.scrolls = [];
+          player.inventory.scrolls.push(buyScroll(item.rarity || 'common'));
         }
 
         saveDatabase();
+
+        const costDisplay = item.currency === 'crystals'
+          ? `💎 ${discountedPrice.toLocaleString()} Mana Stones`
+          : `💠 ${discountedPrice.toLocaleString()} Nexus`;
 
         return sock.sendMessage(chatId, {
           text: [
             `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
             `🛍️ *GUILD SHOP PURCHASE*`,
             `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-            `🎁 Item: *${item.name}*`,
+            `🎁 Purchased: *${item.name}*`,
             `🏷️ Guild Discount: *${discountPct}% OFF*`,
-            `💠 Price Paid: *${finalPrice.toLocaleString()} Nexus*`,
+            `💰 Paid: *${costDisplay}*`,
+            `📦 Units Left Today: *${item.unitsLeft}/5 units*`,
             `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-            `✅ Added to your inventory!`,
+            `✅ Item added to your inventory!`,
             `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
           ].join('\n'),
         }, { quoted: msg });
       }
 
-      // Display Guild Shop Catalog
+      // Display Daily 10 Items from Regular Shop Pool
       const lines = [
         `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-        `🛍️ *GUILD SHOP EXCLUSIVES*`,
+        `🛍️ *GUILD SHOP — TODAY'S STOCK (10 ITEMS)*`,
         `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
         `🏰 Guild: *${playerGuild.name}* (Shop Lv.${shopLvl})`,
-        `🏷️ Active Member Discount: *${discountPct}% OFF*`,
-        `💠 Your Balance: *${(player.gold || 0).toLocaleString()} Nexus*`,
+        `🏷️ Member Discount: *${discountPct}% OFF*`,
+        `💠 Balance: *${(player.gold || 0).toLocaleString()} Nexus* | 💎 *${(player.manaCrystals || 0).toLocaleString()} MS*`,
         `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
       ];
 
-      GUILD_SHOP_CATALOG.forEach((item, i) => {
-        const finalPrice = Math.floor(item.basePrice * (1 - discountPct / 100));
+      todayItems.forEach((item, i) => {
+        const discountedPrice = Math.floor(item.basePrice * (1 - discountPct / 100));
+        const priceStr = item.currency === 'crystals'
+          ? `~💎 ${item.basePrice.toLocaleString()}~ → *💎 ${discountedPrice.toLocaleString()} MS*`
+          : `~💠 ${item.basePrice.toLocaleString()}~ → *💠 ${discountedPrice.toLocaleString()} Nexus*`;
+
+        const stockBadge = item.unitsLeft > 0 ? `📦 *${item.unitsLeft}/5 left*` : `❌ *SOLD OUT*`;
+
         lines.push(`*${i+1}. ${item.name}* [\`${item.id}\`]`);
-        lines.push(`   📂 Category: ${item.category}`);
-        lines.push(`   💰 Price: ~💠 ${item.basePrice.toLocaleString()}~ → *💠 ${finalPrice.toLocaleString()} Nexus* (${discountPct}% OFF)`);
+        lines.push(`   📂 Category: ${item.category} | ${stockBadge}`);
+        lines.push(`   💰 Price: ${priceStr} (${discountPct}% OFF)`);
         lines.push(`   📝 ${item.description}`);
         lines.push(``);
       });
 
       lines.push(`━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
-      lines.push(`📌 Buy item: */guild shop buy <item_id>*`);
+      lines.push(`📌 Buy item: */guild shop buy <1-10 or item_id>*`);
       lines.push(`━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
 
       return sock.sendMessage(chatId, { text: lines.join('\n') }, { quoted: msg });

@@ -73,6 +73,7 @@ function buildCard(player, db, targetId, mentionedId, isOwnProfile) {
   const isBanned    = !!(player.banned || db.bannedUsers?.[targetId]);
   const Nexus       = (player.gold || 0).toLocaleString();
   const manaStones  = (player.manaCrystals || 0).toLocaleString();
+  const guildDisplay = player.guild ? `*${player.guild}*` : 'nil';
   const employmentStatus = player.guild ? `Employed 💼 *(${player.guild})*` : `Unemployed 😴`;
 
   const petDisplay = player.pet
@@ -105,6 +106,7 @@ function buildCard(player, db, targetId, mentionedId, isOwnProfile) {
     `⚡ *Power:* ${power.toLocaleString()} ${powerLabel.emoji} ${powerLabel.label}`,
     `🎭 *Class:* ${classDisplay}`,
     variantLore ? `_${variantLore}_` : null,
+    `🏰 *Guild:* ${guildDisplay}`,
     `🏢 *Status:* ${employmentStatus}`,
     ``,
     `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
