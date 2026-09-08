@@ -18,6 +18,7 @@ const {
   DisconnectReason,
   fetchLatestBaileysVersion,
   Browsers,
+  makeCacheableSignalKeyStore,
 } = require('@whiskeysockets/baileys');
 const pino    = require('pino');
 
@@ -30,6 +31,19 @@ const QRTerminal = (()=>{ try { return require('qrcode-terminal'); } catch(e){ r
 
 const botSockets = {};
 const pairingSessions = {};
+const reconnectAttempts = {};
+
+// ── Background WebSocket Heartbeat & Auto-Healing Monitor ──────
+setInterval(() => {
+  for (const [key, sock] of Object.entries(botSockets)) {
+    if (!sock || !sock.ws) continue;
+    const isClosed = sock.ws.readyState === 2 || sock.ws.readyState === 3; // CLOSING or CLOSED
+    if (isClosed) {
+      console.warn(`⚠️ AstraLink [${key}] detected silent dead WebSocket. Initiating auto-healing reconnect…`);
+      delete botSockets[key];
+    }
+  }
+}, 25000);
 
 function getPairingSession(personalityKey) {
   return pairingSessions[personalityKey] || null;
@@ -188,14 +202,26 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
   const pairingMode  = options.pairingMode || null;
   const pairingPhone = (options.pairingPhone || '').replace(/[^0-9]/g, '') || null;
 
+  const keyStore = typeof makeCacheableSignalKeyStore === 'function'
+    ? makeCacheableSignalKeyStore(state.keys, pino({ level: 'silent' }))
+    : state.keys;
+
   const sock = makeWASocket({
     version,
     logger: pino({ level: 'silent' }),
-    auth: state,
-    browser: Browsers.ubuntu('Chrome'),
+    auth: {
+      creds: state.creds,
+      keys: keyStore,
+    },
+    browser: ['AstraLink Engine', 'Chrome', '122.0.6261.128'],
     syncFullHistory: false,
-    markOnlineOnConnect: false,
+    markOnlineOnConnect: true,        // Keep active & verified on WhatsApp servers
     generateHighQualityLinkPreview: false,
+    keepAliveIntervalMs: 15_000,      // 15s WebSocket keep-alive ping for zero dropped sockets
+    connectTimeoutMs: 60_000,         // 60s handshake timeout
+    defaultQueryTimeoutMs: 60_000,    // 60s query timeout for stanzas
+    retryRequestDelayMs: 3_000,       // Auto retry failed stanzas after 3s
+    maxMsgRetryCount: 5,              // Retry stanzas up to 5 times
     getMessage: async () => ({ conversation: '' }),
   });
 
@@ -261,15 +287,26 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
         credsRegistered = !!(creds.registered && creds.me);
       } catch (_) {}
 
-      const shouldReconnect = restartRequired || (!loggedOut && credsRegistered);
+      if (!loggedOut && (credsRegistered || restartRequired || options.pairingPhone)) {
+        const attempt = (reconnectAttempts[personalityKey] || 0) + 1;
+        reconnectAttempts[personalityKey] = attempt;
+        const backoffMs = restartRequired ? 1200 : Math.min(30000, attempt * 2000 + 1000);
 
-      if (shouldReconnect) {
+        console.log(`📡 AstraLink [${displayName}] connection closed (code ${code || 'unknown'}). Reconnecting in ${Math.round(backoffMs / 1000)}s (attempt #${attempt})…`);
+
         const nextOpts = credsRegistered
           ? { ...options, pairingMode: null, pairingPhone: null }
           : options;
-        setTimeout(() => connectBot(personalityKey, authDir, getDatabase, saveDatabase, nextOpts), restartRequired ? 1200 : 4000);
+
+        setTimeout(() => {
+          connectBot(personalityKey, authDir, getDatabase, saveDatabase, nextOpts);
+        }, backoffMs);
+      } else {
+        console.log(`❌ AstraLink [${displayName}] connection permanently closed / logged out (code ${code}). Session cleared.`);
+        reconnectAttempts[personalityKey] = 0;
       }
     } else if (connection === 'open') {
+      reconnectAttempts[personalityKey] = 0; // Reset reconnect count on successful connection!
       botSockets[personalityKey] = sock;
       const jid = sock.user?.id || null;
       pairingSessions[personalityKey] = {
@@ -280,6 +317,7 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
         code: pairingSessions[personalityKey]?.code || null,
       };
       persistLinkedBot(getDatabase, saveDatabase, personalityKey, sock, pairingPhone);
+      console.log(`✅ AstraLink [${displayName}] connection VERIFIED & ACTIVE! (JID: ${jid})`);
 
       // Deliver pending restart completion notice if present in DB
       try {
