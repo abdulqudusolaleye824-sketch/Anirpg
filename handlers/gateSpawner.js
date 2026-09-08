@@ -2,9 +2,7 @@ const { GateManager } = require('../rpg/dungeons/GateManager');
 const path = require('path');
 const fs = require('fs');
 
-// Map an average player LEVEL to a gate rank letter.
 function levelToRank(avgLevel) {
-  // F-rank gates are removed (Task 9) — the weakest gate is now E-rank.
   if (avgLevel >= 160) return 'S';
   if (avgLevel >= 120) return 'A';
   if (avgLevel >= 90)  return 'B';
@@ -14,18 +12,14 @@ function levelToRank(avgLevel) {
   return 'E';
 }
 
-// ── Per-rank announcement images (Task 9) ──────────────────────────────
-//   S (incl. DISASTER)  → assets/gates/s_rank.jpg
-//   A / B               → assets/gates/ab_rank.jpg
-//   C / D / E           → assets/gates/cde_rank.jpg
 function gateImage(rank) {
-  const file = rank === 'S' || rank === 'DISASTER' ? 's_rank.jpg'
-             : (rank === 'A' || rank === 'B')      ? 'ab_rank.jpg'
-             :                                       'cde_rank.jpg';
+  const r = (rank || 'E').toUpperCase();
+  const file = r === 'S' || r === 'DISASTER' ? 's_rank.jpg'
+             : (r === 'A' || r === 'B')      ? 'ab_rank.jpg'
+             :                                'cde_rank.jpg';
   return path.join(__dirname, '..', 'assets', 'gates', file);
 }
 
-// ── Per-rank announcement text (Task 9) — user-provided verbatim ────────
 function gateCaption(gate) {
   const id = gate.id;
   const priceLine = gate.isFree
@@ -33,9 +27,8 @@ function gateCaption(gate) {
     : `「GATE PRICE: ${gate.purchasePrice.toLocaleString()} 💎」`;
   const gateIdLine = `「GATE ID: ${id}」`;
 
-  // ── C / D / E (green) ────────────────────────────────────────────────
   if (gate.rank === 'E' || gate.rank === 'D' || gate.rank === 'C') {
-    const article = (gate.rank === 'E') ? 'An' : 'A'; // "An E-Rank"
+    const article = (gate.rank === 'E') ? 'An' : 'A';
     return [
       `╭━━━━━━━「 GATE ALERT 」━━━━━━━╮`,
       `A dimensional rift has appeared.`,
@@ -52,7 +45,6 @@ function gateCaption(gate) {
     ].join('\n');
   }
 
-  // ── B (blue) ─────────────────────────────────────────────────────────
   if (gate.rank === 'B') {
     return [
       `╭━━━━━━━「 GATE ALERT 」━━━━━━━╮`,
@@ -72,7 +64,6 @@ function gateCaption(gate) {
     ].join('\n');
   }
 
-  // ── A (purple) ───────────────────────────────────────────────────────
   if (gate.rank === 'A') {
     return [
       `╭━━━━━━━「 GATE ALERT 」━━━━━━━╮`,
@@ -92,7 +83,6 @@ function gateCaption(gate) {
     ].join('\n');
   }
 
-  // ── S (and DISASTER) (red warning) ──────────────────────────────────
   const isDisaster = gate.rank === 'DISASTER';
   return [
     `╔════════「 ⚠️ SYSTEM WARNING ⚠️ 」════════╗`,
@@ -120,24 +110,21 @@ function gateCaption(gate) {
   ].join('\n');
 }
 
-// 23 hours / 48 hours / 24 hours constants (Task 9).
-const PENALTY_TRIGGER_MS   = 23 * 60 * 60 * 1000; // spawn +23h unbought → penalty
-const PENALTY_DURATION_MS  = 48 * 60 * 60 * 1000; // penalty lasts 48h
-const GATE_LOCK_MS         = 24 * 60 * 60 * 1000; // unbought gate blocks 24h
+const PENALTY_TRIGGER_MS   = 23 * 60 * 60 * 1000;
+const PENALTY_DURATION_MS  = 48 * 60 * 60 * 1000;
+const GATE_LOCK_MS         = 24 * 60 * 60 * 1000;
 
 class GateSpawner {
   static activeTimers = {};
   static SPAWN_MIN_INTERVAL = 20;
   static SPAWN_MAX_INTERVAL = 45;
 
-  // Idempotent per-chat boot.
   static initialize(sock, chatId, getDatabase) {
     if (!sock) return;
     if (this.activeTimers[chatId]) return;
     this.scheduleNextGate(sock, chatId, getDatabase);
   }
 
-  // True if a buyable (non-free) gate in this chat is currently unpurchased.
   static hasUnboughtGate(chatId) {
     const gates = GateManager.gatesByChat?.[chatId] || [];
     for (const gid of gates) {
@@ -158,9 +145,6 @@ class GateSpawner {
     }, randomInterval);
   }
 
-  // ── Task 9: 23-hr unbought penalty + 24-hr respawn lock. ──────────────
-  // Returns true when a gate is blocked from spawning (a buyable gate sits
-  // unpurchased within its 24h window). Runs the −70% penalty at the 23h mark.
   static checkUnboughtLock(chatId, db) {
     const meta = (db.gateSpawnMeta && db.gateSpawnMeta[chatId]) || {};
     const now = Date.now();
@@ -172,24 +156,20 @@ class GateSpawner {
       this.applyXpPenalty(db, meta, unbought);
     }
     if (elapsed < GATE_LOCK_MS) {
-      // Still inside the 24h window — hold off and re-check in a few minutes.
       const remaining = GATE_LOCK_MS - elapsed;
       console.log(`[GATE] ${chatId}: unbought gate ${unbought.id} → locked ${Math.ceil(remaining/60000)}min before next spawn`);
       return true;
     }
-    // Past 24h: the stale gate is retired and a fresh spawn may happen.
     unbought.broken = true;
     return false;
   }
 
-  // Capture the members present in the group at spawn time (for the penalty).
   static async captureParticipants(sock, chatId, db) {
     const jids = new Set();
     try {
       const meta = await sock.groupMetadata(chatId);
       for (const m of meta.members || []) if (m.id) jids.add(m.id.split('@')[0] + '@s.whatsapp.net');
-      // some fixtures return plain jids
-    } catch (e) { /* ignore — fall back to db */ }
+    } catch (e) {}
     if (!jids.size) {
       for (const [jid, p] of Object.entries(db.users || {})) {
         if (p.lastActive && Date.now() - p.lastActive < 86400000) jids.add(jid);
@@ -198,7 +178,6 @@ class GateSpawner {
     return [...jids];
   }
 
-  // −70% XP for 48h, recorded per user (only those present at spawn).
   static applyXpPenalty(db, meta, gate) {
     const anchor = gate.spawnTime || Date.now();
     const until = anchor + PENALTY_DURATION_MS;
@@ -219,9 +198,6 @@ class GateSpawner {
   static async spawnGate(sock, chatId, getDatabase) {
     const db = getDatabase();
 
-    // ── Task 9 lock: a buyable gate that's still unpurchased blocks ────────────
-    // other gates in this GC for 24h (and triggers the 23h −70% EXP penalty).
-    // We re-check shortly rather than spawning while locked.
     if (this.checkUnboughtLock(chatId, db)) {
       this.activeTimers[chatId] = setTimeout(() => {
         this.scheduleNextGate(sock, chatId, getDatabase);
@@ -234,7 +210,6 @@ class GateSpawner {
 
     const gate = GateManager.spawnGate(chatId, levelToRank(avgLevel));
 
-    // Record spawn metadata for the unbought 23h/24h logic (persisted → survives restart).
     if (!db.gateSpawnMeta) db.gateSpawnMeta = {};
     const meta = db.gateSpawnMeta[chatId] = db.gateSpawnMeta[chatId] || {};
     if (!gate.isFree) {
@@ -243,21 +218,23 @@ class GateSpawner {
       meta.penaltyApplied = false;
     }
     if (!meta.penaltyParticipants) meta.penaltyParticipants = await this.captureParticipants(sock, chatId, db);
-    // Note: `db` is the live database object — the above mutations (gateSpawnMeta,
-    // xpPenaltyUntil, etc.) are persisted on the bot's next scheduled DB save.
 
-    // Send the per-rank image + caption.
     try {
       const imagePath = gateImage(gate.rank);
       const caption = gateCaption(gate);
       if (fs.existsSync(imagePath)) {
-        await sock.sendMessage(chatId, { image: fs.readFileSync(imagePath), caption });
+        const imageBuffer = fs.readFileSync(imagePath);
+        await sock.sendMessage(chatId, {
+          image: imageBuffer,
+          mimetype: 'image/jpeg',
+          caption: caption
+        });
       } else {
         await sock.sendMessage(chatId, { text: caption });
       }
-      console.log(`[GATE] Spawned ${gate.rank}-rank gate ${gate.id} in ${chatId}`);
+      console.log(`[GATE] Spawned ${gate.rank}-rank gate ${gate.id} in ${chatId} with image`);
     } catch (error) {
-      console.error('[GATE] Failed to announce gate:', error);
+      console.error('[GATE] Failed to announce gate with image:', error);
     }
 
     if (this.activeTimers[chatId]) {

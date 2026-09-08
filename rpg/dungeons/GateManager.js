@@ -3,13 +3,11 @@
 // Gates spawn in group chats. Guilds buy them. Players raid them.
 // ═══════════════════════════════════════════════════════════════
 
-// NOTE: canEnterGate is intentionally not imported — Task 9 removed all rank
-// blocks, so any awakened rank may enter/raid any gate.
+const path = require('path');
+const fs   = require('fs');
+
 const { MONSTER_DROPS, BASE_MATERIALS, rollMonsterDrop, rollBossDrop, rollBaseMaterial, getRandomMonster, getRandomBoss } = require('../data/MonsterDrops');
 
-// No F-rank gates (removed by request). Ranks: E, D, C, B, A, S (+ special DISASTER).
-// Each rank has a purchase PRICE RANGE (rolled per-spawn) and the total loot
-// (Nexus + Mana Stones) in a gate is 2–4× its purchase price.
 const GATE_RANKS = {
   E: { emoji:'⚫', label:'E-Rank Gate', floors:3, monsterRange:[5,15], bossHp:800,  priceRange:[3000,6000],   currencySafe:[800,1400], lootTier:'common',    isFree:false, description:'Standard low-tier gate.' },
   D: { emoji:'🟤', label:'D-Rank Gate', floors:4, monsterRange:[15,35], bossHp:2000, priceRange:[8000,16000],  currencySafe:[2000,3600], lootTier:'uncommon',  isFree:false, description:'Mid-low tier.' },
@@ -20,8 +18,6 @@ const GATE_RANKS = {
   DISASTER: { emoji:'🟣', label:'⚠️ DISASTER GATE', floors:10, monsterRange:[400,999], bossHp:250000, priceRange:[0,0], currencySafe:[400000,900000], lootTier:'mythic', isFree:true, description:'DISASTER LEVEL. Must be cleared or world suffers.' },
 };
 
-// GATE_MONSTERS and GATE_BOSSES are now driven by MonsterDrops.js
-// Legacy exports kept for backwards compat
 const LOOT_TABLES = {};
 const GATE_MONSTERS = Object.fromEntries(Object.entries(MONSTER_DROPS).map(([r, v]) => [r, v.monsters.map(m => m.name)]));
 const GATE_BOSSES  = Object.fromEntries(Object.entries(MONSTER_DROPS).map(([r, v]) => [r, v.bosses.map(b => b.name)]));
@@ -30,11 +26,17 @@ class GateManager {
   static activeGates = {};
   static gatesByChat = {};
   static gateCounter = 1;
-  // Gates persist for ~26h (Task 9: an unbought gate blocks spawns for 24h and
-  // triggers a −70% EXP penalty at the 23h mark, so the display must span that).
   static GATE_BREAK_TIME = 26 * 60 * 60 * 1000;
   static FREE_GATE_CHANCE = 0.20;
   static DISASTER_CHANCE = 0.02;
+
+  static getGateImage(rank) {
+    const r = (rank || 'E').toUpperCase();
+    const file = r === 'S' || r === 'DISASTER' ? 's_rank.jpg'
+               : (r === 'A' || r === 'B')      ? 'ab_rank.jpg'
+               :                                'cde_rank.jpg';
+    return path.join(__dirname, '..', '..', 'assets', 'gates', file);
+  }
 
   static spawnGate(chatId, groupAverageRank = 'E') {
     const gateId = `G-${Date.now()}-${this.gateCounter++}`;
@@ -42,20 +44,15 @@ class GateManager {
     const isDisaster = Math.random() < this.DISASTER_CHANCE;
     if (isDisaster) rank = 'DISASTER';
     const rankData = GATE_RANKS[rank];
-    // Gates are bought (never free) except a random free gate to be friendly.
     const isFree = rank === 'DISASTER' || Math.random() < this.FREE_GATE_CHANCE;
     const pool = MONSTER_DROPS[rank]?.monsters || MONSTER_DROPS['E'].monsters;
     const bossPool = MONSTER_DROPS[rank]?.bosses || MONSTER_DROPS['E'].bosses;
     const bossData = bossPool[Math.floor(Math.random() * bossPool.length)];
     const bossName = bossData.name;
 
-    // Roll a purchase price within the rank's price range.
     const [pMin, pMax] = rankData.priceRange || [0, 0];
     const purchasePrice = isFree ? 0 : Math.floor(pMin + Math.random() * (pMax - pMin));
 
-    // Total gate loot (Nexus + Mana Stones).
-    //   Bought gate  → 2–4× the purchase price (Task 9).
-    //   Free/Disaster→ the rank's currencySafe pool (price is 0, so no ×).
     let totalLootPct;
     let lootMultiplier = 0;
     if (isFree) {
@@ -63,10 +60,9 @@ class GateManager {
         ? rankData.currencySafe : [1000, 2000];
       totalLootPct = Math.floor(cMin + Math.random() * (cMax - cMin));
     } else {
-      lootMultiplier = 2 + Math.random() * 2; // 2.0 – 4.0
+      lootMultiplier = 2 + Math.random() * 2;
       totalLootPct = Math.floor(purchasePrice * lootMultiplier);
     }
-    // Split: ~75% Nexus, ~25% Mana Stones.
     const nexusLoot   = Math.floor(totalLootPct * 0.75);
     const crystalLoot = Math.floor(totalLootPct * 0.25);
 
@@ -100,11 +96,9 @@ class GateManager {
     if (!this.gatesByChat[chatId]) this.gatesByChat[chatId] = [];
     this.gatesByChat[chatId].push(gateId);
 
-    // Trigger disaster event system if applicable
     if (gate.isDisaster) {
       try {
         const DisasterGateEvent = require('../utils/DisasterGateEvent');
-        // sock is passed in by the auto-spawner — stored on gate for later
         gate._disasterEventPending = true;
       } catch(e) { console.warn('[SILENT] GateManager: DisasterGateEvent load failed:', e.message); }
     }
@@ -113,7 +107,6 @@ class GateManager {
   }
 
   static rollGateRank(groupAvgRank = 'E') {
-    // F-rank is removed; the weakest gate is now E-rank.
     const order = ['E','D','C','B','A','S'];
     const idx = order.indexOf(groupAvgRank);
     if (idx < 0) return 'E';
@@ -126,22 +119,17 @@ class GateManager {
   }
 
   static generateBossLoot(rank, count = 5) {
-    // Boss drops: primary guaranteed, secondary 35% chance
     const { primary, secondary, boss } = rollBossDrop(rank);
     const loot = [];
     if (primary) loot.push({ name: primary, type: 'material', source: 'boss_primary' });
     if (secondary) loot.push({ name: secondary, type: 'material', source: 'boss_secondary' });
-    // Also drop base materials as bonus
     for (let i = 0; i < 2; i++) {
       const mat = rollBaseMaterial(rank);
       if (mat) loot.push({ name: mat, type: 'material', source: 'base' });
     }
-    // NOTE: currency rewards (Nexus + Mana Stones) are pre-rolled on the gate
-    // at spawn (2–4× the gate price) and distributed on clear — not rolled here.
     return loot;
   }
 
-  // Called when a monster is killed during a raid — returns the drop or null
   static rollMonsterKillDrop(rank, monsterName) {
     const { drop, monster } = rollMonsterDrop(rank, monsterName);
     return drop ? { name: drop, type: 'material', source: 'monster', from: monster?.name || monsterName } : null;
@@ -166,7 +154,6 @@ class GateManager {
     if (!gate) return { success:false, reason:'Gate not found.' };
     if (gate.cleared || gate.broken) return { success:false, reason:'Gate no longer active.' };
     if (gate.raidStarted) return { success:false, reason:'Raid already started.' };
-    // No rank blocks: any awakened hunter may raid any rank of gate.
     if (gate.raiders.includes(playerJid)) return { success:false, reason:'Already applied.' };
     if (gate.isFree || !gate.owned) {
       gate.raiders.push(playerJid); gate.externalRaiders.push(playerJid);
@@ -232,7 +219,6 @@ class GateManager {
       if (!player.inventory) player.inventory = { weapons:[], armor:[], potions:[], artifacts:[], accessories:[], materials:[], keyStones:[] };
       for (const item of items) {
         if (item.type === 'currency') continue;
-        // All gate drops are now raw materials
         if (!player.inventory.materials) player.inventory.materials = [];
         player.inventory.materials.push({ name: item.name, source: item.source || 'gate', obtainedAt: Date.now() });
       }
@@ -287,15 +273,12 @@ class GateManager {
   }
 }
 
-module.exports = { GateManager, GATE_RANKS, LOOT_TABLES, GATE_MONSTERS, GATE_BOSSES };
-
-// ─── GATE ANNOUNCEMENT (called by auto-spawner in index.js) ──────
 GateManager.formatGateAnnouncement = function(gate) {
   const rd = GATE_RANKS[gate.rank] || GATE_RANKS['E'];
   const timeLeft = Math.floor((gate.breakTime - Date.now()) / 60000);
   const isRare = ['A','S','DISASTER'].includes(gate.rank);
 
-  return [
+  const caption = [
     `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
     gate.isDisaster
       ? `⚠️ ‼️ *DISASTER GATE APPEARED* ‼️ ⚠️`
@@ -318,4 +301,17 @@ GateManager.formatGateAnnouncement = function(gate) {
     `/gates apply ${gate.id} — Apply to join the raid`,
     `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
   ].filter(l => l !== null && l !== '').join('\n');
+
+  const imagePath = GateManager.getGateImage(gate.rank);
+  if (fs.existsSync(imagePath)) {
+    return {
+      image: fs.readFileSync(imagePath),
+      mimetype: 'image/jpeg',
+      caption
+    };
+  }
+
+  return { text: caption };
 };
+
+module.exports = { GateManager, GATE_RANKS, LOOT_TABLES, GATE_MONSTERS, GATE_BOSSES };

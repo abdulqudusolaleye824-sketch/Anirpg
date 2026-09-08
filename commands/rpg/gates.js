@@ -1,28 +1,14 @@
 // ═══════════════════════════════════════════════════════════════
 // GATES — Full gate system with keys, dungeon GCs, affiliates
-//
-// Commands:
-//   /gate                      — list active gates
-//   /gate buy (reply to spawn) — buy gate, get key via DM
-//   /gate enter --<KEY>        — enter gate in dungeon GC
-//   /gate status <KEY>         — check key status
-//   /gate apply <KEY>          — join a gate raid party
-//   /gate party <KEY>          — view party members
-//   /contract <percent%> @user — set payout contract
-//   /affiliate grant @user     — guild master grants affiliate
-//   /affiliate revoke @user    — guild master revokes affiliate
-//   /setdungeon                — owner/coowner sets dungeon GC
-//   /removedungeon             — owner/coowner removes dungeon GC
-//   /dungeons                  — list all dungeon GCs
 // ═══════════════════════════════════════════════════════════════
 
 'use strict';
 
-const { GateManager, GATE_RANKS } = require('../../rpg/dungeons/GateManager');
+const fs                           = require('fs');
+const { GateManager, GATE_RANKS }  = require('../../rpg/dungeons/GateManager');
 const { AWAKENING_RANKS }          = require('../../rpg/utils/SoloLevelingCore');
 const GKM                          = require('../../rpg/dungeons/GateKeyManager');
 
-// ── Permission helper ─────────────────────────────────────────────────────────
 function normaliseJid(jid) {
   return jid?.split('@')[0]?.split(':')[0]?.replace(/[^0-9]/g, '') || '';
 }
@@ -34,7 +20,6 @@ function isOwnerOrCoOwner(sender) {
   return sNum === ownerNum || sNum === coOwnerNum;
 }
 
-// ── /gate ─────────────────────────────────────────────────────────────────────
 const gate = {
   name: 'gate',
   aliases: ['gates'],
@@ -81,17 +66,30 @@ const gate = {
       }
 
       txt += `\n📌 Reply to a gate announcement with */gate buy* to purchase.`;
+
+      const topGate = active.sort((a,b) => {
+        const order = ['DISASTER','S','A','B','C','D','E'];
+        return order.indexOf(a.rank) - order.indexOf(b.rank);
+      })[0];
+
+      const imagePath = GateManager.getGateImage(topGate?.rank || 'E');
+      if (fs.existsSync(imagePath)) {
+        return sock.sendMessage(chatId, {
+          image: fs.readFileSync(imagePath),
+          mimetype: 'image/jpeg',
+          caption: txt
+        }, { quoted: msg });
+      }
+
       return sock.sendMessage(chatId, { text: txt }, { quoted: msg });
     }
 
     // ── /gate buy ─────────────────────────────────────────────────────────────
     if (sub === 'buy' || sub === 'purchase') {
-      // Must reply to gate spawn message
       const quotedText = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage?.conversation
         || msg.message?.extendedTextMessage?.contextInfo?.quotedMessage?.extendedTextMessage?.text
         || '';
 
-      // Extract gate ID from quoted message
       const gateIdMatch = quotedText.match(/ID:\s*\*?(G-[\w-]+)\*?/i)
         || quotedText.match(/(G-\d+-\d+)/);
 
@@ -120,7 +118,6 @@ const gate = {
         return sock.sendMessage(chatId, { text: `❌ ${result.error}` }, { quoted: msg });
       }
 
-      // Mark gate as purchased
       gateObj.purchased   = true;
       gateObj.purchasedBy = sender;
       gateObj.keyId       = result.key;
@@ -129,7 +126,6 @@ const gate = {
       const stability   = GKM.formatStability(result.stabilityMs);
       const paidFrom    = result.keyData.isAffiliate ? 'your personal funds' : `*${result.keyData.guildName}* guild treasury`;
 
-      // Confirm in chat (no key revealed publicly)
       await sock.sendMessage(chatId, {
         text: [
           `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
@@ -145,7 +141,6 @@ const gate = {
         ].join('\n'),
       }, { quoted: msg });
 
-      // DM the key privately
       const expiresDate = new Date(result.keyData.expiresAt).toUTCString().replace(' GMT', ' WAT');
       await sock.sendMessage(sender, {
         text: [
@@ -209,28 +204,37 @@ const gate = {
       const owner   = db.users?.[keyData.ownedBy];
       const timeLeft = GKM.formatStability(keyData.expiresAt - Date.now());
 
-      return sock.sendMessage(chatId, {
-        text: [
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-          `${rd.emoji} *GATE OPENED*`,
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-          ``,
-          `「System」 Dimensional rift confirmed.`,
-          `Gate: *${rd.label}*`,
-          `Key: \`${keyArg}\``,
-          `Key Holder: *${owner?.name || 'Unknown'}*`,
-          `⏳ Gate collapses in: *${timeLeft}*`,
-          ``,
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-          `📌 *NEXT STEPS:*`,
-          `/gate apply --${keyArg}  — add party members`,
-          `/contract <x%> @hunter  — set payout deals`,
-          `/gateraid ${keyArg}      — begin the raid`,
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-          `💡 Use /gateraid ${keyArg} when your party is ready.`,
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-        ].join('\n'),
-      }, { quoted: msg });
+      const captionText = [
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        `${rd.emoji} *GATE OPENED*`,
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        ``,
+        `「System」 Dimensional rift confirmed.`,
+        `Gate: *${rd.label}*`,
+        `Key: \`${keyArg}\``,
+        `Key Holder: *${owner?.name || 'Unknown'}*`,
+        `⏳ Gate collapses in: *${timeLeft}*`,
+        ``,
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        `📌 *NEXT STEPS:*`,
+        `/gate apply --${keyArg}  — add party members`,
+        `/contract <x%> @hunter  — set payout deals`,
+        `/gateraid ${keyArg}      — begin the raid`,
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        `💡 Use /gateraid ${keyArg} when your party is ready.`,
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+      ].join('\n');
+
+      const imagePath = GateManager.getGateImage(keyData.gateRank);
+      if (fs.existsSync(imagePath)) {
+        return sock.sendMessage(chatId, {
+          image: fs.readFileSync(imagePath),
+          mimetype: 'image/jpeg',
+          caption: captionText
+        }, { quoted: msg });
+      }
+
+      return sock.sendMessage(chatId, { text: captionText }, { quoted: msg });
     }
 
     // ── /gate apply --<KEY> ───────────────────────────────────────────────────
@@ -346,7 +350,6 @@ const gate = {
   },
 };
 
-// ── /contract <percent> @user ─────────────────────────────────────────────────
 const contract = {
   name: 'contract',
   description: 'Set a payout contract for a contracted hunter',
@@ -367,7 +370,6 @@ const contract = {
       }, { quoted: msg });
     }
 
-    // Find the active key for this dungeon GC
     const dc = GKM.getDungeonGC(chatId);
     if (!dc?.activeKeyId) {
       return sock.sendMessage(chatId, {
@@ -397,7 +399,6 @@ const contract = {
   },
 };
 
-// ── /affiliate grant|revoke @user ─────────────────────────────────────────────
 const affiliate = {
   name: 'affiliate',
   description: 'Grant or revoke affiliate status',
@@ -410,7 +411,6 @@ const affiliate = {
 
     const sub       = (args[0] || '').toLowerCase();
     const targetJid = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid?.[0];
-    // Parse: /affiliate grant @user | 60  → pct after '|'
     const pipes = msg.message?.conversation || msg.message?.extendedTextMessage?.text || '';
     const pctMatch = pipes.match(/\|\s*(\d{1,3})/i);
     const pct = pctMatch ? parseInt(pctMatch[1], 10) : NaN;
@@ -471,7 +471,6 @@ const affiliate = {
     }
 
     if (sub === 'request') {
-      // /affiliate request <CODE> @user | <pct>  → one-off hire for that raid
       const gateCode = (args[1] || '').toUpperCase().replace(/^--/, '').trim();
       if (!gateCode || gateCode.length !== 8) {
         return sock.sendMessage(chatId, { text: `❌ Usage: /affiliate request <CODE> @user | <pct>\nExample: /affiliate request 2K7SN2N8 @user | 60` }, { quoted: msg });
@@ -509,7 +508,6 @@ const affiliate = {
   },
 };
 
-// ── /setdungeon ───────────────────────────────────────────────────────────────
 const setdungeon = {
   name: 'setdungeon',
   description: 'Register this group as a dungeon GC (owner/coowner only)',
@@ -546,7 +544,6 @@ const setdungeon = {
   },
 };
 
-// ── /removedungeon ────────────────────────────────────────────────────────────
 const removedungeon = {
   name: 'removedungeon',
   description: 'Unregister this group as a dungeon GC',
@@ -566,7 +563,6 @@ const removedungeon = {
   },
 };
 
-// ── /dungeons ─────────────────────────────────────────────────────────────────
 const dungeons = {
   name: 'dungeons',
   description: 'List all registered dungeon GCs (owner/coowner only)',
