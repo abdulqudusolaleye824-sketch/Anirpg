@@ -213,11 +213,11 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
       creds: state.creds,
       keys: keyStore,
     },
-    browser: ['AstraLink Engine', 'Chrome', '122.0.6261.128'],
+    browser: Browsers.ubuntu('Chrome'), // Standard official signature required for WhatsApp pairing code verification
     syncFullHistory: false,
-    markOnlineOnConnect: true,        // Keep active & verified on WhatsApp servers
+    markOnlineOnConnect: false,        // Avoid presence stanzas during pairing
     generateHighQualityLinkPreview: false,
-    keepAliveIntervalMs: 15_000,      // 15s WebSocket keep-alive ping for zero dropped sockets
+    keepAliveIntervalMs: 15_000,      // 15s WebSocket keep-alive ping for stability
     connectTimeoutMs: 60_000,         // 60s handshake timeout
     defaultQueryTimeoutMs: 60_000,    // 60s query timeout for stanzas
     retryRequestDelayMs: 3_000,       // Auto retry failed stanzas after 3s
@@ -252,10 +252,12 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
       if (pairingMode === 'code' && pairingPhone && !pairingCodeRequested && !sock.authState.creds.registered) {
         pairingCodeRequested = true;
         try {
-          await new Promise(r => setTimeout(r, 1500));
+          // Allow 3s for WebSocket key exchange to complete before issuing pairing code request
+          await new Promise(r => setTimeout(r, 3000));
           console.log(`\n🛰️  AstraLink [${displayName}] requesting pairing code for +${pairingPhone}…`);
           const code = await sock.requestPairingCode(pairingPhone);
           const formatted = formatPairingCode(code);
+          console.log(`✅ AstraLink [${displayName}] Pairing Code Generated: ${formatted}`);
           pairingSessions[personalityKey] = {
             ...pairingSessions[personalityKey],
             status: 'code_ready',
@@ -266,6 +268,7 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
           };
         } catch (err) {
           pairingCodeRequested = false;
+          console.error(`❌ AstraLink [${displayName}] Pairing code error:`, err.message);
           pairingSessions[personalityKey] = {
             ...(pairingSessions[personalityKey] || {}),
             status: 'error',
