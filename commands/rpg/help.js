@@ -9,7 +9,7 @@ const KNOWN_SUBCOMMANDS = {
   reset: ['@user', 'restore', 'cooldown'],
   spawnstatus: ['dm', 'gc'],
   bank: ['create', 'register', 'deposit', 'withdraw', 'info', 'accounts', 'list', 'collect'],
-  guild: ['create', 'join', 'leave', 'info', 'members', 'deposit', 'withdraw', 'hire', 'accept', 'decline', 'disband', 'war', 'vault'],
+  guild: ['create', 'join', 'leave', 'list', 'info', 'members', 'upgrade', 'shop', 'deposit', 'withdraw', 'hire', 'accept', 'decline', 'disband', 'war', 'vault'],
   guildwar: ['challenge', 'accept', 'status', 'list'],
   gw: ['challenge', 'accept', 'status', 'list'],
   gate: ['info', 'buy', 'status'],

@@ -8,6 +8,52 @@ const StatAllocationSystem = require('../../rpg/utils/StatAllocationSystem');
 const AchievementManager = require('../../rpg/utils/AchievementManager');
 const CM = require('../../rpg/utils/GuildContractManager');
 
+// Helper: Calculate max member capacity based on size level
+function getMaxMembers(guild) {
+  const sizeLvl = guild?.sizeLevel || 1;
+  return sizeLvl * 10; // Level 1: 10, Level 2: 20, Level 3: 30, Level 4: 40, Level 5: 50
+}
+
+// Helper: Calculate shop discount % based on shop level
+function getShopDiscount(guild) {
+  const shopLvl = guild?.shopLevel || 0;
+  return shopLvl * 5; // Level 0: 0%, Level 1: 5%, Level 2: 10%, Level 3: 15%, Level 4: 20%, Level 5: 25%
+}
+
+// Upgrade Cost Tables (spent from Guild Treasury)
+const SIZE_UPGRADE_COSTS = {
+  1: { nexus: 100000, mana: 5000, targetMembers: 20 },
+  2: { nexus: 250000, mana: 15000, targetMembers: 30 },
+  3: { nexus: 500000, mana: 30000, targetMembers: 40 },
+  4: { nexus: 1000000, mana: 60000, targetMembers: 50 },
+};
+
+const SHOP_UPGRADE_COSTS = {
+  0: { nexus: 50000, mana: 2500, targetDiscount: 5 },
+  1: { nexus: 150000, mana: 7500, targetDiscount: 10 },
+  2: { nexus: 350000, mana: 17500, targetDiscount: 15 },
+  3: { nexus: 700000, mana: 35000, targetDiscount: 20 },
+  4: { nexus: 1500000, mana: 75000, targetDiscount: 25 },
+};
+
+// Guild Shop Exclusive Catalog
+const GUILD_SHOP_CATALOG = [
+  // Pet Food
+  { id: 'pet_food_royal', name: 'Royal Monster Feed', type: 'pet_food', category: 'Pet Food', basePrice: 5000, description: 'Restores 100 pet hunger and +20 happiness' },
+  { id: 'pet_food_beast', name: 'Beast Feast', type: 'pet_food', category: 'Pet Food', basePrice: 12000, description: 'Restores 100 pet hunger and +50 happiness' },
+  { id: 'pet_food_elixir', name: 'Elixir of Growth', type: 'pet_food', category: 'Pet Food', basePrice: 25000, description: 'Gives pet massive XP bonus' },
+
+  // Attack Patterns
+  { id: 'pattern_dragon', name: 'Dragon\'s Breath', type: 'pattern', category: 'Attack Pattern', basePrice: 50000, description: 'High-damage fire AOE attack pattern' },
+  { id: 'pattern_shadow', name: 'Shadow Strike', type: 'pattern', category: 'Attack Pattern', basePrice: 100000, description: 'Critical lethal shadow assassination pattern' },
+  { id: 'pattern_celestial', name: 'Celestial Slash', type: 'pattern', category: 'Attack Pattern', basePrice: 250000, description: 'Ultimate divine slash attack pattern' },
+
+  // Potions
+  { id: 'potion_supreme_hp', name: 'Supreme Health Elixir', type: 'potion', category: 'Potion', basePrice: 10000, description: 'Restores 100% max HP in battle' },
+  { id: 'potion_mega_mana', name: 'Mega Mana Potion', type: 'potion', category: 'Potion', basePrice: 10000, description: 'Restores 100% energy in battle' },
+  { id: 'potion_full_rec', name: 'Full Recovery Tonic', type: 'potion', category: 'Potion', basePrice: 25000, description: 'Full HP + Energy recovery + cleanse debuffs' }
+];
+
 module.exports = {
   name: 'guild',
   description: '🏰 Create and manage guilds',
@@ -50,6 +96,42 @@ module.exports = {
     );
 
     // ═══════════════════════════════════════════════════════════════════
+    // /guild list — Table of all registered guilds
+    // ═══════════════════════════════════════════════════════════════════
+    if (action === 'list') {
+      const allGuilds = Object.values(db.guilds || {});
+      if (allGuilds.length === 0) {
+        return sock.sendMessage(chatId, { text: '🏰 *REGISTERED GUILDS*\n\nNo guilds have been created yet. Create one with /guild create [name]!' }, { quoted: msg });
+      }
+
+      const lines = [
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        `🏰 *REGISTERED GUILDS (${allGuilds.length})*`,
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+      ];
+
+      allGuilds.forEach((g, i) => {
+        const leaderUser = db.users?.[g.leader];
+        const leaderName = leaderUser?.name || g.leader.split('@')[0];
+        const maxM = getMaxMembers(g);
+        const count = g.members?.length || 0;
+        const sizeLvl = g.sizeLevel || 1;
+        const shopLvl = g.shopLevel || 0;
+        const disc = getShopDiscount(g);
+
+        lines.push(`*${i+1}. ${g.name}*`);
+        lines.push(`   👑 Guildmaster: *${leaderName}*`);
+        lines.push(`   👥 Hunters: *${count}/${maxM}* (Size Lv.${sizeLvl})`);
+        lines.push(`   🛍️ Guild Shop: *${shopLvl > 0 ? `Lv.${shopLvl} (${disc}% OFF)` : 'Locked'}*`);
+        lines.push(`   💠 Treasury: ${(g.treasury || 0).toLocaleString()} Nexus | ${(g.manaTreasury || 0).toLocaleString()} 💎`);
+        lines.push(``);
+      });
+
+      lines.push(`━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+      return sock.sendMessage(chatId, { text: lines.join('\n') }, { quoted: msg });
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
     // ACCEPT / DECLINE HIRE CONTRACT OFFER
     // ═══════════════════════════════════════════════════════════════════
     if (action === 'accept' || (action === 'hire' && args[1]?.toLowerCase() === 'accept')) {
@@ -70,9 +152,10 @@ module.exports = {
         return sock.sendMessage(chatId, { text: '❌ You are already in a guild! Leave your current guild first.' }, { quoted: msg });
       }
 
-      if (guild.members.length >= 20) {
+      const maxCap = getMaxMembers(guild);
+      if (guild.members.length >= maxCap) {
         delete db.pendingGuildHires[sender];
-        return sock.sendMessage(chatId, { text: '❌ That guild is full (20/20 members).' }, { quoted: msg });
+        return sock.sendMessage(chatId, { text: `❌ That guild is full (${guild.members.length}/${maxCap} members).` }, { quoted: msg });
       }
 
       // Add to guild members
@@ -118,18 +201,23 @@ module.exports = {
 ⚠️ You are not in a guild yet!
 
 📌 GET STARTED:
+• /guild list          - View all registered guilds
 • /guild create [name] - Create a guild (500,000💠 + 10,000💎 | Lv.20)
-• /guild join [name] - Join an existing guild
+• /guild join [name]   - Join an existing guild
 
 🏆 GUILD BENEFITS:
-- Guild raids & exclusive shop
-- Member XP & Nexus bonuses
+- Guild size upgrades (up to 50 members)
+- Exclusive Guild Shop (up to 25% discount)
 - Shared treasury & Guild Wars!
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━`
         }, { quoted: msg });
       }
 
       const leader = db.users[playerGuild.leader];
+      const maxM   = getMaxMembers(playerGuild);
+      const sizeL  = playerGuild.sizeLevel || 1;
+      const shopL  = playerGuild.shopLevel || 0;
+      const disc   = getShopDiscount(playerGuild);
 
       const info = `━━━━━━━━━━━━━━━━━━━━━━━━━━━
 🏰 GUILD INFO 🏰
@@ -137,19 +225,21 @@ module.exports = {
 🏰 Name: ${playerGuild.name}
 👑 Leader: ${leader?.name || 'Unknown'}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━
-👥 Members: ${playerGuild.members.length}/20
-🏆 Level: ${playerGuild.level || 1}
-✨ XP: ${playerGuild.xp || 0}
+👥 Members: ${playerGuild.members.length}/${maxM} (Size Lv.${sizeL})
+🛍️ Guild Shop: ${shopL > 0 ? `Lv.${shopL} (${disc}% OFF)` : 'Locked'}
 💠 Treasury: ${(playerGuild.treasury || 0).toLocaleString()} Nexus
 💎 Treasury: ${(playerGuild.manaTreasury || 0).toLocaleString()} Mana Stones
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━
-📊 STATS
+📊 STATS & UPGRADES
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━
 🏰 Raids Completed: ${playerGuild.totalRaids || 0}
 ⚔️ Wars Fought: ${playerGuild.totalWars || 0}
 🏆 Wars Won: ${playerGuild.wins || 0}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Use /guild members to see all members!
+📌 /guild upgrade      - Upgrade size or shop
+📌 /guild shop         - Guild exclusive shop
+📌 /guild members      - List all members
+📌 /guild list         - List all guilds
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
 
       return sock.sendMessage(chatId, { text: info }, { quoted: msg });
@@ -244,6 +334,8 @@ Use /guild members to see all members!
         manaTreasury: START_MANA,
         level: 1,
         xp: 0,
+        sizeLevel: 1,  // Base 10 members
+        shopLevel: 0,  // Base Locked
         createdAt: Date.now(),
         totalRaids: 0,
         totalWars: 0,
@@ -267,7 +359,8 @@ Use /guild members to see all members!
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━
 🏰 Name: ${guildName}
 👑 Leader: ${player.name}
-👥 Members: 1/20
+👥 Members: 1/10 (Size Lv.1)
+🛍️ Guild Shop: Locked (Unlock with /guild upgrade shop)
 💠 Treasury: ${START_NEXUS.toLocaleString()} Nexus
 💎 Treasury: ${START_MANA.toLocaleString()} Mana Stones
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━`
@@ -303,10 +396,11 @@ Use /guild members to see all members!
       }
 
       if (!guild.members) guild.members = [];
+      const maxCap = getMaxMembers(guild);
       
-      if (guild.members.length >= 20) {
+      if (guild.members.length >= maxCap) {
         return sock.sendMessage(chatId, {
-          text: '❌ Guild is full!'
+          text: `❌ Guild is at max capacity (${guild.members.length}/${maxCap} members)!\nAsk Guild Officers to upgrade size with /guild upgrade size.`
         });
       }
 
@@ -326,19 +420,252 @@ Use /guild members to see all members!
       saveDatabase();
 
       await sock.sendMessage(chatId, {
-        text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n✅ JOINED GUILD! ✅\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🏰 ${guild.name}\n👥 Members: ${guild.members.length}/20\n━━━━━━━━━━━━━━━━━━━━━━━━━━━`
+        text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n✅ JOINED GUILD! ✅\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🏰 ${guild.name}\n👥 Members: ${guild.members.length}/${maxCap}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━`
       });
 
       if (guild.leader) {
         try {
           await sock.sendMessage(guild.leader, {
-            text: `🏰 ${player.name} joined your guild!\n\nMembers: ${guild.members.length}/20`,
+            text: `🏰 ${player.name} joined your guild!\n\nMembers: ${guild.members.length}/${maxCap}`,
             mentions: [sender]
           });
         } catch (e) {}
       }
 
       return;
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // GUILD UPGRADE CENTER
+    // ═══════════════════════════════════════════════════════════════════
+    if (action === 'upgrade' || action === 'up') {
+      if (!playerGuild) {
+        return sock.sendMessage(chatId, { text: '❌ You are not in a guild!' }, { quoted: msg });
+      }
+
+      const sub = (args[1] || '').toLowerCase();
+      const currentSizeLvl = playerGuild.sizeLevel || 1;
+      const currentShopLvl = playerGuild.shopLevel || 0;
+
+      // View upgrade menu
+      if (!sub) {
+        const nextSize = SIZE_UPGRADE_COSTS[currentSizeLvl];
+        const nextShop = SHOP_UPGRADE_COSTS[currentShopLvl];
+
+        const sizeTxt = nextSize
+          ? `Lv.${currentSizeLvl} (${currentSizeLvl * 10} members) → Lv.${currentSizeLvl + 1} (${nextSize.targetMembers} members)\n   Cost: 💠 ${nextSize.nexus.toLocaleString()} Nexus + 💎 ${nextSize.mana.toLocaleString()} Mana Stones\n   Cmd: /guild upgrade size`
+          : `Lv.5 (MAX: 50 members) ✅`;
+
+        const shopTxt = nextShop
+          ? `${currentShopLvl === 0 ? 'Locked (0%)' : `Lv.${currentShopLvl} (${currentShopLvl * 5}%)`} → Lv.${currentShopLvl + 1} (${nextShop.targetDiscount}% discount)\n   Cost: 💠 ${nextShop.nexus.toLocaleString()} Nexus + 💎 ${nextShop.mana.toLocaleString()} Mana Stones\n   Cmd: /guild upgrade shop`
+          : `Lv.5 (MAX: 25% discount) ✅`;
+
+        return sock.sendMessage(chatId, {
+          text: [
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+            `🏰 *GUILD UPGRADE CENTER*`,
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+            `🏰 Guild: *${playerGuild.name}*`,
+            `💠 Treasury: *${(playerGuild.treasury || 0).toLocaleString()} Nexus*`,
+            `💎 Treasury: *${(playerGuild.manaTreasury || 0).toLocaleString()} Mana Stones*`,
+            ``,
+            `📈 *1. GUILD SIZE / CAPACITY:*`,
+            `   ${sizeTxt}`,
+            ``,
+            `🛍️ *2. GUILD SHOP & EXCLUSIVE DISCOUNT:*`,
+            `   ${shopTxt}`,
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+            `📌 *Guildmaster / Vice GM:* Run /guild upgrade size or /guild upgrade shop to upgrade from Treasury!`,
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          ].join('\n'),
+        }, { quoted: msg });
+      }
+
+      if (!CM.isGuildMasterOrVice(db, playerGuild.name, sender)) {
+        return sock.sendMessage(chatId, { text: '❌ Only the Guildmaster or Vice Guildmaster can upgrade the guild.' }, { quoted: msg });
+      }
+
+      // Upgrade Size
+      if (sub === 'size' || sub === 'capacity') {
+        if (currentSizeLvl >= 5) {
+          return sock.sendMessage(chatId, { text: '❌ Guild Size is already at MAX level (Level 5: 50 members)!' }, { quoted: msg });
+        }
+
+        const cost = SIZE_UPGRADE_COSTS[currentSizeLvl];
+        const treasuryNexus = playerGuild.treasury || 0;
+        const treasuryMana  = playerGuild.manaTreasury || 0;
+
+        if (treasuryNexus < cost.nexus || treasuryMana < cost.mana) {
+          return sock.sendMessage(chatId, {
+            text: `❌ Insufficient Guild Treasury funds!\nNeed: 💠 ${cost.nexus.toLocaleString()} Nexus & 💎 ${cost.mana.toLocaleString()} Mana Stones\nTreasury has: 💠 ${treasuryNexus.toLocaleString()} Nexus & 💎 ${treasuryMana.toLocaleString()} Mana Stones`
+          }, { quoted: msg });
+        }
+
+        playerGuild.treasury -= cost.nexus;
+        playerGuild.manaTreasury -= cost.mana;
+        playerGuild.sizeLevel = currentSizeLvl + 1;
+
+        saveDatabase();
+
+        return sock.sendMessage(chatId, {
+          text: [
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+            `🎉 *GUILD SIZE UPGRADED!*`,
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+            `🏰 Guild: *${playerGuild.name}*`,
+            `📈 Level: *Level ${playerGuild.sizeLevel}*`,
+            `👥 Max Members: *${playerGuild.sizeLevel * 10} members*`,
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          ].join('\n'),
+        }, { quoted: msg });
+      }
+
+      // Upgrade Shop
+      if (sub === 'shop') {
+        if (currentShopLvl >= 5) {
+          return sock.sendMessage(chatId, { text: '❌ Guild Shop is already at MAX level (Level 5: 25% discount)!' }, { quoted: msg });
+        }
+
+        const cost = SHOP_UPGRADE_COSTS[currentShopLvl];
+        const treasuryNexus = playerGuild.treasury || 0;
+        const treasuryMana  = playerGuild.manaTreasury || 0;
+
+        if (treasuryNexus < cost.nexus || treasuryMana < cost.mana) {
+          return sock.sendMessage(chatId, {
+            text: `❌ Insufficient Guild Treasury funds!\nNeed: 💠 ${cost.nexus.toLocaleString()} Nexus & 💎 ${cost.mana.toLocaleString()} Mana Stones\nTreasury has: 💠 ${treasuryNexus.toLocaleString()} Nexus & 💎 ${treasuryMana.toLocaleString()} Mana Stones`
+          }, { quoted: msg });
+        }
+
+        playerGuild.treasury -= cost.nexus;
+        playerGuild.manaTreasury -= cost.mana;
+        playerGuild.shopLevel = currentShopLvl + 1;
+
+        saveDatabase();
+
+        const disc = playerGuild.shopLevel * 5;
+        return sock.sendMessage(chatId, {
+          text: [
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+            `🎉 *GUILD SHOP UPGRADED!*`,
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+            `🏰 Guild: *${playerGuild.name}*`,
+            `🛍️ Level: *Level ${playerGuild.shopLevel}*`,
+            `🏷️ Member Discount: *${disc}% OFF* on all Guild Shop exclusive items!`,
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+            `📌 Access shop with /guild shop!`,
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          ].join('\n'),
+        }, { quoted: msg });
+      }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // GUILD EXCLUSIVE SHOP
+    // ═══════════════════════════════════════════════════════════════════
+    if (action === 'shop') {
+      if (!playerGuild) {
+        return sock.sendMessage(chatId, { text: '❌ You must belong to a guild to access the Guild Shop!' }, { quoted: msg });
+      }
+
+      const shopLvl = playerGuild.shopLevel || 0;
+      if (shopLvl === 0) {
+        return sock.sendMessage(chatId, {
+          text: [
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+            `🔒 *GUILD SHOP LOCKED*`,
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+            `🏰 Guild: *${playerGuild.name}*`,
+            `⚠️ The Guild Shop has not been unlocked yet!`,
+            ``,
+            `💡 Guild Officers can unlock it with:`,
+            `   */guild upgrade shop*`,
+            `   (Cost: 💠 50,000 Nexus & 💎 2,500 Mana Stones)`,
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          ].join('\n'),
+        }, { quoted: msg });
+      }
+
+      const discountPct = shopLvl * 5; // 5%, 10%, 15%, 20%, 25%
+      const sub = (args[1] || 'list').toLowerCase();
+
+      // /guild shop buy <item_id>
+      if (sub === 'buy') {
+        const itemId = (args[2] || '').toLowerCase();
+        const item = GUILD_SHOP_CATALOG.find(i => i.id.toLowerCase() === itemId || i.name.toLowerCase().includes(itemId));
+
+        if (!item) {
+          return sock.sendMessage(chatId, {
+            text: `❌ Item not found! Usage: /guild shop buy <item_id>\nExample: /guild shop buy pet_food_royal`
+          }, { quoted: msg });
+        }
+
+        const finalPrice = Math.floor(item.basePrice * (1 - discountPct / 100));
+        const playerGold = player.gold || 0;
+
+        if (playerGold < finalPrice) {
+          return sock.sendMessage(chatId, {
+            text: `❌ Insufficient Nexus balance!\nItem Cost: 💠 ${finalPrice.toLocaleString()} Nexus (${discountPct}% OFF)\nYou have: 💠 ${playerGold.toLocaleString()} Nexus`
+          }, { quoted: msg });
+        }
+
+        player.gold = playerGold - finalPrice;
+        if (player.inventory) player.inventory.gold = player.gold;
+
+        // Add item to player inventory
+        if (!player.inventory) player.inventory = {};
+        if (item.type === 'pet_food') {
+          if (!player.inventory.petFood) player.inventory.petFood = {};
+          player.inventory.petFood[item.id] = (player.inventory.petFood[item.id] || 0) + 1;
+        } else if (item.type === 'pattern') {
+          if (!player.inventory.patterns) player.inventory.patterns = [];
+          player.inventory.patterns.push({ ...item, boughtAt: Date.now() });
+        } else {
+          if (!player.inventory.potions) player.inventory.potions = [];
+          player.inventory.potions.push({ ...item, boughtAt: Date.now() });
+        }
+
+        saveDatabase();
+
+        return sock.sendMessage(chatId, {
+          text: [
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+            `🛍️ *GUILD SHOP PURCHASE*`,
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+            `🎁 Item: *${item.name}*`,
+            `🏷️ Guild Discount: *${discountPct}% OFF*`,
+            `💠 Price Paid: *${finalPrice.toLocaleString()} Nexus*`,
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+            `✅ Added to your inventory!`,
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          ].join('\n'),
+        }, { quoted: msg });
+      }
+
+      // Display Guild Shop Catalog
+      const lines = [
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        `🛍️ *GUILD SHOP EXCLUSIVES*`,
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        `🏰 Guild: *${playerGuild.name}* (Shop Lv.${shopLvl})`,
+        `🏷️ Active Member Discount: *${discountPct}% OFF*`,
+        `💠 Your Balance: *${(player.gold || 0).toLocaleString()} Nexus*`,
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+      ];
+
+      GUILD_SHOP_CATALOG.forEach((item, i) => {
+        const finalPrice = Math.floor(item.basePrice * (1 - discountPct / 100));
+        lines.push(`*${i+1}. ${item.name}* [\`${item.id}\`]`);
+        lines.push(`   📂 Category: ${item.category}`);
+        lines.push(`   💰 Price: ~💠 ${item.basePrice.toLocaleString()}~ → *💠 ${finalPrice.toLocaleString()} Nexus* (${discountPct}% OFF)`);
+        lines.push(`   📝 ${item.description}`);
+        lines.push(``);
+      });
+
+      lines.push(`━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+      lines.push(`📌 Buy item: */guild shop buy <item_id>*`);
+      lines.push(`━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+
+      return sock.sendMessage(chatId, { text: lines.join('\n') }, { quoted: msg });
     }
 
     // ═══════════════════════════════════════════════════════════════════
@@ -351,6 +678,7 @@ Use /guild members to see all members!
         });
       }
 
+      const maxM = getMaxMembers(playerGuild);
       let memberList = `━━━━━━━━━━━━━━━━━━━━━━━━━━━
 👥 GUILD MEMBERS 👥
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -366,7 +694,7 @@ Use /guild members to see all members!
       }
 
       memberList += `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
-      memberList += `Total: ${playerGuild.members.length}/20`;
+      memberList += `Total: ${playerGuild.members.length}/${maxM}`;
 
       return sock.sendMessage(chatId, { text: memberList });
     }
