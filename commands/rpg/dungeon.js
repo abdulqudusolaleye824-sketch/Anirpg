@@ -29,17 +29,23 @@ const { awardXP }    = require('../../rpg/utils/SilentXP');
 const { GATE_RANKS } = require('../../rpg/dungeons/GateManager');
 
 // ─── HELPERS ───────────────────────────────────────────────────
+const SerfManager = require('../../rpg/utils/SerfManager');
+
 async function notifyAchievements(sock, playerId, player, achievements) {
   if (!achievements?.length) return;
   const n = AchievementManager.buildNotification(achievements);
-  if (n) try { await sock.sendMessage(playerId.includes('@') ? playerId : `${playerId}@s.whatsapp.net`, { text: n }); } catch(e) {}
+  if (n) {
+    const targetJid = playerId.includes('@') ? playerId : `${playerId}@s.whatsapp.net`;
+    try { await sock.sendMessage(targetJid, { text: n }); } catch(e) {}
+  }
 }
 async function notifyQuestUpdates(sock, playerId, updates) {
   if (!updates?.length) return;
   const completed = updates.filter(u => u.type === 'completed');
   for (const u of completed) {
+    const targetJid = playerId.includes('@') ? playerId : `${playerId}@s.whatsapp.net`;
     try {
-      await sock.sendMessage(playerId.includes('@') ? playerId : `${playerId}@s.whatsapp.net`, {
+      await sock.sendMessage(targetJid, {
         text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🎯 QUEST COMPLETED!\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n✅ *${u.questName}*\n\n💡 Use */quest complete ${u.questId}* to claim rewards!\n━━━━━━━━━━━━━━━━━━━━━━━━━━━`
       });
     } catch(e) {}

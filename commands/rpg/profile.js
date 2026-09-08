@@ -159,6 +159,16 @@ module.exports = {
     }
 
     if (player.profileLocked && chatId.endsWith('@g.us')) {
+      const SerfManager = require('../../rpg/utils/SerfManager');
+      const Perms = require('../../utils/permissions');
+      const hasSerf = SerfManager.hasApprovedSerf(db, sender) || Perms.isBotOwner(db, sender);
+
+      if (!hasSerf) {
+        return sock.sendMessage(chatId, {
+          text: `🔒 *${player.name}'s profile is locked.*\n\n⚠️ Set up a Serf using /setserf @bot to receive profile cards in DM!`
+        }, { quoted: msg });
+      }
+
       const dmJid = `${sender.split('@')[0]}@s.whatsapp.net`;
       const caption = buildCard(player, db, targetId, mentionedId, isOwnProfile);
 

@@ -180,7 +180,6 @@ module.exports = {
     saveDatabase();
 
     const info     = PersonalityManager.getPersonalityInfo(bot.key);
-    const playerDb = db.users?.[sender];
     const playerName = playerDb?.name || sender.split('@')[0];
 
     // ── Notify the player (in chat) ────────────────────────────
