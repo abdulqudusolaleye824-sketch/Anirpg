@@ -9,7 +9,6 @@ const { GateManager, GATE_RANKS }  = require('../../rpg/dungeons/GateManager');
 const { AWAKENING_RANKS }          = require('../../rpg/utils/SoloLevelingCore');
 const GKM                          = require('../../rpg/dungeons/GateKeyManager');
 const SerfManager                  = require('../../rpg/utils/SerfManager');
-const MultiSocketManager           = require('../../bots/MultiSocketManager');
 
 function normaliseJid(jid) {
   return jid?.split('@')[0]?.split(':')[0]?.replace(/[^0-9]/g, '') || '';
@@ -61,7 +60,7 @@ const gate = {
       const rankData = AWAKENING_RANKS[player.awakenRank || 'E'];
       let txt = `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n「System」 *ACTIVE GATES*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
       txt += `${rankData.emoji} Your rank: *${rankData.label}*\n`;
-      txt += `🚪 Anyone with an approved serf can buy gate keys.\n\n`;
+      txt += `🚪 Gates can be purchased by Guild Officers or Granted Affiliates.\n\n`;
 
       for (const g of active) {
         txt += GateManager.formatGate(g) + '\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n';
@@ -201,10 +200,13 @@ const gate = {
         `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
       ].join('\n');
 
-      const serfSock = serf.botKey ? MultiSocketManager.getSocket(serf.botKey) : sock;
-      if (serfSock) {
-        await serfSock.sendMessage(sender, { text: keyDmText }).catch(() => {});
-      }
+      try {
+        const MultiSocketManager = require('../../bots/MultiSocketManager');
+        const serfSock = serf.botKey ? MultiSocketManager.getSocket(serf.botKey) : sock;
+        if (serfSock) {
+          await serfSock.sendMessage(sender, { text: keyDmText }).catch(() => {});
+        }
+      } catch (e) {}
 
       return;
     }
