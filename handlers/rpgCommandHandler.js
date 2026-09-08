@@ -253,7 +253,14 @@ module.exports = async (sock, msg, messageText, config, getDatabase, saveDatabas
   const db = getDatabase();
   const { applyPassiveRegen } = require('../rpg/utils/RegenManager');
   if (db?.users?.[sender]) {
-    applyPassiveRegen(db.users[sender], db);
+    const player = db.users[sender];
+    applyPassiveRegen(player, db);
+
+    if (player.customEmoji && (player.isPro || player.proStatus) && player.proExpiresAt && player.proExpiresAt > Date.now()) {
+      try {
+        sock.sendMessage(chatId, { react: { text: player.customEmoji, key: msg.key } }).catch(() => {});
+      } catch (_) {}
+    }
   }
   const OWNER_ID = OWNER_JID;
   const isOwner = sender === OWNER_ID;

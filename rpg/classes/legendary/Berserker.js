@@ -20,14 +20,14 @@ module.exports = {
     lifesteal: 8,      // Sustains through sheer violence
   },
   skills: [
-    // ── Active skills (damage) ──
+    // ── Active skills (damage & status effects) ──
     { name: 'Rage',           type: 'buff',    maxPotency: 80,  desc: 'ATK +{p}% for 3 turns, takes 20% more damage' },
-    { name: 'Reckless Blow',  type: 'damage',  maxPotency: 320, desc: 'Deals {p}% ATK, costs 20% of current HP' },
-    { name: 'Annihilator',    type: 'damage',  maxPotency: 450, desc: 'All-in strike: {p}% ATK, ignores 50% of target DEF' },
-    { name: 'Crimson Cyclone',type: 'damage',  maxPotency: 280, desc: 'Spinning axe: {p}% ATK as AoE, hits all enemies' },
-    { name: 'Blood Howl',     type: 'buff',    maxPotency: 50,  desc: 'Party ATK +{p}% for 2 turns, you take +10% damage' },
+    { name: 'Savage Cleave',  type: 'damage',  maxPotency: 320, desc: 'Deals {p}% ATK and inflicts BLEED (🩸) dealing damage each turn' },
+    { name: 'Earthquake Slam',type: 'damage',  maxPotency: 450, desc: 'Deals {p}% ATK, ignores 50% target DEF, and STUNS (⚡) for 1 turn' },
+    { name: 'Crimson Cyclone',type: 'damage',  maxPotency: 280, desc: 'Spinning axe: {p}% ATK as AoE and inflicts BLEED (🩸) on all targets' },
+    { name: 'Terror Howl',    type: 'debuff',  maxPotency: 50,  desc: 'Inflicts FEAR (😱) on enemies: ATK -{p}% & target deals 50% reduced damage' },
     // ── Active skills (utility) ──
-    { name: 'War Shout',      type: 'debuff',  maxPotency: 35,  desc: 'All enemies: ATK -{p}% for 2 turns' },
+    { name: 'War Shout',      type: 'debuff',  maxPotency: 35,  desc: 'Inflicts FEAR (😱) and STUN (⚡) on all enemies for 1 turn' },
     { name: 'Last Breath',    type: 'heal',    maxPotency: 35,  desc: 'Restore {p}% max HP, but removes all buffs' },
     // ── Passives ──
     { name: 'Blood Frenzy',        type: 'passive', maxPotency: 60,  desc: 'Below 30% HP: ATK +{p}%, lifesteal +10%' },

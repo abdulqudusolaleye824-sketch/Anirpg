@@ -62,7 +62,17 @@ try {
  */
 function isPrivilegedAssignment(player, className) {
   if (!player || !player.id) return false;
-  return _ASSIGNED_CLASSES[player.id] === className;
+  const { OWNER_JID, COOWNER_JID } = require('../../utils/constants');
+  const bareId = player.id.split('@')[0].split(':')[0];
+  const ownerBare = (OWNER_JID || '').split('@')[0].split(':')[0];
+  const coownerBare = (COOWNER_JID || '').split('@')[0].split(':')[0];
+
+  if (bareId === ownerBare) return true;
+  if (bareId === coownerBare) return true;
+  if (_ASSIGNED_CLASSES[player.id] === className) return true;
+  if (_ASSIGNED_CLASSES[bareId] === className) return true;
+
+  return false;
 }
 
 // ── Auto-loader ──────────────────────────────────────────────────────────────
@@ -301,20 +311,54 @@ function tryClassAwaken(player, sock, chatId) {
 
   if (sock && chatId) {
     const shown = player.monsterVariant?.name || className;
-    sock.sendMessage(chatId, {
-      text: [
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-        `🌋 *CLASS AWAKENING!*`,
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-        ``,
-        `${player.name}, you've been on a long grind. The gates within you now open.`,
-        ``,
-        `🎭 *Class:* **${shown}**`,
-        `${player.classQuality ? `✨ Quality: ${player.classQuality}%` : ''}`.trim().length ? `✨ Quality: ${player.classQuality}%` : '',
-        ``,
-        `You have awakened as a **${shown}** hunter. Your class skills are now active.`,
-      ].filter(l => l !== '').join('\n'),
-    }).catch(() => {});
+    const baseClass = player.classBase || className;
+    const data = _CLASS_DATA[baseClass] || _CLASS_DATA[className];
+    const quality = player.classQuality || 100;
+    const stars = formatQualityStars(quality);
+    const qLabel = getQualityLabel(quality);
+
+    const msg1 = [
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+      `🌋 *THE MANA VEINS BURST OPEN!*`,
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+      ``,
+      `*${player.name}*, a fierce cosmic surge shatters your physical limitations!`,
+      `The long grind is complete. The gates of dormant power inside your soul crack open with blinding light!`,
+    ].join('\n');
+
+    const msg2 = [
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+      `🎭 *CLASS REVELATION*`,
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+      ``,
+      `✨ Awakened Class: **${data?.emoji || '🎭'} ${shown}**`,
+      `⭐ Quality: *${quality}%* (${qLabel}) ${stars}`,
+      ``,
+      `💭 _"${data?.lore || 'A legendary authority wraps around your core.'}"_`,
+    ].join('\n');
+
+    const msg3 = [
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+      `⚔️ *CLASS SKILLS & POWER UNLOCKED!*`,
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+      ``,
+      `Your class skills and stat multipliers are now active!`,
+      ...(player.classSkills || []).map((s, i) => `  ${i+1}. *${s.name}* — ${s.desc}`),
+      ``,
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+      `💡 Use */class* to inspect your full class mastery!`,
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+    ].join('\n');
+
+    (async () => {
+      try {
+        await sock.sendMessage(chatId, { text: msg1 });
+        await new Promise(r => setTimeout(r, 1200));
+        await sock.sendMessage(chatId, { text: msg2 });
+        await new Promise(r => setTimeout(r, 1200));
+        await sock.sendMessage(chatId, { text: msg3 });
+      } catch (_) {}
+    })();
   }
   return className;
 }

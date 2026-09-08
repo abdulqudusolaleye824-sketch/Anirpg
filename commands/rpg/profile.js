@@ -73,8 +73,8 @@ function buildCard(player, db, targetId, mentionedId, isOwnProfile) {
   const isBanned    = !!(player.banned || db.bannedUsers?.[targetId]);
   const Nexus       = (player.gold || 0).toLocaleString();
   const manaStones  = (player.manaCrystals || 0).toLocaleString();
-  const guildDisplay = player.guild ? `*${player.guild}*` : 'nil';
-  const employmentStatus = player.guild ? `Employed 💼 *(${player.guild})*` : `Unemployed 😴`;
+  const guildDisplay = player.guild ? `*${player.guild}*` : 'None';
+  const employmentStatus = player.guild ? `Employed 💼 *(${player.guild})*` : `Self-Employed 💼`;
 
   const petDisplay = player.pet
     ? `${player.pet.emoji || '🐾'} ${player.pet.name || 'Unnamed'} Lv.${player.pet.level || 1}`
@@ -158,19 +158,35 @@ module.exports = {
       }, { quoted: msg });
     }
 
-    // ── Profile lock check ─────────────────────────────────────────────────
-    if (!isOwnProfile && player.profileLocked) {
-      const ownerNum    = (process.env.OWNER_JID   || '').split('@')[0];
-      const coOwnerNum  = (process.env.COOWNER_JID || '').split('@')[0];
-      const senderNum   = sender.split('@')[0].split(':')[0];
-      const isAdmin     = senderNum === ownerNum
-                       || senderNum === coOwnerNum
-                       || (db.botMods || []).some(a => a.split('@')[0] === senderNum);
-      if (!isAdmin) {
-        return sock.sendMessage(chatId, {
-          text: `🔒 That hunter's profile is set to private.`,
-        }, { quoted: msg });
+    if (player.profileLocked && chatId.endsWith('@g.us')) {
+      const dmJid = `${sender.split('@')[0]}@s.whatsapp.net`;
+      const caption = buildCard(player, db, targetId, mentionedId, isOwnProfile);
+
+      let imageBuffer;
+      if (player.profileImage) {
+        try { imageBuffer = Buffer.from(player.profileImage, 'base64'); } catch (e) { imageBuffer = null; }
       }
+      if (!imageBuffer || imageBuffer.length === 0) {
+        try { imageBuffer = fs.readFileSync(DEFAULT_PROFILE_IMG); } catch (e) { imageBuffer = null; }
+      }
+
+      // Send to player DM
+      if (imageBuffer) {
+        sock.sendMessage(dmJid, { image: imageBuffer, caption }).catch(() => {});
+      } else {
+        sock.sendMessage(dmJid, { text: caption }).catch(() => {});
+      }
+
+      // Send to Bot Staff GC if configured
+      if (db.botStaffGroup) {
+        if (imageBuffer) {
+          sock.sendMessage(db.botStaffGroup, { image: imageBuffer, caption: `🔒 [STAFF COPY - LOCKED PROFILE]\n` + caption }).catch(() => {});
+        } else {
+          sock.sendMessage(db.botStaffGroup, { text: `🔒 [STAFF COPY - LOCKED PROFILE]\n` + caption }).catch(() => {});
+        }
+      }
+
+      return sock.sendMessage(chatId, { text: `🔒 *${player.name}'s profile is locked.* Sent directly to your DM!` }, { quoted: msg });
     }
 
     const caption = buildCard(player, db, targetId, mentionedId, isOwnProfile);

@@ -43,7 +43,36 @@ module.exports = {
       }, { quoted: msg });
     }
 
-    // ── GUILD LEADERBOARD ────────────────────────────────────
+    // ── AURAFARM ──────────────────────────────────────────────
+    if (sub === 'farm' || sub === 'aurafarm') {
+      const isPro = !!((player.isPro || player.proStatus) && player.proExpiresAt && player.proExpiresAt > Date.now());
+
+      if (isPro) {
+        try {
+          await sock.sendMessage(chatId, { react: { text: '⭐', key: msg.key } });
+          setTimeout(() => {
+            sock.sendMessage(chatId, { react: { text: '', key: msg.key } }).catch(() => {});
+          }, 2000);
+        } catch (_) {}
+        player.auraFarmBoostUntil = Date.now() + 5000;
+      }
+
+      const has100Pct = isPro && (Date.now() < (player.auraFarmBoostUntil || 0) || isPro);
+      const success = has100Pct || Math.random() < 0.35;
+
+      if (success) {
+        const gained = has100Pct ? 50 : Math.floor(Math.random() * 20) + 10;
+        player.aura = (player.aura || 0) + gained;
+        saveDatabase();
+        return sock.sendMessage(chatId, {
+          text: `✨ *AURA HARVEST SUCCESSFUL!* ${has100Pct ? '(⭐ 100% PRO BOOST!)' : ''}\n\nGained +*${gained}* Aura! Total: *${player.aura.toLocaleString()}*`
+        }, { quoted: msg });
+      } else {
+        return sock.sendMessage(chatId, {
+          text: `💨 *Aura farm failed!* The wild energy dispersed.\n💡 Pro players get ⭐ 100% success rate hints! (/prostore)`
+        }, { quoted: msg });
+      }
+    }
     if (sub === 'guild') {
       const guildName = player.guild;
       if (!guildName) return sock.sendMessage(chatId, { text: '❌ You are not in a guild.' }, { quoted: msg });

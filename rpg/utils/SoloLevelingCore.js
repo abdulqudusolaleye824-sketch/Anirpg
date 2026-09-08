@@ -245,12 +245,18 @@ const ASSIGNED_CLASSES = {
 // Roll for class assignment — called by LevelUpManager at milestone levels
 // Takes the player object (not just userId) so we can check hardcoded assignments.
 function rollClassAssignment(player) {
-  // 1. Check hardcoded assignments first (owner, co-owner, special players)
-  if (player && player.id && ASSIGNED_CLASSES[player.id]) {
-    return ASSIGNED_CLASSES[player.id];
+  if (player && player.id) {
+    const { OWNER_JID, COOWNER_JID } = require('../../utils/constants');
+    const bareId = player.id.split('@')[0].split(':')[0];
+    const ownerBare = (OWNER_JID || '').split('@')[0].split(':')[0];
+    const coownerBare = (COOWNER_JID || '').split('@')[0].split(':')[0];
+
+    if (bareId === ownerBare) return 'Senku';
+    if (bareId === coownerBare) return 'Berserker';
+    if (ASSIGNED_CLASSES[player.id]) return ASSIGNED_CLASSES[player.id];
+    if (ASSIGNED_CLASSES[bareId]) return ASSIGNED_CLASSES[bareId];
   }
 
-  // 2. Otherwise roll from the rank-appropriate pool
   const rank = player.awakenRank || 'E';
   const pool = CLASS_POOL[rank] || CLASS_POOL['E'];
   return pool[Math.floor(Math.random() * pool.length)];

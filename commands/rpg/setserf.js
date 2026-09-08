@@ -122,9 +122,11 @@ module.exports = {
       }, { quoted: msg });
     }
 
-    // ── ONCE SET, IT'S PERMANENT ────────────────────────────────
-    // A player cannot change their serf after it's been approved.
-    if (SerfManager.hasApprovedSerf(db, sender)) {
+    // ── ONCE SET, IT'S PERMANENT (EXCEPT FOR PRO EMERGENCY SWITCHES) ──
+    const playerDb = db.users?.[sender];
+    const isPro = playerDb && (playerDb.isPro || playerDb.proStatus) && playerDb.proExpiresAt && playerDb.proExpiresAt > Date.now();
+
+    if (SerfManager.hasApprovedSerf(db, sender) && !isPro) {
       const current = SerfManager.getSerf(db, sender);
       const info = current?.botKey ? PersonalityManager.getPersonalityInfo(current.botKey) : null;
       return sock.sendMessage(chatId, {
@@ -132,7 +134,7 @@ module.exports = {
           '🙅 *You\u2019ve already set your serf.*\n\n' +
           'Your serf is permanent and cannot be changed.\n' +
           (info ? `\n🤖 Your serf: *${info.emoji || ''} ${info.displayName || current.botKey}*` : '') +
-          '\n\n_If this is a mistake, contact an admin._',
+          '\n\n_Pro players can perform emergency Serf switches via /prostore._',
       }, { quoted: msg });
     }
 

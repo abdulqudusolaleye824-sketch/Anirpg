@@ -197,9 +197,22 @@ function buildLeaderboardText(db) {
   ].join('\n');
 }
 
+function isProPlayer(player) {
+  if (!player) return false;
+  return !!((player.isPro || player.proStatus) && player.proExpiresAt && player.proExpiresAt > Date.now());
+}
+
 async function handleRPGIntent(message, sender, msg, personalityKey, db, saveDatabase) {
   const intent = detectRPGIntent(message);
   if (!intent) return { handled: false };
+
+  const player = db?.users?.[sender];
+  if (player && !isProPlayer(player) && !isAdmin(sender, db)) {
+    return {
+      handled: true,
+      text: '🔒 *Natural Language Intent Manager* is locked to Pro players!\nUse */prostore* to upgrade to Pro and unlock AI queries.'
+    };
+  }
 
   const contextInfo = msg?.message?.extendedTextMessage?.contextInfo;
   const mentionedJid = contextInfo?.mentionedJid?.[0] || contextInfo?.participant;
