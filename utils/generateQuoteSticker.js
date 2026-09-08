@@ -12,7 +12,7 @@ function escapeXml(unsafe) {
     .replace(/'/g, '&apos;');
 }
 
-function wrapTextSvg(text, maxCharsPerLine = 24) {
+function wrapTextSvg(text, maxCharsPerLine = 22) {
   const words = text.split(' ');
   const lines = [];
   let currentLine = '';
@@ -53,18 +53,24 @@ async function generateQuoteSticker(senderName, quoteText, outputPath, avatarPat
   }
 
   const nameEsc = escapeXml(senderName);
-  const textWrapped = wrapTextSvg(quoteText, 24);
 
-  let fontSize = 28;
-  if (quoteText.length > 120) fontSize = 18;
-  else if (quoteText.length > 60) fontSize = 22;
-  else if (quoteText.length > 30) fontSize = 26;
+  let fontSize = 32;
+  let maxChars = 20;
+  if (quoteText.length > 120) { fontSize = 18; maxChars = 30; }
+  else if (quoteText.length > 60) { fontSize = 22; maxChars = 26; }
+  else if (quoteText.length > 30) { fontSize = 26; maxChars = 22; }
 
-  const lineHeight = fontSize * 1.35;
-  const textYStart = 160;
+  const textWrapped = wrapTextSvg(quoteText, maxChars);
+  const lineHeight = fontSize * 1.4;
+
+  const totalTextHeight = textWrapped.length * lineHeight;
+  const bodyTop = 130;
+  const bodyBottom = 450;
+  const availableH = bodyBottom - bodyTop;
+  const startY = Math.max(140, bodyTop + (availableH - totalTextHeight) / 2 + fontSize * 0.8);
 
   const textLinesSvg = textWrapped.map((line, idx) => {
-    return `<tspan x="65" y="${textYStart + (idx * lineHeight)}">${escapeXml(line)}</tspan>`;
+    return `<tspan x="256" y="${startY + (idx * lineHeight)}" text-anchor="middle">${escapeXml(line)}</tspan>`;
   }).join('');
 
   let avatarSvg = '';
@@ -72,20 +78,34 @@ async function generateQuoteSticker(senderName, quoteText, outputPath, avatarPat
     const base64Av = avatarBuffer.toString('base64');
     avatarSvg = `
       <clipPath id="avatarClip">
-        <circle cx="75" cy="65" r="26" />
+        <circle cx="65" cy="65" r="28" />
       </clipPath>
-      <image href="data:image/jpeg;base64,${base64Av}" x="49" y="39" width="52" height="52" clip-path="url(#avatarClip)" />
+      <image href="data:image/jpeg;base64,${base64Av}" x="37" y="37" width="56" height="52" clip-path="url(#avatarClip)" />
     `;
   } else {
     avatarSvg = `
-      <circle cx="75" cy="65" r="26" fill="#58a6ff" opacity="0.3" />
-      <text x="75" y="73" font-family="'Noto Sans CJK JP', 'Noto Color Emoji', 'DejaVu Sans', sans-serif" font-size="22" font-weight="bold" fill="#ffffff" text-anchor="middle">${escapeXml((senderName[0] || 'U').toUpperCase())}</text>
+      <circle cx="65" cy="65" r="28" fill="#38bdf8" opacity="0.3" />
+      <text x="65" y="73" font-family="'Noto Sans CJK JP', 'Noto Color Emoji', sans-serif" font-size="24" font-weight="bold" fill="#f8fafc" text-anchor="middle">${escapeXml((senderName[0] || 'U').toUpperCase())}</text>
     `;
   }
 
   const svg = `
   <svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
     <defs>
+      <linearGradient id="cardBg" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stop-color="#0a081a" />
+        <stop offset="50%" stop-color="#120a24" />
+        <stop offset="100%" stop-color="#1a0818" />
+      </linearGradient>
+      <linearGradient id="barGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+        <stop offset="0%" stop-color="#38bdf8" />
+        <stop offset="50%" stop-color="#818cf8" />
+        <stop offset="100%" stop-color="#ef4444" />
+      </linearGradient>
+      <linearGradient id="nameGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+        <stop offset="0%" stop-color="#38bdf8" />
+        <stop offset="100%" stop-color="#f43f5e" />
+      </linearGradient>
       <style>
         .all-text {
           font-family: 'Noto Sans CJK JP', 'Noto Color Emoji', 'Noto Sans', 'DejaVu Sans', sans-serif;
@@ -93,30 +113,33 @@ async function generateQuoteSticker(senderName, quoteText, outputPath, avatarPat
       </style>
     </defs>
     <!-- Background Card -->
-    <rect width="512" height="512" rx="32" fill="#0e0e1a" />
+    <rect width="512" height="512" rx="32" fill="url(#cardBg)" stroke="#ef4444" stroke-opacity="0.15" stroke-width="2" />
     
-    <!-- Accent Bar -->
-    <rect x="32" y="32" width="5" height="448" rx="2.5" fill="#58a6ff" />
+    <!-- Left Accent Gradient Bar -->
+    <rect x="24" y="28" width="6" height="456" rx="3" fill="url(#barGrad)" />
 
-    <!-- Quote Mark Background -->
-    <text class="all-text" x="52" y="110" font-size="140" font-weight="bold" fill="#ffffff" opacity="0.08">“</text>
+    <!-- Top Left Quote Mark -->
+    <text class="all-text" x="42" y="120" font-size="130" font-weight="bold" fill="#ef4444" opacity="0.12">“</text>
+
+    <!-- Bottom Right Quote Mark -->
+    <text class="all-text" x="470" y="460" font-size="130" font-weight="bold" fill="#38bdf8" opacity="0.12" text-anchor="end">”</text>
 
     <!-- Avatar -->
     ${avatarSvg}
 
     <!-- Sender Name -->
-    <text class="all-text" x="115" y="73" font-size="24" font-weight="bold" fill="#58a6ff">${nameEsc}</text>
+    <text class="all-text" x="108" y="73" font-size="24" font-weight="bold" fill="url(#nameGrad)">${nameEsc}</text>
 
-    <!-- Divider -->
-    <line x1="32" y1="108" x2="480" y2="108" stroke="#58a6ff" stroke-opacity="0.25" stroke-width="1" />
+    <!-- Divider Line -->
+    <line x1="24" y1="110" x2="488" y2="110" stroke="url(#nameGrad)" stroke-opacity="0.3" stroke-width="1.5" />
 
-    <!-- Quote Text -->
-    <text class="all-text" font-size="${fontSize}" fill="#e6e6eb">
+    <!-- Centered Quote Text -->
+    <text class="all-text" font-size="${fontSize}" font-weight="600" fill="#f8fafc">
       ${textLinesSvg}
     </text>
 
     <!-- Footer -->
-    <text class="all-text" x="480" y="475" font-size="14" fill="#78788c" text-anchor="end">via QuoteBot ✦</text>
+    <text class="all-text" x="480" y="482" font-size="13" fill="#94a3b8" text-anchor="end">quotly by ✦ 𝐀𝐬𝐭𝐫𝐚™</text>
   </svg>
   `;
 

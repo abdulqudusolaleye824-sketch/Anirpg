@@ -3,6 +3,7 @@ const fs    = require('fs');
 const os    = require('os');
 let sharp; try { sharp = require('sharp'); } catch(e) { sharp = null; }
 const { generateQuoteSticker } = require('../../utils/generateQuoteSticker');
+const { injectStickerMetadata } = require('../../utils/stickerMetadata');
 
 const COOLDOWNS   = new Map();
 const COOLDOWN_MS = 8000;
@@ -45,15 +46,12 @@ module.exports = {
     const quotedNumStr = quotedParticipant.replace(/[^0-9]/g, '');
     let senderName = 'Unknown';
 
-    // 1. pushName directly from quoted context (most reliable)
     if (quoted.pushName) senderName = quoted.pushName;
 
-    // 2. RPG database name
     if (senderName === 'Unknown' && db?.users?.[quotedParticipant]?.name) {
       senderName = db.users[quotedParticipant].name;
     }
 
-    // 3. Baileys contact store (works in DMs)
     if (senderName === 'Unknown') {
       const contact = sock.store?.contacts?.[quotedParticipant] || sock.contacts?.[quotedParticipant];
       if (contact?.pushName) senderName = contact.pushName;
@@ -61,7 +59,6 @@ module.exports = {
       else if (contact?.notify) senderName = contact.notify;
     }
 
-    // 4. Group metadata
     if (senderName === 'Unknown' && chatId.endsWith('@g.us')) {
       try {
         const meta = await sock.groupMetadata(chatId).catch(() => null);
@@ -73,11 +70,8 @@ module.exports = {
       } catch (e) {}
     }
 
-    // 4. Fall back to phone number
     if (senderName === 'Unknown' && quotedNumStr) senderName = '+' + quotedNumStr;
 
-    // ── Try to fetch the quoted sender's profile picture ────────────────
-    // If available, it's composited next to their name on the sticker.
     let avatarPath = null;
     try {
       const profileUrl = await sock.profilePictureUrl(quotedParticipant, 'image');
@@ -90,23 +84,21 @@ module.exports = {
       }
     } catch (e) { avatarPath = null; }
 
-    const tmpPath = path.join(os.tmpdir(), `quote_${Date.now()}.png`);
+    const tmpPath = path.join(os.tmpdir(), `quote_${Date.now()}.webp`);
     await sock.sendMessage(chatId, { react: { text: '🎨', key: msg.key } });
 
     try {
       await generateQuoteSticker(senderName, quoteText, tmpPath, avatarPath);
     } catch (err) {
       console.error('Quote sticker error:', err.message);
-      await sock.sendMessage(chatId, { text: '❌ Failed to generate sticker. Make sure `canvas` is installed.' }, { quoted: msg });
+      await sock.sendMessage(chatId, { text: '❌ Failed to generate sticker.' }, { quoted: msg });
       return;
     }
 
     if (!fs.existsSync(tmpPath)) return;
 
-    const stickerBuffer = await sharp(fs.readFileSync(tmpPath))
-      .resize(512, 512, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } })
-      .webp({ quality: 95 })
-      .toBuffer();
+    const rawBuffer = fs.readFileSync(tmpPath);
+    const stickerBuffer = await injectStickerMetadata(rawBuffer, 'quotly by ✦ 𝐀𝐬𝐭𝐫𝐚™', senderName);
 
     await sock.sendMessage(chatId, { sticker: stickerBuffer }, { quoted: msg });
 

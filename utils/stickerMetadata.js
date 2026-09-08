@@ -18,14 +18,26 @@ async function injectStickerMetadata(webpBuf, packName, packAuthor) {
   const name = packName || '✦ 𝐀𝐬𝐭𝐫𝐚™';
   const author = packAuthor || 'Senku';
 
-  const json = JSON.stringify({
+  let isAnimated = false;
+  try {
+    const webpmux = require('node-webpmux');
+    const img = new webpmux.Image();
+    await img.load(webpBuf);
+    isAnimated = img.hasAnim || false;
+  } catch (e) {}
+
+  const jsonObj = {
     'sticker-pack-id':        'com.astra.bot',
     'sticker-pack-name':      name,
     'sticker-pack-publisher': author,
     'emojis':                 ['✨'],
-  });
+  };
 
-  const jsonBuf = Buffer.from(json, 'utf-8');
+  if (isAnimated) {
+    jsonObj['is-animated-sticker'] = 1;
+  }
+
+  const jsonBuf = Buffer.from(JSON.stringify(jsonObj), 'utf-8');
 
   // Exact 22-byte WhatsApp TIFF EXIF Header
   const exifHeader = Buffer.from([
@@ -51,7 +63,7 @@ async function injectStickerMetadata(webpBuf, packName, packAuthor) {
   } catch (err) {
     try {
       const sharp = require('sharp');
-      return await sharp(webpBuf)
+      return await sharp(webpBuf, { animated: true })
         .withMetadata({ exif: { raw: exifPayload } })
         .toBuffer();
     } catch (e) {

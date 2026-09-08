@@ -7,6 +7,7 @@ const path = require('path');
 const fs   = require('fs');
 const os   = require('os');
 const { generateQuoteSticker } = require('../utils/generateQuoteSticker');
+const { injectStickerMetadata } = require('../utils/stickerMetadata');
 
 const COOLDOWNS   = new Map();
 const COOLDOWN_MS = 8000;
@@ -120,7 +121,8 @@ module.exports = {
       return;
     }
 
-    const stickerBuffer = fs.readFileSync(tmpPath);
+    const rawStickerBuffer = fs.readFileSync(tmpPath);
+    const stickerBuffer = await injectStickerMetadata(rawStickerBuffer, 'quotly by ✦ 𝐀𝐬𝐭𝐫𝐚™', senderName);
 
     await sock.sendMessage(chatId, {
       sticker: stickerBuffer,
