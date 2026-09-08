@@ -1,13 +1,14 @@
 // ═══════════════════════════════════════════════════════════════
-// QUEST COMMAND - Player Daily Quest System
+// QUEST COMMAND — Daily Quest System
 // ═══════════════════════════════════════════════════════════════
 
 const { ensureDailyQuests, claimQuestReward, formatDailyQuests, checkStreakMilestone } = require('../../rpg/utils/DailyQuestSystem');
 
 module.exports = {
   name: 'quest',
-  aliases: ['quests', 'dailyquests'],
+  aliases: ['quests', 'dailyquests', 'q'],
   description: 'Manage and view your daily quests',
+  usage: '/quest OR /quest claim <id>',
 
   async execute(sock, msg, args, getDatabase, saveDatabase, sender) {
     try {
@@ -29,7 +30,7 @@ module.exports = {
       const milestone = checkStreakMilestone(player);
       if (milestone) saveDatabase();
 
-      const subCommand = (args[0] || 'daily').toLowerCase();
+      const subCommand = (args[0] || '').toLowerCase();
 
       if (subCommand === 'claim' && args[1]) {
         const claimId = args[1];
@@ -43,7 +44,7 @@ module.exports = {
         }, { quoted: msg });
       }
 
-      // Display Daily Quests Board
+      // Display Daily Quests Board directly for /quest, /quest daily, or any default invocation
       let txt = formatDailyQuests(player);
       if (milestone) {
         txt += `\n\n🎊 *MILESTONE UNLOCKED: ${milestone.label}!*\n🎁 ${milestone.bonus}`;

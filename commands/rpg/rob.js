@@ -1,5 +1,6 @@
 // ═══════════════════════════════════════════════════════════════
-// ROB / STEAL COMMAND — Attempt to steal Nexus from another player
+// ROB COMMAND — Attempt to steal Nexus from another player
+// Usage: /rob @user
 // ═══════════════════════════════════════════════════════════════
 
 const { updatePlayerNexus } = require('../../rpg/utils/NexusManager');
@@ -40,7 +41,7 @@ function findVictim(db, targetJid, argsText) {
 
 module.exports = {
   name: 'rob',
-  aliases: ['steal'],
+  aliases: [],
   description: 'Attempt to steal Nexus from another player (RISKY!)',
   usage: '/rob @user',
 
@@ -66,7 +67,7 @@ module.exports = {
 
       if (!found) {
         return await sock.sendMessage(chatId, {
-          text: '📌 *Usage:* `/steal @user` or `/rob @user` (reply, tag, or type a player\'s name/number)\n\n⚠️ *Risk:* You might lose Nexus if caught!'
+          text: '📌 *Usage:* `/rob @user` (reply, tag, or type a player\'s name/number)\n\n⚠️ *Risk:* You might lose Nexus if caught!\n\n*(To steal a sticker, reply to the sticker with `/steal`)*'
         }, { quoted: msg });
       }
 
@@ -75,7 +76,7 @@ module.exports = {
 
       if (targetJid === sender) {
         return await sock.sendMessage(chatId, {
-          text: '❌ You cannot steal from yourself! 🤦'
+          text: '❌ You cannot rob yourself! 🤦'
         }, { quoted: msg });
       }
 
@@ -83,14 +84,14 @@ module.exports = {
       if (thief.stealCooldown && Date.now() < thief.stealCooldown) {
         const remaining = Math.ceil((thief.stealCooldown - Date.now()) / 60000);
         return await sock.sendMessage(chatId, {
-          text: `⏰ Cooldown active! Wait *${remaining}* more minute${remaining > 1 ? 's' : ''} before stealing again.`
+          text: `⏰ Cooldown active! Wait *${remaining}* more minute${remaining > 1 ? 's' : ''} before robbing again.`
         }, { quoted: msg });
       }
 
       const thiefNexus = thief.gold || 0;
       if (thiefNexus < 100) {
         return await sock.sendMessage(chatId, {
-          text: '❌ You need at least 100 Nexus in your wallet to attempt a steal!'
+          text: '❌ You need at least 100 Nexus in your wallet to attempt a rob!'
         }, { quoted: msg });
       }
 
@@ -124,13 +125,13 @@ module.exports = {
 
         return await sock.sendMessage(chatId, {
           text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🥷 *SUCCESSFUL THEFT!*
+🥷 *SUCCESSFUL ROBBERY!*
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━
 You stealthily robbed *@${targetJid.split('@')[0]}*!
 
 💰 Stolen: *${actualStolen.toLocaleString()}* Nexus 💠
 🎯 Success Chance: ${Math.round(successChance)}%
-⏰ Next steal: 30 minutes
+⏰ Next rob: 30 minutes
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
           mentions: [targetJid]
         }, { quoted: msg });
@@ -151,16 +152,16 @@ You were caught trying to rob *@${targetJid.split('@')[0]}*!
 
 💸 Fine Paid to Victim: *${actualPenalty.toLocaleString()}* Nexus 💠
 🎯 Success Chance: ${Math.round(successChance)}%
-⏰ Next steal: 30 minutes
+⏰ Next rob: 30 minutes
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
           mentions: [targetJid]
         }, { quoted: msg });
       }
 
     } catch (error) {
-      console.error('Error in rob/steal command:', error);
+      console.error('Error in rob command:', error);
       await sock.sendMessage(msg.key.remoteJid, {
-        text: `❌ An error occurred while executing the steal command: ${error.message}`
+        text: `❌ An error occurred while executing the rob command: ${error.message}`
       }, { quoted: msg });
     }
   }
