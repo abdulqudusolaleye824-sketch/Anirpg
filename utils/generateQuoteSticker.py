@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import sys, os, textwrap
+import sys, os, textwrap, unicodedata
 from PIL import Image, ImageDraw, ImageFont
 
 FONT_BOLD = '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf'
@@ -15,6 +15,27 @@ COLORS = {
     'marks':  (255, 255, 255, 40),
     'footer': (120, 120, 140, 255),
 }
+
+def normalize_text(text):
+    if not text:
+        return ""
+    # Normalize mathematical/gothic/fancy unicode characters to standard glyphs
+    res = []
+    for char in text:
+        cp = ord(char)
+        if 0x1D400 <= cp <= 0x1D419: res.append(chr(ord('A') + (cp - 0x1D400)))
+        elif 0x1D41A <= cp <= 0x1D433: res.append(chr(ord('a') + (cp - 0x1D41A)))
+        elif 0x1D434 <= cp <= 0x1D44D: res.append(chr(ord('A') + (cp - 0x1D434)))
+        elif 0x1D44E <= cp <= 0x1D467: res.append(chr(ord('a') + (cp - 0x1D44E)))
+        elif 0x1D468 <= cp <= 0x1D481: res.append(chr(ord('A') + (cp - 0x1D468)))
+        elif 0x1D482 <= cp <= 0x1D49B: res.append(chr(ord('a') + (cp - 0x1D482)))
+        elif 0x1D5A0 <= cp <= 0x1D5B9: res.append(chr(ord('A') + (cp - 0x1D5A0)))
+        elif 0x1D5BA <= cp <= 0x1D5D3: res.append(chr(ord('a') + (cp - 0x1D5BA)))
+        elif 0xFF21 <= cp <= 0xFF3A: res.append(chr(ord('A') + (cp - 0xFF21)))
+        elif 0xFF41 <= cp <= 0xFF5A: res.append(chr(ord('a') + (cp - 0xFF41)))
+        else: res.append(char)
+    cleaned = ''.join(res)
+    return unicodedata.normalize('NFKD', cleaned)
 
 def wrap_text(text, font, draw, max_width):
     words = text.split()
@@ -33,6 +54,8 @@ def wrap_text(text, font, draw, max_width):
 def load_circular_avatar(avatar_path, size):
     """Load an image and crop it to a circle (transparent corners)."""
     try:
+        if not avatar_path or not os.path.exists(avatar_path):
+            return None
         av = Image.open(avatar_path).convert('RGBA')
         av = av.resize((size, size), Image.LANCZOS)
         mask = Image.new('L', (size, size), 0)
@@ -41,10 +64,13 @@ def load_circular_avatar(avatar_path, size):
         out = Image.new('RGBA', (size, size), (0, 0, 0, 0))
         out.paste(av, (0, 0), mask)
         return out
-    except Exception:
+    except Exception as e:
         return None
 
 def generate(sender_name, quote_text, output_path, avatar_path=None):
+    sender_name = normalize_text(sender_name)
+    quote_text = normalize_text(quote_text)
+
     img  = Image.new('RGBA', (W, H), COLORS['bg'])
     draw = ImageDraw.Draw(img)
     corner = 32

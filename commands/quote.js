@@ -1,14 +1,13 @@
 /**
  * /q | /quote — Reply to any message to turn it into a quote sticker
- * Generates a dark-themed 512x512 WebP sticker with the sender's name
+ * Generates a dark-themed 512x512 WebP sticker with the sender's name and profile picture
  */
 
-const { execFile } = require('child_process');
 const path = require('path');
 const fs   = require('fs');
 const os   = require('os');
+const { generateQuoteSticker } = require('../utils/generateQuoteSticker');
 
-const SCRIPT_PATH = path.join(__dirname, '..', 'utils', 'generateQuoteSticker.py');
 const COOLDOWNS   = new Map();
 const COOLDOWN_MS = 8000;
 
@@ -60,15 +59,14 @@ module.exports = {
     const quotedParticipant = quoted.participant || quoted.remoteJid || 'Unknown';
     const quotedNumStr = quotedParticipant.replace(/[^0-9]/g, '');
 
-    // Resolve quoted sender's display name — best available source wins
     let senderName = 'Unknown';
 
-    // 1. Check RPG database first (most reliable stored name)
-    if (db?.users?.[quotedParticipant]?.name) {
+    if (quoted.pushName) senderName = quoted.pushName;
+
+    if (senderName === 'Unknown' && db?.users?.[quotedParticipant]?.name) {
       senderName = db.users[quotedParticipant].name;
     }
 
-    // 2. Try group metadata for pushName
     if (senderName === 'Unknown') {
       try {
         const meta = await sock.groupMetadata(chatId).catch(() => null);
@@ -76,48 +74,60 @@ module.exports = {
           const participant = meta.participants.find(p =>
             p.id && p.id.includes(quotedNumStr)
           );
-          // Baileys exposes pushName on participant object
           if (participant?.pushName) senderName = participant.pushName;
           else if (participant?.name)  senderName = participant.name;
           else if (participant?.notify) senderName = participant.notify;
         }
-      } catch (e) { /* ignore — group metadata may fail in DMs */ }
+      } catch (e) {}
     }
 
-    // 3. Fall back to phone number
     if (senderName === 'Unknown' && quotedNumStr) {
       senderName = '+' + quotedNumStr;
     }
+
+    // ── Profile Picture ─────────────────────────────────────────
+    let avatarPath = null;
+    try {
+      const pfpUrl = await sock.profilePictureUrl(quotedParticipant, 'image').catch(() => null);
+      if (pfpUrl) {
+        const res = await fetch(pfpUrl);
+        if (res && res.ok) {
+          avatarPath = path.join(os.tmpdir(), `quote_av_${Date.now()}.jpg`);
+          const arrBuf = await res.arrayBuffer();
+          fs.writeFileSync(avatarPath, Buffer.from(arrBuf));
+        }
+      }
+    } catch (e) { avatarPath = null; }
 
     // ── Generate sticker ─────────────────────────────────────────
     const tmpPath = path.join(os.tmpdir(), `quote_${Date.now()}.webp`);
 
     await sock.sendMessage(chatId, { react: { text: '🎨', key: msg.key } });
 
-    await new Promise((resolve, reject) => {
-      execFile('python3', [SCRIPT_PATH, senderName, quoteText, tmpPath], (err, stdout, stderr) => {
-        if (err) return reject(new Error(stderr || err.message));
-        resolve(stdout.trim());
-      });
-    }).catch(async (err) => {
+    try {
+      await generateQuoteSticker(senderName, quoteText, tmpPath, avatarPath);
+    } catch (err) {
       console.error('Quote sticker error:', err.message);
       await sock.sendMessage(chatId, {
-        text: '❌ Failed to generate sticker. Make sure python3 and Pillow are installed.'
+        text: '❌ Failed to generate sticker.'
       }, { quoted: msg });
-      return null;
-    });
+      if (avatarPath) { try { fs.unlinkSync(avatarPath); } catch (e) {} }
+      return;
+    }
 
-    if (!fs.existsSync(tmpPath)) return;
+    if (!fs.existsSync(tmpPath)) {
+      if (avatarPath) { try { fs.unlinkSync(avatarPath); } catch (e) {} }
+      return;
+    }
 
     const stickerBuffer = fs.readFileSync(tmpPath);
 
-    // ── Send as sticker ───────────────────────────────────────────
     await sock.sendMessage(chatId, {
       sticker: stickerBuffer,
       mimetype: 'image/webp',
     }, { quoted: msg });
 
-    // Cleanup
-    try { fs.unlinkSync(tmpPath); } catch (e) { /* ignore */ }
+    try { fs.unlinkSync(tmpPath); } catch (e) {}
+    if (avatarPath) { try { fs.unlinkSync(avatarPath); } catch (e) {} }
   }
 };

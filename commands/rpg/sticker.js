@@ -4,8 +4,8 @@ let sharp; try { sharp = require('sharp'); } catch(e) { sharp = null; }
 
 module.exports = {
   name: 'sticker',
-  aliases: ['s'],
-  description: '🎨 Convert image/video to sticker',
+  aliases: ['st'],
+  description: '🎨 Convert image/video/sticker to sticker with metadata',
   usage: '/sticker [packName | authorName]',
   
   async execute(sock, msg, args, getDatabase, saveDatabase, sender) {
@@ -13,7 +13,7 @@ module.exports = {
     const db = getDatabase();
     const ownerName = db?.users?.[sender]?.name || msg.pushName || 'Senku';
 
-    const rawText = (msg.message?.conversation || msg.message?.extendedTextMessage?.text || '').replace(/^\/(sticker|s)\s*/i, '').trim();
+    const rawText = (msg.message?.conversation || msg.message?.extendedTextMessage?.text || '').replace(/^\/(sticker|st|s)\s*/i, '').trim();
 
     let packName = '✦ 𝐀𝐬𝐭𝐫𝐚™';
     let author   = ownerName;
@@ -35,12 +35,13 @@ module.exports = {
       const videoMessage = msg.message?.videoMessage;
       const quotedImage = quotedMsg?.imageMessage;
       const quotedVideo = quotedMsg?.videoMessage;
+      const quotedSticker = quotedMsg?.stickerMessage;
 
       let mediaMessage = null;
 
       if (imageMessage || videoMessage) {
         mediaMessage = msg;
-      } else if (quotedImage || quotedVideo) {
+      } else if (quotedImage || quotedVideo || quotedSticker) {
         mediaMessage = {
           key: msg.message.extendedTextMessage.contextInfo.stanzaId ? {
             remoteJid: chatId,
@@ -53,12 +54,12 @@ module.exports = {
 
       if (!mediaMessage) {
         return sock.sendMessage(chatId, {
-          text: `❌ No image found!
+          text: `❌ No media found!
 
 📌 *HOW TO USE:*
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━
 1️⃣ Send an image with caption: /sticker
-2️⃣ Reply to an image with: /sticker
+2️⃣ Reply to an image/sticker with: /sticker or /s
 
 💡 Custom pack name: /s My Pack | My Name
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━`
@@ -84,13 +85,16 @@ module.exports = {
         }, { quoted: msg });
       }
 
-      let processedBuffer = await sharp(buffer)
-        .resize(512, 512, {
-          fit: 'contain',
-          background: { r: 0, g: 0, b: 0, alpha: 0 }
-        })
-        .webp({ quality: 95, lossless: false })
-        .toBuffer();
+      let processedBuffer = buffer;
+      if (!quotedSticker && sharp) {
+        processedBuffer = await sharp(buffer)
+          .resize(512, 512, {
+            fit: 'contain',
+            background: { r: 0, g: 0, b: 0, alpha: 0 }
+          })
+          .webp({ quality: 95, lossless: false })
+          .toBuffer();
+      }
 
       processedBuffer = await injectStickerMetadata(processedBuffer, packName, author);
 

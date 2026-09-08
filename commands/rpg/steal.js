@@ -1,20 +1,21 @@
 // ═══════════════════════════════════════════════════════════════
-// STEAL COMMAND — Sticker Theft
-// Reply to a sticker with /steal to steal it into your own pack.
+// STEAL COMMAND — Sticker Theft & Rebranding
+// Reply to a sticker with /steal or /s to steal it into your own pack.
 // Default: Pack Name: ✦ 𝐀𝐬𝐭𝐫𝐚™ | Author: owner/user name
-// Custom: /steal mee | and youu → Pack: mee, Author: and youu
+// Custom: /steal mee | and youu  or /s mee | and youu
 // ═══════════════════════════════════════════════════════════════
 
 const { downloadMediaMessage } = require('@whiskeysockets/baileys');
 const { injectStickerMetadata } = require('../../utils/stickerMetadata');
+let sharp; try { sharp = require('sharp'); } catch(e) { sharp = null; }
 
 const cooldowns = new Map();
 
 module.exports = {
   name: 'steal',
-  aliases: ['ssteal', 'stickersteal'],
-  description: 'Reply to a sticker with /steal [pack | author] to steal it.',
-  usage: '/steal [packName | authorName]',
+  aliases: ['s', 'ssteal', 'stickersteal', 'stealsticker'],
+  description: 'Reply to a sticker or image with /steal [pack | author] or /s [pack | author] to steal it.',
+  usage: '/steal [packName | authorName] or /s [packName | authorName]',
 
   async execute(sock, msg, args, getDatabase, saveDatabase, sender) {
     const chatId = msg.key.remoteJid;
@@ -31,17 +32,20 @@ module.exports = {
     const contextInfo = msg.message?.extendedTextMessage?.contextInfo;
     const quoted = contextInfo?.quotedMessage;
     const stickerMsg = quoted?.stickerMessage;
+    const imageMsg = quoted?.imageMessage || msg.message?.imageMessage;
 
-    if (!quoted || !stickerMsg) {
+    if (!quoted && !imageMsg) {
       return sock.sendMessage(chatId, {
-        text: '📌 *Reply to a sticker* with `/steal` to steal it into your pack.\n\n*(To steal Nexus from a player, use `/rob @user`)*'
+        text: '📌 *Reply to a sticker or image* with `/steal` or `/s` to steal it into your pack.\n\nUsage: `/s My Pack | My Author`\n*(To steal Nexus from a player, use `/rob @user`)*'
       }, { quoted: msg });
     }
 
     const db = getDatabase();
     const ownerName = db?.users?.[sender]?.name || msg.pushName || 'Senku';
 
-    const rawText = (msg.message?.conversation || msg.message?.extendedTextMessage?.text || '').replace(/^\/(steal|ssteal)\s*/i, '').trim();
+    const rawText = (msg.message?.conversation || msg.message?.extendedTextMessage?.text || '')
+      .replace(/^\/(steal|ssteal|stickersteal|stealsticker|s)\s*/i, '')
+      .trim();
 
     let packName = '✦ 𝐀𝐬𝐭𝐫𝐚™';
     let author   = ownerName;
@@ -60,20 +64,41 @@ module.exports = {
     try {
       cooldowns.set(sender, now);
 
-      const mediaMsg = {
-        message: quoted,
-        key: {
-          remoteJid: chatId,
-          id: contextInfo.stanzaId,
-          participant: contextInfo.participant
-        }
-      };
+      let buffer = null;
 
-      const buffer = await downloadMediaMessage(mediaMsg, 'buffer', {});
+      if (stickerMsg) {
+        const mediaMsg = {
+          message: quoted,
+          key: {
+            remoteJid: chatId,
+            id: contextInfo.stanzaId,
+            participant: contextInfo.participant
+          }
+        };
+        buffer = await downloadMediaMessage(mediaMsg, 'buffer', {});
+      } else if (imageMsg) {
+        const mediaMsg = quoted ? {
+          message: quoted,
+          key: {
+            remoteJid: chatId,
+            id: contextInfo.stanzaId,
+            participant: contextInfo.participant
+          }
+        } : msg;
+        const imgBuf = await downloadMediaMessage(mediaMsg, 'buffer', {});
+        if (imgBuf && sharp) {
+          buffer = await sharp(imgBuf)
+            .resize(512, 512, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } })
+            .webp({ quality: 95 })
+            .toBuffer();
+        } else {
+          buffer = imgBuf;
+        }
+      }
 
       if (!buffer || buffer.length === 0) {
         return sock.sendMessage(chatId, {
-          text: '❌ Couldn\'t download that sticker. It may have expired.'
+          text: '❌ Couldn\'t download that media. It may have expired.'
         }, { quoted: msg });
       }
 

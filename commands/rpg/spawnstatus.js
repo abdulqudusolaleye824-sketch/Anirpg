@@ -2,7 +2,7 @@
 // /spawnstatus — Check gate spawn status (Mods/Owners)
 //
 // In GC: Displays last spawn, current active spawn, and spawn status.
-// In DM: Displays all group chats where spawn is set to true & their status.
+// In DM: Displays all group chats where spawn status is set & their status.
 // ═══════════════════════════════════════════════════════════════
 
 'use strict';
@@ -40,8 +40,15 @@ module.exports = {
     const isGroup = chatId.endsWith('@g.us');
 
     if (!db.gateSpawnMeta) db.gateSpawnMeta = {};
+    if (!db.gateSpawns) db.gateSpawns = {};
 
     if (isGroup) {
+      let groupName = 'Group Chat';
+      try {
+        const meta = await sock.groupMetadata(chatId).catch(() => null);
+        if (meta?.subject) groupName = meta.subject;
+      } catch (e) {}
+
       const meta = db.gateSpawnMeta[chatId] || {};
       const activeGates = GateManager.getActiveGatesForChat(chatId) || [];
       const activeGateTxt = activeGates.length
@@ -49,13 +56,15 @@ module.exports = {
         : 'None';
 
       const lastSpawnTxt = formatAgo(meta.lastUnboughtSpawnAt || meta.lastSpawnTime);
-      const isEnabled = meta.disabled ? '🔴 DISABLED' : '🟢 ENABLED (True)';
+      const isEnabled = db.gateSpawns[chatId] === true;
+      const statusTxt = isEnabled ? '🟢 TRUE' : '🔴 FALSE';
 
       const text = [
         `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
         `📡 *GROUP SPAWN STATUS*`,
         `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-        `⚙️ Gate Spawning: *${isEnabled}*`,
+        `📍 Group: *${groupName}*`,
+        `⚙️ Gate Spawning: *${statusTxt}*`,
         `🕒 Last Spawn: *${lastSpawnTxt}*`,
         `⚡ Active Gate(s): *${activeGateTxt}*`,
         `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
@@ -66,6 +75,7 @@ module.exports = {
 
     // ── In DM: Show all groups with active spawn status ─────────────────────
     const knownGroups = new Set([
+      ...Object.keys(db.gateSpawns || {}),
       ...Object.keys(db.gateSpawnMeta || {}),
       ...Object.keys(db.groupSettings || {}),
       ...Object.keys(db.astralGroups || {}),
@@ -82,13 +92,25 @@ module.exports = {
     let idx = 1;
 
     for (const gId of knownGroups) {
+      let name = db.astralGroups?.[gId]?.name || db.groupChatMap?.[gId]?.name || null;
+
+      if (!name && sock) {
+        try {
+          const gm = await sock.groupMetadata(gId).catch(() => null);
+          if (gm?.subject) name = gm.subject;
+        } catch (e) {}
+      }
+
+      if (!name) name = `Group Chat (${gId.slice(-8)})`;
+
       const meta = db.gateSpawnMeta[gId] || {};
-      const isEnabled = !meta.disabled;
+      const isEnabled = db.gateSpawns[gId] === true;
       const activeGates = GateManager.getActiveGatesForChat(gId) || [];
       const activeTxt = activeGates.length ? activeGates.map(g => `${g.rank} [${g.id}]`).join(', ') : 'None';
       const lastTxt = formatAgo(meta.lastUnboughtSpawnAt || meta.lastSpawnTime);
 
-      lines.push(`${idx++}. 📍 *GC:* \`...${gId.slice(-12)}\``);
+      lines.push(`${idx++}. 📍 *GC:* ${name}`);
+      lines.push(`   🆔 ID: \`${gId}\``);
       lines.push(`   ⚙️ Spawn: ${isEnabled ? '🟢 TRUE' : '🔴 FALSE'}`);
       lines.push(`   🕒 Last Spawn: ${lastTxt}`);
       lines.push(`   ⚡ Active Gate: ${activeTxt}\n`);

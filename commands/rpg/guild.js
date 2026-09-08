@@ -398,6 +398,7 @@ Use /guild members to see all members!
 
     // ═══════════════════════════════════════════════════════════════════
     // HIRE MEMBER (PROPOSAL & ACCEPTANCE FLOW)
+    // Syntax: /guild hire @user <nexus> | <mana> || <weeks>
     // ═══════════════════════════════════════════════════════════════════
     if (action === 'hire') {
       if (!playerGuild) return sock.sendMessage(chatId, { text: '❌ You are not in a guild!' });
@@ -416,11 +417,57 @@ Use /guild members to see all members!
         return sock.sendMessage(chatId, { text: '❌ You cannot hire yourself!' });
       }
 
-      const text = (msg.message?.conversation || msg.message?.extendedTextMessage?.text || '');
-      const nums = (text.match(/\d+/g) || []).map(Number);
-      const weeklyNexus = nums[0] || 500;
-      const weeklyMana  = nums[1] || 10;
-      const weeks       = nums[2] || 4;
+      const fullText = (msg.message?.conversation || msg.message?.extendedTextMessage?.text || '');
+      
+      // Strip command, mentions, and target phone digits before parsing numbers
+      let cleanText = fullText.replace(/^\/guild\s+hire/i, '').replace(/@\d+/g, '').trim();
+      const targetDigits = String(targetId).replace(/[^0-9]/g, '');
+      if (targetDigits) {
+        cleanText = cleanText.replace(new RegExp(targetDigits, 'g'), '').trim();
+      }
+
+      let weeklyNexus = 500;
+      let weeklyMana  = 10;
+      let weeks       = 4;
+
+      if (cleanText.includes('||')) {
+        const [wagePart, weeksPart] = cleanText.split('||').map(s => s.trim());
+        if (weeksPart) {
+          const w = parseInt(weeksPart.match(/\d+/)?.[0]);
+          if (!isNaN(w) && w > 0) weeks = w;
+        }
+        if (wagePart) {
+          if (wagePart.includes('|')) {
+            const [nStr, mStr] = wagePart.split('|').map(s => s.trim());
+            const n = parseInt(nStr.match(/\d+/)?.[0]);
+            const m = parseInt(mStr.match(/\d+/)?.[0]);
+            if (!isNaN(n) && n >= 0) weeklyNexus = n;
+            if (!isNaN(m) && m >= 0) weeklyMana = m;
+          } else {
+            const n = parseInt(wagePart.match(/\d+/)?.[0]);
+            if (!isNaN(n) && n >= 0) weeklyNexus = n;
+          }
+        }
+      } else if (cleanText.includes('|')) {
+        const parts = cleanText.split('|').map(s => s.trim());
+        if (parts[0]) {
+          const n = parseInt(parts[0].match(/\d+/)?.[0]);
+          if (!isNaN(n) && n >= 0) weeklyNexus = n;
+        }
+        if (parts[1]) {
+          const m = parseInt(parts[1].match(/\d+/)?.[0]);
+          if (!isNaN(m) && m >= 0) weeklyMana = m;
+        }
+        if (parts[2]) {
+          const w = parseInt(parts[2].match(/\d+/)?.[0]);
+          if (!isNaN(w) && w > 0) weeks = w;
+        }
+      } else {
+        const nums = (cleanText.match(/\d+/g) || []).map(Number);
+        if (nums.length >= 1 && !isNaN(nums[0])) weeklyNexus = nums[0];
+        if (nums.length >= 2 && !isNaN(nums[1])) weeklyMana = nums[1];
+        if (nums.length >= 3 && !isNaN(nums[2])) weeks = nums[2];
+      }
 
       const targetUser = db.users?.[targetId];
       const targetName = targetUser?.name || targetId.split('@')[0];
