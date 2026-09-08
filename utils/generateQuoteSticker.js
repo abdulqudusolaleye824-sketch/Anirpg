@@ -12,7 +12,7 @@ function escapeXml(unsafe) {
     .replace(/'/g, '&apos;');
 }
 
-function wrapTextSvg(text, maxCharsPerLine = 22) {
+function wrapTextSvg(text, maxCharsPerLine = 14) {
   const words = text.split(' ');
   const lines = [];
   let currentLine = '';
@@ -54,14 +54,15 @@ async function generateQuoteSticker(senderName, quoteText, outputPath, avatarPat
 
   const nameEsc = escapeXml(senderName);
 
-  let fontSize = 32;
-  let maxChars = 20;
-  if (quoteText.length > 120) { fontSize = 18; maxChars = 30; }
-  else if (quoteText.length > 60) { fontSize = 22; maxChars = 26; }
-  else if (quoteText.length > 30) { fontSize = 26; maxChars = 22; }
+  let fontSize = 52;
+  let maxChars = 14;
+  if (quoteText.length > 150) { fontSize = 18; maxChars = 30; }
+  else if (quoteText.length > 80) { fontSize = 22; maxChars = 26; }
+  else if (quoteText.length > 35) { fontSize = 28; maxChars = 22; }
+  else if (quoteText.length > 15) { fontSize = 38; maxChars = 18; }
 
   const textWrapped = wrapTextSvg(quoteText, maxChars);
-  const lineHeight = fontSize * 1.4;
+  const lineHeight = fontSize * 1.35;
 
   const totalTextHeight = textWrapped.length * lineHeight;
   const bodyTop = 130;
@@ -133,8 +134,8 @@ async function generateQuoteSticker(senderName, quoteText, outputPath, avatarPat
     <!-- Divider Line -->
     <line x1="24" y1="110" x2="488" y2="110" stroke="url(#nameGrad)" stroke-opacity="0.3" stroke-width="1.5" />
 
-    <!-- Centered Quote Text -->
-    <text class="all-text" font-size="${fontSize}" font-weight="600" fill="#f8fafc">
+    <!-- Centered Bold Quote Text -->
+    <text class="all-text" font-size="${fontSize}" font-weight="bold" fill="#f8fafc">
       ${textLinesSvg}
     </text>
 

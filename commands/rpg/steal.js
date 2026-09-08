@@ -76,19 +76,7 @@ module.exports = {
           }
         };
         const downloadedBuf = await downloadMediaMessage(mediaMsg, 'buffer', {});
-        // Re-process WebP with sharp to strip previous EXIF/author metadata before injecting new EXIF
-        if (downloadedBuf && sharp) {
-          try {
-            buffer = await sharp(downloadedBuf)
-              .resize(512, 512, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } })
-              .webp({ quality: 95 })
-              .toBuffer();
-          } catch(e) {
-            buffer = downloadedBuf;
-          }
-        } else {
-          buffer = downloadedBuf;
-        }
+        buffer = downloadedBuf;
       } else if (imageMsg) {
         const mediaMsg = quoted ? {
           message: quoted,
@@ -117,7 +105,18 @@ module.exports = {
 
       const rebrandedWebp = await injectStickerMetadata(buffer, packName, author);
 
-      await sock.sendMessage(chatId, { sticker: rebrandedWebp }, { quoted: msg });
+      let isAnim = false;
+      try {
+        const webpmux = require('node-webpmux');
+        const img = new webpmux.Image();
+        await img.load(rebrandedWebp);
+        isAnim = img.hasAnim || false;
+      } catch (e) {}
+
+      await sock.sendMessage(chatId, {
+        sticker: rebrandedWebp,
+        isAnimated: isAnim
+      }, { quoted: msg });
 
     } catch (err) {
       console.error('steal sticker error:', err.message);

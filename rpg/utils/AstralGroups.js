@@ -133,6 +133,10 @@ class AstralGroups {
       return { allow: false, silent: false, expired: true, msg: EXPIRED_MSG };
     }
     if (e.status === 'pending') {
+      if (e.type === 'dungeon' || e.type === 'pvp' || e.type === 'support' || db?.dungeonGCs?.[groupId]) {
+        e.status = 'active';
+        return { allow: true, silent: false, expired: false };
+      }
       return { allow: false, silent: true, expired: false };
     }
     if (e.status === 'active' && e.expiresAt && now >= e.expiresAt) {
