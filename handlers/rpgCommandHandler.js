@@ -231,6 +231,25 @@ module.exports = async (sock, msg, messageText, config, getDatabase, saveDatabas
   const resolvedCommand = ALIASES[commandName] || commandName;
   console.log(`[COMMAND] ${resolvedCommand}${resolvedCommand !== commandName ? ` (alias: ${commandName})` : ''} | Sender: ${sender} | Chat: ${chatId}`);
 
+  // ── Block regular player commands in DMs (Only Owner & Co-Owner allowed in DM) ──
+  const isDM = !chatId.endsWith('@g.us');
+  if (isDM) {
+    const normaliseJid = (j) => String(j || '').split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
+    const ownerNum   = normaliseJid(process.env.OWNER_JID   || OWNER_JID || '221951679328499');
+    const coOwnerNum = normaliseJid(process.env.COOWNER_JID || '194592469209292');
+    const sNum       = normaliseJid(sender);
+    const isAuthorizedDM = sNum === ownerNum || sNum === coOwnerNum;
+    if (!isAuthorizedDM) {
+      return sock.sendMessage(
+        chatId,
+        {
+          text: `🚫 *COMMANDS DISABLED IN DM*\n\nBot commands can only be used in authorized group chats.\nJoin an official RPG group to play!`
+        },
+        { quoted: msg }
+      );
+    }
+  }
+
   const db = getDatabase();
   const OWNER_ID = OWNER_JID;
   const isOwner = sender === OWNER_ID;
@@ -500,7 +519,6 @@ module.exports = async (sock, msg, messageText, config, getDatabase, saveDatabas
   }
 
   const adminOnlyCommands = ['disable', 'enable', 'maintenance', 'groupinfo'];
-  const isDM = !chatId.endsWith('@g.us');
   
   if (!adminOnlyCommands.includes(commandName) && !isDM) {
     const redirectCheck = AutoRedirect.checkCommand(chatId, commandName, db);

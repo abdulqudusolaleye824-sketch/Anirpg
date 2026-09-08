@@ -28,7 +28,7 @@ const { AuraSystem } = require('../../rpg/utils/AuraSystem');
 module.exports = {
   name: 'classcmd',   // Primary name (gets aliased to all class cmdNames below)
   description: 'Class-specific skill command — use your class abilities',
-  aliases: Object.values(DEFAULT_CMD_NAMES),  // 'heal', 'cast', 'rage', etc.
+  aliases: [...Object.values(DEFAULT_CMD_NAMES), 'call'],  // 'heal', 'call', 'cast', 'rage', etc.
 
   // ── Main dispatch ──────────────────────────────────────────────
   async execute(sock, msg, args, getDatabase, saveDatabase, sender) {
@@ -63,7 +63,9 @@ module.exports = {
     //    We determine the actual command name from the message.
     const usedCmd = extractCommandName(msg, sender);
 
-    if (usedCmd && usedCmd !== playerCmd) {
+    const isMatchingCmd = (usedCmd === playerCmd) || (className === 'Mage' && (usedCmd === 'call' || usedCmd === 'cast'));
+
+    if (usedCmd && !isMatchingCmd) {
       // Player used a different class's command
       const intendedClass = findClassByCmdName(usedCmd);
       return sock.sendMessage(chatId, {
@@ -334,6 +336,7 @@ function getClassHandler(className) {
 }
 
 function findClassByCmdName(cmdName) {
+  if (cmdName === 'call' || cmdName === 'cast') return 'Mage';
   for (const [cls, name] of Object.entries(DEFAULT_CMD_NAMES)) {
     if (name === cmdName) return cls;
   }

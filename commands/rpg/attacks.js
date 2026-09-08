@@ -1,24 +1,23 @@
 // ═══════════════════════════════════════════════════════════════
-// /attacks — Attack Pattern Management
+// /attacks — Attack Pattern Management & Universal Combat Attack
 //
 // /attacks                   — show equipped attack patterns
-// /attacks all               — all owned patterns
-// /attacks equip <number>    — equip a pattern (max 10 slots)
-// /attacks unequip <number>  — unequip a pattern
-// /attacks info <number>     — view details of any pattern
+// /attack                    — execute combat attack (in battle) or show patterns
+// /attack <pattern_id>       — execute pattern attack in active battle
 // /attacks shop              — browse today's shop
 // /attacks buy <number>      — buy from shop
-// /attacks rank <E|D|C|B|A|S>  — browse all patterns in a rank
+// /attacks equip <number>    — equip a pattern (max 10 slots)
 // ═══════════════════════════════════════════════════════════════
 
 'use strict';
 
 const DB   = require('../../rpg/utils/AttackPatternDB');
 const Shop = require('../../rpg/utils/AttackShop');
+const GKM  = require('../../rpg/dungeons/GateKeyManager');
+const { GateManager } = require('../../rpg/dungeons/GateManager');
 
 const MAX_EQUIPPED = 10;
 
-// ── Ensure player has attackPatterns structure ────────────────────────────────
 function initAP(player) {
   if (!player.attackPatterns) player.attackPatterns = { owned: [], equipped: [] };
   if (!Array.isArray(player.attackPatterns.owned))    player.attackPatterns.owned = [];
@@ -26,22 +25,63 @@ function initAP(player) {
   return player.attackPatterns;
 }
 
-// ── Normalise JID ─────────────────────────────────────────────────────────────
 function normaliseJid(jid) {
   return jid?.split('@')[0]?.split(':')[0]?.replace(/[^0-9]/g, '') || '';
 }
 
-function isOwnerOrCoOwner(sender) {
-  const ownerNum   = normaliseJid(process.env.OWNER_JID   || '221951679328499@lid');
-  const coOwnerNum = normaliseJid(process.env.COOWNER_JID || '194592469209292@lid');
-  const sNum       = normaliseJid(sender);
-  return sNum === ownerNum || sNum === coOwnerNum;
+function detectActiveCombat(player, chatId, db, sender) {
+  const sNum = normaliseJid(sender || player.id || player.jid || player._id);
+
+  // 1. PvP Battle
+  if (player.pvpBattle) {
+    return { type: 'pvp', battle: player.pvpBattle };
+  }
+
+  // 2. Solo Dungeon
+  if (player.dungeon && (player.dungeon.currentBattle || player.dungeon.inDungeon)) {
+    return { type: 'dungeon', dungeon: player.dungeon };
+  }
+
+  // 3. Gate Raid in current chat
+  const gc = GKM.getDungeonGC(chatId);
+  if (gc?.activeKeyId) {
+    const keyData = GKM.getKey(gc.activeKeyId) || db.gateKeys?.[gc.activeKeyId];
+    if (keyData) {
+      const gate = GateManager.getGate(keyData.gateId);
+      if (gate && gate.raid && gate.raid.status === 'active') {
+        const isMember = gate.raid.members?.some(m => normaliseJid(m.id) === sNum);
+        if (isMember) {
+          return { type: 'gateraid', gate, key: gc.activeKeyId, keyData };
+        }
+      }
+    }
+  }
+
+  // Check all active gates
+  for (const gate of Object.values(GateManager.gates || {})) {
+    if (gate.raid && gate.raid.status === 'active') {
+      const isMember = gate.raid.members?.some(m => normaliseJid(m.id) === sNum);
+      if (isMember) {
+        return { type: 'gateraid', gate, key: gate.raid.key, keyData: GKM.getKey(gate.raid.key) };
+      }
+    }
+  }
+
+  // 4. World Boss
+  if (player.boss || player.inBossBattle || (db.activeWorldBoss && db.activeWorldBoss.status === 'active')) {
+    const isBossPart = db.activeWorldBoss?.participants?.some(p => normaliseJid(p) === sNum);
+    if (player.boss || player.inBossBattle || isBossPart) {
+      return { type: 'boss', boss: player.boss, worldBoss: db.activeWorldBoss };
+    }
+  }
+
+  return null;
 }
 
 module.exports = {
   name: 'attacks',
   aliases: ['attack', 'ap', 'patterns'],
-  description: 'Manage your martial attack patterns',
+  description: 'Manage attack patterns or execute attack in active combat',
 
   async execute(sock, msg, args, getDatabase, saveDatabase, sender) {
     const chatId = msg.key?.remoteJid;
@@ -51,6 +91,32 @@ module.exports = {
 
     const ap  = initAP(player);
     const sub = (args[0] || '').toLowerCase();
+
+    const managementCmds = ['shop', 'buy', 'equip', 'unequip', 'all', 'info', 'rank', 'purchase'];
+    const isManagement = managementCmds.includes(sub);
+
+    // ── Combat Check (if not explicit management subcommand) ──
+    if (!isManagement) {
+      const combat = detectActiveCombat(player, chatId, db, sender);
+      if (combat) {
+        if (combat.type === 'pvp') {
+          const PvpCmd = require('./pvp');
+          return PvpCmd.execute(sock, msg, ['attack', ...args], getDatabase, saveDatabase, sender);
+        }
+        if (combat.type === 'dungeon') {
+          const DungeonCmd = require('./dungeon');
+          return DungeonCmd.execute(sock, msg, ['attack', ...args], getDatabase, saveDatabase, sender);
+        }
+        if (combat.type === 'gateraid') {
+          const GateRaidCmd = require('./gateraid');
+          return GateRaidCmd.execute(sock, msg, [combat.key, 'attack', ...args], getDatabase, saveDatabase, sender);
+        }
+        if (combat.type === 'boss') {
+          const WorldBossCmd = require('./worldboss');
+          return WorldBossCmd.execute(sock, msg, ['attack', ...args], getDatabase, saveDatabase, sender);
+        }
+      }
+    }
 
     // ── /attacks (show equipped) ───────────────────────────────────────────────
     if (!sub || sub === 'equipped') {
@@ -88,7 +154,7 @@ module.exports = {
           ``,
           ...lines,
           ``,
-          `📌 /dungeon attack <#> — use in combat`,
+          `📌 /attack <#> — execute in active combat`,
           `📌 /attacks all — see all owned`,
           `📌 /attacks equip <#> — equip a pattern`,
           `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
@@ -111,7 +177,6 @@ module.exports = {
         return DB.formatAttack(atk, true) + (isEquipped ? ' ✅' : '');
       }).filter(Boolean);
 
-      // Split into chunks if too long
       const chunk = lines.slice(0, 20);
       const more  = lines.length > 20 ? `\n...and ${lines.length - 20} more` : '';
 
@@ -179,7 +244,7 @@ module.exports = {
           `${DB.RANK_EMOJI[atk.rank]} ${atk.name}`,
           `Slot ${ap.equipped.length}/${MAX_EQUIPPED}`,
           ``,
-          `Use in combat: */dungeon attack ${num}*`,
+          `Use in combat: */attack ${num}*`,
         ].join('\n'),
       }, { quoted: msg });
     }
@@ -304,7 +369,7 @@ module.exports = {
           `_${atk.flavour}_`,
           ``,
           `📌 /attacks equip ${num} — equip it now`,
-          `📌 /dungeon attack ${num} — use in combat`,
+          `📌 /attack ${num} — use in active combat`,
           `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
         ].join('\n'),
       }, { quoted: msg });

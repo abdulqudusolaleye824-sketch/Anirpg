@@ -1,22 +1,71 @@
-// boss.js — Redirects to /worldboss
-// The old solo boss system has been replaced by the World Boss Raid system.
+'use strict';
+
+const GKM = require('../../rpg/dungeons/GateKeyManager');
+const { GateManager } = require('../../rpg/dungeons/GateManager');
 
 module.exports = {
   name: 'boss',
-  description: 'World Boss Raids (redirects to /worldboss)',
+  aliases: ['b'],
+  description: '👹 Boss Battle Command — engage or attack active boss',
 
   async execute(sock, msg, args, getDatabase, saveDatabase, sender) {
     const chatId = msg.key?.remoteJid;
+    const db = getDatabase();
+    const player = db.users?.[sender];
 
-    // If they typed /boss with subcommands, pass them through to worldboss
+    if (!player) return sock.sendMessage(chatId, { text: '❌ Register first!' }, { quoted: msg });
+
+    // 1. Check Gate Raid active in chat or for player
+    const gc = GKM.getDungeonGC(chatId);
+    let activeKey = gc?.activeKeyId || null;
+    if (!activeKey) {
+      for (const g of Object.values(GateManager.gates || {})) {
+        if (g.raid && g.raid.status === 'active' && g.raid.members?.some(m => m.id === sender)) {
+          activeKey = g.raid.key;
+          break;
+        }
+      }
+    }
+
+    if (activeKey) {
+      const GateRaidCmd = require('./gateraid');
+      return GateRaidCmd.execute(sock, msg, [activeKey, 'boss', ...args], getDatabase, saveDatabase, sender);
+    }
+
+    // 2. Solo Dungeon
+    if (player.dungeon && (player.dungeon.currentBattle || player.dungeon.inDungeon)) {
+      const DungeonCmd = require('./dungeon');
+      return DungeonCmd.execute(sock, msg, ['attack', ...args], getDatabase, saveDatabase, sender);
+    }
+
+    // 3. World Boss
+    const WorldBoss = require('./worldboss');
+    if (db.activeWorldBoss && db.activeWorldBoss.status === 'active') {
+      return WorldBoss.execute(sock, msg, ['attack', ...args], getDatabase, saveDatabase, sender);
+    }
+
+    // Fallback: pass through to World Boss
     if (args.length > 0) {
-      const WorldBoss = require('./worldboss');
       return WorldBoss.execute(sock, msg, args, getDatabase, saveDatabase, sender);
     }
 
-    // No args — show redirect message
     return sock.sendMessage(chatId, {
-      text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n👹 *BOSS RAIDS*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\nBoss raids have been upgraded to the\n🌍 *WORLD BOSS SYSTEM!*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n📋 *COMMANDS:*\n/worldboss list         — View world bosses\n/worldboss create [#]   — Form a raid party\n/worldboss join [ID]    — Join a party\n/worldboss ready        — Mark ready\n/worldboss start        — Begin the raid\n/worldboss attack       — Attack the boss\n/worldboss defend       — Brace for big hits\n/worldboss skill [name] — Use a skill\n/worldboss status       — Check raid status\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n💡 Short alias: */wb* works too!\nExample: /wb create 1\n━━━━━━━━━━━━━━━━━━━━━━━━━━━`
+      text: [
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        `👹 *BOSS BATTLES*`,
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        `🌍 *WORLD BOSS & GATE BOSSES*`,
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        `📋 *COMMANDS:*`,
+        `/worldboss list         — View world bosses`,
+        `/worldboss create [#]   — Form a raid party`,
+        `/worldboss join [ID]    — Join a party`,
+        `/worldboss attack       — Attack the boss`,
+        `/gateraid <code > boss  — Engage gate boss`,
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        `💡 Short alias: */b* works in combat!`,
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+      ].join('\n'),
     }, { quoted: msg });
   }
 };

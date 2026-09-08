@@ -59,6 +59,7 @@ function resolveCode(code) {
   if (!key || key.length !== 8) return { ok: false, error: 'Invalid gate code. Format: 8 characters (e.g. 2K7SN2N8).' };
   const keyData = GKM.getKey(key) || null;
   if (!keyData) return { ok: false, error: '❌ Gate code not found. Check the code and try again.' };
+  if (keyData.used || keyData.raidStarted || keyData.claimed) return { ok: false, error: '❌ This gate key has already been used!' };
   if (keyData.expired || Date.now() > keyData.expiresAt) return { ok: false, error: '⚠️ This gate code has expired. The gate has collapsed.' };
   if (keyData.raidComplete) return { ok: false, error: 'This gate has already been cleared.' };
   const gate = GateManager.getGate(keyData.gateId);

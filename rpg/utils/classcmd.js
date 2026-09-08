@@ -34,7 +34,7 @@ const CS = require('./ClassSystem');
 // and as a documentation reference.
 const DEFAULT_CMD_NAMES = {
   Healer:       'heal',     // /heal <skill|target> — pure support
-  Mage:         'cast',     // /cast <skill> — arcane
+  Mage:         'call',     // /call <skill> — arcane spells
   Berserker:    'rage',     // /rage <skill> — fury
   Assassin:     'strike',   // /strike <skill> — precision
   Paladin:      'prayer',   // /prayer <skill> — divine

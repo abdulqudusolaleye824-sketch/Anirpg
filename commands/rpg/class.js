@@ -1,15 +1,16 @@
 // ═══════════════════════════════════════════════════════════════
-// /class — View your class, quality, and skills
+// /class — View your class, quality, skills & in-battle activation guide
 // ═══════════════════════════════════════════════════════════════
 
 'use strict';
 
 const { CLASS_DATA, formatClassInfo, getQualityLabel, ALL_CLASSES } = require('../../rpg/utils/ClassSystem');
+const { getClassCmdName } = require('../../rpg/utils/classcmd');
 
 module.exports = {
   name: 'class',
   aliases: ['myclass', 'cls'],
-  description: 'View your class info and skills',
+  description: 'View your class info, skills, and in-battle skill command guide',
 
   async execute(sock, msg, args, getDatabase, saveDatabase, sender) {
     const chatId = msg.key?.remoteJid;
@@ -56,6 +57,7 @@ module.exports = {
     const data    = CLASS_DATA[player.class] || {};
     const quality = player.classQuality || 0;
     const qualLabel = getQualityLabel(quality);
+    const playerCmd = getClassCmdName(player.class);
 
     const stars = quality >= 90 ? '⭐⭐⭐⭐⭐'
                 : quality >= 70 ? '⭐⭐⭐⭐'
@@ -63,7 +65,8 @@ module.exports = {
                 : quality >= 30 ? '⭐⭐'
                 : '⭐';
 
-    const skillLines = (player.classSkills || data.skills || []).map((s, i) =>
+    const rawSkills = (player.classSkills || data.skills || []);
+    const skillLines = rawSkills.map((s, i) =>
       `  ${i+1}. *${s.name}*\n     ${s.desc || ''}`
     );
 
@@ -78,6 +81,8 @@ module.exports = {
     const awakenDate = player.classAwakenedAt
       ? new Date(player.classAwakenedAt + 3600000).toISOString().slice(0,10)
       : 'Unknown';
+
+    const exampleSkill = rawSkills[0]?.name || 'skill';
 
     return sock.sendMessage(chatId, {
       text: [
@@ -100,6 +105,36 @@ module.exports = {
         `⚡ *CLASS SKILLS:*`,
         ...skillLines,
         ``,
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        `⚔️ *IN-BATTLE SKILL ACTIVATION:*`,
+        `📌 Your Class Trigger: */${playerCmd} <skill_name>*`,
+        `📌 Example: */${playerCmd} ${exampleSkill}*`,
+        ``,
+        `🎭 *CLASS COMMAND SHORTCUTS (23 CLASSES):*`,
+        `• Healer: /heal <skill>`,
+        `• Mage: /call or /cast <skill>`,
+        `• Berserker: /rage <skill>`,
+        `• Assassin: /strike <skill>`,
+        `• Paladin: /prayer <skill>`,
+        `• Necromancer: /hex <skill>`,
+        `• Chronomancer: /rewind <skill>`,
+        `• Shaman: /chant <skill>`,
+        `• Warlord: /rally <skill>`,
+        `• Phantom: /veil <skill>`,
+        `• Devourer: /feast <skill>`,
+        `• DragonKnight: /roar <skill>`,
+        `• ShadowDancer: /dance <skill>`,
+        `• Summoner: /summon <skill>`,
+        `• BloodKnight: /drain <skill>`,
+        `• SpellBlade: /slash <skill>`,
+        `• Elementalist: /storm <skill>`,
+        `• Warrior: /swing <skill>`,
+        `• Archer: /aim <skill>`,
+        `• Rogue: /sneak <skill>`,
+        `• Knight: /shield <skill>`,
+        `• Monk: /meditate <skill>`,
+        `• Ranger: /hunt <skill>`,
+        `• Senku: /science <skill>`,
         `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
       ].join('\n'),
     }, { quoted: msg });

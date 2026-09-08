@@ -1,165 +1,224 @@
+// ═══════════════════════════════════════════════════════════════
+// /catch — Universal Wild Pet Catching Command
+//
+// Works in both Solo Dungeons and Gate Raids!
+// - 60 second catch window when a wild pet spawns
+// - Costs Nexus + Mana Stones scaled by pet rarity
+// - Cost deducted regardless of success or failure
+// - Rolls up to 3 attempts per /catch execution
+// ═══════════════════════════════════════════════════════════════
+
+'use strict';
+
 const PetManager = require('../../rpg/utils/PetManager');
 const DungeonPartyManager = require('../../rpg/dungeons/DungeonPartyManager');
 const AchievementManager = require('../../rpg/utils/AchievementManager');
+const { PET_DATABASE } = require('../../rpg/utils/PetDatabase');
 
+function bare(jid) {
+  return String(jid || '').split(':')[0].split('@')[0].replace(/[^0-9]/g, '');
+}
+
+const CATCH_COSTS = {
+  common:    { gold: 20000,   crystals: 500 },
+  uncommon:  { gold: 40000,   crystals: 1000 },
+  rare:      { gold: 80000,   crystals: 2000 },
+  epic:      { gold: 200000,  crystals: 5000 },
+  legendary: { gold: 500000,  crystals: 10000 },
+  mythic:    { gold: 1000000, crystals: 20000 }
+};
+
+const BASE_CATCH_RATES = {
+  common: 70,
+  uncommon: 55,
+  rare: 40,
+  epic: 25,
+  legendary: 15,
+  mythic: 8
+};
 
 module.exports = {
   name: 'catch',
-  aliases: ['capture'],
-  
+  aliases: ['capture', 'caught', 'capturepet', 'catchpet'],
+  description: '🪤 Catch a wild pet in dungeons or gate raids',
+
   async execute(sock, msg, args, getDatabase, saveDatabase, sender) {
     const chatId = msg.key?.remoteJid;
     const db = getDatabase();
-    const player = db.users[sender];
+    const player = db.users?.[sender];
 
     if (!player) {
-      return sock.sendMessage(chatId, { 
-        text: '❌ You need to /start first!' 
-      }, { quoted: msg });
+      return sock.sendMessage(chatId, { text: '❌ You need to register first!' }, { quoted: msg });
     }
 
-    // Check if in active dungeon
-    const party = DungeonPartyManager.getPartyByPlayer(sender);
-    if (!party || party.status !== 'active') {
+    const sBare = bare(sender);
+    const now = Date.now();
+
+    // ── 1. Find wild pet in Solo Dungeon or Gate Raid ───────────
+    let petId = null;
+    let wildRecord = null;
+    let isDungeonPet = false;
+    let party = DungeonPartyManager.getPartyByPlayer(sender);
+
+    // Check Solo Dungeon pending pet
+    if (party && party.status === 'active' && party.dungeon?.pendingPet) {
+      petId = party.dungeon.pendingPet;
+      isDungeonPet = true;
+    }
+
+    // Check Gate Raid wild pet in db.wildPets
+    if (!petId && Array.isArray(db.wildPets)) {
+      db.wildPets = db.wildPets.filter(w => w.expiresAt > now && (!w.caughtBy || !w.caughtBy.includes(sender)));
+      wildRecord = db.wildPets.find(w => w.forJids && w.forJids.some(j => bare(j) === sBare));
+      if (wildRecord) {
+        petId = wildRecord.petId;
+      }
+    }
+
+    if (!petId) {
       return sock.sendMessage(chatId, {
-        text: '❌ No active dungeon! Pet encounters only happen in dungeons.'
+        text: [
+          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          `🪤 *WILD PET CATCH*`,
+          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          `❌ No active wild pet to catch nearby!`,
+          ``,
+          `Wild pets appear after clearing dungeons or gate raids.`,
+          `They flee after *60 seconds*!`,
+          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        ].join('\n'),
       }, { quoted: msg });
     }
 
-    const dungeon = party.dungeon;
-    
-    if (!dungeon.pendingPet) {
-      return sock.sendMessage(chatId, {
-        text: '❌ No wild pet to catch! Keep exploring to find pets.'
-      }, { quoted: msg });
-    }
-
-    // Track catch attempts
-    if (dungeon.petCatchAttempts === undefined) dungeon.petCatchAttempts = 1;
-    if (dungeon.petCatchAttempts <= 0) {
-      dungeon.pendingPet = null;
-      saveDatabase();
-      return sock.sendMessage(chatId, {
-        text: '❌ No catch attempts remaining! The pet fled.'
-      }, { quoted: msg });
-    }
-
-    dungeon.petCatchAttempts--;
-
-    const petId = dungeon.pendingPet;
-    const { PET_DATABASE } = require('../../rpg/utils/PetDatabase');
     const petTemplate = PET_DATABASE[petId];
-
     if (!petTemplate) {
-      dungeon.pendingPet = null;
-      saveDatabase();
-      return sock.sendMessage(chatId, { text: '❌ Unknown pet encountered!' }, { quoted: msg });
+      return sock.sendMessage(chatId, { text: '❌ Unknown pet data encountered.' }, { quoted: msg });
     }
 
-    // Cost by rarity
-    const catchCosts = {
-      common:    { gold: 20000,   crystals: 500 },
-      uncommon:  { gold: 40000,   crystals: 1000 },
-      rare:      { gold: 80000,   crystals: 2000 },
-      epic:      { gold: 200000,  crystals: 5000 },
-      legendary: { gold: 500000,  crystals: 10000 },
-      mythic:    { gold: 1000000, crystals: 20000 }
-    };
-    const cost = catchCosts[petTemplate.rarity] || catchCosts.common;
+    const rarity = (petTemplate.rarity || 'common').toLowerCase();
+    const cost = CATCH_COSTS[rarity] || CATCH_COSTS.common;
+    const baseRate = BASE_CATCH_RATES[rarity] || 50;
 
-    if ((player.gold || 0) < cost.gold) {
+    // Check funds
+    if ((player.gold || 0) < cost.gold || (player.manaCrystals || 0) < cost.crystals) {
       return sock.sendMessage(chatId, {
-        text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-              `❌ NOT ENOUGH GOLD!\n` +
-              `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
-              `${petTemplate.emoji} *${petTemplate.name}* (${petTemplate.rarity.toUpperCase()})\n\n` +
-              `💠 Cost: ${cost.gold.toLocaleString()} 💠 + ${cost.crystals} 💎\n` +
-              `💠 You have: ${(player.gold||0).toLocaleString()}g\n\n` +
-              `⚠️ The pet will flee if you don't catch it now!`
+        text: [
+          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          `❌ *INSUFFICIENT FUNDS TO CATCH!*`,
+          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          `${petTemplate.emoji} Target: *${petTemplate.name}* (${rarity.toUpperCase()})`,
+          ``,
+          `💸 Required: ${cost.gold.toLocaleString()} 💠 Nexus + ${cost.crystals.toLocaleString()} 💎 Mana Stones`,
+          `💼 You have: ${(player.gold || 0).toLocaleString()} 💠 Nexus + ${(player.manaCrystals || 0).toLocaleString()} 💎 Mana Stones`,
+          ``,
+          `⚠️ The pet will flee if you don't catch it in 60s!`,
+          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        ].join('\n'),
       }, { quoted: msg });
     }
 
-    if ((player.manaCrystals || 0) < cost.crystals) {
-      return sock.sendMessage(chatId, {
-        text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-              `❌ NOT ENOUGH MANA STONES!\n` +
-              `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
-              `${petTemplate.emoji} *${petTemplate.name}* (${petTemplate.rarity.toUpperCase()})\n\n` +
-              `💎 Cost: ${cost.gold.toLocaleString()} 💠 + ${cost.crystals} 💎\n` +
-              `💎 You have: ${player.manaCrystals||0} 💎\n\n` +
-              `⚠️ The pet will flee if you don't catch it now!`
-      }, { quoted: msg });
-    }
-
-    // Deduct cost regardless of catch success
+    // Deduct cost immediately (failing costs as much as success)
     player.gold = (player.gold || 0) - cost.gold;
     player.manaCrystals = (player.manaCrystals || 0) - cost.crystals;
     if (!player.inventory) player.inventory = {};
     player.inventory.gold = player.gold;
 
-    // Apply luck potion bonus
-    const luckItems = (player.inventory?.items || []).filter(i => i.name === 'Luck Potion' || i.isLuckPotion);
-    const luckBonus = luckItems.length > 0 ? 25 : 0;
-    if (luckBonus > 0) {
-      const luckIdx = player.inventory.items.findIndex(i => i.name === 'Luck Potion' || i.isLuckPotion);
-      if (luckIdx !== -1) player.inventory.items.splice(luckIdx, 1);
+    // Luck Potion check
+    const luckIdx = (player.inventory?.items || []).findIndex(i => i.name === 'Luck Potion' || i.isLuckPotion);
+    const luckBonus = luckIdx !== -1 ? 25 : 0;
+    if (luckIdx !== -1) {
+      player.inventory.items.splice(luckIdx, 1);
     }
 
-    // Owner, co-owner, and Paladin get guaranteed catch
+    // Privileged / Paladin check
     const OWNER_ID = '221951679328499@lid';
     const COOWNER_ID = '194592469209292@lid';
     const playerClass = typeof player.class === 'string' ? player.class : player.class?.name;
-    const isGuaranteedCatch = sender === OWNER_ID || sender === COOWNER_ID || playerClass === 'Paladin';
+    const isGuaranteed = sender === OWNER_ID || sender === COOWNER_ID || playerClass === 'Paladin';
 
-    const result = PetManager.attemptCatch(sender, petId, luckBonus, isGuaranteedCatch);
+    const finalRate = Math.min(95, baseRate + luckBonus);
 
-    const attemptsLeft = dungeon.petCatchAttempts || 0;
-    if (!result.success && attemptsLeft > 0) {
-      // Don't clear pet yet, they still have attempts
-      saveDatabase();
-      let message = result.message + '\n\n';
-      message += `💸 Lost: ${cost.gold.toLocaleString()} 💠 + ${cost.crystals} 💎 (attempt cost)\n`;
-      message += `🎯 Attempts remaining: *${attemptsLeft}*`;
-      if (luckBonus > 0) message += `\n🍀 Luck Potion consumed`;
-      return sock.sendMessage(chatId, { text: message }, { quoted: msg });
+    // Roll 3 catch attempts in 60s
+    let rolls = [];
+    let success = false;
+
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      const roll = Math.floor(Math.random() * 100) + 1;
+      const pass = isGuaranteed || roll <= finalRate;
+      if (pass) {
+        rolls.push(`🎯 *Roll ${attempt}:* 🎉 *SUCCESS!* (${roll} ≤ ${finalRate}%)`);
+        success = true;
+        break;
+      } else {
+        rolls.push(`🎯 *Roll ${attempt}:* 💨 Broke free! (${roll} > ${finalRate}%)`);
+      }
     }
 
-    dungeon.pendingPet = null;
-    saveDatabase();
+    let resultMsg = '';
 
-    if (result.success) {
-      // Track pet catch achievements
+    if (success) {
+      const catchRes = PetManager.attemptCatch(sender, petId, luckBonus, true);
+
+      // Clean up wild pet
+      if (isDungeonPet && party?.dungeon) {
+        party.dungeon.pendingPet = null;
+      }
+      if (wildRecord) {
+        wildRecord.caughtBy = wildRecord.caughtBy || [];
+        wildRecord.caughtBy.push(sender);
+      }
+
+      saveDatabase();
+
+      // Achievements
       try {
         const petCount = Object.keys(PetManager.getPlayerPets ? PetManager.getPlayerPets(sender) : {}).length;
-        const achis = [
-          ...AchievementManager.track(player, 'pets_caught', 1),
-          ...AchievementManager.track(player, 'pets_owned', petCount, {}),
-          ...AchievementManager.track(player, 'pet_rarity', 1, { rarity: result.pet?.rarity || 'common' })
-        ];
-        if (achis.length > 0) {
-          await sock.sendMessage(chatId, { text: AchievementManager.buildNotification(achis) }, { quoted: msg });
-        }
-      } catch(e) {}
+        AchievementManager.track(player, 'pets_caught', 1);
+        AchievementManager.track(player, 'pets_owned', petCount, {});
+      } catch (e) {}
 
-      let message = `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
-      message += `🎉 PET CAUGHT!\n`;
-      message += `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
-      message += `${result.pet.emoji} You caught a *${result.pet.name}*!\n\n`;
-      message += `⭐ Rarity: ${result.pet.rarity.toUpperCase()}\n`;
-      message += `🔮 Type: ${result.pet.type}\n\n`;
-      message += `💸 Paid: ${cost.gold.toLocaleString()} 💠 + ${cost.crystals} 💎\n`;
-      if (luckBonus > 0) message += `🍀 Luck Potion used! (+${luckBonus}% catch rate)\n`;
-      if (result.isFirstPet) {
-        message += `\n✨ This is your first pet! Set as active companion.\n`;
-      }
-      message += `\nUse /pet list to view your pets!`;
-      
-      return sock.sendMessage(chatId, { text: message }, { quoted: msg });
+      resultMsg = [
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        `🎉 *PET CAUGHT SUCCESSFULLY!*`,
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        `${petTemplate.emoji} You caught a *${petTemplate.name}*!`,
+        `⭐ Rarity: ${rarity.toUpperCase()}`,
+        `🔮 Type: ${petTemplate.type || 'Companion'}`,
+        ``,
+        `💸 Cost Paid: ${cost.gold.toLocaleString()} 💠 + ${cost.crystals.toLocaleString()} 💎`,
+        luckBonus > 0 ? `🍀 Luck Potion used (+25% catch rate)` : ``,
+        ``,
+        `📋 *CATCH ROLL BREAKDOWN (60s Window):*`,
+        ...rolls,
+        ``,
+        `📌 Use */pet list* to view your active pets!`,
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+      ].filter(l => l !== '').join('\n');
     } else {
-      let message = result.message + '\n\n';
-      message += `💸 Lost: ${cost.gold.toLocaleString()} 💠 + ${cost.crystals} 💎 (attempt cost)`;
-      if (luckBonus > 0) message += `\n🍀 Luck Potion consumed`;
-      return sock.sendMessage(chatId, { text: message }, { quoted: msg });
+      // Failed all 3 rolls
+      if (isDungeonPet && party?.dungeon) {
+        party.dungeon.pendingPet = null;
+      }
+      saveDatabase();
+
+      resultMsg = [
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        `💨 *WILD PET ESCAPED!*`,
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        `${petTemplate.emoji} *${petTemplate.name}* broke free and fled!`,
+        `⭐ Rarity: ${rarity.toUpperCase()}`,
+        ``,
+        `💸 Cost Paid: ${cost.gold.toLocaleString()} 💠 + ${cost.crystals.toLocaleString()} 💎 (attempt cost)`,
+        luckBonus > 0 ? `🍀 Luck Potion consumed` : ``,
+        ``,
+        `📋 *CATCH ROLL BREAKDOWN (3 Attempts):*`,
+        ...rolls,
+        ``,
+        `🏃 The wild pet escaped into the shadows. Better luck next time!`,
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+      ].filter(l => l !== '').join('\n');
     }
+
+    return sock.sendMessage(chatId, { text: resultMsg }, { quoted: msg });
   }
 };
