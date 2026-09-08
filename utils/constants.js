@@ -58,7 +58,7 @@ const OWNER_NUMBER = OWNER_JID.split('@')[0];
 const CURRENCY = {
   name:    'Nexus',
   emoji:   '💠',          // Nexus mark
-  unit:    'Ne',          // short unit suffix (e.g. "500 Ne")
+  unit:    'Nexus',       // short unit suffix
   stones:  'Mana Stones',
   stonesEmoji: '💎',
 };

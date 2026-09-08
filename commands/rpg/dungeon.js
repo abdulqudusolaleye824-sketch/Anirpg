@@ -310,7 +310,7 @@ module.exports = {
 
       const shopAction = args[1]?.toLowerCase();
       if (!shopAction) {
-        return sock.sendMessage(chatId, { text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🛒 *DUNGEON SHOP*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\nYour Nexus: ${player.gold || 0}g\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🩹 /dungeon shop hp [qty]     — 5,000 Ne — Restore 50% HP (party)\n💙 /dungeon shop energy [qty] — 4,000 Ne — Restore 50% Energy (party)\n🎫 /dungeon shop revive [qty] — 10,000 Ne — Revive a fallen member\n🍀 /dungeon shop luck [qty]   — 5,000 Ne — +25% claim luck (personal)\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🎒 Party inventory:\n🩹 HP Potions: ${party.sharedItems?.healthPotions || 0}\n💙 Energy Potions: ${party.sharedItems?.energyPotions || 0}\n🎫 Revive Tokens: ${party.sharedItems?.reviveTokens || 0}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━` }, { quoted: msg });
+        return sock.sendMessage(chatId, { text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🛒 *DUNGEON SHOP*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\nYour Nexus: ${(player.gold || 0).toLocaleString()} 💠\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🩹 /dungeon shop hp [qty]     — 5,000 💠 Nexus — Restore 50% HP (party)\n💙 /dungeon shop energy [qty] — 4,000 💠 Nexus — Restore 50% Energy (party)\n🎫 /dungeon shop revive [qty] — 10,000 💠 Nexus — Revive a fallen member\n🍀 /dungeon shop luck [qty]   — 5,000 💠 Nexus — +25% claim luck (personal)\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🎒 Party inventory:\n🩹 HP Potions: ${party.sharedItems?.healthPotions || 0}\n💙 Energy Potions: ${party.sharedItems?.energyPotions || 0}\n🎫 Revive Tokens: ${party.sharedItems?.reviveTokens || 0}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━` }, { quoted: msg });
       }
 
       const items = {

@@ -95,10 +95,10 @@ const DAILY_QUEST_POOL = [
 // ── Streak milestones (one-time, never reset, NERFED) ────────────────────────
 const STREAK_MILESTONES = {
   7:   { gold: 200,    crystals: 1,   label: '1 week',     bonus: '+200 Ne'              },
-  14:  { gold: 200,    crystals: 2,   label: '2 weeks',    bonus: '+500 Ne + 5 💎'        },
-  30:  { gold: 200,   crystals: 10,  label: '1 month',    bonus: '+1,500 Ne + 20 💎'     },
-  60:  { gold: 200,   crystals: 25,  label: '2 months',   bonus: '+3,000 Ne + 50 💎'     },
-  100: { gold: 240,   crystals: 50, label: '100 days',   bonus: '+7,500 Ne + 100 💎'    },
+  14:  { gold: 200,    crystals: 2,   label: '2 weeks',    bonus: '+500 Nexus + 5 💎'        },
+  30:  { gold: 200,   crystals: 10,  label: '1 month',    bonus: '+1,500 Nexus + 20 💎'     },
+  60:  { gold: 200,   crystals: 25,  label: '2 months',   bonus: '+3,000 Nexus + 50 💎'     },
+  100: { gold: 240,   crystals: 50, label: '100 days',   bonus: '+7,500 Nexus + 100 💎'    },
 };
 
 // ── Day key (timezone-aware) ─────────────────────────────────────────────────

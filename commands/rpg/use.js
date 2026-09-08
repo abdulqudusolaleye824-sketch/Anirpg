@@ -182,7 +182,7 @@ ${battleStatus}━━━━━━━━━━━━━━━━━━━━━�
       }
 
       if (!chosenTier) {
-        return sock.sendMessage(chatId, { text: '❌ You have no Health Potions!\nBuy them in /shop' }, { quoted: msg });
+        return sock.sendMessage(chatId, { text: '❌ You have no Health Potions!\nBuy them in /shop\n\nPrice: 800 💠 Nexus each' }, { quoted: msg });
       }
 
       // Verify availability
