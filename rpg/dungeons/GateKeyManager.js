@@ -42,7 +42,10 @@ function rollStabilityTimer() {
 }
 
 function normaliseJid(jid) {
-  return jid?.split('@')[0]?.split(':')[0]?.replace(/[^0-9]/g, '') || '';
+  if (!jid) return '';
+  const raw = String(jid).split('@')[0].split(':')[0].toLowerCase();
+  const digits = raw.replace(/[^0-9]/g, '');
+  return digits.length > 0 ? digits : raw;
 }
 
 function findGuild(db, guildName) {
@@ -60,6 +63,7 @@ function isGuildLeaderOrOfficer(sender, guildName, db) {
   const guild = findGuild(db, guildName);
   if (!guild) return false;
   const sNum = normaliseJid(sender);
+  if (!sNum) return false;
   if (guild.leader && normaliseJid(guild.leader) === sNum) return true;
   if ((guild.officers || []).some(o => normaliseJid(o) === sNum)) return true;
   const rankArrays = [guild.memberData, guild.members];
@@ -80,6 +84,7 @@ function isGuildMember(sender, guildName, db) {
   const guild = findGuild(db, guildName);
   if (!guild) return false;
   const sNum = normaliseJid(sender);
+  if (!sNum) return false;
   if (guild.leader && normaliseJid(guild.leader) === sNum) return true;
   return (guild.members || []).some(m => {
     const id = typeof m === 'object' ? m.id : m;
@@ -89,22 +94,26 @@ function isGuildMember(sender, guildName, db) {
 
 function isAffiliate(sender, db) {
   const sNum = normaliseJid(sender);
+  if (!sNum) return false;
   return Object.values(db.affiliates || {}).some(a => normaliseJid(a.jid) === sNum);
 }
 
 function getAffiliateData(sender, db) {
   const sNum = normaliseJid(sender);
+  if (!sNum) return null;
   return Object.values(db.affiliates || {}).find(a => normaliseJid(a.jid) === sNum) || null;
 }
 
 /**
- * Anyone can purchase a gate key provided they have an approved serf bot for DM delivery.
+ * Gate Key Purchase Rules:
+ * 1. Purchaser MUST have an approved Serf bot to receive DM notifications.
+ * 2. Purchaser MUST be a Guild Officer (Guildmaster, Vice GM, Officer) OR a Granted Affiliate.
  */
 function purchaseGateKey(sender, gate, db, saveDatabase) {
   const player = db.users?.[sender];
   if (!player) return { success: false, error: 'You are not registered.' };
 
-  // Serf Check
+  // 1. Serf Check
   const serf = SerfManager.getSerf(db, sender);
   if (!serf) {
     return {
@@ -113,14 +122,22 @@ function purchaseGateKey(sender, gate, db, saveDatabase) {
     };
   }
 
-  const nexusPrice = gate.purchasePrice || 0;
-  const manaPrice  = gate.manaPrice || 0;
-  const isBoth     = gate.currency === 'both' || ['B','A','S'].includes(gate.rank);
-
+  // 2. Purchaser Authorization Check (Only Guildmasters, Vice GMs, Officers, or Granted Affiliates)
   const guildName = player.guild;
   const affData   = getAffiliateData(sender, db);
   const isAff     = !!affData;
   const isOfficer = guildName && isGuildLeaderOrOfficer(sender, guildName, db);
+
+  if (!isOfficer && !isAff) {
+    return {
+      success: false,
+      error: `❌ *Gates can only be purchased by Guild Officers (Guildmaster / Vice GM / Officer) or Granted Affiliates!*\n\nIf you belong to a guild, ask an officer to buy it or grant you affiliate status.`
+    };
+  }
+
+  const nexusPrice = gate.purchasePrice || 0;
+  const manaPrice  = gate.manaPrice || 0;
+  const isBoth     = gate.currency === 'both' || ['B','A','S'].includes(gate.rank);
 
   let paymentSource = null; // 'guild' | 'personal'
   let guild = guildName ? findGuild(db, guildName) : null;
