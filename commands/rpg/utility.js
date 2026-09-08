@@ -5,13 +5,6 @@
  * ╚══════════════════════════════════════════════════════╝
  *
  * All utility — completely separate from RPG gameplay.
- *
- * Env vars needed:
- *   GENIUS_TOKEN     — Genius API token (for lyrics)
- *   (YouTube uses yt-dlp CLI — must be installed on server)
- *   (Image gen uses Pollinations.ai — no key needed)
- *   (Pinterest uses public RSS — no key needed)
- *   (Math/Search uses AI — uses GROQ_API_KEY)
  */
 
 'use strict';
@@ -23,13 +16,11 @@ const path   = require('path');
 const { execFile } = require('child_process');
 const ToolRunner = require('../../rpg/utils/ToolRunner');
 
-// __dirname here is anirpg/commands/rpg/ — go up two levels to project root
 const ROOT_DIR = path.join(__dirname, '..', '..');
 const TMP_DIR  = process.env.DATA_DIR
   ? path.join(process.env.DATA_DIR, 'tmp')
   : path.join(ROOT_DIR, 'tmp');
 
-// ── Tavily real-time search helper ────────────────────────────────────────────
 async function tavilySearch(query, apiKey) {
   return new Promise((resolve, reject) => {
     const body = JSON.stringify({
@@ -56,12 +47,8 @@ async function tavilySearch(query, apiKey) {
           const json = JSON.parse(data);
           if (json.error) return reject(new Error(json.error));
 
-          // Build response from Tavily's answer + top results
           const lines = [];
-
-          if (json.answer) {
-            lines.push(json.answer);
-          }
+          if (json.answer) lines.push(json.answer);
 
           if (json.results?.length) {
             lines.push('');
@@ -86,10 +73,6 @@ async function tavilySearch(query, apiKey) {
   });
 }
 
-// ── Free (no key) web search fallback ──────────────────────────────────────
-// Used when TAVILY_API_KEY is not set, so /search always works out of the box.
-// Uses Wikipedia's public full-text search API (stable, no key, no scraping) —
-// returns real article results with titles, snippets and links.
 function freeWebSearch(query) {
   return new Promise((resolve) => {
     const url = 'https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch='
@@ -123,9 +106,6 @@ function freeWebSearch(query) {
   });
 }
 
-// ── Bing web search (keyless, Google-like results) ───────────────────────────
-// Returns real web results (title + link) with NO API key and NO AI answer —
-// just like typing into a search engine. Used by /search when Tavily is absent.
 function bingSearch(query) {
   return new Promise((resolve) => {
     const url = `https://www.bing.com/search?q=${encodeURIComponent(query)}&form=QBLH&count=10`;
@@ -143,7 +123,6 @@ function bingSearch(query) {
         const seen = new Set();
         const norm = (t) => t.replace(/<[^>]+>/g, '')
           .replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#[0-9]+;/g, '').trim();
-        // Variant A: <a u="a1<base64url>" href="...">Title</a> (Bing redirect w/ real URL)
         let re = /<a[^>]*u="([^"]+)"[^>]*href="[^"]*"[^>]*>([\s\S]*?)<\/a>/g;
         let m;
         while ((m = re.exec(html)) && out.length < 5) {
@@ -157,7 +136,6 @@ function bingSearch(query) {
           seen.add(key);
           out.push({ title, url: u2.split('?')[0] });
         }
-        // Variant B: direct external <a href="https://…">Title</a> (some layouts don't use u=)
         if (out.length < 5) {
           re = /<h2[^>]*>[\s\S]*?<a[^>]*href="(https?:[^"]+)"[^>]*>([\s\S]*?)<\/a>/g;
           while ((m = re.exec(html)) && out.length < 5) {
@@ -179,9 +157,6 @@ function bingSearch(query) {
   });
 }
 
-// ── DuckDuckGo search (keyless, real web results) ────────────────────────────
-// Works out of the box with NO API key and returns real web results (title + link),
-// just like a search engine. More reliable than Bing (whose HTML layout changed).
 function duckSearch(query) {
   return new Promise((resolve) => {
     const url = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
@@ -197,7 +172,6 @@ function duckSearch(query) {
       res.on('end', () => {
         const out = [];
         const seen = new Set();
-        // DuckDuckGo result anchors: href="//duckduckgo.com/l/?uddg=<encoded-url>" tag.
         let re = /<a[^>]*class="result__a"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/g;
         let m;
         while ((m = re.exec(html)) && out.length < 6) {
@@ -225,12 +199,6 @@ function duckSearch(query) {
   });
 }
 
-// ── Google Custom Search (programmable search) ───────────────────────────────
-// The "real" Google search: returns actual Google results (title + link).
-// Requires two free keys in .env (set both):
-//   GOOGLE_API_KEY  — API key from https://console.cloud.google.com/
-//   GOOGLE_CX       — Search Engine ID from https://programmablesearchengine.google.com/
-// Free tier allows ~100 queries/day.
 async function googleSearch(query) {
   const key = process.env.GOOGLE_API_KEY;
   const cx = process.env.GOOGLE_CX;
@@ -241,8 +209,6 @@ async function googleSearch(query) {
     const data = await fetchJson(url);
     if (data.error) {
       console.error('⚠ Google search error:', data.error.message);
-      console.error('   → To fix: enable the "Custom Search JSON API" in your Google Cloud project at');
-      console.error('     console.cloud.google.com → APIs & Services → Library → Search "Custom Search JSON API" → Enable.');
       return null;
     }
     const items = (data.items || []).slice(0, 5);
@@ -254,7 +220,6 @@ async function googleSearch(query) {
   }
 }
 
-// ── HTTP helpers ──────────────────────────────────────────────────────────────
 function fetchJson(url) {
   return new Promise((resolve, reject) => {
     const lib = url.startsWith('https') ? https : http;
@@ -284,9 +249,6 @@ function fetchBuffer(url) {
   });
 }
 
-// ── Keyless TikTok extractor (TikWM) ─────────────────────────────────────────
-// TikTok actively blocks yt-dlp, so /tt uses this free, no-key API first.
-// Returns { ok, buffer?, mimetype?, title?, error? }.
 async function tiktokDownload(url) {
   try {
     const jurl = 'https://www.tikwm.com/api/?url=' + encodeURIComponent(url);
@@ -303,13 +265,8 @@ async function tiktokDownload(url) {
   }
 }
 
-// ── Tool runner ──────────────────────────────────────────────────────────────
-// Finds yt-dlp/ffmpeg even when NOT on PATH (pip installs to Python Scripts).
-// Shared implementation lives in rpg/utils/ToolRunner.js; aliased here so the
-// rest of this file can call ytDlpRun/ffmpegRun as before.
 const { ytDlpRun, ffmpegRun, hasFfmpeg } = ToolRunner;
 
-// ── /imagine — Pollinations.ai image generation ───────────────────────────────
 const imagine = {
   name: 'imagine',
   aliases: ['img', 'gen', 'draw'],
@@ -330,7 +287,6 @@ const imagine = {
     const encodedPrompt = encodeURIComponent(prompt);
     const seed = Math.floor(Math.random() * 999999);
 
-    // Pollinations.ai — free, no key needed
     const imageUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=768&height=768&seed=${seed}&nologo=true`;
 
     await sock.sendMessage(chatId, {
@@ -355,12 +311,12 @@ const imagine = {
   },
 };
 
-// ── /yt — YouTube audio download via yt-dlp ──────────────────────────────────
+// ── /yt — YouTube & SoundCloud audio download via yt-dlp ──────────────────────
 const yt = {
   name: 'yt',
-  aliases: ['ytmp3', 'audio'],   // 'song' is provided by lyrics.js (=/song audio)
-  description: 'Download YouTube audio',
-  usage: '/yt <youtube url or search query>',
+  aliases: ['ytmp3', 'audio'],
+  description: 'Download audio from YouTube/SoundCloud',
+  usage: '/yt <youtube url or song name>',
   category: 'utility',
 
   async execute(sock, msg, args, getDatabase, saveDatabase, sender) {
@@ -383,31 +339,42 @@ const yt = {
     fs.mkdirSync(tmpDir, { recursive: true });
     const outTemplate = path.join(tmpDir, `yt_${Date.now()}.%(ext)s`);
 
-    // Search query or direct URL
-    const ytInput = isUrl ? input : `ytsearch1:${input}`;
+    let ytInput = isUrl ? input : `ytsearch1:${input}`;
 
-    // Convert to MP3 only if ffmpeg is present; otherwise grab the native audio
-    // stream (m4a/opus) so /yt works even WITHOUT ffmpeg installed.
     const aud = await ToolRunner.optimalAudioArgs();
     const ytdlpArgs = [
       '--no-playlist',
-      ...aud.args,               // either mp3-convert args, or '-f bestaudio'
-      '--max-filesize', '25m',    // WhatsApp 25MB limit
+      ...aud.args,
+      '--max-filesize', '25m',
       '--output', outTemplate,
-      '--print', 'after_move:filepath', // print final path
+      '--print', 'after_move:filepath',
       ytInput,
     ];
 
-    const mp3Res = await ytDlpRun(ytdlpArgs, { timeout: 90000 });
-    const audioPath = mp3Res.ok ? mp3Res.stdout.trim().split('\n').pop() : null;
+    let mp3Res = await ytDlpRun(ytdlpArgs, { timeout: 90000 });
+    let audioPath = mp3Res.ok ? mp3Res.stdout.trim().split('\n').pop() : null;
+
+    // Fallback: If YouTube is blocked by bot detection / signature challenge, try SoundCloud
+    if (!audioPath || !fs.existsSync(audioPath)) {
+      console.log('⚠️ YouTube download failed/blocked. Attempting SoundCloud fallback...');
+      const scInput = `scsearch1:${input}`;
+      const scArgs = [
+        '--no-playlist',
+        ...aud.args,
+        '--max-filesize', '25m',
+        '--output', outTemplate,
+        '--print', 'after_move:filepath',
+        scInput,
+      ];
+      mp3Res = await ytDlpRun(scArgs, { timeout: 90000 });
+      audioPath = mp3Res.ok ? mp3Res.stdout.trim().split('\n').pop() : null;
+    }
 
     if (!audioPath || !fs.existsSync(audioPath)) {
       const denoMissing = !(await ToolRunner.hasDeno());
       const hint = mp3Res.notFound
-        ? `❌ Could not find *yt-dlp*.\n\n💡 Run: pip install -U yt-dlp\n(If it still fails, add YTDLP_PATH to .env)`
-        : denoMissing
-          ? `❌ Could not download audio (YouTube signature challenge).\n\n💡 Install Deno (needed to solve YouTube's challenge):\nwinget install DenoLand.Deno\nThen close this terminal and reopen it, and restart the bot.`
-          : `❌ Could not download audio (yt-dlp error).\n\n💡 Update yt-dlp:\npip install -U yt-dlp`;
+        ? `❌ Could not find *yt-dlp*.\n\n💡 Run: pip install -U yt-dlp`
+        : `❌ Could not download audio.\n\n💡 Make sure the song name or URL is valid and public.`;
       return sock.sendMessage(chatId, { text: hint }, { quoted: msg });
     }
 
@@ -415,15 +382,13 @@ const yt = {
       let audioBuffer = fs.readFileSync(audioPath);
       let fileName = path.basename(audioPath);
       const ext = path.extname(audioPath).toLowerCase();
-      // Map native audio container → mimetype (must match the real container,
-      // otherwise WhatsApp reports a "corrupted file").
       let mimetype = ext === '.mp3'  ? 'audio/mpeg'
                      : ext === '.m4a'  ? 'audio/mp4'
                      : ext === '.opus' ? 'audio/ogg'
                      : ext === '.ogg'  ? 'audio/ogg'
                      : ext === '.webm' ? 'audio/webm'
                      : 'audio/mp4';
-      // If ffmpeg is present, always hand WhatsApp an MP3/M4A (best playability).
+
       if (!['.mp3', '.m4a'].includes(ext)) {
         const fixedPath = path.join(tmpDir, `sng_${Date.now()}.mp3`);
         const conv = await ToolRunner.ffmpegRun([
@@ -446,13 +411,11 @@ const yt = {
       }, { quoted: msg });
 
     } finally {
-      // Cleanup temp file
       try { fs.unlinkSync(audioPath); } catch(e) {}
     }
   },
 };
 
-// ── /pinterest — fetch images from Pinterest ─────────────────────────────────
 const pinterest = {
   name: 'pinterest',
   aliases: ['pin', 'pins'],
@@ -476,15 +439,10 @@ const pinterest = {
     }, { quoted: msg });
 
     try {
-      // Pinterest public RSS feed
-      const feedUrl = `https://www.pinterest.com/search/pins/?q=${encodeURIComponent(query)}&rs=typed`;
-
-      // Use Pinterest's open graph / CDN approach via their JSON endpoint
       const apiUrl = `https://www.pinterest.com/resource/BaseSearchResource/get/?data=%7B%22options%22%3A%7B%22query%22%3A%22${encodeURIComponent(query)}%22%2C%22scope%22%3A%22pins%22%7D%7D&_=${Date.now()}`;
 
       const data = await fetchJson(apiUrl).catch(() => null);
 
-      // Try to extract image URLs from Pinterest results
       let imageUrls = [];
       if (data?.resource_response?.data?.results) {
         imageUrls = data.resource_response.data.results
@@ -494,7 +452,6 @@ const pinterest = {
       }
 
       if (imageUrls.length === 0) {
-        // Fallback: direct Pollinations search (uses same image quality)
         return sock.sendMessage(chatId, {
           text: [
             `📌 *Pinterest: "${query}"*`,
@@ -505,7 +462,6 @@ const pinterest = {
         }, { quoted: msg });
       }
 
-      // Send first found image
       const { buffer } = await fetchBuffer(imageUrls[0]);
       await sock.sendMessage(chatId, {
         image: buffer,
@@ -521,7 +477,6 @@ const pinterest = {
   },
 };
 
-// ── /math — AI-powered math solver ───────────────────────────────────────────
 const math = {
   name: 'math',
   aliases: ['calc', 'solve'],
@@ -540,13 +495,10 @@ const math = {
 
     const problem = args.join(' ');
 
-    // Try simple eval first for basic arithmetic
     const simpleMatch = problem.match(/^[\d\s+\-*/().^%]+$/);
     if (simpleMatch) {
       try {
-        // Safe eval for simple expressions
         const sanitized = problem.replace(/\^/g, '**');
-        // eslint-disable-next-line no-new-func
         const result = new Function(`return (${sanitized})`)();
         if (!isNaN(result) && isFinite(result)) {
           return sock.sendMessage(chatId, {
@@ -556,7 +508,6 @@ const math = {
       } catch(e) {}
     }
 
-    // Complex problems — use Groq AI
     const apiKey = process.env.GROQ_API_KEY;
     if (!apiKey) {
       return sock.sendMessage(chatId, {
@@ -600,10 +551,9 @@ const math = {
   },
 };
 
-// ── /search — Tavily real-time web search ─────────────────────────────────────
 const search = {
   name: 'search',
-  aliases: ['google', 'query', 'web'],  // 'ask' intentionally reserved for /ai
+  aliases: ['google', 'query', 'web'],
   description: 'Search the web for real-time information',
   usage: '/search <question>',
   category: 'utility',
@@ -627,24 +577,19 @@ const search = {
     try {
       let body = '';
       let source = '';
-      // 1) Real Google results (if GOOGLE_API_KEY + GOOGLE_CX set in .env AND working).
       const google = await googleSearch(question);
       if (google) { body = google; source = 'Google'; }
-      // 2) DuckDuckGo — keyless, reliable real-web results (no API key needed).
       if (!body) {
         const ddg = await duckSearch(question);
         if (ddg.length) { body = ddg.map(r => `🔗 *${r.title}*\n${r.url}`).join('\n\n'); source = 'DuckDuckGo'; }
       }
-      // 3) Tavily (if its key is set).
       if (!body && apiKey) {
         try { body = await tavilySearch(question, apiKey); source = 'Tavily'; }
         catch (e) { console.error('⚠ Tavily failed:', e.message); }
       }
-      // 4) Wikipedia — reliable keyless fallback so /search ALWAYS returns something.
       if (!body) { body = await freeWebSearch(question) || 'No results found — try rephrasing.'; source = 'Wikipedia'; }
-      const hint = source !== 'Google' ? '' : '';
       return sock.sendMessage(chatId, {
-        text: `🔍 *${question}*${source ? `\n󠁧󠁢󠁥󠁮󠁧󠁿 *via ${source}*` : ''}\n\n${body}${hint}`,
+        text: `🔍 *${question}*${source ? `\n\n*via ${source}*` : ''}\n\n${body}`,
       }, { quoted: msg });
     } catch (err) {
       console.error('❌ Search error:', err.message);
@@ -655,7 +600,6 @@ const search = {
   },
 };
 
-// ── /tt — TikTok video download via yt-dlp ───────────────────────────────────
 const tt = {
   name: 'tt',
   aliases: ['tiktok', 'tok'],
@@ -678,7 +622,6 @@ const tt = {
       text: '⬇️ *Downloading TikTok...*',
     }, { quoted: msg });
 
-    // Primary: TikWM — free, no-key, reliable for TikTok.
     const api = await tiktokDownload(url);
     if (api.ok) {
       await sock.sendMessage(chatId, {
@@ -689,7 +632,6 @@ const tt = {
       return;
     }
 
-    // Fallback: yt-dlp (works on some TikTok videos; TikTok blocks a lot).
     const tmpDir = TMP_DIR;
     fs.mkdirSync(tmpDir, { recursive: true });
     const outPath = path.join(tmpDir, `tt_${Date.now()}.mp4`);
@@ -718,11 +660,7 @@ const tt = {
   },
 };
 
-// ── !mp3 reply handler ────────────────────────────────────────────────────────
-// Not a slash command — triggered when user replies to any media message with "!mp3"
-// Called directly from the message handler in index.js / MultiSocketManager
 async function handleMp3Reply(sock, msg, chatId) {
-  // Get the quoted message
   const quoted = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage;
   if (!quoted) {
     return sock.sendMessage(chatId, {
@@ -730,7 +668,6 @@ async function handleMp3Reply(sock, msg, chatId) {
     }, { quoted: msg });
   }
 
-  // Check quoted message type
   const videoMsg  = quoted.videoMessage;
   const audioMsg  = quoted.audioMessage;
   const docMsg    = quoted.documentMessage;
@@ -746,7 +683,6 @@ async function handleMp3Reply(sock, msg, chatId) {
   }, { quoted: msg });
 
   try {
-    // Download the quoted media — Baileys v7 uses @whiskeysockets/baileys
     let downloadMediaMessage;
     try {
       ({ downloadMediaMessage } = require('@whiskeysockets/baileys'));
@@ -781,22 +717,20 @@ async function handleMp3Reply(sock, msg, chatId) {
 
     fs.writeFileSync(inPath, mediaBuffer);
 
-    // Use ffmpeg to extract audio
     const ffmpegResult = await ffmpegRun([
       '-i', inPath,
-      '-vn',                  // no video
+      '-vn',
       '-acodec', 'libmp3lame',
       '-ab', '128k',
-      '-y',                   // overwrite
+      '-y',
       outPath,
     ], { timeout: 60000 });
 
-    // Cleanup input
     try { fs.unlinkSync(inPath); } catch(e) {}
 
     if (!ffmpegResult.ok || !fs.existsSync(outPath)) {
       const hint = ffmpegResult.notFound
-        ? `❌ Could not find *ffmpeg*.\n\n💡 On Windows run:\nwinget install Gyan.FFmpeg --source winget\n\nThen restart the bot (restart the terminal so PATH refreshes).`
+        ? `❌ Could not find *ffmpeg*.\n\n💡 On Windows run:\nwinget install Gyan.FFmpeg --source winget\n\nThen restart the bot.`
         : '❌ Audio extraction failed (ffmpeg error). Try again.';
       return sock.sendMessage(chatId, { text: hint }, { quoted: msg });
     }
@@ -818,4 +752,5 @@ async function handleMp3Reply(sock, msg, chatId) {
     }, { quoted: msg });
   }
 }
+
 module.exports = { imagine, yt, tt, pinterest, math, search, handleMp3Reply };

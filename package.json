@@ -9,15 +9,17 @@
     "ui:dev": "node -e \"console.log('Open http://localhost:'+(process.env.PORT||3000)+' in your browser.\\nThe UI is served directly by the bot at that URL.');\""
   },
   "dependencies": {
+    "@distube/ytdl-core": "^4.16.12",
     "@whiskeysockets/baileys": "7.0.0-rc14",
+    "canvas": "^2.11.2",
     "dotenv": "^16.4.5",
     "imagemin-webp": "^8.0.0",
     "mongodb": "^6.0.0",
     "pino": "^8.21.0",
-    "sharp": "^0.34.5",
-    "canvas": "^2.11.2",
+    "play-dl": "^1.9.7",
+    "qrcode": "^1.5.3",
     "qrcode-terminal": "^0.12.0",
-    "qrcode": "^1.5.3"
+    "sharp": "^0.34.5"
   },
   "engines": {
     "node": ">=20.0.0"
