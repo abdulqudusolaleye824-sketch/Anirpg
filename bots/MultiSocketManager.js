@@ -6,17 +6,6 @@
  * ║  personality. No "primary" or "secondary" — all     ║
  * ║  bots are equal.                                   ║
  * ╚══════════════════════════════════════════════════════╝
- *
- * Each bot number:
- *  - Has its own auth folder (auth/hinata/, auth/lunar/, …)
- *  - Runs its own Baileys socket
- *  - Handles RPG commands in groups (like /dungeon, /pvp, /profile)
- *  - Reacts to AI chat in groups when its personality is active
- *  - Can DM players — but DMs are GATED by the serf system.
- *    The ONLY exception is the welcome DM (first-join only).
- *
- * AstraLink pairing codes are issued through whichever bot is
- * currently connected (the API endpoint picks any live socket).
  */
 
 'use strict';
@@ -39,12 +28,7 @@ const Perms              = require('../utils/permissions');
 const QRCode             = require('qrcode');
 const QRTerminal = (()=>{ try { return require('qrcode-terminal'); } catch(e){ return null; } })();
 
-// ── Connected sockets registry ────────────────────────────────────────────────
-// { personalityKey: socket }
 const botSockets = {};
-
-// ── AstraLink pairing sessions (in-memory) ───────────────────────────────────
-// { personalityKey: { status, method, phoneNumber, code, qr, qrDataUrl, error, jid, startedAt } }
 const pairingSessions = {};
 
 function getPairingSession(personalityKey) {
@@ -86,13 +70,6 @@ function persistLinkedBot(getDatabase, saveDatabase, personalityKey, sock, phone
   }
 }
 
-/**
- * AstraLink is the ONLY way to link a number.
- * Starts a fresh Baileys socket for this personality and either:
- *   - requests a pairing code for `phoneNumber` (method: 'code')
- *   - exposes a QR payload (method: 'qr')
- * No BOT_* env vars are required.
- */
 async function startAstraLink(personalityKey, authDir, getDatabase, saveDatabase, options = {}) {
   const method = options.pairingMode === 'qr' ? 'qr' : 'code';
   const phoneNumber = (options.pairingPhone || '').replace(/[^0-9]/g, '');
@@ -108,7 +85,6 @@ async function startAstraLink(personalityKey, authDir, getDatabase, saveDatabase
   }
 
   const botAuthDir = path.join(authDir, personalityKey);
-  // Explicit AstraLink = always a fresh WhatsApp session
   try {
     if (botSockets[personalityKey]) {
       try { botSockets[personalityKey].end(undefined); } catch (_) {}
@@ -144,48 +120,24 @@ async function startAstraLink(personalityKey, authDir, getDatabase, saveDatabase
   return { success: true, method, personality: personalityKey };
 }
 
-/**
- * Get the socket for a given personality key.
- * Returns null if not connected.
- */
 function getSocket(personalityKey) {
   return botSockets[personalityKey] || null;
 }
 
-/**
- * Get the socket that is (or will be) pairing for a personality.
- * Used by AstraLink to request a pairing code on the CORRECT socket.
- * Falls back to the socket already connected for that personality.
- */
 function getPendingSocket(personalityKey) {
-  const s = botSockets[personalityKey];
-  return s || null;
+  return botSockets[personalityKey] || null;
 }
 
-/**
- * Get the most recent QR for a personality from its pairing session,
- * plus a base64 data-URL so the UI can render it without a terminal.
- */
 function getLatestQr(personalityKey) {
   const session = pairingSessions[personalityKey];
   if (!session) return { qr: null, dataUri: null };
   return { qr: session.qr || null, dataUri: session.qrDataUrl || null };
 }
 
-/**
- * Get all connected sockets keyed by personality.
- */
 function getAllSockets() {
   return { ...botSockets };
 }
 
-/**
- * Decide whether THIS socket should handle a bootstrap/control command when
- * the group has no active bot. Exactly one socket must dispatch, otherwise
- * every connected bot replies (triple-spam). Deterministic tiebreak:
- *   - if the group already has an active bot, that bot dispatches;
- *   - otherwise the connected bot with the smallest personality key dispatches.
- */
 function _bootstrapDispatcher(personalityKey, chatId) {
   const active = PersonalityManager.getActiveBot(chatId);
   if (active) return active === personalityKey;
@@ -193,12 +145,6 @@ function _bootstrapDispatcher(personalityKey, chatId) {
   return keys.length > 0 && keys[0] === personalityKey;
 }
 
-/**
- * True if `bareNumber` (no device/domain, e.g. "2348012345678") belongs to one
- * of our OWN connected bots. Used to make sure no bot ever replies to another
- * bot — every socket receives every group message, so without this, kira's
- * posts would trigger ryo/astra's handlers.
- */
 function _isOwnBotNumber(bareNumber, getDatabase) {
   for (const key of Object.keys(botSockets)) {
     const sock = botSockets[key];
@@ -206,8 +152,6 @@ function _isOwnBotNumber(bareNumber, getDatabase) {
     if (!jid) continue;
     if (String(jid).split(':')[0].split('@')[0] === bareNumber) return true;
   }
-  // Also match any bot that was previously linked (e.g. a socket being
-  // re-established during a restart).
   try {
     const db = getDatabase?.();
     if (db && db.linkedBots) {
@@ -219,30 +163,12 @@ function _isOwnBotNumber(bareNumber, getDatabase) {
   return false;
 }
 
-/**
- * Return any one connected socket (for AstraLink pairing code requests).
- */
 function getAnySocket() {
   const keys = Object.keys(botSockets);
   if (keys.length === 0) return null;
   return botSockets[keys[0]];
 }
 
-/**
- * Connect one bot. Every bot has equal status — all of them handle
- * RPG commands and can host a personality in their active group.
- *
- * @param {string} personalityKey  e.g. 'hinata'
- * @param {string} authDir         base auth directory
- * @param {Function} getDatabase
- * @param {Function} saveDatabase
- * @param {object} options
- *   - personalityKey:  which personality to attach to this socket
- *   - isWelcomeBot:    if true, this bot also sends the welcome DM
- *                      (only one bot should do this; we pick the first
- *                      that connects)
- *   - handlers:        { rpgCommandHandler, onGroupJoin }
- */
 async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, options = {}) {
   const botAuthDir = path.join(authDir, personalityKey);
   fs.mkdirSync(botAuthDir, { recursive: true });
@@ -306,23 +232,14 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
             code: formatted,
             error: null,
           };
-          console.log('━'.repeat(60));
-          console.log(`🔗 AstraLink [${displayName}] PAIRING CODE:  ${formatted}`);
-          console.log('━'.repeat(60));
         } catch (err) {
           pairingCodeRequested = false;
           pairingSessions[personalityKey] = {
-            ...pairingSessions[personalityKey],
+            ...(pairingSessions[personalityKey] || {}),
             status: 'error',
             error: err.message || 'Failed to issue pairing code',
           };
-          console.error(`❌ AstraLink pairing code failed [${displayName}]:`, err.message);
         }
-      } else if (pairingMode === 'qr') {
-        pairingSessions[personalityKey].status = 'qr_ready';
-        console.log(`📷 AstraLink [${displayName}] QR ready`);
-      } else if (!isPairing) {
-        console.log(`🛰️  [${displayName}] needs linking. Open AstraLink — no .env bot numbers required.`);
       }
     }
 
@@ -339,18 +256,6 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
       } catch (_) {}
 
       const shouldReconnect = restartRequired || (!loggedOut && credsRegistered);
-      console.log(`❌ [${displayName}] Disconnected (code: ${code}). Reconnect: ${shouldReconnect}`);
-
-      if (loggedOut) {
-        try { fs.rmSync(botAuthDir, { recursive: true, force: true }); } catch (_) {}
-        if (pairingSessions[personalityKey] && pairingSessions[personalityKey].status !== 'connected') {
-          pairingSessions[personalityKey] = {
-            ...(pairingSessions[personalityKey] || {}),
-            status: 'logged_out',
-            error: 'WhatsApp rejected the session. Tap Refresh on AstraLink.',
-          };
-        }
-      }
 
       if (shouldReconnect) {
         const nextOpts = credsRegistered
@@ -359,7 +264,6 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
         setTimeout(() => connectBot(personalityKey, authDir, getDatabase, saveDatabase, nextOpts), restartRequired ? 1200 : 4000);
       }
     } else if (connection === 'open') {
-      console.log(`✅ [${displayName}] Connected via AstraLink!`);
       botSockets[personalityKey] = sock;
       const jid = sock.user?.id || null;
       pairingSessions[personalityKey] = {
@@ -375,11 +279,6 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
 
   sock.ev.on('creds.update', saveCreds);
 
-  // ── Group join/leave announcements ─────────────────────────────────────
-  // `onGroupJoin(sock, personalityKey, chatId, participants, action)` is
-  // called for every bot in the group. The handler decides whether
-  // the bot should respond (based on whether it's the active bot in
-  // the group, plus dedupe for the welcome DM).
   sock.ev.on('group-participants.update', async ({ id: chatId, participants, action }) => {
     if (action !== 'add' && action !== 'remove') return;
     if (options.onGroupJoin) {
@@ -388,7 +287,6 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
     }
   });
 
-  // ── Message handler (RPG commands + AI chat) ─────────────────────────────
   sock.ev.on('messages.upsert', async ({ messages, type }) => {
     if (type !== 'notify') return;
     const msg = messages[0];
@@ -407,21 +305,11 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
       msg.message.videoMessage?.caption || '';
 
     const db = getDatabase();
-    // bare-number normalization so bans always match (device/@lid-independent)
     const bareSender = String(sender).split(':')[0].split('@')[0];
     if (db.bannedUsers?.[bareSender] || db.banlist?.[sender] || db.bannedUsers?.[sender]) return;
 
-    // ── BOTS NEVER REPLY TO ANOTHER BOT ─────────────────────────────────────
-    // Every socket receives every group message, so without this a message
-    // posted by one of our own bots would be picked up by the other bots'
-    // handlers and answered. Skip any message sent by one of our own bots.
     if (_isOwnBotNumber(bareSender, getDatabase)) return;
 
-    // ── GROUP MUTE ENFORCEMENT ──────────────────────────────────────────────
-    // A group-muted user has EVERY message they send (including commands)
-    // silently deleted by the bot, and their commands are ignored. Only the
-    // active bot deletes (so a single copy is removed), but ALL sockets ignore
-    // the muted user so no bot ever responds to them.
     if (isGroup) {
       try {
         const Mod = require('../rpg/utils/ModerationUtils');
@@ -430,7 +318,7 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
           if (activeKey === personalityKey) {
             try { await sock.sendMessage(chatId, { delete: msg.key }); } catch (e) { /* best effort */ }
           }
-          return; // never respond to a muted user
+          return;
         }
       } catch (e) { /* best effort */ }
     }
@@ -438,12 +326,6 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
     const config = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'config.json'), 'utf-8'));
     const isCommand = messageText.startsWith(config.prefix);
 
-    // ── Control / bootstrap commands ────────────────────────────────────────
-    // /start and /switch are the ONLY way to (re)set a group's active bot, so
-    // they MUST be able to run even when the group has no active bot (otherwise
-    // a brand-new group could never activate its first bot — the "deadlock"
-    // that made every bot go silent). These are dispatched from a single
-    // deterministic socket to avoid duplicate replies.
     const commandName = isCommand
       ? messageText.slice(config.prefix.length).trim().split(/\s+/)[0].toLowerCase()
       : '';
@@ -453,25 +335,17 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
     ]);
     const isBootstrap = BOOTSTRAP_COMMANDS.has(commandName);
 
-    // ── Active-bot gate (resolved EARLY so AFK notices don't spam) ────────
-    // In any group, only the active bot (set via /start or /switch) is
-    // allowed to respond. Every bot in the group receives the same message,
-    // so non-active bots must stay silent — otherwise THREE copies of every
-    // AFK/notice are posted. For DMs, ANY connected bot can respond.
     let activeKey = isGroup ? PersonalityManager.getActiveBot(chatId) : null;
-    // EXPLICIT-ONLY: a bot becomes active in a group ONLY via /start or /switch
-    // (chosen by the owner and persisted in the DB). There is NO silent
-    // auto-activation here. That silent self-heal was the root cause of
-    // (a) bots switching to a new personality in every group after a redeploy
-    //     and (b) commands being "ignored" in some groups while the bot would
-    //     still chat — because the self-heal and the AI path disagreed on
-    //     whether this bot was active.
     const isActive = isGroup ? (activeKey === personalityKey) : true;
 
-    // ── AFK MENTION CHECK (only the ACTIVE bot posts an AFK notice — otherwise
-    //    /tagall and any @mention of an AFK user makes EVERY bot echo it) ────
+    // ── AFK MENTION OR REPLY CHECK (Active bot only) ───────────────────
     if (isGroup && isActive && db.afkUsers) {
-      const mentionedAlso = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
+      const contextInfo = msg.message?.extendedTextMessage?.contextInfo;
+      const mentionedAlso = [
+        ...(contextInfo?.mentionedJid || []),
+        ...(contextInfo?.participant ? [contextInfo.participant] : [])
+      ];
+
       for (const mj of mentionedAlso) {
         const bareNumber = String(mj).split(':')[0].split('@')[0];
         const afkEntry = Object.entries(db.afkUsers).find(
@@ -499,7 +373,7 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
       }
     }
 
-    // ── AFK SELF WELCOME-BACK (only the ACTIVE bot welcomes back) ─────────
+    // ── AFK SELF WELCOME-BACK ──────────────────────────────────────────
     if (isGroup && isActive && db.afkUsers && db.afkUsers[sender]) {
       const afk = db.afkUsers[sender];
       const duration = Math.floor((Date.now() - (afk.since || Date.now())) / 60000);
@@ -517,19 +391,12 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
       } catch (e) { /* best effort */ }
     }
 
-    // ── RPG command handling ───────────────────────────────────────────────
-    // Only the active bot in a group handles commands. In DMs, the
-    // receiving bot handles the command (mod-only via the handler's gate).
+    // ── RPG Command handling (Active bot only) ─────────────────────────
     if (isCommand && options.rpgCommandHandler) {
       let shouldHandle = false;
       if (isGroup) {
-        // Commands are handled by the ACTIVE bot (set via /start or /switch,
-        // persisted in the DB). Bootstrap/control commands may also run when
-        // the group has no active bot yet — but only from ONE socket, so a
-        // control command can (re)activate a bot without triple-replying.
         shouldHandle = isActive || (isBootstrap && _bootstrapDispatcher(personalityKey, chatId));
       } else {
-        // DMs: any connected bot may handle it (permission enforced in handler).
         shouldHandle = Perms.canAccessDM(db, sender);
       }
       if (shouldHandle) {
@@ -542,10 +409,7 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
       return;
     }
 
-    // ── !mp3 reply trigger (works in any chat) ───────────────────────────
     if (messageText.trim().toLowerCase() === '!mp3') {
-      // Only the active bot replies (no point sending three identical
-      // /mp3 confirmations from every bot in the group)
       if (isActive) {
         try {
           const { handleMp3Reply } = require('../commands/rpg/utility');
@@ -555,24 +419,13 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
       return;
     }
 
-    // ── AI personality chat (only when this bot is the active personality) ─
-    // Never let AI hijack a command: if the message is a bot command (starts
-    // with the prefix), the command handler owns it — AI must stay silent.
-    // This is a hard guard even if the command wasn't dispatched (e.g. the
-    // handler returned for a non-active bot). Without it, /start <name>,
-    // /switch, etc. get answered by the personality as if they were chat.
+    // ── AI Personality Chat ──────────────────────────────────────────
     if (isCommand) return;
     if (!isGroup || !messageText.trim()) return;
-    // IMPORTANT: AI chat is NOT gated on this bot being the "active" one.
-    // Any LINKED bot may answer when it's directly addressed (mentioned,
-    // quoted, or its display name appears in the text) — the name/mention
-    // checks below already guarantee only the addressed bot replies. Gating
-    // this on active-bot was the reason calling a bot by name stopped working
-    // in groups where no /start had been run.
 
-    // 💳 Subscription gate (✦ 𝐀𝐬𝐭𝐫𝐚™ groups): a pending or expired group is
-    // silent — including for AI name-calls. (Command replies are handled by
-    // rpgCommandHandler / setgroup flow.)
+    // Strict Active Bot Gate: Non-active bots in a group stay SILENT
+    if (activeKey && !isActive) return;
+
     try {
       const AstralGroups = require('../rpg/utils/AstralGroups');
       const g = AstralGroups.gate(getDatabase(), chatId);
@@ -618,12 +471,6 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
   return sock;
 }
 
-/**
- * Send an attachment from AIHandler. Group sends are unfiltered; 1:1 DMs
- * go through the serf gate. The only bypass is the welcome DM (caller
- * passes opts.welcome = true and the welcome-bypass is applied via
- * `safeSendDM` directly).
- */
 async function sendAttachment(sock, chatId, attachment, opts = {}) {
   if (!attachment) return;
   const isGroup = chatId?.endsWith?.('@g.us');
@@ -654,10 +501,6 @@ async function sendAttachment(sock, chatId, attachment, opts = {}) {
   }
 }
 
-/**
- * sendAs — send from a specific personality's socket. 1:1 DMs are
- * gated through the serf system (unless `welcome: true`).
- */
 async function sendAs(personalityKey, chatId, content, opts = {}) {
   const sock = botSockets[personalityKey];
   if (!sock) return { dropped: true, reason: 'no-socket' };
@@ -667,19 +510,9 @@ async function sendAs(personalityKey, chatId, content, opts = {}) {
   return sock.sendMessage(chatId, content);
 }
 
-/**
- * Serf-gate: should this bot be allowed to DM this player?
- *
- * Rules:
- *   - Welcome DMs are always allowed (caller sets opts.welcome = true)
- *   - Otherwise the bot must be the player's approved serf
- *   - Players without an approved serf receive a one-time reminder
- *   - Mods / owners can always be DMed by any bot
- */
 function canSendDM(db, playerJid, botJid, botKey) {
-  if (!db || !playerJid) return { allowed: true, reason: 'no-db' };
+  if (!db || !playerJid) return { allowed: false, reason: 'no-db' };
 
-  // Mods / owners are exempt from the serf gate (admin override)
   if (Perms.isBotMod(db, playerJid) || Perms.isBotOwner(db, playerJid)) {
     return { allowed: true, reason: 'privileged' };
   }
@@ -694,52 +527,27 @@ function canSendDM(db, playerJid, botJid, botKey) {
   return { allowed: false, reason: 'not-serf' };
 }
 
-/**
- * Send a DM from a bot, gated by the serf system.
- * If the player has not set a serf, the DM is dropped and a one-time
- * reminder is sent telling them to /setserf.
- */
 const _serfReminderSent = new Set();
 async function safeSendDM(sock, playerJid, content, opts = {}) {
-  // The "welcome" flag bypasses serf checks — only used for the new-member DM.
   if (opts.welcome) {
     return sock.sendMessage(playerJid, content);
   }
-  if (!opts.db) {
-    // Without DB we can't gate — fail open and let the caller decide.
-    return sock.sendMessage(playerJid, content);
-  }
-  const botJid = sock.user?.id || null;
+  const db = opts.db || (typeof opts.getDatabase === 'function' ? opts.getDatabase() : null);
+  const botJid = sock?.user?.id || null;
   const botKey = opts.botKey || null;
-  const verdict = canSendDM(opts.db, playerJid, botJid, botKey);
+
+  const verdict = canSendDM(db, playerJid, botJid, botKey);
   if (verdict.allowed) {
     return sock.sendMessage(playerJid, content);
   }
-  // Dropped. Queue a one-time reminder.
-  if (!_serfReminderSent.has(playerJid)) {
-    _serfReminderSent.add(playerJid);
-    const reminder =
-      '━━━━━━━━━━━━━━━━━━━━━━━━━━━\n' +
-      '⚓ *DM BLOCKED — PICK YOUR SERF*\n' +
-      '━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n' +
-      'A bot tried to DM you, but you haven\'t set it as your serf.\n\n' +
-      'To allow DMs from one personality bot:\n' +
-      '1. Go to any group where the bot is active.\n' +
-      '2. Run: `/setserf @botname`\n' +
-      '3. A mod will confirm in the Mod GC.\n\n' +
-      'After that, only your chosen bot can DM you.\n' +
-      '━━━━━━━━━━━━━━━━━━━━━━━━━━━';
-    try {
-      await sock.sendMessage(playerJid, { text: reminder });
-    } catch (e) { /* best effort */ }
-  }
-  return { dropped: true, reason: verdict.reason };
+
+  return {
+    dropped: true,
+    reason: verdict.reason,
+    message: '⚠️ Set up a Serf using /setserf @bot to receive DM notifications!'
+  };
 }
 
-/**
- * Send /hi chorus — each bot replies from its own number.
- * All sends go to the group chat (not a DM), so no serf gate needed.
- */
 async function sendHiChorus(chatId, responses, quotedMsg) {
   for (let i = 0; i < responses.length; i++) {
     const { personalityKey, displayName, text, attachment } = responses[i];
@@ -763,12 +571,6 @@ async function sendHiChorus(chatId, responses, quotedMsg) {
   }
 }
 
-/**
- * Pick a socket for a group chat:
- *   - The active personality in that group, if connected
- *   - Otherwise any connected socket (round-robin is overkill — we just
- *     pick the first one)
- */
 function getActiveSocket(chatId) {
   const PersonalityManager = require('./PersonalityManager');
   const activeKey = PersonalityManager.getActiveBot(chatId);

@@ -8,15 +8,9 @@
 
 const SUB_DAYS = 30; // length of one subscription window
 
-// Types a group can be set as.
 const TYPES = ['support', 'pvp', 'dungeon', 'casino', 'guild'];
-
-// Features that can be ADDED onto a base group with /allowgc.
 const FEATURE_TYPES = ['pvp', 'dungeon'];
-
-// Types allowed WITHOUT the --main tag.
 const TYPES_WITHOUT_MAIN = ['support', 'pvp', 'dungeon'];
-// Types that REQUIRE the --main tag.
 const MAIN_ONLY_TYPES = ['casino', 'guild'];
 
 const TYPE_INFO = {
@@ -45,10 +39,8 @@ class AstralGroups {
     return TYPES.includes(type) ? type : null;
   }
 
-  static typeInfo(type) { return TYPE_INFO[type]; }
+  static typeInfo(type) { return TYPE_INFO[type] || { emoji: '🌐', name: type, desc: '' }; }
 
-  // ── Register a group (base type). ──────────────────────────────
-  // Returns { success, status } where status ∈ main | pending | error.
   static register(db, type, groupId, inviteLink, opts = {}) {
     const cat = this.get((type || '').toLowerCase());
     if (!cat) return { success: false, reason: `Unknown type. Valid: ${TYPES.join(', ')}` };
@@ -61,18 +53,17 @@ class AstralGroups {
     const reg = this._registry(db);
     const existing = reg[groupId];
     reg[groupId] = {
+      groupId,
       type: cat,
       inviteLink: inviteLink || existing?.inviteLink || null,
       setAt: Date.now(),
       isMain,
-      // Subscription fields (only meaningful for non-main groups):
-      status: isMain ? 'main' : 'pending',   // main | pending | active | expired
+      status: isMain ? 'main' : 'pending',
       startsAt: existing?.startsAt || null,
       expiresAt: existing?.expiresAt || null,
       subscriber: existing?.subscriber || null,
       features: Array.from(new Set([...(existing?.features || [])])),
     };
-    // MAIN groups get anti-link auto-enabled (co-owner spec: auto antilink on all main groups).
     if (isMain) {
       try {
         if (!db.groupSettings) db.groupSettings = {};
@@ -80,8 +71,6 @@ class AstralGroups {
         db.groupSettings[groupId].antiLink = true;
       } catch (e) { /* best effort */ }
     }
-    // Legacy mirror (so setserf / old readers of db.communityGroups still
-    // resolve a group id for this category).
     try {
       if (!db.communityGroups) db.communityGroups = {};
       const info = TYPE_INFO[cat];
@@ -96,21 +85,20 @@ class AstralGroups {
   }
 
   static getEntry(db, groupId) {
-    return this._registry(db)[groupId] || null;
+    const e = this._registry(db)[groupId];
+    if (e && !e.groupId) e.groupId = groupId;
+    return e || null;
   }
 
   static hasType(db, groupId) {
     return !!this.getEntry(db, groupId);
   }
 
-  // A registered group is "silent" (bot gives no responses) when it's a
-  // non-main group that hasn't been subscribed yet (pending).
   static isPending(db, groupId) {
     const e = this.getEntry(db, groupId);
     return !!(e && !e.isMain && e.status === 'pending');
   }
 
-  // "Expired" = non-main group past its window (or explicitly expired).
   static isExpired(db, groupId, now = Date.now()) {
     const e = this.getEntry(db, groupId);
     if (!e || e.isMain) return false;
@@ -122,17 +110,14 @@ class AstralGroups {
     return false;
   }
 
-  // Whether the bot may respond at all in this group.
   static isActive(db, groupId, now = Date.now()) {
     const e = this.getEntry(db, groupId);
-    if (!e) return true;          // unregistered = normal behavior
-    if (e.isMain) return true;    // main never expires
+    if (!e) return true;
+    if (e.isMain) return true;
     if (e.status === 'active') return !(e.expiresAt && now >= e.expiresAt);
     return false;
   }
 
-  // The gate result for the command handler.
-  // Returns { allow, silent, expiredMsgs? }
   static gate(db, groupId, now = Date.now()) {
     const e = this.getEntry(db, groupId);
     if (!e) return { allow: true, silent: false, expired: false };
@@ -149,7 +134,6 @@ class AstralGroups {
     return { allow: true, silent: false, expired: false };
   }
 
-  // ── /ssub — start the 30-day window (owner/co-owner). ─────────
   static ssub(db, groupId, subscriberName) {
     const e = this.getEntry(db, groupId);
     if (!e) return { success: false, reason: 'This group is not registered. Run /setgroup <type> here first.' };
@@ -162,7 +146,6 @@ class AstralGroups {
     return { success: true, expiresAt: e.expiresAt, subscriber: e.subscriber };
   }
 
-  // ── /renew — extend the window by SUB_DAYS. ───────────────────
   static renew(db, groupId) {
     const e = this.getEntry(db, groupId);
     if (!e) return { success: false, reason: 'This group is not registered.' };
@@ -175,7 +158,6 @@ class AstralGroups {
     return { success: true, expiresAt: e.expiresAt };
   }
 
-  // ── /allowgc <feature> — add a pvp/dungeon feature on top. ────
   static addFeature(db, groupId, feature) {
     const e = this.getEntry(db, groupId);
     if (!e) return { success: false, reason: 'This group is not registered. Run /setgroup <type> here first.' };
@@ -183,14 +165,14 @@ class AstralGroups {
     if (!FEATURE_TYPES.includes(cat)) {
       return { success: false, reason: `Invalid feature. You can add: ${FEATURE_TYPES.join(', ')}` };
     }
+    if (!e.features) e.features = [];
     if (e.features.includes(cat)) {
-      return { success: false, reason: `*${TYPE_INFO[cat].name}* feature is already enabled in this group.` };
+      return { success: false, reason: `*${TYPE_INFO[cat]?.name || cat}* feature is already enabled in this group.` };
     }
     e.features.push(cat);
     return { success: true, feature: cat, features: e.features };
   }
 
-  // Does this group host a given base/feature category?
   static hosts(db, groupId, category) {
     const e = this.getEntry(db, groupId);
     if (!e) return false;
@@ -204,7 +186,7 @@ class AstralGroups {
     if (e.isMain) return 'main';
     if (this.isExpired(db, groupId, now)) return 'expired';
     if (e.expiresAt && now >= e.expiresAt) { e.status = 'expired'; return 'expired'; }
-    return e.status; // pending | active
+    return e.status;
   }
 
   static daysLeft(db, groupId, now = Date.now()) {
@@ -214,30 +196,25 @@ class AstralGroups {
     return Math.max(0, Math.ceil((e.expiresAt - now) / (24 * 60 * 60 * 1000)));
   }
 
-  // All registered groups (for the /community listing).
   static getAll(db) {
     const reg = this._registry(db);
-    return Object.values(reg).map((e) => ({
+    return Object.entries(reg).map(([groupId, e]) => ({
+      groupId,
       ...e,
-      daysLeft: this.daysLeft(db, Object.keys(reg).find((k) => reg[k] === e)),
+      daysLeft: this.daysLeft(db, groupId),
     }));
   }
 
   static getByType(db, type) {
-    const reg = this._registry(db);
-    return Object.values(reg).filter((e) => e.type === type);
+    return this.getAll(db).filter((e) => e.type === type);
   }
 
-  // Preferred "primary" group for a type (for redirects / link lookups):
-  // main group first, then an active one, then any.
   static primaryOf(db, type) {
     const list = this.getByType(db, type);
     if (!list.length) return null;
     return list.find((g) => g.isMain) || list.find((g) => this.isActive(db, g.groupId)) || list[0];
   }
 
-  // For a command host: is this chatId a registered group that hosts the
-  // category AND is currently active (not pending/expired)?
   static hostsActive(db, chatId, category) {
     if (!this.hosts(db, chatId, category)) return false;
     return this.gate(db, chatId).allow;

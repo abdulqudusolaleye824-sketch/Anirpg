@@ -1,278 +1,139 @@
-const TaxSystem = require('../../rpg/utils/TaxSystem');
-const { updatePlayerNexus } = require('../../rpg/utils/NexusManager');
-const DC = require('../../rpg/utils/DailyChallenges');
+// ═══════════════════════════════════════════════════════════════
+// ROB / STEAL COMMAND — Attempt to steal Nexus from another player
+// ═══════════════════════════════════════════════════════════════
+
+const { updatePlayerNexus } = require('../../rpg/utils/TaxSystem');
 
 module.exports = {
   name: 'rob',
+  aliases: ['steal'],
   description: 'Attempt to steal Nexus from another player (RISKY!)',
-  
+  usage: '/rob @user',
+
   async execute(sock, msg, args, getDatabase, saveDatabase, sender) {
-    const chatId = msg.key.remoteJid;
-    const db = getDatabase();
-    const thief = db.users[sender];
-
-    if (!thief) {
-      return sock.sendMessage(chatId, { 
-        text: '❌ You are not registered!' 
-      }, { quoted: msg });
-    }
-
-    // Get target from mention or quoted message
-    let targetId = null;
-    
-    // Check for quoted message
-    if (msg.message?.extendedTextMessage?.contextInfo?.participant) {
-      targetId = msg.message.extendedTextMessage.contextInfo.participant;
-    }
-    // Check for mentions
-    else if (msg.message?.extendedTextMessage?.contextInfo?.mentionedJid?.[0]) {
-      targetId = msg.message.extendedTextMessage.contextInfo.mentionedJid[0];
-    }
-
-    if (!targetId) {
-      return sock.sendMessage(chatId, { 
-        text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🦹 STEAL COMMAND 🦹
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-💠 Your Nexus: ${thief.gold || 0}
-⏰ Cooldown: ${thief.stealCooldown ? Math.max(0, Math.ceil((thief.stealCooldown - Date.now()) / 60000)) : 0} mins
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-📜 HOW IT WORKS
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🎯 Success Rate: 40%
-💠 Steal: 5-15% of their Nexus
-❌ Fail: Lose 5-10% of YOUR Nexus (max 5,000)
-🏦 Bank Nexus is SAFE
-⏰ 5 minute cooldown
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-📌 USAGE
-Reply to someone's message and type:
-/rob
-
-Or mention them:
-/rob @user
-━━━━━━━━━━━━━━━━━━━━━━━━━━━`
-      }, { quoted: msg });
-    }
-
-    const target = db.users[targetId];
-
-    if (!target) {
-      return sock.sendMessage(chatId, { 
-        text: '❌ Target player is not registered!' 
-      }, { quoted: msg });
-    }
-
-    // Owner immunity — reverse rob on attacker
-    const OWNER_ID = '221951679328499@lid';
-    if (targetId === OWNER_ID) {
-      const reverseSteal = Math.floor((thief.gold || 0) * 0.3);
-      const actualReverse = Math.min(reverseSteal, thief.gold || 0);
-      updatePlayerNexus(thief, -actualReverse, saveDatabase);
-      const ownerPlayer = db.users[OWNER_ID];
-      if (ownerPlayer) updatePlayerNexus(ownerPlayer, actualReverse, saveDatabase);
-      saveDatabase();
-      return sock.sendMessage(chatId, {
-        text: `⚠️ *BIG MISTAKE!* ⚠️\n\nYou tried to rob the Owner...\n\n👑 The Owner's guards caught you instantly!\n\n💸 They took *${actualReverse} Nexus* from YOU as punishment!\n💠 Your Nexus: ${thief.gold || 0}\n\n😂 Maybe rob someone... safer next time.`
-      }, { quoted: msg });
-    }
-
-    // Can't steal from yourself
-    if (targetId === sender) {
-      return sock.sendMessage(chatId, { 
-        text: '❌ You cannot steal from yourself! 🤦' 
-      }, { quoted: msg });
-    }
-
-    // Cooldown check (5 minutes)
-    const cooldownTime = 5 * 60 * 1000; // 5 minutes
-    if (thief.stealCooldown && Date.now() < thief.stealCooldown) {
-      const remaining = Math.ceil((thief.stealCooldown - Date.now()) / 60000);
-      return sock.sendMessage(chatId, { 
-        text: `⏰ Cooldown active!\n\nWait ${remaining} more minute${remaining > 1 ? 's' : ''} before stealing again.`
-      }, { quoted: msg });
-    }
-
-    // Check if thief has Nexus
-    if ((thief.gold || 0) < 100) {
-      return sock.sendMessage(chatId, { 
-        text: '❌ You need at least 100 Nexus to attempt a steal!\n\n(Risk: You might lose 20% if you fail)'
-      }, { quoted: msg });
-    }
-
-    // Check if target has Nexus (wallet only — banked Nexus is safe)
-    const targetNexus = target.gold || 0;
-
-    // Get banked amount for flavour message
-    let targetBanked = 0;
     try {
-      const BankingSystem = require('../../rpg/banking/BankingSystem');
-      const bank = BankingSystem.getAccountBank(db, targetId);
-      if (bank) {
-        const acc = bank.accounts.find(a => a.userId === targetId);
-        targetBanked = acc?.balance || 0;
+      const chatId = msg.key.remoteJid;
+      const db = getDatabase();
+      const thief = db.users[sender];
+
+      if (!thief) {
+        return await sock.sendMessage(chatId, {
+          text: '❌ You don\'t have a character! Use `/register` to start.'
+        }, { quoted: msg });
       }
-    } catch(e) {}
 
-    if (targetNexus < 50) {
-      const bankHint = targetBanked > 0 ? `\n💡 They have *${targetBanked.toLocaleString()}g* in the bank — that's untouchable.` : '';
-      return sock.sendMessage(chatId, { 
-        text: `❌ ${target.name} only has ${targetNexus} 💠 in their wallet!\n\nNot worth the risk... 🤷${bankHint}`
-      }, { quoted: msg });
-    }
+      // Check mentioned user
+      const contextInfo = msg.message?.extendedTextMessage?.contextInfo;
+      const mentionedJids = contextInfo?.mentionedJid || [];
+      const quotedParticipant = contextInfo?.participant;
+      const targetJid = mentionedJids[0] || quotedParticipant;
 
-    // Set cooldown immediately
-    thief.stealCooldown = Date.now() + cooldownTime;
-    DC.trackProgress(thief, 'rob_attempt', 1);
+      if (!targetJid) {
+        return await sock.sendMessage(chatId, {
+          text: '📌 *Usage:* `/rob @user` or `/steal @user` (reply or tag a player)\n\n⚠️ *Risk:* You might lose Nexus if caught!'
+        }, { quoted: msg });
+      }
 
-    // Calculate success chance (base 40%, but modified by level difference)
-    const levelDiff = thief.level - target.level;
-    let successChance = 40;
-    
-    if (levelDiff > 0) {
-      successChance += Math.min(levelDiff * 2, 20); // Max +20% bonus
-    } else {
-      successChance += Math.max(levelDiff * 3, -25); // Max -25% penalty
-    }
+      // Can't steal from yourself
+      if (targetJid === sender) {
+        return await sock.sendMessage(chatId, {
+          text: '❌ You cannot steal from yourself! 🤦'
+        }, { quoted: msg });
+      }
 
-    const roll = Math.random() * 100;
-    const success = roll < successChance;
+      const victim = db.users[targetJid];
+      if (!victim) {
+        return await sock.sendMessage(chatId, {
+          text: '❌ That player is not registered in the system.'
+        }, { quoted: msg });
+      }
 
-    // ============================================
-    // SUCCESS - Steal Nexus
-    // ============================================
-    if (success) {
-      const stealPercent = 5 + Math.random() * 10; // 5-15%
-      const stolenNexus = Math.floor(targetNexus * (stealPercent / 100));
-      const actualStolen = Math.min(stolenNexus, targetNexus); // Can't steal more than they have
+      // Check cooldown (30 mins)
+      const cooldownTime = 30 * 60 * 1000;
+      if (thief.stealCooldown && Date.now() < thief.stealCooldown) {
+        const remaining = Math.ceil((thief.stealCooldown - Date.now()) / 60000);
+        return await sock.sendMessage(chatId, {
+          text: `⏰ Cooldown active! Wait *${remaining}* more minute${remaining > 1 ? 's' : ''} before stealing again.`
+        }, { quoted: msg });
+      }
 
-      // Transfer Nexus
-      updatePlayerNexus(target, -actualStolen, saveDatabase);
-      updatePlayerNexus(thief, actualStolen, saveDatabase);
+      const thiefNexus = thief.gold || 0;
+      if (thiefNexus < 100) {
+        return await sock.sendMessage(chatId, {
+          text: '❌ You need at least 100 Nexus in your wallet to attempt a steal!'
+        }, { quoted: msg });
+      }
 
-      // Add to thief's crime record
-      if (!thief.crimes) thief.crimes = { successful: 0, failed: 0, totalStolen: 0 };
-      thief.crimes.successful++;
-      thief.crimes.totalStolen += actualStolen;
+      const targetNexus = victim.gold || 0;
+      if (targetNexus < 50) {
+        return await sock.sendMessage(chatId, {
+          text: `❌ *${victim.name}* doesn't have enough Nexus in their wallet to steal (min 50 💠).`
+        }, { quoted: msg });
+      }
 
-      saveDatabase();
+      // Calculate success chance (base 50% + speed advantage)
+      thief.stealCooldown = Date.now() + cooldownTime;
 
-      // Success messages
-      const successMessages = [
-        `🦹 *HEIST SUCCESSFUL!* 🦹
+      const thiefSpeed = thief.stats?.speed || 10;
+      const victimSpeed = victim.stats?.speed || 10;
+      const speedDiff = thiefSpeed - victimSpeed;
+      let successChance = 50 + (speedDiff * 1.5);
+      successChance = Math.max(20, Math.min(80, successChance)); // Clamp 20-80%
 
-You snuck into ${target.name}'s vault and made off with the loot!
+      const roll = Math.random() * 100;
+      const success = roll < successChance;
 
-💠 Stolen: ${actualStolen} Nexus
-🎲 Success Rate: ${successChance.toFixed(1)}%
-🎯 Your Roll: ${roll.toFixed(1)}
+      if (success) {
+        const stealPercent = 5 + Math.random() * 15; // 5-20%
+        const stolenAmount = Math.max(10, Math.floor(targetNexus * (stealPercent / 100)));
+        const actualStolen = Math.min(stolenAmount, targetNexus);
 
+        updatePlayerNexus(victim, -actualStolen, null);
+        updatePlayerNexus(thief, actualStolen, null);
+
+        saveDatabase();
+
+        return await sock.sendMessage(chatId, {
+          text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🥷 *SUCCESSFUL THEFT!*
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━
-💼 Your Nexus: ${thief.gold || 0} (+${actualStolen})
-😢 ${target.name}'s Nexus: ${target.gold || 0} (-${actualStolen})
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
+You stealthily robbed *@${targetJid.split('@')[0]}*!
+
+💰 Stolen: *${actualStolen.toLocaleString()}* Nexus 💠
+🎯 Success Chance: ${Math.round(successChance)}%
 ⏰ Next steal: 30 minutes
-💡 Tip: They should deposit in /bank!`,
+━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          mentions: [targetJid]
+        }, { quoted: msg });
+      } else {
+        // Failed - caught penalty (lose 15% of own wallet to victim)
+        const penalty = Math.max(20, Math.floor(thiefNexus * 0.15));
+        const actualPenalty = Math.min(penalty, thiefNexus);
 
-        `🎭 *MASTER THIEF!* 🎭
+        updatePlayerNexus(thief, -actualPenalty, null);
+        updatePlayerNexus(victim, actualPenalty, null);
 
-You picked ${target.name}'s pocket with incredible finesse!
+        saveDatabase();
 
-💠 Stolen: ${actualStolen} Nexus
-🎲 Success Rate: ${successChance.toFixed(1)}%
-🎯 Your Roll: ${roll.toFixed(1)}
-
+        return await sock.sendMessage(chatId, {
+          text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🚨 *CAUGHT RED-HANDED!*
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━
-💼 Your Nexus: ${thief.gold || 0} (+${actualStolen})
-😭 ${target.name}'s Nexus: ${target.gold || 0} (-${actualStolen})
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🏆 Crime Record: ${thief.crimes.successful} successful heists!`,
+You were caught trying to rob *@${targetJid.split('@')[0]}*!
 
-        `🔓 *VAULT CRACKED!* 🔓
+💸 Fine Paid to Victim: *${actualPenalty.toLocaleString()}* Nexus 💠
+🎯 Success Chance: ${Math.round(successChance)}%
+⏰ Next steal: 30 minutes
+━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          mentions: [targetJid]
+        }, { quoted: msg });
+      }
 
-${target.name} didn't see it coming!
-
-💠 Stolen: ${actualStolen} Nexus
-🎲 Success Rate: ${successChance.toFixed(1)}%
-🎯 Your Roll: ${roll.toFixed(1)}
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-💼 Your Nexus: ${thief.gold || 0} (+${actualStolen})
-💔 ${target.name}'s Nexus: ${target.gold || 0} (-${actualStolen})
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🎯 You've stolen ${thief.crimes.totalStolen} total Nexus!`
-      ];
-
-      const randomMessage = successMessages[Math.floor(Math.random() * successMessages.length)];
-      return sock.sendMessage(chatId, { text: randomMessage }, { quoted: msg });
-    }
-
-    // ============================================
-    // FAILURE - Lose Nexus as penalty (CAPPED!)
-    // ============================================
-    else {
-      const lossPercent = 5 + Math.random() * 5; // 5-10% loss
-      const calculatedLoss = Math.floor((thief.gold || 0) * (lossPercent / 100));
-      const lostNexus = Math.min(calculatedLoss, 5000); // CAP at 5,000 Nexus max loss!
-
-      updatePlayerNexus(thief, -lostNexus, saveDatabase);
-
-      // Add to thief's crime record
-      if (!thief.crimes) thief.crimes = { successful: 0, failed: 0, totalStolen: 0 };
-      thief.crimes.failed++;
-
-      saveDatabase();
-
-      // Failure messages
-      const failMessages = [
-        `🚨 *BUSTED!* 🚨
-
-${target.name} caught you red-handed!
-
-❌ Lost: ${lostNexus} Nexus (${lossPercent.toFixed(1)}% penalty, max 5k)
-🎲 Success Rate: ${successChance.toFixed(1)}%
-🎯 Your Roll: ${roll.toFixed(1)}
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-💸 Your Nexus: ${thief.gold || 0} (-${lostNexus})
-😂 ${target.name} is laughing at you!
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-💡 Better luck next time!
-⏰ Try again in 5 minutes`,
-
-        `👮 *CAUGHT!* 👮
-
-The guards spotted you sneaking around!
-
-❌ Lost: ${lostNexus} Nexus (${lossPercent.toFixed(1)}% penalty, max 5k)
-🎲 Success Rate: ${successChance.toFixed(1)}%
-🎯 Your Roll: ${roll.toFixed(1)}
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-💸 Your Nexus: ${thief.gold || 0} (-${lostNexus})
-🛡️ ${target.name}'s Nexus is safe!
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-📊 Failures: ${thief.crimes.failed}
-⏰ Cooldown: 5 minutes`,
-
-        `⚠️ *FAILED HEIST!* ⚠️
-
-You tripped over your own feet!
-
-❌ Lost: ${lostNexus} Nexus (${lossPercent.toFixed(1)}% penalty, max 5k)
-🎲 Success Rate: ${successChance.toFixed(1)}%
-🎯 Your Roll: ${roll.toFixed(1)}
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-💸 Your Nexus: ${thief.gold || 0} (-${lostNexus})
-😆 ${target.name} is pointing and laughing!
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🎭 Maybe crime isn't for you...
-⏰ Try again in 5 minutes`
-      ];
-
-      const randomMessage = failMessages[Math.floor(Math.random() * failMessages.length)];
-      return sock.sendMessage(chatId, { text: randomMessage }, { quoted: msg });
+    } catch (error) {
+      console.error('Error in rob command:', error);
+      await sock.sendMessage(msg.key.remoteJid, {
+        text: '❌ An error occurred while executing the steal command.'
+      }, { quoted: msg });
     }
   }
 };

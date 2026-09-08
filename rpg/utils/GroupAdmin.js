@@ -45,9 +45,23 @@ async function requireGroupAdmin(sock, chatId, sender, db) {
 
   // ── Bot must be a group admin ───────────────────────────────────────
   const botJid = sock?.user?.id || '';
+  const botLid = sock?.user?.lid || '';
   const botPhone = bare(botJid);
-  const botPart = meta.participants.find((p) => bare(p.id) === botPhone);
-  const botIsAdmin = isAdminState(botPart);
+  const botLidPhone = bare(botLid);
+
+  const botPart = meta.participants.find((p) => {
+    const pBare = bare(p.id);
+    return (
+      p.id === botJid ||
+      p.id === botLid ||
+      (botPhone && pBare === botPhone) ||
+      (botLidPhone && pBare === botLidPhone)
+    );
+  });
+
+  // Fall back: if bot is executing the command, assume bot has admin rights if meta contains it as admin or if participants has >= 1 admin
+  const botIsAdmin = isAdminState(botPart) || meta.participants.some(p => isAdminState(p) && (bare(p.id) === botPhone || bare(p.id) === botLidPhone));
+
   if (!botIsAdmin) {
     return { ok: false, err: '❌ I need to be a *group admin* for that.', botIsAdmin: false };
   }
@@ -60,7 +74,7 @@ async function requireGroupAdmin(sock, chatId, sender, db) {
     return { ok: false, err: '❌ *Group admins only.*\n\n(You need to be a group admin, or the owner/co-owner.)' };
   }
 
-  return { ok: true, meta, botIsAdmin, isOwner, isSelfAdmin, botJid };
+  return { ok: true, meta, botIsAdmin: true, isOwner, isSelfAdmin, botJid };
 }
 
 /**

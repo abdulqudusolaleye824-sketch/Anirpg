@@ -72,7 +72,7 @@ module.exports = {
     if (!player.inventory.items) player.inventory.items = [];
 
     const action = args[0]?.toLowerCase();
-    const Nexus = (player.gold||0).toLocaleString();
+    const gold = (player.gold||0).toLocaleString();
     const crystals = (player.manaCrystals||0).toLocaleString();
 
     if (!action) {
