@@ -1,12 +1,13 @@
 // ═══════════════════════════════════════════════════════════════
-// PARTY COMMAND — Revamped Gate Party System
-// Flow: gate -> party -> dungeon
+// PARTY COMMAND — Unified Gate Party Creation & Management Flow
+// Flow: /party create --<key> -> /party join/ready -> /party raid
 //
 // Commands:
+//   /party create --<KEY>      — open a gate party with a gate key
 //   /party                     — view active party status & ready states
 //   /party ready               — mark yourself ready for the raid
 //   /party raid (or start)     — leader launches raid once everyone is ready
-//   /party join <CODE>         — join a gate party (guild/affiliate only)
+//   /party join <KEY>          — join an active party
 //   /party leave               — leave current party
 //   /party kick @user          — leader kicks a member from party
 // ═══════════════════════════════════════════════════════════════
@@ -24,7 +25,7 @@ function normaliseJid(jid) {
 module.exports = {
   name: 'party',
   aliases: ['praid', 'raidparty'],
-  description: '👥 Gate raid party manager — view, ready, join & launch raid',
+  description: '👥 Gate party manager — create, join, ready & launch raid',
 
   async execute(sock, msg, args, getDatabase, saveDatabase, sender) {
     const chatId = msg.key?.remoteJid;
@@ -36,39 +37,163 @@ module.exports = {
     }
 
     const action = (args[0] || 'status').toLowerCase();
-    const subArg = (args[1] || '').toUpperCase().replace(/^--/, '').trim();
+    const rawKey = (args[1] || (args[0] && args[0].length === 8 ? args[0] : '')).toUpperCase().replace(/^--/, '').trim();
 
     // ── Find active gate in current chat ──────────────────────────
     const gc = GKM.getDungeonGC(chatId);
     let activeKey = gc?.activeKeyId || null;
 
-    if (!activeKey && subArg && subArg.length === 8) {
-      activeKey = subArg;
+    if (!activeKey && rawKey && rawKey.length === 8) {
+      activeKey = rawKey;
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // /party create --<KEY>
+    // ═══════════════════════════════════════════════════════════════
+    if (action === 'create' || action === 'open' || (action.length === 8 && !activeKey)) {
+      const key = rawKey || (args[0] && args[0].length === 8 ? args[0].toUpperCase().replace(/^--/, '') : '');
+      if (!key || key.length !== 8) {
+        return sock.sendMessage(chatId, {
+          text: '❌ Usage: /party create --<gate key>\nExample: /party create --2K7SN2N8'
+        }, { quoted: msg });
+      }
+
+      const resolved = GR.resolveCode(key);
+      if (!resolved.ok) return sock.sendMessage(chatId, { text: resolved.error }, { quoted: msg });
+      const { gate, keyData } = resolved;
+
+      const playerGuild = player.guild || null;
+      const affData     = GKM.getAffiliateData(sender, db);
+      const isAffiliate = !!affData;
+
+      // Ensure dungeon GC registration
+      if (!GKM.isDungeonGC(chatId)) {
+        GKM.setDungeonGC(chatId, sender);
+      }
+      const activeGc = GKM.getDungeonGC(chatId);
+
+      // ── SCENARIO A: Solo Hunter (No Guild & Not an Affiliate) ─────
+      if (!playerGuild && !isAffiliate) {
+        const enterRes = GR.enter(sender, player.name, key, keyData, gate, db);
+        activeGc.activeKeyId = key;
+        keyData.dungeonChatId = chatId;
+        keyData.raidStarted = true;
+
+        saveDatabase();
+
+        const rd = GATE_RANKS[keyData.gateRank] || GATE_RANKS['E'];
+        return sock.sendMessage(chatId, {
+          text: [
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+            `${rd.emoji} *SOLO GATE RAID LAUNCHED!*`,
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+            `🆔 Key: \`${key}\` (${rd.label})`,
+            `👤 Hunter: *${player.name}* (Solo)`,
+            `🗺️ Floor: 1/${gate.totalFloors}`,
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+            `💡 Since you are not in a guild or an affiliate, party setup is skipped and you enter solo!`,
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+            `⚔️ *COMBAT:*`,
+            `/gateraid ${key} attack    — attack monster`,
+            `/gateraid ${key} skill <n> — use skill`,
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          ].join('\n'),
+        }, { quoted: msg });
+      }
+
+      // ── SCENARIO B: Affiliate User ───────────────────────────────
+      if (isAffiliate) {
+        keyData.isAffiliate = true;
+        keyData.guildName   = affData.guildName;
+        keyData.dungeonChatId = chatId;
+        activeGc.activeKeyId  = key;
+
+        const raid = GR.raidOf(gate, key, keyData);
+        raid.mode      = 'party';
+        raid.partyType = 'affiliate';
+        raid.guildName = affData.guildName;
+        raid.leader    = sender;
+        raid.status    = 'recruiting';
+        raid.members   = [];
+        GR.ensureMember(gate, sender, db);
+
+        saveDatabase();
+
+        const rd = GATE_RANKS[keyData.gateRank] || GATE_RANKS['E'];
+        return sock.sendMessage(chatId, {
+          text: [
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+            `👥 *AFFILIATE PARTY CREATED!*`,
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+            `🆔 Gate: *${rd.label}* [\`${key}\`]`,
+            `👑 Leader: *${player.name}* (Granted Affiliate)`,
+            `🏰 Guild: *${affData.guildName}*`,
+            ``,
+            `📌 *PARTY ACCESS RULE:*`,
+            `• Hunters WITHOUT guilds (solo) can join using */party join ${key}*`,
+            `• Hunters in guilds CANNOT join affiliate-led parties.`,
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+            `📌 Run */party ready* when ready. Leader uses */party raid* to launch!`,
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          ].join('\n'),
+        }, { quoted: msg });
+      }
+
+      // ── SCENARIO C: Guild Member User ─────────────────────────────
+      keyData.isAffiliate = false;
+      keyData.guildName   = playerGuild;
+      keyData.dungeonChatId = chatId;
+      activeGc.activeKeyId  = key;
+
+      const raid = GR.raidOf(gate, key, keyData);
+      raid.mode      = 'party';
+      raid.partyType = 'guild';
+      raid.guildName = playerGuild;
+      raid.leader    = sender;
+      raid.status    = 'recruiting';
+      raid.members   = [];
+      GR.ensureMember(gate, sender, db);
+
+      saveDatabase();
+
+      const rd = GATE_RANKS[keyData.gateRank] || GATE_RANKS['E'];
+      return sock.sendMessage(chatId, {
+        text: [
+          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          `👥 *GUILD PARTY CREATED!*`,
+          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          `🆔 Gate: *${rd.label}* [\`${key}\`]`,
+          `👑 Leader: *${player.name}*`,
+          `🏰 Guild: *${playerGuild}*`,
+          ``,
+          `📌 *PARTY ACCESS RULE:*`,
+          `• Members of *${playerGuild}* or assigned affiliates can join using */party join ${key}*`,
+          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          `📌 Run */party ready* when ready. Leader uses */party raid* to launch!`,
+          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        ].join('\n'),
+      }, { quoted: msg });
     }
 
     // ═══════════════════════════════════════════════════════════════
     // /party (status)
     // ═══════════════════════════════════════════════════════════════
-    if (action === 'status' || action === 'info' || action === 'list' || (!args[0] && activeKey)) {
+    if (action === 'status' || action === 'info' || action === 'list') {
       if (!activeKey) {
         return sock.sendMessage(chatId, {
           text: [
             `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-            `👥 *GATE RAID PARTY MANAGER*`,
+            `👥 *GATE PARTY MANAGER*`,
             `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-            `Flow: *Gate → Party → Dungeon*`,
-            ``,
             `📌 *COMMANDS:*`,
-            `/party                 — view active party status`,
-            `/party ready           — mark yourself ready for raid`,
-            `/party raid            — leader launches raid (all ready required)`,
-            `/party join <CODE>     — join gate party`,
-            `/party leave           — leave current party`,
-            `/party kick @user      — kick member (leader only)`,
-            `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-            `💡 *Gate Access Rule:*`,
-            `• Guild-led raids: Members of the party leader's guild only.`,
-            `• Affiliate-led raids: Granted affiliates & guild members.`,
+            `/party create --<KEY>   — create a party with a gate key`,
+            `/party ready            — toggle ready state`,
+            `/party raid             — launch raid (leader only)`,
+            `/party join <KEY>       — join an active party`,
+            `/party leave            — leave current party`,
+            `/party kick @user       — kick member (leader only)`,
+            `/affiliate hire 60|40   — hire affiliate for party`,
+            `/affiliate grant 60|40  — grant guild affiliate status`,
             `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
           ].join('\n'),
         }, { quoted: msg });
@@ -101,9 +226,9 @@ module.exports = {
           `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
           `${rd.emoji} *GATE RAID PARTY STATUS*`,
           `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-          `🆔 Gate: *${rd.label}* [${activeKey}]`,
+          `🆔 Gate: *${rd.label}* [\`${activeKey}\`]`,
           `👑 Leader: *${owner?.name || keyData.ownedBy.split('@')[0]}*`,
-          `🏰 Guild: *${keyData.guildName || 'Affiliate'}*`,
+          `🏰 Type: *${raid.partyType === 'affiliate' ? 'Affiliate Party' : 'Guild Party'}* (${keyData.guildName || 'Guild'})`,
           `📊 Status: *${raid.status.toUpperCase()}*`,
           ``,
           `👥 *HUNTERS IN PARTY (${totalMembers}/${GR.MAX_PARTY}):*`,
@@ -114,9 +239,55 @@ module.exports = {
             ? `🎉 *ALL MEMBERS READY!* Leader can run */party raid*`
             : `⏰ *Ready Count:* ${totalReady}/${totalMembers} ready. Members run */party ready*`,
           `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-          `📌 Leader: */party raid* to enter dungeon`,
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
         ].join('\n'),
+      }, { quoted: msg });
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // /party join <KEY>
+    // ═══════════════════════════════════════════════════════════════
+    if (action === 'join') {
+      const code = rawKey || (args[1] || '').toUpperCase().replace(/^--/, '').trim();
+      if (!code) {
+        return sock.sendMessage(chatId, { text: '❌ Usage: /party join <KEY>\nExample: /party join 2K7SN2N8' }, { quoted: msg });
+      }
+
+      const resolved = GR.resolveCode(code);
+      if (!resolved.ok) return sock.sendMessage(chatId, { text: resolved.error }, { quoted: msg });
+      const { gate, keyData } = resolved;
+
+      const raid = gate.raid;
+      if (!raid) return sock.sendMessage(chatId, { text: '❌ No active party for this key.' }, { quoted: msg });
+
+      const joinerGuild = player.guild || null;
+
+      // Access Check: Affiliate-led Party vs Guild Party
+      if (raid.partyType === 'affiliate') {
+        if (joinerGuild) {
+          return sock.sendMessage(chatId, {
+            text: '❌ *Access Denied!* Hunters in guilds cannot join affiliate-led parties. Only solo hunters without guilds can join.'
+          }, { quoted: msg });
+        }
+      } else if (raid.partyType === 'guild') {
+        const isSameGuild = joinerGuild && joinerGuild === raid.guildName;
+        const isAssignedAff = GKM.getAffiliateData(sender, db)?.guildName === raid.guildName;
+        const isHired = keyData.contracts && keyData.contracts[sender];
+
+        if (!isSameGuild && !isAssignedAff && !isHired) {
+          return sock.sendMessage(chatId, {
+            text: `❌ *Access Denied!* Only members or assigned affiliates of *${raid.guildName}* can join this party.`
+          }, { quoted: msg });
+        }
+      }
+
+      const res = GR.join(sender, player.name, gate, db);
+      if (!res.ok) return sock.sendMessage(chatId, { text: `❌ ${res.error}` }, { quoted: msg });
+
+      saveDatabase();
+
+      return sock.sendMessage(chatId, {
+        text: `✅ *${player.name}* joined the party!\n🔑 Key: \`${code}\`\n👥 Members: ${res.raid.members.length}\n\n📌 Run */party ready* when ready.`,
+        mentions: [sender],
       }, { quoted: msg });
     }
 
@@ -124,7 +295,7 @@ module.exports = {
     // /party ready
     // ═══════════════════════════════════════════════════════════════
     if (action === 'ready') {
-      if (!activeKey) return sock.sendMessage(chatId, { text: '❌ No active gate party in this chat. Enter a gate code first with /gate enter --<CODE>' }, { quoted: msg });
+      if (!activeKey) return sock.sendMessage(chatId, { text: '❌ No active party in this chat.' }, { quoted: msg });
 
       const resolved = GR.resolveCode(activeKey);
       if (!resolved.ok) return sock.sendMessage(chatId, { text: resolved.error }, { quoted: msg });
@@ -139,9 +310,9 @@ module.exports = {
       const totalReady = raid.members.filter(m => m.ready).length;
       const totalMembers = raid.members.length;
 
-      let responseText = `✅ *${player.name}* is now **READY** for the raid! (${totalReady}/${totalMembers} ready)`;
+      let responseText = `✅ *${player.name}* is now **READY**! (${totalReady}/${totalMembers} ready)`;
       if (res.allReadied) {
-        responseText += `\n\n🎉 *ALL MEMBERS ARE READY!* Leader can run */party raid* to launch the raid!`;
+        responseText += `\n\n🎉 *ALL MEMBERS ARE READY!* Leader can run */party raid* to launch!`;
       }
 
       return sock.sendMessage(chatId, {
@@ -154,7 +325,7 @@ module.exports = {
     // /party raid (or start)
     // ═══════════════════════════════════════════════════════════════
     if (action === 'raid' || action === 'start') {
-      if (!activeKey) return sock.sendMessage(chatId, { text: '❌ No active gate party in this chat.' }, { quoted: msg });
+      if (!activeKey) return sock.sendMessage(chatId, { text: '❌ No active party in this chat.' }, { quoted: msg });
 
       const keyData = GKM.getKey(activeKey) || db.gateKeys?.[activeKey];
       if (!keyData) return sock.sendMessage(chatId, { text: '❌ Gate party not found.' }, { quoted: msg });
@@ -188,7 +359,7 @@ module.exports = {
           `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
           `${rd.emoji} *DUNGEON RAID LAUNCHED!*`,
           `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-          `📍 Gate: *${rd.label}* [${activeKey}]`,
+          `📍 Gate: *${rd.label}* [\`${activeKey}\`]`,
           `🗺️ Entering Floor 1/${gate.totalFloors}`,
           ``,
           `👥 *RAID TEAM (${raid.members.length}):*`,
@@ -200,37 +371,6 @@ module.exports = {
           `/gateraid ${activeKey} status   — view floor status`,
           `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
         ].join('\n'),
-      }, { quoted: msg });
-    }
-
-    // ═══════════════════════════════════════════════════════════════
-    // /party join <CODE>
-    // ═══════════════════════════════════════════════════════════════
-    if (action === 'join') {
-      const code = subArg || (args[0] && args[0] !== 'join' ? args[0].toUpperCase() : '');
-      if (!code) {
-        return sock.sendMessage(chatId, { text: '❌ Usage: /party join <CODE>\nExample: /party join 2K7SN2N8' }, { quoted: msg });
-      }
-
-      const resolved = GR.resolveCode(code);
-      if (!resolved.ok) return sock.sendMessage(chatId, { text: resolved.error }, { quoted: msg });
-      const { gate, keyData } = resolved;
-
-      // Access Check: Guild Officer Raid vs Affiliate-Led Raid
-      if (!GKM.canUseKey(sender, keyData, db)) {
-        return sock.sendMessage(chatId, {
-          text: `❌ *Access Denied!* Only members of the party leader's guild (*${keyData.guildName || 'Guild'}*) or granted affiliates can join this party.`
-        }, { quoted: msg });
-      }
-
-      const res = GR.join(sender, player.name, gate, db);
-      if (!res.ok) return sock.sendMessage(chatId, { text: `❌ ${res.error}` }, { quoted: msg });
-
-      saveDatabase();
-
-      return sock.sendMessage(chatId, {
-        text: `✅ *${player.name}* joined the gate party!\n🔑 Gate Code: \`${code}\`\n👥 Members: ${res.raid.members.length}\n\n📌 Run */party ready* when ready.`,
-        mentions: [sender],
       }, { quoted: msg });
     }
 
@@ -289,7 +429,7 @@ module.exports = {
     }
 
     return sock.sendMessage(chatId, {
-      text: '❌ Usage: /party [ready|raid|join|leave|kick]'
+      text: '❌ Usage: /party [create|ready|raid|join|leave|kick]'
     }, { quoted: msg });
   }
 };

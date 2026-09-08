@@ -8,7 +8,7 @@
 
 'use strict';
 
-const { formatDuration } = require('../utils/NigerianTime');
+const SerfManager = require('../utils/SerfManager');
 
 const activeKeys = {};
 const dungeonGCs = {};
@@ -97,48 +97,19 @@ function getAffiliateData(sender, db) {
   return Object.values(db.affiliates || {}).find(a => normaliseJid(a.jid) === sNum) || null;
 }
 
-function canUseKey(sender, keyData, db) {
-  if (!keyData) return false;
-
-  // Exception: Affiliate-led raids
-  if (keyData.isAffiliate) {
-    if (normaliseJid(sender) === normaliseJid(keyData.ownedBy)) return true;
-    if (isAffiliate(sender, db)) return true;
-    if (keyData.guildName && isGuildMember(sender, keyData.guildName, db)) return true;
-    return false;
-  }
-
-  // Guild-led raid: Only members of the party leader's guild can join
-  if (keyData.guildName) {
-    if (isGuildMember(sender, keyData.guildName, db)) return true;
-    const aff = getAffiliateData(sender, db);
-    if (aff && aff.guildName === keyData.guildName) return true;
-    if (keyData.contracts && keyData.contracts[sender]) return true;
-    return false;
-  }
-
-  return false;
-}
-
 /**
- * Gate Purchasing Rule:
- * Gates can ONLY be bought by Guilds — either an Officer of a guild or a granted Affiliate.
+ * Anyone can purchase a gate key provided they have an approved serf bot for DM delivery.
  */
 function purchaseGateKey(sender, gate, db, saveDatabase) {
   const player = db.users?.[sender];
   if (!player) return { success: false, error: 'You are not registered.' };
 
-  const guildName = player.guild;
-  const affData   = getAffiliateData(sender, db);
-  const isAff     = !!affData;
-
-  const isLeaderOrOfficer = guildName && isGuildLeaderOrOfficer(sender, guildName, db);
-
-  // Must be either a Guild Officer or a Granted Affiliate
-  if (!isLeaderOrOfficer && !isAff) {
+  // Serf Check
+  const serf = SerfManager.getSerf(db, sender);
+  if (!serf) {
     return {
       success: false,
-      error: `❌ *Gates can only be purchased by Guild Officers (Guildmaster / Co-Leader / Officer) or Granted Affiliates!*\n\nIf you belong to a guild, ask an officer to buy it or grant you affiliate status.`
+      error: `❌ No serf detected! Set a serf first using /setserf @bot so you can receive DM notifications.`
     };
   }
 
@@ -146,11 +117,16 @@ function purchaseGateKey(sender, gate, db, saveDatabase) {
   const manaPrice  = gate.manaPrice || 0;
   const isBoth     = gate.currency === 'both' || ['B','A','S'].includes(gate.rank);
 
+  const guildName = player.guild;
+  const affData   = getAffiliateData(sender, db);
+  const isAff     = !!affData;
+  const isOfficer = guildName && isGuildLeaderOrOfficer(sender, guildName, db);
+
   let paymentSource = null; // 'guild' | 'personal'
   let guild = guildName ? findGuild(db, guildName) : null;
 
   // Try Guild Treasury first if buyer is a Guild Officer
-  if (isLeaderOrOfficer && guild) {
+  if (isOfficer && guild) {
     const gNexus = guild.treasury || 0;
     const gMana  = guild.manaTreasury || 0;
     const canGuildPay = isBoth
@@ -168,7 +144,7 @@ function purchaseGateKey(sender, gate, db, saveDatabase) {
     }
   }
 
-  // Fallback to Personal Balance for granted affiliates or if treasury insufficient
+  // Fallback to Personal Balance
   if (!paymentSource) {
     const pNexus = player.gold || 0;
     const pMana  = player.manaCrystals || 0;
@@ -211,6 +187,7 @@ function purchaseGateKey(sender, gate, db, saveDatabase) {
     ownedBy:      sender,
     guildName:    isAff ? affData.guildName : guildName,
     isAffiliate:  isAff,
+    affiliateData: isAff ? affData : null,
     paymentSource,
     purchasedAt:  Date.now(),
     expiresAt,
@@ -230,7 +207,7 @@ function purchaseGateKey(sender, gate, db, saveDatabase) {
   db.gateKeys[key] = keyData;
 
   if (saveDatabase) saveDatabase();
-  return { success: true, key, keyData, stabilityMs };
+  return { success: true, key, keyData, stabilityMs, serf };
 }
 
 function setDungeonGC(chatId, setBy) {
@@ -270,214 +247,6 @@ function loadFromDB(db) {
   }
 }
 
-function enterGate(key, sender, chatId, db) {
-  const keyData = activeKeys[key] || db.gateKeys?.[key];
-  if (!keyData) return { success: false, error: 'Invalid key. Check the key and try again.' };
-  if (keyData.expired || Date.now() > keyData.expiresAt) {
-    return { success: false, error: '⚠️ This gate key has expired. The gate has collapsed.' };
-  }
-  if (keyData.raidComplete) return { success: false, error: 'This gate has already been cleared.' };
-  if (keyData.raidStarted && keyData.dungeonChatId !== chatId) {
-    return { success: false, error: 'This gate raid is already active in another dungeon.' };
-  }
-  if (!isDungeonGC(chatId)) return { success: false, error: 'This group is not a registered dungeon GC.\nAsk the bot owner to set it up with /setdungeon.' };
-
-  const gc = getDungeonGC(chatId);
-  if (gc.activeKeyId && gc.activeKeyId !== key) {
-    return { success: false, error: 'This dungeon GC already has an active gate raid. Clear it first.' };
-  }
-  if (!canUseKey(sender, keyData, db)) {
-    return { success: false, error: 'You are not authorized to use this key. Only members of the party leader\'s guild or granted affiliates can join.' };
-  }
-
-  keyData.dungeonChatId = chatId;
-  keyData.raidStarted   = true;
-  gc.activeKeyId        = key;
-
-  if (!keyData.raidParty.includes(sender)) keyData.raidParty.push(sender);
-
-  return { success: true, keyData };
-}
-
-function grantAffiliate(grantorJid, targetJid, guildName, pct, db, saveDatabase) {
-  const guild = findGuild(db, guildName);
-  if (!guild) return { success: false, error: 'Guild not found.' };
-  const CM = require('../utils/GuildContractManager');
-  if (!CM.isGuildMasterOrVice(db, guildName, grantorJid)) {
-    return { success: false, error: 'Only the guild master or vice guild master can grant affiliate status.' };
-  }
-  if (isGuildMember(targetJid, guildName, db)) {
-    return { success: false, error: 'That hunter is already a guild member.' };
-  }
-  pct = Number(pct);
-  if (!pct || pct < 1 || pct > 100) return { success: false, error: 'You must specify the affiliate loot % (1-100).\nExample: /affiliate grant @user | 60' };
-  if (isAffiliate(targetJid, db)) return { success: false, error: 'That hunter is already an affiliate of a guild.' };
-
-  if (!db.affiliates) db.affiliates = {};
-  const affId = `aff_${normaliseJid(targetJid)}`;
-  db.affiliates[affId] = {
-    jid:        targetJid,
-    guildName,
-    grantedBy:  grantorJid,
-    grantedAt:  Date.now(),
-    pct,
-  };
-  affiliates[affId] = db.affiliates[affId];
-  saveDatabase();
-  return { success: true };
-}
-
-function requestAffiliate(grantorJid, targetJid, guildName, key, pct, db, saveDatabase) {
-  const guild = findGuild(db, guildName);
-  if (!guild) return { success: false, error: 'Guild not found.' };
-  const CM = require('../utils/GuildContractManager');
-  if (!CM.isGuildMasterOrVice(db, guildName, grantorJid)) {
-    return { success: false, error: 'Only the guild master or vice guild master can request an affiliate.' };
-  }
-  const keyData = activeKeys?.[key] || db.gateKeys?.[key];
-  if (!keyData) return { success: false, error: 'Gate code not found.' };
-  if (keyData.guildName !== guildName) return { success: false, error: 'That gate does not belong to your guild.' };
-  pct = Number(pct);
-  if (!pct || pct < 1 || pct > 100) return { success: false, error: 'You must specify the loot % (1-100).\nExample: /affiliate request @user | 60' };
-
-  if (!db.requests) db.requests = {};
-  const reqId = `req_${key}_${normaliseJid(targetJid)}`;
-  db.requests[reqId] = {
-    jid:       targetJid,
-    guildName,
-    key,
-    requestedBy: grantorJid,
-    requestedAt: Date.now(),
-    pct,
-  };
-  saveDatabase();
-  return { success: true };
-}
-
-function revokeAffiliate(revokerJid, targetJid, guildName, db, saveDatabase) {
-  const guild = findGuild(db, guildName);
-  if (!guild) return { success: false, error: 'Guild not found.' };
-  const CM = require('../utils/GuildContractManager');
-  if (!CM.isGuildMasterOrVice(db, guildName, revokerJid)) {
-    return { success: false, error: 'Only the guild master or vice guild master can revoke affiliate status.' };
-  }
-  if (!db.affiliates) return { success: false, error: 'No affiliates found.' };
-  const affId = `aff_${normaliseJid(targetJid)}`;
-  if (!db.affiliates[affId]) return { success: false, error: 'That hunter is not an affiliate.' };
-  delete db.affiliates[affId];
-  delete affiliates[affId];
-  saveDatabase();
-  return { success: true };
-}
-
-function setContract(key, partyLeaderJid, targetJid, percent, db) {
-  const keyData = activeKeys[key] || db.gateKeys?.[key];
-  if (!keyData) return { success: false, error: 'Key not found.' };
-  if (normaliseJid(keyData.ownedBy) !== normaliseJid(partyLeaderJid)) {
-    return { success: false, error: 'Only the key holder can set contracts.' };
-  }
-  if (percent < 1 || percent > 99) return { success: false, error: 'Contract must be between 1% and 99%.' };
-
-  const current = Object.values(keyData.contracts || {}).reduce((s, p) => s + p, 0);
-  if (current + percent > 100) {
-    return { success: false, error: `Total contracts would exceed 100%. Currently at ${current}%.` };
-  }
-
-  if (!keyData.contracts) keyData.contracts = {};
-  keyData.contracts[targetJid] = percent;
-
-  if (!keyData.raidParty.includes(targetJid)) keyData.raidParty.push(targetJid);
-
-  return { success: true };
-}
-
-function distributeLoot(key, lootBundle, db, saveDatabase) {
-  const keyData = activeKeys[key] || db.gateKeys?.[key];
-  if (!keyData) return null;
-
-  const { Nexus = 0, crystals = 0, items = [] } = lootBundle;
-
-  const contractPayouts = processContracts(key, Nexus, crystals, db);
-  const contractGold     = Object.values(contractPayouts).reduce((s, p) => s + p.gold,    0);
-  const contractCrystals = Object.values(contractPayouts).reduce((s, p) => s + p.crystals, 0);
-  const remainingGold     = Math.max(0, Nexus    - contractGold);
-  const remainingCrystals = Math.max(0, crystals - contractCrystals);
-
-  if (keyData.isAffiliate) {
-    const owner = db.users?.[keyData.ownedBy];
-    if (owner) {
-      owner.gold         = (owner.gold         || 0) + remainingGold;
-      owner.manaCrystals = (owner.manaCrystals  || 0) + remainingCrystals;
-      for (const item of items) addItemToPlayer(owner, item);
-    }
-  } else {
-    const guild = findGuild(db, keyData.guildName);
-    if (guild) {
-      if (!guild.gold) guild.gold = 0;
-      guild.gold     += remainingGold;
-      guild.treasury  = (guild.treasury || 0) + remainingCrystals;
-      if (!guild.inventory) guild.inventory = [];
-      guild.inventory.push(...items.map(i => ({ ...i, obtainedAt: Date.now(), fromGate: key })));
-    }
-
-    for (const jid of keyData.raidParty) {
-      const p = db.users?.[jid];
-      if (p) {
-        if (!p.stats_history) p.stats_history = {};
-        p.stats_history.gatesCleared = (p.stats_history.gatesCleared || 0) + 1;
-      }
-    }
-  }
-
-  keyData.raidComplete = true;
-  if (db.gateKeys?.[key]) db.gateKeys[key].raidComplete = true;
-  const gc = dungeonGCs[keyData.dungeonChatId];
-  if (gc) gc.activeKeyId = null;
-
-  saveDatabase();
-
-  return {
-    isAffiliate:    keyData.isAffiliate,
-    guild:          keyData.guildName,
-    gold:           remainingGold,
-    crystals:       remainingCrystals,
-    items,
-    contractPayouts,
-  };
-}
-
-function processContracts(key, totalGold, totalCrystals, db) {
-  const keyData = activeKeys[key] || db.gateKeys?.[key];
-  if (!keyData?.contracts) return {};
-
-  const payouts = {};
-  for (const [jid, percent] of Object.entries(keyData.contracts)) {
-    const goldCut    = Math.floor(totalGold    * (percent / 100));
-    const crystalCut = Math.floor(totalCrystals * (percent / 100));
-    const player = db.users?.[jid];
-    if (player) {
-      player.gold = (player.gold || 0) + goldCut;
-      player.manaCrystals = (player.manaCrystals || 0) + crystalCut;
-    }
-    payouts[jid] = { gold: goldCut, crystals: crystalCut, percent };
-  }
-  return payouts;
-}
-
-function addItemToPlayer(player, item) {
-  if (!player.inventory) player.inventory = { weapons:[], armor:[], accessories:[], potions:[], artifacts:[], materials:[], keyStones:[] };
-  const inv = player.inventory;
-  const bucket = item.type === 'weapon' ? 'weapons'
-    : item.type === 'armor' ? 'armor'
-    : item.type === 'potion' ? 'potions'
-    : item.type === 'artifact' ? 'artifacts'
-    : item.type === 'accessory' ? 'accessories'
-    : 'materials';
-  if (Array.isArray(inv[bucket])) {
-    inv[bucket].push({ ...item, obtainedAt: Date.now() });
-  }
-}
-
 function checkExpiredKeys(sock, db, saveDatabase) {
   const expired = Object.entries(activeKeys).filter(([, k]) =>
     !k.expired && !k.raidComplete && Date.now() > k.expiresAt
@@ -490,16 +259,23 @@ function checkExpiredKeys(sock, db, saveDatabase) {
     if (db.gateKeys?.[key]) db.gateKeys[key].expired = true;
 
     if (sock && keyData.ownedBy) {
-      sock.sendMessage(keyData.ownedBy, {
-        text: [
-          `⚠️ *GATE KEY EXPIRED*`,
-          ``,
-          `Your ${keyData.gateRank || '?'}-Rank gate key has expired.`,
-          `Key: \`${key}\``,
-          ``,
-          `The gate has collapsed. The purchase is non-refundable.`,
-        ].join('\n'),
-      }).catch(() => {});
+      try {
+        const MultiSocketManager = require('../../bots/MultiSocketManager');
+        const serfKey = SerfManager.getSerfBotKey(db, keyData.ownedBy);
+        const serfSock = serfKey ? MultiSocketManager.getSocket(serfKey) : sock;
+        if (serfSock) {
+          serfSock.sendMessage(keyData.ownedBy, {
+            text: [
+              `⚠️ *GATE KEY EXPIRED*`,
+              ``,
+              `Your ${keyData.gateRank || '?'}-Rank gate key has expired.`,
+              `Key: \`${key}\``,
+              ``,
+              `The gate has collapsed. The purchase is non-refundable.`,
+            ].join('\n'),
+          }).catch(() => {});
+        }
+      } catch (e) {}
     }
 
     if (keyData.dungeonChatId) {
@@ -530,18 +306,12 @@ function formatStability(ms) {
 
 module.exports = {
   purchaseGateKey,
-  enterGate,
   setDungeonGC,
   removeDungeonGC,
   isDungeonGC,
   getDungeonGC,
   getAllDungeonGCs,
   loadFromDB,
-  grantAffiliate,
-  revokeAffiliate,
-  requestAffiliate,
-  setContract,
-  distributeLoot,
   checkExpiredKeys,
   getKey,
   formatStability,
@@ -551,7 +321,6 @@ module.exports = {
   isGuildMember,
   isAffiliate,
   getAffiliateData,
-  canUseKey,
   dungeonGCs,
   activeKeys,
 };
