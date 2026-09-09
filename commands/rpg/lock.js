@@ -60,6 +60,13 @@ module.exports = {
           text: `🔒 *${targetPlayer.name}*'s profile is already locked!`
         }, { quoted: msg });
       }
+      // /lock profile is Pro-only for self-lock (mirrors /lockprofile). Super users bypass.
+      if (!isSuperUser) {
+        const isPro = !!((targetPlayer.isPro || targetPlayer.proStatus) && targetPlayer.proExpiresAt && targetPlayer.proExpiresAt > Date.now());
+        if (!isPro) {
+          return sock.sendMessage(chatId, { text: '🔒 *Lock Profile* is a Pro feature! Upgrade to Pro via /prostore — only Pro players can lock their profile.' }, { quoted: msg });
+        }
+      }
       targetPlayer.profileLocked = true;
       saveDatabase();
       return sock.sendMessage(chatId, {

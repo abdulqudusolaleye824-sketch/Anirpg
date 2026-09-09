@@ -158,70 +158,19 @@ module.exports = {
       }, { quoted: msg });
     }
 
+    // ── LOCKED PROFILE: /lockprofile is Pro-only. Only locked profiles go to DM (owner + staff). ──
+    // Normal /profile in GC sends to GC. Locked in GC → DM via serf (completely gated).
     if (player.profileLocked && chatId.endsWith('@g.us')) {
-      // ── PRO LOCKED PROFILE: serf-gated DM with 2 chat status messages ──
-      const isProLocked = (()=>{ try { return isOwnProfile && !!((player.isPro || player.proStatus) && player.proExpiresAt && player.proExpiresAt > Date.now()); } catch{ return false; } })();
-      if (isProLocked) {
-        const caption = buildCard(player, db, targetId, mentionedId, isOwnProfile);
-        let imageBuffer;
-        if (player.profileImage) {
-          try { imageBuffer = Buffer.from(player.profileImage, 'base64'); } catch (e) { imageBuffer = null; }
-        }
-        if (!imageBuffer || imageBuffer.length === 0) {
-          try { imageBuffer = fs.readFileSync(DEFAULT_PROFILE_IMG); } catch (e) { imageBuffer = null; }
-        }
-        // 1st message to chat: Player is pro message sending
-        await sock.sendMessage(chatId, { text: `⏳ *Player is pro — sending profile...*` }, { quoted: msg });
+      const Perms = require('../../utils/permissions');
+      const isStaffViewer = Perms.isBotOwner(db, sender) || Perms.isBotMod(db, sender);
 
-        // DM is completely gated by serfs — try serf DM
-        let MSM = null;
-        try { MSM = require('../../bots/MultiSocketManager'); } catch (e) {}
-        const SerfManager = require('../../rpg/utils/SerfManager');
-        const serf = SerfManager.getSerf(db, sender);
-        const serfSock = serf?.botKey && MSM ? MSM.getSocket(serf.botKey) : null;
-        const dmJid = `${sender.split('@')[0]}@s.whatsapp.net`;
-
-        // No serf or serf offline → bug / ask to setserf
-        if (!serf || !serfSock || !serfSock.user?.id) {
-          const reason = !serf
-            ? `❌ No serf set. Please set your serf with */setserf @bot* and ask a mod to approve.`
-            : `❌ Your serf *${serf.botKey}* is offline/unavailable. Try again when it's online.`;
-          return sock.sendMessage(chatId, { text: reason + `\n\n💡 DM is completely gated by serfs.` }, { quoted: msg });
-        }
-
-        // Try to send via serf (no bugs)
-        try {
-          if (imageBuffer && imageBuffer.length > 0) {
-            await serfSock.sendMessage(dmJid, { image: imageBuffer, caption });
-          } else {
-            await serfSock.sendMessage(dmJid, { text: caption });
-          }
-          // Staff copy if configured (best effort)
-          if (db.botStaffGroup) {
-            try {
-              if (imageBuffer) {
-                await sock.sendMessage(db.botStaffGroup, { image: imageBuffer, caption: `🔒 [STAFF COPY - LOCKED PROFILE]\n` + caption });
-              } else {
-                await sock.sendMessage(db.botStaffGroup, { text: `🔒 [STAFF COPY - LOCKED PROFILE]\n` + caption });
-              }
-            } catch {}
-          }
-          // After successfully sent, no bugs or serf blocks → second chat message
-          return sock.sendMessage(chatId, { text: `✅ *Profile successfully sent!*` }, { quoted: msg });
-        } catch (e) {
-          console.error('Pro locked DM failed:', e.message);
-          return sock.sendMessage(chatId, { text: `❌ Failed to send profile to DM: ${e.message}\n\nPlease ensure your serf is set and online. Use */setserf @bot*` }, { quoted: msg });
-        }
+      // Privacy: locked profile only visible to owner and bot staff
+      if (!isOwnProfile && !isStaffViewer) {
+        return sock.sendMessage(chatId, { text: `🔒 *${player.name}'s profile is locked.* Only the owner and bot staff can view it.` }, { quoted: msg });
       }
 
-      // Non-pro locked profile (original serf-gated DM flow)
-      const SerfManager = require('../../rpg/utils/SerfManager');
-      const Perms = require('../../utils/permissions');
-      const hasSerf = SerfManager.hasApprovedSerf(db, sender) || Perms.isBotOwner(db, sender) || Perms.isBotMod(db, sender);
-
-      const dmJid = `${sender.split('@')[0]}@s.whatsapp.net`;
+      // Build card for the locked player (targetId)
       const caption = buildCard(player, db, targetId, mentionedId, isOwnProfile);
-
       let imageBuffer;
       if (player.profileImage) {
         try { imageBuffer = Buffer.from(player.profileImage, 'base64'); } catch (e) { imageBuffer = null; }
@@ -230,35 +179,50 @@ module.exports = {
         try { imageBuffer = fs.readFileSync(DEFAULT_PROFILE_IMG); } catch (e) { imageBuffer = null; }
       }
 
-      // Route DM sending through Serf socket or MultiSocketManager fallback
+      const isProLocked = (()=>{ try { return !!((player.isPro || player.proStatus) && player.proExpiresAt && player.proExpiresAt > Date.now()); } catch{ return false; } })();
+      // 1st chat message — keep pro wording for pro users as requested
+      const firstMsg = isProLocked
+        ? `⏳ *Player is pro — sending profile...*`
+        : `⏳ *Profile is locked — sending to DM...*`;
+      await sock.sendMessage(chatId, { text: firstMsg }, { quoted: msg });
+
+      // DM is completely gated by serfs — no fallback to anySocket
       let MSM = null;
       try { MSM = require('../../bots/MultiSocketManager'); } catch (e) {}
-
+      const SerfManager = require('../../rpg/utils/SerfManager');
       const serf = SerfManager.getSerf(db, sender);
       const serfSock = serf?.botKey && MSM ? MSM.getSocket(serf.botKey) : null;
-      const targetSock = serfSock || (MSM ? MSM.getAnySocket() : null) || sock;
+      const dmJid = `${sender.split('@')[0]}@s.whatsapp.net`;
 
-      // Send to player DM
-      if (imageBuffer) {
-        Promise.resolve(targetSock.sendMessage(dmJid, { image: imageBuffer, caption })).catch(() => {
-          Promise.resolve(sock.sendMessage(dmJid, { image: imageBuffer, caption })).catch(() => {});
-        });
-      } else {
-        Promise.resolve(targetSock.sendMessage(dmJid, { text: caption })).catch(() => {
-          Promise.resolve(sock.sendMessage(dmJid, { text: caption })).catch(() => {});
-        });
+      if (!serf || !serfSock || !serfSock.user?.id) {
+        const reason = !serf
+          ? `❌ No serf set. Please set your serf with */setserf @bot* and ask a mod to approve.`
+          : `❌ Your serf *${serf.botKey}* is offline/unavailable. Try again when it's online.`;
+        return sock.sendMessage(chatId, { text: reason + `\n\n💡 DM is completely gated by serfs.` }, { quoted: msg });
       }
 
-      // Send to Bot Staff GC if configured
-      if (db.botStaffGroup) {
-        if (imageBuffer) {
-          Promise.resolve(sock.sendMessage(db.botStaffGroup, { image: imageBuffer, caption: `🔒 [STAFF COPY - LOCKED PROFILE]\n` + caption })).catch(() => {});
+      try {
+        if (imageBuffer && imageBuffer.length > 0) {
+          await serfSock.sendMessage(dmJid, { image: imageBuffer, caption });
         } else {
-          Promise.resolve(sock.sendMessage(db.botStaffGroup, { text: `🔒 [STAFF COPY - LOCKED PROFILE]\n` + caption })).catch(() => {});
+          await serfSock.sendMessage(dmJid, { text: caption });
         }
+        // Staff copy (best effort) — locked profiles always mirrored to botStaffGroup
+        if (db.botStaffGroup) {
+          try {
+            if (imageBuffer) {
+              await sock.sendMessage(db.botStaffGroup, { image: imageBuffer, caption: `🔒 [STAFF COPY - LOCKED PROFILE] ${player.name}\n` + caption });
+            } else {
+              await sock.sendMessage(db.botStaffGroup, { text: `🔒 [STAFF COPY - LOCKED PROFILE] ${player.name}\n` + caption });
+            }
+          } catch {}
+        }
+        // 2nd chat message — only if no bugs/blocks
+        return sock.sendMessage(chatId, { text: `✅ *Profile successfully sent!*` }, { quoted: msg });
+      } catch (e) {
+        console.error('Locked profile DM failed:', e.message);
+        return sock.sendMessage(chatId, { text: `❌ Failed to send profile to DM: ${e.message}\n\nPlease ensure your serf is set and online. Use */setserf @bot*` }, { quoted: msg });
       }
-
-      return sock.sendMessage(chatId, { text: `🔒 *${player.name}'s profile is locked.* Sent directly to your DM!` }, { quoted: msg });
     }
 
     const caption = buildCard(player, db, targetId, mentionedId, isOwnProfile);
