@@ -240,11 +240,22 @@ Use /bank deposit to add more!
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━`
       }, { quoted: msg });
 
-      // Notify bank owner
+      // Notify bank owner — serf-only (fix non-serfbot DMs on new member join)
       try {
-        await sock.sendMessage(bank.owner, {
-          text: `🏦 NEW ACCOUNT!\n\n${player.name} joined ${bank.name}\nDeposit: ${initialDeposit} gold`
-        });
+        let _notifySock = null;
+        try {
+          const SerfManager2 = require('../../rpg/utils/SerfManager');
+          const MSM2 = require('../../bots/MultiSocketManager');
+          const serf2 = SerfManager2.getSerf(db, bank.owner);
+          _notifySock = serf2?.botKey ? MSM2.getSocket(serf2.botKey) : null;
+        } catch {}
+        if (_notifySock) {
+          await _notifySock.sendMessage(bank.owner, {
+            text: `🏦 NEW ACCOUNT!\n\n${player.name} joined ${bank.name}\nDeposit: ${initialDeposit} gold`
+          });
+        } else {
+          try { console.log(`[BANK] Skipped NEW ACCOUNT DM to ${bank.owner} — no serf`); } catch {}
+        }
       } catch (e) {}
 
       return;
@@ -354,11 +365,22 @@ Use /bank deposit to add more!
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━`
       }, { quoted: msg });
 
-      // Notify bank owner
+      // Notify bank owner — serf-only (fix non-serfbot DMs on withdraw interest)
       try {
-        await sock.sendMessage(bank.owner, {
-          text: `💠 BANK INTEREST!\n\n${player.name} withdrew ${amount}\nYou earned: ${result.interest} gold`
-        });
+        let _notifySock2 = null;
+        try {
+          const SerfManager3 = require('../../rpg/utils/SerfManager');
+          const MSM3 = require('../../bots/MultiSocketManager');
+          const serf3 = SerfManager3.getSerf(db, bank.owner);
+          _notifySock2 = serf3?.botKey ? MSM3.getSocket(serf3.botKey) : null;
+        } catch {}
+        if (_notifySock2) {
+          await _notifySock2.sendMessage(bank.owner, {
+            text: `💠 BANK INTEREST!\n\n${player.name} withdrew ${amount}\nYou earned: ${result.interest} gold`
+          });
+        } else {
+          try { console.log(`[BANK] Skipped BANK INTEREST DM to ${bank.owner} — no serf`); } catch {}
+        }
       } catch (e) {}
 
       return;

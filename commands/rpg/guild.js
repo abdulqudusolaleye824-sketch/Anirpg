@@ -538,26 +538,38 @@ module.exports = {
         if (!leaderJid) continue;
         const serf = SerfManager.getSerf(db, leaderJid);
         const serfSock = serf?.botKey && MultiSocketManager ? MultiSocketManager.getSocket(serf.botKey) : null;
-        const targetSock = serfSock || (MultiSocketManager ? MultiSocketManager.getAnySocket() : null) || sock;
+        // FIX: serf-only DM — do NOT fallback to getAnySocket/sock (prevents non-serfbot DMs)
+        if (!serfSock) {
+          // No serf assigned or serf offline → skip DM (strict serf-wall). Optionally queue or notify in group that leader has no serf.
+          try { console.log(`[GUILD] Skipped application DM to ${leaderJid} — no serf (${serf?.botKey || 'none'})`); } catch {}
+          continue;
+        }
         try {
-          await targetSock.sendMessage(leaderJid, { text: appText, mentions: [sender] });
+          await serfSock.sendMessage(leaderJid, { text: appText, mentions: [sender] });
           sentCount++;
         } catch (e) {}
       }
 
+      // If no DM was sent (no serf), warn applicant
+      if (sentCount === 0) {
+        try { console.log(`[GUILD] Application for ${guild.name} from ${sender} — no serf DMs sent (leaders have no serf assigned)`); } catch {}
+      }
       return sock.sendMessage(chatId, {
         text: [
           `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-          `📩 *APPLICATION DISPATCHED TO GUILD LEADERS*`,
+          sentCount > 0 ? `📩 *APPLICATION DISPATCHED TO GUILD LEADERS*` : `⚠️ *APPLICATION PENDING — LEADER HAS NO SERF*`,
           `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
           `🏰 Target Guild: *${guild.name}*`,
           ``,
-          `@${sender.split('@')[0]}, your profile card, stats, and power rating have been sent directly to the Guildmaster and Officers in DM!`,
+          sentCount > 0
+            ? `@${sender.split('@')[0]}, your profile card, stats, and power rating have been sent directly to the Guildmaster and Officers in DM!`
+            : `@${sender.split('@')[0]}, the Guildmaster/Officers have no Serf assigned — they did NOT receive a DM.\nPlease contact them directly or ask them to set a Serf via /setserf.`,
           ``,
           `💡 If they accept your application, they will issue you a contract offer via DM/chat:`,
           `   */guild hire @${sender.split('@')[0]} <weekly_nexus> <weekly_mana> <weeks>*`,
+          sentCount === 0 ? `\n⚠️ DM delivery failed — leader serf is offline or not set.\nGuild still exists, but leaders must check /guild info manually.` : ``,
           `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-        ].join('\n'),
+        ].filter(Boolean).join('\n'),
         mentions: [sender]
       }, { quoted: msg });
     }
@@ -925,13 +937,17 @@ module.exports = {
         }, { quoted: msg });
       }
 
-      const newRole = (args[2] || args[1] || 'officer').toLowerCase();
+      // FIX: handle both "/guild promote vice @user" and "/guild promote @user vice" — check combined args for vice/co
+      const roleCand = ((args[1] || '') + ' ' + (args[2] || '')).toLowerCase();
       let targetRank = 'Officer';
-      if (newRole.includes('vice') || newRole.includes('co')) {
+      const wantsVice = roleCand.includes('vice') || roleCand.includes('co-') || roleCand.includes('co ') || roleCand.includes('co_leader') || roleCand.includes('coleader') || /\bco\b/.test(roleCand);
+      if (wantsVice) {
         if (!isLeader) {
           return sock.sendMessage(chatId, { text: '❌ Only the Guild Master can promote someone to Vice Guildmaster!' }, { quoted: msg });
         }
         targetRank = 'Vice';
+      } else if (roleCand.includes('officer')) {
+        targetRank = 'Officer';
       }
 
       const memberObj = playerGuild.members?.find(m => (typeof m === 'object' ? m.id : m) === targetId);
