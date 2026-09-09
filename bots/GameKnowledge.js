@@ -41,12 +41,12 @@ Each player can pick one bot as their "serf" — the only personality bot allowe
 --- AWAKENING RANKS ---
 Your rank is your POTENTIAL — it sets your stat ceiling and which gates you can enter.
 Ranks weakest to strongest: E → D → C → B → A → S
-• E-Rank (⬛) — 40% of hunters. Weakest potential. F and E gates.
-• D-Rank (🟤) — 30%. Below average. F, E, D gates.
-• C-Rank (🔵) — 15%. Mid-tier. Respected.
-• B-Rank (🟢) — 8%. Above average.
-• A-Rank (🟡) — 5%. Elite.
-• S-Rank (🔴) — 2%. The pinnacle. Feared by all.
+• E-Rank (⬛) — 10% of hunters. Weakest potential. F and E gates.
+• D-Rank (🟤) — 10%. Below average. F, E, D gates.
+• C-Rank (🔵) — 35%. Mid-tier. Respected.
+• B-Rank (🟢) — 25%. Above average.
+• A-Rank (🟡) — 17%. Elite.
+• S-Rank (🔴) — 3%. The pinnacle. Feared by all.
 Rank is assigned at register and is destiny — you cannot change it. Use /stats to see yours.
 
 --- LEVELING ---

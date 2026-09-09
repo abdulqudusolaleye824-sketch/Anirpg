@@ -16,9 +16,16 @@ const SNAPSHOT_TYPES = new Set([
 class AchievementManager {
   // Store achievements inside player object — no separate file needed
   getPlayer(player) {
-    if (!player.achievements) {
+    if (!player || typeof player !== 'object') {
+      // Defensive: caller passed a string (e.g. sender JID) — avoid crash
+      console.warn('[AchievementManager] getPlayer called with non-object:', typeof player, String(player).slice(0,60));
+      return { unlocked: [], progress: {} };
+    }
+    if (!player.achievements || typeof player.achievements !== 'object' || Array.isArray(player.achievements)) {
       player.achievements = { unlocked: [], progress: {} };
     }
+    if (!Array.isArray(player.achievements.unlocked)) player.achievements.unlocked = [];
+    if (!player.achievements.progress || typeof player.achievements.progress !== 'object') player.achievements.progress = {};
     return player.achievements;
   }
 
@@ -102,6 +109,9 @@ class AchievementManager {
 
   // Display for /achievements command
   getDisplay(player, category) {
+    if (!player || typeof player !== 'object') {
+      return '❌ Invalid player data. Please /register again or contact support.';
+    }
     const pd = this.getPlayer(player);
     const total = Object.keys(ACHIEVEMENTS).length;
     const unlocked = pd.unlocked.length;

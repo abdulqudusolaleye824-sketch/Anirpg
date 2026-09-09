@@ -11,7 +11,7 @@ const AWAKENING_RANKS = {
     label: 'E-Rank', emoji: '⚫', color: 'grey',
     gateAccess: ['F', 'E'],
     statMultiplier: 1.0,
-    spawnChance: 0.40, // 40% of players awaken as E-rank
+    spawnChance: 0.10, // 10% of players awaken as E-rank
     baseStats: { hp: 80, atk: 8, def: 5, speed: 90, maxEnergy: 80 },
     description: 'The weakest awakeners. Most people who awaken are E-rank.',
     xpMultiplier: 1.0,
@@ -20,7 +20,7 @@ const AWAKENING_RANKS = {
     label: 'D-Rank', emoji: '🟤', color: 'brown',
     gateAccess: ['F', 'E', 'D'],
     statMultiplier: 1.3,
-    spawnChance: 0.30, // 30%
+    spawnChance: 0.10, // 10%
     baseStats: { hp: 110, atk: 12, def: 8, speed: 95, maxEnergy: 100 },
     description: 'Below-average awakeners. Still weak, but more potential.',
     xpMultiplier: 1.1,
@@ -29,7 +29,7 @@ const AWAKENING_RANKS = {
     label: 'C-Rank', emoji: '🔵', color: 'blue',
     gateAccess: ['F', 'E', 'D', 'C'],
     statMultiplier: 1.7,
-    spawnChance: 0.15, // 15%
+    spawnChance: 0.35, // 35%
     baseStats: { hp: 150, atk: 18, def: 12, speed: 100, maxEnergy: 120 },
     description: 'Mid-tier awakeners. Respected, but not feared.',
     xpMultiplier: 1.2,
@@ -38,7 +38,7 @@ const AWAKENING_RANKS = {
     label: 'B-Rank', emoji: '🟢', color: 'green',
     gateAccess: ['F', 'E', 'D', 'C', 'B'],
     statMultiplier: 2.2,
-    spawnChance: 0.08, // 8%
+    spawnChance: 0.25, // 25%
     baseStats: { hp: 200, atk: 26, def: 18, speed: 108, maxEnergy: 145 },
     description: 'Above-average awakeners. Known by name in the industry.',
     xpMultiplier: 1.35,
@@ -47,16 +47,16 @@ const AWAKENING_RANKS = {
     label: 'A-Rank', emoji: '🟡', color: 'gold',
     gateAccess: ['F', 'E', 'D', 'C', 'B', 'A'],
     statMultiplier: 3.0,
-    spawnChance: 0.05, // 5%
+    spawnChance: 0.17, // 17%
     baseStats: { hp: 280, atk: 38, def: 28, speed: 118, maxEnergy: 175 },
-    description: 'Elite awakeners. The top 5% of hunters worldwide.',
+    description: 'Elite awakeners. Roughly 17% of hunters.',
     xpMultiplier: 1.5,
   },
   S: {
     label: 'S-Rank', emoji: '🔴', color: 'red',
     gateAccess: ['F', 'E', 'D', 'C', 'B', 'A', 'S', 'DISASTER'],
     statMultiplier: 4.5,
-    spawnChance: 0.02, // 2%
+    spawnChance: 0.03, // 3%
     baseStats: { hp: 420, atk: 62, def: 45, speed: 135, maxEnergy: 220 },
     description: 'The pinnacle of human potential. Feared by all. Known by few.',
     xpMultiplier: 2.0,

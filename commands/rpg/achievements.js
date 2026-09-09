@@ -22,7 +22,7 @@ module.exports = {
     }
 
     const category = args[0] ? args[0].trim() : null;
-    const display = AchievementManager.getDisplay(sender, category);
+    const display = AchievementManager.getDisplay(player, category);
 
     return sock.sendMessage(chatId, { text: display }, { quoted: msg });
   }
