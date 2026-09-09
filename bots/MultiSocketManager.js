@@ -402,7 +402,6 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
 
     const db = getDatabase();
     const bareSender = String(sender).split(':')[0].split('@')[0];
-    if (db.bannedUsers?.[bareSender] || db.banlist?.[sender] || db.bannedUsers?.[sender]) return;
 
     if (_isOwnBotNumber(bareSender)) return;
 
@@ -519,7 +518,20 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
       if (isGroup) {
         shouldHandle = isActive || (isBootstrap && _bootstrapDispatcher(personalityKey, chatId));
       } else {
-        shouldHandle = Perms.canAccessDM(db, sender);
+        // DM Handling under Serf DM Iron Wall rule
+        const isOwnerOrMod = Perms.isBotOwner(db, sender) || Perms.isBotMod(db, sender);
+        if (isOwnerOrMod) {
+          shouldHandle = true;
+        } else {
+          const serfKey = SerfManager.getSerfBotKey(db, sender);
+          if (serfKey) {
+            // IRON WALL: ONLY the player's assigned Serf bot socket handles their DM!
+            shouldHandle = (personalityKey === serfKey);
+          } else {
+            // No assigned Serf yet — allow the DMed bot socket to handle registration/setserf/help
+            shouldHandle = true;
+          }
+        }
       }
       if (shouldHandle) {
         try {
