@@ -46,7 +46,7 @@ module.exports = {
           '  /ban @user [reason]',
           '  /ban @user spamming',
           '',
-          'Reply to their message and type /ban [reason].',
+          'Reply to their message and type /ban [reason] or /ban | <reason>.',
         ].join('\n'),
       }, { quoted: msg });
     }
@@ -69,7 +69,13 @@ module.exports = {
     }
 
     // ── Ban ──────────────────────────────────────────────────────────
-    const reason = args.join(' ').replace(/^@\S+\s*/, '') || 'No reason provided';
+    let reason = args.join(' ').replace(/^@\S+\s*/, '') || 'No reason provided';
+    // New config: support /ban | <reason>  and /ban @user | <reason>
+    if (reason.includes('|')) {
+      const parts = reason.split('|');
+      // If pipe at start, take after pipe; otherwise take after first pipe
+      reason = parts.slice(1).join('|').trim() || parts[0].trim() || 'No reason provided';
+    }
     const key = Mod.bare(targetId);
     const u = Mod.getUser(db, targetId);
     const name = u?.name || key;

@@ -51,7 +51,15 @@ Reply to their message:
       }, { quoted: msg });
     }
     
-    const reason = args.slice(1).join(' ') || 'No reason provided';
+    let reason = args.slice(1).join(' ') || 'No reason provided';
+    if (reason.includes('|')) {
+      const parts = reason.split('|');
+      reason = parts.slice(1).join('|').trim() || parts[0].trim() || 'No reason provided';
+    }
+    // Also handle direct | as first arg: /ban | reason  (when replying)
+    if (args[0] === '|' || (args[0] && args[0].startsWith('|'))) {
+      reason = args.join(' ').split('|').slice(1).join('|').trim() || 'No reason provided';
+    }
     const targetUser = db.users[targetId];
     const targetName = targetUser?.name || targetId.split('@')[0];
     let gcName2 = chatId;

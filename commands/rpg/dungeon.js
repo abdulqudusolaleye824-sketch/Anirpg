@@ -11,6 +11,7 @@ const DungeonPartyManager = require('../../rpg/dungeons/DungeonPartyManager');
 const ImprovedCombat    = require('../../rpg/utils/ImprovedCombat');
 let BuffManager; try { BuffManager = require('../../rpg/utils/BuffManager'); } catch(e) {}
 const StatusEffectManager = require('../../rpg/utils/StatusEffectManager');
+function statusSummary(entity){ if(!entity||!entity.statusEffects||!entity.statusEffects.length) return null; const m={burn:'🔥 Burn -5% maxHP', poison:'☠️ Poison -3% maxHP', bleed:'🩸 Bleed -4% maxHP', stun:'💫 Stun skip', freeze:'❄️ Freeze -20% DEF', paralyze:'⚡ Paralyze -50% SPD', weaken:'💔 Weaken -30% ATK', curse:'👁️ Curse -15% DEF'}; return entity.statusEffects.map(s=>{ const k=(s.type||'').toLowerCase(); const desc=m[k]||k; const dur=s.duration||s.turns||'?'; return `${desc} (${dur}t)`; }).join(' | '); }
 const BarSystem         = require('../../rpg/utils/BarSystem');
 const LevelUpManager    = require('../../rpg/utils/LevelUpManager');
 const ArtifactSystem    = require('../../rpg/utils/ArtifactSystem');
@@ -618,6 +619,9 @@ module.exports = {
           }
         } catch (e) {}
 
+        // Prepend status effects summary if any (at start of this turn)
+        const _statusSolo = statusSummary(player) || statusSummary(monster);
+        if (_statusSolo) introLines.unshift(`⚠️ *STATUS:* ${_statusSolo}`);
         const sections = [
           { text: introLines.join('\n') },
           {
@@ -638,7 +642,8 @@ module.exports = {
             dunSd.totalNexus += Math.floor(rewards.gold);
             dunSd.totalCrystals += Math.floor(rewards.crystals || 0);
             dunSd.awaitingAdvance = true;
-            rewardLine = `💠 +${Math.floor(rewards.gold)} 💠  |  💎 +${Math.floor(rewards.crystals || 0)}`;
+            // Unified battle win rewards (aura/BP/pass/XP)
+            try { const BR=require('../../rpg/utils/BattleRewards'); const w=BR.giveBattleWinRewards(player, db, 'dungeon', player.level); rewardLine = `💠 +${Math.floor(rewards.gold)} 💠  |  💎 +${Math.floor(rewards.crystals || 0)} | ${BR.formatRewards(w).replace(/\n/g,' | ')}`; } catch(e){ rewardLine = `💠 +${Math.floor(rewards.gold)} 💠  |  💎 +${Math.floor(rewards.crystals || 0)}`; }
           } else if (dunPty) {
             dunPty.awaitingAdvance = true;
           }

@@ -148,9 +148,9 @@ _Owners (Senku + Naruto) are permanent and cannot be modified._
       }
       saveDatabase();
       return sock.sendMessage(chatId, {
-        text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🚪 *GATE SPAWNING: ${want ? 'ON' : 'OFF'}*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n${want
-          ? '✅ Gates will now spawn in this group. Players can buy them and raid.\nFirst gate in a few minutes.'
-          : '🛑 Gates will no longer spawn in this group.'}\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━`
+        text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🚪 *SPAWN SYSTEM: ${want ? 'ON' : 'OFF'}*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n${want
+          ? '✅ *Gates* will now spawn in this group. First gate in a few minutes.\n🎁 *Item Spawns* (common→epic, Mending Stone & materials) enabled — *ONCE daily globally* across all enabled GCs. Use /claim to grab them.\n💎 Mending Stones restore durability — use /use mending stone'
+          : '🛑 Gates and daily item spawns disabled in this group.'}\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━`
       }, { quoted: msg });
     }
 

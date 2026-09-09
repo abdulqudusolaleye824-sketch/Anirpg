@@ -3,6 +3,7 @@
 // Boss has phases, telegraphed attacks, HP shared across party
 
 const StatusEffectManager = require('../../rpg/utils/StatusEffectManager');
+function statusSummary(ent){ if(!ent||!ent.statusEffects||!ent.statusEffects.length) return null; const m={burn:'🔥 Burn -5% HP', poison:'☠️ Poison -3% HP', bleed:'🩸 Bleed -4% HP', stun:'💫 Stun skip', freeze:'❄️ Freeze -20% DEF', paralyze:'⚡ Paralyze -50% SPD', weaken:'💔 Weaken -30% ATK', curse:'👁️ Curse -15% DEF'}; return ent.statusEffects.map(s=> (m[(s.type||'').toLowerCase()]||s.type)+' ('+(s.duration||s.turns||'?')+'t)').join(' | '); }
 const BP = require('../../rpg/utils/BattlePass');
 const BarSystem           = require('../../rpg/utils/BarSystem');
 const LevelUpManager      = require('../../rpg/utils/LevelUpManager');
@@ -381,6 +382,7 @@ module.exports = {
     if (['attack', 'skill', 'defend'].includes(action)) {
       const party = WorldBossParties.getByPlayer(sender);
       if (!party || party.status !== 'active') return sock.sendMessage(chatId, { text: '❌ No active raid! /worldboss create [#]' }, { quoted: msg });
+      try { const _ss = statusSummary(player) || statusSummary(party.boss) || statusSummary(db.activeWorldBoss); if(_ss) await sock.sendMessage(chatId, { text: `⚠️ *STATUS EFFECTS*\n${_ss}` }, { quoted: msg }); } catch(e){}
 
       const boss = party.boss;
       if (!boss) return sock.sendMessage(chatId, { text: '❌ No active boss!' }, { quoted: msg });

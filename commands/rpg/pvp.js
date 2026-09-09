@@ -187,8 +187,8 @@ module.exports = {
         `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
       ].join('\n');
 
-      const __challengerPlayer = db.players[challenge.challengerId];
-      const __senderPlayer = db.players[sender];
+      const __challengerPlayer = db.users?.[challenge.challengerId];
+      const __senderPlayer = db.users?.[sender];
       const __challengerName = __challengerPlayer ? getPlayerName(__challengerPlayer) : challenge.challengerId.split('@')[0];
       const __senderName = __senderPlayer ? getPlayerName(__senderPlayer) : sender.split('@')[0];
             const startPrompt = [
@@ -558,18 +558,42 @@ async function resolveTurn(sock, chatId, p1, p2, db, saveDatabase) {
 
   const isPro1 = UC.isPro(p1);
   const isPro2 = UC.isPro(p2);
+  // Build status summary for next turn start
+  function statusSummary(pl) {
+    if (!pl.statusEffects || pl.statusEffects.length===0) return null;
+    const lines = [];
+    for (const e of pl.statusEffects) {
+      const em = e.emoji || ({ bleed:'🩸', burn:'🔥', poison:'☠️', stun:'⚡', freeze:'❄️', paralyze:'🔱', weaken:'💔', curse:'💀' }[e.type] || '✨');
+      let desc = '';
+      if (e.type==='bleed') desc = `🩸 -4% max HP/turn`;
+      else if (e.type==='burn') desc = `🔥 -5% max HP/turn`;
+      else if (e.type==='poison') desc = `☠️ -3% max HP/turn`;
+      else if (e.type==='stun') desc = `⚡ skip next turn`;
+      else if (e.type==='freeze') desc = `❄️ cannot act, -20% DEF`;
+      else if (e.type==='paralyze') desc = `🔱 -50% speed`;
+      else if (e.type==='weaken') desc = `💔 -30% ATK`;
+      else if (e.type==='curse') desc = `💀 -15% DEF`;
+      else desc = e.desc || '';
+      lines.push(`${em} *${e.type}* (${e.duration}t) — ${desc}`);
+    }
+    return lines.join('\n');
+  }
+  const s1 = statusSummary(p1);
+  const s2 = statusSummary(p2);
+  const statusBlock = (s1||s2) ? `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n⚠️ *STATUS EFFECTS*\n${s1 ? `👤 ${name1}:\n${s1}` : ''}${s1&&s2?'\n':''}${s2 ? `👤 ${name2}:\n${s2}` : ''}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━` : '';
   const nextMsg = [
     `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
     `🎮 *TURN ${turnNum + 1} — CHOOSE YOUR MOVE*`,
     `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-    `❤️ ${name1}: ${BarSystemPVP.getHPBar(p1.stats?.hp || 0, p1.stats?.maxHp || 100, isPro1)}`,
-    `❤️ ${name2}: ${BarSystemPVP.getHPBar(p2.stats?.hp || 0, p2.stats?.maxHp || 100, isPro2)}`,
+    `❤️ ${name1}: ${BarSystemPVP.getHPBar(p1.stats?.hp || 0, p1.stats?.maxHp || 100, isPro1)}${s1 ? `\n  ${s1.split('\n')[0]}` : ''}`,
+    `❤️ ${name2}: ${BarSystemPVP.getHPBar(p2.stats?.hp || 0, p2.stats?.maxHp || 100, isPro2)}${s2 ? `\n  ${s2.split('\n')[0]}` : ''}`,
+    statusBlock,
     ``,
     `📌 20s to lock move:`,
     `• /attack or /attack <pattern_id>`,
     `• /skill or /<classcmd>`,
     `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-  ].join('\n');
+  ].filter(Boolean).join('\n');
 
   await UC.slowSend(sock, chatId, { text: nextMsg, mentions: [id1, id2] });
   setTimeout(async () => {
@@ -636,11 +660,29 @@ function handlePvpVictory(sock, chatId, winner, loser, wId, lId, db, saveDatabas
   winner.pvpStreak = (winner.pvpStreak || 0) + 1;
   loser.pvpStreak = 0;
 
-  const rewardNexus = 1000 + Math.floor((loser.level || 1) * 50);
-  const rewardXP = 500 + Math.floor((loser.level || 1) * 30);
+  const isProWinner = !!(winner.isPro && winner.proExpiresAt && Date.now() < winner.proExpiresAt);
+  const proMultPvP = isProWinner ? 2 : 1;
+  let rewardNexus = 1000 + Math.floor((loser.level || 1) * 50);
+  let rewardXP = 500 + Math.floor((loser.level || 1) * 30);
+  let rewardAura = 50 + Math.floor((loser.level || 1) * 2);
+  let rewardBp = 100;
+  let rewardPass = 50;
+  rewardNexus = Math.floor(rewardNexus * proMultPvP);
+  rewardXP = Math.floor(rewardXP * proMultPvP);
+  rewardAura = Math.floor(rewardAura * proMultPvP);
+  rewardBp = Math.floor(rewardBp * proMultPvP);
+  rewardPass = Math.floor(rewardPass * proMultPvP);
 
   winner.gold = (winner.gold || 0) + rewardNexus;
   winner.xp = (winner.xp || 0) + rewardXP;
+  winner.aura = (winner.aura || 0) + rewardAura;
+  // Battle Pass XP
+  try { const BP = require('../../rpg/utils/BattlePass'); if (BP.addPassXP) { BP.addPassXP(winner, 'pvp_win', rewardBp); } else { winner.battlePassXp = (winner.battlePassXp||0)+rewardBp; } } catch(e){ winner.battlePassXp=(winner.battlePassXp||0)+rewardBp; }
+  // Astra Pass
+  try { const AP = require('../../rpg/utils/AstraPass'); if (AP.addPassXP) AP.addPassXP(winner, rewardPass); else winner.astraPassXp=(winner.astraPassXp||0)+rewardPass; } catch(e){ winner.astraPassXp=(winner.astraPassXp||0)+rewardPass; }
+
+  // Also give general exp via LevelUpManager check
+  try { const LUM = require('../../rpg/utils/LevelUpManager'); LUM.checkAndApplyLevelUps(winner, saveDatabase, sock, chatId); } catch(e){}
 
   // Reset battle state
   winner.pvpBattle = null;
@@ -659,9 +701,12 @@ function handlePvpVictory(sock, chatId, winner, loser, wId, lId, db, saveDatabas
     `🥇 ${winnerName}: ${wElo} → *${winner.pvpElo}* (+${change})`,
     `🥈 ${loserName}: ${lElo} → *${loser.pvpElo}* (−${loss})`,
     ``,
-    `🎁 *REWARDS:*`,
-    `💠 Nexus: +${rewardNexus.toLocaleString()}`,
-    `✨ XP: +${rewardXP.toLocaleString()}`,
+    `🎁 *REWARDS:*${isProWinner?' 🌟 PRO 2×':''}`,
+    `💠 Nexus: +${rewardNexus.toLocaleString()}${isProWinner?' (2×)':''}`,
+    `✨ XP: +${rewardXP.toLocaleString()}${isProWinner?' (2×)':''} (general)`,
+    `🌀 Aura: +${rewardAura.toLocaleString()}${isProWinner?' (2×)':''}`,
+    `🎖️ Battle Pass XP: +${rewardBp}${isProWinner?' (2×)':''}`,
+    `🌟 Astra Pass: +${rewardPass}${isProWinner?' (2×)':''}`,
     `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
   ].join('\n');
 

@@ -180,6 +180,42 @@ module.exports = {
       if (summonArts.length > 5) message += `  ...and ${summonArts.length - 5} more\n`;
     }
 
+    // ── Pass & BP Rewards ────────────────────────────────────────
+    message += `\n🎖️ *PASS & BATTLE REWARDS*\n`;
+    const apXp = player.astraPassXp || player.passXp || 0;
+    const apLvl = player.astraPassLevel || player.passLevel || 1;
+    const bpXp = player.battlePassXp || 0;
+    const bpLvl = player.battlePassLevel || 1;
+    const apTier = player.astraPassTier || (player.isPro ? 'Pro' : 'Free');
+    const auraVal = player.aura || 0;
+    message += `  🌀 Aura: ${auraVal.toLocaleString()} | 🌟 Astra Pass: Lv.${apLvl} — ${apXp.toLocaleString()} XP [${apTier}]\n`;
+    message += `  🎖️ Battle Pass: Lv.${bpLvl} — ${bpXp.toLocaleString()} XP\n`;
+    if (player._lastBpAdded) message += `  📈 Last BP Gain: +${player._lastBpAdded} XP\n`;
+    if (player._lastAuraAdded) message += `  🌀 Last Aura Gain: +${player._lastAuraAdded}\n`;
+    // Show unclaimed pass items if any
+    const passItems = player.passRewards || player.astraPassRewards || [];
+    if (Array.isArray(passItems) && passItems.length>0) {
+      const cnt = passItems.length;
+      message += `  📦 Unclaimed Pass Items: ${cnt} — use /pass claim\n`;
+    }
+    // Show inventory items that came from passes/dungeons/pvp (already in gear/consumables, but highlight recent)
+    const recentPassGear = gearItems.filter(g=> g.source==='pass' || g.source==='battlepass' || g.source==='pvp' || g.source==='dungeon' || g.source==='gate' || g.source==='worldboss').slice(0,2);
+    if (recentPassGear.length>0) {
+      message += `  ✨ Recent Battle Gear: ${recentPassGear.map(g=>g.name).join(', ')}\n`;
+    }
+    // Materials & Mending Stone
+    const mats = player.materials || {};
+    const matKeys = Object.keys(mats);
+    if (matKeys.length>0) {
+      const matStr = matKeys.slice(0,5).map(k=> `${k} x${mats[k]}`).join(', ');
+      message += `  🧱 Materials: ${matStr}${matKeys.length>5? ' ...':''}\n`;
+    }
+    const mending = player.inventory?.mendingStones || 0;
+    if (mending>0) message += `  🛠️ Mending Stones: ${mending} — use /use mending stone to restore durability\n`;
+    // Daily spawn info
+    const lastSpawn = (getArgDb => { try { const db2=require('../../database'); return db2?.globalSpawn?.lastSpawnAt; } catch(e){return null;} })();
+    message += `  🎁 Item Spawns: common→epic 1/day globally (requires /set spawn --true) — claim with /claim\n`;
+
     message += `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
     message += `📌 /inv <#>  — item detail + lore\n`;
     message += `📌 /gear     — manage gear\n`;

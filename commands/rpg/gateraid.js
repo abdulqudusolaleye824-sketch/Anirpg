@@ -51,9 +51,56 @@ module.exports = {
       }, { quoted: msg });
     }
 
-    const code = (args[0] || '').toUpperCase().replace(/^--/, '').trim();
-    const action = (args[1] || '').toLowerCase() || 'enter';
-    const skillArg = args.slice(2).join(' ');
+    let code = (args[0] || '').toUpperCase().replace(/^--/, '').trim();
+    let action = (args[1] || '').toLowerCase() || 'enter';
+    let skillArg = args.slice(2).join(' ');
+
+    // Shorthand: /gateraid attack  OR  /gateraid skill <name>  OR  /attack routing via attacks.js
+    // Also support /attack or /attack <id> directly in gate raid (via attacks.js detective)
+    // If code looks like an action and no second arg, infer code from active raid
+    const ACTIONS = ['attack','skill','status','advance','boss','join','ready','start','enter','open','start-raid','help'];
+    const isCodeAction = ACTIONS.includes(code.toLowerCase());
+    if (isCodeAction || !code) {
+      // Try to infer code from player's active gate raid
+      let inferred = null;
+      // Check via attacks.js detective or via GKM
+      try {
+        const atkDetect = require('./attacks');
+        // try to find active gate via GateManager
+        const GM = require('../../rpg/dungeons/GateManager');
+        for (const g of Object.values(GM.GateManager.gates || {})) {
+          if (g.raid && g.raid.status === 'active') {
+            const isMember = g.raid.members?.some(m => String(m.id).split('@')[0].replace(/[^0-9]/g,'') === String(sender).split('@')[0].replace(/[^0-9]/g,''));
+            if (isMember) { inferred = g.raid.key || g.id; break; }
+          }
+        }
+        if (!inferred) {
+          const gc = require('../../rpg/dungeons/GateKeyManager').getDungeonGC(chatId);
+          if (gc?.activeKeyId) inferred = gc.activeKeyId;
+        }
+      } catch(e){}
+      if (inferred) {
+        if (isCodeAction) {
+          // Shift: code was actually action
+          skillArg = action ? (action + (skillArg ? ' ' + skillArg : '')) : skillArg;
+          // For skill, skillArg already contains second token? Handle special
+          if (code.toLowerCase() === 'skill') {
+            // code=skill, action=skillName, skillArg=rest
+            skillArg = action + (skillArg ? ' ' + skillArg : '');
+          } else if (code.toLowerCase() === 'attack') {
+            // /gateraid attack <id> -> code=ATTACK, action=<id>
+            // Pass pattern id via skillArg
+            skillArg = action;
+          }
+          action = code.toLowerCase();
+          code = inferred;
+        } else if (!code) {
+          // /gateraid with no args -> status?
+          code = inferred;
+          action = 'status';
+        }
+      }
+    }
 
     if (!code) {
       return sock.sendMessage(chatId, {
@@ -64,15 +111,13 @@ module.exports = {
           `Use your gate code to start a raid.`,
           ``,
           `📌 *COMMANDS:*`,
-          `/gateraid <CODE>          — enter (auto party/solo)`,
+          `• /attack or /attack <id> — attack (works inside gate raid, no code needed)`,
+          `• /gateraid <CODE>          — enter (auto party/solo)`,
           `/gateraid <CODE> join     — join party`,
           `/gateraid <CODE> ready    — mark ready`,
           `/gateraid <CODE> start    — start (party leader)`,
-          `/gateraid <CODE> attack   — attack`,
-          `/gateraid <CODE> skill <n>— use skill`,
-          `/gateraid <CODE> advance  — next floor`,
-          `/gateraid <CODE> boss     — boss fight`,
           `/gateraid <CODE> status   — status`,
+          `• Or in-raid: /gateraid attack / /gateraid skill <name> (code inferred)`,
           `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
           `💡 Guild member → party raid.\n   No-guild hunter → solo raid.\n   Affiliate key → open to everyone.`,
           `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
@@ -319,6 +364,11 @@ module.exports = {
       if (action === 'attack' && skillArg) {
         const pid = parseInt(String(skillArg).trim().split(' ')[0]);
         if (!isNaN(pid) && pid >= 1 && pid <= 750) patternId = pid;
+      }
+      // Show status at start of turn
+      const _gateStatus = statusSummary(player) || (target && target.statusEffects ? statusSummary(target) : null);
+      if (_gateStatus) {
+        try { await sock.sendMessage(chatId, { text: `⚠️ *STATUS EFFECTS*\n${_gateStatus}` }, { quoted: msg }); } catch(e){}
       }
       let result;
       let atkPattern = null;

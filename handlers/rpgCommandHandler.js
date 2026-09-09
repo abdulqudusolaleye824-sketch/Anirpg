@@ -351,13 +351,24 @@ module.exports = async (sock, msg, messageText, config, getDatabase, saveDatabas
 
   if (db.bannedUsers?.[Mod.bare(sender)]) {
     const rec = db.bannedUsers[Mod.bare(sender)] || db.bannedUsers[sender];
+    const bannedBy = rec.bannedBy ? '@' + Mod.bare(rec.bannedBy) : 'Unknown';
+    const gmt = rec.bannedAtGMT || (rec.bannedAt ? new Date(rec.bannedAt).toUTCString() : 'Unknown');
+    const gcName = rec.gcName || rec.gc || 'Unknown';
     return sock.sendMessage(
       chatId,
       {
         text:
-          `🚫 *You are banned from using this bot.*\n\n` +
-          `📝 Reason: ${rec.reason || 'No reason provided'}\n\n` +
-          `_Contact a mod to appeal._`
+          `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+          `🚫 *YOU ARE BANNED*\n` +
+          `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+          `👤 You: @${Mod.bare(sender)}\n` +
+          `📝 Reason: ${rec.reason || 'No reason provided'}\n` +
+          `👮 Banned by: ${bannedBy}\n` +
+          `📍 GC: ${gcName}\n` +
+          `🕒 Time (GMT): ${gmt}\n` +
+          `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+          `_Contact a mod to appeal._`,
+        mentions: rec.bannedBy ? [rec.bannedBy] : undefined
       },
       { quoted: msg }
     );

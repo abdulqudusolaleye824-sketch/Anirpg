@@ -54,6 +54,19 @@ const SPAWN_ARTIFACTS = [
   // ── MYTHIC (extremely rare — once in a blue moon) ─────────
   { name: 'Crown of the Void King', emoji: '👑', rarity: 'mythic',    type: 'ring',   bonus: { atk: 200, def: 100, hp: 1000 }, desc: 'The crown of a conquered dimension. Its weight is crushing. Its power is absolute.' },
   { name: 'Soul Stone',             emoji: '🌀', rarity: 'mythic',    type: 'tome',   bonus: { atk: 180, crit: 50, hp: 500 }, desc: 'Contains a trapped god. Its power cannot be measured.' },
+  // ── MENDING STONE (durability restore) ───────────────────
+  { name: 'Mending Stone',          emoji: '🛠️', rarity: 'rare',     type: 'material', bonus: {}, desc: 'Restores durability of your equipped gear. Use /inventory to apply.', isMendingStone: true },
+  // ── RANDOM MATERIALS (claimable) ─────────────────────────
+  { name: 'Wood',                   emoji: '🪵', rarity: 'common',   type: 'material', bonus: {}, desc: 'Basic crafting material.' },
+  { name: 'Stone',                  emoji: '🪨', rarity: 'common',   type: 'material', bonus: {}, desc: 'Sturdy stone for crafting.' },
+  { name: 'Iron Ore',               emoji: '⛏️', rarity: 'common',   type: 'material', bonus: {}, desc: 'Raw iron ore.' },
+  { name: 'Leather',                emoji: '🦌', rarity: 'common',   type: 'material', bonus: {}, desc: 'Tanned hide.' },
+  { name: 'String',                 emoji: '🧵', rarity: 'common',   type: 'material', bonus: {}, desc: 'Useful for crafting.' },
+  { name: 'Flint',                  emoji: '🪨', rarity: 'common',   type: 'material', bonus: {}, desc: 'Sharp flint shard.' },
+  { name: 'Mana Fragment',          emoji: '💠', rarity: 'rare',     type: 'material', bonus: {}, desc: 'Pulsing mana fragment.' },
+  { name: 'Crystal Shard',          emoji: '🔮', rarity: 'rare',     type: 'material', bonus: {}, desc: 'Glowing crystal.' },
+  { name: 'Shadow Essence',         emoji: '🌑', rarity: 'rare',     type: 'material', bonus: {}, desc: 'Dark shadow essence.' },
+  { name: 'Dragon Scale',           emoji: '🐉', rarity: 'epic',     type: 'material', bonus: {}, desc: 'Rare dragon scale.' },
 ];
 
 // ─── RARITY ANNOUNCEMENT STYLES ──────────────────────────────
@@ -87,22 +100,37 @@ const activeSpawns = new Map(); // chatId → { artifact, spawnTime, claimed, cl
 async function spawnArtifact(sock, chatId, db, saveDatabase, forcedArtifact) {
   // Don't double-spawn
   if (activeSpawns.has(chatId)) return;
+  // Respect /set spawn --true — only spawn where gates are allowed (integrated)
+  if (!forcedArtifact && db.gateSpawns && db.gateSpawns[chatId] !== true) return;
+  // GLOBAL DAILY LIMITER: only ONE spawn per 24h across ALL GCs (common->epic once daily)
+  if (!forcedArtifact) {
+    if (!db.globalSpawn) db.globalSpawn = {};
+    const last = db.globalSpawn.lastSpawnAt || 0;
+    if (Date.now() - last < 24*60*60*1000) return;
+  }
 
-  // Pick artifact
+  // Pick artifact — LIMITED to common->epic for global daily (per request)
   let artifact;
   if (forcedArtifact) {
     artifact = forcedArtifact;
   } else {
-    // Realistic rarity weights:
-    // Common: 55% | Rare: 30% | Epic: 12% | Legendary: 2.5% | Mythic: 0.5%
+    // Weights for global daily: Common 55% | Rare 30% | Epic 15% (no legendary/mythic for daily)
     const roll = Math.random() * 100;
     let pool;
     if (roll < 55)       pool = SPAWN_ARTIFACTS.filter(a => a.rarity === 'common');
     else if (roll < 85)  pool = SPAWN_ARTIFACTS.filter(a => a.rarity === 'rare');
-    else if (roll < 97)  pool = SPAWN_ARTIFACTS.filter(a => a.rarity === 'epic');
-    else if (roll < 99.5) pool = SPAWN_ARTIFACTS.filter(a => a.rarity === 'legendary');
-    else                 pool = SPAWN_ARTIFACTS.filter(a => a.rarity === 'mythic');
+    else                 pool = SPAWN_ARTIFACTS.filter(a => a.rarity === 'epic');
+    // Filter to only include items up to epic (safety)
+    if (!pool.length) pool = SPAWN_ARTIFACTS.filter(a => ['common','rare','epic'].includes(a.rarity));
     artifact = pool[Math.floor(Math.random() * pool.length)];
+  }
+  // Mark global spawn time after picking (before announcement to avoid race)
+  if (!forcedArtifact) {
+    if (!db.globalSpawn) db.globalSpawn = {};
+    db.globalSpawn.lastSpawnAt = Date.now();
+    db.globalSpawn.lastChatId = chatId;
+    db.globalSpawn.lastArtifact = artifact.name;
+    try { saveDatabase(); } catch(e){}
   }
 
   const style   = RARITY_STYLES[artifact.rarity];
@@ -195,8 +223,31 @@ async function handleClaim(sock, msg, args, getDatabase, saveDatabase, sender) {
   if (!player.artifacts.equipped) player.artifacts.equipped = { weapon: null, armor: null, helmet: null, gloves: null, ring: null, amulet: null, tome: null };
   if (!player.artifacts.enhanced) player.artifacts.enhanced = {};
 
-  // Save artifact name as string (compatible with /artifact commands)
-  player.artifacts.inventory.push(art.name);
+  // Handle special types: Mending Stone and materials go to inventory/materials
+  if (art.isMendingStone || art.name === 'Mending Stone') {
+    if (!player.inventory) player.inventory = { items: [] };
+    if (!player.inventory.items) player.inventory.items = [];
+    if (!player.inventory.mendingStones) player.inventory.mendingStones = 0;
+    player.inventory.mendingStones += 1;
+    // Also keep as string for visibility in /inventory items
+    if (!player.artifacts) player.artifacts = { inventory: [], equipped: {}, enhanced: {} };
+    if (!player.artifacts.inventory) player.artifacts.inventory = [];
+    player.artifacts.inventory.push(art.name + ' (x'+player.inventory.mendingStones+')');
+    // Allow immediate durability restore via /claim auto-apply if gear damaged
+    try {
+      // No auto apply, just store; player can use /use mending stone later
+    } catch(e){}
+  } else if (art.type === 'material') {
+    if (!player.inventory) player.inventory = { items: [] };
+    if (!player.materials) player.materials = {};
+    const matName = art.name;
+    player.materials[matName] = (player.materials[matName]||0) + 1;
+    // Also add to artifacts inventory string for /inventory display compatibility
+    player.artifacts.inventory.push(art.name);
+  } else {
+    // Save artifact name as string (compatible with /artifact commands)
+    player.artifacts.inventory.push(art.name);
+  }
 
   // Consume luck potion if used
   if (hasLuckPotion) {
@@ -225,15 +276,25 @@ async function handleClaim(sock, msg, args, getDatabase, saveDatabase, sender) {
 function startSpawnScheduler(sock, getDatabase, saveDatabase, groupChatIds) {
   if (!groupChatIds || groupChatIds.length === 0) return;
 
+  // Filter to only GCs where spawn is enabled (/set spawn --true)
+  function getSpawnEnabledIds(db) {
+    if (!db.gateSpawns) return [];
+    return groupChatIds.filter(id => db.gateSpawns[id] === true);
+  }
+
   function scheduleNext() {
-    // 2-3 hours in ms
-    const delay = (2 * 60 * 60 * 1000) + Math.floor(Math.random() * 60 * 60 * 1000);
+    // For global daily: check once per hour if we can spawn (24h since last)
+    const delay = 60*60*1000; // check hourly
     setTimeout(async () => {
       try {
         const db = getDatabase();
-        for (const chatId of groupChatIds) {
-          await spawnArtifact(sock, chatId, db, saveDatabase);
-        }
+        const enabled = getSpawnEnabledIds(db);
+        if (enabled.length === 0) { scheduleNext(); return; }
+        const last = db.globalSpawn?.lastSpawnAt || 0;
+        if (Date.now() - last < 24*60*60*1000) { scheduleNext(); return; }
+        // Pick ONE random GC among enabled to spawn the daily item
+        const pick = enabled[Math.floor(Math.random()*enabled.length)];
+        await spawnArtifact(sock, pick, db, saveDatabase);
       } catch(e) {
         console.error('[ArtifactSpawn] Scheduler error:', e.message);
       }
@@ -241,19 +302,22 @@ function startSpawnScheduler(sock, getDatabase, saveDatabase, groupChatIds) {
     }, delay);
   }
 
-  // First spawn after 30min to 1hr on bot start
-  const firstDelay = (30 * 60 * 1000) + Math.floor(Math.random() * 30 * 60 * 1000);
+  // First spawn check after 5-15 minutes
+  const firstDelay = (5 * 60 * 1000) + Math.floor(Math.random() * 10 * 60 * 1000);
   setTimeout(async () => {
     try {
       const db = getDatabase();
-      for (const chatId of groupChatIds) {
-        await spawnArtifact(sock, chatId, db, saveDatabase);
-      }
+      const enabled = getSpawnEnabledIds(db);
+      if (enabled.length === 0) { scheduleNext(); return; }
+      const last = db.globalSpawn?.lastSpawnAt || 0;
+      if (Date.now() - last < 24*60*60*1000) { scheduleNext(); return; }
+      const pick = enabled[Math.floor(Math.random()*enabled.length)];
+      await spawnArtifact(sock, pick, db, saveDatabase);
     } catch(e) {}
     scheduleNext();
   }, firstDelay);
 
-  console.log(`[ArtifactSpawn] Scheduler started. First spawn in ${Math.floor(firstDelay/60000)} minutes.`);
+  console.log(`[ArtifactSpawn] Global daily scheduler started (common->epic, 1/day across all GCs where /set spawn --true). First check in ${Math.floor(firstDelay/60000)} minutes.`);
 }
 
 // ═══════════════════════════════════════════════════════════════

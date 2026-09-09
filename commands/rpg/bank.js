@@ -27,15 +27,15 @@ module.exports = {
       let menu = `━━━━━━━━━━━━━━━━━━━━━━━━━━━
 🏦 BANKING SYSTEM 🏦
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━
-💠 Your Nexus: ${player.gold || 0}
+💠 Your Nexus: ${(player.gold||0).toLocaleString()} | 💎 Mana Stones: ${(player.manaCrystals||player.manaStones||0).toLocaleString()}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
 
       if (ownedBank) {
         const stats = BankingSystem.getBankStats(ownedBank);
         menu += `\n🏦 YOUR BANK: ${ownedBank.name}
 👥 Accounts: ${stats.accounts}
-💠 Total Deposits: ${stats.totalDeposits}
-💸 Interest Earned: ${stats.interestCollected}
+💠 Total Deposits: ${stats.totalDeposits} | 💎 Mana: ${stats.totalDepositsMana||0}
+💸 Interest Earned: ${stats.interestCollected} | 💎 Mana Interest: ${stats.interestCollectedMana||0}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
       }
 
@@ -43,7 +43,7 @@ module.exports = {
         const account = accountBank.accounts.find(a => a.userId === sender);
         menu += `\n💳 YOUR ACCOUNT
 🏦 Bank: ${accountBank.name}
-💠 Balance: ${account.balance}
+💠 Balance: ${account.balance||0} | 💎 Mana Stones: ${account.balanceMana||0}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
       }
 
@@ -52,10 +52,11 @@ module.exports = {
 ${!ownedBank ? '🏦 /bank create [name] - Create bank\n   Requirements: Level 50 OR 20k Nexus\n   Cost: 10,000 Nexus\n\n' : ''}${!accountBank ? '💳 /bank register [bank] - Open account\n\n' : ''}`;
 
       if (accountBank) {
-        menu += `💠 /bank deposit [amount] - Deposit Nexus
-💸 /bank withdraw [amount] - Withdraw
+        menu += `💠 /bank deposit [amount] [nexus|mana] - Deposit (default Nexus)
+   e.g. /bank deposit 1000  | /bank deposit 500 mana
+💸 /bank withdraw [amount] [nexus|mana] - Withdraw
    (10% fee to bank owner)
-   (1 hr cooldown)
+   (1 hr cooldown, 30m Pro)
 \n`;
       }
 
@@ -273,15 +274,33 @@ Use /bank deposit to add more!
       }
 
       const amount = parseInt(args[1]);
+      let currency = (args[2]||'nexus').toLowerCase();
+      if (['mana','manastones','ms','crystals','crystal'].includes(currency)) currency='mana'; else currency='nexus';
       
       // ✅ FIX: Validate amount first
       if (!amount || amount < 1) {
         return sock.sendMessage(chatId, {
-          text: '❌ Invalid amount!\n\nExample: /bank deposit 1000'
+          text: '❌ Invalid amount!\n\nExample: /bank deposit 1000\n/bank deposit 500 mana'
         }, { quoted: msg });
       }
 
-      // ✅ FIX: Check if player has enough Nexus BEFORE depositing
+      if (currency==='mana') {
+        const haveMana = player.manaCrystals||player.manaStones||0;
+        if (haveMana < amount) {
+          return sock.sendMessage(chatId, {
+            text: `❌ Not enough Mana Stones!\n\nHave: ${haveMana}\nNeed: ${amount}`
+          }, { quoted: msg });
+        }
+        player.manaCrystals = haveMana - amount;
+        player.manaStones = player.manaCrystals;
+        const resultM = BankingSystem.deposit(bank, sender, amount, 'mana');
+        saveDatabase();
+        return sock.sendMessage(chatId, {
+          text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n✅ DEPOSIT SUCCESS! ✅\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🏦 Bank: ${bank.name}\n💎 Deposited: ${amount} Mana Stones\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n💳 Bank Mana Balance: ${resultM.newBalance}\n💎 Wallet Mana: ${player.manaCrystals}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━`
+        }, { quoted: msg });
+      }
+
+      // Nexus handling
       if ((player.gold || 0) < amount) {
         return sock.sendMessage(chatId, {
           text: `❌ Not enough Nexus!\n\nHave: ${player.gold || 0}\nNeed: ${amount}`
@@ -293,7 +312,7 @@ Use /bank deposit to add more!
       if (player.gold < 0) player.gold = 0; // Safety check
       if (player.inventory) player.inventory.gold = player.gold;
 
-      const result = BankingSystem.deposit(bank, sender, amount);
+      const result = BankingSystem.deposit(bank, sender, amount, 'nexus');
       saveDatabase();
 
       return sock.sendMessage(chatId, {
@@ -322,13 +341,15 @@ Use /bank deposit to add more!
       }
 
       const amount = parseInt(args[1]);
+      let wCurrency = (args[2]||'nexus').toLowerCase();
+      if (['mana','manastones','ms','crystals','crystal'].includes(wCurrency)) wCurrency='mana'; else wCurrency='nexus';
       if (!amount || amount < 1) {
         return sock.sendMessage(chatId, {
-          text: '❌ Invalid amount!\n\nExample: /bank withdraw 1000'
+          text: '❌ Invalid amount!\n\nExample: /bank withdraw 1000\n/bank withdraw 500 mana'
         }, { quoted: msg });
       }
 
-      const result = BankingSystem.withdraw(bank, sender, amount, player);
+      const result = BankingSystem.withdraw(bank, sender, amount, player, wCurrency);
       
       if (!result.success) {
         return sock.sendMessage(chatId, {
@@ -336,15 +357,24 @@ Use /bank deposit to add more!
         }, { quoted: msg });
       }
 
-      // Give player the Nexus (after 10% fee)
-      player.gold = (player.gold || 0) + result.withdrawn;
-      if (player.inventory) player.inventory.gold = player.gold;
-
-      // Give bank owner the interest
-      const owner = db.users[bank.owner];
-      if (owner) {
-        owner.gold = (owner.gold || 0) + result.interest;
-        if (owner.inventory) owner.inventory.gold = owner.gold;
+      if (result.currency==='mana') {
+        player.manaCrystals = (player.manaCrystals||0) + result.withdrawn;
+        player.manaStones = player.manaCrystals;
+        const ownerM = db.users[bank.owner];
+        if (ownerM) {
+          ownerM.manaCrystals = (ownerM.manaCrystals||0) + result.interest;
+          ownerM.manaStones = ownerM.manaCrystals;
+        }
+      } else {
+        // Give player the Nexus (after 10% fee)
+        player.gold = (player.gold || 0) + result.withdrawn;
+        if (player.inventory) player.inventory.gold = player.gold;
+        // Give bank owner the interest
+        const owner = db.users[bank.owner];
+        if (owner) {
+          owner.gold = (owner.gold || 0) + result.interest;
+          if (owner.inventory) owner.inventory.gold = owner.gold;
+        }
       }
 
       saveDatabase();
