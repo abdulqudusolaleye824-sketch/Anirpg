@@ -378,7 +378,7 @@ module.exports = {
       party.members.forEach(m => {
         const mp  = db.users[m.id];
         if (!mp) return;
-        const bar = BarSystem.getHPBar(mp.stats.hp, mp.stats.maxHp);
+        const bar = BarSystem.getHPBar(mp.stats.hp, mp.stats.maxHp, require('../../rpg/utils/UnifiedCombat').isPro(mp));
         txt += `${mp.stats.hp > 0 ? '⚔️' : '💀'} *${m.name}* — ${bar} ${mp.stats.hp}/${mp.stats.maxHp}\n`;
       });
       txt += `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
@@ -540,35 +540,66 @@ module.exports = {
         if (dunSd  && dunSd.awaitingAdvance)  return sock.sendMessage(chatId, { text: '✅ Floor cleared! /dungeon advance' }, { quoted: msg });
         if (dunPty && dunPty.awaitingAdvance) return sock.sendMessage(chatId, { text: '✅ Floor cleared! /dungeon advance' }, { quoted: msg });
 
-        let consAtk = 0;
-        try { const CS = require('../../rpg/utils/ConstellationSystem'); consAtk = CS.getSponsorBonus(player).atk||0; } catch(e) {}
-        const effAtk   = (player.stats.atk||10) + (player.weapon?.bonus||0) + consAtk;
-        const isCrit   = Math.random() < ((player.stats.critChance||5)/100);
-        const critMult = 1.5 + (player.statAllocations?.critDamage||0)*0.01;
-        const rawDmg   = Math.floor(effAtk * atk.dmgMult * (isCrit ? critMult : 1.0));
-        const finalDmg = Math.max(1, rawDmg - Math.floor(monster.stats.def * 0.4));
-        monster.stats.hp = Math.max(0, monster.stats.hp - finalDmg);
+        const UCd2 = require('../../rpg/utils/UnifiedCombat');
+        let finalDmg, isCrit, _dungeonUnified;
+        const _cdChk = UCd2.isOnCooldown(player, atk.id);
+        if (_cdChk.onCd) {
+          finalDmg = 0; isCrit = false; _dungeonUnified = { missed:false, crit:false, effective:'skipped' };
+          try { UCd2.tickStatuses(player); } catch(e){}
+          try { UCd2.tickStatuses(monster); } catch(e){}
+          const _skipMsg = `⏳ *attack failed — still on cooldown ${UCd2.formatCd(_cdChk.remaining)} remaining* — turn skipped (0 dmg, status -1)`;
+          // store for intro patching
+          player._dungeonSkipMsg = _skipMsg;
+          // do not damage monster
+        } else {
+          const _uni = UCd2.calcMoveDamage(player, monster, atk);
+          _dungeonUnified = _uni;
+          if (_uni.missed) { finalDmg = 0; isCrit = false; }
+          else { finalDmg = _uni.damage; isCrit = _uni.crit; monster.stats.hp = Math.max(0, monster.stats.hp - finalDmg); }
+          UCd2.setCooldown(player, atk.id, atk);
+          const _effTmp = UCd2.tryApplyEffect(atk, player, monster);
+          if (_effTmp) player._dungeonEffTmp = _effTmp;
+        }
 
         const re = RANK_EMOJI[atk.rank] || '⬜';
 
         // ── Build per-beat sections so each combat tick is its own
         //    WhatsApp message: pattern → crit (if any) → damage →
         //    status (if any) → monster counter-attack → final state.
-        const introLines = [
-          '━━━━━━━━━━━━━━━━━━━━━━━━━━━',
-          `🥋 *ATTACK PATTERN*`,
-          '━━━━━━━━━━━━━━━━━━━━━━━━━━━',
-          `${re} *#${atk.id} — ${atk.name}* [${atk.rank}]`,
-          `_${atk.flavour}_`,
-          '━━━━━━━━━━━━━━━━━━━━━━━━━━━',
-        ];
+        let introLines;
+        if (player._dungeonSkipMsg) {
+          const _smsg = player._dungeonSkipMsg; delete player._dungeonSkipMsg;
+          introLines = [
+            '━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+            `🥋 *ATTACK PATTERN — FAILED*`,
+            '━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+            `${re} *#${atk.id} — ${atk.name}* [${atk.rank}]`,
+            _smsg,
+            `_${(atk.description||atk.flavour).slice(0,220)}_`,
+            `📊 Atk×${atk.atkMult} Def×${atk.defMult} Spd×${atk.speedMult} Crit×${atk.critMult} Acc ${atk.accuracy}%`,
+            '━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+          ];
+          // clear effectLine skip duplication
+          if (effectLine === _smsg) effectLine = null;
+        } else {
+          introLines = [
+            '━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+            `🥋 *ATTACK PATTERN*`,
+            '━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+            `${re} *#${atk.id} — ${atk.name}* [${atk.rank}]`,
+            `_${atk.description || atk.flavour}_`,
+            `📊 Atk×${atk.atkMult} Def×${atk.defMult} Spd×${atk.speedMult} Crit×${atk.critMult} Acc ${atk.accuracy}%`,
+            '━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+          ];
+        }
 
-        // Effect application
+        // Effect application — unified
         let effectLine = null;
-        if (atk.effect && Math.random() < atk.effect.chance / 100) {
-          effectLine = `${atk.effect.emoji} *${atk.effect.label}* applied! (${atk.effect.duration}t)`;
-          if (!monster.statusEffects) monster.statusEffects = {};
-          monster.statusEffects[atk.effect.statKey] = { duration: atk.effect.duration };
+        if (player._dungeonEffTmp) {
+          const _et = player._dungeonEffTmp; delete player._dungeonEffTmp;
+          effectLine = `${_et.emoji || atk.effect?.emoji || '✨'} *${_et.type}* applied! (${_et.duration}t)`;
+        } else if (player._dungeonSkipMsg) {
+          effectLine = player._dungeonSkipMsg; // will be handled as intro
         }
 
         // Quest tracking notes — keep them as small inline footnotes
@@ -650,7 +681,7 @@ module.exports = {
 
         // ── Status snapshot ───────────────────────────────
         const mBar = BarSystem.getMonsterHPBar(monster.stats.hp, monster.stats.maxHp);
-        const pBar = BarSystem.getHPBar(player.stats.hp, player.stats.maxHp);
+        const pBar = BarSystem.getHPBar(player.stats.hp, player.stats.maxHp, require('../../rpg/utils/UnifiedCombat').isPro(player));
         sections.push({
           text: [
             '━━━━━━━━━━━━━━━━━━━━━━━━━━━',
@@ -800,7 +831,7 @@ module.exports = {
         if (mfxSolo.messages.length) log += '\n' + mfxSolo.messages.join('\n') + '\n';
 
         const mHpBar = BarSystem.getMonsterHPBar(monster.stats.hp, monster.stats.maxHp);
-        const pHpBar = BarSystem.getHPBar(player.stats.hp, player.stats.maxHp);
+        const pHpBar = BarSystem.getHPBar(player.stats.hp, player.stats.maxHp, require('../../rpg/utils/UnifiedCombat').isPro(player));
 
         if (player.stats.hp <= 0) {
           // Player died — give partial rewards
@@ -903,7 +934,7 @@ module.exports = {
 
       saveDatabase();
       log += `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
-      log += `👤 *${player.name}* ❤️ ${player.stats.hp}/${player.stats.maxHp}\n${BarSystem.getHPBar(player.stats.hp, player.stats.maxHp)}\n`;
+      log += `👤 *${player.name}* ❤️ ${player.stats.hp}/${player.stats.maxHp}\n${BarSystem.getHPBar(player.stats.hp, player.stats.maxHp, require('../../rpg/utils/UnifiedCombat').isPro(player))}\n`;
       log += `\n${monster.emoji} *${monster.name}*\n${BarSystem.getMonsterHPBar(monster.stats.hp, monster.stats.maxHp)}\n`;
       log += `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🎯 Floor ${dungeon.currentFloor}/20 | Turn ${dungeon.turn}`;
       return sock.sendMessage(chatId, { text: log }, { quoted: msg });
@@ -1020,7 +1051,7 @@ module.exports = {
         }
 
         saveDatabase();
-        log += `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n${monster.emoji} *${monster.name}*\n${BarSystem.getMonsterHPBar(monster.stats.hp, monster.stats.maxHp)}\n❤️ ${monster.stats.hp}/${monster.stats.maxHp}\n\n👤 *${player.name}*\n${BarSystem.getHPBar(player.stats.hp, player.stats.maxHp)}\n❤️ ${player.stats.hp}/${player.stats.maxHp}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🎯 Floor ${sd.currentFloor}/10 | Turn ${sd.turn}`;
+        log += `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n${monster.emoji} *${monster.name}*\n${BarSystem.getMonsterHPBar(monster.stats.hp, monster.stats.maxHp)}\n❤️ ${monster.stats.hp}/${monster.stats.maxHp}\n\n👤 *${player.name}*\n${BarSystem.getHPBar(player.stats.hp, player.stats.maxHp, require('../../rpg/utils/UnifiedCombat').isPro(player))}\n❤️ ${player.stats.hp}/${player.stats.maxHp}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🎯 Floor ${sd.currentFloor}/10 | Turn ${sd.turn}`;
         return sock.sendMessage(chatId, { text: log }, { quoted: msg });
       }
 
@@ -1063,7 +1094,7 @@ module.exports = {
       if (player.stats.hp <= 0) return handlePlayerDeath(sock, chatId, party, dungeon, db, saveDatabase, msg, sender, log);
 
       saveDatabase();
-      log += `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n👤 *${player.name}* ❤️ ${player.stats.hp}/${player.stats.maxHp}\n${BarSystem.getHPBar(player.stats.hp, player.stats.maxHp)}\n\n${monster.emoji} *${monster.name}*\n${BarSystem.getMonsterHPBar(monster.stats.hp, monster.stats.maxHp)}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🎯 Floor ${dungeon.currentFloor}/20`;
+      log += `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n👤 *${player.name}* ❤️ ${player.stats.hp}/${player.stats.maxHp}\n${BarSystem.getHPBar(player.stats.hp, player.stats.maxHp, require('../../rpg/utils/UnifiedCombat').isPro(player))}\n\n${monster.emoji} *${monster.name}*\n${BarSystem.getMonsterHPBar(monster.stats.hp, monster.stats.maxHp)}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🎯 Floor ${dungeon.currentFloor}/20`;
       return sock.sendMessage(chatId, { text: log }, { quoted: msg });
     }
 
@@ -1204,7 +1235,7 @@ async function handleMonsterDefeat(sock, chatId, party, monster, dungeon, db, sa
     party.members.forEach(m => {
       const mp = db.users[m.id];
       if (!mp) return;
-      txt += `${mp.stats.hp > 0 ? '⚔️' : '💀'} *${m.name}* — ${BarSystem.getHPBar(mp.stats.hp, mp.stats.maxHp)} ${mp.stats.hp}/${mp.stats.maxHp}\n`;
+      txt += `${mp.stats.hp > 0 ? '⚔️' : '💀'} *${m.name}* — ${BarSystem.getHPBar(mp.stats.hp, mp.stats.maxHp, require('../../rpg/utils/UnifiedCombat').isPro(mp))} ${mp.stats.hp}/${mp.stats.maxHp}\n`;
     });
     txt += `\n/dungeon advance — next floor\n/dungeon leave   — exit & keep rewards`;
     await sock.sendMessage(chatId, { text: txt }, { quoted: msg });

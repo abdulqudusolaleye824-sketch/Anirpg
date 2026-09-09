@@ -314,23 +314,73 @@ module.exports = {
       }
 
       const target = floorMonsters[0];
-      const useSkill = action === 'skill' ? skillArg : null;
-      const result = GR.playerDamage(player, useSkill);
+      // Check for attack pattern id in skillArg when action is attack (from /attack <id> routed via attacks.js)
+      let patternId = null;
+      if (action === 'attack' && skillArg) {
+        const pid = parseInt(String(skillArg).trim().split(' ')[0]);
+        if (!isNaN(pid) && pid >= 1 && pid <= 750) patternId = pid;
+      }
+      let result;
+      let atkPattern = null;
+      if (patternId) {
+        const DBp = require('../../rpg/utils/AttackPatternDB');
+        const UCg = require('../../rpg/utils/UnifiedCombat');
+        const atk = DBp.generateAttack(patternId);
+        atkPattern = atk;
+        if (!atk) result = { damage:0, blocked:true, reason:'Invalid pattern' };
+        else {
+          const owned = player.attackPatterns?.owned || [];
+          if (!owned.includes(patternId)) {
+            result = { damage:0, blocked:true, reason:`You don't own Attack #${patternId}` };
+          } else {
+            const cd = UCg.isOnCooldown(player, patternId);
+            if (cd.onCd) {
+              result = { damage:0, blocked:true, reason:`attack failed — still on cooldown ${UCg.formatCd(cd.remaining)} remaining (0 dmg, status -1)` };
+              try { UCg.tickStatuses(player); } catch(e){}
+              // status -1 already
+            } else {
+              // Unified calc: treat monster as defender
+              const fakeMonster = { stats:{ hp: target.hp, maxHp: target.maxHp, atk: target.atk, def: target.def||5, speed: 30 }, statusEffects: [] };
+              const uni = UCg.calcMoveDamage(player, fakeMonster, atk);
+              if (uni.missed) result = { damage:0, isCrit:false, atkPattern: atk, missed:true };
+              else { result = { damage: uni.damage, isCrit: uni.crit, atkPattern: atk, unified: uni }; target.hp = Math.max(0, target.hp - uni.damage); UCg.setCooldown(player, patternId, atk); const eff=UCg.tryApplyEffect(atk, player, fakeMonster); if(eff) result.effectApplied = eff; }
+              // If not missed, we already set hp; if we set hp above, avoid double-set below
+              // To avoid double damage, we will not do the generic target.hp subtraction below — we already did
+              // So we need to handle that we already subtracted
+              if (!uni.missed) {
+                // we have already applied damage, so we will skip the generic subtraction by setting a flag
+                result._alreadyApplied = true;
+              } else {
+                result._alreadyApplied = true;
+              }
+            }
+          }
+        }
+      } else {
+        const useSkill = action === 'skill' ? skillArg : null;
+        result = GR.playerDamage(player, useSkill);
+      }
       if (result.blocked) return sock.sendMessage(chatId, { text: `❌ ${result.reason}` }, { quoted: msg });
 
       if (!gate.damageDealt) gate.damageDealt = {};
       gate.damageDealt[sender] = (gate.damageDealt[sender] || 0) + result.damage;
 
-      target.hp = Math.max(0, target.hp - result.damage);
+      if (!result._alreadyApplied) target.hp = Math.max(0, target.hp - result.damage);
 
+      const UCgBar = require('../../rpg/utils/UnifiedCombat');
+      const BarG = require('../../rpg/utils/BarSystem');
+      const pBarG = BarG.getHPBar(player.stats.hp, player.stats.maxHp, UCgBar.isPro(player));
       const msg1Lines = [
         `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-        `⚔️ *PLAYER ATTACK*`,
+        atkPattern ? `🥋 *ATTACK PATTERN #${atkPattern.id} — ${atkPattern.name}* [${atkPattern.rank}]` : `⚔️ *PLAYER ATTACK*`,
         `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        atkPattern ? `_${(atkPattern.description||atkPattern.flavour).slice(0,200)}_` : ``,
+        atkPattern ? `📊 Atk×${atkPattern.atkMult} Def×${atkPattern.defMult} Spd×${atkPattern.speedMult} Crit×${atkPattern.critMult} Acc ${atkPattern.accuracy}%` : ``,
         `⚔️ *${player.name}* → *${target.name}*`,
-        result.skillUsed ? `🔮 Skill: *${result.skillUsed.name}*` : ``,
-        `${result.isCrit ? '💥 *CRITICAL HIT!* ' : ''}Dealt *${result.damage}* damage`,
-        `👾 ${target.name} HP: ${target.hp}/${target.maxHp}`,
+        result.skillUsed ? `🔮 Skill: *${result.skillUsed.name}*` : (atkPattern ? `` : ``),
+        result.missed ? `💨 *Missed!* Accuracy ${atkPattern?.accuracy || 85}%` : `${result.isCrit ? '💥 *CRITICAL HIT!* ' : ''}Dealt *${result.damage}* damage${result.effectApplied ? ` ${result.effectApplied.emoji} ${result.effectApplied.type} applied!` : ''}`,
+        `👾 ${target.name} HP: ${target.hp}/${target.maxHp} ${BarG.getMonsterHPBar(target.hp, target.maxHp)}`,
+        `❤️ You: ${pBarG} ${player.stats.hp}/${player.stats.maxHp}`,
       ];
 
       if (target.hp <= 0) {

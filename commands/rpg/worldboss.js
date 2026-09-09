@@ -336,7 +336,7 @@ module.exports = {
       party.members.forEach(m => {
         const mp = db.users[m.id];
         if (!mp) return;
-        const hpBar = BarSystem.getHPBar(mp.stats.hp, mp.stats.maxHp);
+        const hpBar = BarSystem.getHPBar(mp.stats.hp, mp.stats.maxHp, require('../../rpg/utils/UnifiedCombat').isPro(mp));
         const hasAction = !!party.pendingActions[m.id];
         txt += `${hasAction?'✅':'⏳'} *${m.name}*\n  ${hpBar}\n  ❤️ ${mp.stats.hp}/${mp.stats.maxHp}\n\n`;
       });
@@ -397,7 +397,11 @@ module.exports = {
         if (!skillName) return sock.sendMessage(chatId, { text: '❌ Specify skill name!\nExample: /worldboss skill fireball' }, { quoted: msg });
         party.pendingActions[sender] = { type: 'skill', skillName };
       } else {
-        party.pendingActions[sender] = { type: 'attack' };
+        // Check for pattern id from /attack <id> routed via attacks.js
+        let wbPatternId = null;
+        const possiblePid = parseInt((args[1]||'').toString().trim());
+        if (!isNaN(possiblePid) && possiblePid>=1 && possiblePid<=750) wbPatternId = possiblePid;
+        party.pendingActions[sender] = wbPatternId ? { type: 'attack', patternId: wbPatternId } : { type: 'attack' };
       }
 
       // Check if all alive members have acted
@@ -450,13 +454,46 @@ async function resolveRaidTurn(sock, chatId, party, db, saveDatabase) {
     }
 
     if (act.type === 'attack') {
-      const isCrit = Math.random() < 0.12;
-      dmg = Math.max(1, Math.floor(pl.stats.atk * (isCrit ? 1.5 : 1.0)) - Math.floor(boss.stats.def * 0.3));
-      const art = ArtifactSystem.calculateCombatBonusFromPlayer?.(pl);
-      if (art?.bonuses?.atk) dmg += art.bonuses.atk;
-      boss.stats.hp -= dmg;
-      totalDmg += dmg;
-      log += `⚔️ *${m.name}* deals *${dmg.toLocaleString()}* dmg${isCrit ? ' 💥 CRIT!' : ''}!\n`;
+      const pidWB = act.patternId;
+      if (pidWB) {
+        const DBwb = require('../../rpg/utils/AttackPatternDB');
+        const UCwb = require('../../rpg/utils/UnifiedCombat');
+        const atkWb = DBwb.generateAttack(pidWB);
+        const ownedWb = pl.attackPatterns?.owned || [];
+        if (!atkWb || !ownedWb.includes(pidWB)) {
+          log += `❌ *${m.name}* pattern #${pidWB} not owned — skipped\n`;
+          continue;
+        }
+        const cdWb = UCwb.isOnCooldown(pl, pidWB);
+        if (cdWb.onCd) {
+          log += `⏳ *${m.name}'s attack failed — still on cooldown ${UCwb.formatCd(cdWb.remaining)} remaining* — 0 dmg, status -1\n`;
+          try { UCwb.tickStatuses(pl); } catch(e){}
+          continue;
+        }
+        const fakeBoss = { stats:{ hp: boss.stats.hp, maxHp: boss.stats.maxHp, atk: boss.stats.atk, def: boss.stats.def, speed: boss.stats.speed||30 }, statusEffects: boss.statusEffects||[] };
+        const uniWb = UCwb.calcMoveDamage(pl, fakeBoss, atkWb);
+        if (uniWb.missed) {
+          log += `💨 *${m.name}'s ${atkWb.name} missed! Acc ${atkWb.accuracy}%\n`;
+          UCwb.setCooldown(pl, pidWB, atkWb);
+          continue;
+        }
+        dmg = uniWb.damage;
+        const isCritWb = uniWb.crit;
+        UCwb.setCooldown(pl, pidWB, atkWb);
+        const effWb = UCwb.tryApplyEffect(atkWb, pl, boss);
+        boss.stats.hp -= dmg;
+        totalDmg += dmg;
+        log += `🥋 *${m.name}* ${atkWb.name} [${atkWb.rank}] Dmg×${atkWb.dmgMult} ${isCritWb?'💥 CRIT! ':''}*${dmg.toLocaleString()}* dmg${effWb?` ${effWb.emoji} ${effWb.type}`:''}!\n`;
+        if (atkWb.description) log += `_${atkWb.description.slice(0,120)}_\n`;
+      } else {
+        const isCrit = Math.random() < 0.12;
+        dmg = Math.max(1, Math.floor(pl.stats.atk * (isCrit ? 1.5 : 1.0)) - Math.floor(boss.stats.def * 0.3));
+        const art = ArtifactSystem.calculateCombatBonusFromPlayer?.(pl);
+        if (art?.bonuses?.atk) dmg += art.bonuses.atk;
+        boss.stats.hp -= dmg;
+        totalDmg += dmg;
+        log += `⚔️ *${m.name}* deals *${dmg.toLocaleString()}* dmg${isCrit ? ' 💥 CRIT!' : ''}!\n`;
+      }
     } else if (act.type === 'skill') {
       // simplified skill: 1.8x atk
       const isCrit = Math.random() < 0.15;
@@ -577,7 +614,7 @@ async function resolveRaidTurn(sock, chatId, party, db, saveDatabase) {
 
   members.forEach(m => {
     const pl  = m.player;
-    const bar = BarSystem.getHPBar(pl.stats.hp, pl.stats.maxHp);
+    const bar = BarSystem.getHPBar(pl.stats.hp, pl.stats.maxHp, require('../../rpg/utils/UnifiedCombat').isPro(pl));
     const sta = pl.stats.hp > 0 ? '⚔️' : '💀';
     log += `${sta} *${m.name}* — ${bar} ${pl.stats.hp}/${pl.stats.maxHp}\n`;
   });

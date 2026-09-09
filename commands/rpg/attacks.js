@@ -142,7 +142,7 @@ module.exports = {
         if (!atk) return `  ${i+1}. #${id} *(invalid)*`;
         const re  = DB.RANK_EMOJI[atk.rank] || '⬜';
         const eff = atk.effect ? ` ${atk.effect.emoji}` : '';
-        return `  ${i+1}. ${re} *#${id}* ${atk.name}${eff} ×${atk.dmgMult}`;
+        return `  ${i+1}. ${re} *#${id}* ${atk.name}${eff} Dmg×${atk.dmgMult} Atk×${atk.atkMult} Def×${atk.defMult} Spd×${atk.speedMult} Crit×${atk.critMult} ${atk.accuracy}% ${atk.cooldownSec}s`;
       });
 
       return sock.sendMessage(chatId, {
@@ -309,7 +309,7 @@ module.exports = {
 
       const lines = items.map((atk, i) => {
         const re  = DB.RANK_EMOJI[atk.rank] || '⬜';
-        const eff = atk.effect ? ` ${atk.effect.emoji}` : '';
+        const eff = atk.effect ? ` ${atk.effect.emoji} ${atk.effect.label} ${atk.effect.chance}%` : 'No effect';
         const owned = ap.owned.includes(atk.id);
         const stock = atk.inStock ? '' : ' *(Sold Out)*';
         const ownedMark = owned ? ' ✅' : '';
@@ -320,7 +320,7 @@ module.exports = {
           : atk.cost.shopNexus > 0
           ? `${atk.cost.shopNexus.toLocaleString()} Nexus`
           : `${atk.cost.shopStones.toLocaleString()} MS`;
-        return `${i+1}. ${re} *#${atk.id}* ${atk.name}${eff}${stock}${ownedMark} — ${costStr}`;
+        return `${i+1}. ${re} *#${atk.id}* ${atk.name} Dmg×${atk.dmgMult} Atk×${atk.atkMult} Def×${atk.defMult} Spd×${atk.speedMult} Crit×${atk.critMult} ${atk.accuracy}% ${atk.cooldownSec}s cd | ${eff} — ${costStr}${stock}${ownedMark}`;
       });
 
       return sock.sendMessage(chatId, {
