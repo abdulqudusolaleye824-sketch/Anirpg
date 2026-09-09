@@ -73,8 +73,16 @@ module.exports = {
     const key = Mod.bare(targetId);
     const u = Mod.getUser(db, targetId);
     const name = u?.name || key;
-
-    Mod.banUser(db, targetId, sender, reason);
+    // Capture GC info for audit
+    let gcName = chatId;
+    try {
+      const gmd = await sock.groupMetadata(chatId).catch(()=>null);
+      if (gmd && gmd.subject) gcName = gmd.subject;
+    } catch {}
+    const bannedAtGMT = new Date().toUTCString();
+    Mod.banUser(db, targetId, sender, reason, { gc: chatId, gcName, bannedAtGMT });
+    // Also store GMT directly for quick display
+    if (db.bannedUsers[key]) db.bannedUsers[key].bannedAtGMT = bannedAtGMT;
     saveDatabase();
 
     await sock.sendMessage(chatId, {
@@ -82,9 +90,11 @@ module.exports = {
         '━━━━━━━━━━━━━━━━━━━━━━━━━━━',
         '🚫 *USER BANNED* 🚫',
         '━━━━━━━━━━━━━━━━━━━━━━━━━━━',
-        `👤 User: ${name}`,
+        `👤 User: ${name} (@${key})`,
         `📝 Reason: ${reason}`,
-        `👮 By: @${Mod.bare(sender)}`,
+        `👮 Banned by: @${Mod.bare(sender)}`,
+        `📍 GC: ${gcName} (${chatId})`,
+        `🕒 Time (GMT): ${bannedAtGMT}`,
         '━━━━━━━━━━━━━━━━━━━━━━━━━━━',
         '_They can no longer use any bot command._',
         '━━━━━━━━━━━━━━━━━━━━━━━━━━━',

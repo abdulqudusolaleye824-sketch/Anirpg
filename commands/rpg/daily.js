@@ -207,8 +207,8 @@ module.exports = {
 
     // Achievement notifications
     if (achUnlocks.length > 0) {
-      const note = AchMgr.buildNotification(achUnlocks);
-      if (note) await sock.sendMessage(chatId, { text: note }, { quoted: msg });
+      const note = AchMgr.buildNotification(achUnlocks, player);
+      if (note) await sock.sendMessage(chatId, { text: note, mentions: [sender] }, { quoted: msg });
     }
   }
 };

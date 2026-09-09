@@ -34,12 +34,14 @@ Total Banned: ${bannedList.length}
       const banInfo = db.bannedUsers[userId];
       const userName = db.users[userId]?.name || userId.split('@')[0];
       const reason = banInfo.reason || 'No reason';
-      const date = new Date(banInfo.bannedAt).toLocaleDateString();
-      
-      text += `${i + 1}. ${userName}\n`;
-      text += `   @${userId.split('@')[0]}\n`;
+      const gmt2 = banInfo.bannedAtGMT || (banInfo.bannedAt ? new Date(banInfo.bannedAt).toUTCString() : '?');
+      const bannedBy2 = banInfo.bannedBy ? '@' + banInfo.bannedBy.split('@')[0].split(':')[0] : 'Unknown';
+      const gcInfo2 = banInfo.gcName ? `${banInfo.gcName} (${banInfo.gc || '?'})` : (banInfo.gc || 'Unknown GC');
+      text += `${i + 1}. ${userName} (@${userId.split('@')[0]})\n`;
+      text += `   👮 Banned by: ${bannedBy2}\n`;
       text += `   📝 Reason: ${reason}\n`;
-      text += `   📅 Date: ${date}\n\n`;
+      text += `   📍 GC: ${gcInfo2}\n`;
+      text += `   🕒 Time (GMT): ${gmt2}\n\n`;
     });
     
     text += `━━━━━━━━━━━━━━━━━━━━━━━━━━━\nUse /unban @user to unban`;

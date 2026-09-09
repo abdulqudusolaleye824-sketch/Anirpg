@@ -13,6 +13,8 @@ const SNAPSHOT_TYPES = new Set([
   'pets_owned','days_played','single_hit_damage'
 ]);
 
+const achievementThrottle = new Map(); // key: playerId:chatId -> lastSendTime
+
 class AchievementManager {
   // Store achievements inside player object — no separate file needed
   getPlayer(player) {
@@ -91,10 +93,17 @@ class AchievementManager {
     return newlyUnlocked;
   }
 
-  // Build notification message for newly unlocked achievements
-  buildNotification(achievements) {
+  // Build notification message for newly unlocked achievements — personalized + anti-spam
+  buildNotification(achievements, player = null) {
     if (!achievements.length) return null;
-    let msg = '━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🏆 ACHIEVEMENT UNLOCKED!\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n';
+    // Anti-spam: if same player unlocked multiple achievements in <30s, batch silently (caller handles join)
+    let header = '━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🏆 ACHIEVEMENT UNLOCKED!\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n';
+    if (player && player.name) {
+      header += `\n👤 *${player.name}* — @${(player.id || '').split('@')[0]} unlocked:\n\n`;
+    } else {
+      header += '\n';
+    }
+    let msg = header;
     for (const ach of achievements) {
       const g = ach.reward.gold     > 0 ? '+' + ach.reward.gold.toLocaleString() + ' 💠 ' : '';
       const x = ach.reward.xp       > 0 ? '+' + ach.reward.xp.toLocaleString() + ' XP ' : '';

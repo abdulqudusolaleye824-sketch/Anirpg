@@ -38,8 +38,23 @@ async function trackActivity(player, type, amount = 1, extra = {}, sock = null, 
   // 2. Track Achievements
   try {
     const newlyUnlocked = AchievementManager.track(player, type, amount, extra);
-    const achNote = AchievementManager.buildNotification(newlyUnlocked);
-    if (achNote) notes.push(achNote);
+    if (newlyUnlocked.length > 0) {
+      // Anti-spam throttle: max 1 achievement notification per player per chat per 60s (unless >2 achievements batched)
+      const throttleKey = (player.id || jid || '') + ':' + (chatId || '');
+      const now = Date.now();
+      const last = AchievementManager._throttleGet ? AchievementManager._throttleGet(throttleKey) : 0;
+      // Also check global throttle map if exists
+      let lastTime = 0;
+      try { lastTime = (global.achievementThrottle && global.achievementThrottle.get(throttleKey)) || 0; } catch {}
+      const isThrottled = (now - lastTime) < 60000 && newlyUnlocked.length < 3;
+      if (!isThrottled) {
+        try { if (global.achievementThrottle) global.achievementThrottle.set(throttleKey, now); } catch {}
+        const achNote = AchievementManager.buildNotification(newlyUnlocked, player);
+        if (achNote) notes.push(achNote);
+      } else {
+        console.log(`[TRACKER] Throttled achievement spam for ${player.name} in ${chatId} (${newlyUnlocked.length} unlocks)`);
+      }
+    }
   } catch (e) {
     console.warn(`[TRACKER] Achievement error (${type}):`, e.message);
   }
@@ -47,7 +62,8 @@ async function trackActivity(player, type, amount = 1, extra = {}, sock = null, 
   // 3. Dispatch combined notifications if present and not already dispatched by QuestDispatcher
   if (notes.length > 0 && sock && chatId) {
     try {
-      await sock.sendMessage(chatId, { text: notes.join('\n\n') });
+      const mentions = jid ? [jid] : [];
+      await sock.sendMessage(chatId, { text: notes.join('\n\n'), mentions });
     } catch (e) {}
   }
 
@@ -68,9 +84,22 @@ async function checkSnapshotAchievements(player, sock = null, jid = null, chatId
     const crystalAch = AchievementManager.track(player, 'crystals_total', player.manaCrystals || 0);
 
     const allUnlocked = [...levelAch, ...goldAch, ...bankAch, ...crystalAch];
-    const achNote = AchievementManager.buildNotification(allUnlocked);
-    if (achNote && sock && chatId) {
-      await sock.sendMessage(chatId, { text: achNote });
+    if (allUnlocked.length > 0) {
+      // Throttle snapshot achievements too (level/gold spam)
+      const throttleKey2 = (player.id || jid || '') + ':' + (chatId || '') + ':snap';
+      const now2 = Date.now();
+      let last2 = 0;
+      try { last2 = (global.achievementThrottle && global.achievementThrottle.get(throttleKey2)) || 0; } catch {}
+      if ((now2 - last2) >= 60000) {
+        try { if (global.achievementThrottle) global.achievementThrottle.set(throttleKey2, now2); } catch {}
+        const achNote = AchievementManager.buildNotification(allUnlocked, player);
+        if (achNote && sock && chatId) {
+          const mentions2 = jid ? [jid] : [];
+          await sock.sendMessage(chatId, { text: achNote, mentions: mentions2 });
+        }
+      } else {
+        console.log(`[TRACKER] Throttled snapshot spam for ${player.name}`);
+      }
     }
   } catch (e) {}
 }

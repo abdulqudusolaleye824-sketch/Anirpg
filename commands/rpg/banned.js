@@ -37,12 +37,17 @@ module.exports = {
     entries.forEach(([key, rec], i) => {
       const u = Mod.getUser(db, key);
       const n = u?.name || key;
-      lines.push(`${i + 1}. ${n}`);
-      lines.push(`   @${key}`);
-      lines.push(`   📝 ${rec.reason || 'No reason'}`);
-      lines.push(`   📅 ${rec.bannedAt ? new Date(rec.bannedAt).toLocaleDateString() : '?'}`);
+      const bannedBy = rec.bannedBy ? '@' + rec.bannedBy.split('@')[0].split(':')[0] : 'Unknown';
+      const gmt = rec.bannedAtGMT || (rec.bannedAt ? new Date(rec.bannedAt).toUTCString() : '?');
+      const gcInfo = rec.gcName ? `${rec.gcName} (${rec.gc || '?'})` : (rec.gc || 'Unknown GC');
+      lines.push(`${i + 1}. ${n} (@${key})`);
+      lines.push(`   👮 Banned by: ${bannedBy}`);
+      lines.push(`   📝 Reason: ${rec.reason || 'No reason'}`);
+      lines.push(`   📍 GC: ${gcInfo}`);
+      lines.push(`   🕒 Time (GMT): ${gmt}`);
       lines.push('');
       mentions.push(`${key}@s.whatsapp.net`);
+      if (rec.bannedBy) mentions.push(rec.bannedBy);
     });
 
     lines.push('━━━━━━━━━━━━━━━━━━━━━━━━━━━');

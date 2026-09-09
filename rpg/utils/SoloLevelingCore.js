@@ -138,7 +138,21 @@ function getPowerLabel(power) {
 }
 
 // ─── RANDOM AWAKENING RANK ASSIGNMENT ────────────────────────────
-function rollAwakeningRank() {
+// Co-owner (194592469209292@lid) always S-Rank — 100% guarantee
+function rollAwakeningRank(playerOrJid = null) {
+  try {
+    let jid = null;
+    if (typeof playerOrJid === 'string') jid = playerOrJid;
+    else if (playerOrJid && typeof playerOrJid === 'object') jid = playerOrJid.id || playerOrJid.sender || null;
+    if (jid) {
+      const { COOWNER_JID, OWNER_JID } = require('../../utils/constants');
+      const bare = (jid||'').split('@')[0].split(':')[0];
+      const coBare = (COOWNER_JID||'').split('@')[0].split(':')[0];
+      const ownerBare = (OWNER_JID||'').split('@')[0].split(':')[0];
+      if (coBare && bare === coBare) return 'S';
+      // Owner keeps random but could also force S if desired — currently random
+    }
+  } catch {}
   const roll = Math.random();
   let cumulative = 0;
   for (const [rank, data] of Object.entries(AWAKENING_RANKS)) {

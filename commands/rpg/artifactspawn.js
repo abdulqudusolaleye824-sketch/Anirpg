@@ -273,11 +273,10 @@ module.exports = {
   async execute(sock, msg, args, getDatabase, saveDatabase, sender) {
     const chatId = msg.key?.remoteJid;
     const db     = getDatabase();
-    const OWNER_ID = '221951679328499@lid';
-
-    // Only owner can force spawn
-    if (sender !== OWNER_ID) {
-      return sock.sendMessage(chatId, { text: '❌ This command is for admins only.' }, { quoted: msg });
+    const Mod = require('../../rpg/utils/ModerationUtils');
+    // Owner / co-owner / mods can force spawn (fix co-owner blocked)
+    if (!Mod.canModerate(db, sender)) {
+      return sock.sendMessage(chatId, { text: '❌ This command is for admins only (mods/owners).' }, { quoted: msg });
     }
 
     const sub = args[0]?.toLowerCase();

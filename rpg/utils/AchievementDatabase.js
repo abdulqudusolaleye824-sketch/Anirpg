@@ -10,22 +10,22 @@ const ACHIEVEMENTS = {
   },
   monster_slayer: {
     id: 'monster_slayer', name: '⚔️ Monster Slayer', category: 'Combat',
-    desc: 'Kill 50 monsters', condition: { type: 'kill', count: 50 },
+    desc: 'Kill 150 monsters', condition: { type: 'kill', count: 150 },
     reward: { gold: 2000, xp: 500, crystals: 5 }
   },
   century_killer: {
     id: 'century_killer', name: '💀 Century Killer', category: 'Combat',
-    desc: 'Kill 100 monsters', condition: { type: 'kill', count: 100 },
+    desc: 'Kill 500 monsters', condition: { type: 'kill', count: 500 },
     reward: { gold: 5000, xp: 1000, crystals: 10 }
   },
   thousand_kills: {
     id: 'thousand_kills', name: '🔱 Thousand Kills', category: 'Combat',
-    desc: 'Kill 1000 monsters', condition: { type: 'kill', count: 1000 },
+    desc: 'Kill 3000 monsters', condition: { type: 'kill', count: 3000 },
     reward: { gold: 20000, xp: 5000, crystals: 50 }
   },
   critical_master: {
     id: 'critical_master', name: '💥 Critical Master', category: 'Combat',
-    desc: 'Land 100 critical hits', condition: { type: 'crit_hit', count: 100 },
+    desc: 'Land 300 critical hits', condition: { type: 'crit_hit', count: 300 },
     reward: { gold: 3000, xp: 800, crystals: 10 }
   },
   dungeon_novice: {
@@ -35,17 +35,17 @@ const ACHIEVEMENTS = {
   },
   dungeon_veteran: {
     id: 'dungeon_veteran', name: '🗝️ Dungeon Veteran', category: 'Dungeon',
-    desc: 'Clear 10 dungeons', condition: { type: 'dungeon_clear', count: 10 },
+    desc: 'Clear 25 dungeons', condition: { type: 'dungeon_clear', count: 25 },
     reward: { gold: 5000, xp: 1500, crystals: 15 }
   },
   dungeon_master: {
     id: 'dungeon_master', name: '👑 Dungeon Master', category: 'Dungeon',
-    desc: 'Clear 50 dungeons', condition: { type: 'dungeon_clear', count: 50 },
+    desc: 'Clear 250 dungeons', condition: { type: 'dungeon_clear', count: 250 },
     reward: { gold: 25000, xp: 8000, crystals: 75 }
   },
   dungeon_legend: {
     id: 'dungeon_legend', name: '🌟 Dungeon Legend', category: 'Dungeon',
-    desc: 'Clear 100 dungeons', condition: { type: 'dungeon_clear', count: 100 },
+    desc: 'Clear 250 dungeons', condition: { type: 'dungeon_clear', count: 250 },
     reward: { gold: 50000, xp: 20000, crystals: 200 }
   },
   floor_diver: {
@@ -60,12 +60,12 @@ const ACHIEVEMENTS = {
   },
   boss_hunter: {
     id: 'boss_hunter', name: '🏹 Boss Hunter', category: 'Boss',
-    desc: 'Defeat 10 bosses', condition: { type: 'boss_kill', count: 10 },
+    desc: 'Defeat 25 bosses', condition: { type: 'boss_kill', count: 25 },
     reward: { gold: 10000, xp: 3000, crystals: 30 }
   },
   boss_destroyer: {
     id: 'boss_destroyer', name: '💣 Boss Destroyer', category: 'Boss',
-    desc: 'Defeat 50 bosses', condition: { type: 'boss_kill', count: 50 },
+    desc: 'Defeat 100 bosses', condition: { type: 'boss_kill', count: 100 },
     reward: { gold: 50000, xp: 15000, crystals: 150 }
   },
   raid_champion: {
@@ -85,27 +85,27 @@ const ACHIEVEMENTS = {
   },
   arena_regular: {
     id: 'arena_regular', name: '🎖️ Arena Regular', category: 'PvP',
-    desc: 'Win 10 PvP battles', condition: { type: 'pvp_win', count: 10 },
+    desc: 'Win 25 PvP battles', condition: { type: 'pvp_win', count: 25 },
     reward: { gold: 5000, xp: 1500, crystals: 20 }
   },
   pvp_veteran: {
     id: 'pvp_veteran', name: '⚔️ PvP Veteran', category: 'PvP',
-    desc: 'Win 50 PvP battles', condition: { type: 'pvp_win', count: 50 },
+    desc: 'Win 150 PvP battles', condition: { type: 'pvp_win', count: 150 },
     reward: { gold: 20000, xp: 8000, crystals: 80 }
   },
   pvp_legend: {
     id: 'pvp_legend', name: '🏆 PvP Legend', category: 'PvP',
-    desc: 'Win 100 PvP battles', condition: { type: 'pvp_win', count: 100 },
+    desc: 'Win 300 PvP battles', condition: { type: 'pvp_win', count: 300 },
     reward: { gold: 50000, xp: 20000, crystals: 200 }
   },
   win_streak_5: {
     id: 'win_streak_5', name: '🔥 On Fire', category: 'PvP',
-    desc: 'Achieve a 5 PvP win streak', condition: { type: 'pvp_streak', count: 5 },
+    desc: 'Achieve a 7 PvP win streak', condition: { type: 'pvp_streak', count: 7 },
     reward: { gold: 5000, xp: 2000, crystals: 25 }
   },
   win_streak_10: {
     id: 'win_streak_10', name: '🌪️ Unstoppable', category: 'PvP',
-    desc: 'Achieve a 10 PvP win streak', condition: { type: 'pvp_streak', count: 10 },
+    desc: 'Achieve a 15 PvP win streak', condition: { type: 'pvp_streak', count: 15 },
     reward: { gold: 15000, xp: 6000, crystals: 75 }
   },
   level_10: {
@@ -115,47 +115,47 @@ const ACHIEVEMENTS = {
   },
   level_25: {
     id: 'level_25', name: '📊 Seasoned Hunter', category: 'Growth',
-    desc: 'Reach Level 25', condition: { type: 'level', count: 25 },
+    desc: 'Reach Level 30', condition: { type: 'level', count: 30 },
     reward: { gold: 5000, xp: 0, crystals: 25 }
   },
   level_50: {
     id: 'level_50', name: '🌟 Elite Hunter', category: 'Growth',
-    desc: 'Reach Level 50', condition: { type: 'level', count: 50 },
+    desc: 'Reach Level 60', condition: { type: 'level', count: 60 },
     reward: { gold: 15000, xp: 0, crystals: 75 }
   },
   level_75: {
     id: 'level_75', name: '💫 Master Hunter', category: 'Growth',
-    desc: 'Reach Level 75', condition: { type: 'level', count: 75 },
+    desc: 'Reach Level 90', condition: { type: 'level', count: 90 },
     reward: { gold: 30000, xp: 0, crystals: 150 }
   },
   level_100: {
     id: 'level_100', name: '👑 S-Rank Hunter', category: 'Growth',
-    desc: 'Reach Level 100', condition: { type: 'level', count: 100 },
+    desc: 'Reach Level 120', condition: { type: 'level', count: 120 },
     reward: { gold: 100000, xp: 0, crystals: 500 }
   },
   first_thousand: {
     id: 'first_thousand', name: '💠 First Thousand', category: 'Wealth',
-    desc: 'Accumulate 1,000 Nexus', condition: { type: 'gold_total', count: 1000 },
+    desc: 'Accumulate 10,000 Nexus', condition: { type: 'gold_total', count: 10000 },
     reward: { gold: 500, xp: 100, crystals: 0 }
   },
   gold_hoarder: {
     id: 'gold_hoarder', name: '💛 Nexus Hoarder', category: 'Wealth',
-    desc: 'Accumulate 100,000 Nexus', condition: { type: 'gold_total', count: 100000 },
+    desc: 'Accumulate 500,000 Nexus', condition: { type: 'gold_total', count: 500000 },
     reward: { gold: 10000, xp: 2000, crystals: 20 }
   },
   millionaire: {
     id: 'millionaire', name: '🤑 Millionaire', category: 'Wealth',
-    desc: 'Accumulate 1,000,000 Nexus', condition: { type: 'gold_total', count: 1000000 },
+    desc: 'Accumulate 5,000,000 Nexus', condition: { type: 'gold_total', count: 5000000 },
     reward: { gold: 50000, xp: 10000, crystals: 100 }
   },
   crystal_collector: {
     id: 'crystal_collector', name: '💎 Mana Stone Collector', category: 'Wealth',
-    desc: 'Collect 100 Mana Stones', condition: { type: 'crystals_total', count: 100 },
+    desc: 'Collect 500 Mana Stones', condition: { type: 'crystals_total', count: 500 },
     reward: { gold: 5000, xp: 1000, crystals: 50 }
   },
   crystal_hoarder: {
     id: 'crystal_hoarder', name: '🔮 Mana Stone Hoarder', category: 'Wealth',
-    desc: 'Collect 1,000 Mana Stones', condition: { type: 'crystals_total', count: 1000 },
+    desc: 'Collect 5,000 Mana Stones', condition: { type: 'crystals_total', count: 5000 },
     reward: { gold: 25000, xp: 5000, crystals: 200 }
   },
   first_companion: {
@@ -165,17 +165,17 @@ const ACHIEVEMENTS = {
   },
   pet_collector: {
     id: 'pet_collector', name: '🦁 Pet Collector', category: 'Pets',
-    desc: 'Catch 5 different pets', condition: { type: 'pets_caught', count: 5 },
+    desc: 'Catch 25 different pets', condition: { type: 'pets_caught', count: 25 },
     reward: { gold: 10000, xp: 2000, crystals: 30 }
   },
   pet_master: {
     id: 'pet_master', name: '🌟 Pet Master', category: 'Pets',
-    desc: 'Catch 10 different pets', condition: { type: 'pets_caught', count: 10 },
+    desc: 'Catch 25 different pets', condition: { type: 'pets_caught', count: 25 },
     reward: { gold: 25000, xp: 5000, crystals: 75 }
   },
   best_friends: {
     id: 'best_friends', name: '💕 Best Friends', category: 'Pets',
-    desc: 'Reach 100 bonding with a pet', condition: { type: 'pet_bonding', count: 100 },
+    desc: 'Reach 150 bonding with a pet', condition: { type: 'pet_bonding', count: 150 },
     reward: { gold: 5000, xp: 2000, crystals: 25 }
   },
   pet_evolver: {
@@ -195,7 +195,7 @@ const ACHIEVEMENTS = {
   },
   pet_feeder: {
     id: 'pet_feeder', name: '🍖 Devoted Caretaker', category: 'Pets',
-    desc: 'Feed your pet 50 times', condition: { type: 'pet_feed', count: 50 },
+    desc: 'Feed your pet 150 times', condition: { type: 'pet_feed', count: 150 },
     reward: { gold: 3000, xp: 1000, crystals: 15 }
   },
   pet_level_10: {
@@ -210,17 +210,17 @@ const ACHIEVEMENTS = {
   },
   skill_user: {
     id: 'skill_user', name: '✨ Skill User', category: 'Skills',
-    desc: 'Use a skill 10 times', condition: { type: 'skill_use', count: 10 },
+    desc: 'Use a skill 50 times', condition: { type: 'skill_use', count: 50 },
     reward: { gold: 1000, xp: 300, crystals: 5 }
   },
   skill_adept: {
     id: 'skill_adept', name: '🔮 Skill Adept', category: 'Skills',
-    desc: 'Use skills 100 times', condition: { type: 'skill_use', count: 100 },
+    desc: 'Use skills 300 times', condition: { type: 'skill_use', count: 300 },
     reward: { gold: 5000, xp: 1500, crystals: 20 }
   },
   skill_master: {
     id: 'skill_master', name: '🌀 Skill Master', category: 'Skills',
-    desc: 'Use skills 500 times', condition: { type: 'skill_use', count: 500 },
+    desc: 'Use skills 1000 times', condition: { type: 'skill_use', count: 1000 },
     reward: { gold: 20000, xp: 8000, crystals: 75 }
   },
   max_skill: {
@@ -230,7 +230,7 @@ const ACHIEVEMENTS = {
   },
   full_skillset: {
     id: 'full_skillset', name: '📚 Full Arsenal', category: 'Skills',
-    desc: 'Learn 6 active skills', condition: { type: 'skills_learned', count: 6 },
+    desc: 'Learn 10 active skills', condition: { type: 'skills_learned', count: 10 },
     reward: { gold: 8000, xp: 2000, crystals: 30 }
   },
   quest_starter: {
@@ -255,17 +255,17 @@ const ACHIEVEMENTS = {
   },
   quest_runner: {
     id: 'quest_runner', name: '🏃 Quest Runner', category: 'Quests',
-    desc: 'Complete 10 quests', condition: { type: 'quests_complete', count: 10 },
+    desc: 'Complete 25 quests', condition: { type: 'quests_complete', count: 25 },
     reward: { gold: 5000, xp: 1500, crystals: 20 }
   },
   quest_champion: {
     id: 'quest_champion', name: '🎗️ Quest Champion', category: 'Quests',
-    desc: 'Complete 50 quests', condition: { type: 'quests_complete', count: 50 },
+    desc: 'Complete 100 quests', condition: { type: 'quests_complete', count: 100 },
     reward: { gold: 20000, xp: 8000, crystals: 75 }
   },
   daily_devotion: {
     id: 'daily_devotion', name: '📅 Daily Devotion', category: 'Quests',
-    desc: 'Complete 7 daily quests', condition: { type: 'daily_quests', count: 7 },
+    desc: 'Complete 14 daily quests', condition: { type: 'daily_quests', count: 14 },
     reward: { gold: 5000, xp: 2000, crystals: 20 }
   },
   explorer: {
@@ -320,7 +320,7 @@ const ACHIEVEMENTS = {
   },
   lucky_gambler: {
     id: 'lucky_gambler', name: '🎰 Lucky Gambler', category: 'Casino',
-    desc: 'Win at the casino 10 times', condition: { type: 'casino_win', count: 10 },
+    desc: 'Win at the casino 25 times', condition: { type: 'casino_win', count: 25 },
     reward: { gold: 5000, xp: 1000, crystals: 15 }
   },
   jackpot: {
@@ -330,7 +330,7 @@ const ACHIEVEMENTS = {
   },
   big_spender: {
     id: 'big_spender', name: '💸 Big Spender', category: 'Casino',
-    desc: 'Bet 100,000 Nexus total in the casino', condition: { type: 'casino_bet_total', count: 100000 },
+    desc: 'Bet 500,000 Nexus total in the casino', condition: { type: 'casino_bet_total', count: 500000 },
     reward: { gold: 10000, xp: 2000, crystals: 30 }
   },
   near_death: {
@@ -355,22 +355,22 @@ const ACHIEVEMENTS = {
   },
   power_up: {
     id: 'power_up', name: '💪 Power Up', category: 'Upgrades',
-    desc: 'Allocate 10 upgrade points', condition: { type: 'up_spent', count: 10 },
+    desc: 'Allocate 25 upgrade points', condition: { type: 'up_spent', count: 25 },
     reward: { gold: 1000, xp: 300, crystals: 5 }
   },
   optimizer: {
     id: 'optimizer', name: '🔧 Optimizer', category: 'Upgrades',
-    desc: 'Allocate 100 upgrade points', condition: { type: 'up_spent', count: 100 },
+    desc: 'Allocate 250 upgrade points', condition: { type: 'up_spent', count: 250 },
     reward: { gold: 8000, xp: 2000, crystals: 30 }
   },
   min_maxer: {
     id: 'min_maxer', name: '📊 Min-Maxer', category: 'Upgrades',
-    desc: 'Allocate 500 upgrade points', condition: { type: 'up_spent', count: 500 },
+    desc: 'Allocate 1000 upgrade points', condition: { type: 'up_spent', count: 1000 },
     reward: { gold: 30000, xp: 10000, crystals: 100 }
   },
   hundred_days: {
     id: 'hundred_days', name: '📆 Centurion', category: 'Milestones',
-    desc: 'Play for 100 days', condition: { type: 'days_played', count: 100 },
+    desc: 'Play for 150 days', condition: { type: 'days_played', count: 150 },
     reward: { gold: 50000, xp: 10000, crystals: 200 }
   },
   achievement_hunter_10: {
@@ -380,7 +380,7 @@ const ACHIEVEMENTS = {
   },
   achievement_hunter_50: {
     id: 'achievement_hunter_50', name: '🏅 Achievement Addict', category: 'Milestones',
-    desc: 'Unlock 50 achievements', condition: { type: 'achievements_unlocked', count: 50 },
+    desc: 'Unlock 75 achievements', condition: { type: 'achievements_unlocked', count: 75 },
     reward: { gold: 30000, xp: 10000, crystals: 100 }
   },
   completionist: {
@@ -430,12 +430,12 @@ const ACHIEVEMENTS = {
   },
   pvp_participate_50: {
     id: 'pvp_participate_50', name: '🥋 Battle Hardened', category: 'PvP',
-    desc: 'Participate in 50 PvP battles', condition: { type: 'pvp_participate', count: 50 },
+    desc: 'Participate in 150 PvP battles', condition: { type: 'pvp_participate', count: 150 },
     reward: { gold: 8000, xp: 2000, crystals: 25 }
   },
   richer_than_rich: {
     id: 'richer_than_rich', name: '🏦 Bank Tycoon', category: 'Wealth',
-    desc: 'Have 500,000 Nexus in the bank', condition: { type: 'bank_gold', count: 500000 },
+    desc: 'Have 2,000,000 Nexus in the bank', condition: { type: 'bank_gold', count: 2000000 },
     reward: { gold: 25000, xp: 5000, crystals: 75 }
   },
   pet_happy: {
@@ -460,7 +460,7 @@ const ACHIEVEMENTS = {
   },
   dungeon_100_rank_f: {
     id: 'dungeon_100_rank_f', name: '🌀 F-Rank Grinder', category: 'Dungeon',
-    desc: 'Clear an F-rank dungeon 100 times', condition: { type: 'dungeon_rank_count', rank: 'F', count: 100 },
+    desc: 'Clear an F-rank dungeon 250 times', condition: { type: 'dungeon_rank_count', rank: 'F', count: 250 },
     reward: { gold: 10000, xp: 3000, crystals: 30 }
   },
   unstoppable_force: {
@@ -470,7 +470,7 @@ const ACHIEVEMENTS = {
   },
   lucky_charm: {
     id: 'lucky_charm', name: '🍀 Lucky Charm', category: 'Casino',
-    desc: 'Use 10 Luck Potions', condition: { type: 'luck_potions_used', count: 10 },
+    desc: 'Use 25 Luck Potions', condition: { type: 'luck_potions_used', count: 25 },
     reward: { gold: 5000, xp: 1000, crystals: 20 }
   },
   ancient_knowledge: {
@@ -480,7 +480,7 @@ const ACHIEVEMENTS = {
   },
   rising_star: {
     id: 'rising_star', name: '⭐ Rising Star', category: 'Growth',
-    desc: 'Level up 5 times in one day', condition: { type: 'daily_levelups', count: 5 },
+    desc: 'Level up 10 times in one day', condition: { type: 'daily_levelups', count: 10 },
     reward: { gold: 5000, xp: 0, crystals: 25 }
   },
   elite_catch: {
@@ -535,7 +535,7 @@ const ACHIEVEMENTS = {
   },
   pet_army: {
     id: 'pet_army', name: '🐾 Pet Army', category: 'Pets',
-    desc: 'Have 15 pets in your collection', condition: { type: 'pets_owned', count: 15 },
+    desc: 'Have 30 pets in your collection', condition: { type: 'pets_owned', count: 30 },
     reward: { gold: 20000, xp: 5000, crystals: 75 }
   },
   dungeon_clear_b: {
@@ -555,17 +555,17 @@ const ACHIEVEMENTS = {
   },
   casino_100_bets: {
     id: 'casino_100_bets', name: '🎲 High Roller', category: 'Casino',
-    desc: 'Place 100 casino bets', condition: { type: 'casino_bets', count: 100 },
+    desc: 'Place 250 casino bets', condition: { type: 'casino_bets', count: 250 },
     reward: { gold: 5000, xp: 1000, crystals: 15 }
   },
   quest_daily_30: {
     id: 'quest_daily_30', name: '📆 Monthly Grind', category: 'Quests',
-    desc: 'Complete 30 daily quests', condition: { type: 'daily_quests', count: 30 },
+    desc: 'Complete 60 daily quests', condition: { type: 'daily_quests', count: 60 },
     reward: { gold: 15000, xp: 5000, crystals: 60 }
   },
   level_200: {
     id: 'level_200', name: '🌌 National Level', category: 'Growth',
-    desc: 'Reach Level 200', condition: { type: 'level', count: 200 },
+    desc: 'Reach Level 250', condition: { type: 'level', count: 250 },
     reward: { gold: 500000, xp: 0, crystals: 1000 }
   },
   first_bank: {

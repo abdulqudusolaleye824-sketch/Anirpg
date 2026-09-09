@@ -222,10 +222,13 @@ async function sendWithButtons(sock, chatId, content, buttons, quoted) {
     // First try direct sendMessage with interactiveButtons (some Baileys forks support this directly)
     try {
       const footerText = content.footer || 'Astra™ 2026';
+      // Truncate caption for interactive limits (1024)
+      let capInteractive = content.caption || content.text || '';
+      if (capInteractive.length > 1000) capInteractive = capInteractive.slice(0, 1000) + '…';
       if (hasImage) {
         const directInteractive = {
           image: content.image,
-          caption: content.caption || content.text || '',
+          caption: capInteractive,
           footer: footerText,
           interactiveButtons: interactiveButtons
         };
@@ -252,12 +255,52 @@ async function sendWithButtons(sock, chatId, content, buttons, quoted) {
     if (ok) return;
   }
 
-  // ── 2) Fallback: legacy templateButtons (viewOnce wrapper) ─────
+  // ── 2) Fallback: simple buttons (quickReply only, most compatible for text+buttons) ─────
+  // Only for quickReply buttons (pass/bp/party), not for urlButtons (support)
+  const hasOnlyQuickReply = buttons.every(b => !!b.quickReplyButton);
+  if (hasOnlyQuickReply) {
+    try {
+      const simpleButtons = buttons.map(b => ({
+        buttonId: b.quickReplyButton.id,
+        buttonText: { displayText: b.quickReplyButton.displayText },
+        type: 1
+      }));
+      const captionText = content.caption || content.text || '';
+      // Truncate caption to 900 chars for buttonsMessage limit
+      const truncated = captionText.length > 900 ? captionText.slice(0, 900) + '… (truncated)' : captionText;
+      if (hasImage) {
+        // For image+buttons with simple buttons, some clients require headerType
+        await sock.sendMessage(chatId, {
+          image: content.image,
+          caption: truncated,
+          footer: content.footer || 'Astra™ 2026',
+          buttons: simpleButtons,
+          headerType: 4
+        }, quoted ? { quoted } : {});
+        return;
+      } else {
+        await sock.sendMessage(chatId, {
+          text: truncated,
+          footer: content.footer || 'Astra™ 2026',
+          buttons: simpleButtons,
+          headerType: 1
+        }, quoted ? { quoted } : {});
+        return;
+      }
+    } catch (e) {
+      console.error('⚠️ simple buttons send failed:', e.message);
+    }
+  }
+
+  // ── 3) Fallback: legacy templateButtons (viewOnce wrapper) ─────
   try {
+    // Truncate caption to 1000 for templateButtons as well
+    let cap = content.caption || content.text || '';
+    if (cap.length > 1000) cap = cap.slice(0, 1000) + '…';
     if (hasImage) {
       const msg = {
         image: content.image,
-        caption: content.caption || content.text || '',
+        caption: cap,
         footer: content.footer || 'Astra RPG',
         templateButtons: buttons,
       };
@@ -265,7 +308,7 @@ async function sendWithButtons(sock, chatId, content, buttons, quoted) {
       return await sock.sendMessage(chatId, msg, quoted ? { quoted } : {});
     } else {
       const msg = {
-        text: content.text || content.caption || '',
+        text: cap,
         footer: content.footer || 'Astra RPG',
         templateButtons: buttons,
       };
@@ -275,7 +318,7 @@ async function sendWithButtons(sock, chatId, content, buttons, quoted) {
     console.error('⚠️ templateButtons send failed, falling back to plain:', e.message);
   }
 
-  // ── 3) Final fallback: plain text with manual hints ────────────
+  // ── 4) Final fallback: plain text with manual hints ────────────
   try {
     const buttonHints = buttons.map(b => {
       const qr = b.quickReplyButton;

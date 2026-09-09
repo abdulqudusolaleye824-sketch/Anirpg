@@ -74,10 +74,17 @@ function isProtected(db, targetJid) {
 }
 
 /** Ban a user (bare-number key). Returns the stored record. */
-function banUser(db, targetJid, bannedBy, reason) {
+function banUser(db, targetJid, bannedBy, reason, extra = {}) {
   if (!db.bannedUsers) db.bannedUsers = {};
   const key = bare(targetJid);
-  const rec = { bannedBy, bannedAt: Date.now(), reason: reason || 'No reason provided' };
+  const rec = {
+    bannedBy,
+    bannedAt: Date.now(),
+    bannedAtGMT: new Date().toUTCString(),
+    gc: extra.gc || null,
+    gcName: extra.gcName || null,
+    reason: reason || 'No reason provided'
+  };
   db.bannedUsers[key] = rec;
   return { key, rec };
 }

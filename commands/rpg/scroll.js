@@ -115,8 +115,8 @@ module.exports = {
     try {
       const AchievementManager = require('../../rpg/utils/AchievementManager');
       const newlyUnlocked = AchievementManager.track(player, 'scroll_read', 1);
-      const achNote = AchievementManager.buildNotification(newlyUnlocked);
-      if (achNote) await sock.sendMessage(chatId, { text: achNote }, { quoted: msg });
+      const achNote = AchievementManager.buildNotification(newlyUnlocked, player);
+      if (achNote) await sock.sendMessage(chatId, { text: achNote, mentions: [sender] }, { quoted: msg });
     } catch (e) {}
 
     saveDatabase();

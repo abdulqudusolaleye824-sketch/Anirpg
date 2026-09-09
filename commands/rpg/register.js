@@ -290,7 +290,7 @@ module.exports = {
     const name = (nameArgs.join(' ').trim() || msg.pushName || 'Hunter')
       .substring(0, 50).replace(/[<>]/g, '');
 
-    const rank  = rollAwakeningRank();
+    const rank  = rollAwakeningRank(sender);
     const stats = buildStartingStats(rank);
     const bonus = RANK_BONUSES[rank];
     const power = calculatePowerRating(stats);
