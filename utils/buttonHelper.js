@@ -205,9 +205,8 @@ async function trySendInteractive(sock, chatId, content, interactiveButtons, quo
 /**
  * Send a message with buttons, handling image+caption vs text
  * Strategy:
- * 1) Convert templateButtons -> interactiveButtons and try interactive (modern, actually renders)
- * 2) Fallback to legacy templateButtons (viewOnce wrapper)
- * 3) Fallback to plain text with hints
+ * - For quickReply-only (pass/bp/party): try interactive first (modern), then simple buttons, then template
+ * - For urlButtons (support: cta_url): try legacy templateButtons FIRST (proven on WhatsApp Business — Sapphire bot on Business used this), then interactive, then plain with links. Business accounts often require template for cta_url.
  */
 async function sendWithButtons(sock, chatId, content, buttons, quoted) {
   if (!buttons || buttons.length === 0) {
@@ -216,8 +215,43 @@ async function sendWithButtons(sock, chatId, content, buttons, quoted) {
 
   const hasImage = !!content.image;
   const interactiveButtons = templateToInteractive(buttons);
+  const hasUrlButton = buttons.some(b => !!b.urlButton);
+  const hasOnlyQuickReply = buttons.every(b => !!b.quickReplyButton);
 
-  // ── 1) Try modern interactive (nativeFlow) ─────────────────────
+  // ── 1) For URL buttons (support): try legacy templateButtons FIRST — Sapphire on Business used this and it renders on Business, while interactive often does not for non-Business numbers
+  if (hasUrlButton) {
+    try {
+      // Truncate caption to 1000 for templateButtons as well
+      let cap = content.caption || content.text || '';
+      if (cap.length > 1000) cap = cap.slice(0, 1000) + '…';
+      // Limit buttons to 3 for template (WhatsApp limit) — extra will be shown as plain links in final fallback
+      const limitedButtons = buttons.slice(0, 3);
+      if (hasImage) {
+        const msg = {
+          image: content.image,
+          caption: cap,
+          footer: content.footer || 'Astra RPG',
+          templateButtons: limitedButtons,
+        };
+        if (content.mimetype) msg.mimetype = content.mimetype;
+        await sock.sendMessage(chatId, msg, quoted ? { quoted } : {});
+        return;
+      } else {
+        const msg = {
+          text: cap,
+          footer: content.footer || 'Astra RPG',
+          templateButtons: limitedButtons,
+        };
+        await sock.sendMessage(chatId, msg, quoted ? { quoted } : {});
+        return;
+      }
+    } catch (e) {
+      console.error('⚠️ templateButtons (url) send failed, trying interactive:', e.message);
+    }
+    // Fallthrough to interactive for url as second attempt
+  }
+
+  // ── 2) Try modern interactive (nativeFlow) — best for quickReply ---
   if (interactiveButtons.length > 0) {
     // First try direct sendMessage with interactiveButtons (some Baileys forks support this directly)
     try {
@@ -255,9 +289,8 @@ async function sendWithButtons(sock, chatId, content, buttons, quoted) {
     if (ok) return;
   }
 
-  // ── 2) Fallback: simple buttons (quickReply only, most compatible for text+buttons) ─────
+  // ── 3) Fallback: simple buttons (quickReply only, most compatible for text+buttons) ─────
   // Only for quickReply buttons (pass/bp/party), not for urlButtons (support)
-  const hasOnlyQuickReply = buttons.every(b => !!b.quickReplyButton);
   if (hasOnlyQuickReply) {
     try {
       const simpleButtons = buttons.map(b => ({
@@ -292,7 +325,7 @@ async function sendWithButtons(sock, chatId, content, buttons, quoted) {
     }
   }
 
-  // ── 3) Fallback: legacy templateButtons (viewOnce wrapper) ─────
+  // ── 4) Fallback: legacy templateButtons (viewOnce wrapper) — quickReply or second chance for url ─────
   try {
     // Truncate caption to 1000 for templateButtons as well
     let cap = content.caption || content.text || '';
@@ -318,7 +351,7 @@ async function sendWithButtons(sock, chatId, content, buttons, quoted) {
     console.error('⚠️ templateButtons send failed, falling back to plain:', e.message);
   }
 
-  // ── 4) Final fallback: plain text with manual hints ────────────
+  // ── 5) Final fallback: plain text with manual hints (ensures Business clients without button support still get clickable links) ────────────
   try {
     const buttonHints = buttons.map(b => {
       const qr = b.quickReplyButton;

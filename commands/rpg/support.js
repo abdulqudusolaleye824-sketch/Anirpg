@@ -89,12 +89,17 @@ module.exports = {
     }
 
     // Screenshot-style text: simple header + tap prompt (matches Sapphire example)
+    // FIX: always include invite links as plain text so Business clients without button rendering can still join
+    const inviteLines = buttonGroups.map(g=>`🔗 ${g.typeInfo?.name || g.type}: ${g.inviteLink}`).join('\n');
     const dmText = [
       `📌 *Astra™ Arise Support Groups*`,
       ``,
       `Tap a group below to join.`,
+      ``,
+      ...(inviteLines ? [inviteLines] : []),
     ].join('\n');
     // Keep detailed version as fallback if no buttons? But use simple for image caption
+    // FIX: fullDmText now always includes invite links as plain text so Business clients without button rendering still get clickable links ( Sapphire on Business used template but non-Business Kira does not render interactive)
     const fullDmText = [
       `━━━━━━━━━━━━━━━━━━━━━━━`,
       `🛡️ *ASTRA SUPPORT GROUPS*`,
@@ -103,6 +108,7 @@ module.exports = {
       ``,
       ...(groupLinesText.length ? groupLinesText : ['⚠️ No main community groups configured yet. Ask the owner to set them using `/setgroup <type> --main`.']),
       ``,
+      ...(buttonGroups.length ? ['━━━━━━━━━━━━━━━━━━━━━━━', ...buttonGroups.map(g=>`🔗 ${g.typeInfo?.name || g.type}: ${g.inviteLink}`), ''] : []),
       `━━━━━━━━━━━━━━━━━━━━━━━`,
     ].join('\n');
     const supportImage = getAstraSupportImage();
@@ -111,7 +117,9 @@ module.exports = {
     let supportButtons = null;
     try {
       if (ButtonHelper?.buildSupportButtons && buttonGroups.length) {
-        supportButtons = ButtonHelper.buildSupportButtons(buttonGroups);
+        // FIX: limit to 3 per WhatsApp Business template limit; extra links remain as plain text above
+        const limitedGroups = buttonGroups.slice(0, 3);
+        supportButtons = ButtonHelper.buildSupportButtons(limitedGroups);
       }
     } catch {}
 
@@ -143,14 +151,16 @@ module.exports = {
     } else if (serfSock) {
       await serfSock.sendMessage(sender, supportImage ? { image: supportImage, caption: fullDmText, mimetype: 'image/jpeg' } : { text: fullDmText });
     } else {
+      // No serf: try buttons via current sock, but always include links as text fallback
+      const fallbackWithLinks = supportImage ? { image: supportImage, caption: fullDmText + '\n\n' + buttonGroups.map(g=>`🔗 ${g.typeInfo.name}: ${g.inviteLink}`).join('\n'), mimetype: 'image/jpeg' } : { text: fullDmText + '\n\n' + buttonGroups.map(g=>`🔗 ${g.typeInfo.name}: ${g.inviteLink}`).join('\n') };
       if (supportButtons && supportButtons.length && ButtonHelper?.sendWithButtons) {
         try {
           await ButtonHelper.sendWithButtons(sock, sender, dmPayload, supportButtons, null);
         } catch {
-          await MultiSocketManager.safeSendDM(sock, sender, supportImage ? { image: supportImage, caption: fullDmText + '\n\n' + buttonGroups.map(g=>`🔗 ${g.typeInfo.name}: ${g.inviteLink}`).join('\n'), mimetype: 'image/jpeg' } : { text: fullDmText + '\n\n' + buttonGroups.map(g=>`🔗 ${g.typeInfo.name}: ${g.inviteLink}`).join('\n') }, { getDatabase });
+          await MultiSocketManager.safeSendDM(sock, sender, fallbackWithLinks, { getDatabase });
         }
       } else {
-        await MultiSocketManager.safeSendDM(sock, sender, supportImage ? { image: supportImage, caption: fullDmText, mimetype: 'image/jpeg' } : { text: fullDmText }, { getDatabase });
+        await MultiSocketManager.safeSendDM(sock, sender, fallbackWithLinks, { getDatabase });
       }
     }
 
