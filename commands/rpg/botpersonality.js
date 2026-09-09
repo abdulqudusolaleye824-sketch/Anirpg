@@ -60,18 +60,27 @@ const start = {
 
     if (!target) {
       if (current) {
-        const curName = PersonalityManager.getDisplayName(current);
+        // Check if current is actually online; if offline, allow new activation
+        let currentOnline = false;
+        try { const MSM = require('../../bots/MultiSocketManager'); const s = MSM.getSocket(current); currentOnline = !!(s?.user?.id); } catch {}
+        if (currentOnline) {
+          const curName = PersonalityManager.getDisplayName(current);
+          return sock.sendMessage(chatId, {
+            text: `✨ Bot *${curName}* is already active in this group!\n\n• Use */switch <botname>* to change bots\n• Use */stop* to deactivate`,
+          }, { quoted: msg });
+        }
+        // current is offline — fall through to allow new activation
+      } else {
+        // no current and no target arg → show usage
+      }
+      if (!target) {
+        const all = PersonalityManager.getAllPersonalities()
+          .map((k) => `• ${PersonalityManager.getDisplayName(k)} (${k})`)
+          .join('\n');
         return sock.sendMessage(chatId, {
-          text: `✨ Bot *${curName}* is already active in this group!\n\n• Use */switch <botname>* to change bots\n• Use */stop* to deactivate`,
+          text: `❌ Usage: /start <botname>\n\n📋 Available bots:\n${all}`,
         }, { quoted: msg });
       }
-
-      const all = PersonalityManager.getAllPersonalities()
-        .map((k) => `• ${PersonalityManager.getDisplayName(k)} (${k})`)
-        .join('\n');
-      return sock.sendMessage(chatId, {
-        text: `❌ Usage: /start <botname>\n\n📋 Available bots:\n${all}`,
-      }, { quoted: msg });
     }
 
     const resolvedTarget = PersonalityManager.resolvePersonality(target);
@@ -81,12 +90,16 @@ const start = {
       }, { quoted: msg });
     }
 
+    // If another bot is active, check if it's online. If offline, auto-switch; if online, also auto-switch for UX (user expects /start to work)
     if (current && current !== resolvedTarget) {
-      const curName = PersonalityManager.getDisplayName(current);
-      const targetName = PersonalityManager.getDisplayName(resolvedTarget);
-      return sock.sendMessage(chatId, {
-        text: `⚠️ Bot *${curName}* is already active in this group!\n\nUse */switch ${targetName}* to switch bots, or */stop* to deactivate first.`,
-      }, { quoted: msg });
+      let currentOnline = false;
+      try { const MSM = require('../../bots/MultiSocketManager'); const s = MSM.getSocket(current); currentOnline = !!(s?.user?.id); } catch {}
+      if (currentOnline) {
+        // Instead of blocking, auto-switch for better UX — /start should just work
+        // Fall through to activate
+      } else {
+        // current offline — auto-switch silently
+      }
     }
 
     const result = PersonalityManager.activateBot(chatId, target);
@@ -129,10 +142,15 @@ const switchBot = {
     }
 
     const current = PersonalityManager.getActiveBot(chatId);
-    if (!current) {
-      return sock.sendMessage(chatId, {
-        text: '❌ No bot is currently active in this group!\nUse /start <botname> first to activate a bot.',
-      }, { quoted: msg });
+    // If no current, treat /switch as /start (auto-activate) for UX
+    let currentOnline = false;
+    try { const MSM = require('../../bots/MultiSocketManager'); const s = MSM.getSocket(current); currentOnline = !!(s?.user?.id); } catch {}
+    if (!current || !currentOnline) {
+      // No active or active is offline — allow switch as start
+      // fall through to activation logic below
+      if (!current) {
+        // will be handled as fresh activation
+      }
     }
 
     const target = args[0];
@@ -180,12 +198,27 @@ const hi = {
     const chatId = msg.key.remoteJid;
 
     let connectedKeys = [];
+    let present = [];
     try {
       const MSM = require('../../bots/MultiSocketManager');
-      connectedKeys = Object.keys(MSM.getAllSockets() || {});
-    } catch (_) {}
-    const present = PersonalityManager.getPresentBots(chatId);
-    const bots = [...new Set([...connectedKeys, ...present])];
+      const all = MSM.getAllSockets() || {};
+      // Only count actually online bots (user.id present) for hi
+      connectedKeys = Object.keys(all).filter(k => all[k]?.user?.id);
+      present = PersonalityManager.getPresentBots(chatId) || [];
+      // Filter present to only those that are actually online
+      present = present.filter(k => all[k]?.user?.id);
+    } catch (_) {
+      try { present = PersonalityManager.getPresentBots(chatId) || []; } catch {}
+    }
+    let bots = [...new Set([...connectedKeys, ...present])];
+    // Fallback: if still empty, try any socket that is online (even if not marked present)
+    if (bots.length === 0) {
+      try {
+        const MSM = require('../../bots/MultiSocketManager');
+        const all = MSM.getAllSockets() || {};
+        bots = Object.keys(all).filter(k => all[k]?.user?.id);
+      } catch {}
+    }
 
     if (bots.length === 0) {
       return sock.sendMessage(chatId, {
