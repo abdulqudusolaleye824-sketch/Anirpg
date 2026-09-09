@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@distube/ytdl-core": "^4.16.12",
+    "@napi-rs/canvas": "^1.0.8",
     "@whiskeysockets/baileys": "7.0.0-rc14",
     "canvas": "^2.11.2",
     "dotenv": "^16.4.5",

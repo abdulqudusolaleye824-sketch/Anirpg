@@ -10,6 +10,8 @@
 
 'use strict';
 
+const { renderAstraPassImage } = require('../../rpg/utils/PassRenderer');
+
 const SEASON_DAYS = 40;
 const TOTAL_TIERS = 50;
 
@@ -131,11 +133,11 @@ function getTierDisplay(t) {
   const freeItem = PASS_ITEMS.free[t] || null;
   const premItem = PASS_ITEMS.premium[t] || null;
 
-  let freeStr = `+${freeNexus.toLocaleString()} 💠 Nexus | +${freeStones} 💎 Stones`;
-  if (freeItem) freeStr += ` | 📦 *${freeItem.name}* (${freeItem.rarity.toUpperCase()})`;
+  let freeStr = `+${freeNexus.toLocaleString()} 💠 | +${freeStones} 💎`;
+  if (freeItem) freeStr += ` | 📦 *${freeItem.name}*`;
 
-  let premStr = `+${premNexus.toLocaleString()} 💠 Nexus | +${premStones} 💎 Stones`;
-  if (premItem) premStr += ` | 🎁 *${premItem.name}* (${premItem.rarity.toUpperCase()})`;
+  let premStr = `+${premNexus.toLocaleString()} 💠 | +${premStones} 💎`;
+  if (premItem) premStr += ` | 🎁 *${premItem.name}*`;
 
   return { freeStr, premStr, freeItem, premItem, freeNexus, freeStones, premNexus, premStones };
 }
@@ -183,6 +185,33 @@ module.exports = {
 
     const sub = (args[0] || '').toLowerCase();
 
+    // ── INFO SUBCOMMAND ──────────────────────────────────────────
+    if (sub === 'info' || sub === 'help' || sub === 'xp') {
+      const infoText = [
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        `🏛️ *ASTRA PASS — XP & SYSTEM INFO*`,
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        ``,
+        `📜 *HOW TO EARN ASTRA PASS XP:*`,
+        `Earn Astra Pass XP automatically from *ALL GAME ACTIVITIES*:`,
+        `• 💬 Commands & Interactions: 10–100 XP`,
+        `• 🌅 Daily / Weekly Claims: 100–500 XP`,
+        `• ⚒️ Crafting & Forging: 50–300 XP`,
+        `• ⚔️ PvP Battles & Duels: 100–500 XP`,
+        `• 🏰 Gate Raids & Dungeons: 500–2,000 XP`,
+        `• 🐉 World Boss Battles: 1,000–5,000 XP`,
+        ``,
+        `⚡ *EXP BOOSTS & MULTIPLIERS:*`,
+        `• 👑 *PRO Subscription:* Gives **2x Player EXP** across all actions!`,
+        `• 🏛️ *Astra Pass Premium:* Unlocks the Premium Track rewards for all 50 tiers!`,
+        ``,
+        `💡 *HOW TO UPGRADE TO PREMIUM:*`,
+        `Upgrade to PRO via */prostore* to automatically unlock Premium Astra Pass!`,
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+      ].join('\n');
+      return sock.sendMessage(chatId, { text: infoText }, { quoted: msg });
+    }
+
     // ── CLAIM REWARDS ───────────────────────────────────────────
     if (sub === 'claim') {
       const tier = parseInt(args[1]);
@@ -199,7 +228,7 @@ module.exports = {
             player.nexus = player.gold;
             player.manaCrystals = (player.manaCrystals || 0) + tInfo.freeStones;
             player.manaStones = player.manaCrystals;
-            let str = `Tier ${t} Free: +${tInfo.freeNexus.toLocaleString()} 💠 Nexus | +${tInfo.freeStones} 💎 Stones`;
+            let str = `Tier ${t} Free: +${tInfo.freeNexus.toLocaleString()} 💠 | +${tInfo.freeStones} 💎`;
             if (tInfo.freeItem) {
               addItemToInventory(player, tInfo.freeItem);
               str += ` | 📦 *${tInfo.freeItem.name}*`;
@@ -213,7 +242,7 @@ module.exports = {
             player.nexus = player.gold;
             player.manaCrystals = (player.manaCrystals || 0) + tInfo.premStones;
             player.manaStones = player.manaCrystals;
-            let str = `Tier ${t} Premium: +${tInfo.premNexus.toLocaleString()} 💠 Nexus | +${tInfo.premStones} 💎 Stones`;
+            let str = `Tier ${t} Premium: +${tInfo.premNexus.toLocaleString()} 💠 | +${tInfo.premStones} 💎`;
             if (tInfo.premItem) {
               addItemToInventory(player, tInfo.premItem);
               str += ` | 🎁 *${tInfo.premItem.name}*`;
@@ -268,51 +297,59 @@ module.exports = {
       return sock.sendMessage(chatId, { text: `✅ *Tier ${tier} Claimed!*\n\n${gained.join('\n')}` }, { quoted: msg });
     }
 
-    // Default Pass view — SENT AS ONE LONG SINGLE MESSAGE
+    // Determine Page (1–5)
+    let page = 1;
+    const pageArg = parseInt(sub === 'page' ? args[1] : sub);
+    if (!isNaN(pageArg) && pageArg >= 1 && pageArg <= 5) {
+      page = pageArg;
+    } else {
+      page = Math.min(5, Math.max(1, Math.ceil(ap.level / 10)));
+    }
+
+    // Default Pass view — RENDERS IMAGE AND SENDS AS ONE MESSAGE
+    const passData = {
+      level: ap.level || 1,
+      xp: ap.xp || 0,
+      hasPremium,
+      claimedFree: ap.claimedFree || [],
+      claimedPremium: ap.claimedPremium || [],
+      passItems: PASS_ITEMS,
+    };
+
+    const imageBuffer = await renderAstraPassImage(player, passData, page);
+
     const xpReq = 1000;
     const xpPct = Math.min(100, Math.floor(((ap.xp || 0) / xpReq) * 100));
     const xpBar = '█'.repeat(Math.floor(xpPct / 5)) + '░'.repeat(20 - Math.floor(xpPct / 5));
 
-    const lines = [
+    const captionLines = [
       `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
       `🏛️ *ASTRA PASS (SEASON 1 — 40 DAYS)*`,
       `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
       `👤 Hunter: *${player.name}*`,
-      `⭐ Pass Level: *Tier ${ap.level}/${TOTAL_TIERS}*`,
+      `⭐ Level: *Tier ${ap.level}/${TOTAL_TIERS}* | Page *${page}/5*`,
       `[${xpBar}] ${ap.xp || 0}/${xpReq} XP`,
       ``,
       hasPremium
-        ? `👑 *PREMIUM UNLOCKED* (Included with PRO / Activated)`
-        : `🆓 *FREE TIER* — Upgrade to PRO (/prostore) to automatically unlock Premium!`,
+        ? `👑 *PREMIUM UNLOCKED* (PRO Card Active)`
+        : `🆓 *FREE TRACK* — Upgrade to PRO (/prostore) for Auto-Premium!`,
       ``,
-      `📌 *HOW TO EARN ASTRA PASS XP:*`,
-      `Earn XP from *ALL ACTIVITIES* — Daily claims, Quests, Battles, Crafting, & Commands!`,
-      ``,
+      `📌 *COMMANDS:*`,
+      `• */pass claim* — Claim all unlocked rewards`,
+      `• */pass claim [num]* — Claim specific tier`,
+      `• */pass [page]* — View Page 1–5 (10 tiers per page)`,
+      `• */pass info* — Detailed XP sources & boosts`,
       `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-      `📜 *FULL 50-TIER REWARD TRACK*`,
-      `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-      ``,
     ];
 
-    for (let t = 1; t <= TOTAL_TIERS; t++) {
-      const isUnlocked = t <= ap.level;
-      const statusIcon = isUnlocked ? '🔓' : '🔒';
-      const freeClaimed = ap.claimedFree.includes(t) ? ' [✅ Free]' : '';
-      const premClaimed = ap.claimedPremium.includes(t) ? ' [✅ Prem]' : '';
-      const tInfo = getTierDisplay(t);
-
-      lines.push(`${statusIcon} *Tier ${t}*${freeClaimed}${premClaimed}`);
-      lines.push(`  🆓 Free: ${tInfo.freeStr}`);
-      lines.push(`  👑 Prem: ${tInfo.premStr}`);
-      lines.push(``);
+    if (imageBuffer) {
+      return sock.sendMessage(chatId, {
+        image: imageBuffer,
+        caption: captionLines.join('\n'),
+        mimetype: 'image/png',
+      }, { quoted: msg });
     }
 
-    lines.push(`━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
-    lines.push(`📌 /pass claim       — Claim all unlocked rewards`);
-    lines.push(`📌 /pass claim [num] — Claim specific tier reward`);
-    lines.push(`📌 /prostore         — Buy PRO card to get Auto-Premium!`);
-    lines.push(`━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
-
-    return sock.sendMessage(chatId, { text: lines.join('\n') }, { quoted: msg });
+    return sock.sendMessage(chatId, { text: captionLines.join('\n') }, { quoted: msg });
   }
 };

@@ -9,8 +9,15 @@
 
 'use strict';
 
+const { renderBattlePassImage } = require('../../rpg/utils/PassRenderer');
+
 const TOTAL_TIERS = 40;
 const BP_COST_PC = 1000;
+
+function isProPlayer(player) {
+  if (!player) return false;
+  return !!((player.isPro || player.proStatus) && player.proExpiresAt && player.proExpiresAt > Date.now());
+}
 
 // PC reward tiers (5 locked tiers that return 200 PC each)
 const PC_REWARD_TIERS = [8, 16, 24, 32, 40];
@@ -68,7 +75,7 @@ function getBPTierRewards(t) {
 
   let str = `+${goldAmt.toLocaleString()} 💠 Nexus | +${stoneAmt} 💎 Stones`;
   if (hasPC) str += ` | 💼 *+200 PC Return!*`;
-  if (item) str += ` | 🎁 *${item.name}* (${item.rarity.toUpperCase()})`;
+  if (item) str += ` | 🎁 *${item.name}*`;
 
   return { str, item, pc, gold: goldAmt, stones: stoneAmt };
 }
@@ -114,6 +121,39 @@ module.exports = {
     const bp = player.battlePass;
     const sub = (args[0] || '').toLowerCase();
 
+    // ── INFO SUBCOMMAND ──────────────────────────────────────────
+    if (sub === 'info' || sub === 'help' || sub === 'xp') {
+      const isPro = isProPlayer(player);
+      const isPrem = bp.premium;
+      let expRate = '1x';
+      if (isPro && isPrem) expRate = '4x (PRO 2x × BP Premium 2x)';
+      else if (isPro || isPrem) expRate = '2x Boost Active';
+
+      const infoText = [
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        `🎖️ *BATTLE PASS — XP & SYSTEM INFO*`,
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        ``,
+        `⚔️ *HOW TO EARN BATTLE PASS XP:*`,
+        `Earn Battle Pass XP strictly from *BATTLE ACTIVITIES*:`,
+        `• ⚔️ PvP Wins & Duels: 100–500 BP XP`,
+        `• 🏰 Gate Raids & Dungeons: 200–800 BP XP`,
+        `• 🐉 World Boss Battles & Kills: 500–2,000 BP XP`,
+        ``,
+        `🔥 *EXP BOOSTS & MULTIPLIERS:*`,
+        `• 🆓 *Standard User:* 1x BP EXP`,
+        `• 👑 *BP Premium:* **2x BP EXP** boost on all battle activities!`,
+        `• 🌟 *PRO Player + BP Premium:* **4x BP EXP** (Pro 2x × BP Premium 2x = 4x)!`,
+        `• ⚡ *Your Current Rate:* **${expRate}**`,
+        ``,
+        `💰 *PREMIUM REFUND TRACK:*`,
+        `• Unlock Premium for **1,000 PC** (/bp buy)`,
+        `• Tiers 8, 16, 24, 32, and 40 return **200 PC each** (Full 1,000 PC Refunded at Tier 40!).`,
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+      ].join('\n');
+      return sock.sendMessage(chatId, { text: infoText }, { quoted: msg });
+    }
+
     // ── BUY PREMIUM BP ──────────────────────────────────────────
     if (sub === 'buy' || sub === 'premium' || sub === 'unlock') {
       if (bp.premium) {
@@ -122,7 +162,7 @@ module.exports = {
       if ((player.procoin || 0) < BP_COST_PC) {
         return sock.sendMessage(chatId, {
           text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🎖️ *PREMIUM BATTLE PASS UNLOCK*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n💰 Cost: *${BP_COST_PC.toLocaleString()} PC*\n💼 Your Balance: *${(player.procoin || 0).toLocaleString()} PC*\n\n✨ *PREMIUM PERKS:*` +
-            `\n• Unlocks all 20 Premium-Locked Tiers\n• Receive 200 PC back at Tiers 8, 16, 24, 32, 40 (1,000 PC Total Refund!)\n• Exclusive Mana Stones, Pet Eggs & Gear\n\n💡 Use /prostore to get PC, or buy with /bp buy when ready!`
+            `\n• Unlocks all 20 Premium-Locked Tiers\n• **2x BP EXP Boost** on all Battle XP!\n• Combine with PRO for **4x BP EXP**!\n• Receive 200 PC back at Tiers 8, 16, 24, 32, 40 (1,000 PC Total Refund!)\n\n💡 Use /prostore to get PC, or buy with /bp buy when ready!`
         }, { quoted: msg });
       }
 
@@ -130,7 +170,7 @@ module.exports = {
       bp.premium = true;
       saveDatabase();
       return sock.sendMessage(chatId, {
-        text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🌟 *PREMIUM BATTLE PASS ACTIVATED!*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n✅ Premium Track Unlocked for ${BP_COST_PC} PC!\nAll 20 locked levels can now be claimed!\n\n💡 Claim 200 PC back at Tiers 8, 16, 24, 32, and 40!\n━━━━━━━━━━━━━━━━━━━━━━━━━━━`
+        text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🌟 *PREMIUM BATTLE PASS ACTIVATED!*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n✅ Premium Track Unlocked for ${BP_COST_PC} PC!\nAll 20 locked levels can now be claimed!\n\n🔥 **2x BP EXP Boost Activated!**\n💡 Claim 200 PC back at Tiers 8, 16, 24, 32, and 40!\n━━━━━━━━━━━━━━━━━━━━━━━━━━━`
       }, { quoted: msg });
     }
 
@@ -158,7 +198,7 @@ module.exports = {
           if (r.pc > 0) player.procoin = (player.procoin || 0) + r.pc;
           if (r.item) addItemToInventory(player, r.item);
 
-          let str = `Tier ${t}: +${r.gold.toLocaleString()} 💠 Nexus | +${r.stones} 💎 Mana Stones`;
+          let str = `Tier ${t}: +${r.gold.toLocaleString()} 💠 | +${r.stones} 💎`;
           if (r.pc > 0) str += ` | 💼 +200 PC Return!`;
           if (r.item) str += ` | 🎁 *${r.item.name}*`;
           gained.push(str);
@@ -211,56 +251,66 @@ module.exports = {
       return sock.sendMessage(chatId, { text: `✅ *Tier ${targetLvl} Claimed!*\n\n${gained.join('\n')}` }, { quoted: msg });
     }
 
-    // Default BP view — SENT AS ONE LONG SINGLE MESSAGE
+    // Determine Page (1–4)
+    let page = 1;
+    const pageArg = parseInt(sub === 'page' ? args[1] : sub);
+    if (!isNaN(pageArg) && pageArg >= 1 && pageArg <= 4) {
+      page = pageArg;
+    } else {
+      page = Math.min(4, Math.max(1, Math.ceil(bp.level / 10)));
+    }
+
+    // Default BP view — RENDERS IMAGE AND SENDS AS ONE MESSAGE
+    const bpData = {
+      level: bp.level || 1,
+      xp: bp.xp || 0,
+      premium: bp.premium,
+      claimed: bp.claimed || [],
+      bpItems: BP_ITEMS,
+      lockedTiers: LOCKED_TIERS,
+      pcTiers: PC_REWARD_TIERS,
+    };
+
+    const imageBuffer = await renderBattlePassImage(player, bpData, page);
+
     const xpReq = 500;
     const xpPct = Math.min(100, Math.floor(((bp.xp || 0) / xpReq) * 100));
     const xpBar = '█'.repeat(Math.floor(xpPct / 5)) + '░'.repeat(20 - Math.floor(xpPct / 5));
 
-    const lines = [
+    const isPro = isProPlayer(player);
+    let boostTag = '';
+    if (isPro && bp.premium) boostTag = ' 🔥 4x EXP Boost';
+    else if (isPro || bp.premium) boostTag = ' 🔥 2x EXP Boost';
+
+    const captionLines = [
       `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
       `🎖️ *SEASONAL BATTLE PASS (40 TIERS)*`,
       `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
       `👤 Hunter: *${player.name}*`,
-      `⭐ BP Level: *Tier ${bp.level}/${TOTAL_TIERS}*`,
-      `[${xpBar}] ${bp.xp || 0}/${xpReq} XP`,
+      `⭐ BP Level: *Tier ${bp.level}/${TOTAL_TIERS}* | Page *${page}/4*`,
+      `[${xpBar}] ${bp.xp || 0}/${xpReq} XP${boostTag}`,
       ``,
       bp.premium
-        ? `👑 *PREMIUM PASS UNLOCKED ✅*`
+        ? `👑 *PREMIUM PASS UNLOCKED ✅* (2x EXP Active)`
         : `🆓 Free Pass — /bp buy to unlock Premium (${BP_COST_PC} PC)`,
       ``,
-      `📌 *HOW TO EARN BATTLE PASS XP:*`,
-      `Earn XP strictly from *BATTLE COMMANDS* — PvP wins, Gate Raids, Dungeon Clears, & Boss Fights!`,
-      ``,
-      `💡 *INFO & REFUND TRACK:*`,
-      `• 20 Tiers locked to Premium BP`,
-      `• Tiers 8, 16, 24, 32 & 40 award *200 PC each* (+1,000 PC total refund at Tier 40!)`,
-      ``,
+      `📌 *COMMANDS:*`,
+      `• */bp claim* — Claim all available rewards`,
+      `• */bp claim [num]* — Claim specific tier reward`,
+      `• */bp buy* — Unlock Premium BP (1,000 PC)`,
+      `• */bp [page]* — View Page 1–4 (10 tiers per page)`,
+      `• */bp info* — Detailed XP sources & 4x boost info`,
       `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-      `📜 *FULL 40-TIER REWARD TRACK*`,
-      `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-      ``,
     ];
 
-    for (let t = 1; t <= TOTAL_TIERS; t++) {
-      const isUnlocked = t <= bp.level;
-      const isPremiumLocked = LOCKED_TIERS.includes(t);
-      const isClaimed = bp.claimed.includes(t);
-
-      const statusIcon = isUnlocked ? (isClaimed ? '✅' : '🔓') : (isPremiumLocked ? '🔒' : '⏳');
-      const lockLabel = isPremiumLocked ? ' [👑 Premium Locked]' : ' [🆓 Free Track]';
-      const r = getBPTierRewards(t);
-
-      lines.push(`${statusIcon} *Tier ${t}*${lockLabel}`);
-      lines.push(`  🎁 Reward: ${r.str}`);
-      lines.push(``);
+    if (imageBuffer) {
+      return sock.sendMessage(chatId, {
+        image: imageBuffer,
+        caption: captionLines.join('\n'),
+        mimetype: 'image/png',
+      }, { quoted: msg });
     }
 
-    lines.push(`━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
-    lines.push(`📌 /bp claim       — Claim all available rewards`);
-    lines.push(`📌 /bp claim [num] — Claim specific tier reward`);
-    lines.push(`📌 /bp buy         — Unlock Premium BP (1,000 PC)`);
-    lines.push(`━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
-
-    return sock.sendMessage(chatId, { text: lines.join('\n') }, { quoted: msg });
+    return sock.sendMessage(chatId, { text: captionLines.join('\n') }, { quoted: msg });
   }
 };

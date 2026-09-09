@@ -128,7 +128,11 @@ function awardXP(player, action = 'command', saveDatabase, sock, chatId, extraMu
     if (!player.battlePass) {
       player.battlePass = { level: 1, xp: 0, claimed: [], premium: false };
     }
-    const bpXpGained = Math.max(15, Math.floor(amount * 0.20));
+    let bpMult = 1.0;
+    if (player.battlePass?.premium) {
+      bpMult *= 2.0; // BP Premium 2x boost!
+    }
+    const bpXpGained = Math.max(15, Math.floor(amount * 0.20 * bpMult));
     player.battlePass.xp = (player.battlePass.xp || 0) + bpXpGained;
     while (player.battlePass.xp >= 500 && player.battlePass.level < 40) {
       player.battlePass.xp -= 500;
