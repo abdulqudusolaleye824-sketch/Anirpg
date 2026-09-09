@@ -39,6 +39,9 @@ async function sendChunked(sock, chatId, text, options = {}) {
   if (!text || text.length <= CHUNK_SIZE) {
     return sock.sendMessage(chatId, { text, ...options });
   }
+  const cleanOptions = { ...options };
+  delete cleanOptions.text;
+
   const parts = [];
   let remaining = text;
   while (remaining.length > CHUNK_SIZE) {
@@ -53,8 +56,9 @@ async function sendChunked(sock, chatId, text, options = {}) {
   for (let i = 0; i < parts.length; i++) {
     const isFirst = i === 0;
     await sock.sendMessage(chatId, {
+      ...cleanOptions,
       text: parts[i] + (parts.length > 1 ? `\n_(${i+1}/${parts.length})_` : ''),
-      ...(isFirst ? options : {})
+      ...(isFirst ? options.quoted ? { quoted: options.quoted } : {} : {})
     });
     if (i < parts.length - 1) await new Promise(r => setTimeout(r, 600));
   }
@@ -657,7 +661,7 @@ module.exports = async (sock, msg, messageText, config, getDatabase, saveDatabas
             const MEDIA_KEYS = ['image','video','audio','sticker','document','ptt'];
             const hasMedia = MEDIA_KEYS.some(k => content[k] !== undefined);
             if (!hasMedia && content.text && content.text.length > CHUNK_SIZE) {
-              return sendChunked(target, jid, content.text, { ...content, text: undefined, ...opts });
+              return sendChunked(target, jid, content.text, opts);
             }
             return target.sendMessage(jid, content, opts);
           };

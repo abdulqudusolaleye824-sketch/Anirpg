@@ -171,76 +171,29 @@ module.exports = {
       }
     }
 
-    // ── HELP ─────────────────────────────────────────────────
-    if (!sub || sub === 'help') {
-      return sock.sendMessage(chatId, { text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🏰 *TOWER DUNGEON SYSTEM*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🗂️ 8 Dungeon Types × 20 Floors each\n👹 Boss every 5 floors (F5, F10, F15, F20)\n👤 Solo or 👥 Party of 2-5 hunters!\n\n📋 *SOLO COMMANDS:*\n/dungeon solo         — Start solo dungeon\n/dungeon solo [#]     — Pick dungeon type\n/dungeon attack       — Attack\n/<classcmd> [skill]  — Use skill\n/dungeon item [hp/energy/revive] — Use item\n/dungeon advance      — Next floor\n/dungeon leave        — Exit (keep rewards)\n/dungeon flee         — Flee\n\n📋 *PARTY COMMANDS:*\n/dungeon party create — Form a party\n/dungeon party join [ID] — Join party\n/dungeon party info   — Party status\n/dungeon party leave  — Leave party\n/dungeon ready        — Mark yourself ready\n/dungeon start [#]    — Leader starts dungeon\n\n📋 *OTHER:*\n/dungeon types        — See all dungeon types\n/dungeon shop         — Buy items\n/dungeon status       — Check floor/party status\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n💡 Solo: 10 floors, easier monsters, good rewards!\n💡 Party: 20 floors, harder, MUCH better rewards!\n━━━━━━━━━━━━━━━━━━━━━━━━━━━` }, { quoted: msg });
-    }
-
-    // ── SOLO DUNGEON ──────────────────────────────────────────
-    if (sub === 'solo') {
-      // Check if already in a party dungeon
-      const existingParty = DungeonPartyManager.getPartyByPlayer(sender);
-      if (existingParty?.status === 'active') {
-        return sock.sendMessage(chatId, { text: '❌ You are already in a party dungeon!\nUse /dungeon leave to exit first.' }, { quoted: msg });
-      }
-
-      // Check if already in solo dungeon
-      if (db.soloDungeons && db.soloDungeons[sender]) {
-        const sd = db.soloDungeons[sender];
-        const monster = sd.currentMonster;
-        const hpBar = BarSystem.getMonsterHPBar(monster.stats.hp, monster.stats.maxHp);
-        const pHpBar = BarSystem.getHPBar(player.stats.hp, player.stats.maxHp);
-        return sock.sendMessage(chatId, {
-          text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n⚔️ *SOLO DUNGEON IN PROGRESS*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🏰 ${sd.dungeonName} | Floor ${sd.currentFloor}/10\n💠 Earned so far: ${(sd.totalNexus||0).toLocaleString()}g\n\n${monster.emoji} *${monster.name}* [Lv.${monster.level}]\n${hpBar} ${monster.stats.hp}/${monster.stats.maxHp} HP\n⚔️ ATK: ${monster.stats.atk} | 🛡️ DEF: ${monster.stats.def}\n\n👤 *${player.name}*\n${pHpBar} ${player.stats.hp}/${player.stats.maxHp} HP\n\n/dungeon attack — Attack\n/<classcmd> [skill] — Use skill\n/dungeon item hp — Use health potion\n/dungeon flee — Flee\n━━━━━━━━━━━━━━━━━━━━━━━━━━━`
-        }, { quoted: msg });
-      }
-
-      // Pick dungeon type
-      const available = DungeonManager.getAvailableTypes(player.level);
-      if (available.length === 0) {
-        return sock.sendMessage(chatId, { text: '❌ No dungeons available at your level!' }, { quoted: msg });
-      }
-
-      const choice = parseInt(args[1]);
-      if (!args[1] || isNaN(choice)) {
-        let txt = `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🏰 *SOLO DUNGEON — CHOOSE TYPE*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\nYour Level: ${player.level}\n⚠️ Solo: 10 floors, scaled to your level\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
-        available.forEach((d, i) => {
-          txt += `*${i+1}.* ${d.emoji} ${d.name} [Rank ${d.rank}]\n   Req. Lv${d.minLevel}+ | ${d.description}\n\n`;
-        });
-        txt += `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n/dungeon solo [#] to enter`;
-        return sock.sendMessage(chatId, { text: txt }, { quoted: msg });
-      }
-
-      const dtype = available[choice - 1];
-      if (!dtype) return sock.sendMessage(chatId, { text: '❌ Invalid choice!' }, { quoted: msg });
-
-      // Spawn first monster (scaled easier for solo — 70% of normal stats)
-      const monster = DungeonManager.getFloorMonster(dtype.id, 1, player.level);
-      monster.stats.hp = Math.floor(monster.stats.hp * 0.5);
-      monster.stats.maxHp = monster.stats.hp;
-      monster.stats.atk = Math.floor(monster.stats.atk * 0.5);
-      monster.stats.def = Math.floor(monster.stats.def * 0.5);
-
-      if (!db.soloDungeons) db.soloDungeons = {};
-      db.soloDungeons[sender] = {
-        dungeonTypeId: dtype.id,
-        dungeonName: dtype.name,
-        currentFloor: 1,
-        maxFloors: 10,
-        currentMonster: monster,
-        totalXp: 0,
-        totalNexus: 0,
-        totalCrystals: 0,
-        startTime: Date.now(),
-      };
-      saveDatabase();
-
-      const hpBar = BarSystem.getMonsterHPBar(monster.stats.hp, monster.stats.maxHp);
-      const atmo0 = dtype.atmosphere[Math.floor(Math.random() * dtype.atmosphere.length)];
-      const line0 = getDialogue(monster.name);
-      return sock.sendMessage(chatId, {
-        text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n${dtype.emoji} *${dtype.name.toUpperCase()} — SOLO*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n${atmo0}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n👤 Solo | 10 Floors | Boss at F5 & F10\n📊 Rank: ${dtype.rank} | Monsters scaled to Lv${player.level}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🔽 *FLOOR 1*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n${monster.emoji} *${monster.name}* [Lv.${monster.level}]\n💬 "${line0}"\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n${hpBar}\n❤️ ${monster.stats.hp}/${monster.stats.maxHp} HP\n⚔️ ATK: ${monster.stats.atk} | 🛡️ DEF: ${monster.stats.def}\n💥 Abilities: ${monster.abilities.join(', ')}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n⚔️ /dungeon attack\n⚡ /<classcmd> [skill]\n🎒 /dungeon item [hp/energy]\n━━━━━━━━━━━━━━━━━━━━━━━━━━━`
-      }, { quoted: msg });
+    // ── HELP & DEFAULT DISPLAY ────────────────────────────────
+    if (!sub || sub === 'help' || sub === 'solo') {
+      return sock.sendMessage(chatId, { text: [
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        `🏰 *GATE RAID SYSTEM ACTIVE*`,
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        `🚫 */dungeon solo* has been removed in favor of the new Gate Raid flow!`,
+        ``,
+        `All dungeons and gate battles now use our code-driven gate raid flow:`,
+        ``,
+        `📋 *GATE RAID COMMANDS:*`,
+        `⚔️ */party create <CODE>* — Form/Join a party for a gate raid`,
+        `⚔️ */gateraid <CODE>*     — Enter the gate raid`,
+        `🔑 */gate buy*            — Buy a gate when a gate spawns`,
+        `🔑 */gate key list*       — View your unused gate keys`,
+        ``,
+        `💡 *How to play:*`,
+        `1. Buy a gate in your group when one spawns using */gate buy*.`,
+        `2. Check your Gate Code with */gate key list*.`,
+        `3. Run */party create --<CODE>* in your dungeon GC to recruit party members.`,
+        `4. Run */gateraid <CODE>* to enter the raid!`,
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+      ].join('\n') }, { quoted: msg });
     }
 
     // ── TYPES ─────────────────────────────────────────────────
