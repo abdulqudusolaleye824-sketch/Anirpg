@@ -32,6 +32,25 @@ const QRTerminal = (()=>{ try { return require('qrcode-terminal'); } catch(e){ r
 const botSockets = {};
 const pairingSessions = {};
 const reconnectAttempts = {};
+let hostBotKey = null;
+
+function getHostSocket() {
+  if (hostBotKey && botSockets[hostBotKey]?.user?.id && botSockets[hostBotKey]?.ws?.readyState === 1) {
+    return botSockets[hostBotKey];
+  }
+  const keys = Object.keys(botSockets).filter(k => botSockets[k]?.user?.id && botSockets[k]?.ws?.readyState === 1);
+  if (keys.length > 0) {
+    hostBotKey = keys[0];
+    return botSockets[keys[0]];
+  }
+  hostBotKey = null;
+  return null;
+}
+
+function getHostKey() {
+  getHostSocket();
+  return hostBotKey;
+}
 
 // ── Background WebSocket Heartbeat & Auto-Healing Monitor ──────
 setInterval(() => {
@@ -326,10 +345,30 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
       } else {
         console.log(`❌ AstraLink [${displayName}] connection permanently closed / logged out (code ${code}). Session cleared.`);
         reconnectAttempts[personalityKey] = 0;
+        delete botSockets[personalityKey];
+        if (hostBotKey === personalityKey) {
+          hostBotKey = null;
+        }
+
+        // Purge dead session directory from disk so server does not attempt booting dead bots on restart
+        try {
+          if (fs.existsSync(botAuthDir)) {
+            fs.rmSync(botAuthDir, { recursive: true, force: true });
+            console.log(`🧹 Purged dead session directory for [${displayName}] (${botAuthDir})`);
+          }
+        } catch (e) {
+          console.error(`⚠️ Could not purge auth dir for [${displayName}]:`, e.message);
+        }
+
         try {
           const db = getDatabase?.();
-          if (db?.linkedBots?.[personalityKey]) {
-            delete db.linkedBots[personalityKey];
+          if (db) {
+            if (db.linkedBots?.[personalityKey]) delete db.linkedBots[personalityKey];
+            if (db.botActive) {
+              for (const [cid, pKey] of Object.entries(db.botActive)) {
+                if (pKey === personalityKey) delete db.botActive[cid];
+              }
+            }
             saveDatabase?.();
           }
         } catch (_) {}
@@ -338,6 +377,12 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
       reconnectAttempts[personalityKey] = 0; // Reset reconnect count on successful connection!
       botSockets[personalityKey] = sock;
       const jid = sock.user?.id || null;
+
+      if (!hostBotKey || !botSockets[hostBotKey] || botSockets[hostBotKey].ws?.readyState !== 1) {
+        hostBotKey = personalityKey;
+        console.log(`🌟 AstraLink Host assigned to live bot: [${displayName}]`);
+      }
+
       pairingSessions[personalityKey] = {
         ...(pairingSessions[personalityKey] || {}),
         status: 'connected',
@@ -791,6 +836,8 @@ module.exports = {
   getLatestQr,
   getAllSockets,
   getAnySocket,
+  getHostSocket,
+  getHostKey,
   sendAs,
   sendHiChorus,
   sendAttachment,

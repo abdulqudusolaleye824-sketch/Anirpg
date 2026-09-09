@@ -570,10 +570,12 @@ http.createServer(async (req, res) => {
         });
       }
 
-      const primaryConnected = !!_astralinkHostSock && !!_astralinkHostSock.user?.id;
-      const primaryJid = primaryConnected ? _astralinkHostSock.user?.id : null;
+      const hostSock = MultiSocketManager.getHostSocket();
+      const primaryConnected = !!hostSock && !!hostSock.user?.id;
+      const primaryJid = primaryConnected ? hostSock.user?.id : null;
+      const hostKey = MultiSocketManager.getHostKey();
       const primaryObj = {
-        displayName: 'Primary Host',
+        displayName: hostKey ? PersonalityManager.getDisplayName(hostKey) : 'No Active Host',
         connected: primaryConnected,
         jid: primaryJid,
       };
@@ -944,26 +946,12 @@ function startBotScheduler(personalityKey) {
   // Each bot's connectBot call passes an `onGroupJoin` callback that
   // knows the bot's personalityKey, so the join handler can filter out
   // non-active bots (preventing multiple welcome messages).
-  //
-  // There is no "first" / "primary" bot. Every bot is equal. The
-  // first to successfully connect becomes the "AstraLink host" —
-  // purely for code organization (it provides the socket used by the
-  // HTTP API to issue pairing codes for the loopback handler).
-  const isFirstBot = !_astralinkHostKey;
   MultiSocketManager.connectBot(personalityKey, AUTH_DIR, getDatabase, saveDatabase, {
     rpgCommandHandler,
     onGroupJoin: async (sock, chatId, participants, action) => {
-      // The bot's own personalityKey is already known to the handler
-      // via the connectBot binding; we pass it through here.
       await onGroupJoin(sock, personalityKey, chatId, participants, action);
     },
   }).then(sock => {
-    if (isFirstBot) {
-      _astralinkHostKey = personalityKey;
-      _astralinkHostSock = sock;
-      console.log(`🌟 ${personalityKey} is the AstraLink host (first bot connected)`);
-    }
-
     // Per-bot init: regen system (any bot that connects, runs it)
     try {
       RegenManager.initAllPlayers(getDatabase, saveDatabase, sock);
@@ -1059,23 +1047,40 @@ async function startup() {
   for (const key of ALL_PERSONALITY_KEYS) {
     if (process.env['BOT_' + key.toUpperCase()]) linkedKeys.push(key);
   }
-  // Also include any personality with a saved AstraLink session (creds.json
-  // that's registered). Link via AstraLink even without BOT_* env vars.
+
+  // Also include any personality with a saved, registered AstraLink session
   for (const key of ALL_PERSONALITY_KEYS) {
     const authDir = path.join(AUTH_DIR, key);
+    const credsFile = path.join(authDir, 'creds.json');
     try {
-      const creds = JSON.parse(fs.readFileSync(path.join(authDir, 'creds.json'), 'utf8'));
-      if (creds && creds.registered && creds.me) {
-        if (!linkedKeys.includes(key)) linkedKeys.push(key);
+      if (fs.existsSync(credsFile)) {
+        const creds = JSON.parse(fs.readFileSync(credsFile, 'utf8'));
+        if (creds && creds.registered && creds.me) {
+          if (!linkedKeys.includes(key)) linkedKeys.push(key);
+        } else {
+          // Stale / un-registered session folder -> clean up!
+          try { fs.rmSync(authDir, { recursive: true, force: true }); } catch (_) {}
+        }
       }
-    } catch (e) { /* no saved session for this personality */ }
+    } catch (e) {
+      try { fs.rmSync(authDir, { recursive: true, force: true }); } catch (_) {}
+    }
   }
-  // Also check db.linkedBots
+
+  // Also check db.linkedBots — only keep keys that actually have registered creds on disk
   const db = getDatabase();
   if (db && db.linkedBots) {
     for (const key of Object.keys(db.linkedBots)) {
-      if (!linkedKeys.includes(key) && ALL_PERSONALITY_KEYS.includes(key)) {
-        linkedKeys.push(key);
+      if (ALL_PERSONALITY_KEYS.includes(key)) {
+        const authDir = path.join(AUTH_DIR, key);
+        const credsFile = path.join(authDir, 'creds.json');
+        if (fs.existsSync(credsFile)) {
+          if (!linkedKeys.includes(key)) linkedKeys.push(key);
+        } else {
+          // DB entry exists but disk session is missing/dead -> purge from db.linkedBots!
+          delete db.linkedBots[key];
+          saveDatabase();
+        }
       }
     }
   }
