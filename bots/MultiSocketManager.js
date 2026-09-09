@@ -342,6 +342,17 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
 
   sock.ev.on('group-participants.update', async ({ id: chatId, participants, action }) => {
     if (action !== 'add' && action !== 'remove') return;
+
+    if (_bootstrapDispatcher(personalityKey, chatId)) {
+      try {
+        const { handleParticipantUpdate } = require('../rpg/utils/GroupNoticeManager');
+        const db = getDatabase();
+        await handleParticipantUpdate(sock, chatId, participants, action, db);
+      } catch (e) {
+        console.error('❌ GroupNotice error:', e.message);
+      }
+    }
+
     if (options.onGroupJoin) {
       try { await options.onGroupJoin(sock, personalityKey, chatId, participants, action); }
       catch (e) { console.error('❌ onGroupJoin error:', e.message); }
