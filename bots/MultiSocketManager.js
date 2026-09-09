@@ -178,12 +178,15 @@ function getAllSockets() {
 
 function _bootstrapDispatcher(personalityKey, chatId) {
   const active = PersonalityManager.getActiveBot(chatId);
-  if (active && botSockets[active]?.user?.id && botSockets[active]?.ws?.readyState === 1) return active === personalityKey;
+  if (active && botSockets[active]?.user?.id && botSockets[active]?.ws?.readyState === 1) {
+    return active === personalityKey;
+  }
 
   const sockets = getAllSockets();
   const keys = Object.keys(sockets).filter(k => !!(sockets[k]?.user?.id && sockets[k]?.ws?.readyState === 1)).sort();
   if (keys.length === 0) return false;
-  const chosenKey = keys[0];
+
+  const chosenKey = keys.includes(personalityKey) ? personalityKey : keys[0];
   try {
     PersonalityManager.activateBot(chatId, chosenKey);
   } catch (e) {}
@@ -439,12 +442,23 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
       ? messageText.slice(config.prefix.length).trim().split(/\s+/)[0].toLowerCase()
       : '';
 
+    // Mark this socket as present in the group
+    if (isGroup) {
+      try { PersonalityManager.markPresent(chatId, personalityKey); } catch (_) {}
+    }
+
+    const BOOTSTRAP_COMMANDS = new Set([
+      'start', 'switch', 'stopbot', 'bots', 'setainame', 'hi',
+      'link', 'unlink', 'help', 'menu', 'restart', 'groupstatus', 'gstatus', 'set', 'setgroup'
+    ]);
+    const isBootstrap = BOOTSTRAP_COMMANDS.has(commandName);
+
     // Active bot check with automatic offline fallback
     const rawActiveKey = isGroup ? PersonalityManager.getActiveBot(chatId) : null;
     const isOnlineActive = rawActiveKey && !!(botSockets[rawActiveKey]?.user?.id && botSockets[rawActiveKey]?.ws?.readyState === 1);
     const activeKey = isOnlineActive ? rawActiveKey : null;
 
-    // Check if command is targeting a specific bot personality (e.g. /switch gojo or /start gojo)
+    // Check if command is targeting a specific bot personality (e.g. /switch kira or /start kira)
     let isTargetMentionedBot = false;
     let hasOnlineTargetBot = false;
     if (isGroup && isCommand && (commandName === 'switch' || commandName === 'start')) {
@@ -460,7 +474,7 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
     }
 
     const isActive = isGroup
-      ? (isTargetMentionedBot || (!hasOnlineTargetBot && (activeKey ? activeKey === personalityKey : _bootstrapDispatcher(personalityKey, chatId))))
+      ? (isTargetMentionedBot || (isBootstrap ? _bootstrapDispatcher(personalityKey, chatId) : (!hasOnlineTargetBot && (activeKey ? activeKey === personalityKey : _bootstrapDispatcher(personalityKey, chatId)))))
       : true;
 
     if (isGroup) {
@@ -474,12 +488,6 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
         }
       } catch (e) { /* best effort */ }
     }
-
-    const BOOTSTRAP_COMMANDS = new Set([
-      'start', 'switch', 'stopbot', 'bots', 'setainame', 'hi',
-      'link', 'unlink', 'help', 'menu', 'restart', 'groupstatus', 'gstatus', 'set', 'setgroup'
-    ]);
-    const isBootstrap = BOOTSTRAP_COMMANDS.has(commandName);
 
     // ── AFK MENTION OR REPLY CHECK (Active bot only) ───────────────────
     if (isGroup && isActive && db.afkUsers) {
