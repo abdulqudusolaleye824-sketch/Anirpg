@@ -160,14 +160,9 @@ module.exports = {
 
     if (player.profileLocked && chatId.endsWith('@g.us')) {
       const SerfManager = require('../../rpg/utils/SerfManager');
+      const MultiSocketManager = require('../../bots/MultiSocketManager');
       const Perms = require('../../utils/permissions');
-      const hasSerf = SerfManager.hasApprovedSerf(db, sender) || Perms.isBotOwner(db, sender);
-
-      if (!hasSerf) {
-        return sock.sendMessage(chatId, {
-          text: `🔒 *${player.name}'s profile is locked.*\n\n⚠️ Set up a Serf using /setserf @bot to receive profile cards in DM!`
-        }, { quoted: msg });
-      }
+      const hasSerf = SerfManager.hasApprovedSerf(db, sender) || Perms.isBotOwner(db, sender) || Perms.isBotMod(db, sender);
 
       const dmJid = `${sender.split('@')[0]}@s.whatsapp.net`;
       const caption = buildCard(player, db, targetId, mentionedId, isOwnProfile);
@@ -180,11 +175,23 @@ module.exports = {
         try { imageBuffer = fs.readFileSync(DEFAULT_PROFILE_IMG); } catch (e) { imageBuffer = null; }
       }
 
+      // Route DM sending through Serf socket or MultiSocketManager fallback
+      let MultiSocketManager = null;
+      try { MultiSocketManager = require('../../bots/MultiSocketManager'); } catch (e) {}
+
+      const serf = SerfManager.getSerf(db, sender);
+      const serfSock = serf?.botKey && MultiSocketManager ? MultiSocketManager.getSocket(serf.botKey) : null;
+      const targetSock = serfSock || (MultiSocketManager ? MultiSocketManager.getAnySocket() : null) || sock;
+
       // Send to player DM
       if (imageBuffer) {
-        sock.sendMessage(dmJid, { image: imageBuffer, caption }).catch(() => {});
+        targetSock.sendMessage(dmJid, { image: imageBuffer, caption }).catch(() => {
+          sock.sendMessage(dmJid, { image: imageBuffer, caption }).catch(() => {});
+        });
       } else {
-        sock.sendMessage(dmJid, { text: caption }).catch(() => {});
+        targetSock.sendMessage(dmJid, { text: caption }).catch(() => {
+          sock.sendMessage(dmJid, { text: caption }).catch(() => {});
+        });
       }
 
       // Send to Bot Staff GC if configured

@@ -43,10 +43,21 @@ function buyScroll(rarity) {
   const pool = RECIPES[rarity];
   if (!pool) return null;
   const types = ['weapons','helmet','chest','gloves','boots','leggings','accessories','artifacts'];
-  const type = types[Math.floor(Math.random() * types.length)];
-  const list = pool[type];
-  const recipe = list[Math.floor(Math.random() * list.length)];
+  const typeKey = types[Math.floor(Math.random() * types.length)];
+  const list = pool[typeKey];
+  const rawRecipe = list[Math.floor(Math.random() * list.length)];
   const key = generateCraftKey();
+
+  const isArmor = ['helmet','chest','gloves','boots','leggings'].includes(typeKey);
+  const mainType = isArmor ? 'armor' : typeKey === 'weapons' ? 'weapon' : typeKey === 'accessories' ? 'accessory' : typeKey === 'artifacts' ? 'artifact' : 'item';
+  const subType = typeKey.charAt(0).toUpperCase() + typeKey.slice(1);
+
+  const recipe = {
+    type: rawRecipe.type || mainType,
+    subtype: rawRecipe.subtype || subType,
+    ...rawRecipe,
+  };
+
   return {
     id: `scroll-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
     rarity,
@@ -117,18 +128,22 @@ function checkMaterials(player, recipe) {
 }
 
 function formatScrollRead(scroll) {
-  const recipe = scroll.recipe;
-  const matLines = Object.entries(recipe.materials).map(([mat, qty]) => `  • ${mat} ×${qty}`).join('\n');
-  const statLines = Object.entries(recipe.stats).filter(([, v]) => v).map(([k, v]) => `${k}: ${v > 0 ? '+' : ''}${v}`).join(' | ');
+  const recipe = scroll.recipe || {};
+  const mainType = recipe.type ? (recipe.type.charAt(0).toUpperCase() + recipe.type.slice(1)) : 'Equipment';
+  const subTypeStr = recipe.subtype ? ` (${recipe.subtype.charAt(0).toUpperCase() + recipe.subtype.slice(1)})` : '';
+  const typeDisplay = `${mainType}${subTypeStr}`;
+
+  const matLines = Object.entries(recipe.materials || {}).map(([mat, qty]) => `  • ${mat} ×${qty}`).join('\n');
+  const statLines = Object.entries(recipe.stats || {}).filter(([, v]) => v).map(([k, v]) => `${k}: ${v > 0 ? '+' : ''}${v}`).join(' | ');
   return [
     `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-    `${scroll.emoji} *${scroll.rarity.toUpperCase()} RECIPE SCROLL*`,
+    `${scroll.emoji || '📜'} *${(scroll.rarity || 'Common').toUpperCase()} RECIPE SCROLL*`,
     `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
     ``,
-    `📜 *Recipe: ${recipe.output}*`,
-    `🗂️ Type: ${recipe.type}${recipe.subtype ? ' (' + recipe.subtype + ')' : ''}`,
-    `⚔️ Stats: ${statLines}`,
-    `🛡️ Durability: ${recipe.durability}`,
+    `📜 *Recipe: ${recipe.output || 'Unknown Item'}*`,
+    `🗂️ Type: ${typeDisplay}`,
+    `⚔️ Stats: ${statLines || 'None'}`,
+    `🛡️ Durability: ${recipe.durability || 'N/A'}`,
     recipe.lore ? `📖 *Lore:* _${recipe.lore}_` : ``,
     ``,
     `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
@@ -137,7 +152,7 @@ function formatScrollRead(scroll) {
     matLines,
     ``,
     `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-    `🔑 *CRAFT KEY: ${scroll.key}*`,
+    `🔑 *CRAFT KEY: ${scroll.key || 'N/A'}*`,
     `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
     ``,
     `⚠️ Guard this key carefully.`,
