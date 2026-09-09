@@ -149,6 +149,14 @@ function getLatestQr(personalityKey) {
   return { qr: session.qr || null, dataUri: session.qrDataUrl || null };
 }
 
+function cleanJid(jid) {
+  if (!jid || typeof jid !== 'string') return jid;
+  const parts = jid.split('@');
+  if (parts.length < 2) return jid;
+  const bareUser = parts[0].split(':')[0];
+  return `${bareUser}@${parts[1]}`;
+}
+
 function unwrapMessage(msg) {
   if (!msg || !msg.message) return null;
   let m = msg.message;
@@ -383,9 +391,11 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
     if (!realMessage) return;
     msg.message = realMessage;
 
-    const isGroup  = msg.key.remoteJid?.endsWith('@g.us');
-    const sender   = isGroup ? msg.key.participant : msg.key.remoteJid;
-    const chatId   = msg.key.remoteJid;
+    const rawRemoteJid = msg.key.remoteJid || '';
+    const chatId   = cleanJid(rawRemoteJid);
+    const isGroup  = chatId.endsWith('@g.us');
+    const rawSender = isGroup ? (msg.key.participant || chatId) : chatId;
+    const sender   = cleanJid(rawSender);
 
     if (!sender?.endsWith('@s.whatsapp.net') && !sender?.endsWith('@lid')) return;
 
@@ -401,12 +411,13 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
       '';
 
     const db = getDatabase();
-    const bareSender = String(sender).split(':')[0].split('@')[0];
-
-    if (_isOwnBotNumber(bareSender)) return;
+    const bareSender = String(sender).split('@')[0];
 
     const config = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'config.json'), 'utf-8'));
     const isCommand = messageText.startsWith(config.prefix);
+
+    // Only apply _isOwnBotNumber loop prevention for non-command messages (e.g. AI chat)
+    if (!isCommand && _isOwnBotNumber(bareSender)) return;
 
     const commandName = isCommand
       ? messageText.slice(config.prefix.length).trim().split(/\s+/)[0].toLowerCase()
