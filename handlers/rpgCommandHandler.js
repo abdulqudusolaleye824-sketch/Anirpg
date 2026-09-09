@@ -127,7 +127,6 @@ const CaughtCmd = require('../commands/rpg/caught');
 const gateCmds = {
   gate:          GateCmds.gate,
   gates:         GateCmds.gate,
-  contract:      GateCmds.contract,
   affiliate:     GateCmds.affiliate,
   setdungeon:    GateCmds.setdungeon,
   removedungeon: GateCmds.removedungeon,
@@ -187,7 +186,6 @@ const ALIASES = {
   'q':           'quote',
   'stat':        'stats',
   'artifacts':   'artifact',
-  'unlock':      'lock',
   'inv':         'inventory',
   'h':           'help',
   'remove':      'kick',

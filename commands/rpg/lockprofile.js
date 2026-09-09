@@ -11,7 +11,7 @@ function isProPlayer(player) {
 
 module.exports = {
   name: 'lockprofile',
-  aliases: ['lockp', 'lock'],
+  aliases: ['lockp'],
   description: '🔒 Toggle profile lock (Pro feature: sends profile to DM in group chats)',
 
   async execute(sock, msg, args, getDatabase, saveDatabase, sender) {

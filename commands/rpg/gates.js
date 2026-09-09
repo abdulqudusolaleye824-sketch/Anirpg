@@ -313,56 +313,6 @@ const gate = {
   },
 };
 
-const contract = {
-  name: 'contract',
-  description: 'Set a payout contract for a contracted hunter',
-
-  async execute(sock, msg, args, getDatabase, saveDatabase, sender) {
-    const chatId = msg.key?.remoteJid;
-    const db     = getDatabase();
-    const player = db.users?.[sender];
-    if (!player) return sock.sendMessage(chatId, { text: '❌ Register first!' }, { quoted: msg });
-
-    const percentArg = parseFloat((args[0] || '').replace('%', ''));
-    const targetJid  = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid?.[0]
-                    || msg.message?.extendedTextMessage?.contextInfo?.participant;
-
-    if (isNaN(percentArg) || !targetJid) {
-      return sock.sendMessage(chatId, {
-        text: `❌ Usage: /contract <percent%> @hunter\nExample: /contract 20% @hunter`,
-      }, { quoted: msg });
-    }
-
-    const dc = GKM.getDungeonGC(chatId);
-    if (!dc?.activeKeyId) {
-      return sock.sendMessage(chatId, {
-        text: `❌ No active party in this dungeon GC. Open a party first with /party create --<KEY>`,
-      }, { quoted: msg });
-    }
-
-    const keyData = GKM.getKey(dc.activeKeyId) || db.gateKeys?.[dc.activeKeyId];
-    if (!keyData) return sock.sendMessage(chatId, { text: '❌ Party key not found.' }, { quoted: msg });
-
-    if (!keyData.contracts) keyData.contracts = {};
-    keyData.contracts[targetJid] = percentArg;
-
-    saveDatabase();
-
-    const target = db.users?.[targetJid];
-    return sock.sendMessage(chatId, {
-      text: [
-        `📋 *CONTRACT SET*`,
-        ``,
-        `Hunter: *${target?.name || targetJid.split('@')[0]}*`,
-        `Cut: *${percentArg}%* of Nexus & crystals`,
-        ``,
-        `Paid out automatically after gate is cleared.`,
-      ].join('\n'),
-      mentions: [targetJid],
-    }, { quoted: msg });
-  },
-};
-
 const affiliateCmd = require('./affiliate');
 
 const setdungeon = {
@@ -445,4 +395,4 @@ const dungeons = {
   },
 };
 
-module.exports = { gate, contract, affiliate: affiliateCmd, setdungeon, removedungeon, dungeons };
+module.exports = { gate, affiliate: affiliateCmd, setdungeon, removedungeon, dungeons };
