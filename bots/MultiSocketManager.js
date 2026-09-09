@@ -149,6 +149,21 @@ function getLatestQr(personalityKey) {
   return { qr: session.qr || null, dataUri: session.qrDataUrl || null };
 }
 
+function unwrapMessage(msg) {
+  if (!msg || !msg.message) return null;
+  let m = msg.message;
+  while (m) {
+    if (m.ephemeralMessage?.message) { m = m.ephemeralMessage.message; continue; }
+    if (m.viewOnceMessage?.message) { m = m.viewOnceMessage.message; continue; }
+    if (m.viewOnceMessageV2?.message) { m = m.viewOnceMessageV2.message; continue; }
+    if (m.viewOnceMessageV2Extension?.message) { m = m.viewOnceMessageV2Extension.message; continue; }
+    if (m.documentWithCaptionMessage?.message) { m = m.documentWithCaptionMessage.message; continue; }
+    if (m.editedMessage?.message?.protocolMessage?.editedMessage) { m = m.editedMessage.message.protocolMessage.editedMessage; continue; }
+    break;
+  }
+  return m;
+}
+
 function getAllSockets() {
   return { ...botSockets };
 }
@@ -363,6 +378,11 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
     const msg = messages[0];
     if (!msg.message || msg.key.fromMe) return;
 
+    // Unwrap Baileys message containers (ephemeralMessage, viewOnceMessage, documentWithCaptionMessage, editedMessage, etc.)
+    const realMessage = unwrapMessage(msg);
+    if (!realMessage) return;
+    msg.message = realMessage;
+
     const isGroup  = msg.key.remoteJid?.endsWith('@g.us');
     const sender   = isGroup ? msg.key.participant : msg.key.remoteJid;
     const chatId   = msg.key.remoteJid;
@@ -373,7 +393,12 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
       msg.message.conversation ||
       msg.message.extendedTextMessage?.text ||
       msg.message.imageMessage?.caption ||
-      msg.message.videoMessage?.caption || '';
+      msg.message.videoMessage?.caption ||
+      msg.message.documentMessage?.caption ||
+      msg.message.buttonsResponseMessage?.selectedButtonId ||
+      msg.message.listResponseMessage?.singleSelectReply?.selectedRowId ||
+      msg.message.templateButtonReplyMessage?.selectedId ||
+      '';
 
     const db = getDatabase();
     const bareSender = String(sender).split(':')[0].split('@')[0];
@@ -432,7 +457,12 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
 
     // ── AFK MENTION OR REPLY CHECK (Active bot only) ───────────────────
     if (isGroup && isActive && db.afkUsers) {
-      const contextInfo = msg.message?.extendedTextMessage?.contextInfo;
+      const contextInfo =
+        msg.message?.extendedTextMessage?.contextInfo ||
+        msg.message?.imageMessage?.contextInfo ||
+        msg.message?.videoMessage?.contextInfo ||
+        msg.message?.documentMessage?.contextInfo ||
+        msg.message?.stickerMessage?.contextInfo;
       const mentionedAlso = [
         ...(contextInfo?.mentionedJid || []),
         ...(contextInfo?.participant ? [contextInfo.participant] : [])
@@ -526,8 +556,14 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
     const botDisplayName = PersonalityManager.getDisplayName(personalityKey);
     const botJid = sock.user?.id;
 
-    const mentionedJids = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
-    const quotedParticipant = msg.message?.extendedTextMessage?.contextInfo?.participant;
+    const contextInfo =
+      msg.message?.extendedTextMessage?.contextInfo ||
+      msg.message?.imageMessage?.contextInfo ||
+      msg.message?.videoMessage?.contextInfo ||
+      msg.message?.documentMessage?.contextInfo ||
+      msg.message?.stickerMessage?.contextInfo;
+    const mentionedJids = contextInfo?.mentionedJid || [];
+    const quotedParticipant = contextInfo?.participant;
     const isMentioned = botJid && mentionedJids.some(j => j.split(':')[0] === botJid.split(':')[0]);
     const isQuoted    = botJid && quotedParticipant?.split(':')[0] === botJid?.split(':')[0];
     const nameInText  = messageText.toLowerCase().includes(botDisplayName.toLowerCase());
