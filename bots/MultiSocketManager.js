@@ -394,10 +394,26 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
     const rawRemoteJid = msg.key.remoteJid || '';
     const chatId   = cleanJid(rawRemoteJid);
     const isGroup  = chatId.endsWith('@g.us');
-    const rawSender = isGroup ? (msg.key.participant || chatId) : chatId;
-    const sender   = cleanJid(rawSender);
 
-    if (!sender?.endsWith('@s.whatsapp.net') && !sender?.endsWith('@lid')) return;
+    const msgCtxInfo =
+      msg.message?.extendedTextMessage?.contextInfo ||
+      msg.message?.imageMessage?.contextInfo ||
+      msg.message?.videoMessage?.contextInfo ||
+      msg.message?.documentMessage?.contextInfo ||
+      msg.message?.stickerMessage?.contextInfo ||
+      msg.message?.buttonsResponseMessage?.contextInfo ||
+      msg.message?.listResponseMessage?.contextInfo;
+
+    const rawSender = isGroup
+      ? (msg.key.participant || msg.participant || msgCtxInfo?.participant || chatId)
+      : chatId;
+    const sender = cleanJid(rawSender);
+
+    if (isGroup) {
+      if (!sender) return;
+    } else {
+      if (!sender?.endsWith('@s.whatsapp.net') && !sender?.endsWith('@lid')) return;
+    }
 
     const messageText =
       msg.message.conversation ||

@@ -219,19 +219,53 @@ for (const [cmdName, cmd] of Object.entries(commands)) {
   }
 }
 
+function cleanJid(jid) {
+  if (!jid) return '';
+  const str = String(jid).trim();
+  const domain = str.endsWith('@g.us') ? '@g.us' : str.endsWith('@lid') ? '@lid' : '@s.whatsapp.net';
+  const bare = str.split('@')[0].split(':')[0];
+  return bare ? `${bare}${domain}` : str;
+}
+
 module.exports = async (sock, msg, messageText, config, getDatabase, saveDatabase) => {
   const args = messageText.slice(config.prefix.length).trim().split(/ +/);
   const commandName = args.shift()?.toLowerCase();
 
   const isGroup = msg.key.remoteJid?.endsWith('@g.us');
-  const sender = isGroup ? msg.key.participant : msg.key.remoteJid;
-  const chatId = msg.key.remoteJid;
 
-  const isValidSender =
-    sender?.endsWith('@s.whatsapp.net') || sender?.endsWith('@lid');
+  const contextInfo =
+    msg.message?.extendedTextMessage?.contextInfo ||
+    msg.message?.imageMessage?.contextInfo ||
+    msg.message?.videoMessage?.contextInfo ||
+    msg.message?.documentMessage?.contextInfo ||
+    msg.message?.stickerMessage?.contextInfo ||
+    msg.message?.buttonsResponseMessage?.contextInfo ||
+    msg.message?.listResponseMessage?.contextInfo;
+
+  const rawSender = isGroup
+    ? (msg.key.participant || msg.participant || contextInfo?.participant || msg.key.remoteJid)
+    : msg.key.remoteJid;
+
+  const sender = cleanJid(rawSender);
+  const chatId = cleanJid(msg.key.remoteJid);
+
+  const isValidSender = isGroup
+    ? !!sender
+    : (sender?.endsWith('@s.whatsapp.net') || sender?.endsWith('@lid'));
+
   if (!isValidSender) {
-    console.log(`⚠️ Invalid sender format: ${sender}`);
+    console.log(`⚠️ Invalid sender format: ${sender} in chat ${chatId}`);
     return;
+  }
+
+  if (!commandName) {
+    return sock.sendMessage(
+      chatId,
+      {
+        text: `📜 *ASTRA RPG COMMAND MENU*\n\nType */help* to see all commands!\nType */start <botname>* to activate a bot personality!\nType */profile* to view your stats.`
+      },
+      { quoted: msg }
+    );
   }
 
   const resolvedCommand = ALIASES[commandName] || commandName;
