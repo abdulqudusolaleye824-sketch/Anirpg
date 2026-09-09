@@ -112,8 +112,23 @@ function applyPassiveRegen(player, db) {
   }
 }
 
+function initAllPlayers(getDatabase, saveDatabase, sock) {
+  try {
+    const db = typeof getDatabase === 'function' ? getDatabase() : null;
+    if (!db || !db.users) return;
+    const now = Date.now();
+    for (const player of Object.values(db.users)) {
+      if (player && !player.lastRegenTime) {
+        player.lastRegenTime = now;
+      }
+    }
+    if (typeof saveDatabase === 'function') saveDatabase();
+  } catch (_) {}
+}
+
 module.exports = {
   checkInBattle,
   getRegenRate,
   applyPassiveRegen,
+  initAllPlayers,
 };

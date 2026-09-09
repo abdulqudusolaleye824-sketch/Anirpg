@@ -288,7 +288,7 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
 
     if (connection === 'close') {
       const code = lastDisconnect?.error?.output?.statusCode;
-      const loggedOut = code === DisconnectReason.loggedOut || code === 401;
+      const loggedOut = code === DisconnectReason.loggedOut || code === 401 || code === 403 || code === 428;
       const restartRequired = code === DisconnectReason.restartRequired || code === 515;
       delete botSockets[personalityKey];
 
