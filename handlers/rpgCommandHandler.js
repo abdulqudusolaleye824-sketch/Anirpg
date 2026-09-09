@@ -691,11 +691,11 @@ module.exports = async (sock, msg, messageText, config, getDatabase, saveDatabas
 
       const _db = getDatabase();
       if (_db.users?.[sender]) {
-        awardCommandXP(_db.users[sender], saveDatabase, chunkedSock, chatId);
+        const player = _db.users[sender];
+        awardCommandXP(player, saveDatabase, chunkedSock, chatId);
 
         try {
-          const { trackAndNotify } = require('../rpg/utils/QuestDispatcher');
-          const player = _db.users[sender];
+          const { trackActivity, checkSnapshotAchievements } = require('../rpg/utils/ActivityTracker');
           const questTypeByCommand = {
             daily:     'daily',
             summon:    'summon',
@@ -723,12 +723,10 @@ module.exports = async (sock, msg, messageText, config, getDatabase, saveDatabas
           };
           const qType = questTypeByCommand[resolvedCommand];
           if (qType) {
-            const note = trackAndNotify(player, qType, 1);
-            if (note) {
-              await chunkedSock.sendMessage(chatId, { text: note });
-            }
-            saveDatabase();
+            await trackActivity(player, qType, 1, {}, chunkedSock, sender, chatId);
           }
+          await checkSnapshotAchievements(player, chunkedSock, sender, chatId);
+          saveDatabase();
         } catch(e) {}
       }
 

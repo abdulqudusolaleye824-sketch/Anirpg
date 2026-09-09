@@ -168,11 +168,12 @@ module.exports = {
 
       saveDatabase();
 
-      // Achievements
+      // Achievements & Quests via ActivityTracker
       try {
+        const { trackActivity } = require('../../rpg/utils/ActivityTracker');
         const petCount = Object.keys(PetManager.getPlayerPets ? PetManager.getPlayerPets(sender) : {}).length;
-        AchievementManager.track(player, 'pets_caught', 1);
-        AchievementManager.track(player, 'pets_owned', petCount, {});
+        await trackActivity(player, 'pets_caught', 1, { rarity }, sock, sender, chatId);
+        await trackActivity(player, 'pets_owned', petCount, {}, sock, sender, chatId);
       } catch (e) {}
 
       resultMsg = [
