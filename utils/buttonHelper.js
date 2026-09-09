@@ -1,147 +1,264 @@
 // ═══════════════════════════════════════════════════════════════
 // Astra — Button Helper for Baileys 7.0.0-rc14
-// Supports templateButtons (quickReply + url) with fallback to text.
-// Handles patchMessageBeforeSending requirement for buttons.
+// Supports BOTH legacy templateButtons (quickReply + url) AND modern
+// interactiveButtons (nativeFlow) — tries interactive first since
+// templateButtons is deprecated and no longer renders on WhatsApp.
+// Handles image+caption vs text, patchMessageBeforeSending, and
+// fallback to plain text with hints if all button methods fail.
 // ═══════════════════════════════════════════════════════════════
 
 'use strict';
 
-/**
- * Build Next/Prev buttons for /pass and /bp
- * @param {number} currentPage - 1-indexed
- * @param {number} totalPages
- * @param {string} prefix - "pass" or "bp"
- * @returns {Array} templateButtons
- */
-function buildPassButtons(currentPage, totalPages, prefix) {
-  const cmd = prefix.toLowerCase(); // "pass" or "bp" or "battlepass"
-  const buttons = [];
-  let idx = 1;
-
-  if (currentPage > 1) {
-    buttons.push({
-      index: idx++,
-      quickReplyButton: {
-        displayText: `⬅️ Prev`,
-        id: `/${cmd} ${currentPage - 1}`
-      }
-    });
-  }
-  if (currentPage < totalPages) {
-    buttons.push({
-      index: idx++,
-      quickReplyButton: {
-        displayText: `➡️ Next`,
-        id: `/${cmd} ${currentPage + 1}`
-      }
-    });
-  }
-  // Always add a Claim button for convenience
-  buttons.push({
-    index: idx++,
-    quickReplyButton: {
-      displayText: `🎁 Claim`,
-      id: `/${cmd} claim`
-    }
-  });
-
-  return buttons;
+let generateWAMessageFromContent = null;
+let proto = null;
+try {
+  const baileys = require('@whiskeysockets/baileys');
+  generateWAMessageFromContent = baileys.generateWAMessageFromContent;
+  proto = baileys.proto;
+} catch (e) {
+  // Baileys not available in snapshot cache — will fallback to templateButtons
 }
 
 /**
- * Build URL buttons for /support DM
- * @param {Array} groups - from AstralGroups.getAll().filter(g=>g.isMain)
- * @returns {Array} templateButtons (urlButtons)
+ * Build Next/Prev buttons for /pass and /bp (legacy template format)
+ * Returned value is converted to interactive inside sendWithButtons,
+ * so callers don't need to change.
  */
+function buildPassButtons(currentPage, totalPages, prefix) {
+  const cmd = prefix.toLowerCase();
+  const buttons = [];
+  let idx = 1;
+  if (currentPage > 1) {
+    buttons.push({ index: idx++, quickReplyButton: { displayText: `⬅️ Prev`, id: `/${cmd} ${currentPage - 1}` } });
+  }
+  if (currentPage < totalPages) {
+    buttons.push({ index: idx++, quickReplyButton: { displayText: `➡️ Next`, id: `/${cmd} ${currentPage + 1}` } });
+  }
+  buttons.push({ index: idx++, quickReplyButton: { displayText: `🎁 Claim`, id: `/${cmd} claim` } });
+  return buttons;
+}
+
 function buildSupportButtons(groups) {
   const buttons = [];
   let idx = 1;
   for (const g of groups) {
     if (!g.inviteLink) continue;
-    // WhatsApp limits displayText to 20 chars, URL to 512
     const name = (g.typeInfo?.name || g.type || 'Group').replace(/[^a-zA-Z0-9 ]/g, '').trim().slice(0, 18) || g.type;
     const emoji = g.typeInfo?.emoji || '🔗';
-    buttons.push({
-      index: idx++,
-      urlButton: {
-        displayText: `${emoji} ${name}`.slice(0, 30),
-        url: g.inviteLink
-      }
-    });
-    if (idx > 10) break; // Allow up to 10 URL buttons (screenshot shows 6)
+    buttons.push({ index: idx++, urlButton: { displayText: `${emoji} ${name}`.slice(0, 30), url: g.inviteLink } });
+    if (idx > 10) break;
   }
   return buttons;
 }
 
-/**
- * Build Party Join button
- * @param {string} key - gate/party key
- * @returns {Array} templateButtons
- */
 function buildPartyJoinButton(key) {
   return [
-    {
-      index: 1,
-      quickReplyButton: {
-        displayText: `✅ Join Party`,
-        id: `/party join ${key}`
-      }
-    },
-    {
-      index: 2,
-      quickReplyButton: {
-        displayText: `📊 Party Status`,
-        id: `/party status`
-      }
-    }
+    { index: 1, quickReplyButton: { displayText: `✅ Join Party`, id: `/party join ${key}` } },
+    { index: 2, quickReplyButton: { displayText: `📊 Party Status`, id: `/party status` } },
   ];
 }
 
-/**
- * Build Guild-restricted party join button with extra info
- * Same as above but caller can decide to show blocked message instead
- */
 function buildPartyButtons(key, options = {}) {
-  const buttons = [
-    {
-      index: 1,
-      quickReplyButton: {
-        displayText: options.joinText || `✅ Join Party`,
-        id: `/party join ${key}`
-      }
-    }
-  ];
-  if (options.showStatus) {
-    buttons.push({
-      index: 2,
-      quickReplyButton: {
-        displayText: `📊 Status`,
-        id: `/party status`
-      }
-    });
-  }
+  const buttons = [{ index: 1, quickReplyButton: { displayText: options.joinText || `✅ Join Party`, id: `/party join ${key}` } }];
+  if (options.showStatus) buttons.push({ index: 2, quickReplyButton: { displayText: `📊 Status`, id: `/party status` } });
   return buttons;
 }
 
 /**
- * Send a message with templateButtons, handling image+caption vs text
- * Falls back to plain text if button send fails
+ * Convert legacy templateButtons (quickReplyButton/urlButton) to
+ * interactiveButtons (nativeFlow) format.
+ */
+function templateToInteractive(templateButtons) {
+  const interactive = [];
+  for (const b of templateButtons) {
+    if (b.quickReplyButton) {
+      interactive.push({
+        name: 'quick_reply',
+        buttonParamsJson: JSON.stringify({ display_text: b.quickReplyButton.displayText, id: b.quickReplyButton.id })
+      });
+    } else if (b.urlButton) {
+      interactive.push({
+        name: 'cta_url',
+        buttonParamsJson: JSON.stringify({ display_text: b.urlButton.displayText, url: b.urlButton.url, merchant_url: b.urlButton.url })
+      });
+    } else if (b.callButton) {
+      interactive.push({
+        name: 'cta_call',
+        buttonParamsJson: JSON.stringify({ display_text: b.callButton.displayText, phone_number: b.callButton.phoneNumber })
+      });
+    }
+  }
+  return interactive;
+}
+
+/**
+ * Try to send via interactiveMessage (nativeFlow) — the currently
+ * working method for WhatsApp Business. Returns true on success, false on failure.
+ */
+async function trySendInteractive(sock, chatId, content, interactiveButtons, quoted) {
+  if (!generateWAMessageFromContent || !proto) return false;
+  const hasImage = !!content.image;
+  const bodyText = content.caption || content.text || '';
+  const footerText = content.footer || 'Astra™ 2026';
+  const titleText = content.title || undefined;
+
+  try {
+    let header = undefined;
+    let body = { text: bodyText };
+    let footer = footerText ? { text: footerText } : undefined;
+
+    // Build nativeFlow buttons
+    const nativeFlowMessage = proto.Message.InteractiveMessage.NativeFlowMessage.create({
+      buttons: interactiveButtons
+    });
+
+    if (hasImage) {
+      // For media interactive, header hasMediaAttachment = true and we attach image via generateWAMessage
+      // We'll use the approach from shizo-devs example: pass image as media with caption
+      header = proto.Message.InteractiveMessage.Header.create({
+        title: titleText || bodyText.slice(0, 30) || 'Astra',
+        subtitle: undefined,
+        hasMediaAttachment: true
+      });
+    } else {
+      header = proto.Message.InteractiveMessage.Header.create({
+        title: titleText || undefined,
+        subtitle: undefined,
+        hasMediaAttachment: false
+      });
+      if (titleText) body = { text: bodyText };
+    }
+
+    const interactiveMessage = proto.Message.InteractiveMessage.create({
+      body: proto.Message.InteractiveMessage.Body.create({ text: bodyText }),
+      footer: footer ? proto.Message.InteractiveMessage.Footer.create(footer) : undefined,
+      header: header,
+      nativeFlowMessage
+    });
+
+    let msgContent;
+    if (hasImage) {
+      // media + interactive needs special handling: use sock.sendMessage with image + interactiveButtons if available
+      // Try direct sendMessage with interactiveButtons + image first (newer Baileys helper)
+      try {
+        // Direct interactive with image via sendMessage (if Baileys patched)
+        const direct = {
+          image: content.image,
+          caption: bodyText,
+          footer: footerText,
+          interactiveButtons: interactiveButtons
+        };
+        if (content.mimetype) direct.mimetype = content.mimetype;
+        await sock.sendMessage(chatId, direct, quoted ? { quoted } : {});
+        return true;
+      } catch (e) {
+        // Fallback to generateWAMessage + relay
+      }
+      // Fallback: generateWAMessageFromContent with image
+      const mtype = content.mimetype || 'image/jpeg';
+      // For image interactive, we need to use relay with viewOnce wrapper
+      const waMsg = generateWAMessageFromContent(chatId, {
+        viewOnceMessage: {
+          message: {
+            messageContextInfo: { deviceListMetadataVersion: 2, deviceListMetadata: {} },
+            interactiveMessage
+          }
+        }
+      }, { quoted: quoted || undefined });
+      // Attach image via uploaded media? Instead relay will need image node.
+      // Simpler: send image first, then interactive text buttons as follow-up (guaranteed to show)
+      // We'll do two-step: image alone, then interactive text
+      await sock.sendMessage(chatId, { image: content.image, caption: bodyText, mimetype: mtype }, quoted ? { quoted } : {});
+      const waMsg2 = generateWAMessageFromContent(chatId, {
+        viewOnceMessage: {
+          message: {
+            messageContextInfo: { deviceListMetadataVersion: 2, deviceListMetadata: {} },
+            interactiveMessage: proto.Message.InteractiveMessage.create({
+              body: proto.Message.InteractiveMessage.Body.create({ text: `Tap a button below:` }),
+              footer: proto.Message.InteractiveMessage.Footer.create({ text: footerText }),
+              header: proto.Message.InteractiveMessage.Header.create({ title: 'Astra™', subtitle: undefined, hasMediaAttachment: false }),
+              nativeFlowMessage
+            })
+          }
+        }
+      }, {});
+      await sock.relayMessage(chatId, waMsg2.message, { messageId: waMsg2.key.id });
+      return true;
+    } else {
+      const waMsg = generateWAMessageFromContent(chatId, {
+        viewOnceMessage: {
+          message: {
+            messageContextInfo: { deviceListMetadataVersion: 2, deviceListMetadata: {} },
+            interactiveMessage
+          }
+        }
+      }, { quoted: quoted || undefined });
+      await sock.relayMessage(chatId, waMsg.message, { messageId: waMsg.key.id });
+      return true;
+    }
+  } catch (e) {
+    console.error('⚠️ interactive send failed:', e.message);
+    return false;
+  }
+}
+
+/**
+ * Send a message with buttons, handling image+caption vs text
+ * Strategy:
+ * 1) Convert templateButtons -> interactiveButtons and try interactive (modern, actually renders)
+ * 2) Fallback to legacy templateButtons (viewOnce wrapper)
+ * 3) Fallback to plain text with hints
  */
 async function sendWithButtons(sock, chatId, content, buttons, quoted) {
   if (!buttons || buttons.length === 0) {
     return sock.sendMessage(chatId, content, quoted ? { quoted } : {});
   }
 
-  // Try templateButtons first (most compatible with rc14)
   const hasImage = !!content.image;
+  const interactiveButtons = templateToInteractive(buttons);
 
+  // ── 1) Try modern interactive (nativeFlow) ─────────────────────
+  if (interactiveButtons.length > 0) {
+    // First try direct sendMessage with interactiveButtons (some Baileys forks support this directly)
+    try {
+      const footerText = content.footer || 'Astra™ 2026';
+      if (hasImage) {
+        const directInteractive = {
+          image: content.image,
+          caption: content.caption || content.text || '',
+          footer: footerText,
+          interactiveButtons: interactiveButtons
+        };
+        if (content.mimetype) directInteractive.mimetype = content.mimetype;
+        if (content.title) directInteractive.title = content.title;
+        await sock.sendMessage(chatId, directInteractive, quoted ? { quoted } : {});
+        return;
+      } else {
+        const directInteractive = {
+          text: content.text || content.caption || '',
+          footer: footerText,
+          interactiveButtons: interactiveButtons
+        };
+        if (content.title) directInteractive.title = content.title;
+        await sock.sendMessage(chatId, directInteractive, quoted ? { quoted } : {});
+        return;
+      }
+    } catch (e) {
+      console.error('⚠️ direct interactiveButtons send failed, trying generateWAMessage:', e.message);
+    }
+
+    // Second try: generateWAMessageFromContent + relay (more reliable)
+    const ok = await trySendInteractive(sock, chatId, content, interactiveButtons, quoted);
+    if (ok) return;
+  }
+
+  // ── 2) Fallback: legacy templateButtons (viewOnce wrapper) ─────
   try {
     if (hasImage) {
-      // Image + buttons: Baileys requires caption + footer + templateButtons
       const msg = {
         image: content.image,
         caption: content.caption || content.text || '',
-        footer: content.footer || `Page ${content.page || ''}`.trim() || 'Astra RPG',
+        footer: content.footer || 'Astra RPG',
         templateButtons: buttons,
       };
       if (content.mimetype) msg.mimetype = content.mimetype;
@@ -156,58 +273,37 @@ async function sendWithButtons(sock, chatId, content, buttons, quoted) {
     }
   } catch (e) {
     console.error('⚠️ templateButtons send failed, falling back to plain:', e.message);
-    // Fallback: plain text with manual command hints — handle image vs text correctly
-    try {
-      const buttonHints = buttons.map(b => {
-        const qr = b.quickReplyButton;
-        if (qr) return `▶️ ${qr.displayText}: ${qr.id}`;
-        const url = b.urlButton;
-        if (url) return `🔗 ${url.displayText}: ${url.url}`;
-        return '';
-      }).filter(Boolean).join('\n');
-      const baseText = content.caption || content.text || '';
-      const fallbackText = baseText + (buttonHints ? '\n\n' + buttonHints : '');
-      if (hasImage) {
-        return await sock.sendMessage(chatId, {
-          image: content.image,
-          caption: fallbackText,
-          mimetype: content.mimetype || 'image/png'
-        }, quoted ? { quoted } : {});
-      }
-      return await sock.sendMessage(chatId, {
-        text: fallbackText
-      }, quoted ? { quoted } : {});
-    } catch (e2) {
-      console.error('Fallback send also failed:', e2.message);
-      // Final fallback without buttons
-      if (hasImage) {
-        return sock.sendMessage(chatId, { image: content.image, caption: content.caption || content.text || '', mimetype: content.mimetype || 'image/png' }, quoted ? { quoted } : {});
-      }
-      return sock.sendMessage(chatId, { text: content.text || content.caption || '' }, quoted ? { quoted } : {});
+  }
+
+  // ── 3) Final fallback: plain text with manual hints ────────────
+  try {
+    const buttonHints = buttons.map(b => {
+      const qr = b.quickReplyButton;
+      if (qr) return `▶️ ${qr.displayText}: ${qr.id}`;
+      const url = b.urlButton;
+      if (url) return `🔗 ${url.displayText}: ${url.url}`;
+      return '';
+    }).filter(Boolean).join('\n');
+    const baseText = content.caption || content.text || '';
+    const fallbackText = baseText + (buttonHints ? '\n\n' + buttonHints : '');
+    if (hasImage) {
+      return await sock.sendMessage(chatId, { image: content.image, caption: fallbackText, mimetype: content.mimetype || 'image/png' }, quoted ? { quoted } : {});
     }
+    return await sock.sendMessage(chatId, { text: fallbackText }, quoted ? { quoted } : {});
+  } catch (e2) {
+    console.error('Fallback send also failed:', e2.message);
+    if (hasImage) return sock.sendMessage(chatId, { image: content.image, caption: content.caption || content.text || '', mimetype: content.mimetype || 'image/png' }, quoted ? { quoted } : {});
+    return sock.sendMessage(chatId, { text: content.text || content.caption || '' }, quoted ? { quoted } : {});
   }
 }
 
-/**
- * Patch function for makeWASocket to enable buttons/templateMessages
- * Usage in makeWASocket: { patchMessageBeforeSending: patchMessageBeforeSending }
- */
 function patchMessageBeforeSending(message) {
-  const requiresPatch = !!(
-    message.buttonsMessage ||
-    message.templateMessage ||
-    message.listMessage ||
-    message.templateButtons ||
-    message.buttons
-  );
+  const requiresPatch = !!(message.buttonsMessage || message.templateMessage || message.listMessage || message.templateButtons || message.buttons || message.interactiveMessage || message.interactiveButtons);
   if (requiresPatch) {
     message = {
       viewOnceMessage: {
         message: {
-          messageContextInfo: {
-            deviceListMetadataVersion: 2,
-            deviceListMetadata: {},
-          },
+          messageContextInfo: { deviceListMetadataVersion: 2, deviceListMetadata: {} },
           ...message,
         },
       },
@@ -222,5 +318,6 @@ module.exports = {
   buildPartyJoinButton,
   buildPartyButtons,
   sendWithButtons,
-  patchMessageBeforeSending
+  patchMessageBeforeSending,
+  templateToInteractive
 };
