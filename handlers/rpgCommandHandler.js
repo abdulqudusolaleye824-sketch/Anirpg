@@ -201,6 +201,8 @@ const ALIASES = {
   'spawn':       'artifactspawn',
   'groupstatus': 'spawnstatus',
   'gstatus':     'spawnstatus',
+  'read':        'scroll',
+  'scrolls':     'scroll',
 };
 
 const NO_ADMIN_REQUIRED = new Set([
@@ -715,6 +717,9 @@ module.exports = async (sock, msg, messageText, config, getDatabase, saveDatabas
             donate:    'donate',
             rep:       'rep',
             heal:      'heal',
+            scroll:    'scroll',
+            read:      'scroll',
+            open:      'scroll',
           };
           const qType = questTypeByCommand[resolvedCommand];
           if (qType) {

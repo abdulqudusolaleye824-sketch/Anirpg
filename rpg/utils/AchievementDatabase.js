@@ -238,6 +238,21 @@ const ACHIEVEMENTS = {
     desc: 'Complete your first quest', condition: { type: 'quests_complete', count: 1 },
     reward: { gold: 1000, xp: 300, crystals: 5 }
   },
+  scroll_reader_1: {
+    id: 'scroll_reader_1', name: '📜 Scroll Scholar', category: 'Quests',
+    desc: 'Read your first recipe scroll', condition: { type: 'scroll_read', count: 1 },
+    reward: { gold: 1000, xp: 300, crystals: 5 }
+  },
+  scroll_reader_10: {
+    id: 'scroll_reader_10', name: '📖 Master Archivist', category: 'Quests',
+    desc: 'Read 10 recipe scrolls', condition: { type: 'scroll_read', count: 10 },
+    reward: { gold: 5000, xp: 1500, crystals: 20 }
+  },
+  scroll_reader_50: {
+    id: 'scroll_reader_50', name: '🔮 Scroll Master', category: 'Quests',
+    desc: 'Read 50 recipe scrolls', condition: { type: 'scroll_read', count: 50 },
+    reward: { gold: 20000, xp: 8000, crystals: 75 }
+  },
   quest_runner: {
     id: 'quest_runner', name: '🏃 Quest Runner', category: 'Quests',
     desc: 'Complete 10 quests', condition: { type: 'quests_complete', count: 10 },

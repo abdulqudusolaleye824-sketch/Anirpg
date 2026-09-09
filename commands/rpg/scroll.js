@@ -13,12 +13,11 @@ const { stripDevice } = require('../../utils/constants');
 
 module.exports = {
   name: 'scroll',
-  aliases: ['scrolls'],
+  aliases: ['scrolls', 'read'],
   description: '📜 Manage your recipe scrolls and send recipes to DM via Serf',
 
   async execute(sock, msg, args, getDatabase, saveDatabase, sender) {
     const chatId = msg.key?.remoteJid;
-    const isGroup = chatId.endsWith('@g.us');
     const db = getDatabase();
     const player = db.users[sender];
 
@@ -105,6 +104,21 @@ module.exports = {
 
     // Reveal if not already
     readScroll(scroll);
+
+    // Track Quests & Achievements for reading scroll
+    try {
+      const { trackAndNotify } = require('../../rpg/utils/QuestDispatcher');
+      const note = trackAndNotify(player, 'scroll', 1, sock, sender, chatId);
+      if (note) await sock.sendMessage(chatId, { text: note }, { quoted: msg });
+    } catch (e) {}
+
+    try {
+      const AchievementManager = require('../../rpg/utils/AchievementManager');
+      const newlyUnlocked = AchievementManager.track(player, 'scroll_read', 1);
+      const achNote = AchievementManager.buildNotification(newlyUnlocked);
+      if (achNote) await sock.sendMessage(chatId, { text: achNote }, { quoted: msg });
+    } catch (e) {}
+
     saveDatabase();
 
     // Check materials
@@ -124,63 +138,40 @@ module.exports = {
       `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
     ].join('\n');
 
-    // Deliver via Serf socket or primary socket
+    // Deliver via Serf ONLY — IRON WALL GATING
     let MultiSocketManager = null;
     try { MultiSocketManager = require('../../bots/MultiSocketManager'); } catch (e) {}
 
+    const cleanSender = stripDevice(sender);
     const serf = SerfManager.getSerf(db, sender);
     const hasSerf = !!serf;
-    const serfSock = serf?.botKey && MultiSocketManager ? MultiSocketManager.getSocket(serf.botKey) : null;
-    const targetSock = serfSock || (MultiSocketManager ? MultiSocketManager.getAnySocket() : null) || sock;
-
-    const cleanSender = stripDevice(sender);
-    const bareNum = cleanSender.split('@')[0].replace(/[^0-9]/g, '');
-
-    const candidateJids = Array.from(new Set([
-      cleanSender,
-      bareNum ? `${bareNum}@s.whatsapp.net` : null,
-      player?.jid ? stripDevice(player.jid) : null,
-      player?.id ? stripDevice(player.id) : null,
-    ].filter(Boolean)));
 
     let dmSent = false;
-
-    for (const targetJid of candidateJids) {
-      try {
-        await targetSock.sendMessage(targetJid, { text: fullText });
-        dmSent = true;
-        break;
-      } catch (e) {
-        try {
-          await sock.sendMessage(targetJid, { text: fullText });
-          dmSent = true;
-          break;
-        } catch (err) {}
-      }
+    if (MultiSocketManager) {
+      const dmRes = await MultiSocketManager.safeSendDM(sock, cleanSender, { text: fullText }, { db });
+      dmSent = !dmRes?.dropped;
     }
 
     if (isGroup) {
       if (dmSent) {
-        const serfText = hasSerf ? ` via your Serf` : ``;
         return sock.sendMessage(chatId, {
-          text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n📬 *RECIPE DISPATCHED TO DM*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n@${sender.split('@')[0]}, your Recipe Scroll #${idx + 1} (*${scroll.recipe?.output || 'Item'}*) details and craft key have been sent directly to your DM${serfText}!\n\n${!hasSerf ? '💡 *Tip:* Set up an official Serf with */setserf @bot* for guaranteed DM delivery!' : ''}`,
+          text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n📬 *RECIPE DISPATCHED TO DM*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n@${sender.split('@')[0]}, your Recipe Scroll #${idx + 1} (*${scroll.recipe?.output || 'Item'}*) details and craft key have been sent directly to your DM via your Serf!`,
           mentions: [sender]
         }, { quoted: msg });
       } else {
-        // DM failed or blocked
+        // Serf offline, banned, or not set — ABSOLUTELY NO LEAKS
         return sock.sendMessage(chatId, {
           text: [
             `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-            `⚠️ *PRIVATE DM DELIVERY FAILED*`,
+            `⚠️ *SERF DM NOTIFICATION*`,
             `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
             ``,
-            `@${sender.split('@')[0]}, WhatsApp blocked the private DM delivery!`,
+            `@${sender.split('@')[0]}, private DM delivery was blocked because your assigned Serf is currently offline or not set!`,
             ``,
-            `⚓ *Solution 1 (Recommended):*`,
-            `Set up your Serf with */setserf @botname* so the bot can DM you safely.`,
-            ``,
-            `📩 *Solution 2:*`,
-            `Send a DM directly to the bot first, or read your scroll in DM: */scroll read ${idx + 1}*`,
+            `⚓ *Solution:*`,
+            hasSerf
+              ? `Your assigned Serf is currently offline. You can view your recipe details right here:`
+              : `Set up your official Serf using */setserf @bot* to receive private DM alerts.`,
             ``,
             `📜 *Scroll Details:*`,
             fullText,

@@ -55,6 +55,8 @@ const DAILY_QUEST_POOL = [
   { id: 'dq_pvpfloor',    name: 'Floor Fight',           desc: 'Win 1 PvP inside a dungeon',               type: 'pvpFloor', target: 1,   reward: { gold: 1100,  crystals: 33  } },
 
   // ── Crafting / Economy (8) ───────────────────────────────────────────────
+  { id: 'dq_scroll1',     name: 'Recipe Reader',         desc: 'Read 1 recipe scroll',                     type: 'scroll',   target: 1,   reward: { gold: 300,   crystals: 5   } },
+  { id: 'dq_scroll3',     name: 'Avid Scholar',          desc: 'Read 3 recipe scrolls',                    type: 'scroll',   target: 3,   reward: { gold: 800,   crystals: 20  } },
   { id: 'dq_craft1',      name: 'Craftsmaster',          desc: 'Craft 1 item',                             type: 'craft',    target: 1,   reward: { gold: 400,   crystals: 10  } },
   { id: 'dq_craft3',      name: 'Artisan',               desc: 'Craft 3 items',                            type: 'craft',    target: 3,   reward: { gold: 1100,  crystals: 33  } },
   { id: 'dq_craft5',      name: 'Master Crafter',        desc: 'Craft 5 items',                            type: 'craft',    target: 5,   reward: { gold: 1800,  crystals: 55  } },

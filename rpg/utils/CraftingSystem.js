@@ -122,7 +122,8 @@ function checkMaterials(player, recipe) {
   const playerMaterials = {};
   for (const mat of (player.inventory?.materials || []))
     playerMaterials[mat.name] = (playerMaterials[mat.name] || 0) + 1;
-  return Object.entries(recipe.materials).map(([mat, qty]) => ({
+  const mats = recipe?.materials || {};
+  return Object.entries(mats).map(([mat, qty]) => ({
     mat, need: qty, have: playerMaterials[mat] || 0, ok: (playerMaterials[mat] || 0) >= qty,
   }));
 }

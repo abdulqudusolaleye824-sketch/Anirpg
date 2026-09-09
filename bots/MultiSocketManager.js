@@ -615,14 +615,19 @@ function canSendDM(db, playerJid, botJid, botKey) {
     return { allowed: true, reason: 'privileged' };
   }
 
+  const serfKey = SerfManager.getSerfBotKey(db, playerJid);
+  if (!serfKey) {
+    return { allowed: false, reason: 'no-serf' };
+  }
+
+  if (botKey && serfKey === botKey) {
+    return { allowed: true, reason: 'serf-key' };
+  }
   if (botJid && SerfManager.isJidPlayerSerf(db, playerJid, botJid)) {
     return { allowed: true, reason: 'serf-jid' };
   }
-  if (botKey && SerfManager.isPlayerSerf(db, playerJid, botKey)) {
-    return { allowed: true, reason: 'serf-key' };
-  }
 
-  return { allowed: false, reason: 'not-serf' };
+  return { allowed: false, reason: 'not-assigned-serf' };
 }
 
 async function safeSendDM(sock, playerJid, content, opts = {}) {
@@ -631,27 +636,38 @@ async function safeSendDM(sock, playerJid, content, opts = {}) {
   }
   const db = opts.db || (typeof opts.getDatabase === 'function' ? opts.getDatabase() : null);
 
-  let targetSock = sock;
-  if (db && playerJid) {
-    const serfKey = SerfManager.getSerfBotKey(db, playerJid);
-    if (serfKey && botSockets[serfKey]) {
-      targetSock = botSockets[serfKey];
-    }
+  if (!db || !playerJid) {
+    return { dropped: true, reason: 'no-db' };
   }
 
-  const botJid = targetSock?.user?.id || null;
-  const botKey = opts.botKey || null;
-
-  const verdict = canSendDM(db, playerJid, botJid, botKey);
-  if (verdict.allowed) {
+  // Privileged check (Owners & Mods can receive DM alerts from active socket if needed)
+  if (Perms.isBotMod(db, playerJid) || Perms.isBotOwner(db, playerJid)) {
+    const serfKey = SerfManager.getSerfBotKey(db, playerJid);
+    const targetSock = (serfKey && botSockets[serfKey]) ? botSockets[serfKey] : sock;
     return targetSock.sendMessage(playerJid, content);
   }
 
-  return {
-    dropped: true,
-    reason: verdict.reason,
-    message: '⚠️ Set up a Serf using /setserf @bot to receive DM notifications!'
-  };
+  const serfKey = SerfManager.getSerfBotKey(db, playerJid);
+  if (!serfKey) {
+    return {
+      dropped: true,
+      reason: 'no-serf',
+      message: '⚠️ Set up a Serf using /setserf @bot to receive DM notifications!'
+    };
+  }
+
+  // IRON WALL: If player HAS a Serf, ONLY that specific Serf socket can send the DM!
+  const serfSock = botSockets[serfKey];
+  if (!serfSock || !serfSock.user?.id) {
+    // Serf bot is offline / banned — ABSOLUTELY NO OTHER BOT CAN DM!
+    return {
+      dropped: true,
+      reason: 'serf-offline',
+      message: `⚠️ Your assigned Serf (${serfKey}) is currently offline or unavailable.`
+    };
+  }
+
+  return serfSock.sendMessage(playerJid, content);
 }
 
 async function sendHiChorus(chatId, responses, quotedMsg) {
