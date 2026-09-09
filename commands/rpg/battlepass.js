@@ -103,7 +103,9 @@ module.exports = {
             gained.push(`Tier ${t}: +200 PC (Procoin Return!) 💼`);
           } else {
             player.gold = (player.gold || 0) + r.gold;
+            player.nexus = player.gold;
             player.manaCrystals = (player.manaCrystals || 0) + r.stones;
+            player.manaStones = player.manaCrystals;
             let str = `Tier ${t}: +${r.gold.toLocaleString()} 💠 Nexus | +${r.stones} 💎 Mana Stones`;
             if (r.item) {
               addItemToInventory(player, r.item);
@@ -149,7 +151,9 @@ module.exports = {
         gained.push(`Tier ${targetLvl}: +200 PC (Procoin Return!) 💼`);
       } else {
         player.gold = (player.gold || 0) + r.gold;
+        player.nexus = player.gold;
         player.manaCrystals = (player.manaCrystals || 0) + r.stones;
+        player.manaStones = player.manaCrystals;
         let str = `Tier ${targetLvl}: +${r.gold.toLocaleString()} 💠 Nexus | +${r.stones} 💎 Mana Stones`;
         if (r.item) {
           addItemToInventory(player, r.item);

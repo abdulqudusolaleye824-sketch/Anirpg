@@ -99,7 +99,9 @@ module.exports = {
           if (!ap.claimedFree.includes(t)) {
             ap.claimedFree.push(t);
             player.gold = (player.gold || 0) + tInfo.freeNexus;
+            player.nexus = player.gold;
             player.manaCrystals = (player.manaCrystals || 0) + tInfo.freeStones;
+            player.manaStones = player.manaCrystals;
             let str = `Tier ${t} Free: +${tInfo.freeNexus.toLocaleString()} 💠 Nexus | +${tInfo.freeStones} 💎 Stones`;
             if (tInfo.freeItem) {
               addItemToInventory(player, tInfo.freeItem);
@@ -138,7 +140,9 @@ module.exports = {
       if (!ap.claimedFree.includes(tier)) {
         ap.claimedFree.push(tier);
         player.gold = (player.gold || 0) + tInfo.freeNexus;
+        player.nexus = player.gold;
         player.manaCrystals = (player.manaCrystals || 0) + tInfo.freeStones;
+        player.manaStones = player.manaCrystals;
         let str = `Free: +${tInfo.freeNexus.toLocaleString()} 💠 Nexus | +${tInfo.freeStones} 💎 Mana Stones`;
         if (tInfo.freeItem) {
           addItemToInventory(player, tInfo.freeItem);
