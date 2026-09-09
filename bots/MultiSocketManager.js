@@ -518,20 +518,8 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
       if (isGroup) {
         shouldHandle = isActive || (isBootstrap && _bootstrapDispatcher(personalityKey, chatId));
       } else {
-        // DM Handling under Serf DM Iron Wall rule
-        const isOwnerOrMod = Perms.isBotOwner(db, sender) || Perms.isBotMod(db, sender);
-        if (isOwnerOrMod) {
-          shouldHandle = true;
-        } else {
-          const serfKey = SerfManager.getSerfBotKey(db, sender);
-          if (serfKey) {
-            // IRON WALL: ONLY the player's assigned Serf bot socket handles their DM!
-            shouldHandle = (personalityKey === serfKey);
-          } else {
-            // No assigned Serf yet — allow the DMed bot socket to handle registration/setserf/help
-            shouldHandle = true;
-          }
-        }
+        // DM Handling: ONLY Bot Owners, Co-Owners, and Bot Mods can use commands in DM (no exceptions for Pro or regular users)
+        shouldHandle = Perms.isBotOwner(db, sender) || Perms.isBotMod(db, sender);
       }
       if (shouldHandle) {
         try {

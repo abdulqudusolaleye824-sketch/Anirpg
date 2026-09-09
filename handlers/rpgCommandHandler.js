@@ -238,29 +238,20 @@ module.exports = async (sock, msg, messageText, config, getDatabase, saveDatabas
   console.log(`[COMMAND] ${resolvedCommand}${resolvedCommand !== commandName ? ` (alias: ${commandName})` : ''} | Sender: ${sender} | Chat: ${chatId}`);
 
   const db = getDatabase();
+  const Perms = require('../utils/permissions');
+  const isPrivilegedUser = Perms.isBotOwner(db, sender) || Perms.isBotMod(db, sender);
 
-  // ── DM Command Access Control (Serf DM Iron Wall) ──
+  // ── DM Command Access Control (Only Owner / Co-Owner / Mods allowed in DM - no exceptions) ──
   const isDM = !chatId.endsWith('@g.us');
   if (isDM) {
-    const normaliseJid = (j) => String(j || '').split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
-    const ownerNum   = normaliseJid(process.env.OWNER_JID   || OWNER_JID || '221951679328499');
-    const coOwnerNum = normaliseJid(process.env.COOWNER_JID || '194592469209292');
-    const sNum       = normaliseJid(sender);
-    const isOwnerOrCoOwner = sNum === ownerNum || sNum === coOwnerNum;
-
-    if (!isOwnerOrCoOwner) {
-      const SerfManager = require('../rpg/utils/SerfManager');
-      const serfKey = SerfManager.getSerfBotKey(db, sender);
-      const allowedDmWithoutSerf = new Set(['register', 'setserf', 'help', 'start', 'bots', 'support']);
-      if (!serfKey && !allowedDmWithoutSerf.has(commandName) && !allowedDmWithoutSerf.has(resolvedCommand)) {
-        return sock.sendMessage(
-          chatId,
-          {
-            text: `⚠️ *No Serf Bot Assigned*\n\nTo use bot commands in DM, please set up your Serf bot using */setserf* in an authorized group chat!`
-          },
-          { quoted: msg }
-        );
-      }
+    if (!isPrivilegedUser) {
+      return sock.sendMessage(
+        chatId,
+        {
+          text: `🚫 *COMMANDS DISABLED IN DM*\n\nBot commands can only be used in authorized group chats.\nJoin an official RPG group to play!`
+        },
+        { quoted: msg }
+      );
     }
   }
   const { applyPassiveRegen } = require('../rpg/utils/RegenManager');
@@ -328,9 +319,6 @@ module.exports = async (sock, msg, messageText, config, getDatabase, saveDatabas
       return;
     }
   }
-
-  const Perms = require('../utils/permissions');
-  const isPrivilegedUser = Perms.isBotOwner(db, sender) || Perms.isBotMod(db, sender);
 
   if (chatId.endsWith('@g.us')) {
     const settings = db.groupSettings?.[chatId];
