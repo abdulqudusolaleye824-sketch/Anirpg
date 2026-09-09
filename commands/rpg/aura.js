@@ -43,7 +43,8 @@ module.exports = {
     // ── AURAFARM ──────────────────────────────────────────────
     if (sub === 'farm' || sub === 'aurafarm') {
       if (!player.cooldowns) player.cooldowns = {};
-      const COOLDOWN_MS = 10 * 60 * 60 * 1000; // 10 Hours
+      const isPro = !!((player.isPro || player.proStatus) && player.proExpiresAt && player.proExpiresAt > Date.now());
+      const COOLDOWN_MS = isPro ? (5 * 60 * 60 * 1000) : (10 * 60 * 60 * 1000); // 5h for Pro, 10h for standard
       const lastFarm = player.cooldowns.auraFarm || 0;
       const now = Date.now();
 
@@ -51,13 +52,12 @@ module.exports = {
         const { formatDuration } = require('../../rpg/utils/NigerianTime');
         const remaining = COOLDOWN_MS - (now - lastFarm);
         return sock.sendMessage(chatId, {
-          text: `⏳ *AURA FARM COOLDOWN*\n\nYou must wait *${formatDuration(remaining)}* before farming aura again!`
+          text: `⏳ *AURA FARM COOLDOWN*\n\nYou must wait *${formatDuration(remaining)}* before farming aura again! ${isPro ? '\n⚡ *(PRO 50% Reduced Cooldown Active!)*' : ''}`
         }, { quoted: msg });
       }
 
       player.cooldowns.auraFarm = now;
 
-      const isPro = !!((player.isPro || player.proStatus) && player.proExpiresAt && player.proExpiresAt > Date.now());
       const has100Pct = isPro && player.auraFarmBoostUntil && Date.now() <= player.auraFarmBoostUntil;
       const success = has100Pct || Math.random() < 0.35;
 

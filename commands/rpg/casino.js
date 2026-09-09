@@ -266,7 +266,10 @@ Example: /casino open 30
     // ANTI-SPAM CHECK (Per-game cooldowns)
     // ============================================
     const now = Date.now();
-    const cooldownMs = GAME_COOLDOWNS[game] || 10_000;
+    const isPro = !!((player.isPro || player.proStatus) && player.proExpiresAt && player.proExpiresAt > now);
+    let cooldownMs = GAME_COOLDOWNS[game] || 10_000;
+    if (isPro) cooldownMs = Math.floor(cooldownMs * 0.5);
+
     const cooldownKey = `${sender}:${game}`;
     const lastPlay = lastPlayTime.get(cooldownKey) || 0;
     const timeSinceLastPlay = now - lastPlay;
@@ -274,7 +277,7 @@ Example: /casino open 30
     if (timeSinceLastPlay < cooldownMs) {
       const remaining = Math.ceil((cooldownMs - timeSinceLastPlay) / 1000);
       return sock.sendMessage(chatId, { 
-        text: `⏱️ *${game.toUpperCase()}* cooldown!\nWait *${remaining}s* before playing again.` 
+        text: `⏱️ *${game.toUpperCase()}* cooldown!\nWait *${remaining}s* before playing again.${isPro ? ' (🌟 PRO 50% Reduced Cooldown)' : ''}` 
       }, { quoted: msg });
     }
 

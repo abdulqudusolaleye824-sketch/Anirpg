@@ -10,15 +10,11 @@
 const PersonalityManager = require('../../bots/PersonalityManager');
 const AIHandler = require('../../bots/AIHandler');
 
-// ── Helper: is sender owner or co-owner? ─────────────────────────────────────
 function normaliseJid(jid) {
   if (!jid) return '';
   return jid.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
 }
 
-// Reliable privilege check. Delegates to the bot's central Perms.isBotOwner,
-// which always treats the built-in OWNER_JID + COOWNER_JID as owners and
-// compares on bare numbers (so "@lid" owners match "@s.whatsapp.net" senders).
 function isPrivileged(sender, db) {
   const sNum = normaliseJid(sender);
   let ok = false;
@@ -28,13 +24,6 @@ function isPrivileged(sender, db) {
   } catch (e) {
     ok = (db.botMods || []).some(a => normaliseJid(a) === sNum);
   }
-  if (!ok) {
-    console.log('🛑 isPrivileged REFUSED. Diagnose below:');
-    console.log('   sender number      =', sNum, '(the number that sent the command)');
-    console.log('   OWNER_JID(env)     =', normaliseJid(process.env.OWNER_JID || ''));
-    console.log('   COOWNER_JID(env)   =', normaliseJid(process.env.COOWNER_JID || ''));
-    console.log('   db.botMods         =', JSON.stringify((db.botMods || []).map(a => normaliseJid(a))));
-  }
   return ok;
 }
 
@@ -42,17 +31,10 @@ function isPrivileged(sender, db) {
 const start = {
   name: 'start',
   description: 'Activate a bot personality in this group',
-  ownerOnly: true,
 
   async execute(sock, msg, args, getDatabase, saveDatabase, sender) {
     const chatId = msg.key.remoteJid;
     const db = getDatabase();
-
-    if (!isPrivileged(sender, db)) {
-      return sock.sendMessage(chatId, {
-        text: '❌ Only the owner or co-owner can activate bots.',
-      }, { quoted: msg });
-    }
 
     const target = args[0];
     if (!target) {
@@ -72,9 +54,6 @@ const start = {
     }
 
     const info = PersonalityManager.getPersonalityInfo(result.personalityKey);
-    // Announce from the newly-active bot's OWN socket (like /switch) so the
-    // activation message comes from the right bot, not whichever socket
-    // happened to be the bootstrap dispatcher.
     const text = [
       `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
       `✨ *${result.displayName}* is now active`,
@@ -86,11 +65,15 @@ const start = {
       ``,
       `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
     ].join('\n');
+
     try {
       const MSM = require('../../bots/MultiSocketManager');
       const botSock = MSM.getSocket(result.personalityKey);
-      if (botSock) return botSock.sendMessage(chatId, { text }, { quoted: msg });
-    } catch (e) { /* fall through */ }
+      if (botSock && botSock.user?.id && botSock.ws?.readyState === 1) {
+        return botSock.sendMessage(chatId, { text }, { quoted: msg });
+      }
+    } catch (e) { /* fall through to healthy socket fallback */ }
+
     return sock.sendMessage(chatId, { text }, { quoted: msg });
   },
 };
@@ -99,22 +82,15 @@ const start = {
 const switchBot = {
   name: 'switch',
   description: 'Switch the active bot in this group',
-  ownerOnly: true,
 
   async execute(sock, msg, args, getDatabase, saveDatabase, sender) {
     const chatId = msg.key.remoteJid;
     const db = getDatabase();
 
-    if (!isPrivileged(sender, db)) {
-      return sock.sendMessage(chatId, {
-        text: '❌ Only the owner or co-owner can switch bots.',
-      }, { quoted: msg });
-    }
-
     const target = args[0];
     if (!target) {
       return sock.sendMessage(chatId, {
-        text: '❌ Usage: /switch <botname>',
+        text: '❌ Usage: /switch <botname>\nExample: /switch gojo',
       }, { quoted: msg });
     }
 
@@ -130,13 +106,11 @@ const switchBot = {
     const info = PersonalityManager.getPersonalityInfo(result.personalityKey);
     const newKey = result.personalityKey;
 
-    // 💬 Only the bot that was switched to speaks. It announces "I am active
-    // now" from ITS OWN socket, so the group sees exactly one reply — the
-    // newly-active bot — and no other bot chimes in.
+    // Send greeting from target bot if online
     try {
       const MSM = require('../../bots/MultiSocketManager');
       const newBotSock = MSM.getSocket(newKey);
-      if (newBotSock) {
+      if (newBotSock && newBotSock.user?.id && newBotSock.ws?.readyState === 1) {
         const greeting =
           `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
           `✨ I am active now!\n` +
@@ -148,8 +122,9 @@ const switchBot = {
         await newBotSock.sendMessage(chatId, { text: greeting }, { quoted: msg });
         return;
       }
-    } catch (e) { /* fall through to socket send below */ }
+    } catch (e) { /* fall through to active socket response */ }
 
+    // Fallback: If target bot is offline/banned, the current healthy socket sends confirmation
     const prevName = current ? PersonalityManager.getDisplayName(current) : null;
     return sock.sendMessage(chatId, {
       text: [
@@ -159,6 +134,7 @@ const switchBot = {
         prevName ? `📤 Previous: ${prevName}` : null,
         `📥 Active: *${result.displayName}*`,
         `🎭 Theme: ${info.theme}`,
+        `⚠️ _Note: ${result.displayName}'s socket is currently offline or unlinked._`,
         `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
       ].filter(Boolean).join('\n'),
     }, { quoted: msg });
@@ -173,8 +149,6 @@ const hi = {
   async execute(sock, msg, args, getDatabase, saveDatabase, sender) {
     const chatId = msg.key.remoteJid;
 
-    // Determine which bots to summon: ALL connected bots in the group (active
-    // or dormant). Fall back to 'present' bots for backwards compatibility.
     let connectedKeys = [];
     try {
       const MSM = require('../../bots/MultiSocketManager');
@@ -190,10 +164,6 @@ const hi = {
     }
 
     const senderName = msg.pushName || sender.split('@')[0];
-
-    // 👋 /hi is a SIMPLE greeting — no AI. Each present bot replies with a
-    // plain line: "Hi <player name> I'm <bot name> 🎭". No angle brackets,
-    // and each bot is tagged with its own distinguishing emoji.
     const greeting = args.length > 0 ? `Hi ${senderName}! ${args.join(' ')}` : `Hi ${senderName}!`;
 
     let responses = [];
@@ -220,12 +190,10 @@ const hi = {
       }, { quoted: msg });
     }
 
-    // Use MultiSocketManager to send each reply from its own bot socket
     try {
       const MultiSocketManager = require('../../bots/MultiSocketManager');
       await MultiSocketManager.sendHiChorus(chatId, responses, msg);
     } catch(e) {
-      // Fallback: send all from primary socket (quoted so it looks like a normal reply)
       for (let i = 0; i < responses.length; i++) {
         const { displayName, text } = responses[i];
         if (text) await sock.sendMessage(chatId, { text: `*${displayName}:* ${text}` }, { quoted: msg });
@@ -326,7 +294,6 @@ const bots = {
     for (const key of PersonalityManager.getAllPersonalities()) {
       const info = PersonalityManager.getPersonalityInfo(key);
       const isActive = key === activeKey;
-      // "Linked" = this personality has a live socket (a number is paired to it).
       const isLinked = linkedKeys.has(key) || (MSM && !!MSM.getSocket?.(key));
 
       let status;
@@ -350,7 +317,6 @@ const bots = {
 const stopbot = {
   name: 'stopbot',
   description: 'Deactivate all bots in this group',
-  ownerOnly: true,
 
   async execute(sock, msg, args, getDatabase, saveDatabase, sender) {
     const chatId = msg.key.remoteJid;

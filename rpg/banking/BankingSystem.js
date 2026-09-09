@@ -89,7 +89,7 @@ class BankingSystem {
     return { success: true, newBalance: account.balance };
   }
 
-  static withdraw(bank, playerId, amount) {
+  static withdraw(bank, playerId, amount, player = null) {
     const account = bank.accounts.find(a => a.userId === playerId);
     if (!account) return { success: false, reason: 'Account not found' };
     
@@ -97,14 +97,17 @@ class BankingSystem {
       return { success: false, reason: 'Insufficient balance' };
     }
     
-    // Check cooldown
+    // Check cooldown (50% reduced for Pro players)
     const now = Date.now();
-    if (account.lastWithdrawal && (now - account.lastWithdrawal) < this.WITHDRAWAL_COOLDOWN) {
-      const timeLeft = this.WITHDRAWAL_COOLDOWN - (now - account.lastWithdrawal);
-      const daysLeft = Math.ceil(timeLeft / (24 * 60 * 60 * 1000));
+    const isPro = player && (player.isPro || player.proStatus) && player.proExpiresAt && player.proExpiresAt > now;
+    const effectiveCooldown = isPro ? (30 * 60 * 1000) : this.WITHDRAWAL_COOLDOWN;
+
+    if (account.lastWithdrawal && (now - account.lastWithdrawal) < effectiveCooldown) {
+      const timeLeft = effectiveCooldown - (now - account.lastWithdrawal);
+      const minsLeft = Math.ceil(timeLeft / (60 * 1000));
       return { 
         success: false, 
-        reason: `Withdrawal cooldown: ${daysLeft} days left` 
+        reason: `Withdrawal cooldown: ${minsLeft} minute(s) left${isPro ? ' (🌟 PRO 50% Reduced Cooldown)' : ''}` 
       };
     }
     

@@ -138,15 +138,18 @@ async function defaultHandler(sock, msg, player, skill, db, saveDatabase, getDat
     }, { quoted: msg });
   }
 
-  // Cooldown check
+  // Cooldown check (50% reduced for Pro players)
   if (!player.skillCooldowns) player.skillCooldowns = {};
   if (!player.lastSkillUse)  player.lastSkillUse  = {};
+  const isPro = !!((player.isPro || player.proStatus) && player.proExpiresAt && player.proExpiresAt > Date.now());
   const lastUse = player.lastSkillUse[skill.name] || 0;
-  const cooldownMs = (skill.cooldown || 0) * 1000;
+  let cooldownMs = (skill.cooldown || 0) * 1000;
+  if (isPro) cooldownMs = Math.floor(cooldownMs * 0.5);
+
   if (Date.now() - lastUse < cooldownMs) {
     const remaining = Math.ceil((cooldownMs - (Date.now() - lastUse)) / 1000);
     return sock.sendMessage(chatId, {
-      text: `⏰ *${skill.name}* is on cooldown! (${remaining}s remaining)`
+      text: `⏰ *${skill.name}* is on cooldown! (${remaining}s remaining)${isPro ? ' (🌟 PRO 50% Reduced Cooldown)' : ''}`
     }, { quoted: msg });
   }
 
@@ -206,14 +209,17 @@ async function healerHandler(sock, msg, player, skill, db, saveDatabase, getData
     }, { quoted: msg });
   }
 
-  // Cooldown check
+  // Cooldown check (50% reduced for Pro)
   if (!player.lastSkillUse)  player.lastSkillUse  = {};
+  const isPro = !!((player.isPro || player.proStatus) && player.proExpiresAt && player.proExpiresAt > Date.now());
   const lastUse = player.lastSkillUse[skill.name] || 0;
-  const cooldownMs = (skill.cooldown || 0) * 1000;
+  let cooldownMs = (skill.cooldown || 0) * 1000;
+  if (isPro) cooldownMs = Math.floor(cooldownMs * 0.5);
+
   if (Date.now() - lastUse < cooldownMs) {
     const remaining = Math.ceil((cooldownMs - (Date.now() - lastUse)) / 1000);
     return sock.sendMessage(chatId, {
-      text: `⏰ *${skill.name}* is on cooldown! (${remaining}s remaining)`
+      text: `⏰ *${skill.name}* is on cooldown! (${remaining}s remaining)${isPro ? ' (🌟 PRO 50% Reduced Cooldown)' : ''}`
     }, { quoted: msg });
   }
 

@@ -1,5 +1,7 @@
 // cooldowns.js — Show all active cooldowns for the player in one place
 
+'use strict';
+
 module.exports = {
   name: 'cooldowns',
   aliases: ['cd', 'timers'],
@@ -15,7 +17,13 @@ module.exports = {
     }
 
     const now = Date.now();
+    const isPro = !!((player.isPro || player.proStatus) && player.proExpiresAt && player.proExpiresAt > now);
     const lines = [];
+
+    if (isPro) {
+      lines.push(`🌟 *PRO VIP STATUS ACTIVE:* 50% Reduced Cooldowns on all features!`);
+      lines.push(``);
+    }
 
     const fmt = (ms) => {
       if (ms <= 0) return '✅ Ready';
@@ -26,6 +34,12 @@ module.exports = {
       const h = Math.floor(m / 60), remm = m % 60;
       return `⏳ ${h}h ${remm}m`;
     };
+
+    // ── Aura Farm Cooldown ────────────────────────────────────
+    const auraCdMs = isPro ? (5 * 60 * 60 * 1000) : (10 * 60 * 60 * 1000);
+    const lastAura = player.cooldowns?.auraFarm || 0;
+    const auraCd = Math.max(0, (lastAura + auraCdMs) - now);
+    lines.push(`✨ *Aura Farm:* ${fmt(auraCd)}${auraCd === 0 ? ' — /aura farm' : ''}`);
 
     // ── Daily reward ──────────────────────────────────────────
     const dailyCd = player.dailyQuest?.lastClaimed
@@ -60,10 +74,11 @@ module.exports = {
 
     // ── Bank withdrawal cooldown ──────────────────────────────
     if (db.banks) {
+      const bankWdMs = isPro ? (30 * 60 * 1000) : (60 * 60 * 1000);
       for (const bank of Object.values(db.banks)) {
         const acc = bank.accounts?.find(a => a.userId === sender);
         if (acc?.lastWithdrawal) {
-          const wdCd = Math.max(0, (acc.lastWithdrawal + 60*60*1000) - now);
+          const wdCd = Math.max(0, (acc.lastWithdrawal + bankWdMs) - now);
           lines.push(`🏦 *Bank Withdraw:* ${fmt(wdCd)}${wdCd === 0 ? ` — /bank withdraw` : ''}`);
           break;
         }
@@ -71,11 +86,7 @@ module.exports = {
     }
 
     // ── Casino per-game cooldowns (in-memory) ─────────────────
-    const casinoGames = { slots: 30_000, blackjack: 15_000, roulette: 20_000, dice: 10_000 };
-    const casinoLines = [];
-    // We can't read the Map from here directly, but we can show a summary
-    casinoLines.push(`🎰 *Casino:* Slots 30s • Blackjack 15s • Roulette 20s • Dice 10s`);
-    lines.push(...casinoLines);
+    lines.push(`🎰 *Casino Cooldowns:* ${isPro ? 'Slots 15s • BJ 7s • Roulette 10s • Dice 5s' : 'Slots 30s • BJ 15s • Roulette 20s • Dice 10s'}`);
 
     return sock.sendMessage(chatId, {
       text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n⏱️ *YOUR COOLDOWNS*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n${lines.join('\n')}\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n❤️ HP: ${player.stats.hp}/${player.stats.maxHp} | 💠 Nexus: ${player.gold || 0}`

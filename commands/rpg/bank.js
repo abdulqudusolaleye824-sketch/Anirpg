@@ -313,7 +313,7 @@ Use /bank deposit to add more!
         }, { quoted: msg });
       }
 
-      const result = BankingSystem.withdraw(bank, sender, amount);
+      const result = BankingSystem.withdraw(bank, sender, amount, player);
       
       if (!result.success) {
         return sock.sendMessage(chatId, {

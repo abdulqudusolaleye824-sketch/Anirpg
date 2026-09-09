@@ -408,9 +408,14 @@ module.exports = async (sock, msg, messageText, config, getDatabase, saveDatabas
       const now = Date.now();
       const last = db.userCooldowns[key] || 0;
 
-      if (now - last < settings.slowmode * 1000) {
+      const player = db.users?.[sender];
+      const isPro = player && (player.isPro || player.proStatus) && player.proExpiresAt && player.proExpiresAt > now;
+      const slowmodeMs = isPro ? Math.floor((settings.slowmode * 1000) * 0.5) : (settings.slowmode * 1000);
+
+      if (now - last < slowmodeMs) {
+        const remaining = Math.ceil((slowmodeMs - (now - last)) / 1000);
         return sock.sendMessage(chatId, {
-          text: `⏳ Slowmode active.\nWait ${settings.slowmode}s between commands. Baka`
+          text: `⏳ Slowmode active.\nWait ${remaining}s between commands. Baka${isPro ? ' (🌟 PRO 50% Reduced Cooldown)' : ''}`
         }, { quoted: msg });
       }
 

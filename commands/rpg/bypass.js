@@ -23,16 +23,19 @@ module.exports = {
       }, { quoted: msg });
     }
 
-    // ── Self 24hr cooldown ───────────────────────────────────────
+    // ── Self 24hr cooldown (12hr for Pro) ───────────────────────
     if (!db.bypassCooldowns) db.bypassCooldowns = {};
+    const player = db.users[sender];
+    const isPro = player && (player.isPro || player.proStatus) && player.proExpiresAt && player.proExpiresAt > Date.now();
+    const effectiveCooldown = isPro ? (12 * 60 * 60 * 1000) : BYPASS_COOLDOWN_MS;
     const lastUsed = db.bypassCooldowns[sender] || 0;
-    const timeLeft = BYPASS_COOLDOWN_MS - (Date.now() - lastUsed);
+    const timeLeft = effectiveCooldown - (Date.now() - lastUsed);
 
     if (timeLeft > 0) {
       const hours = Math.floor(timeLeft / 1000 / 60 / 60);
       const minutes = Math.ceil((timeLeft % (1000 * 60 * 60)) / 1000 / 60);
       return sock.sendMessage(chatId, {
-        text: `⏰ Bypass on cooldown!\n\nTime remaining: ${hours}h ${minutes}m`
+        text: `⏰ Bypass on cooldown!\n\nTime remaining: ${hours}h ${minutes}m${isPro ? ' (🌟 PRO 50% Reduced Cooldown)' : ''}`
       }, { quoted: msg });
     }
 
