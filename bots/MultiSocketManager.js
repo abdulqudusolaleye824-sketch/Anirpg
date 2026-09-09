@@ -109,6 +109,66 @@ function persistLinkedBot(getDatabase, saveDatabase, personalityKey, sock, phone
   }
 }
 
+// ── PERSISTENT AUTH BACKUP (fixes Railway redeploy wipe) ─────────────────
+// Auth files live on ephemeral FS (auth/<bot>/). On Railway each redeploy
+// wipes the container. We mirror every bot's auth folder into database
+// (which is persisted via MongoDB) so a fresh container can restore it.
+function backupAuthToDB(personalityKey, authDir, getDatabase, saveDatabase) {
+  try {
+    const db = getDatabase?.();
+    if (!db) return;
+    const botAuthDir = path.join(authDir, personalityKey);
+    if (!fs.existsSync(botAuthDir)) return;
+    if (!db.authBackups) db.authBackups = {};
+    const files = {};
+    function walk(dir, base) {
+      let entries;
+      try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+      for (const e of entries) {
+        const full = path.join(dir, e.name);
+        const rel = path.join(base, e.name);
+        if (e.isDirectory()) walk(full, rel);
+        else {
+          try {
+            const data = fs.readFileSync(full);
+            files[rel] = data.toString('base64');
+          } catch {}
+        }
+      }
+    }
+    walk(botAuthDir, '.');
+    if (Object.keys(files).length === 0) return;
+    db.authBackups[personalityKey] = { files, updatedAt: Date.now() };
+    saveDatabase?.();
+  } catch (e) {
+    console.error('backupAuth error:', e.message);
+  }
+}
+
+function restoreAuthFromDB(personalityKey, authDir, getDatabase) {
+  try {
+    const db = getDatabase?.();
+    if (!db?.authBackups?.[personalityKey]) return false;
+    const botAuthDir = path.join(authDir, personalityKey);
+    if (fs.existsSync(path.join(botAuthDir, 'creds.json'))) return false;
+    const backup = db.authBackups[personalityKey];
+    if (!backup?.files || Object.keys(backup.files).length === 0) return false;
+    fs.mkdirSync(botAuthDir, { recursive: true });
+    for (const [rel, b64] of Object.entries(backup.files)) {
+      const full = path.join(botAuthDir, rel);
+      try {
+        fs.mkdirSync(path.dirname(full), { recursive: true });
+        fs.writeFileSync(full, Buffer.from(b64, 'base64'));
+      } catch {}
+    }
+    console.log(`♻️  Restored auth for [${personalityKey}] from DB backup (${Object.keys(backup.files).length} files)`);
+    return true;
+  } catch (e) {
+    console.error('restoreAuth error:', e.message);
+    return false;
+  }
+}
+
 async function startAstraLink(personalityKey, authDir, getDatabase, saveDatabase, options = {}) {
   const method = options.pairingMode === 'qr' ? 'qr' : 'code';
   const phoneNumber = (options.pairingPhone || '').replace(/[^0-9]/g, '');
@@ -131,6 +191,15 @@ async function startAstraLink(personalityKey, authDir, getDatabase, saveDatabase
     }
     // Clear old un-registered session state so pre-keys match fresh pairing code
     if (fs.existsSync(botAuthDir)) fs.rmSync(botAuthDir, { recursive: true, force: true });
+    // Also clear persisted backup so fresh pairing starts clean
+    try {
+      const db = getDatabase?.();
+      if (db?.authBackups?.[personalityKey]) {
+        delete db.authBackups[personalityKey];
+        saveDatabase?.();
+        console.log(`🧹 Cleared persisted backup for [${personalityKey}] (fresh AstraLink)`);
+      }
+    } catch {}
   } catch (_) {}
 
   pairingSessions[personalityKey] = {
@@ -236,6 +305,8 @@ function getAnySocket() {
 
 async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, options = {}) {
   const botAuthDir = path.join(authDir, personalityKey);
+  // Restore from DB backup if ephemeral FS was wiped (Railway redeploy fix)
+  try { restoreAuthFromDB(personalityKey, authDir, getDatabase); } catch {}
   fs.mkdirSync(botAuthDir, { recursive: true });
 
   const { state, saveCreds } = await useMultiFileAuthState(botAuthDir);
@@ -388,6 +459,7 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
           const db = getDatabase?.();
           if (db) {
             if (db.linkedBots?.[personalityKey]) delete db.linkedBots[personalityKey];
+            if (db.authBackups?.[personalityKey]) delete db.authBackups[personalityKey];
             if (db.botActive) {
               for (const [cid, pKey] of Object.entries(db.botActive)) {
                 if (pKey === personalityKey) delete db.botActive[cid];
@@ -415,6 +487,7 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
         code: pairingSessions[personalityKey]?.code || null,
       };
       persistLinkedBot(getDatabase, saveDatabase, personalityKey, sock, pairingPhone);
+      try { backupAuthToDB(personalityKey, authDir, getDatabase, saveDatabase); } catch {}
       console.log(`✅ AstraLink [${displayName}] connection VERIFIED & ACTIVE! (JID: ${jid})`);
 
       // Deliver pending restart completion notice if present in DB
@@ -432,7 +505,10 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
     }
   });
 
-  sock.ev.on('creds.update', saveCreds);
+  sock.ev.on('creds.update', async (...args) => {
+    try { await saveCreds(...args); } catch {}
+    try { backupAuthToDB(personalityKey, authDir, getDatabase, saveDatabase); } catch {}
+  });
 
   sock.ev.on('group-participants.update', async ({ id: chatId, participants, action }) => {
     if (action !== 'add' && action !== 'remove') return;
@@ -917,4 +993,6 @@ module.exports = {
   canSendDM,
   safeSendDM,
   getActiveSocket,
+  backupAuthToDB,
+  restoreAuthFromDB,
 };

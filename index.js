@@ -1048,6 +1048,38 @@ async function startup() {
     if (process.env['BOT_' + key.toUpperCase()]) linkedKeys.push(key);
   }
 
+  // ── RESTORE PERSISTED AUTH (Railway redeploy fix) ──────────────
+  // If container FS was wiped, auth files are gone but DB backup (Mongo) remains.
+  // Restore each backed-up personality before checking disk.
+  try {
+    const dbTmp = getDatabase();
+    if (dbTmp?.authBackups) {
+      for (const key of Object.keys(dbTmp.authBackups)) {
+        if (!ALL_PERSONALITY_KEYS.includes(key)) continue;
+        const authDir = path.join(AUTH_DIR, key);
+        const credsFile = path.join(authDir, 'creds.json');
+        if (!fs.existsSync(credsFile)) {
+          try {
+            const backup = dbTmp.authBackups[key];
+            if (backup?.files && Object.keys(backup.files).length > 0) {
+              fs.mkdirSync(authDir, { recursive: true });
+              for (const [rel, b64] of Object.entries(backup.files)) {
+                const full = path.join(authDir, rel);
+                fs.mkdirSync(path.dirname(full), { recursive: true });
+                fs.writeFileSync(full, Buffer.from(b64, 'base64'));
+              }
+              console.log(`♻️  [startup] Restored auth for [${key}] from DB backup`);
+            }
+          } catch (e) {
+            console.error(`⚠️  [startup] restore failed for [${key}]:`, e.message);
+          }
+        }
+      }
+    }
+  } catch (e) {
+    console.error('startup restore error:', e.message);
+  }
+
   // Also include any personality with a saved, registered AstraLink session
   for (const key of ALL_PERSONALITY_KEYS) {
     const authDir = path.join(AUTH_DIR, key);
@@ -1060,6 +1092,11 @@ async function startup() {
         } else {
           // Stale / un-registered session folder -> clean up!
           try { fs.rmSync(authDir, { recursive: true, force: true }); } catch (_) {}
+          // Also clear stale backup for unregistered creds
+          try {
+            const db2 = getDatabase();
+            if (db2?.authBackups?.[key]) { delete db2.authBackups[key]; saveDatabase(); }
+          } catch {}
         }
       }
     } catch (e) {
@@ -1068,6 +1105,7 @@ async function startup() {
   }
 
   // Also check db.linkedBots — only keep keys that actually have registered creds on disk
+  // (but now disk may have been restored from backup above, so re-check)
   const db = getDatabase();
   if (db && db.linkedBots) {
     for (const key of Object.keys(db.linkedBots)) {
@@ -1076,8 +1114,12 @@ async function startup() {
         const credsFile = path.join(authDir, 'creds.json');
         if (fs.existsSync(credsFile)) {
           if (!linkedKeys.includes(key)) linkedKeys.push(key);
+        } else if (db.authBackups?.[key]?.files) {
+          // Has backup but file still missing after restore attempt → keep entry, will restore on next connect
+          console.log(`⏳ [startup] ${key} has DB backup but no file yet — keeping linked entry`);
+          if (!linkedKeys.includes(key)) linkedKeys.push(key);
         } else {
-          // DB entry exists but disk session is missing/dead -> purge from db.linkedBots!
+          // DB entry exists but disk session is missing/dead and no backup -> purge from db.linkedBots!
           delete db.linkedBots[key];
           saveDatabase();
         }
