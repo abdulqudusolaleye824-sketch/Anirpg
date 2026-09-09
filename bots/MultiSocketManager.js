@@ -36,15 +36,15 @@ const reconnectAttempts = {};
 let hostBotKey = null;
 
 function getFirstOnlineSocketKey() {
-  const keys = Object.keys(botSockets).filter(k => botSockets[k]?.user?.id && botSockets[k]?.ws?.readyState === 1).sort();
+  const keys = Object.keys(botSockets).filter(k => !!botSockets[k]?.user?.id).sort();
   return keys[0] || null;
 }
 
 function getHostSocket() {
-  if (hostBotKey && botSockets[hostBotKey]?.user?.id && botSockets[hostBotKey]?.ws?.readyState === 1) {
+  if (hostBotKey && botSockets[hostBotKey]?.user?.id) {
     return botSockets[hostBotKey];
   }
-  const keys = Object.keys(botSockets).filter(k => botSockets[k]?.user?.id && botSockets[k]?.ws?.readyState === 1);
+  const keys = Object.keys(botSockets).filter(k => !!botSockets[k]?.user?.id);
   if (keys.length > 0) {
     hostBotKey = keys[0];
     return botSockets[keys[0]];
@@ -291,7 +291,7 @@ function _isOwnBotNumber(bareNumber) {
   for (const key of Object.keys(botSockets)) {
     const sock = botSockets[key];
     const jid = sock?.user?.id;
-    if (!jid || sock.ws?.readyState !== 1) continue;
+    if (!jid) continue;
     if (String(jid).split(':')[0].split('@')[0] === bareNumber) return true;
   }
   return false;
@@ -602,7 +602,7 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
 
     // Active bot determination with strict /start and /switch handling
     const rawActiveKey = isGroup ? PersonalityManager.getActiveBot(chatId) : null;
-    const isOnlineActive = rawActiveKey && !!(botSockets[rawActiveKey]?.user?.id && botSockets[rawActiveKey]?.ws?.readyState === 1);
+    const isOnlineActive = rawActiveKey && !!(botSockets[rawActiveKey]?.user?.id);
     const activeKey = isOnlineActive ? rawActiveKey : null;
 
     let isTargetMentionedBot = false;
@@ -639,9 +639,11 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
     if (!isGroup) {
       isActive = true;
     } else if (commandName === 'hi') {
-      // /hi is the ONLY command that works in group chat without /start first!
-      // All connected present bots process individually and respond independently.
-      isActive = true;
+      // /hi — single handler orchestrates chorus for all present bots (fixes double-reply)
+      // Only the active bot (or first online if no active) handles /hi and then broadcasts via sendHiChorus
+      const firstKey = getFirstOnlineSocketKey();
+      const hiHandler = isOnlineActive ? rawActiveKey : firstKey;
+      isActive = (personalityKey === hiHandler);
     } else if (isCommand && (commandName === 'start' || commandName === 'switch')) {
       if (resolvedTarget) {
         isActive = isTargetMentionedBot;

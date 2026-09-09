@@ -590,7 +590,7 @@ module.exports = async (sock, msg, messageText, config, getDatabase, saveDatabas
     try {
       const MSM = require('../bots/MultiSocketManager');
       const s = MSM.getSocket(activeKey);
-      const isOnline = s?.user?.id && s.ws?.readyState === 1;
+      const isOnline = !!(s?.user?.id);
       if (!isOnline) {
         console.log(`🔄 Active bot ${activeKey} is offline in ${chatId}, clearing for failover`);
         activeKey = null;
@@ -614,7 +614,7 @@ module.exports = async (sock, msg, messageText, config, getDatabase, saveDatabas
       if (MSM.getFirstOnlineSocketKey) failoverKey = MSM.getFirstOnlineSocketKey();
       if (!failoverKey && MSM.getAllSockets) {
         const all = MSM.getAllSockets();
-        failoverKey = Object.keys(all).find(k => all[k]?.user?.id && all[k].ws?.readyState === 1) || null;
+        failoverKey = Object.keys(all).find(k => !!all[k]?.user?.id) || null;
       }
       // Also try any key that is marked present in this group
       if (!failoverKey) {
