@@ -28,6 +28,15 @@ const RARITY_COLORS = {
   mythic:    '#E74C3C',
 };
 
+function cleanText(str) {
+  if (!str) return '';
+  // Strip emojis and unrenderable symbols for Node Canvas to avoid tofu boxes (☐)
+  return String(str)
+    .replace(/[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{1F600}-\u{1F64F}\u{1F680}-\u{1F6FF}\u{1F1E0}-\u{1F1FF}]/gu, '')
+    .replace(/[^\x20-\x7E]/g, '') // Keep standard printable ASCII
+    .trim();
+}
+
 /**
  * Render Astra Pass Image (Deep Blue & Red theme)
  */
@@ -75,33 +84,35 @@ async function renderAstraPassImage(player, passData, page = 1) {
   ctx.fillStyle = '#FFFFFF';
   ctx.font = 'bold 32px sans-serif';
   ctx.textAlign = 'left';
-  ctx.fillText('🏛️ ASTRA PASS', 35, 55);
+  ctx.fillText('ASTRA PASS', 35, 55);
 
   ctx.fillStyle = '#3897FF';
   ctx.font = 'bold 18px sans-serif';
-  ctx.fillText(`SEASON 1 — PAGE ${page} / 5 (TIERS ${startTier}–${endTier})`, 35, 85);
+  ctx.fillText(`SEASON 1 - PAGE ${page} / 5 (TIERS ${startTier}-${endTier})`, 35, 85);
 
   // Player info box
   ctx.fillStyle = 'rgba(255, 255, 255, 0.05)';
-  ctx.roundRect ? ctx.roundRect(35, 105, width - 70, 95, 12) : ctx.fillRect(35, 105, width - 70, 95);
+  if (ctx.roundRect) ctx.roundRect(35, 105, width - 70, 95, 12);
+  else ctx.fillRect(35, 105, width - 70, 95);
   ctx.fill();
   ctx.strokeStyle = 'rgba(180, 20, 60, 0.5)';
   ctx.stroke();
 
+  const hunterName = cleanText(player.name) || 'Hunter';
   ctx.fillStyle = '#FFFFFF';
   ctx.font = 'bold 20px sans-serif';
-  ctx.fillText(`👤 Hunter: ${player.name || 'Player'}`, 55, 138);
+  ctx.fillText(`Hunter: ${hunterName}`, 55, 138);
 
   const level = passData.level || 1;
   ctx.fillStyle = '#FF4500';
-  ctx.fillText(`⭐ Pass Level: Tier ${level} / 50`, 55, 170);
+  ctx.fillText(`Pass Level: Tier ${level} / 50`, 55, 170);
 
   // Premium badge
   const hasPremium = passData.hasPremium;
   ctx.fillStyle = hasPremium ? '#FFD700' : '#888888';
   ctx.font = 'bold 16px sans-serif';
   ctx.textAlign = 'right';
-  ctx.fillText(hasPremium ? '✨ PREMIUM UNLOCKED' : '🆓 FREE TRACK', width - 55, 138);
+  ctx.fillText(hasPremium ? '[PREMIUM UNLOCKED]' : '[FREE TRACK]', width - 55, 138);
 
   // XP Bar
   const xp = passData.xp || 0;
@@ -181,33 +192,37 @@ async function renderAstraPassImage(player, passData, page = 1) {
 
     ctx.textAlign = 'left';
 
+    // Dynamic seasonal rewards for Tier t
+    const premNexus = t * 3000;
+    const premStones = Math.floor(t * 14);
+    const freeNexus = t * 1500;
+    const freeStones = Math.floor(t * 7);
+
     // ── TOP STACK: PREMIUM TRACK REWARD ─────────────────────
     ctx.fillStyle = '#FFD700';
     ctx.font = 'bold 14px sans-serif';
-    ctx.fillText(`👑 PREMIUM:`, 150, y + 36);
+    ctx.fillText(`PREMIUM:`, 150, y + 36);
 
-    const premNexus = 3000;
-    const premStones = 360;
-    let premText = `+${premNexus.toLocaleString()} 💠 | +${premStones} 💎`;
+    let premText = `+${premNexus.toLocaleString()} Nexus | +${premStones} Stones`;
     if (premItem) {
-      premText += ` | 🎁 ${premItem.name}`;
+      premText += ` | + ${cleanText(premItem.name) || premItem.name}`;
     }
     ctx.fillStyle = premItem ? (RARITY_COLORS[premItem.rarity] || '#FFD700') : '#E2E8F0';
     ctx.font = '14px sans-serif';
     ctx.fillText(premText, 250, y + 36);
 
     // Premium Status Badge
-    let premStatus = '🔒 Locked';
+    let premStatus = 'Locked';
     let premStatusColor = '#6B7280';
     if (isUnlocked) {
       if (!hasPremium) {
-        premStatus = '🔒 Buy PRO';
+        premStatus = 'Buy PRO';
         premStatusColor = '#F59E0B';
       } else if (premClaimed) {
-        premStatus = '✅ Claimed';
+        premStatus = 'Claimed';
         premStatusColor = '#10B981';
       } else {
-        premStatus = '🔓 Unlocked';
+        premStatus = 'Unlocked';
         premStatusColor = '#3B82F6';
       }
     }
@@ -228,27 +243,25 @@ async function renderAstraPassImage(player, passData, page = 1) {
     ctx.textAlign = 'left';
     ctx.fillStyle = '#3897FF';
     ctx.font = 'bold 14px sans-serif';
-    ctx.fillText(`🆓 FREE:`, 150, y + 84);
+    ctx.fillText(`FREE:`, 150, y + 84);
 
-    const freeNexus = 1000;
-    const freeStones = 120;
-    let freeText = `+${freeNexus.toLocaleString()} 💠 | +${freeStones} 💎`;
+    let freeText = `+${freeNexus.toLocaleString()} Nexus | +${freeStones} Stones`;
     if (freeItem) {
-      freeText += ` | 📦 ${freeItem.name}`;
+      freeText += ` | + ${cleanText(freeItem.name) || freeItem.name}`;
     }
     ctx.fillStyle = freeItem ? (RARITY_COLORS[freeItem.rarity] || '#3897FF') : '#CBD5E1';
     ctx.font = '14px sans-serif';
     ctx.fillText(freeText, 250, y + 84);
 
     // Free Status Badge
-    let freeStatus = '🔒 Locked';
+    let freeStatus = 'Locked';
     let freeStatusColor = '#6B7280';
     if (isUnlocked) {
       if (freeClaimed) {
-        freeStatus = '✅ Claimed';
+        freeStatus = 'Claimed';
         freeStatusColor = '#10B981';
       } else {
-        freeStatus = '🔓 Unlocked';
+        freeStatus = 'Unlocked';
         freeStatusColor = '#3B82F6';
       }
     }
@@ -264,7 +277,7 @@ async function renderAstraPassImage(player, passData, page = 1) {
   ctx.fillStyle = '#94A3B8';
   ctx.font = '13px sans-serif';
   ctx.textAlign = 'center';
-  ctx.fillText('📖 Use /pass claim to claim rewards | Use /pass [page] to switch pages (1–5)', width / 2, totalHeight - 22);
+  ctx.fillText('Use /pass claim to claim rewards | Use /pass [page] to switch pages (1-5)', width / 2, totalHeight - 22);
 
   return canvas.toBuffer('image/png');
 }
@@ -315,11 +328,11 @@ async function renderBattlePassImage(player, bpData, page = 1) {
   ctx.fillStyle = '#FFD700';
   ctx.font = 'bold 32px sans-serif';
   ctx.textAlign = 'left';
-  ctx.fillText('🎖️ BATTLE PASS', 35, 55);
+  ctx.fillText('BATTLE PASS', 35, 55);
 
   ctx.fillStyle = '#F59E0B';
   ctx.font = 'bold 18px sans-serif';
-  ctx.fillText(`SEASONAL PASS — PAGE ${page} / 4 (TIERS ${startTier}–${endTier})`, 35, 85);
+  ctx.fillText(`SEASONAL PASS - PAGE ${page} / 4 (TIERS ${startTier}-${endTier})`, 35, 85);
 
   // Player info box
   ctx.fillStyle = 'rgba(212, 175, 55, 0.05)';
@@ -329,20 +342,21 @@ async function renderBattlePassImage(player, bpData, page = 1) {
   ctx.strokeStyle = 'rgba(212, 175, 55, 0.4)';
   ctx.stroke();
 
+  const hunterName = cleanText(player.name) || 'Hunter';
   ctx.fillStyle = '#FFFFFF';
   ctx.font = 'bold 20px sans-serif';
-  ctx.fillText(`👤 Hunter: ${player.name || 'Player'}`, 55, 138);
+  ctx.fillText(`Hunter: ${hunterName}`, 55, 138);
 
   const level = bpData.level || 1;
   ctx.fillStyle = '#FFD700';
-  ctx.fillText(`⭐ BP Level: Tier ${level} / 40`, 55, 170);
+  ctx.fillText(`BP Level: Tier ${level} / 40`, 55, 170);
 
   // Premium status badge
   const isPremium = bpData.premium;
   ctx.fillStyle = isPremium ? '#FFD700' : '#888888';
   ctx.font = 'bold 16px sans-serif';
   ctx.textAlign = 'right';
-  ctx.fillText(isPremium ? '👑 PREMIUM PASS (2x EXP)' : '🆓 FREE PASS', width - 55, 138);
+  ctx.fillText(isPremium ? '[PREMIUM PASS - 2x EXP]' : '[FREE PASS]', width - 55, 138);
 
   // XP Bar
   const xp = bpData.xp || 0;
@@ -428,29 +442,29 @@ async function renderBattlePassImage(player, bpData, page = 1) {
     // Tier Details
     ctx.fillStyle = '#FFD700';
     ctx.font = 'bold 15px sans-serif';
-    const trackLabel = isPremLocked ? '👑 PREMIUM TRACK' : '🆓 FREE TRACK';
+    const trackLabel = isPremLocked ? 'PREMIUM TRACK' : 'FREE TRACK';
     ctx.fillText(trackLabel, 145, y + 34);
 
-    let rewardText = `+${goldAmt.toLocaleString()} 💠 Nexus | +${stoneAmt} 💎 Stones`;
-    if (hasPC) rewardText += ` | 💼 +200 PC Return!`;
-    if (item) rewardText += ` | 🎁 ${item.name}`;
+    let rewardText = `+${goldAmt.toLocaleString()} Nexus | +${stoneAmt} Stones`;
+    if (hasPC) rewardText += ` | +200 PC Return!`;
+    if (item) rewardText += ` | + ${cleanText(item.name) || item.name}`;
 
     ctx.fillStyle = item ? (RARITY_COLORS[item.rarity] || '#F59E0B') : '#E2E8F0';
     ctx.font = '14px sans-serif';
     ctx.fillText(rewardText, 145, y + 62);
 
     // Status Badge
-    let statusText = '🔒 Locked';
+    let statusText = 'Locked';
     let statusColor = '#6B7280';
     if (isUnlocked) {
       if (isPremLocked && !isPremium) {
-        statusText = '🔒 Buy Premium';
+        statusText = 'Buy Premium';
         statusColor = '#F59E0B';
       } else if (isClaimed) {
-        statusText = '✅ Claimed';
+        statusText = 'Claimed';
         statusColor = '#10B981';
       } else {
-        statusText = '🔓 Unlocked';
+        statusText = 'Unlocked';
         statusColor = '#3B82F6';
       }
     }
@@ -467,7 +481,7 @@ async function renderBattlePassImage(player, bpData, page = 1) {
   ctx.fillStyle = '#94A3B8';
   ctx.font = '13px sans-serif';
   ctx.textAlign = 'center';
-  ctx.fillText('📖 Use /bp claim to claim rewards | Use /bp [page] to switch pages (1–4)', width / 2, totalHeight - 22);
+  ctx.fillText('Use /bp claim to claim rewards | Use /bp [page] to switch pages (1-4)', width / 2, totalHeight - 22);
 
   return canvas.toBuffer('image/png');
 }

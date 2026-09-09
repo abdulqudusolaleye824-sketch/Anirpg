@@ -241,7 +241,17 @@ module.exports = async (sock, msg, messageText, config, getDatabase, saveDatabas
   const Perms = require('../utils/permissions');
   const isPrivilegedUser = Perms.isBotOwner(db, sender) || Perms.isBotMod(db, sender);
 
-  // ── DM Command Access Control (Only Owner / Co-Owner / Mods allowed in DM - no exceptions) ──
+  // ── DM Command Access Control (Only Owner / Co-Owner / Mods allowed in DM, ONLY for Mod commands) ──
+  const MOD_DM_COMMANDS = new Set([
+    'killspawn', 'spawnstatus', 'spawnsstatus', 'gstatus', 'groupstatus',
+    'cctv', 'statusreport', 'botid', 'disable', 'enable', 'restart',
+    'maintenance', 'banned', 'ban', 'unban', 'mute', 'unmute',
+    'setgroup', 'setgc', 'ssub', 'renew', 'allowgc', 'groupinfo',
+    'setdungeon', 'removedungeon', 'dungeons', 'set', 'settings', 'gcset',
+    'help', 'menu', 'reset', 'start', 'switch', 'stopbot',
+    'bots', 'hi', 'setainame', 'promotedm', 'demotedm', 'profaq', 'botstats'
+  ]);
+
   const isDM = !chatId.endsWith('@g.us');
   if (isDM) {
     if (!isPrivilegedUser) {
@@ -249,6 +259,16 @@ module.exports = async (sock, msg, messageText, config, getDatabase, saveDatabas
         chatId,
         {
           text: `🚫 *COMMANDS DISABLED IN DM*\n\nBot commands can only be used in authorized group chats.\nJoin an official RPG group to play!`
+        },
+        { quoted: msg }
+      );
+    }
+
+    if (!MOD_DM_COMMANDS.has(commandName) && !MOD_DM_COMMANDS.has(resolvedCommand)) {
+      return sock.sendMessage(
+        chatId,
+        {
+          text: `🚫 *PLAYER COMMANDS DISABLED IN DM*\n\nRegular RPG commands (/profile, /daily, /pass, /dungeon, /casino, etc.) can only be used in group chats!\n\n_DM is reserved exclusively for Mod commands (/killspawn, /groupstatus, etc.)._`
         },
         { quoted: msg }
       );

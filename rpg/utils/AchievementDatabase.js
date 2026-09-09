@@ -135,27 +135,27 @@ const ACHIEVEMENTS = {
   },
   first_thousand: {
     id: 'first_thousand', name: '💠 First Thousand', category: 'Wealth',
-    desc: 'Accumulate 1,000 gold', condition: { type: 'gold_total', count: 1000 },
+    desc: 'Accumulate 1,000 Nexus', condition: { type: 'gold_total', count: 1000 },
     reward: { gold: 500, xp: 100, crystals: 0 }
   },
   gold_hoarder: {
     id: 'gold_hoarder', name: '💛 Nexus Hoarder', category: 'Wealth',
-    desc: 'Accumulate 100,000 gold', condition: { type: 'gold_total', count: 100000 },
+    desc: 'Accumulate 100,000 Nexus', condition: { type: 'gold_total', count: 100000 },
     reward: { gold: 10000, xp: 2000, crystals: 20 }
   },
   millionaire: {
     id: 'millionaire', name: '🤑 Millionaire', category: 'Wealth',
-    desc: 'Accumulate 1,000,000 gold', condition: { type: 'gold_total', count: 1000000 },
+    desc: 'Accumulate 1,000,000 Nexus', condition: { type: 'gold_total', count: 1000000 },
     reward: { gold: 50000, xp: 10000, crystals: 100 }
   },
   crystal_collector: {
     id: 'crystal_collector', name: '💎 Mana Stone Collector', category: 'Wealth',
-    desc: 'Collect 100 mana crystals', condition: { type: 'crystals_total', count: 100 },
+    desc: 'Collect 100 Mana Stones', condition: { type: 'crystals_total', count: 100 },
     reward: { gold: 5000, xp: 1000, crystals: 50 }
   },
   crystal_hoarder: {
     id: 'crystal_hoarder', name: '🔮 Mana Stone Hoarder', category: 'Wealth',
-    desc: 'Collect 1000 mana crystals', condition: { type: 'crystals_total', count: 1000 },
+    desc: 'Collect 1,000 Mana Stones', condition: { type: 'crystals_total', count: 1000 },
     reward: { gold: 25000, xp: 5000, crystals: 200 }
   },
   first_companion: {
@@ -575,7 +575,7 @@ const ACHIEVEMENTS = {
   },
   crystal_spender: {
     id: 'crystal_spender', name: '💎 Mana Stone Spender', category: 'Wealth',
-    desc: 'Spend 500 mana crystals', condition: { type: 'crystals_spent', count: 500 },
+    desc: 'Spend 500 Mana Stones', condition: { type: 'crystals_spent', count: 500 },
     reward: { gold: 10000, xp: 2000, crystals: 50 }
   },
   void_touched: {

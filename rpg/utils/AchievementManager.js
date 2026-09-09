@@ -89,12 +89,12 @@ class AchievementManager {
     if (!achievements.length) return null;
     let msg = '━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🏆 ACHIEVEMENT UNLOCKED!\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n';
     for (const ach of achievements) {
-      const g = ach.reward.gold     > 0 ? '+' + ach.reward.gold.toLocaleString() + 'g ' : '';
-      const x = ach.reward.xp       > 0 ? '+' + ach.reward.xp + 'xp ' : '';
-      const c = ach.reward.crystals > 0 ? '+' + ach.reward.crystals + '💎' : '';
+      const g = ach.reward.gold     > 0 ? '+' + ach.reward.gold.toLocaleString() + ' 💠 ' : '';
+      const x = ach.reward.xp       > 0 ? '+' + ach.reward.xp.toLocaleString() + ' XP ' : '';
+      const c = ach.reward.crystals > 0 ? '+' + ach.reward.crystals.toLocaleString() + ' 💎 ' : '';
       msg += ach.name + '\n';
       msg += '📖 ' + ach.desc + '\n';
-      msg += '🎁 ' + (g + x + c || 'No reward') + '\n\n';
+      msg += '🎁 ' + (g + x + c || 'No reward').trim() + '\n\n';
     }
     msg += '━━━━━━━━━━━━━━━━━━━━━━━━━━━';
     return msg;
