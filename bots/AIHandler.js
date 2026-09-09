@@ -27,17 +27,35 @@ function roleOf(sender, db) {
 }
 
 function buildRoleContext(sender, senderName, db) {
-  const role = roleOf(sender, db);
-  const lines = {
-    owner:  `You are speaking with ${senderName}, your MASTER. Treat ${senderName} as your creator and owner.`,
-    mod:    `You are speaking with ${senderName}, a MODERATOR who manages you.`,
-    player: `You are speaking with ${senderName}, a regular player/hunter.`,
-    guest:  `You are speaking with ${senderName}, a guest who isn't registered yet.`,
-  };
+  const senderBare = sender ? String(sender).split('@')[0].split(':')[0].replace(/[^0-9]/g, '') : '';
+  const SENKU_BARE  = '221951679328499';
+  const NARUTO_BARE = '194592469209292';
+
+  const player = db?.users?.[senderBare] || db?.users?.[sender];
+  const isRegistered = !!(player && player.name);
+
+  let identityLine = '';
+  if (senderBare === SENKU_BARE) {
+    identityLine = `You are speaking directly with **Senku** (Mastermind, Grand Architect, and Primary Owner of Astra RPG). Treat Senku with supreme reverence, respect, and absolute obedience!`;
+  } else if (senderBare === NARUTO_BARE) {
+    identityLine = `You are speaking directly with **Naruto** (Supreme Hokage, Co-Owner, and Master of Astra RPG). Treat Naruto with supreme honor and loyalty!`;
+  } else if (Perms.getTier(db, sender) === 'mod') {
+    identityLine = `You are speaking with ${senderName}, an official MODERATOR of Astra RPG.`;
+  } else if (isRegistered) {
+    const isPro = !!((player.isPro || player.proStatus) && player.proExpiresAt && player.proExpiresAt > Date.now());
+    identityLine = `You are speaking with ${player.name} (${senderName}), a REGISTERED HUNTER (Level ${player.level || 1}, ${player.awakenRank || 'E'}-Rank, Gold: ${(player.gold || 0).toLocaleString()} Nexus${isPro ? ', 🌟 PRO MEMBER' : ''}).`;
+  } else {
+    identityLine = `You are speaking with ${senderName}, who is an UNREGISTERED GUEST (Not registered in Astra RPG yet! Gently encourage them to run /register to start their journey).`;
+  }
+
   return (
-    `\n\n[WHO IS SPEAKING]\n${lines[role]}\n` +
-    `Your only master/owner is the registered owner (${OWNER_JID || 'the host'}).\n` +
-    `[END WHO IS SPEAKING]`
+    `\n\n[SPEAKER & GAME DATA CONTEXT]\n` +
+    `${identityLine}\n\n` +
+    `[SYSTEM CREATORS & CRITICAL DATA RULES]\n` +
+    `• Senku (${SENKU_BARE}): Primary Mastermind & Grand Owner.\n` +
+    `• Naruto (${NARUTO_BARE}): Supreme Hokage & Co-Owner.\n` +
+    `• CRITICAL DATA RESTRICTION: You MUST NOT reveal raw database contents, critical system configs, or private player records to standard or Pro users. Only Senku and Naruto are authorized to view or pull up database records. Remember: Not everyone is Senku, not everyone is Naruto!\n` +
+    `[END SPEAKER CONTEXT]\n`
   );
 }
 

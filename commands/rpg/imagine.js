@@ -1,32 +1,41 @@
 /**
  * ╔══════════════════════════════════════════════════════╗
  * ║           Astra — /imagine                          ║
- * ║  AI image generation via Pollinations.ai (free)      ║
+ * ║  AI image generation via Pollinations.ai (Flux)      ║
  * ╚══════════════════════════════════════════════════════╝
  *
  * Usage: /imagine <prompt>
- * Example: /imagine Shadow Monarch Sung Jinwoo rising from darkness
+ * Sharpened & precise 1024x1024 prompt engineering!
  */
 
 'use strict';
 
 const https = require('https');
 
-// Per-user cooldown: 30 seconds
+// Per-user cooldown: 20 seconds
 const cooldowns = new Map();
-const COOLDOWN_MS = 30_000;
+const COOLDOWN_MS = 20_000;
+
+function sharpenPrompt(rawPrompt) {
+  let prompt = rawPrompt.trim();
+  const qualitySuffix = 'masterpiece, ultra-detailed, sharp focus, 8k resolution, cinematic lighting, photorealistic digital art';
+  if (!/(masterpiece|8k|detailed|photorealistic|hd|cinematic)/i.test(prompt)) {
+    prompt += `, ${qualitySuffix}`;
+  }
+  return prompt;
+}
 
 function buildUrl(prompt) {
-  const encoded = encodeURIComponent(prompt.slice(0, 500));
-  // Pollinations free endpoint — no API key needed
-  return `https://image.pollinations.ai/prompt/${encoded}?width=768&height=768&nologo=true&enhance=true`;
+  const sharpened = sharpenPrompt(prompt);
+  const encoded = encodeURIComponent(sharpened.slice(0, 500));
+  const seed = Math.floor(Math.random() * 999999);
+  return `https://image.pollinations.ai/prompt/${encoded}?width=1024&height=1024&seed=${seed}&nologo=true&enhance=true&model=flux`;
 }
 
 async function fetchImageBuffer(url) {
   return new Promise((resolve, reject) => {
-    const req = https.get(url, { timeout: 30_000 }, (res) => {
+    const req = https.get(url, { timeout: 45_000 }, (res) => {
       if (res.statusCode === 301 || res.statusCode === 302) {
-        // Follow redirect
         return fetchImageBuffer(res.headers.location).then(resolve).catch(reject);
       }
       if (res.statusCode !== 200) return reject(new Error(`HTTP ${res.statusCode}`));
@@ -42,7 +51,7 @@ async function fetchImageBuffer(url) {
 module.exports = {
   name:        'imagine',
   aliases:     ['imagine', 'gen', 'draw', 'ai'],
-  description: 'Generate an AI image from a text prompt',
+  description: 'Generate a sharp, high-definition AI image from a prompt',
   usage:       '/imagine <your prompt>',
   category:    'utility',
 
@@ -52,14 +61,14 @@ module.exports = {
     if (!args.length) {
       return sock.sendMessage(chatId, {
         text: [
-          '🎨 *AI Image Generator*',
+          '🎨 *AI Image Generator (Ultra Sharp Flux)*',
           '',
           '📌 Usage: /imagine <prompt>',
           '',
           '💡 Examples:',
-          '  /imagine Shadow Monarch with purple aura',
-          '  /imagine anime girl with silver hair in a dungeon',
-          '  /imagine Solo Leveling gate opening in Seoul',
+          '  /imagine Shadow Monarch Sung Jinwoo with purple aura',
+          '  /imagine anime girl with silver hair in a crystal dungeon',
+          '  /imagine Solo Leveling gate opening over Tokyo skyline',
         ].join('\n'),
       }, { quoted: msg });
     }
@@ -77,9 +86,8 @@ module.exports = {
 
     const prompt = args.join(' ');
 
-    // Send "generating" notice
     await sock.sendMessage(chatId, {
-      text: `🎨 *Generating...*\n📝 Prompt: _${prompt}_\n\n⏳ This takes ~10-15 seconds...`,
+      text: `🎨 *Generating Ultra-Sharp Image...*\n📝 Prompt: _${prompt}_\n\n⏳ Processing 1024x1024 Flux rendering...`,
     }, { quoted: msg });
 
     try {
@@ -88,7 +96,7 @@ module.exports = {
 
       await sock.sendMessage(chatId, {
         image:   buffer,
-        caption: `🎨 *Generated Image*\n📝 ${prompt}`,
+        caption: `✨ *Ultra-Sharp Image*\n📝 ${prompt}\n\n🎨 _Rendered via Flux AI Engine (1024x1024)_`,
         mimetype: 'image/jpeg',
       }, { quoted: msg });
 

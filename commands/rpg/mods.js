@@ -1,26 +1,16 @@
 // ═══════════════════════════════════════════════════════════════
 // /mods — List all bot owners + mods
-// Tier hierarchy:
-//   👑 Owner — Senku (221951679328499@lid)
-//   ⭐ Mod   — operator-managed list
+// Format cleanly with bare phone numbers and valid WhatsApp tags
 // ═══════════════════════════════════════════════════════════════
+
+'use strict';
 
 const Perms = require('../../utils/permissions');
 
 const COOWNER_JID = process.env.COOWNER_JID || '194592469209292@lid';
 
-function normaliseJid(jid) {
-  return jid?.split('@')[0]?.split(':')[0]?.replace(/[^0-9]/g, '') || '';
-}
-
-function formatJidDisplay(jid, db) {
-  const u = db.users?.[jid];
-  if (u?.name) return u.name;
-  const bare = normaliseJid(jid);
-  if (/^\d+$/.test(bare)) {
-    return `+${bare}`;
-  }
-  return bare || jid;
+function cleanBare(jid) {
+  return String(jid || '').split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
 }
 
 module.exports = {
@@ -42,26 +32,31 @@ module.exports = {
     db.botOwners = [...new Set(owners.map(j => j))];
     saveDatabase();
 
-    // Filter out Co-owner (Naruto) from visible display list (keep Senku only)
-    const coOwnerNum = normaliseJid(COOWNER_JID);
-    const visibleOwners = owners.filter(j => normaliseJid(j) !== coOwnerNum);
+    const coOwnerNum = cleanBare(COOWNER_JID);
+    const visibleOwners = owners.filter(j => cleanBare(j) !== coOwnerNum);
 
-    let txt = `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n👑 BOT STAFF 👑\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+    let txt = `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n👑 *BOT STAFF* 👑\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
     txt += `👑 Owner: ${visibleOwners.length}\n`;
     txt += `⭐ Mods:  ${mods.length}\n`;
     txt += `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
+
+    const mentions = [];
 
     // ── Owner ─────────────────────────────────────────────
     txt += `👑 *OWNER*\n`;
     txt += `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
     for (let i = 0; i < visibleOwners.length; i++) {
       const jid = visibleOwners[i];
-      const u   = db.users[jid];
+      const bareNum = cleanBare(jid);
+      const u = db.users?.[bareNum] || db.users?.[jid];
       const name = u?.name || 'Senku';
+      const cleanJid = `${bareNum}@s.whatsapp.net`;
+      mentions.push(cleanJid);
+
       txt += `${i + 1}. 👑 Owner\n`;
       txt += `   👤 ${name}\n`;
-      txt += `   📱 @${jid.split('@')[0]}\n`;
-      if (u) txt += `   📊 Level ${u.level || 1} | ${u.rank || 'Unranked'}\n`;
+      txt += `   📱 @${bareNum}\n`;
+      if (u) txt += `   📊 Level ${u.level || 1} | ${u.awakenRank || 'E'}-Rank\n`;
       txt += `\n`;
     }
 
@@ -73,12 +68,16 @@ module.exports = {
     } else {
       for (let i = 0; i < mods.length; i++) {
         const jid = mods[i];
-        const u   = db.users[jid];
-        const dispName = formatJidDisplay(jid, db);
+        const bareNum = cleanBare(jid);
+        const u = db.users?.[bareNum] || db.users?.[jid];
+        const name = u?.name || 'Hunter';
+        const cleanJid = `${bareNum}@s.whatsapp.net`;
+        mentions.push(cleanJid);
+
         txt += `${i + 1}. ⭐ Mod\n`;
-        txt += `   👤 ${dispName}\n`;
-        txt += `   📱 @${jid.split('@')[0]}\n`;
-        if (u) txt += `   📊 Level ${u.level || 1} | ${u.rank || 'Unranked'}\n`;
+        txt += `   👤 ${name}\n`;
+        txt += `   📱 @${bareNum}\n`;
+        if (u) txt += `   📊 Level ${u.level || 1} | ${u.awakenRank || 'E'}-Rank\n`;
         txt += `\n`;
       }
     }
@@ -87,13 +86,13 @@ module.exports = {
     txt += `💡 *MANAGEMENT COMMANDS:*\n`;
     txt += `/set --mod @user --true   — promote to mod (owner)\n`;
     txt += `/set --mod @user --false  — demote mod (owner)\n`;
-    txt += `/set --owner @user --true — add as super-owner (owner)\n`;
     txt += `━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
 
-    // Include coOwnerJid in mentions so co-owner receives hidden tag
+    if (COOWNER_JID) mentions.push(`${coOwnerNum}@s.whatsapp.net`);
+
     await sock.sendMessage(chatId, {
       text: txt,
-      mentions: [...owners, ...mods, COOWNER_JID],
+      mentions: [...new Set(mentions)],
     }, { quoted: msg });
   }
 };

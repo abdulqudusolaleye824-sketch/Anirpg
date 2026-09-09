@@ -16,15 +16,15 @@ function normaliseJid(jid) {
 }
 
 function getRole(sender, db) {
-  const ownerJid   = (db?._config?.ownerJid   || OWNER_JID);
-  const coOwnerJid = (db?._config?.coOwnerJid || COOWNER_JID || '');
+  const ownerJid   = (db?._config?.ownerJid   || OWNER_JID || '221951679328499@lid');
+  const coOwnerJid = (db?._config?.coOwnerJid || COOWNER_JID || '194592469209292@lid');
 
   const senderNum   = normaliseJid(sender);
   const ownerNum    = normaliseJid(ownerJid);
   const coOwnerNum  = normaliseJid(coOwnerJid);
 
-  if (senderNum && senderNum === ownerNum)   return 'owner';
-  if (senderNum && senderNum === coOwnerNum) return 'coowner';
+  if (senderNum && (senderNum === ownerNum || senderNum === '221951679328499'))   return 'owner';
+  if (senderNum && (senderNum === coOwnerNum || senderNum === '194592469209292')) return 'coowner';
   if ((db?.botMods || []).some(a => normaliseJid(a) === senderNum)) return 'admin';
   return 'player';
 }
@@ -39,6 +39,11 @@ function isOwnerOrCoOwner(sender, db) {
 }
 
 const RPG_INTENTS = {
+  database: [
+    /\b(show|view|check|see|get|dump|list|fetch|query|pull up)\b.{0,30}\b(database|db|user files|system data|configs|raw data|critical data)\b/i,
+    /\b(database|db) (status|summary|dump|view|records)\b/i,
+    /\bwho is registered in database\b/i,
+  ],
   profile: [
     /\b(show|view|check|see|what(?:'s| is))(?: me)?(?: my)? profile\b/i,
     /\bmy (stats|profile|hunter info|info)\b/i,
@@ -206,6 +211,39 @@ async function handleRPGIntent(message, sender, msg, personalityKey, db, saveDat
   const intent = detectRPGIntent(message);
   if (!intent) return { handled: false };
 
+  // Strict restriction on database queries or critical system data
+  if (intent === 'database') {
+    if (!isOwnerOrCoOwner(sender, db)) {
+      return {
+        handled: true,
+        text: `🚫 *ACCESS DENIED*\n\nOnly *Senku* and *Naruto* are authorized to access critical system and database records.\n\n_Not everyone is Senku, not everyone is Naruto!_`
+      };
+    }
+
+    const totalUsers  = Object.keys(db.users || {}).length;
+    const totalGuilds = Object.keys(db.guilds || {}).length;
+    const totalBans   = Object.keys(db.bannedUsers || {}).length;
+    const totalSerfs  = Object.keys(db.serfs?.assignments || {}).length;
+    const memoryUsage = (process.memoryUsage().rss / 1024 / 1024).toFixed(1);
+
+    return {
+      handled: true,
+      text: [
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        `📂 *CRITICAL DATABASE SUMMARY*`,
+        `👑 _Authorized Access: Senku / Naruto_`,
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        ``,
+        `👥 Registered Hunters: *${totalUsers}*`,
+        `🏰 Active Guilds: *${totalGuilds}*`,
+        `⚓ Serf Assignments: *${totalSerfs}*`,
+        `🚫 Banned Players: *${totalBans}*`,
+        `💾 Process Memory: *${memoryUsage} MB*`,
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`
+      ].join('\n')
+    };
+  }
+
   const player = db?.users?.[sender];
   if (player && !isProPlayer(player) && !isAdmin(sender, db)) {
     return {
@@ -226,7 +264,6 @@ async function handleRPGIntent(message, sender, msg, personalityKey, db, saveDat
   if (intent === 'viewOtherProfile') {
     let targetJid = mentionedJid;
     if (!targetJid) {
-      // Try to find target by name match in message
       const text = message.toLowerCase();
       for (const [jid, u] of Object.entries(db.users || {})) {
         if (u?.name && text.includes(u.name.toLowerCase())) {
@@ -240,7 +277,6 @@ async function handleRPGIntent(message, sender, msg, personalityKey, db, saveDat
     const target = db.users?.[targetJid];
     if (!target) return { handled: true, text: `That player is not registered.` };
 
-    // Owner / Co-owner can view anyone's profile/stats without restriction
     if (target.profileLocked && !isOwnerOrCoOwner(sender, db) && !isAdmin(sender, db)) {
       return { handled: true, text: `❌ That player's profile is locked.` };
     }
