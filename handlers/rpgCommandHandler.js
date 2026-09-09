@@ -281,7 +281,8 @@ module.exports = async (sock, msg, messageText, config, getDatabase, saveDatabas
     'setgroup', 'setgc', 'ssub', 'renew', 'allowgc', 'groupinfo',
     'setdungeon', 'removedungeon', 'dungeons', 'set', 'settings', 'gcset',
     'help', 'menu', 'reset', 'start', 'switch', 'stop', 'stopbot',
-    'bots', 'hi', 'setainame', 'promotedm', 'demotedm', 'profaq', 'botstats', 'clearactivebots'
+    'bots', 'hi', 'setainame', 'promotedm', 'demotedm', 'profaq', 'botstats', 'clearactivebots',
+    'announce', 'globalannounce', 'broadcast', 'tagall'
   ]);
 
   const isDM = !chatId.endsWith('@g.us');
