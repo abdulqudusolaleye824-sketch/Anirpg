@@ -117,12 +117,19 @@ module.exports = {
     const seasonNexusMult = SeasonManager.getNexusMult();
     const activeEvent    = SeasonManager.getActiveEvent();
     const dailyMult      = activeEvent?.bonuses?.dailyBonusMult || 1;
-    const finalNexus      = Math.floor(base.gold     * seasonNexusMult * dailyMult);
-    const finalCrystals  = base.crystals;
+    const isProDaily = !!(player.isPro && player.proExpiresAt && Date.now() < player.proExpiresAt);
+    const proMult = isProDaily ? 2 : 1;
+    let finalNexus      = Math.floor(base.gold     * seasonNexusMult * dailyMult * proMult);
+    let finalCrystals  = base.crystals * proMult;
     player.gold         = (player.gold || 0)         + finalNexus;
     // XP awarded (also shown in the rewards summary)
     const xpAward = awardXP(player, 'daily_claim', saveDatabase, sock, chatId);
-    const finalXp = xpAward?.amount || 0;
+    let finalXp = (xpAward?.amount || 0) * proMult;
+    if (isProDaily && xpAward?.amount) {
+      // give extra XP directly if awardXP already gave base
+      const extraXp = xpAward.amount * (proMult - 1);
+      player.xp = (player.xp || 0) + extraXp;
+    }
     player.manaCrystals = (player.manaCrystals || 0) + finalCrystals;
 
     // Level up check via LevelUpManager (unlocks skills, weapons, UP)
@@ -148,12 +155,12 @@ module.exports = {
       '☀️  *DAILY REWARD CLAIMED*',
       '━━━━━━━━━━━━━━━━━━━━━━━━━━━',
       '',
-      `🔥 Streak: *${streak} day${streak===1?'':'s'}* — ${streakTitle}`,
+      `🔥 Streak: *${streak} day${streak===1?'':'s'}* — ${streakTitle}${isProDaily ? ' 🌟 PRO 2×' : ''}`,
       '',
-      '🎁 *TODAY\'S REWARDS*',
-      `💠 +${finalNexus.toLocaleString()} Nexus${seasonNexusMult>1?' ('+seasonNexusMult+'× '+SeasonManager.getActiveEvent()?.emoji+')':''}`,
-      `💎 +${finalCrystals} Mana Stones`,
-      `✨ +${finalXp} XP${seasonXpMult>1?' ('+seasonXpMult+'× '+SeasonManager.getActiveEvent()?.emoji+')':''}`,
+      '🎁 *TODAY\'S REWARDS*' + (isProDaily ? ' — 🌟 *PRO 2× REWARDS*' : ''),
+      `💠 +${finalNexus.toLocaleString()} Nexus${seasonNexusMult>1?' ('+seasonNexusMult+'× '+SeasonManager.getActiveEvent()?.emoji+')':''}${isProDaily ? ' (2×)' : ''}`,
+      `💎 +${finalCrystals} Mana Stones${isProDaily ? ' (2×)' : ''}`,
+      `✨ +${finalXp} XP${seasonXpMult>1?' ('+seasonXpMult+'× '+SeasonManager.getActiveEvent()?.emoji+')':''}${isProDaily ? ' (2×)' : ''}`,
     ];
 
     if (milestone) {

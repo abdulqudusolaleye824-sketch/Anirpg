@@ -76,7 +76,7 @@ module.exports = {
 
         txt += `${i + 1}. ⭐ Mod\n`;
         txt += `   👤 ${name}\n`;
-        txt += `   📱 @${bareNum}\n`;
+        // phone hidden — tag only via mentions, no visible @
         if (u) txt += `   📊 Level ${u.level || 1} | ${u.awakenRank || 'E'}-Rank\n`;
         txt += `\n`;
       }

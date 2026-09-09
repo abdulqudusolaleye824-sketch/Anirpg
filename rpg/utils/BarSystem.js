@@ -7,7 +7,7 @@ class BarSystem {
   // ═══════════════════════════════════════════════════════════════
   // PLAYER HP BAR
   // ═══════════════════════════════════════════════════════════════
-  static getHPBar(currentHP, maxHP) {
+  static getHPBar(currentHP, maxHP, isPro = false) {
     // Validate inputs
     currentHP = Math.max(0, Math.floor(currentHP || 0));
     maxHP = Math.max(1, Math.floor(maxHP || 1));
@@ -19,20 +19,33 @@ class BarSystem {
     const filledBars = Math.floor((percentage / 100) * 10);
     const emptyBars = 10 - filledBars;
     
-    // Choose color based on HP percentage
-    let barEmoji = '🟢'; // Green (100-70%)
-    if (percentage < 70 && percentage >= 40) {
-      barEmoji = '🟡'; // Yellow (70-40%)
-    } else if (percentage < 40 && percentage >= 20) {
-      barEmoji = '🟠'; // Orange (40-20%)
-    } else if (percentage < 20) {
-      barEmoji = '🔴'; // Red (20-0%)
+    if (isPro) {
+      // PRO: Emoji color based HP mark (vibrant, distinct)
+      let barEmoji = '🟩'; // Green (100-70%) Pro
+      if (percentage < 70 && percentage >= 40) {
+        barEmoji = '🟨'; // Yellow (70-40%)
+      } else if (percentage < 40 && percentage >= 20) {
+        barEmoji = '🟧'; // Orange (40-20%)
+      } else if (percentage < 20) {
+        barEmoji = '🟥'; // Red (20-0%)
+      }
+      const filled = barEmoji.repeat(Math.max(0, filledBars));
+      const empty = '⬜'.repeat(Math.max(0, emptyBars));
+      return `${filled}${empty} ${percentage}%`;
+    } else {
+      // NORMAL: Regular progress bar like Pass (▰▱)
+      const filled = '▰'.repeat(Math.max(0, filledBars));
+      const empty = '▱'.repeat(Math.max(0, emptyBars));
+      return `${filled}${empty} ${percentage}%`;
     }
-    
-    const filled = barEmoji.repeat(Math.max(0, filledBars));
-    const empty = '⚪'.repeat(Math.max(0, emptyBars));
-    
-    return `${filled}${empty} ${percentage}%`;
+  }
+
+  // Legacy wrapper for existing calls
+  static getHPBarPro(currentHP, maxHP) {
+    return this.getHPBar(currentHP, maxHP, true);
+  }
+  static getHPBarRegular(currentHP, maxHP) {
+    return this.getHPBar(currentHP, maxHP, false);
   }
   
   // ═══════════════════════════════════════════════════════════════

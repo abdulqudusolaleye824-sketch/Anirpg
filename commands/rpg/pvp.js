@@ -187,11 +187,15 @@ module.exports = {
         `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
       ].join('\n');
 
-      const startPrompt = [
+      const __challengerPlayer = db.players[challenge.challengerId];
+      const __senderPlayer = db.players[sender];
+      const __challengerName = __challengerPlayer ? getPlayerName(__challengerPlayer) : challenge.challengerId.split('@')[0];
+      const __senderName = __senderPlayer ? getPlayerName(__senderPlayer) : sender.split('@')[0];
+            const startPrompt = [
         `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
         `🎮 *PVP BATTLE STARTED — TURN 1*`,
         `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-        `@${challenge.challengerId.split('@')[0]} & @${sender.split('@')[0]} — select your move!`,
+        `⚔️ ${__challengerName} vs ${__senderName} — select your move!`,
         ``,
         `📌 *YOUR MOVES:*`,
         `• /attack or /attack <pattern_id>`,
@@ -318,8 +322,26 @@ module.exports = {
       if (opp.pvpBattle.pendingAction) {
         return resolveTurn(sock, chatId, player, opp, db, saveDatabase);
       } else {
+        battle.turnExpiresAt = Date.now() + 20000;
+        const curTurn = battle.turn || 1;
+        const meId = sender;
+        const myName = getPlayerName(player, 'Hunter');
+        setTimeout(async () => {
+          try {
+            const me = db.users?.[meId];
+            const them = db.users?.[oppId];
+            if (!me?.pvpBattle || !them?.pvpBattle) return;
+            if (me.pvpBattle.turn !== curTurn || them.pvpBattle.turn !== curTurn) return;
+            if (them.pvpBattle.pendingAction) return; // opponent locked in time
+            if (!me.pvpBattle.pendingAction) return; // i was cleared?
+            // Opponent timed out — auto-resolve with opponent skipped
+            // Create a dummy skipped action for opponent
+            them.pvpBattle.pendingAction = { type: 'attack', arg: null, _timedOut: true, _skip: true };
+            await resolveTurn(sock, chatId, me, them, db, saveDatabase);
+          } catch(e) {}
+        }, 20000);
         return sock.sendMessage(chatId, {
-          text: `✅ *Move locked in!* Waiting for *@${oppId.split('@')[0]}* to choose their move...`,
+          text: `✅ *Move locked in!* Waiting for *@${oppId.split('@')[0]}* to choose their move... ⏳ 20s to lock or turn will be skipped.`,
           mentions: [oppId],
         }, { quoted: msg });
       }
@@ -348,185 +370,254 @@ module.exports = {
   }
 };
 
-// ── Turn Resolution Engine ────────────────────────────────────────
+// ── Turn Resolution Engine — Unified + Cooldown + Slow Drop ────────────────────────────────────────
+const UC = require('../../rpg/utils/UnifiedCombat');
+const BarSystemPVP = require('../../rpg/utils/BarSystem');
+const AttackDBPVP = require('../../rpg/utils/AttackPatternDB');
+
 async function resolveTurn(sock, chatId, p1, p2, db, saveDatabase) {
-  const p1Id = p1.id || p1.jid || p1.userId;
-  const p2Id = p2.id || p2.jid || p2.userId;
+  // Resolve jids for mentions — try to find keys in db.users
+  let id1 = null, id2 = null;
+  for (const [k,v] of Object.entries(db.users)) {
+    if (v === p1) id1 = k;
+    if (v === p2) id2 = k;
+  }
+  // fallback to stored opponentId / pending
+  if (!id1 || !String(id1).includes('@')) {
+    if (p1.pvpBattle?.opponentId) id1 = p2.pvpBattle?.opponentId ? Object.keys(db.users).find(k=>db.users[k]===p1) || p1.pvpBattle.opponentId : id1;
+  }
+  if (!id2 || !String(id2).includes('@')) {
+    if (p2.pvpBattle?.opponentId) id2 = p1.pvpBattle?.opponentId ? Object.keys(db.users).find(k=>db.users[k]===p2) || p2.pvpBattle.opponentId : id2;
+  }
+  if (!id1) id1 = p1.jid || p1.id || 'unknown@s.whatsapp.net';
+  if (!id2) id2 = p2.jid || p2.id || 'unknown@s.whatsapp.net';
+  if (!String(id1).includes('@')) id1 = String(id1) + '@s.whatsapp.net';
+  if (!String(id2).includes('@')) id2 = String(id2) + '@s.whatsapp.net';
 
-  const p1Spd = (p1.stats?.speed || 10) + (p1.equipped?.weapon?.speed || 0);
-  const p2Spd = (p2.stats?.speed || 10) + (p2.equipped?.weapon?.speed || 0);
+  const battle1 = p1.pvpBattle;
+  const battle2 = p2.pvpBattle;
+  const turnNum = (battle1?.turn || battle2?.turn || 1);
 
+  function buildMove(player, act) {
+    if (!act) return null;
+    if (act.type === 'attack') {
+      const pid = parseInt(act.patternId || act.arg);
+      if (!isNaN(pid) && pid >= 1 && pid <= 750) {
+        const atk = AttackDBPVP.generateAttack(pid);
+        if (atk) return atk;
+      }
+      return AttackDBPVP.generateAttack(1);
+    }
+    if (act.type === 'skill') {
+      const skillName = act.skillName || act.arg || 'Skill';
+      return {
+        id: 0,
+        rank: 'C',
+        name: skillName,
+        flavour: 'Class technique',
+        description: 'A class-bound skill channeled through practiced form. Not a martial pattern, but the unified engine treats its Atk/Def/Speed/Crit/Accuracy the same way — the calculations are identical across all battle systems.',
+        dmgMult: 1.5,
+        atkMult: 1.2,
+        defMult: 1.1,
+        speedMult: 1.1,
+        critMult: 1.6,
+        accuracy: 88,
+        effect: null,
+        cooldownMs: 30000,
+        cooldownSec: 30,
+      };
+    }
+    return AttackDBPVP.generateAttack(1);
+  }
+
+  const m1 = buildMove(p1, battle1?.pendingAction);
+  const m2 = buildMove(p2, battle2?.pendingAction);
+  const name1 = getPlayerName(p1, 'Hunter');
+  const name2 = getPlayerName(p2, 'Hunter');
+
+  const act1 = battle1?.pendingAction;
+  const act2 = battle2?.pendingAction;
+  const cd1 = m1 && m1.id ? UC.isOnCooldown(p1, m1.id) : { onCd: false };
+  const cd2 = m2 && m2.id ? UC.isOnCooldown(p2, m2.id) : { onCd: false };
+
+  let res1 = null, res2 = null;
+  let p1Skipped = false, p2Skipped = false;
+  let skipMsg1 = '', skipMsg2 = '';
+
+  if (act1 && (act1._skip || act1._timedOut)) {
+    p1Skipped = true;
+    skipMsg1 = `⏳ *${name1}'s attack failed — no move locked in 20s. Turn skipped (0 dmg, status -1).`;
+    res1 = { damage: 0, missed: false, crit: false, effective: 'skipped', _skipped: true };
+  } else if (cd1.onCd) {
+    p1Skipped = true;
+    skipMsg1 = `⏳ *${name1}'s attack failed — still on cooldown* ${UC.formatCd(cd1.remaining)} remaining. Turn skipped (0 dmg, status -1).`;
+    res1 = { damage: 0, missed: false, crit: false, effective: 'skipped', _skipped: true };
+  }
+  if (act2 && (act2._skip || act2._timedOut)) {
+    p2Skipped = true;
+    skipMsg2 = `⏳ *${name2}'s attack failed — no move locked in 20s. Turn skipped (0 dmg, status -1).`;
+    res2 = { damage: 0, missed: false, crit: false, effective: 'skipped', _skipped: true };
+  } else if (cd2.onCd) {
+    p2Skipped = true;
+    skipMsg2 = `⏳ *${name2}'s attack failed — still on cooldown* ${UC.formatCd(cd2.remaining)} remaining. Turn skipped (0 dmg, status -1).`;
+    res2 = { damage: 0, missed: false, crit: false, effective: 'skipped', _skipped: true };
+  }
+
+  if (!p1Skipped && m1) {
+    res1 = UC.calcMoveDamage(p1, p2, m1);
+    if (m1.id) UC.setCooldown(p1, m1.id, m1);
+  }
+  if (!p2Skipped && m2) {
+    res2 = UC.calcMoveDamage(p2, p1, m2);
+    if (m2.id) UC.setCooldown(p2, m2.id, m2);
+  }
+
+  const p1Spd = (p1.stats?.speed || 50) * (m1?.speedMult || 1);
+  const p2Spd = (p2.stats?.speed || 50) * (m2?.speedMult || 1);
   const p1First = p1Spd > p2Spd || (p1Spd === p2Spd && Math.random() < 0.5);
+  const order = p1First ? [{p:p1,opp:p2,move:m1,res:res1,name:name1,oppName:name2,skipped:p1Skipped,skipMsg:skipMsg1},
+                           {p:p2,opp:p1,move:m2,res:res2,name:name2,oppName:name1,skipped:p2Skipped,skipMsg:skipMsg2}]
+                        : [{p:p2,opp:p1,move:m2,res:res2,name:name2,oppName:name1,skipped:p2Skipped,skipMsg:skipMsg2},
+                           {p:p1,opp:p2,move:m1,res:res1,name:name1,oppName:name2,skipped:p1Skipped,skipMsg:skipMsg1}];
 
-  const faster = p1First ? p1 : p2;
-  const slower = p1First ? p2 : p1;
-  const fasterId = p1First ? p1Id : p2Id;
-  const slowerId = p1First ? p2Id : p1Id;
+  let accumulated = '';
+  let battleEnded = false;
+  let winner = null, loser = null, winnerId = null, loserId = null;
 
-  const fasterName = getPlayerName(faster, 'Fighter 1');
-  const slowerName = getPlayerName(slower, 'Fighter 2');
-
-  const fasterAct = p1First ? p1.pvpBattle.pendingAction : p2.pvpBattle.pendingAction;
-  const slowerAct = p1First ? p2.pvpBattle.pendingAction : p1.pvpBattle.pendingAction;
-
-  const turnNum = p1.pvpBattle.turn || 1;
-
-  // 1. Faster player's move
-  const fasterRes = calcMoveDamage(faster, slower, fasterAct);
-  slower.stats.hp = Math.max(0, (slower.stats?.hp || 0) - fasterRes.damage);
-
-  let msg1 = [
-    `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-    `⚔️ *TURN ${turnNum}: FASTER PLAYER STRIKES FIRST!*`,
-    `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-    `⚡ *${fasterName}* (Speed ${p1First ? p1Spd : p2Spd}) acts first!`,
-    `📜 *Action:* ${fasterRes.moveLabel}`,
-    `${fasterRes.isCrit ? '💥 *CRITICAL HIT!* ' : ''}Dealt *${fasterRes.damage.toLocaleString()}* damage to *${slowerName}*!`,
-    ``,
-    `❤️ *${slowerName}* HP: ${(slower.stats?.hp || 0).toLocaleString()}/${(slower.stats?.maxHp || 100).toLocaleString()}`,
-    `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-  ].join('\n');
-
-  // Check if slower player was defeated
-  if ((slower.stats?.hp || 0) <= 0) {
-    const PetManager = require('../../rpg/utils/PetManager');
-    const sac = PetManager.checkPetSacrifice(slowerId, slower);
-    if (sac && sac.sacrificed) {
-      msg1 += `\n\n${sac.message}`;
+  for (let idx = 0; idx < order.length; idx++) {
+    const o = order[idx];
+    if (battleEnded) break;
+    let segment = '';
+    if (o.skipped) {
+      segment = [
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        `⚔️ *TURN ${turnNum} — ${o.name}'s Move*`,
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        o.skipMsg,
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        `❤️ ${name1}: ${BarSystemPVP.getHPBar(p1.stats?.hp || 0, p1.stats?.maxHp || 100, UC.isPro(p1))}`,
+        `❤️ ${name2}: ${BarSystemPVP.getHPBar(p2.stats?.hp || 0, p2.stats?.maxHp || 100, UC.isPro(p2))}`,
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+      ].join('\n');
+      UC.tickStatuses(o.p);
+      UC.tickStatuses(o.opp);
     } else {
-      return handlePvpVictory(sock, chatId, faster, slower, fasterId, slowerId, db, saveDatabase, turnNum, msg1);
+      if (!o.res.missed) {
+        o.opp.stats.hp = Math.max(0, (o.opp.stats?.hp || 0) - o.res.damage);
+        const eff = UC.tryApplyEffect(o.move, o.p, o.opp);
+        segment = UC.buildTurnMessage(o.p, o.opp, o.move, o.res);
+        segment = segment.replace('━━━━━━━━━━━━━━━━━━━━━━━━━━━\n', `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n⚔️ *TURN ${turnNum} — ${o.name}'s Move*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`);
+        if (eff) segment += `\n${eff.emoji || '✨'} *${eff.type} applied!* (${eff.duration}t)`;
+      } else {
+        segment = UC.buildTurnMessage(o.p, o.opp, o.move, o.res);
+        segment = segment.replace('━━━━━━━━━━━━━━━━━━━━━━━━━━━\n', `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n⚔️ *TURN ${turnNum} — ${o.name}'s Move*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`);
+      }
+      const tickLogs = UC.tickStatuses(o.opp);
+      if (tickLogs.length) segment += `\n` + tickLogs.join('\n');
+      const selfTick = UC.tickStatuses(o.p);
+      if (selfTick.length) segment += `\n` + selfTick.join('\n');
+    }
+
+    const target = o.opp;
+    if ((target.stats?.hp || 0) <= 0) {
+      const PetManager = require('../../rpg/utils/PetManager');
+      const oppJid = (o.opp === p1 ? id1 : id2);
+      const sac = PetManager.checkPetSacrifice(oppJid, target);
+      if (sac && sac.sacrificed) {
+        segment += `\n\n${sac.message}`;
+        accumulated += (accumulated ? '\n\n' : '') + segment;
+        await UC.slowSend(sock, chatId, { text: segment, mentions: [id1, id2] });
+      } else {
+        winner = o.p; loser = o.opp;
+        winnerId = (o.p === p1 ? id1 : id2);
+        loserId = (o.opp === p1 ? id1 : id2);
+        battleEnded = true;
+        accumulated += (accumulated ? '\n\n' : '') + segment;
+        await UC.slowSend(sock, chatId, { text: segment, mentions: [id1, id2] });
+        return handlePvpVictory(sock, chatId, winner, loser, winnerId, loserId, db, saveDatabase, turnNum, accumulated);
+      }
+    } else {
+      accumulated += (accumulated ? '\n\n' : '') + segment;
+      await UC.slowSend(sock, chatId, { text: segment, mentions: [id1, id2] });
     }
   }
 
-  // 2. Slower player's move (since slower is still alive)
-  const slowerRes = calcMoveDamage(slower, faster, slowerAct);
-  faster.stats.hp = Math.max(0, (faster.stats?.hp || 0) - slowerRes.damage);
+  if (battleEnded) return;
 
-  let msg2 = [
-    `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-    `⚔️ *SECOND PLAYER COUNTERS!*`,
-    `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-    `🛡️ *${slowerName}* counters!`,
-    `📜 *Action:* ${slowerRes.moveLabel}`,
-    `${slowerRes.isCrit ? '💥 *CRITICAL HIT!* ' : ''}Dealt *${slowerRes.damage.toLocaleString()}* damage to *${fasterName}*!`,
-    ``,
-    `❤️ *${fasterName}* HP: ${(faster.stats?.hp || 0).toLocaleString()}/${(faster.stats?.maxHp || 100).toLocaleString()}`,
-    `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-  ].join('\n');
-
-  // Check if faster player was defeated
-  if ((faster.stats?.hp || 0) <= 0) {
-    const PetManager = require('../../rpg/utils/PetManager');
-    const sac = PetManager.checkPetSacrifice(fasterId, faster);
-    if (sac && sac.sacrificed) {
-      msg2 += `\n\n${sac.message}`;
-    } else {
-      return handlePvpVictory(sock, chatId, slower, faster, slowerId, fasterId, db, saveDatabase, turnNum, msg1 + '\n\n' + msg2);
-    }
+  if (p1.pvpBattle) {
+    p1.pvpBattle.turn = turnNum + 1;
+    p1.pvpBattle.pendingAction = null;
+    p1.pvpBattle.turnExpiresAt = Date.now() + 20000;
   }
-
-  // 3. Advance to next turn
-  p1.pvpBattle.turn = turnNum + 1;
-  p2.pvpBattle.turn = turnNum + 1;
-  p1.pvpBattle.pendingAction = null;
-  p2.pvpBattle.pendingAction = null;
-
+  if (p2.pvpBattle) {
+    p2.pvpBattle.turn = turnNum + 1;
+    p2.pvpBattle.pendingAction = null;
+    p2.pvpBattle.turnExpiresAt = Date.now() + 20000;
+  }
   saveDatabase();
 
-  const msg3 = [
+  const isPro1 = UC.isPro(p1);
+  const isPro2 = UC.isPro(p2);
+  const nextMsg = [
     `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-    `🎮 *ADVANCING TO TURN ${turnNum + 1}*`,
+    `🎮 *TURN ${turnNum + 1} — CHOOSE YOUR MOVE*`,
     `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-    `👤 *${getPlayerName(p1)}*: ${(p1.stats?.hp || 0).toLocaleString()}/${(p1.stats?.maxHp || 100).toLocaleString()} ❤️`,
-    `👤 *${getPlayerName(p2)}*: ${(p2.stats?.hp || 0).toLocaleString()}/${(p2.stats?.maxHp || 100).toLocaleString()} ❤️`,
+    `❤️ ${name1}: ${BarSystemPVP.getHPBar(p1.stats?.hp || 0, p1.stats?.maxHp || 100, isPro1)}`,
+    `❤️ ${name2}: ${BarSystemPVP.getHPBar(p2.stats?.hp || 0, p2.stats?.maxHp || 100, isPro2)}`,
     ``,
-    `📌 Both players, select your next move:`,
+    `📌 20s to lock move:`,
     `• /attack or /attack <pattern_id>`,
     `• /skill or /<classcmd>`,
     `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
   ].join('\n');
 
-  return sock.sendMessage(chatId, {
-    sections: [
-      { text: msg1, mentions: [fasterId, slowerId] },
-      { text: msg2, mentions: [fasterId, slowerId] },
-      { text: msg3, mentions: [p1Id, p2Id] },
-    ]
-  });
+  await UC.slowSend(sock, chatId, { text: nextMsg, mentions: [id1, id2] });
+  setTimeout(async () => {
+    try {
+      const cur1 = db.users?.[id1];
+      const cur2 = db.users?.[id2];
+      if (!cur1?.pvpBattle || !cur2?.pvpBattle) return;
+      if (cur1.pvpBattle.turn !== turnNum + 1) return;
+      if (cur1.pvpBattle.pendingAction || cur2.pvpBattle.pendingAction) return;
+      UC.tickStatuses(cur1);
+      UC.tickStatuses(cur2);
+      cur1.pvpBattle.turn = turnNum + 2;
+      cur2.pvpBattle.turn = turnNum + 2;
+      cur1.pvpBattle.pendingAction = null;
+      cur2.pvpBattle.pendingAction = null;
+      saveDatabase();
+      const timeoutMsg = `⏳ *Turn ${turnNum + 1} timed out* — no move locked in 20s. Both turns skipped (status -1).\n` +
+                         `❤️ ${getPlayerName(cur1)}: ${BarSystemPVP.getHPBar(cur1.stats?.hp || 0, cur1.stats?.maxHp || 100, UC.isPro(cur1))}\n` +
+                         `❤️ ${getPlayerName(cur2)}: ${BarSystemPVP.getHPBar(cur2.stats?.hp || 0, cur2.stats?.maxHp || 100, UC.isPro(cur2))}`;
+      await sock.sendMessage(chatId, { text: timeoutMsg, mentions: [id1, id2] });
+    } catch(e) {}
+  }, 20000);
 }
 
 function calcMoveDamage(attacker, defender, act) {
   const atk = (attacker.stats?.atk || 10) + (attacker.equipped?.weapon?.atk || attacker.equipped?.weapon?.bonus || 0);
   const def = (defender.stats?.def || 5) + (defender.equipped?.armor?.def || 0);
-
   let dmgMult = 1.0;
   let moveLabel = 'Basic Attack';
-
   const patternId = parseInt(act?.patternId || act?.arg);
   if (!isNaN(patternId) && patternId >= 1 && patternId <= 750) {
-    const pattern = DB.generateAttack(patternId);
+    const pattern = AttackDBPVP.generateAttack(patternId);
     if (pattern && pattern.name) {
       dmgMult = pattern.dmgMult || 1.2;
       moveLabel = `Attack Pattern #${pattern.id || patternId} (${pattern.name})`;
     }
   }
-
-  if (act && act.type === 'skill') {
-    const skillName = act.skillName;
-    const skill = (attacker.classSkills || []).find(s => s && (typeof s === 'string' ? s === skillName : s.name?.toLowerCase() === skillName?.toLowerCase()))
-               || (attacker.skills?.active || []).find(s => s && (typeof s === 'string' ? s === skillName : s.name?.toLowerCase() === skillName?.toLowerCase()));
-    if (skill) {
-      const sName = typeof skill === 'string' ? skill : skill.name || skillName || 'Ability';
-      dmgMult = (skill.potency ? skill.potency / 100 + 1 : 1.5);
-      moveLabel = `Class Skill: ${sName}`;
-    } else {
-      dmgMult = 1.4;
-      moveLabel = `Class Skill: ${skillName || 'Ability'}`;
-    }
-  }
-
   let rawDmg = Math.floor(atk * dmgMult * (0.9 + Math.random() * 0.20));
-
-  // ── CLASS INTERDEPENDENCY SYNERGIES ─────────────────────────
-  const attClass = String(getClassName(attacker)).toLowerCase();
-  const defClass = String(getClassName(defender)).toLowerCase();
-  const activeStatus = defender.statusEffects || [];
-
-  // Berserker vs Fear / DragonKnight target -> 3.0x Damage
-  if ((attClass.includes('berserker') || attClass.includes('warrior')) && (activeStatus.includes('fear') || defClass.includes('dragon'))) {
-    rawDmg = Math.floor(rawDmg * 3.0);
-    moveLabel += ' (😱 FEAR SYNERGY ×3.0!)';
-  }
-  // SpellBlade vs Frozen / Burning target -> 2.5x Damage
-  else if ((attClass.includes('spellblade') || attClass.includes('chronomancer')) && (activeStatus.includes('freeze') || activeStatus.includes('burn') || defClass.includes('elemental') || defClass.includes('mage'))) {
-    rawDmg = Math.floor(rawDmg * 2.5);
-    moveLabel += ' (❄️ ELEMENTAL SYNERGY ×2.5!)';
-  }
-  // BloodKnight / Devourer vs Bleeding target -> 2.0x Damage + Lifesteal
-  else if ((attClass.includes('blood') || attClass.includes('devourer')) && (activeStatus.includes('bleed') || activeStatus.includes('curse') || defClass.includes('necro') || defClass.includes('rogue'))) {
-    rawDmg = Math.floor(rawDmg * 2.0);
-    const heal = Math.floor(rawDmg * 0.5);
-    if (!attacker.stats) attacker.stats = { hp: 100, maxHp: 100 };
-    attacker.stats.hp = Math.min(attacker.stats.maxHp || 100, (attacker.stats.hp || 0) + heal);
-    moveLabel += ` (🩸 BLOOD SYNERGY ×2.0 +${heal} HP!)`;
-  }
-  // Monk / Ranger vs Cursed / Marked target -> Ignores DEF
-  else if ((attClass.includes('monk') || attClass.includes('ranger')) && (activeStatus.includes('curse') || activeStatus.includes('mark'))) {
-    rawDmg = Math.floor(atk * dmgMult * 2.0); // True damage
-    moveLabel += ' (🎯 TRUE DAMAGE SYNERGY!)';
-  }
-
   const critChance = (attacker.stats?.critChance || 5) / 100;
   const isCrit = Math.random() < critChance;
   if (isCrit) {
     const critMult = (attacker.stats?.critDamage || 150) / 100;
     rawDmg = Math.floor(rawDmg * critMult);
   }
-
   const netDmg = Math.max(5, rawDmg - Math.floor(def * 0.35));
-
   return { damage: netDmg, isCrit, moveLabel };
 }
+
 
 function handlePvpVictory(sock, chatId, winner, loser, wId, lId, db, saveDatabase, turns, lastTurnText) {
   const winnerName = getPlayerName(winner, 'Winner');
