@@ -1,9 +1,11 @@
 // ═══════════════════════════════════════════════════════════════
 // /pass (/astrapass) — Astra Pass (50 Tiers, 40 Days)
-// Free & Premium tracks (Premium comes automatically with PRO!)
-// Every tier grants Currency (Nexus + Mana Stones) + Enumerated Named Items!
-// Level 50 Free Reward: Epic Armor "Shadow Dragon Cloak"
-// Level 50 Premium Reward: Legendary Weapon "Astra's Sovereign Blade"
+// Free Track:
+//   • Levels 1-4, 17, 33 grant Currency alone
+//   • 5 Epic items (Tiers 35, 38, 42, 45, 48) + Level 50 Epic item ("Shadow Dragon Cloak")
+// Premium Track:
+//   • Only 5 levels grant Currency alone (Tiers 1, 2, 17, 28, 44)
+//   • All other 45 levels grant Currency + Uncommon-Epic items, ending at Level 50 ("Astra's Sovereign Blade")
 // ═══════════════════════════════════════════════════════════════
 
 'use strict';
@@ -19,10 +21,7 @@ function isProPlayer(player) {
 // Complete reward map for ALL 50 tiers on both Free and Premium tracks
 const PASS_ITEMS = {
   free: {
-    1:  { name: 'Wood', type: 'material', rarity: 'common', desc: '🪵 Basic crafting wood' },
-    2:  { name: 'Iron Ore', type: 'material', rarity: 'common', desc: '⚒️ Basic crafting ore' },
-    3:  { name: 'Bone Fragment', type: 'material', rarity: 'common', desc: '🦴 Common skeleton bone' },
-    4:  { name: 'Goblin Ear', type: 'material', rarity: 'common', desc: '👂 Goblin crafting trophy' },
+    // 1-4 currency alone
     5:  { name: 'Leather', type: 'material', rarity: 'common', desc: '📜 Tanned beast hide' },
     6:  { name: 'Monster Fang', type: 'material', rarity: 'common', desc: '🦴 Common monster crafting material' },
     7:  { name: 'Flint', type: 'material', rarity: 'common', desc: '🪨 Sparking crafting stone' },
@@ -35,7 +34,7 @@ const PASS_ITEMS = {
     14: { name: 'Spider Silk', type: 'material', rarity: 'common', desc: '🕸️ Flexible web thread' },
     15: { name: 'Shadow Pelt', type: 'material', rarity: 'uncommon', desc: '🖤 Dark beast fur' },
     16: { name: 'Dark Silk', type: 'material', rarity: 'uncommon', desc: '🧵 Woven shadow thread' },
-    17: { name: 'Granite Shard', type: 'material', rarity: 'uncommon', desc: '🪨 Dense golem stone' },
+    // 17 currency alone
     18: { name: 'Cobra Venom Sac', type: 'material', rarity: 'uncommon', desc: '🐍 Potent venom pouch' },
     19: { name: 'Steel Ingot', type: 'material', rarity: 'uncommon', desc: '🧱 Refined steel bar' },
     20: { name: 'Frost Gland', type: 'material', rarity: 'uncommon', desc: '❄️ Cold beast organ' },
@@ -49,30 +48,29 @@ const PASS_ITEMS = {
     28: { name: 'Volcanic Dust', type: 'material', rarity: 'rare', desc: '🌋 Scorched ash powder' },
     29: { name: 'Thunder Essence', type: 'material', rarity: 'rare', desc: '⚡ Storm elemental energy' },
     30: { name: 'Dragon Scale', type: 'material', rarity: 'rare', desc: '🐉 Toughened dragon scale for gear crafting' },
-    31: { name: 'Titan Alloy', type: 'material', rarity: 'epic', desc: '🧱 Indestructible alloy used by ancient blacksmiths' },
-    32: { name: 'Void Shard', type: 'material', rarity: 'epic', desc: '🕳️ Crystallized void energy' },
-    33: { name: 'Celestial Dust', type: 'material', rarity: 'epic', desc: '✨ Stardust from high-level gate realms' },
-    34: { name: 'Mythic Core', type: 'material', rarity: 'epic', desc: '💎 High-grade energy core' },
-    35: { name: 'Astral Core', type: 'material', rarity: 'epic', desc: '🌟 Core of astral power' },
+    31: { name: 'Silver Ore', type: 'material', rarity: 'uncommon', desc: '⚒️ Refined crafting ore' },
+    32: { name: 'Shadow Essence', type: 'material', rarity: 'uncommon', desc: '🔮 Concentrated shadow energy' },
+    // 33 currency alone
+    34: { name: 'Prismatic Shard', type: 'material', rarity: 'rare', desc: '💎 Refracting mana crystal' },
+    35: { name: 'Titan Alloy', type: 'material', rarity: 'epic', desc: '🧱 Indestructible alloy used by ancient blacksmiths' }, // Epic 1
     36: { name: 'Phoenix Feather', type: 'material', rarity: 'rare', desc: '🔥 Glowing feather infused with flame' },
     37: { name: 'Wyvern Fang', type: 'material', rarity: 'rare', desc: '🦷 Sharp wyvern tooth' },
-    38: { name: 'Titan Alloy', type: 'material', rarity: 'epic', desc: '🧱 Indestructible alloy used by ancient blacksmiths' },
-    39: { name: 'Void Shard', type: 'material', rarity: 'epic', desc: '🕳️ Crystallized void energy' },
-    40: { name: 'Celestial Dust', type: 'material', rarity: 'epic', desc: '✨ Stardust from high-level gate realms' },
-    41: { name: 'Abyssal Stone', type: 'material', rarity: 'epic', desc: '🕳️ Deep ocean abyss crystal' },
-    42: { name: 'Tempest Core', type: 'material', rarity: 'epic', desc: '🌪️ Swirling storm core' },
-    43: { name: 'Demonic Alloy', type: 'material', rarity: 'epic', desc: '😈 Forged in demon flame' },
-    44: { name: 'Sovereign Steel', type: 'material', rarity: 'epic', desc: '⚔️ Heavy monarch grade steel' },
-    45: { name: 'Ethereal Cloth', type: 'material', rarity: 'epic', desc: '👻 Phantom woven fabric' },
-    46: { name: 'Doom Metal', type: 'material', rarity: 'epic', desc: '☠️ Heavy dark metal' },
-    47: { name: 'Mythic Core', type: 'material', rarity: 'epic', desc: '💎 High-grade energy core' },
-    48: { name: 'Astral Core', type: 'material', rarity: 'epic', desc: '🌟 Core of astral power' },
-    49: { name: 'Celestial Dust', type: 'material', rarity: 'epic', desc: '✨ Stardust from high-level gate realms' },
-    50: { name: 'Shadow Dragon Cloak', type: 'armor', rarity: 'epic', def: 120, hp: 400, desc: '👘 Epic cloak woven from dragon scales' },
+    38: { name: 'Void Shard', type: 'material', rarity: 'epic', desc: '🕳️ Crystallized void energy' }, // Epic 2
+    39: { name: 'Dragon Scale', type: 'material', rarity: 'rare', desc: '🐉 Toughened dragon scale for gear crafting' },
+    40: { name: 'Thunder Essence', type: 'material', rarity: 'rare', desc: '⚡ Storm elemental energy' },
+    41: { name: 'Silver Ore', type: 'material', rarity: 'uncommon', desc: '⚒️ Refined crafting ore' },
+    42: { name: 'Celestial Dust', type: 'material', rarity: 'epic', desc: '✨ Stardust from high-level gate realms' }, // Epic 3
+    43: { name: 'Steel Ingot', type: 'material', rarity: 'uncommon', desc: '🧱 Refined steel bar' },
+    44: { name: 'Wyvern Fang', type: 'material', rarity: 'rare', desc: '🦷 Sharp wyvern tooth' },
+    45: { name: 'Mythic Core', type: 'material', rarity: 'epic', desc: '💎 High-grade energy core' }, // Epic 4
+    46: { name: 'Shadow Essence', type: 'material', rarity: 'uncommon', desc: '🔮 Concentrated shadow energy' },
+    47: { name: 'Prismatic Shard', type: 'material', rarity: 'rare', desc: '💎 Refracting mana crystal' },
+    48: { name: 'Astral Core', type: 'material', rarity: 'epic', desc: '🌟 Core of astral power' }, // Epic 5
+    49: { name: 'Dragon Scale', type: 'material', rarity: 'rare', desc: '🐉 Toughened dragon scale for gear crafting' },
+    50: { name: 'Shadow Dragon Cloak', type: 'armor', rarity: 'epic', def: 120, hp: 400, desc: '👘 Epic cloak woven from dragon scales' }, // Epic 6 (Lvl 50)
   },
   premium: {
-    1:  { name: 'Silver Ore', type: 'material', rarity: 'uncommon', desc: '⚒️ Refined crafting ore' },
-    2:  { name: 'Shadow Essence', type: 'material', rarity: 'uncommon', desc: '🔮 Concentrated shadow energy' },
+    // Tiers 1, 2 currency alone
     3:  { name: 'Steel Ingot', type: 'material', rarity: 'uncommon', desc: '🧱 Refined steel bar' },
     4:  { name: 'Frost Gland', type: 'material', rarity: 'uncommon', desc: '❄️ Cold beast organ' },
     5:  { name: 'Shadow Pelt', type: 'material', rarity: 'uncommon', desc: '🖤 Dark beast fur' },
@@ -87,7 +85,7 @@ const PASS_ITEMS = {
     14: { name: 'Prismatic Shard', type: 'material', rarity: 'rare', desc: '💎 Refracting mana crystal' },
     15: { name: 'Frozen Claw', type: 'material', rarity: 'rare', desc: '🧊 Ice-encrusted monster talon' },
     16: { name: 'Volcanic Dust', type: 'material', rarity: 'rare', desc: '🌋 Scorched ash powder' },
-    17: { name: 'Thunder Essence', type: 'material', rarity: 'rare', desc: '⚡ Storm elemental energy' },
+    // Tier 17 currency alone
     18: { name: 'Storm Shard', type: 'material', rarity: 'rare', desc: '🌩️ High-energy tempest shard' },
     19: { name: 'Abyssal Stone', type: 'material', rarity: 'epic', desc: '🕳️ Deep ocean abyss crystal' },
     20: { name: 'Titan Alloy', type: 'material', rarity: 'epic', desc: '🧱 Indestructible alloy used by ancient blacksmiths' },
@@ -98,7 +96,7 @@ const PASS_ITEMS = {
     25: { name: 'Tempest Core', type: 'material', rarity: 'epic', desc: '🌪️ Swirling storm core' },
     26: { name: 'Demonic Alloy', type: 'material', rarity: 'epic', desc: '😈 Forged in demon flame' },
     27: { name: 'Sovereign Steel', type: 'material', rarity: 'epic', desc: '⚔️ Heavy monarch grade steel' },
-    28: { name: 'Ethereal Cloth', type: 'material', rarity: 'epic', desc: '👻 Phantom woven fabric' },
+    // Tier 28 currency alone
     29: { name: 'Doom Metal', type: 'material', rarity: 'epic', desc: '☠️ Heavy dark metal' },
     30: { name: 'Dragon Bone', type: 'material', rarity: 'epic', desc: '🦴 Ancient dragon frame' },
     31: { name: 'Infernal Alloy', type: 'material', rarity: 'epic', desc: '🔥 Hellfire forged metal' },
@@ -114,7 +112,7 @@ const PASS_ITEMS = {
     41: { name: 'God-Forged Iron', type: 'material', rarity: 'epic', desc: '⚡ Divine anvil iron' },
     42: { name: 'Monarch Shard', type: 'material', rarity: 'epic', desc: '👑 Fragment of monarch authority' },
     43: { name: 'Eternal Flame', type: 'material', rarity: 'epic', desc: '🔥 Never ending divine flame' },
-    44: { name: 'Null Core', type: 'material', rarity: 'epic', desc: '⬛ Core of absolute void' },
+    // Tier 44 currency alone
     45: { name: 'Apocalypse Alloy', type: 'material', rarity: 'epic', desc: '☄️ Forged in world destruction' },
     46: { name: 'Divine Metal', type: 'material', rarity: 'epic', desc: '✨ Heavenly metallic ingot' },
     47: { name: 'Catastrophe Steel', type: 'material', rarity: 'epic', desc: '💥 Steel tempered in disaster' },
@@ -130,16 +128,20 @@ function getTierDisplay(t) {
   const premNexus = 3000;
   const premStones = 360;
 
-  const freeItem = PASS_ITEMS.free[t] || { name: 'Iron Ore', type: 'material', rarity: 'common', desc: '⚒️ Basic crafting ore' };
-  const premItem = PASS_ITEMS.premium[t] || { name: 'Silver Ore', type: 'material', rarity: 'uncommon', desc: '⚒️ Refined crafting ore' };
+  const freeItem = PASS_ITEMS.free[t] || null;
+  const premItem = PASS_ITEMS.premium[t] || null;
 
-  let freeStr = `+${freeNexus.toLocaleString()} 💠 Nexus | +${freeStones} 💎 Stones | 📦 *${freeItem.name}* (${freeItem.rarity.toUpperCase()})`;
-  let premStr = `+${premNexus.toLocaleString()} 💠 Nexus | +${premStones} 💎 Stones | 🎁 *${premItem.name}* (${premItem.rarity.toUpperCase()})`;
+  let freeStr = `+${freeNexus.toLocaleString()} 💠 Nexus | +${freeStones} 💎 Stones`;
+  if (freeItem) freeStr += ` | 📦 *${freeItem.name}* (${freeItem.rarity.toUpperCase()})`;
+
+  let premStr = `+${premNexus.toLocaleString()} 💠 Nexus | +${premStones} 💎 Stones`;
+  if (premItem) premStr += ` | 🎁 *${premItem.name}* (${premItem.rarity.toUpperCase()})`;
 
   return { freeStr, premStr, freeItem, premItem, freeNexus, freeStones, premNexus, premStones };
 }
 
 function addItemToInventory(player, item) {
+  if (!item) return;
   if (!player.inventory) {
     player.inventory = { weapons: [], armor: [], potions: [], artifacts: [], accessories: [], materials: [], scrolls: [], keyStones: [], items: [] };
   }
@@ -197,8 +199,12 @@ module.exports = {
             player.nexus = player.gold;
             player.manaCrystals = (player.manaCrystals || 0) + tInfo.freeStones;
             player.manaStones = player.manaCrystals;
-            addItemToInventory(player, tInfo.freeItem);
-            rewardsGained.push(`Tier ${t} Free: +${tInfo.freeNexus.toLocaleString()} 💠 Nexus | +${tInfo.freeStones} 💎 Stones | 📦 *${tInfo.freeItem.name}*`);
+            let str = `Tier ${t} Free: +${tInfo.freeNexus.toLocaleString()} 💠 Nexus | +${tInfo.freeStones} 💎 Stones`;
+            if (tInfo.freeItem) {
+              addItemToInventory(player, tInfo.freeItem);
+              str += ` | 📦 *${tInfo.freeItem.name}*`;
+            }
+            rewardsGained.push(str);
             count++;
           }
           if (hasPremium && !ap.claimedPremium.includes(t)) {
@@ -207,8 +213,12 @@ module.exports = {
             player.nexus = player.gold;
             player.manaCrystals = (player.manaCrystals || 0) + tInfo.premStones;
             player.manaStones = player.manaCrystals;
-            addItemToInventory(player, tInfo.premItem);
-            rewardsGained.push(`Tier ${t} Premium: +${tInfo.premNexus.toLocaleString()} 💠 Nexus | +${tInfo.premStones} 💎 Stones | 🎁 *${tInfo.premItem.name}*`);
+            let str = `Tier ${t} Premium: +${tInfo.premNexus.toLocaleString()} 💠 Nexus | +${tInfo.premStones} 💎 Stones`;
+            if (tInfo.premItem) {
+              addItemToInventory(player, tInfo.premItem);
+              str += ` | 🎁 *${tInfo.premItem.name}*`;
+            }
+            rewardsGained.push(str);
             count++;
           }
         }
@@ -232,8 +242,12 @@ module.exports = {
         player.nexus = player.gold;
         player.manaCrystals = (player.manaCrystals || 0) + tInfo.freeStones;
         player.manaStones = player.manaCrystals;
-        addItemToInventory(player, tInfo.freeItem);
-        gained.push(`Free: +${tInfo.freeNexus.toLocaleString()} 💠 Nexus | +${tInfo.freeStones} 💎 Mana Stones | 📦 *${tInfo.freeItem.name}*`);
+        let str = `Free: +${tInfo.freeNexus.toLocaleString()} 💠 Nexus | +${tInfo.freeStones} 💎 Mana Stones`;
+        if (tInfo.freeItem) {
+          addItemToInventory(player, tInfo.freeItem);
+          str += ` | 📦 *${tInfo.freeItem.name}*`;
+        }
+        gained.push(str);
       }
       if (hasPremium && !ap.claimedPremium.includes(tier)) {
         ap.claimedPremium.push(tier);
@@ -241,8 +255,12 @@ module.exports = {
         player.nexus = player.gold;
         player.manaCrystals = (player.manaCrystals || 0) + tInfo.premStones;
         player.manaStones = player.manaCrystals;
-        addItemToInventory(player, tInfo.premItem);
-        gained.push(`Premium: +${tInfo.premNexus.toLocaleString()} 💠 Nexus | +${tInfo.premStones} 💎 Mana Stones | 🎁 *${tInfo.premItem.name}*`);
+        let str = `Premium: +${tInfo.premNexus.toLocaleString()} 💠 Nexus | +${tInfo.premStones} 💎 Mana Stones`;
+        if (tInfo.premItem) {
+          addItemToInventory(player, tInfo.premItem);
+          str += ` | 🎁 *${tInfo.premItem.name}*`;
+        }
+        gained.push(str);
       }
 
       if (gained.length === 0) return sock.sendMessage(chatId, { text: `❌ Tier ${tier} rewards already claimed!` }, { quoted: msg });

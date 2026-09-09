@@ -269,7 +269,7 @@ module.exports = {
 📌 GET STARTED:
 • /guild list          - View all registered guilds
 • /guild create [name] - Create a guild (1,000,000💠 + 100,000💎 | Lv.20)
-• /guild join [name]   - Join an existing guild
+• /guild request [name]- Submit application + stats to Guildmaster DM
 
 🏆 GUILD BENEFITS:
 - Guild size upgrades (up to 50 members)
@@ -434,15 +434,43 @@ module.exports = {
     }
 
     // ═══════════════════════════════════════════════════════════════════
-    // JOIN GUILD
+    // JOIN GUILD (DISABLED DIRECT JOIN — USE /guild request)
     // ═══════════════════════════════════════════════════════════════════
     if (action === 'join') {
       const guildName = args.slice(1).join(' ');
+      return sock.sendMessage(chatId, {
+        text: [
+          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          `🚫 *DIRECT JOIN DISABLED*`,
+          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          ``,
+          `Direct joining is disabled. Submit your application and profile to the Guildmaster in DM using:`,
+          ``,
+          `👉 */guild request ${guildName || '[guild name]'}*`,
+          ``,
+          `Your stats and profile will be dispatched to the Guildmaster and Officers in DM.`,
+          `If accepted, they will issue you a contract offer using */guild hire*.`,
+          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        ].join('\n')
+      }, { quoted: msg });
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // GUILD REQUEST (APPLICATION DISPATCH TO GUILDMASTER / OFFICERS IN DM)
+    // ═══════════════════════════════════════════════════════════════════
+    if (action === 'request' || action === 'apply') {
+      const guildName = args.slice(1).join(' ').trim();
 
       if (!guildName) {
         return sock.sendMessage(chatId, {
-          text: '❌ Specify guild name!\n\nExample: /guild join Dragon Slayers'
-        });
+          text: '❌ Specify guild name!\n\nUsage: */guild request [guild name]*\nExample: */guild request Dragon Slayers*'
+        }, { quoted: msg });
+      }
+
+      if (playerGuild) {
+        return sock.sendMessage(chatId, {
+          text: '❌ You are already in a guild! Leave your current guild first with */guild leave*.'
+        }, { quoted: msg });
       }
 
       const guild = Object.values(db.guilds).find(g => 
@@ -451,58 +479,87 @@ module.exports = {
 
       if (!guild) {
         return sock.sendMessage(chatId, {
-          text: '❌ Guild not found!'
-        });
+          text: `❌ Guild *${guildName}* not found!\nUse */guild list* to see all registered guilds.`
+        }, { quoted: msg });
       }
 
-      if (playerGuild) {
-        return sock.sendMessage(chatId, {
-          text: '❌ You are already in a guild!'
-        });
-      }
-
-      if (!guild.members) guild.members = [];
       const maxCap = getMaxMembers(guild);
-      
-      if (guild.members.length >= maxCap) {
+      if ((guild.members?.length || 0) >= maxCap) {
         return sock.sendMessage(chatId, {
-          text: `❌ Guild is at max capacity (${guild.members.length}/${maxCap} members)!\nAsk Guild Officers to upgrade size with /guild upgrade size.`
-        });
+          text: `❌ Guild *${guild.name}* is at max capacity (${guild.members.length}/${maxCap} members)!`
+        }, { quoted: msg });
       }
 
-      guild.members.push({
-        id: sender,
-        name: player.name || 'Unknown',
-        rank: 'Member',
-        joinedAt: Date.now()
+      // Find leaders (Guildmaster, Grandmaster, Vice GM)
+      const leaders = (guild.members || []).filter(m => {
+        const rank = m.rank || '';
+        return rank === 'Leader' || rank === 'Guild Master' || rank === 'Grandmaster' || rank === 'Vice' || rank === 'Vice GM' || m.id === guild.leader;
       });
-      player.guild = guild.name;
-      player.guildJoinedAt = Date.now();
 
-      if (db.guildInvites[sender]) {
-        delete db.guildInvites[sender];
+      if (leaders.length === 0 && guild.leader) {
+        leaders.push({ id: guild.leader, rank: 'Guild Master' });
       }
 
-      // Award Weekly GP to the recruiter (not the recruit)
-      const recruiterId = db.guildInvites?.[sender]?.invitedBy || guild.leader;
-      try { require('../../rpg/utils/WeeklyGuildWar').addGP(db, recruiterId, 200, saveDatabase); } catch(e) {}
+      let power = 0, powerLabel = { emoji: '⚪', label: 'Unknown' };
+      try {
+        const { calculatePowerRating, getPowerLabel } = require('../../rpg/utils/SoloLevelingCore');
+        power = calculatePowerRating(player.stats || {}, Object.values(player.equipped || {}).filter(Boolean), player.pet) || 0;
+        powerLabel = getPowerLabel(power) || powerLabel;
+      } catch (e) {}
 
-      saveDatabase();
+      const appText = [
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        `📩 *NEW GUILD APPLICATION REQUEST*`,
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        `👤 Candidate: *@${sender.split('@')[0]}* (${player.name || 'Unknown'})`,
+        `🏰 Applying for Guild: *${guild.name}*`,
+        ``,
+        `📊 *CANDIDATE PROFILE & STATS:*`,
+        `⭐ Level: *${player.level || 1}* | Rank: *${player.awakenRank || 'E'}-Rank*`,
+        `⚡ Power Rating: *${power.toLocaleString()} ${powerLabel.emoji} ${powerLabel.label}*`,
+        `🎭 Class: *${player.class || 'Not assigned'}*`,
+        `💠 Nexus: *${(player.gold || 0).toLocaleString()}*`,
+        `💎 Mana Stones: *${(player.manaCrystals || 0).toLocaleString()}*`,
+        `⚔️ ATK: *${player.stats?.atk || 0}* | 🛡️ DEF: *${player.stats?.def || 0}* | ❤️ HP: *${player.stats?.hp || 0}/${player.stats?.maxHp || 100}*`,
+        ``,
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        `💡 *To recruit this applicant, send a contract offer:*`,
+        `*/guild hire @${sender.split('@')[0]} <weekly_nexus> <weekly_mana> <weeks>*`,
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+      ].join('\n');
 
-      await sock.sendMessage(chatId, {
-        text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n✅ JOINED GUILD! ✅\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🏰 ${guild.name}\n👥 Members: ${guild.members.length}/${maxCap}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━`
-      });
+      let MultiSocketManager = null;
+      try { MultiSocketManager = require('../../bots/MultiSocketManager'); } catch (e) {}
+      const SerfManager = require('../../rpg/utils/SerfManager');
 
-      if (guild.leader) {
+      let sentCount = 0;
+      for (const l of leaders) {
+        const leaderJid = typeof l === 'object' ? l.id : l;
+        if (!leaderJid) continue;
+        const serf = SerfManager.getSerf(db, leaderJid);
+        const serfSock = serf?.botKey && MultiSocketManager ? MultiSocketManager.getSocket(serf.botKey) : null;
+        const targetSock = serfSock || (MultiSocketManager ? MultiSocketManager.getAnySocket() : null) || sock;
         try {
-          await sock.sendMessage(guild.leader, {
-            text: `🏰 ${player.name} joined your guild!\n\nMembers: ${guild.members.length}/${maxCap}`,
-            mentions: [sender]
-          });
+          await targetSock.sendMessage(leaderJid, { text: appText, mentions: [sender] });
+          sentCount++;
         } catch (e) {}
       }
 
-      return;
+      return sock.sendMessage(chatId, {
+        text: [
+          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          `📩 *APPLICATION DISPATCHED TO GUILD LEADERS*`,
+          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          `🏰 Target Guild: *${guild.name}*`,
+          ``,
+          `@${sender.split('@')[0]}, your profile card, stats, and power rating have been sent directly to the Guildmaster and Officers in DM!`,
+          ``,
+          `💡 If they accept your application, they will issue you a contract offer via DM/chat:`,
+          `   */guild hire @${sender.split('@')[0]} <weekly_nexus> <weekly_mana> <weeks>*`,
+          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        ].join('\n'),
+        mentions: [sender]
+      }, { quoted: msg });
     }
 
     // ═══════════════════════════════════════════════════════════════════
