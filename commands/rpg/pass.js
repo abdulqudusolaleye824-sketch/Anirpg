@@ -1,6 +1,7 @@
 // ═══════════════════════════════════════════════════════════════
 // /pass (/astrapass) — Astra Pass (50 Tiers, 40 Days)
 // Free & Premium tracks (Premium comes automatically with PRO!)
+// Level 50 Free Reward: Epic Armor "Shadow Dragon Cloak"
 // Level 50 Premium Reward: Legendary Weapon "Astra's Sovereign Blade"
 // ═══════════════════════════════════════════════════════════════
 
@@ -14,19 +15,56 @@ function isProPlayer(player) {
   return !!((player.isPro || player.proStatus) && player.proExpiresAt && player.proExpiresAt > Date.now());
 }
 
-function getTierRewards(t) {
-  const freeNexus = t * 1000;
-  const premStones = t * 50;
-  if (t === 50) {
-    return {
-      free: `+${freeNexus.toLocaleString()} 💠 Nexus`,
-      prem: `+${premStones.toLocaleString()} 💎 Mana Stones + 🗡️✨ *Astra's Sovereign Blade* (Legendary Weapon)`,
-    };
+// Fixed seasonal reward map for all 50 tiers
+const PASS_ITEMS = {
+  free: {
+    5:  { name: 'Iron Ore', type: 'material', rarity: 'common', desc: '⚒️ Basic crafting ore' },
+    10: { name: 'Monster Fang', type: 'material', rarity: 'common', desc: '🦴 Common monster crafting material' },
+    15: { name: 'Silver Ore', type: 'material', rarity: 'uncommon', desc: '⚒️ Refined crafting ore' },
+    20: { name: 'Shadow Essence', type: 'material', rarity: 'uncommon', desc: '🔮 Concentrated shadow energy' },
+    25: { name: 'Dragon Scale', type: 'material', rarity: 'rare', desc: '🐉 Toughened dragon scale for gear crafting' },
+    30: { name: 'Phoenix Feather', type: 'material', rarity: 'rare', desc: '🔥 Glowing feather infused with flame' },
+    35: { name: 'Titan Alloy', type: 'material', rarity: 'epic', desc: '🧱 Indestructible alloy used by ancient blacksmiths' },
+    40: { name: 'Void Shard', type: 'material', rarity: 'epic', desc: '🕳️ Crystallized void energy' },
+    45: { name: 'Celestial Dust', type: 'material', rarity: 'epic', desc: '✨ Stardust from high-level gate realms' },
+    50: { name: 'Shadow Dragon Cloak', type: 'armor', rarity: 'epic', def: 120, hp: 400, desc: '👘 Epic cloak woven from dragon scales' },
+  },
+  premium: {
+    5:  { name: 'Silver Ore', type: 'material', rarity: 'uncommon', desc: '⚒️ Refined crafting ore' },
+    10: { name: 'Shadow Essence', type: 'material', rarity: 'uncommon', desc: '🔮 Concentrated shadow energy' },
+    15: { name: 'Dragon Scale', type: 'material', rarity: 'rare', desc: '🐉 Toughened dragon scale for gear crafting' },
+    20: { name: 'Phoenix Feather', type: 'material', rarity: 'rare', desc: '🔥 Glowing feather infused with flame' },
+    25: { name: 'Titan Alloy', type: 'material', rarity: 'epic', desc: '🧱 Indestructible alloy used by ancient blacksmiths' },
+    30: { name: 'Void Shard', type: 'material', rarity: 'epic', desc: '🕳️ Crystallized void energy' },
+    35: { name: 'Celestial Dust', type: 'material', rarity: 'epic', desc: '✨ Stardust from high-level gate realms' },
+    40: { name: 'Mythic Core', type: 'material', rarity: 'epic', desc: '💎 High-grade energy core' },
+    45: { name: 'Astral Core', type: 'material', rarity: 'epic', desc: '🌟 Core of astral power' },
+    50: { name: "Astra's Sovereign Blade", type: 'weapon', rarity: 'legendary', atk: 180, hp: 600, crit: 15, desc: '🗡️✨ Legendary weapon granted to masters of the 40-Day Astra Pass.' },
   }
-  return {
-    free: `+${freeNexus.toLocaleString()} 💠 Nexus`,
-    prem: `+${premStones.toLocaleString()} 💎 Mana Stones`,
-  };
+};
+
+function getTierDisplay(t) {
+  const freeNexus = 1000;
+  const freeStones = 120;
+  const premNexus = 3000;
+  const premStones = 360;
+
+  const freeItem = PASS_ITEMS.free[t];
+  const premItem = PASS_ITEMS.premium[t];
+
+  let freeStr = `+${freeNexus.toLocaleString()} 💠 | +${freeStones} 💎`;
+  if (freeItem) freeStr += ` | 📦 *${freeItem.name}* (${freeItem.rarity.toUpperCase()})`;
+
+  let premStr = `+${premNexus.toLocaleString()} 💠 | +${premStones} 💎`;
+  if (premItem) premStr += ` | 🎁 *${premItem.name}* (${premItem.rarity.toUpperCase()})`;
+
+  return { freeStr, premStr, freeItem, premItem, freeNexus, freeStones, premNexus, premStones };
+}
+
+function addItemToInventory(player, item) {
+  if (!player.inventory) player.inventory = {};
+  if (!Array.isArray(player.inventory.items)) player.inventory.items = [];
+  player.inventory.items.push({ ...item, acquiredAt: Date.now() });
 }
 
 module.exports = {
@@ -48,38 +86,38 @@ module.exports = {
 
     const sub = (args[0] || '').toLowerCase();
 
+    // ── CLAIM REWARDS ───────────────────────────────────────────
     if (sub === 'claim') {
       const tier = parseInt(args[1]);
+
       if (isNaN(tier)) {
         // Claim all unlocked
         let count = 0;
         const rewardsGained = [];
         for (let t = 1; t <= Math.min(TOTAL_TIERS, ap.level); t++) {
+          const tInfo = getTierDisplay(t);
           if (!ap.claimedFree.includes(t)) {
             ap.claimedFree.push(t);
-            const rewardGold = t * 1000;
-            player.gold = (player.gold || 0) + rewardGold;
-            rewardsGained.push(`Tier ${t} Free: +${rewardGold.toLocaleString()} 💠 Nexus`);
+            player.gold = (player.gold || 0) + tInfo.freeNexus;
+            player.manaCrystals = (player.manaCrystals || 0) + tInfo.freeStones;
+            let str = `Tier ${t} Free: +${tInfo.freeNexus.toLocaleString()} 💠 Nexus | +${tInfo.freeStones} 💎 Stones`;
+            if (tInfo.freeItem) {
+              addItemToInventory(player, tInfo.freeItem);
+              str += ` | 📦 *${tInfo.freeItem.name}*`;
+            }
+            rewardsGained.push(str);
             count++;
           }
           if (hasPremium && !ap.claimedPremium.includes(t)) {
             ap.claimedPremium.push(t);
-            const rewardStones = t * 50;
-            player.manaCrystals = (player.manaCrystals || 0) + rewardStones;
-            rewardsGained.push(`Tier ${t} Premium: +${rewardStones.toLocaleString()} 💎 Mana Stones`);
-            if (t === 50) {
-              if (!player.inventory) player.inventory = [];
-              player.inventory.push({
-                name: "Astra's Sovereign Blade",
-                type: 'weapon',
-                rarity: 'legendary',
-                atk: 150,
-                hp: 500,
-                crit: 15,
-                desc: '🗡️✨ Legendary weapon granted to masters of the 40-Day Astra Pass.'
-              });
-              rewardsGained.push(`🏆 *TIER 50 LEGENDARY REWARD:* "Astra's Sovereign Blade" (+150 ATK, +500 HP, +15% CRIT)!`);
+            player.gold = (player.gold || 0) + tInfo.premNexus;
+            player.manaCrystals = (player.manaCrystals || 0) + tInfo.premStones;
+            let str = `Tier ${t} Premium: +${tInfo.premNexus.toLocaleString()} 💠 Nexus | +${tInfo.premStones} 💎 Stones`;
+            if (tInfo.premItem) {
+              addItemToInventory(player, tInfo.premItem);
+              str += ` | 🎁 *${tInfo.premItem.name}*`;
             }
+            rewardsGained.push(str);
             count++;
           }
         }
@@ -95,30 +133,29 @@ module.exports = {
       }
 
       const gained = [];
+      const tInfo = getTierDisplay(tier);
+
       if (!ap.claimedFree.includes(tier)) {
         ap.claimedFree.push(tier);
-        const rewardGold = tier * 1000;
-        player.gold = (player.gold || 0) + rewardGold;
-        gained.push(`Free: +${rewardGold.toLocaleString()} 💠 Nexus`);
+        player.gold = (player.gold || 0) + tInfo.freeNexus;
+        player.manaCrystals = (player.manaCrystals || 0) + tInfo.freeStones;
+        let str = `Free: +${tInfo.freeNexus.toLocaleString()} 💠 Nexus | +${tInfo.freeStones} 💎 Mana Stones`;
+        if (tInfo.freeItem) {
+          addItemToInventory(player, tInfo.freeItem);
+          str += ` | 📦 *${tInfo.freeItem.name}*`;
+        }
+        gained.push(str);
       }
       if (hasPremium && !ap.claimedPremium.includes(tier)) {
         ap.claimedPremium.push(tier);
-        const rewardStones = tier * 50;
-        player.manaCrystals = (player.manaCrystals || 0) + rewardStones;
-        gained.push(`Premium: +${rewardStones.toLocaleString()} 💎 Mana Stones`);
-        if (tier === 50) {
-          if (!player.inventory) player.inventory = [];
-          player.inventory.push({
-            name: "Astra's Sovereign Blade",
-            type: 'weapon',
-            rarity: 'legendary',
-            atk: 150,
-            hp: 500,
-            crit: 15,
-            desc: '🗡️✨ Legendary weapon granted to masters of the 40-Day Astra Pass.'
-          });
-          gained.push(`🏆 *TIER 50 LEGENDARY REWARD:* "Astra's Sovereign Blade"!`);
+        player.gold = (player.gold || 0) + tInfo.premNexus;
+        player.manaCrystals = (player.manaCrystals || 0) + tInfo.premStones;
+        let str = `Premium: +${tInfo.premNexus.toLocaleString()} 💠 Nexus | +${tInfo.premStones} 💎 Mana Stones`;
+        if (tInfo.premItem) {
+          addItemToInventory(player, tInfo.premItem);
+          str += ` | 🎁 *${tInfo.premItem.name}*`;
         }
+        gained.push(str);
       }
 
       if (gained.length === 0) return sock.sendMessage(chatId, { text: `❌ Tier ${tier} rewards already claimed!` }, { quoted: msg });
@@ -126,12 +163,12 @@ module.exports = {
       return sock.sendMessage(chatId, { text: `✅ *Tier ${tier} Claimed!*\n\n${gained.join('\n')}` }, { quoted: msg });
     }
 
-    // Default Pass view: Header + Full Tier & Reward List
+    // Default Pass view — SENT AS ONE LONG SINGLE MESSAGE
     const xpReq = 1000;
     const xpPct = Math.min(100, Math.floor(((ap.xp || 0) / xpReq) * 100));
     const xpBar = '█'.repeat(Math.floor(xpPct / 5)) + '░'.repeat(20 - Math.floor(xpPct / 5));
 
-    const overviewHeader = [
+    const lines = [
       `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
       `🏛️ *ASTRA PASS (SEASON 1 — 40 DAYS)*`,
       `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
@@ -143,50 +180,34 @@ module.exports = {
         ? `👑 *PREMIUM UNLOCKED* (Included with PRO / Activated)`
         : `🆓 *FREE TIER* — Upgrade to PRO (/prostore) to automatically unlock Premium!`,
       ``,
-      `🎁 *TIER 50 HIGHLIGHT:*`,
-      `🗡️✨ *Astra's Sovereign Blade* (Legendary Weapon)`,
-      ``,
       `📌 *HOW TO EARN ASTRA PASS XP:*`,
       `Earn XP from *ALL ACTIVITIES* — Daily claims, Quests, Battles, Crafting, & Commands!`,
       ``,
       `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-      `📌 /pass claim       — Claim all unlocked rewards`,
-      `📌 /pass claim [num] — Claim specific tier reward`,
-      `📌 /prostore         — Buy PRO card to get Auto-Premium!`,
+      `📜 *FULL 50-TIER REWARD TRACK*`,
       `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-    ].join('\n');
+      ``,
+    ];
 
-    // Build levels breakdown in 2 chunks (Tiers 1-25 and Tiers 26-50)
-    let chunk1 = `📜 *ASTRA PASS — TIERS 1 TO 25*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
-    for (let t = 1; t <= 25; t++) {
+    for (let t = 1; t <= TOTAL_TIERS; t++) {
       const isUnlocked = t <= ap.level;
       const statusIcon = isUnlocked ? '🔓' : '🔒';
-      const freeClaimed = ap.claimedFree.includes(t) ? ' [✅ Free Claimed]' : '';
-      const premClaimed = ap.claimedPremium.includes(t) ? ' [✅ Prem Claimed]' : '';
-      const rewards = getTierRewards(t);
-      chunk1 += `${statusIcon} *Tier ${t}*${freeClaimed}${premClaimed}\n`;
-      chunk1 += `  🆓 Free: ${rewards.free}\n`;
-      chunk1 += `  👑 Prem: ${rewards.prem}\n\n`;
+      const freeClaimed = ap.claimedFree.includes(t) ? ' [✅ Free]' : '';
+      const premClaimed = ap.claimedPremium.includes(t) ? ' [✅ Prem]' : '';
+      const tInfo = getTierDisplay(t);
+
+      lines.push(`${statusIcon} *Tier ${t}*${freeClaimed}${premClaimed}`);
+      lines.push(`  🆓 Free: ${tInfo.freeStr}`);
+      lines.push(`  👑 Prem: ${tInfo.premStr}`);
+      lines.push(``);
     }
 
-    let chunk2 = `📜 *ASTRA PASS — TIERS 26 TO 50*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
-    for (let t = 26; t <= 50; t++) {
-      const isUnlocked = t <= ap.level;
-      const statusIcon = isUnlocked ? '🔓' : '🔒';
-      const freeClaimed = ap.claimedFree.includes(t) ? ' [✅ Free Claimed]' : '';
-      const premClaimed = ap.claimedPremium.includes(t) ? ' [✅ Prem Claimed]' : '';
-      const rewards = getTierRewards(t);
-      chunk2 += `${statusIcon} *Tier ${t}*${freeClaimed}${premClaimed}\n`;
-      chunk2 += `  🆓 Free: ${rewards.free}\n`;
-      chunk2 += `  👑 Prem: ${rewards.prem}\n\n`;
-    }
+    lines.push(`━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+    lines.push(`📌 /pass claim       — Claim all unlocked rewards`);
+    lines.push(`📌 /pass claim [num] — Claim specific tier reward`);
+    lines.push(`📌 /prostore         — Buy PRO card to get Auto-Premium!`);
+    lines.push(`━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
 
-    return sock.sendMessage(chatId, {
-      sections: [
-        { text: overviewHeader },
-        { text: chunk1 },
-        { text: chunk2 },
-      ]
-    });
+    return sock.sendMessage(chatId, { text: lines.join('\n') }, { quoted: msg });
   }
 };

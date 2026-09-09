@@ -15,13 +15,33 @@ const PC_REWARD_TIERS = [8, 16, 24, 32, 40];
 // The 20 tiers that are locked to Premium BP:
 const LOCKED_TIERS = [2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32, 34, 36, 38, 40];
 
+// Named item rewards for specific milestone levels
+const BP_ITEMS = {
+  15: { name: 'Celestial Ring', type: 'ring', rarity: 'epic', hp: 300, def: 25, desc: '💍 Glowing ring blessed by starlight' },
+  30: { name: 'Titan Guard', type: 'armor', rarity: 'epic', def: 110, hp: 350, desc: '🛡️ Heavy shield crafted from titan ore' },
+  20: { name: 'Shadow Fang Blade', type: 'weapon', rarity: 'epic', atk: 115, crit: 10, desc: '🗡️ Dark blade coated in shadow venom' },
+  35: { name: 'Void Core Pendant', type: 'ring', rarity: 'epic', atk: 60, energy: 50, desc: '🔮 A pendant throbbing with void energy' },
+  40: { name: "Dragon Emperor's Crown", type: 'ring', rarity: 'legendary', atk: 140, hp: 500, desc: '👑 Crown of the Dragon Emperor' },
+};
+
 function getBPTierRewards(t) {
   if (PC_REWARD_TIERS.includes(t)) {
-    return `💼 +200 PC (Procoin Refund Track!)`;
+    return { str: `💼 +200 PC (Procoin Refund Track!)`, item: null, pc: 200, gold: 0, stones: 0 };
   }
   const goldAmt = t * 1500;
   const stoneAmt = t * 20;
-  return `+${goldAmt.toLocaleString()} 💠 Nexus | +${stoneAmt} 💎 Mana Stones`;
+  const item = BP_ITEMS[t] || null;
+
+  let str = `+${goldAmt.toLocaleString()} 💠 Nexus | +${stoneAmt} 💎 Mana Stones`;
+  if (item) str += ` | 🎁 *${item.name}* (${item.rarity.toUpperCase()})`;
+
+  return { str, item, pc: 0, gold: goldAmt, stones: stoneAmt };
+}
+
+function addItemToInventory(player, item) {
+  if (!player.inventory) player.inventory = {};
+  if (!Array.isArray(player.inventory.items)) player.inventory.items = [];
+  player.inventory.items.push({ ...item, acquiredAt: Date.now() });
 }
 
 module.exports = {
@@ -77,15 +97,19 @@ module.exports = {
           bp.claimed.push(t);
           totalClaimed++;
 
-          if (PC_REWARD_TIERS.includes(t)) {
-            player.procoin = (player.procoin || 0) + 200;
+          const r = getBPTierRewards(t);
+          if (r.pc > 0) {
+            player.procoin = (player.procoin || 0) + r.pc;
             gained.push(`Tier ${t}: +200 PC (Procoin Return!) 💼`);
           } else {
-            const goldAmt = t * 1500;
-            const stoneAmt = t * 20;
-            player.gold = (player.gold || 0) + goldAmt;
-            player.manaCrystals = (player.manaCrystals || 0) + stoneAmt;
-            gained.push(`Tier ${t}: +${goldAmt.toLocaleString()} 💠 Nexus | +${stoneAmt} 💎 Mana Stones`);
+            player.gold = (player.gold || 0) + r.gold;
+            player.manaCrystals = (player.manaCrystals || 0) + r.stones;
+            let str = `Tier ${t}: +${r.gold.toLocaleString()} 💠 Nexus | +${r.stones} 💎 Mana Stones`;
+            if (r.item) {
+              addItemToInventory(player, r.item);
+              str += ` | 🎁 *${r.item.name}*`;
+            }
+            gained.push(str);
           }
         }
 
@@ -118,28 +142,32 @@ module.exports = {
 
       bp.claimed.push(targetLvl);
       const gained = [];
+      const r = getBPTierRewards(targetLvl);
 
-      if (PC_REWARD_TIERS.includes(targetLvl)) {
-        player.procoin = (player.procoin || 0) + 200;
+      if (r.pc > 0) {
+        player.procoin = (player.procoin || 0) + r.pc;
         gained.push(`Tier ${targetLvl}: +200 PC (Procoin Return!) 💼`);
       } else {
-        const goldAmt = targetLvl * 1500;
-        const stoneAmt = targetLvl * 20;
-        player.gold = (player.gold || 0) + goldAmt;
-        player.manaCrystals = (player.manaCrystals || 0) + stoneAmt;
-        gained.push(`Tier ${targetLvl}: +${goldAmt.toLocaleString()} 💠 Nexus | +${stoneAmt} 💎 Mana Stones`);
+        player.gold = (player.gold || 0) + r.gold;
+        player.manaCrystals = (player.manaCrystals || 0) + r.stones;
+        let str = `Tier ${targetLvl}: +${r.gold.toLocaleString()} 💠 Nexus | +${r.stones} 💎 Mana Stones`;
+        if (r.item) {
+          addItemToInventory(player, r.item);
+          str += ` | 🎁 *${r.item.name}*`;
+        }
+        gained.push(str);
       }
 
       saveDatabase();
       return sock.sendMessage(chatId, { text: `✅ *Tier ${targetLvl} Claimed!*\n\n${gained.join('\n')}` }, { quoted: msg });
     }
 
-    // Default BP view
+    // Default BP view — SENT AS ONE LONG SINGLE MESSAGE
     const xpReq = 500;
     const xpPct = Math.min(100, Math.floor(((bp.xp || 0) / xpReq) * 100));
     const xpBar = '█'.repeat(Math.floor(xpPct / 5)) + '░'.repeat(20 - Math.floor(xpPct / 5));
 
-    const overviewHeader = [
+    const lines = [
       `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
       `🎖️ *SEASONAL BATTLE PASS (40 TIERS)*`,
       `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
@@ -159,45 +187,31 @@ module.exports = {
       `• Tiers 8, 16, 24, 32 & 40 award *200 PC each* (+1,000 PC total refund at Tier 40!)`,
       ``,
       `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-      `📌 /bp claim       — Claim all available rewards`,
-      `📌 /bp claim [num] — Claim specific tier reward`,
-      `📌 /bp buy         — Unlock Premium BP (1,000 PC)`,
+      `📜 *FULL 40-TIER REWARD TRACK*`,
       `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-    ].join('\n');
+      ``,
+    ];
 
-    // Build levels breakdown in 2 chunks (Tiers 1-20 and Tiers 21-40)
-    let chunk1 = `🎖️ *BATTLE PASS — TIERS 1 TO 20*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
-    for (let t = 1; t <= 20; t++) {
+    for (let t = 1; t <= TOTAL_TIERS; t++) {
       const isUnlocked = t <= bp.level;
       const isPremiumLocked = LOCKED_TIERS.includes(t);
       const isClaimed = bp.claimed.includes(t);
 
       const statusIcon = isUnlocked ? (isClaimed ? '✅' : '🔓') : (isPremiumLocked ? '🔒' : '⏳');
       const lockLabel = isPremiumLocked ? ' [👑 Premium Locked]' : ' [🆓 Free Track]';
-      const rewards = getBPTierRewards(t);
+      const r = getBPTierRewards(t);
 
-      chunk1 += `${statusIcon} *Tier ${t}*${lockLabel}\n  🎁 Reward: ${rewards}\n\n`;
+      lines.push(`${statusIcon} *Tier ${t}*${lockLabel}`);
+      lines.push(`  🎁 Reward: ${r.str}`);
+      lines.push(``);
     }
 
-    let chunk2 = `🎖️ *BATTLE PASS — TIERS 21 TO 40*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
-    for (let t = 21; t <= 40; t++) {
-      const isUnlocked = t <= bp.level;
-      const isPremiumLocked = LOCKED_TIERS.includes(t);
-      const isClaimed = bp.claimed.includes(t);
+    lines.push(`━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+    lines.push(`📌 /bp claim       — Claim all available rewards`);
+    lines.push(`📌 /bp claim [num] — Claim specific tier reward`);
+    lines.push(`📌 /bp buy         — Unlock Premium BP (1,000 PC)`);
+    lines.push(`━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
 
-      const statusIcon = isUnlocked ? (isClaimed ? '✅' : '🔓') : (isPremiumLocked ? '🔒' : '⏳');
-      const lockLabel = isPremiumLocked ? ' [👑 Premium Locked]' : ' [🆓 Free Track]';
-      const rewards = getBPTierRewards(t);
-
-      chunk2 += `${statusIcon} *Tier ${t}*${lockLabel}\n  🎁 Reward: ${rewards}\n\n`;
-    }
-
-    return sock.sendMessage(chatId, {
-      sections: [
-        { text: overviewHeader },
-        { text: chunk1 },
-        { text: chunk2 },
-      ]
-    });
+    return sock.sendMessage(chatId, { text: lines.join('\n') }, { quoted: msg });
   }
 };

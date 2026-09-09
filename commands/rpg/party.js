@@ -58,7 +58,7 @@ module.exports = {
         }, { quoted: msg });
       }
 
-      const resolved = GR.resolveCode(key);
+      const resolved = GR.resolveCode(key, db);
       if (!resolved.ok) return sock.sendMessage(chatId, { text: resolved.error }, { quoted: msg });
       const { gate, keyData } = resolved;
 
@@ -74,8 +74,6 @@ module.exports = {
 
       // ── SCENARIO A: Solo Hunter (No Guild & Not an Affiliate) ─────
       if (!playerGuild && !isAffiliate) {
-        keyData.used = true;
-        if (db.gateKeys?.[key]) db.gateKeys[key].used = true;
         const enterRes = GR.enter(sender, player.name, key, keyData, gate, db);
         activeGc.activeKeyId = key;
         keyData.dungeonChatId = chatId;
@@ -105,8 +103,6 @@ module.exports = {
 
       // ── SCENARIO B: Affiliate User ───────────────────────────────
       if (isAffiliate) {
-        keyData.used = true;
-        if (db.gateKeys?.[key]) db.gateKeys[key].used = true;
         keyData.isAffiliate = true;
         keyData.guildName   = affData.guildName;
         keyData.dungeonChatId = chatId;
@@ -144,8 +140,6 @@ module.exports = {
       }
 
       // ── SCENARIO C: Guild Member User ─────────────────────────────
-      keyData.used = true;
-      if (db.gateKeys?.[key]) db.gateKeys[key].used = true;
       keyData.isAffiliate = false;
       keyData.guildName   = playerGuild;
       keyData.dungeonChatId = chatId;

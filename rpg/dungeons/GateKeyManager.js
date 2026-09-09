@@ -34,8 +34,8 @@ function generateUniqueKey() {
   return key;
 }
 
-const MIN_STABILITY = 3  * 24 * 60 * 60 * 1000;
-const MAX_STABILITY = 7  * 24 * 60 * 60 * 1000;
+const MIN_STABILITY = 7  * 24 * 60 * 60 * 1000;
+const MAX_STABILITY = 14 * 24 * 60 * 60 * 1000;
 
 function rollStabilityTimer() {
   return Math.floor(MIN_STABILITY + Math.random() * (MAX_STABILITY - MIN_STABILITY));
@@ -311,8 +311,18 @@ function checkExpiredKeys(sock, db, saveDatabase) {
   saveDatabase();
 }
 
-function getKey(key) {
-  return activeKeys[key] || null;
+function getKey(key, db = null) {
+  if (!key) return null;
+  const upper = String(key).toUpperCase().trim();
+  if (activeKeys[upper]) return activeKeys[upper];
+  if (db?.gateKeys?.[upper]) {
+    const k = db.gateKeys[upper];
+    if (!k.expired && !k.raidComplete && Date.now() < k.expiresAt) {
+      activeKeys[upper] = k;
+      return k;
+    }
+  }
+  return activeKeys[upper] || null;
 }
 
 function formatStability(ms) {

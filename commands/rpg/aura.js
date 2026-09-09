@@ -1,6 +1,8 @@
 // ═══════════════════════════════════════════════════════════════
-// AURA COMMAND — View aura, leaderboard, and title
+// AURA COMMAND — View aura, leaderboard, title tiers & active perks
 // ═══════════════════════════════════════════════════════════════
+
+'use strict';
 
 const { AuraSystem, AURA_TITLES } = require('../../rpg/utils/AuraSystem');
 const { AWAKENING_RANKS } = require('../../rpg/utils/SoloLevelingCore');
@@ -8,7 +10,7 @@ const { AWAKENING_RANKS } = require('../../rpg/utils/SoloLevelingCore');
 module.exports = {
   name: 'aura',
   aliases: ['rep', 'prestige', 'fame'],
-  description: '✨ View your Aura and the Aura leaderboard',
+  description: '✨ View your Aura, active perks, and the Aura leaderboard',
 
   async execute(sock, msg, args, getDatabase, saveDatabase, sender) {
     const chatId = msg.key?.remoteJid;
@@ -23,15 +25,10 @@ module.exports = {
       const board = AuraSystem.getLeaderboard(db, 15);
       if (board.length === 0) return sock.sendMessage(chatId, { text: 'No data yet.' }, { quoted: msg });
 
-      const myRank = Object.values(db.users || {})
-        .filter(u => u && !u.banned)
-        .sort((a, b) => (b.aura || 0) - (a.aura || 0))
-        .findIndex(u => u.id === sender || Object.keys(db.users).find(k => db.users[k] === u && k === sender));
-
       return sock.sendMessage(chatId, {
         text: [
           `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-          `✨ *AURA LEADERBOARD*`,
+          `✨ *GLOBAL AURA LEADERBOARD*`,
           `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
           ``,
           board.join('\n'),
@@ -79,6 +76,8 @@ module.exports = {
         }, { quoted: msg });
       }
     }
+
+    // ── GUILD AURA ───────────────────────────────────────────
     if (sub === 'guild') {
       const guildName = player.guild;
       if (!guildName) return sock.sendMessage(chatId, { text: '❌ You are not in a guild.' }, { quoted: msg });
@@ -95,18 +94,21 @@ module.exports = {
       }, { quoted: msg });
     }
 
-    // ── TITLE LIST ───────────────────────────────────────────
-    if (sub === 'titles') {
+    // ── TITLE LIST & PERKS ───────────────────────────────────
+    if (sub === 'titles' || sub === 'perks') {
       const lines = [
         `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-        `✨ *AURA TITLE TIERS*`,
+        `✨ *AURA TITLE TIERS & PERKS*`,
         `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
         ``,
       ];
       for (const tier of AURA_TITLES) {
         const current = (player.aura || 0) >= tier.min;
-        lines.push(`${current ? '✅' : '🔒'} ${tier.emoji} *${tier.title}* — ${tier.min.toLocaleString()}+ Aura`);
-        lines.push(`    ${tier.description}`);
+        const icon = current ? '✅' : '🔒';
+        lines.push(`${icon} ${tier.emoji} *${tier.title}* — ${tier.min.toLocaleString()}+ Aura`);
+        lines.push(`   💭 ${tier.description}`);
+        lines.push(`   🎁 *Active Perks:* ${tier.perks}`);
+        lines.push(``);
       }
       lines.push(`━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
       return sock.sendMessage(chatId, { text: lines.join('\n') }, { quoted: msg });
@@ -128,29 +130,26 @@ module.exports = {
 
     const lines = [
       `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-      `✨ *AURA*`,
+      `✨ *HUNTER AURA & PRESTIGE*`,
       `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
       ``,
-      `👤 *${player.name}* ${rankData.emoji} [${rank}-Rank]`,
-      ``,
-      `${title.emoji} *${title.title}*`,
-      `✨ Aura: *${aura.toLocaleString()}*`,
+      `👤 Hunter: *${player.name}* ${rankData.emoji} [${rank}-Rank]`,
+      `${title.emoji} Title Tier: *${title.title}*`,
+      `✨ Current Aura: *${aura.toLocaleString()}*`,
       `📊 ${progressBar}`,
-      next ? `📈 Next: *${next.title}* at ${next.min.toLocaleString()}` : `👑 MAX TITLE REACHED`,
+      next ? `📈 Next Tier: *${next.title}* at ${next.min.toLocaleString()} Aura` : `👑 MAX TIER REACHED`,
+      ``,
+      `🎁 *ACTIVE TIER PERKS:*`,
+      `👉 ${title.perks}`,
       ``,
       `⚔️ PvP Win Streak: *${streak}*`,
       ``,
       `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-      `📌 /aura top — global leaderboard`,
-      `📌 /aura guild — guild leaderboard`,
-      `📌 /aura titles — all title tiers`,
+      `📌 /aura farm    — Harvest wild aura (10h cooldown)`,
+      `📌 /aura top     — Global aura leaderboard`,
+      `📌 /aura guild   — Guild aura leaderboard`,
+      `📌 /aura titles  — View all tier perks`,
       `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-      ``,
-      `*How to gain Aura:*`,
-      `⚔️ PvP wins`,
-      `🚪 Gate clears`,
-      `🎭 Class awakening`,
-      `🏆 Top raider in a gate`,
     ];
 
     return sock.sendMessage(chatId, { text: lines.join('\n') }, { quoted: msg });

@@ -93,6 +93,13 @@ function awardXP(player, action = 'command', saveDatabase, sock, chatId, extraMu
   if (player.xpPenaltyUntil && player.xpPenaltyUntil > Date.now()) {
     extraMult *= 0.3;
   }
+
+  // ── Pro Subscription 2x EXP Boost ─────────────────────────────────────
+  const isPro = !!((player.isPro || player.proStatus) && player.proExpiresAt && player.proExpiresAt > Date.now());
+  if (isPro) {
+    extraMult *= 2.0;
+  }
+
   const amount   = Math.floor(rand(range[0], range[1]) * rankMult * extraMult);
 
   // Add XP immediately — synchronous

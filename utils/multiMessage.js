@@ -140,7 +140,7 @@ async function sendMulti(sock, jid, input, opts = {}) {
 
   const stagger     = Array.isArray(opts.stagger) && opts.stagger.length === 2
     ? opts.stagger
-    : [350, 900];
+    : [2000, 3000];
   const chunkTextOn = opts.chunkText !== false;
   const quoted      = opts.quoted || (opts.firstSection ? null : null);
   const firstDelay  = opts.firstDelay || 0;

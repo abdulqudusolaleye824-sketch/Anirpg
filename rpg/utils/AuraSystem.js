@@ -11,16 +11,16 @@
 
 // ─── AURA TITLE THRESHOLDS ───────────────────────────────────────
 const AURA_TITLES = [
-  { min: 0,       title: 'Unknown',          emoji: '⬛', description: 'No one knows who you are.' },
-  { min: 100,     title: 'Rookie Hunter',     emoji: '🟫', description: 'You\'ve started making a name for yourself.' },
-  { min: 500,     title: 'Rising Hunter',     emoji: '🟦', description: 'Word is spreading about you.' },
-  { min: 1500,    title: 'Recognized Hunter', emoji: '🟩', description: 'The Association knows your name.' },
-  { min: 4000,    title: 'Notable Hunter',    emoji: '🟨', description: 'Other hunters respect you.' },
-  { min: 10000,   title: 'Elite Hunter',      emoji: '🟧', description: 'You\'re among the top tier.' },
-  { min: 25000,   title: 'Legendary Hunter',  emoji: '🟥', description: 'Your name causes gates to tremble.' },
-  { min: 60000,   title: 'National Hero',     emoji: '💜', description: 'The government watches your every move.' },
-  { min: 150000,  title: 'World-Class Hunter',emoji: '🌟', description: 'You\'re known across every country.' },
-  { min: 500000,  title: 'Sovereign',         emoji: '👑', description: 'An existence beyond human measure.' },
+  { min: 0,       title: 'Unknown',          emoji: '⬛', description: 'No one knows who you are.', perks: 'None' },
+  { min: 100,     title: 'Rookie Hunter',     emoji: '🟫', description: 'You\'ve started making a name for yourself.', perks: '⚔️ +2% ATK | ✨ +2% EXP' },
+  { min: 500,     title: 'Rising Hunter',     emoji: '🟦', description: 'Word is spreading about you.', perks: '⚔️ +4% ATK | ✨ +5% EXP | 🚪 +3% Gate Loot' },
+  { min: 1500,    title: 'Recognized Hunter', emoji: '🟩', description: 'The Association knows your name.', perks: '⚔️ +6% ATK | ✨ +8% EXP | 🚪 +5% Gate Loot | 🎯 +2% Crit' },
+  { min: 4000,    title: 'Notable Hunter',    emoji: '🟨', description: 'Other hunters respect you.', perks: '⚔️ +8% ATK | ✨ +10% EXP | 🚪 +8% Gate Loot | 🎯 +4% Crit' },
+  { min: 10000,   title: 'Elite Hunter',      emoji: '🟧', description: 'You\'re among the top tier.', perks: '⚔️ +12% ATK | ✨ +15% EXP | 🚪 +12% Gate Loot | 🎯 +6% Crit | ❤️ +5% HP' },
+  { min: 25000,   title: 'Legendary Hunter',  emoji: '🟥', description: 'Your name causes gates to tremble.', perks: '⚔️ +16% ATK | ✨ +20% EXP | 🚪 +15% Gate Loot | 🎯 +8% Crit | ❤️ +10% HP' },
+  { min: 60000,   title: 'National Hero',     emoji: '💜', description: 'The government watches your every move.', perks: '⚔️ +22% ATK | ✨ +25% EXP | 🚪 +20% Gate Loot | 🎯 +10% Crit | ❤️ +15% HP' },
+  { min: 150000,  title: 'World-Class Hunter',emoji: '🌟', description: 'You\'re known across every country.', perks: '⚔️ +30% ATK | ✨ +35% EXP | 🚪 +25% Gate Loot | 🎯 +12% Crit | ❤️ +20% HP' },
+  { min: 500000,  title: 'Sovereign',         emoji: '👑', description: 'An existence beyond human measure.', perks: '👑 +40% ATK | ✨ +50% EXP | 🚪 +35% Gate Loot | 🎯 +15% Crit | ❤️ +30% HP | 🌌 Sovereign Domain' },
 ];
 
 // ─── AURA GAIN EVENTS ─────────────────────────────────────────────

@@ -38,6 +38,56 @@ const gate = {
     GateManager.checkGateBreaks(chatId, sock);
 
     const sub = (args[0] || 'list').toLowerCase();
+    const sub2 = (args[1] || '').toLowerCase();
+
+    // ── /gate key list / /gate keys ───────────────────────────────────────────
+    if (sub === 'keys' || sub === 'keylist' || (sub === 'key' && (sub2 === 'list' || sub2 === 'ls' || !sub2))) {
+      const allKeys = Object.entries(db.gateKeys || {}).filter(([, k]) => {
+        return normaliseJid(k.ownedBy) === normaliseJid(sender)
+            && !k.expired
+            && !k.raidComplete
+            && Date.now() < k.expiresAt;
+      });
+
+      if (allKeys.length === 0) {
+        return sock.sendMessage(chatId, {
+          text: [
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+            `🔑 *YOUR UNUSED GATE KEYS*`,
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+            ``,
+            `❌ You have no active unused gate keys.`,
+            `Buy a gate using */gate buy* when a gate spawns!`,
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          ].join('\n'),
+        }, { quoted: msg });
+      }
+
+      const lines = [
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        `🔑 *YOUR UNUSED GATE KEYS (${allKeys.length})*`,
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        ``,
+      ];
+
+      allKeys.forEach(([key, k], i) => {
+        const rd = GATE_RANKS[k.gateRank] || { emoji: '🚪', label: `${k.gateRank}-Rank` };
+        const timeLeft = GKM.formatStability(Math.max(0, k.expiresAt - Date.now()));
+        lines.push(`${i + 1}. ${rd.emoji} *${rd.label}*`);
+        lines.push(`   🔑 Code: \`${key}\``);
+        lines.push(`   🏰 Guild: *${k.guildName || 'Solo/Affiliate'}*`);
+        lines.push(`   ⏳ Expires in: *${timeLeft}*`);
+        lines.push(``);
+      });
+
+      lines.push(`━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+      lines.push(`📌 *How to use:*`);
+      lines.push(`Go to a registered dungeon GC and run:`);
+      lines.push(`/party create --<CODE>`);
+      lines.push(`━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+
+      return sock.sendMessage(chatId, { text: lines.join('\n') }, { quoted: msg });
+    }
 
     // ── /gate (list) ──────────────────────────────────────────────────────────
     if (sub === 'list' || sub === 'gates' || !args[0]) {
