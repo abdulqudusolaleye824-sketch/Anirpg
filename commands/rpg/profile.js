@@ -158,36 +158,63 @@ module.exports = {
       }, { quoted: msg });
     }
 
-    // ── PRO USER FIX: /p (profile) for pro users sends 2 messages to chat, no DM/serf blocks ──
-    const isProUser = (()=>{ try { return !!((player.isPro || player.proStatus) && player.proExpiresAt && player.proExpiresAt > Date.now()); } catch{ return false; } })();
-    if (isOwnProfile && isProUser && chatId.endsWith('@g.us')) {
-      const caption = buildCard(player, db, targetId, mentionedId, isOwnProfile);
-      let imageBuffer;
-      if (player.profileImage) {
-        try { imageBuffer = Buffer.from(player.profileImage, 'base64'); } catch (e) { imageBuffer = null; }
-      }
-      if (!imageBuffer || imageBuffer.length === 0) {
-        try { imageBuffer = fs.readFileSync(DEFAULT_PROFILE_IMG); } catch (e) { imageBuffer = null; }
-      }
-      // 1st message to chat: Player is pro message sending
-      await sock.sendMessage(chatId, { text: `⏳ *Player is pro — sending profile...*` }, { quoted: msg });
-      // Send profile directly to chat (no DM, no serf blocks, no bugs)
-      try {
-        if (imageBuffer && imageBuffer.length > 0) {
-          await sock.sendMessage(chatId, { image: imageBuffer, caption }, { quoted: msg });
-        } else {
-          await sock.sendMessage(chatId, { text: caption }, { quoted: msg });
-        }
-      } catch (e) {
-        console.error('Pro profile send failed:', e.message);
-        // Fallback to text if image fails
-        await sock.sendMessage(chatId, { text: caption }, { quoted: msg });
-      }
-      // 2nd message to chat: Profile successfully sent
-      return sock.sendMessage(chatId, { text: `✅ *Profile successfully sent!*` }, { quoted: msg });
-    }
-
     if (player.profileLocked && chatId.endsWith('@g.us')) {
+      // ── PRO LOCKED PROFILE: serf-gated DM with 2 chat status messages ──
+      const isProLocked = (()=>{ try { return isOwnProfile && !!((player.isPro || player.proStatus) && player.proExpiresAt && player.proExpiresAt > Date.now()); } catch{ return false; } })();
+      if (isProLocked) {
+        const caption = buildCard(player, db, targetId, mentionedId, isOwnProfile);
+        let imageBuffer;
+        if (player.profileImage) {
+          try { imageBuffer = Buffer.from(player.profileImage, 'base64'); } catch (e) { imageBuffer = null; }
+        }
+        if (!imageBuffer || imageBuffer.length === 0) {
+          try { imageBuffer = fs.readFileSync(DEFAULT_PROFILE_IMG); } catch (e) { imageBuffer = null; }
+        }
+        // 1st message to chat: Player is pro message sending
+        await sock.sendMessage(chatId, { text: `⏳ *Player is pro — sending profile...*` }, { quoted: msg });
+
+        // DM is completely gated by serfs — try serf DM
+        let MSM = null;
+        try { MSM = require('../../bots/MultiSocketManager'); } catch (e) {}
+        const SerfManager = require('../../rpg/utils/SerfManager');
+        const serf = SerfManager.getSerf(db, sender);
+        const serfSock = serf?.botKey && MSM ? MSM.getSocket(serf.botKey) : null;
+        const dmJid = `${sender.split('@')[0]}@s.whatsapp.net`;
+
+        // No serf or serf offline → bug / ask to setserf
+        if (!serf || !serfSock || !serfSock.user?.id) {
+          const reason = !serf
+            ? `❌ No serf set. Please set your serf with */setserf @bot* and ask a mod to approve.`
+            : `❌ Your serf *${serf.botKey}* is offline/unavailable. Try again when it's online.`;
+          return sock.sendMessage(chatId, { text: reason + `\n\n💡 DM is completely gated by serfs.` }, { quoted: msg });
+        }
+
+        // Try to send via serf (no bugs)
+        try {
+          if (imageBuffer && imageBuffer.length > 0) {
+            await serfSock.sendMessage(dmJid, { image: imageBuffer, caption });
+          } else {
+            await serfSock.sendMessage(dmJid, { text: caption });
+          }
+          // Staff copy if configured (best effort)
+          if (db.botStaffGroup) {
+            try {
+              if (imageBuffer) {
+                await sock.sendMessage(db.botStaffGroup, { image: imageBuffer, caption: `🔒 [STAFF COPY - LOCKED PROFILE]\n` + caption });
+              } else {
+                await sock.sendMessage(db.botStaffGroup, { text: `🔒 [STAFF COPY - LOCKED PROFILE]\n` + caption });
+              }
+            } catch {}
+          }
+          // After successfully sent, no bugs or serf blocks → second chat message
+          return sock.sendMessage(chatId, { text: `✅ *Profile successfully sent!*` }, { quoted: msg });
+        } catch (e) {
+          console.error('Pro locked DM failed:', e.message);
+          return sock.sendMessage(chatId, { text: `❌ Failed to send profile to DM: ${e.message}\n\nPlease ensure your serf is set and online. Use */setserf @bot*` }, { quoted: msg });
+        }
+      }
+
+      // Non-pro locked profile (original serf-gated DM flow)
       const SerfManager = require('../../rpg/utils/SerfManager');
       const Perms = require('../../utils/permissions');
       const hasSerf = SerfManager.hasApprovedSerf(db, sender) || Perms.isBotOwner(db, sender) || Perms.isBotMod(db, sender);
