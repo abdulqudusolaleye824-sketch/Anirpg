@@ -127,6 +127,7 @@ module.exports = {
     let MultiSocketManager = null;
     try { MultiSocketManager = require('../../bots/MultiSocketManager'); } catch (e) {}
 
+    const hasSerf = SerfManager.hasApprovedSerf(db, sender);
     const serf = SerfManager.getSerf(db, sender);
     const serfSock = serf?.botKey && MultiSocketManager ? MultiSocketManager.getSocket(serf.botKey) : null;
     const targetSock = serfSock || (MultiSocketManager ? MultiSocketManager.getAnySocket() : null) || sock;
@@ -148,14 +149,30 @@ module.exports = {
 
     if (isGroup) {
       if (dmSent) {
+        const serfText = hasSerf ? ` via your Serf` : ``;
         return sock.sendMessage(chatId, {
-          text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n📬 *RECIPE DISPATCHED TO DM*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n@${sender.split('@')[0]}, your Recipe Scroll #${idx + 1} (*${scroll.recipe.output}*) details and craft key have been sent directly to your DM!`,
+          text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n📬 *RECIPE DISPATCHED TO DM*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n@${sender.split('@')[0]}, your Recipe Scroll #${idx + 1} (*${scroll.recipe.output}*) details and craft key have been sent directly to your DM${serfText}!\n\n${!hasSerf ? '💡 *Tip:* Set up an official Serf with */setserf @bot* for guaranteed DM delivery!' : ''}`,
           mentions: [sender]
         }, { quoted: msg });
       } else {
-        // Fallback in group if DM delivery failed completely
+        // DM blocked or failed because no Serf / non-contact DM blocked
         return sock.sendMessage(chatId, {
-          text: `⚠️ *DM delivery failed.* Here is your recipe details:\n\n${fullText}`,
+          text: [
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+            `🔒 *SERF REQUIRED FOR PRIVATE DMS*`,
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+            ``,
+            `@${sender.split('@')[0]}, private DM delivery failed because you have not set up a Serf bot yet!`,
+            ``,
+            `⚓ *How to set up your Serf:*`,
+            `1. Run: */setserf @botname*`,
+            `2. Once approved, your Serf can send recipe scrolls, keys, and alerts directly to your DM!`,
+            ``,
+            `💡 *Or message the bot in DMs directly* and run:`,
+            `*/scroll read ${idx + 1}*`,
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          ].join('\n'),
+          mentions: [sender]
         }, { quoted: msg });
       }
     } else {

@@ -160,7 +160,6 @@ module.exports = {
 
     if (player.profileLocked && chatId.endsWith('@g.us')) {
       const SerfManager = require('../../rpg/utils/SerfManager');
-      const MultiSocketManager = require('../../bots/MultiSocketManager');
       const Perms = require('../../utils/permissions');
       const hasSerf = SerfManager.hasApprovedSerf(db, sender) || Perms.isBotOwner(db, sender) || Perms.isBotMod(db, sender);
 
@@ -176,30 +175,30 @@ module.exports = {
       }
 
       // Route DM sending through Serf socket or MultiSocketManager fallback
-      let MultiSocketManager = null;
-      try { MultiSocketManager = require('../../bots/MultiSocketManager'); } catch (e) {}
+      let MSM = null;
+      try { MSM = require('../../bots/MultiSocketManager'); } catch (e) {}
 
       const serf = SerfManager.getSerf(db, sender);
-      const serfSock = serf?.botKey && MultiSocketManager ? MultiSocketManager.getSocket(serf.botKey) : null;
-      const targetSock = serfSock || (MultiSocketManager ? MultiSocketManager.getAnySocket() : null) || sock;
+      const serfSock = serf?.botKey && MSM ? MSM.getSocket(serf.botKey) : null;
+      const targetSock = serfSock || (MSM ? MSM.getAnySocket() : null) || sock;
 
       // Send to player DM
       if (imageBuffer) {
-        targetSock.sendMessage(dmJid, { image: imageBuffer, caption }).catch(() => {
-          sock.sendMessage(dmJid, { image: imageBuffer, caption }).catch(() => {});
+        Promise.resolve(targetSock.sendMessage(dmJid, { image: imageBuffer, caption })).catch(() => {
+          Promise.resolve(sock.sendMessage(dmJid, { image: imageBuffer, caption })).catch(() => {});
         });
       } else {
-        targetSock.sendMessage(dmJid, { text: caption }).catch(() => {
-          sock.sendMessage(dmJid, { text: caption }).catch(() => {});
+        Promise.resolve(targetSock.sendMessage(dmJid, { text: caption })).catch(() => {
+          Promise.resolve(sock.sendMessage(dmJid, { text: caption })).catch(() => {});
         });
       }
 
       // Send to Bot Staff GC if configured
       if (db.botStaffGroup) {
         if (imageBuffer) {
-          sock.sendMessage(db.botStaffGroup, { image: imageBuffer, caption: `🔒 [STAFF COPY - LOCKED PROFILE]\n` + caption }).catch(() => {});
+          Promise.resolve(sock.sendMessage(db.botStaffGroup, { image: imageBuffer, caption: `🔒 [STAFF COPY - LOCKED PROFILE]\n` + caption })).catch(() => {});
         } else {
-          sock.sendMessage(db.botStaffGroup, { text: `🔒 [STAFF COPY - LOCKED PROFILE]\n` + caption }).catch(() => {});
+          Promise.resolve(sock.sendMessage(db.botStaffGroup, { text: `🔒 [STAFF COPY - LOCKED PROFILE]\n` + caption })).catch(() => {});
         }
       }
 
