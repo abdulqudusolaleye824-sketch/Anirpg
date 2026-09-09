@@ -90,14 +90,14 @@ module.exports = {
 
     // Screenshot-style text: simple header + tap prompt (matches Sapphire example)
     const dmText = [
-      `📌 *Sapphire Support Groups*`,
+      `📌 *Astra™ Arise Support Groups*`,
       ``,
       `Tap a group below to join.`,
     ].join('\n');
     // Keep detailed version as fallback if no buttons? But use simple for image caption
     const fullDmText = [
       `━━━━━━━━━━━━━━━━━━━━━━━`,
-      `🛡️ *SAPPHIRE SUPPORT GROUPS*`,
+      `🛡️ *ASTRA SUPPORT GROUPS*`,
       `━━━━━━━━━━━━━━━━━━━━━━━`,
       `Tap a group below to join.`,
       ``,
@@ -126,7 +126,7 @@ module.exports = {
     // DM user via their Serf bot — with URL buttons! (with image like screenshot)
     const serfKey = SerfManager.getSerfBotKey(db, sender);
     const serfSock = serfKey ? MultiSocketManager.getSocket(serfKey) : null;
-    // Use image + caption if available (matches screenshot's blue S logo)
+    // Use image + caption if available (Astra gold A logo)
     const dmPayload = supportImage ? { image: supportImage, caption: fullDmText, mimetype: 'image/jpeg', footer: 'Astra™ 2026' } : { text: fullDmText, footer: 'Astra™ 2026' };
 
     if (serfSock && supportButtons && supportButtons.length) {

@@ -1,6 +1,6 @@
 // ═══════════════════════════════════════════════════════════════
-// /battlepass (/bp alias) — Seasonal Battle Pass (40 Tiers)
-// Cost: 1,000 PC for Premium BP.
+// /battlepass (/bp alias) — Seasonal Battle Pass (40 Tiers, 30 Days)
+// Cost: 1,000 PC for Premium BP. — 30 Day Season
 // 4 levels grant Currency alone (Free: L1, L2, L3 | Prem: L7)
 // All other 36 levels grant Currency + Items / PC Refunds!
 // 20 levels are locked to Premium.
@@ -108,7 +108,7 @@ function addItemToInventory(player, item) {
 module.exports = {
   name: 'battlepass',
   aliases: ['bp'],
-  description: '🎖️ Seasonal Battle Pass (40 Tiers) — 1,000 PC to unlock Premium',
+  description: '🎖️ Seasonal Battle Pass (40 Tiers, 30 Days) — 1,000 PC to unlock Premium',
 
   async execute(sock, msg, args, getDatabase, saveDatabase, sender) {
     const chatId = msg.key.remoteJid;
@@ -293,34 +293,27 @@ module.exports = {
       const isUnlocked = tTier <= bp.level;
       const isLocked = LOCKED_TIERS.includes(tTier);
       const isClaimed = (bp.claimed || []).includes(tTier);
-      let statusIcon = '🔒';
       let statusText = '🔒 Locked';
-      if(tTier === bp.level){ statusIcon='🟣'; statusText='🟣 Current'; }
+      if(tTier === bp.level){ statusText='🟣 Current'; }
       else if(tTier < bp.level){
-        if(isLocked && !bp.premium){ statusIcon='🔒'; statusText='🔒 Premium Locked'; }
-        else if(isClaimed){ statusIcon='✅'; statusText='✅ Claimed'; }
-        else { statusIcon='🟢'; statusText='🟢 Unlocked'; }
+        if(isLocked && !bp.premium){ statusText='🔒 Premium Locked'; }
+        else if(isClaimed){ statusText='✅ Claimed'; }
+        else { statusText='🟢 Unlocked'; }
       } else if(isUnlocked){
-        if(isLocked && !bp.premium){ statusIcon='🔒'; statusText='🔒 Premium Locked'; }
-        else if(isClaimed){ statusIcon='✅'; statusText='✅ Claimed'; }
-        else { statusIcon='🟢'; statusText='🟢 Unlocked'; }
+        if(isLocked && !bp.premium){ statusText='🔒 Premium Locked'; }
+        else if(isClaimed){ statusText='✅ Claimed'; }
+        else { statusText='🟢 Unlocked'; }
       }
-      const track = isLocked ? 'Premium' : 'Free';
       const pcTxt = r.pc ? ` + 200 PC` : '';
       const itemTxt = r.item ? ` + ${r.item.name}` : '';
+      const premiumTag = isLocked ? ' (Premium)' : '';
       tierLines.push(`Level ${tTier}: ${statusText}`);
-      if(isLocked){
-        tierLines.push(`  Free: — Premium Locked`);
-        tierLines.push(`  Premium: ${r.gold.toLocaleString()} 💠 | ${r.stones} 💎${pcTxt}${itemTxt}`);
-      } else {
-        tierLines.push(`  Free: ${r.gold.toLocaleString()} 💠 | ${r.stones} 💎${pcTxt}${itemTxt}`);
-        tierLines.push(`  Premium: ${r.gold.toLocaleString()} 💠 | ${r.stones} 💎${pcTxt}${itemTxt}`);
-      }
+      tierLines.push(`  Rewards: ${r.gold.toLocaleString()} 💠 | ${r.stones} 💎${pcTxt}${itemTxt}${premiumTag}`);
       tierLines.push(``);
     }
     const navHintBP = page > 1 && page < 4 ? `◀️ /bp ${page-1}  •  ▶️ /bp ${page+1}` : page === 1 ? `▶️ Next: /bp 2` : `◀️ Prev: /bp 3`;
 
-    const seasonRemainingBP = (()=>{ const s=bp.seasonStart||Date.now(); const e=s+40*24*60*60*1000; const d=e-Date.now(); if(d<=0) return 'Ended'; const days=Math.floor(d/(24*60*60*1000)); const hrs=Math.floor((d%(24*60*60*1000))/(60*60*1000)); return `${days}d ${hrs}h`; })();
+    const seasonRemainingBP = (()=>{ const s=bp.seasonStart||Date.now(); const e=s+30*24*60*60*1000; const d=e-Date.now(); if(d<=0) return 'Ended'; const days=Math.floor(d/(24*60*60*1000)); const hrs=Math.floor((d%(24*60*60*1000))/(60*60*1000)); return `${days}d ${hrs}h`; })();
     const captionLines = [
       `🎫 *BATTLE PASS VISUALIZATION*`,
       ``,
