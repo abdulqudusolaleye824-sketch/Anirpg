@@ -95,6 +95,7 @@ module.exports = {
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━
 🧪 /shop potions    — Consumables (Nexus)
 ⚔️  /shop weapons   — Class weapons (Nexus)
+🥋 /shop attacks    — Attack Patterns (Nexus/MS)
 🎁 /shop bundles    — Value packs (Nexus)
 📜 /shop scrolls    — Recipe scrolls (Mana Stones)
 📦 /shop inventory  — Your items
@@ -104,8 +105,26 @@ module.exports = {
 /shop buy bundles [#]
 /shop weapon [#]
 /shop buy scroll [sc1-sc6]
+/shop attacks — browse patterns
+/shop attacks buy [#] — buy pattern
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━`
       },{quoted:msg});
+    }
+    // ── Attack Patterns via /shop attacks (alias to /attacks) ───────────────
+    if (action === 'attacks' || action === 'attack' || action === 'ap') {
+      try {
+        const attacksCmd = require('./attacks');
+        // Forward remaining args to attacks command
+        // /shop attacks -> attacks args = ['shop']
+        // /shop attacks buy 5 -> ['buy','5']
+        // /shop attacks shop -> ['shop']
+        const remaining = args.slice(1);
+        const forwarded = remaining.length === 0 ? ['shop'] : remaining;
+        return attacksCmd.execute(sock, msg, forwarded, getDatabase, saveDatabase, sender);
+      } catch (e) {
+        console.error('shop attacks delegate failed:', e.message);
+        return sock.sendMessage(chatId, { text: `❌ Attack shop error: ${e.message}` }, { quoted: msg });
+      }
     }
 
     if (action==='potions'||action==='potion') {
