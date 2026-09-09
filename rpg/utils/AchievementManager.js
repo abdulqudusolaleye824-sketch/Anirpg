@@ -10,7 +10,7 @@ const { ACHIEVEMENTS } = require('./AchievementDatabase');
 const SNAPSHOT_TYPES = new Set([
   'level','gold_total','bank_gold','crystals_total',
   'stat_value','pvp_streak','pet_bonding','legendary_pet_bond',
-  'pets_owned','days_played'
+  'pets_owned','days_played','single_hit_damage'
 ]);
 
 class AchievementManager {
@@ -49,7 +49,7 @@ class AchievementManager {
       if (!pd.progress[id]) pd.progress[id] = 0;
 
       if (SNAPSHOT_TYPES.has(type)) {
-        // For snapshot: set to the actual current value
+        // For snapshot: set to the actual current value (max)
         pd.progress[id] = Math.max(pd.progress[id], value);
       } else {
         // Accumulative: add the delta
@@ -117,10 +117,38 @@ class AchievementManager {
     const unlocked = pd.unlocked.length;
 
     let msg = '━━━━━━━━━━━━━━━━━━━━━━━━━━━\n';
-    msg += '🏆 ACHIEVEMENTS — ' + (player.name || 'Hunter') + '\n';
+    const catTitle = category ? ' — ' + category.charAt(0).toUpperCase() + category.slice(1).toLowerCase() : '';
+    msg += '🏆 ACHIEVEMENTS' + catTitle + ' — ' + (player.name || 'Hunter') + '\n';
     msg += '━━━━━━━━━━━━━━━━━━━━━━━━━━━\n';
-    msg += 'Progress: ' + unlocked + '/' + total + ' (' + Math.floor(unlocked/total*100) + '%)\n';
-    msg += '━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n';
+    // When filtering, show both filtered progress and total
+    if (category) {
+      let catTotal = 0, catUnlocked = 0;
+      const catLower = category.toLowerCase();
+      for (const [id, ach] of Object.entries(ACHIEVEMENTS)) {
+        if (ach.category.toLowerCase() === catLower) {
+          catTotal++;
+          if (pd.unlocked.includes(id)) catUnlocked++;
+        }
+      }
+      if (catTotal > 0) {
+        msg += 'Progress: ' + catUnlocked + '/' + catTotal + ' (' + (catTotal?Math.floor(catUnlocked/catTotal*100):0) + '%) · Total: ' + unlocked + '/' + total + ' (' + Math.floor(unlocked/total*100) + '%)\n';
+        msg += '━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n';
+        // Helpful tip for Class category when not yet awakened
+        if (catLower === 'class' && !player.class) {
+          const thresh = player.classAwakeningThreshold || 10;
+          msg += '🎭 You have not awakened a class yet. Reach Lv.' + thresh + ' and use /awakening to choose your path!\n';
+          msg += 'Class achievements unlock after awakening.\n\n';
+        }
+      } else {
+        msg += 'Progress: ' + unlocked + '/' + total + ' (' + Math.floor(unlocked/total*100) + '%)\n';
+        msg += '━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n';
+        msg += '❓ Unknown category "' + category + '". Try: ' + require('./AchievementDatabase').ACHIEVEMENT_CATEGORIES.join(', ') + '\n\n';
+        return msg;
+      }
+    } else {
+      msg += 'Progress: ' + unlocked + '/' + total + ' (' + Math.floor(unlocked/total*100) + '%)\n';
+      msg += '━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n';
+    }
 
     const groups = {};
     for (const [id, ach] of Object.entries(ACHIEVEMENTS)) {

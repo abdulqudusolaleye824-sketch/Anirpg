@@ -810,7 +810,7 @@ module.exports = async (sock, msg, messageText, config, getDatabase, saveDatabas
         try {
           const { trackActivity, checkSnapshotAchievements } = require('../rpg/utils/ActivityTracker');
           const questTypeByCommand = {
-            daily:     'daily',
+            // daily handled manually in daily.js only on successful claim (not on Already Claimed)
             summon:    'summon',
             shop:      'shop',
             buy:       'shop',

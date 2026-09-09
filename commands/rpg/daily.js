@@ -101,6 +101,8 @@ module.exports = {
     }
     player.dailyQuest.streak = (player.dailyQuest.streak || 0) + 1;
     player.dailyQuest.lastClaimed = now;
+    // Daily Quest System: only tick Devoted quest on successful claim (not on Already Claimed)
+    try { const { trackAndNotify } = require('../../rpg/utils/QuestDispatcher'); trackAndNotify(player, 'daily', 1, sock, sender, chatId); } catch(e){}
     DC.trackProgress(player, 'claim_daily', 1);
     try { const WK=require('./weekly'); WK.trackWeeklyProgress(player,'daily_streak',1); } catch(e) {}
     try { const BP2=require('../../rpg/utils/BattlePass'); BP2.addPassXP(player,'daily_claim'); } catch(e) {}

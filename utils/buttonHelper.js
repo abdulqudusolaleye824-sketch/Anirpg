@@ -22,7 +22,7 @@ function buildPassButtons(currentPage, totalPages, prefix) {
     buttons.push({
       index: idx++,
       quickReplyButton: {
-        displayText: `⬅️ Prev (Page ${currentPage - 1})`,
+        displayText: `⬅️ Prev`,
         id: `/${cmd} ${currentPage - 1}`
       }
     });
@@ -31,7 +31,7 @@ function buildPassButtons(currentPage, totalPages, prefix) {
     buttons.push({
       index: idx++,
       quickReplyButton: {
-        displayText: `Next ➡️ (Page ${currentPage + 1})`,
+        displayText: `➡️ Next`,
         id: `/${cmd} ${currentPage + 1}`
       }
     });
@@ -64,11 +64,11 @@ function buildSupportButtons(groups) {
     buttons.push({
       index: idx++,
       urlButton: {
-        displayText: `${emoji} ${name}`.slice(0, 20),
+        displayText: `${emoji} ${name}`.slice(0, 30),
         url: g.inviteLink
       }
     });
-    if (idx > 4) break; // WhatsApp max 3-5 buttons per message; cap at 4 for safety
+    if (idx > 10) break; // Allow up to 10 URL buttons (screenshot shows 6)
   }
   return buttons;
 }

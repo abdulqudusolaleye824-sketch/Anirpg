@@ -179,8 +179,9 @@ module.exports = {
     if (!player) return sock.sendMessage(chatId, { text: '❌ Register first! Use /register' }, { quoted: msg });
 
     if (!player.astraPass) {
-      player.astraPass = { level: 1, xp: 0, claimedFree: [], claimedPremium: [] };
+      player.astraPass = { level: 1, xp: 0, claimedFree: [], claimedPremium: [], seasonStart: Date.now() };
     }
+    if(!player.astraPass.seasonStart) player.astraPass.seasonStart = Date.now();
     const ap = player.astraPass;
     const hasPremium = isProPlayer(player) || ap.premiumBought;
 
@@ -323,7 +324,7 @@ module.exports = {
     const xpPct = Math.min(100, Math.floor(((ap.xp || 0) / xpReq) * 100));
     const xpBar = '█'.repeat(Math.floor(xpPct / 5)) + '░'.repeat(20 - Math.floor(xpPct / 5));
 
-    // Build text tier list for this page (so rewards are visible even if image is tofu)
+    // Build text tier list for this page - POKEMON-STYLE SPACING (10 per page, blank line between levels)
     const startTier = (page - 1) * 10 + 1;
     const endTier = Math.min(TOTAL_TIERS, startTier + 9);
     const tierLines = [];
@@ -332,36 +333,49 @@ module.exports = {
       const isUnlocked = tTier <= ap.level;
       const freeClaimed = (ap.claimedFree || []).includes(tTier);
       const premClaimed = (ap.claimedPremium || []).includes(tTier);
-      let freeStatus = isUnlocked ? (freeClaimed ? '✅ Claimed' : '🟢 Unlocked') : '🔒 Locked';
-      let premStatus = !hasPremium && isUnlocked ? '🔒 Need Premium' : isUnlocked ? (premClaimed ? '✅ Claimed' : '🟢 Unlocked') : '🔒 Locked';
-      // Clean item names for text (avoid tofu)
-      const freeItemTxt = tInfo.freeItem ? ` | 📦 ${tInfo.freeItem.name}` : '';
-      const premItemTxt = tInfo.premItem ? ` | 🎁 ${tInfo.premItem.name}` : '';
-      tierLines.push(`• *Tier ${tTier}* ${isUnlocked ? '🟢' : '🔒'} | 🆓 ${tInfo.freeStr}${freeItemTxt} [${freeStatus}]`);
-      tierLines.push(`  👑 ${tInfo.premStr}${premItemTxt} [${premStatus}]`);
+      let statusIcon = '🔒';
+      let statusText = '🔒 Locked';
+      if(tTier === ap.level){
+        statusIcon = '🟣';
+        statusText = '🟣 Current';
+      } else if(tTier < ap.level){
+        const fullyClaimed = freeClaimed && (hasPremium ? premClaimed : true);
+        if(fullyClaimed){ statusIcon='✅'; statusText='✅ Claimed'; }
+        else { statusIcon='🟢'; statusText='🟢 Unlocked'; }
+      }
+      const freeItemTxt = tInfo.freeItem ? ` + ${tInfo.freeItem.name}` : '';
+      const premItemTxt = tInfo.premItem ? ` + ${tInfo.premItem.name}` : '';
+      tierLines.push(`Level ${tTier}: ${statusText}`);
+      tierLines.push(`  Free: ${tInfo.freeNexus.toLocaleString()} 💠 | ${tInfo.freeStones} 💎${freeItemTxt}`);
+      tierLines.push(`  Premium: ${tInfo.premNexus.toLocaleString()} 💠 | ${tInfo.premStones} 💎${premItemTxt}`);
+      tierLines.push(``);
     }
     const navHint = page > 1 && page < 5 ? `◀️ /pass ${page-1}  •  ▶️ /pass ${page+1}` : page === 1 ? `▶️ Next: /pass 2` : `◀️ Prev: /pass 4`;
 
+    const seasonRemaining = (()=>{ const s=ap.seasonStart||Date.now(); const e=s+SEASON_DAYS*24*60*60*1000; const d=e-Date.now(); if(d<=0) return 'Ended'; const days=Math.floor(d/(24*60*60*1000)); const hrs=Math.floor((d%(24*60*60*1000))/(60*60*1000)); return `${days}d ${hrs}h`; })();
     const captionLines = [
-      `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-      `🏛️ *ASTRA PASS (SEASON 1 — 40 DAYS)*`,
-      `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-      `👤 Hunter: *${player.name}*`,
-      `⭐ Level: *Tier ${ap.level}/${TOTAL_TIERS}* | Page *${page}/5* — ${navHint}`,
-      `[${xpBar}] ${ap.xp || 0}/${xpReq} XP`,
+      `🎫 *ASTRA PASS VISUALIZATION*`,
       ``,
-      hasPremium
-        ? `👑 *PREMIUM UNLOCKED* (PRO Card Active)`
-        : `🆓 *FREE TRACK* — Upgrade to PRO (/prostore) for Auto-Premium!`,
+      `📊 Level: ${ap.level}/${TOTAL_TIERS}`,
+      `⭐ XP: ${ap.xp||0}/${xpReq}`,
+      `💎 Premium: ${hasPremium ? 'YES ✅' : 'NO ❌'}`,
+      `⏰ Season Ends: ${seasonRemaining}`,
       ``,
-      `📜 *TIERS ${startTier}-${endTier} REWARDS:*`,
+      `Legend:`,
+      `🟣 Current | ✅ Claimed | 🔒 Locked`,
+      `💛 Gold = Premium rewards`,
+      ``,
+      `💡 Use /pass claim to collect rewards!`,
+      ``,
+      `📋 *ALL REWARDS (Page ${page}/5):*`,
+      ``,
       ...tierLines,
-      ``,
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
       `📌 *COMMANDS:*`,
-      `• */pass claim* — Claim all unlocked rewards`,
-      `• */pass claim [num]* — Claim specific tier`,
-      `• */pass [page]* — View Page 1–5 (10 tiers per page)`,
-      `• */pass info* — Detailed XP sources & boosts`,
+      `• /pass claim — Claim all unlocked rewards`,
+      `• /pass claim [num] — Claim specific tier`,
+      `• /pass [page] — View Page 1–5 (10 tiers per page)`,
+      `• /pass info — Detailed XP sources & boosts`,
       `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
     ];
 

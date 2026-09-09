@@ -1,12 +1,29 @@
 // support.js — Sends user all --main community group links via DM with URL Buttons (no messy links)
 // (Excludes Mods GC; DM is delivered by the user's assigned Serf bot)
 
+const fs = require('fs');
+const path = require('path');
 const COOLDOWN = 5 * 60 * 1000; // 5 minutes
 const supportCooldown = new Map();
 const AstralGroups = require('../../rpg/utils/AstralGroups');
 const SerfManager = require('../../rpg/utils/SerfManager');
 const MultiSocketManager = require('../../bots/MultiSocketManager');
 const ButtonHelper = (()=>{ try { return require('../../utils/buttonHelper'); } catch(e){ return null; } })();
+
+function getAstraSupportImage(){
+  const candidates = [
+    path.join(__dirname, '../../assets/profile_default.jpg'),
+    path.join(process.cwd(), 'assets/profile_default.jpg'),
+    path.join(__dirname, '../../assets/help_banner.jpg'),
+    path.join(process.cwd(), 'assets/help_banner.jpg'),
+  ];
+  for(const p of candidates){
+    try{
+      if(fs.existsSync(p)) return fs.readFileSync(p);
+    } catch{}
+  }
+  return null;
+}
 
 module.exports = {
   name: 'support',
@@ -71,18 +88,24 @@ module.exports = {
       }
     }
 
+    // Screenshot-style text: simple header + tap prompt (matches Sapphire example)
     const dmText = [
+      `📌 *Sapphire Support Groups*`,
+      ``,
+      `Tap a group below to join.`,
+    ].join('\n');
+    // Keep detailed version as fallback if no buttons? But use simple for image caption
+    const fullDmText = [
       `━━━━━━━━━━━━━━━━━━━━━━━`,
-      `🛡️ *✦ 𝐀𝐬𝐭𝐫𝐚™ ARISE — COMMUNITY GROUPS*`,
+      `🛡️ *SAPPHIRE SUPPORT GROUPS*`,
       `━━━━━━━━━━━━━━━━━━━━━━━`,
-      `Tap a button below to join:`,
+      `Tap a group below to join.`,
       ``,
       ...(groupLinesText.length ? groupLinesText : ['⚠️ No main community groups configured yet. Ask the owner to set them using `/setgroup <type> --main`.']),
       ``,
       `━━━━━━━━━━━━━━━━━━━━━━━`,
-      `💡 Need direct assistance? Type \`/support owner\` to message staff.`,
-      `━━━━━━━━━━━━━━━━━━━━━━━`,
     ].join('\n');
+    const supportImage = getAstraSupportImage();
 
     // Build URL buttons for DM — no messy links in text!
     let supportButtons = null;
@@ -100,33 +123,34 @@ module.exports = {
       }, { quoted: msg });
     }
 
-    // DM user via their Serf bot — with URL buttons!
+    // DM user via their Serf bot — with URL buttons! (with image like screenshot)
     const serfKey = SerfManager.getSerfBotKey(db, sender);
     const serfSock = serfKey ? MultiSocketManager.getSocket(serfKey) : null;
-    const dmPayload = { text: dmText, footer: 'Astra™ Official Groups' };
+    // Use image + caption if available (matches screenshot's blue S logo)
+    const dmPayload = supportImage ? { image: supportImage, caption: fullDmText, mimetype: 'image/jpeg', footer: 'Astra™ 2026' } : { text: fullDmText, footer: 'Astra™ 2026' };
 
     if (serfSock && supportButtons && supportButtons.length) {
       try {
         if (ButtonHelper?.sendWithButtons) {
           await ButtonHelper.sendWithButtons(serfSock, sender, dmPayload, supportButtons, null);
         } else {
-          await serfSock.sendMessage(sender, { text: dmText });
+          await serfSock.sendMessage(sender, supportImage ? { image: supportImage, caption: fullDmText, mimetype: 'image/jpeg' } : { text: fullDmText });
         }
       } catch (e) {
         // Fallback: append links if buttons fail
-        await serfSock.sendMessage(sender, { text: dmText + (buttonGroups.length ? '\n\n' + buttonGroups.map(g=>`🔗 ${g.typeInfo.name}: ${g.inviteLink}`).join('\n') : '') });
+        await serfSock.sendMessage(sender, supportImage ? { image: supportImage, caption: fullDmText + (buttonGroups.length ? '\n\n' + buttonGroups.map(g=>`🔗 ${g.typeInfo.name}: ${g.inviteLink}`).join('\n') : ''), mimetype: 'image/jpeg' } : { text: fullDmText + (buttonGroups.length ? '\n\n' + buttonGroups.map(g=>`🔗 ${g.typeInfo.name}: ${g.inviteLink}`).join('\n') : '') });
       }
     } else if (serfSock) {
-      await serfSock.sendMessage(sender, { text: dmText });
+      await serfSock.sendMessage(sender, supportImage ? { image: supportImage, caption: fullDmText, mimetype: 'image/jpeg' } : { text: fullDmText });
     } else {
       if (supportButtons && supportButtons.length && ButtonHelper?.sendWithButtons) {
         try {
           await ButtonHelper.sendWithButtons(sock, sender, dmPayload, supportButtons, null);
         } catch {
-          await MultiSocketManager.safeSendDM(sock, sender, { text: dmText + '\n\n' + buttonGroups.map(g=>`🔗 ${g.typeInfo.name}: ${g.inviteLink}`).join('\n') }, { getDatabase });
+          await MultiSocketManager.safeSendDM(sock, sender, supportImage ? { image: supportImage, caption: fullDmText + '\n\n' + buttonGroups.map(g=>`🔗 ${g.typeInfo.name}: ${g.inviteLink}`).join('\n'), mimetype: 'image/jpeg' } : { text: fullDmText + '\n\n' + buttonGroups.map(g=>`🔗 ${g.typeInfo.name}: ${g.inviteLink}`).join('\n') }, { getDatabase });
         }
       } else {
-        await MultiSocketManager.safeSendDM(sock, sender, { text: dmText }, { getDatabase });
+        await MultiSocketManager.safeSendDM(sock, sender, supportImage ? { image: supportImage, caption: fullDmText, mimetype: 'image/jpeg' } : { text: fullDmText }, { getDatabase });
       }
     }
 

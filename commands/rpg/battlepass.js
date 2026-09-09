@@ -117,8 +117,9 @@ module.exports = {
     if (!player) return sock.sendMessage(chatId, { text: '❌ Register first! Use /register' }, { quoted: msg });
 
     if (!player.battlePass) {
-      player.battlePass = { level: 1, xp: 0, claimed: [], premium: false };
+      player.battlePass = { level: 1, xp: 0, claimed: [], premium: false, seasonStart: Date.now() };
     }
+    if(!player.battlePass.seasonStart) player.battlePass.seasonStart = Date.now();
     const bp = player.battlePass;
     const sub = (args[0] || '').toLowerCase();
 
@@ -283,7 +284,7 @@ module.exports = {
     if (isPro && bp.premium) boostTag = ' 🔥 4x EXP Boost';
     else if (isPro || bp.premium) boostTag = ' 🔥 2x EXP Boost';
 
-    // Build text tier list for this page (visible even if image fails)
+    // Build text tier list for this page — POKEMON-STYLE SPACING (10 per page)
     const startTier = (page - 1) * 10 + 1;
     const endTier = Math.min(TOTAL_TIERS, startTier + 9);
     const tierLines = [];
@@ -292,40 +293,57 @@ module.exports = {
       const isUnlocked = tTier <= bp.level;
       const isLocked = LOCKED_TIERS.includes(tTier);
       const isClaimed = (bp.claimed || []).includes(tTier);
-      let status = '🔒 Locked';
-      if (isUnlocked) {
-        if (isLocked && !bp.premium) status = '🔒 Premium Locked';
-        else if (isClaimed) status = '✅ Claimed';
-        else status = '🟢 Unlocked';
+      let statusIcon = '🔒';
+      let statusText = '🔒 Locked';
+      if(tTier === bp.level){ statusIcon='🟣'; statusText='🟣 Current'; }
+      else if(tTier < bp.level){
+        if(isLocked && !bp.premium){ statusIcon='🔒'; statusText='🔒 Premium Locked'; }
+        else if(isClaimed){ statusIcon='✅'; statusText='✅ Claimed'; }
+        else { statusIcon='🟢'; statusText='🟢 Unlocked'; }
+      } else if(isUnlocked){
+        if(isLocked && !bp.premium){ statusIcon='🔒'; statusText='🔒 Premium Locked'; }
+        else if(isClaimed){ statusIcon='✅'; statusText='✅ Claimed'; }
+        else { statusIcon='🟢'; statusText='🟢 Unlocked'; }
       }
-      const track = isLocked ? '👑 PREMIUM' : '🆓 FREE';
-      const pcTxt = r.pc ? ' +200 PC' : '';
-      const itemTxt = r.item ? ` | 🎁 ${r.item.name}` : '';
-      tierLines.push(`• *Tier ${tTier}* [${track}] ${r.str}${pcTxt}${itemTxt} [${status}]`);
+      const track = isLocked ? 'Premium' : 'Free';
+      const pcTxt = r.pc ? ` + 200 PC` : '';
+      const itemTxt = r.item ? ` + ${r.item.name}` : '';
+      tierLines.push(`Level ${tTier}: ${statusText}`);
+      if(isLocked){
+        tierLines.push(`  Free: — Premium Locked`);
+        tierLines.push(`  Premium: ${r.gold.toLocaleString()} 💠 | ${r.stones} 💎${pcTxt}${itemTxt}`);
+      } else {
+        tierLines.push(`  Free: ${r.gold.toLocaleString()} 💠 | ${r.stones} 💎${pcTxt}${itemTxt}`);
+        tierLines.push(`  Premium: ${r.gold.toLocaleString()} 💠 | ${r.stones} 💎${pcTxt}${itemTxt}`);
+      }
+      tierLines.push(``);
     }
     const navHintBP = page > 1 && page < 4 ? `◀️ /bp ${page-1}  •  ▶️ /bp ${page+1}` : page === 1 ? `▶️ Next: /bp 2` : `◀️ Prev: /bp 3`;
 
+    const seasonRemainingBP = (()=>{ const s=bp.seasonStart||Date.now(); const e=s+40*24*60*60*1000; const d=e-Date.now(); if(d<=0) return 'Ended'; const days=Math.floor(d/(24*60*60*1000)); const hrs=Math.floor((d%(24*60*60*1000))/(60*60*1000)); return `${days}d ${hrs}h`; })();
     const captionLines = [
-      `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-      `🎖️ *SEASONAL BATTLE PASS (40 TIERS)*`,
-      `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-      `👤 Hunter: *${player.name}*`,
-      `⭐ BP Level: *Tier ${bp.level}/${TOTAL_TIERS}* | Page *${page}/4* — ${navHintBP}`,
-      `[${xpBar}] ${bp.xp || 0}/${xpReq} XP${boostTag}`,
+      `🎫 *BATTLE PASS VISUALIZATION*`,
       ``,
-      bp.premium
-        ? `👑 *PREMIUM PASS UNLOCKED ✅* (2x EXP Active)`
-        : `🆓 Free Pass — /bp buy to unlock Premium (${BP_COST_PC} PC)`,
+      `📊 Level: ${bp.level}/${TOTAL_TIERS}`,
+      `⭐ XP: ${bp.xp||0}/${xpReq}`,
+      `💎 Premium: ${bp.premium ? 'YES ✅' : 'NO ❌'}`,
+      `⏰ Season Ends: ${seasonRemainingBP}`,
       ``,
-      `📜 *TIERS ${startTier}-${endTier} REWARDS:*`,
+      `Legend:`,
+      `🟣 Current | ✅ Claimed | 🔒 Locked`,
+      `💛 Gold = Premium rewards`,
+      ``,
+      `💡 Use /bp claim to collect rewards!`,
+      ``,
+      `📋 *ALL REWARDS (Page ${page}/4):*`,
+      ``,
       ...tierLines,
-      ``,
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
       `📌 *COMMANDS:*`,
-      `• */bp claim* — Claim all available rewards`,
-      `• */bp claim [num]* — Claim specific tier reward`,
-      `• */bp buy* — Unlock Premium BP (1,000 PC)`,
-      `• */bp [page]* — View Page 1–4 (10 tiers per page)`,
-      `• */bp info* — Detailed XP sources & 4x boost info`,
+      `• /bp claim — Claim all available rewards`,
+      `• /bp claim [num] — Claim specific tier`,
+      `• /bp buy — Unlock Premium (1,000 PC)`,
+      `• /bp [page] — View Page 1–4 (10 tiers per page)`,
       `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
     ];
 

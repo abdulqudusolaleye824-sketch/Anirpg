@@ -192,7 +192,6 @@ module.exports = {
       const SerfManager = require('../../rpg/utils/SerfManager');
       const serf = SerfManager.getSerf(db, sender);
       const serfSock = serf?.botKey && MSM ? MSM.getSocket(serf.botKey) : null;
-      const dmJid = `${sender.split('@')[0]}@s.whatsapp.net`;
 
       if (!serf || !serfSock || !serfSock.user?.id) {
         const reason = !serf
@@ -202,10 +201,24 @@ module.exports = {
       }
 
       try {
-        if (imageBuffer && imageBuffer.length > 0) {
-          await serfSock.sendMessage(dmJid, { image: imageBuffer, caption });
-        } else {
-          await serfSock.sendMessage(dmJid, { text: caption });
+        // FIX: Use sender JID directly (lid) for DM, not converted s.whatsapp.net — ensures delivery to correct lid
+        // Also use safeSendDM logic: try serfSock directly, fallback to MSM.safeSendDM
+        let dmResult;
+        try {
+          if (imageBuffer && imageBuffer.length > 0) {
+            dmResult = await serfSock.sendMessage(sender, { image: imageBuffer, caption });
+          } else {
+            dmResult = await serfSock.sendMessage(sender, { text: caption });
+          }
+        } catch (directErr) {
+          console.error('Direct serf DM failed, trying safeSendDM:', directErr.message);
+          try {
+            const MSM2 = require('../../bots/MultiSocketManager');
+            dmResult = await MSM2.safeSendDM(serfSock, sender, imageBuffer && imageBuffer.length > 0 ? { image: imageBuffer, caption } : { text: caption }, { getDatabase });
+            if(dmResult && dmResult.dropped) throw new Error(dmResult.reason || 'DM dropped');
+          } catch (e2) {
+            throw directErr;
+          }
         }
         // Staff copy (best effort) — locked profiles always mirrored to botStaffGroup
         if (db.botStaffGroup) {
@@ -217,8 +230,8 @@ module.exports = {
             }
           } catch {}
         }
-        // 2nd chat message — only if no bugs/blocks
-        return sock.sendMessage(chatId, { text: `✅ *Profile successfully sent!*` }, { quoted: msg });
+        // 2nd chat message — ONLY after DM actually succeeds (fixes premature success)
+        return sock.sendMessage(chatId, { text: `✅ *Profile successfully sent to your DM!*` }, { quoted: msg });
       } catch (e) {
         console.error('Locked profile DM failed:', e.message);
         return sock.sendMessage(chatId, { text: `❌ Failed to send profile to DM: ${e.message}\n\nPlease ensure your serf is set and online. Use */setserf @bot*` }, { quoted: msg });
