@@ -384,6 +384,15 @@ function loadPersisted() {
         if (Array.isArray(arr)) presentBots[cid] = new Set(arr);
       }
     }
+    if (db.linkedBots && typeof db.linkedBots === 'object') {
+      for (const [key, info] of Object.entries(db.linkedBots)) {
+        if (info?.jid) {
+          registerLinkedNumber(info.jid, key);
+          const bare = info.jid.split(':')[0];
+          if (bare && bare !== info.jid) registerLinkedNumber(bare, key);
+        }
+      }
+    }
   } catch (e) { /* best effort */ }
 }
 
@@ -397,6 +406,12 @@ const linkedNumbers = {}; // { '1234567890@s.whatsapp.net': 'hinata' }
 function registerLinkedNumber(jid, personalityKey) {
   if (!PERSONALITIES[personalityKey]) {
     throw new Error(`Unknown personality: ${personalityKey}`);
+  }
+  // Clear old stale JID entries for this personality
+  for (const [oldJid, pKey] of Object.entries(linkedNumbers)) {
+    if (pKey === personalityKey && oldJid !== jid) {
+      delete linkedNumbers[oldJid];
+    }
   }
   linkedNumbers[jid] = personalityKey;
 }

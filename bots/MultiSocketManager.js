@@ -155,10 +155,10 @@ function getAllSockets() {
 
 function _bootstrapDispatcher(personalityKey, chatId) {
   const active = PersonalityManager.getActiveBot(chatId);
-  if (active && botSockets[active]?.user?.id) return active === personalityKey;
+  if (active && botSockets[active]?.user?.id && botSockets[active]?.ws?.readyState === 1) return active === personalityKey;
 
   const sockets = getAllSockets();
-  const keys = Object.keys(sockets).filter(k => !!sockets[k]?.user?.id).sort();
+  const keys = Object.keys(sockets).filter(k => !!(sockets[k]?.user?.id && sockets[k]?.ws?.readyState === 1)).sort();
   if (keys.length === 0) return false;
   const chosenKey = keys[0];
   try {
@@ -167,21 +167,13 @@ function _bootstrapDispatcher(personalityKey, chatId) {
   return chosenKey === personalityKey;
 }
 
-function _isOwnBotNumber(bareNumber, getDatabase) {
+function _isOwnBotNumber(bareNumber) {
   for (const key of Object.keys(botSockets)) {
     const sock = botSockets[key];
     const jid = sock?.user?.id;
-    if (!jid) continue;
+    if (!jid || sock.ws?.readyState !== 1) continue;
     if (String(jid).split(':')[0].split('@')[0] === bareNumber) return true;
   }
-  try {
-    const db = getDatabase?.();
-    if (db && db.linkedBots) {
-      for (const entry of Object.values(db.linkedBots)) {
-        if (entry?.jid && String(entry.jid).split(':')[0].split('@')[0] === bareNumber) return true;
-      }
-    }
-  } catch (e) { /* best effort */ }
   return false;
 }
 
@@ -308,6 +300,13 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
       } else {
         console.log(`❌ AstraLink [${displayName}] connection permanently closed / logged out (code ${code}). Session cleared.`);
         reconnectAttempts[personalityKey] = 0;
+        try {
+          const db = getDatabase?.();
+          if (db?.linkedBots?.[personalityKey]) {
+            delete db.linkedBots[personalityKey];
+            saveDatabase?.();
+          }
+        } catch (_) {}
       }
     } else if (connection === 'open') {
       reconnectAttempts[personalityKey] = 0; // Reset reconnect count on successful connection!
@@ -380,7 +379,7 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
     const bareSender = String(sender).split(':')[0].split('@')[0];
     if (db.bannedUsers?.[bareSender] || db.banlist?.[sender] || db.bannedUsers?.[sender]) return;
 
-    if (_isOwnBotNumber(bareSender, getDatabase)) return;
+    if (_isOwnBotNumber(bareSender)) return;
 
     const config = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'config.json'), 'utf-8'));
     const isCommand = messageText.startsWith(config.prefix);
@@ -391,7 +390,7 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
 
     // Active bot check with automatic offline fallback
     const rawActiveKey = isGroup ? PersonalityManager.getActiveBot(chatId) : null;
-    const isOnlineActive = rawActiveKey && !!botSockets[rawActiveKey]?.user?.id;
+    const isOnlineActive = rawActiveKey && !!(botSockets[rawActiveKey]?.user?.id && botSockets[rawActiveKey]?.ws?.readyState === 1);
     const activeKey = isOnlineActive ? rawActiveKey : null;
 
     // Check if command is targeting a specific bot personality (e.g. /switch gojo or /start gojo)
@@ -402,7 +401,7 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
       const targetArg = parts[1];
       if (targetArg) {
         const resolvedTarget = PersonalityManager.resolvePersonality(targetArg);
-        if (resolvedTarget && botSockets[resolvedTarget]?.user?.id) {
+        if (resolvedTarget && botSockets[resolvedTarget]?.user?.id && botSockets[resolvedTarget]?.ws?.readyState === 1) {
           hasOnlineTargetBot = true;
           isTargetMentionedBot = (personalityKey === resolvedTarget);
         }
