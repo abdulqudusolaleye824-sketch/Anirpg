@@ -498,9 +498,13 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
     ]);
     const isBootstrap = BOOTSTRAP_COMMANDS.has(commandName);
 
-    // Active bot check with automatic offline fallback
+    // Active bot check with automatic failover
     const rawActiveKey = isGroup ? PersonalityManager.getActiveBot(chatId) : null;
-    const isOnlineActive = rawActiveKey && !!(botSockets[rawActiveKey]?.user?.id && botSockets[rawActiveKey]?.ws?.readyState === 1);
+    const presentInGroup = isGroup ? PersonalityManager.getPresentBots(chatId) : [];
+    const isOnlineActive = rawActiveKey &&
+      !!(botSockets[rawActiveKey]?.user?.id && botSockets[rawActiveKey]?.ws?.readyState === 1) &&
+      presentInGroup.includes(rawActiveKey);
+
     const activeKey = isOnlineActive ? rawActiveKey : null;
 
     // Check if command is targeting a specific bot personality (e.g. /switch kira or /start kira)
@@ -518,9 +522,19 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
       }
     }
 
-    const isActive = isGroup
-      ? (isTargetMentionedBot || (isBootstrap ? _bootstrapDispatcher(personalityKey, chatId) : (!hasOnlineTargetBot && (activeKey ? activeKey === personalityKey : _bootstrapDispatcher(personalityKey, chatId)))))
-      : true;
+    let isActive = true;
+    if (isGroup) {
+      if (isTargetMentionedBot) {
+        isActive = true;
+      } else if (hasOnlineTargetBot && !isTargetMentionedBot) {
+        isActive = false;
+      } else if (activeKey) {
+        isActive = (personalityKey === activeKey);
+      } else {
+        // No valid active bot online/present in group -> receiving socket handles it automatically
+        isActive = _bootstrapDispatcher(personalityKey, chatId);
+      }
+    }
 
     if (isGroup) {
       try {
