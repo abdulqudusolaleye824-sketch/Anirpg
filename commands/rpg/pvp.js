@@ -66,7 +66,10 @@ module.exports = {
 
   async execute(sock, msg, args, getDatabase, saveDatabase, sender) {
     const chatId = msg.key?.remoteJid;
-    const db = getDatabase();
+    let db = getDatabase();
+    if (!db) db = {};
+    if (!db.users) db.users = {};
+    if (!db.pendingChallenges) db.pendingChallenges = {};
     const player = db.users?.[sender];
 
     if (!player) {
@@ -134,6 +137,7 @@ module.exports = {
 
     // ── /pvp accept ──────────────────────────────────────────────
     if (sub === 'accept') {
+      if (!db.pendingChallenges) db.pendingChallenges = {};
       const challenge = db.pendingChallenges[sender];
       if (!challenge) {
         return sock.sendMessage(chatId, { text: '❌ You have no pending PvP challenges.' }, { quoted: msg });
@@ -214,6 +218,7 @@ module.exports = {
 
     // ── /pvp reject / /pvp decline ───────────────────────────────
     if (sub === 'reject' || sub === 'decline') {
+      if (!db.pendingChallenges) db.pendingChallenges = {};
       const challenge = db.pendingChallenges[sender];
       if (!challenge) {
         return sock.sendMessage(chatId, { text: '❌ No pending challenge to decline.' }, { quoted: msg });
@@ -376,6 +381,8 @@ const BarSystemPVP = require('../../rpg/utils/BarSystem');
 const AttackDBPVP = require('../../rpg/utils/AttackPatternDB');
 
 async function resolveTurn(sock, chatId, p1, p2, db, saveDatabase) {
+  if (!db) db = {};
+  if (!db.users) db.users = {};
   // Resolve jids for mentions — try to find keys in db.users
   let id1 = null, id2 = null;
   for (const [k,v] of Object.entries(db.users)) {

@@ -23,9 +23,17 @@ function giveBattleWinRewards(player, db, type='generic', baseLevel=1) {
   pass = Math.floor(pass * mult);
   xp = Math.floor(xp * mult);
 
-  player.aura = (player.aura||0) + aura;
-  // Level up aura title check via AuraSystem if available
-  try { const Aura = require('./AuraSystem'); if (Aura.addAura) Aura.addAura(player, aura); } catch(e){}
+  // Aura with title routing — use addRawAura so title thresholds are checked cleanly
+  try {
+    const { AuraSystem } = require('./AuraSystem');
+    const res = AuraSystem.addRawAura(player, aura, type+'_win');
+    // addRawAura already updated aura & title; ensure we don't double add
+    // If addRawAura failed, fallback manual
+    if (!res || typeof res.newTotal !== 'number') throw new Error('no res');
+  } catch(e) {
+    player.aura = (player.aura||0) + aura;
+    try { const { AuraSystem:AS2 } = require('./AuraSystem'); AS2.getAuraTitle(player.aura); } catch(e2){}
+  }
 
   // Battle Pass XP
   try {

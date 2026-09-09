@@ -365,10 +365,25 @@ module.exports = {
         const pid = parseInt(String(skillArg).trim().split(' ')[0]);
         if (!isNaN(pid) && pid >= 1 && pid <= 750) patternId = pid;
       }
-      // Show status at start of turn
-      const _gateStatus = statusSummary(player) || (target && target.statusEffects ? statusSummary(target) : null);
-      if (_gateStatus) {
-        try { await sock.sendMessage(chatId, { text: `⚠️ *STATUS EFFECTS*\n${_gateStatus}` }, { quoted: msg }); } catch(e){}
+      // Show status at start of turn — tick damage/effects then display
+      let _gateStatus = null;
+      let _tickLogs = [];
+      try {
+        const UCgTick = require('../../rpg/utils/UnifiedCombat');
+        _tickLogs = UCgTick.tickStatuses(player) || [];
+        if (target && target.statusEffects) {
+          const tl2 = UCgTick.tickStatuses({ statusEffects: target.statusEffects, stats: { hp: target.hp, maxHp: target.maxHp } });
+          if (tl2 && tl2.length) _tickLogs = _tickLogs.concat(tl2);
+        }
+      } catch(e){}
+      _gateStatus = statusSummary(player) || (target && target.statusEffects ? statusSummary(target) : null);
+      if (_gateStatus || _tickLogs.length) {
+        try {
+          let statusMsg = '';
+          if (_tickLogs.length) statusMsg += _tickLogs.join('\n') + '\n';
+          if (_gateStatus) statusMsg += `⚠️ *STATUS EFFECTS*\n${_gateStatus}`;
+          if (statusMsg) await sock.sendMessage(chatId, { text: statusMsg.trim() }, { quoted: msg });
+        } catch(e){}
       }
       let result;
       let atkPattern = null;
@@ -439,8 +454,7 @@ module.exports = {
         if (!player.stats_history) player.stats_history = {};
         player.stats_history.monstersKilled = (player.stats_history.monstersKilled || 0) + 1;
 
-        awardXP(player, 'gate_complete', saveDatabase, sock, chatId);
-        msg1Lines.push(``, `💀 *${target.name}* defeated!`);
+        try { const BR=require('../../rpg/utils/BattleRewards'); const w=BR.giveBattleWinRewards(player, db, 'gate', player.level); msg1Lines.push(``, `💀 *${target.name}* defeated!`, BR.formatRewards(w)); } catch(e){ awardXP(player, 'gate_complete', saveDatabase, sock, chatId); msg1Lines.push(``, `💀 *${target.name}* defeated!`); }
 
         const heal = GR.lifeSteal(player, result.damage);
         if (heal > 0) { player.stats.hp = Math.min(player.stats.maxHp, (player.stats.hp || 0) + heal); msg1Lines.push(`💚 Lifesteal: +${heal} HP`); }
@@ -520,10 +534,13 @@ module.exports = {
         }
       }
 
+      let _nextStatus2 = null;
+      try { _nextStatus2 = statusSummary(player); } catch(e){}
       const msg3Lines = [
         `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
         `🎮 *NEXT TURN*`,
         `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        ...(_nextStatus2 ? [`⚠️ *YOUR STATUS:* ${_nextStatus2}`] : []),
         `⚔️ /gateraid ${key} attack`,
         `🔮 /gateraid ${key} skill <name>`,
         `🩹 /use heal`,
@@ -574,6 +591,7 @@ module.exports = {
         if (topRaider && topRaider[0] === sender) AuraSystem.addAura(player, 'topRaider');
 
         awardXP(player, 'gate_boss', saveDatabase, sock, chatId);
+        try { const BRb=require('../../rpg/utils/BattleRewards'); const wb=BRb.giveBattleWinRewards(player, db, 'gate', player.level); lines.push(BRb.formatRewards(wb)); } catch(e){}
 
         // Final-blow boss loot → the killer
         const bossDropLines = [];

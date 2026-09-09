@@ -437,6 +437,33 @@ async function resolveRaidTurn(sock, chatId, party, db, saveDatabase) {
   const members = party.members.map(m => ({ ...m, player: db.users[m.id] })).filter(m => m.player);
 
   let log = `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🌍 *RAID TURN ${party.turn}*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+  // ── STATUS EFFECTS — tick at start of round for boss & each member if alive
+  try {
+    const UCwbS = require('../../rpg/utils/UnifiedCombat');
+    const StatusWB = require('../../rpg/utils/StatusEffectManager');
+    let _wbStatusLines = [];
+    let _wbTickLogs = [];
+    // Tick boss
+    try { const bt = UCwbS.tickStatuses(boss); if(bt && bt.length) _wbTickLogs = _wbTickLogs.concat(bt); } catch(e){}
+    try { const bt2 = StatusWB.processTurnEffects ? StatusWB.processTurnEffects(boss) : null; if(bt2 && bt2.messages && bt2.messages.length) _wbTickLogs = _wbTickLogs.concat(bt2.messages); } catch(e){}
+    // Tick each alive member
+    for (const m of members) {
+      if (m.player.stats.hp <= 0) continue;
+      try { const pt = UCwbS.tickStatuses(m.player); if(pt && pt.length) _wbTickLogs = _wbTickLogs.concat(pt.map(x => `${m.name}: ${x}`)); } catch(e){}
+      try { const pm = StatusWB.processTurnEffects ? null : null; } catch(e){}
+      // Build summary line for this member
+      if (m.player.statusEffects && m.player.statusEffects.length) {
+        const s = m.player.statusEffects.map(sEff => `${sEff.emoji||'✨'} ${sEff.type||sEff.name}(${sEff.duration||sEff.turns||'?' }t)`).join(', ');
+        _wbStatusLines.push(`👤 ${m.name}: ${s}`);
+      }
+    }
+    if (boss.statusEffects && boss.statusEffects.length) {
+      const bs = boss.statusEffects.map(sEff => `${sEff.emoji||'✨'} ${sEff.type||sEff.name}(${sEff.duration||sEff.turns||'?' }t)`).join(', ');
+      _wbStatusLines.push(`👹 ${boss.name}: ${bs}`);
+    }
+    if (_wbTickLogs.length) log += _wbTickLogs.join('\n') + '\n\n';
+    if (_wbStatusLines.length) log += `⚠️ *STATUS EFFECTS*\n` + _wbStatusLines.join('\n') + `\n\n`;
+  } catch(e){}
 
   // ── PHASE 1: PARTY ATTACKS BOSS ──────────────────────────────
   log += `\n⚔️ *PARTY ATTACKS*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
@@ -618,7 +645,12 @@ async function resolveRaidTurn(sock, chatId, party, db, saveDatabase) {
     const pl  = m.player;
     const bar = BarSystem.getHPBar(pl.stats.hp, pl.stats.maxHp, require('../../rpg/utils/UnifiedCombat').isPro(pl));
     const sta = pl.stats.hp > 0 ? '⚔️' : '💀';
-    log += `${sta} *${m.name}* — ${bar} ${pl.stats.hp}/${pl.stats.maxHp}\n`;
+    let sfx = '';
+    if (pl.statusEffects && pl.statusEffects.length) {
+      const sum = pl.statusEffects.map(se => `${se.emoji||'✨'}${se.type||se.name}(${se.duration||'?' }t)`).join(' ');
+      sfx = ` ${sum}`;
+    }
+    log += `${sta} *${m.name}* — ${bar} ${pl.stats.hp}/${pl.stats.maxHp}${sfx}\n`;
   });
 
   // Save and prepare next turn
@@ -657,6 +689,8 @@ async function handleRaidVictory(sock, chatId, party, db, saveDatabase, log) {
     }
   } catch(e) {}
 
+  // Unified battle win rewards (aura/BP/pass/XP) — per member, with Pro 2× handling
+  let sampleRewards = null;
   members.forEach(({ player: member, id: memberId }) => {
     member.xp           = (member.xp           || 0) + xpReward;
     member.gold         = (member.gold          || 0) + goldReward;
@@ -670,8 +704,9 @@ async function handleRaidVictory(sock, chatId, party, db, saveDatabase, log) {
     try { if (DC) DC.trackProgress(member, 'boss_kill', 1); } catch(e) {}
     try { const WK=require('./weekly'); WK.trackWeeklyProgress(member,'boss_kill',1); } catch(e) {}
     try { if (TitleSystem) TitleSystem.checkAndAwardTitles(member); } catch(e) {}
-    // Fix #4: use memberId directly instead of broken member._id lookup
+    // Battle Pass (keep for compatibility) + unified rewards
     try { const BP2=require('../../rpg/utils/BattlePass'); BP2.addPassXP(member,'world_boss'); } catch(e) {}
+    try { const BR=require('../../rpg/utils/BattleRewards'); const w=BR.giveBattleWinRewards(member, db, 'worldboss', member.level); if(!sampleRewards) sampleRewards=w; } catch(e){}
     // #7: Guild War points for world boss kill (+50 per the guildwar description)
     try { if (GuildWar) GuildWar.addWarPoints(db, memberId, 50, null); } catch(e) {}
   });
@@ -680,7 +715,9 @@ async function handleRaidVictory(sock, chatId, party, db, saveDatabase, log) {
   saveDatabase();
   setTimeout(() => WorldBossParties.remove(party.id), 10000);
 
-  log += `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🏆 *WORLD BOSS DEFEATED!*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n${boss.emoji} *${boss.name}* has fallen!\n💭 A legendary victory!\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🎁 *REWARDS (Each member):*\n✨ +${xpReward.toLocaleString()} XP\n💠 +${goldReward.toLocaleString()} Nexus\n💎 +${crystalRew} Mana Stones\n⬆️ +${upReward} Upgrade Points${eventBonusMsg}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+  let brLine = '';
+  try { const BR=require('../../rpg/utils/BattleRewards'); if(sampleRewards) brLine = '\n' + BR.formatRewards(sampleRewards).replace(/\n/g,'\n'); } catch(e){}
+  log += `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🏆 *WORLD BOSS DEFEATED!*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n${boss.emoji} *${boss.name}* has fallen!\n💭 A legendary victory!\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🎁 *REWARDS (Each member):*\n✨ +${xpReward.toLocaleString()} XP\n💠 +${goldReward.toLocaleString()} Nexus\n💎 +${crystalRew} Mana Stones\n⬆️ +${upReward} Upgrade Points${brLine ? '\n' + brLine : ''}${eventBonusMsg}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
   return sock.sendMessage(chatId, { text: log });
 }
 

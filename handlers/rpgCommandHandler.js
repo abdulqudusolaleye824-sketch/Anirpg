@@ -309,7 +309,7 @@ module.exports = async (sock, msg, messageText, config, getDatabase, saveDatabas
   }
   const { applyPassiveRegen } = require('../rpg/utils/RegenManager');
   if (db?.users?.[sender]) {
-    const player = db.users[sender];
+    const player = db.users?.[sender];
     applyPassiveRegen(player, db);
 
     const isPro = !!((player.isPro || player.proStatus) && player.proExpiresAt && player.proExpiresAt > Date.now());
@@ -519,7 +519,7 @@ module.exports = async (sock, msg, messageText, config, getDatabase, saveDatabas
 
   if (db.users?.[sender]) {
     try {
-      db.users[sender] = PlayerMigration.migratePlayer(db.users[sender]);
+      if (db.users?.[sender]) db.users[sender] = PlayerMigration.migratePlayer(db.users[sender]);
       saveDatabase();
     } catch (error) {
       console.error('⚠️ Migration error:', error);

@@ -619,8 +619,17 @@ module.exports = {
           }
         } catch (e) {}
 
-        // Prepend status effects summary if any (at start of this turn)
-        const _statusSolo = statusSummary(player) || statusSummary(monster);
+        // Tick statuses and prepend summary + damage logs at start of this turn
+        let _tickSoloLogs = [];
+        let _statusSolo = null;
+        try {
+          const UCTick = require('../../rpg/utils/UnifiedCombat');
+          _tickSoloLogs = UCTick.tickStatuses(player) || [];
+          const mTick = UCTick.tickStatuses(monster) || [];
+          if (mTick.length) _tickSoloLogs = _tickSoloLogs.concat(mTick);
+          _statusSolo = statusSummary(player) || statusSummary(monster);
+        } catch(e){}
+        if (_tickSoloLogs.length) introLines.unshift(_tickSoloLogs.join('\n'));
         if (_statusSolo) introLines.unshift(`⚠️ *STATUS:* ${_statusSolo}`);
         const sections = [
           { text: introLines.join('\n') },
@@ -716,10 +725,12 @@ module.exports = {
           return sock.sendMessage(chatId, { text: '✅ Floor cleared!\n/dungeon advance — next floor\n/dungeon leave — exit with rewards' }, { quoted: msg });
         }
 
-        // Status effects
+        // Status effects — Unified tick + summary for next round
+        let _preStatus = statusSummary(player) || statusSummary(monster);
         const fx = StatusEffectManager.processTurnEffects(player);
         let log = '';
         if (fx.messages.length) log += fx.messages.join('\n') + '\n\n';
+        else if (_preStatus) log += `⚠️ *STATUS:* ${_preStatus}\n\n`;
         if (!fx.canAct) {
           log += `❌ *${player.name}* cannot act this turn!`;
           return sock.sendMessage(chatId, { text: log }, { quoted: msg });
