@@ -539,13 +539,15 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
         resolvedTarget = PersonalityManager.resolvePersonality(targetArg);
         if (resolvedTarget) {
           const targetSock = botSockets[resolvedTarget];
-          const isTargetOnline = targetSock?.user?.id && targetSock.ws?.readyState === 1;
+          // FIX: Use same online check as Online list (user?.id) to avoid false offline when ws.readyState flaps
+          const isTargetOnline = !!targetSock?.user?.id;
 
           if (!isTargetOnline) {
-            // FIX: Instead of silent ignore, tell user the bot is offline
+            // FIX: Chorus — all online bots respond (as you requested)
+            const onlineList = Object.keys(botSockets).filter(k=>botSockets[k]?.user?.id).sort().join(', ') || 'none';
             try {
               await sock.sendMessage(chatId, {
-                text: `⚠️ *${resolvedTarget}* is offline / not linked.\n\n📋 *Online bots:* ${Object.keys(botSockets).filter(k=>botSockets[k]?.user?.id).join(', ') || 'none'}\n\nTry */bots* to see all personalities.`,
+                text: `⚠️ *${resolvedTarget}* is offline / not linked.\n\n📋 *Online bots:* ${onlineList}\n\nTry */bots* to see all personalities.`,
               }, { quoted: msg });
             } catch (e) { console.error('offline target reply fail:', e.message); }
             return;
