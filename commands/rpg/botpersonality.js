@@ -1,14 +1,13 @@
 /**
  * ╔══════════════════════════════════════════════════════╗
  * ║           Astra — Bot Personality Commands          ║
- * ║  /start /switch /hi /setainame /bots /stopbot        ║
+ * ║  /start /switch /hi /setainame /bots /stop           ║
  * ╚══════════════════════════════════════════════════════╝
  */
 
 'use strict';
 
 const PersonalityManager = require('../../bots/PersonalityManager');
-const AIHandler = require('../../bots/AIHandler');
 
 function normaliseJid(jid) {
   if (!jid) return '';
@@ -18,7 +17,6 @@ function normaliseJid(jid) {
 async function isModLevel(sock, sender, chatId, db) {
   const sNum = normaliseJid(sender);
 
-  // 1. Bot Owner / Co-Owner / Bot Mod
   try {
     const Perms = require('../../utils/permissions');
     if (Perms.isBotOwner(db, sender) || Perms.isBotMod(db, sender)) return true;
@@ -26,13 +24,11 @@ async function isModLevel(sock, sender, chatId, db) {
     if ((db.botMods || []).some(a => normaliseJid(a) === sNum)) return true;
   }
 
-  // 2. Pro Player
   const player = db.users?.[sender] || db.users?.[sNum];
   if (player && (player.isPro || player.proStatus) && player.proExpiresAt && player.proExpiresAt > Date.now()) {
     return true;
   }
 
-  // 3. Group Admin
   if (chatId && chatId.endsWith('@g.us') && sock && typeof sock.groupMetadata === 'function') {
     try {
       const meta = await sock.groupMetadata(chatId);
@@ -47,7 +43,7 @@ async function isModLevel(sock, sender, chatId, db) {
 // ── /start <botname> ─────────────────────────────────────────────────────────
 const start = {
   name: 'start',
-  description: 'Activate a bot personality in this group (Mods / Admins / Pro only)',
+  description: 'Start/activate a bot personality in this group (Mods / Admins / Pro only)',
 
   async execute(sock, msg, args, getDatabase, saveDatabase, sender) {
     const chatId = msg.key.remoteJid;
@@ -59,13 +55,37 @@ const start = {
       }, { quoted: msg });
     }
 
+    const current = PersonalityManager.getActiveBot(chatId);
     const target = args[0];
+
     if (!target) {
+      if (current) {
+        const curName = PersonalityManager.getDisplayName(current);
+        return sock.sendMessage(chatId, {
+          text: `✨ Bot *${curName}* is already active in this group!\n\n• Use */switch <botname>* to change bots\n• Use */stop* to deactivate`,
+        }, { quoted: msg });
+      }
+
       const all = PersonalityManager.getAllPersonalities()
         .map((k) => `• ${PersonalityManager.getDisplayName(k)} (${k})`)
         .join('\n');
       return sock.sendMessage(chatId, {
         text: `❌ Usage: /start <botname>\n\n📋 Available bots:\n${all}`,
+      }, { quoted: msg });
+    }
+
+    const resolvedTarget = PersonalityManager.resolvePersonality(target);
+    if (!resolvedTarget) {
+      return sock.sendMessage(chatId, {
+        text: `❌ Unknown bot: "${target}".\n\nUse /bots to see available personalities.`,
+      }, { quoted: msg });
+    }
+
+    if (current && current !== resolvedTarget) {
+      const curName = PersonalityManager.getDisplayName(current);
+      const targetName = PersonalityManager.getDisplayName(resolvedTarget);
+      return sock.sendMessage(chatId, {
+        text: `⚠️ Bot *${curName}* is already active in this group!\n\nUse */switch ${targetName}* to switch bots, or */stop* to deactivate first.`,
       }, { quoted: msg });
     }
 
@@ -85,17 +105,9 @@ const start = {
       `🎭 Theme: ${info.theme}`,
       `💬 Mention me or reply to chat with me!`,
       `🔄 Use /switch <name> to change bots`,
-      ``,
+      `🛑 Use /stop to deactivate`,
       `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
     ].join('\n');
-
-    try {
-      const MSM = require('../../bots/MultiSocketManager');
-      const botSock = MSM.getSocket(result.personalityKey);
-      if (botSock && botSock.user?.id && botSock.ws?.readyState === 1) {
-        return botSock.sendMessage(chatId, { text }, { quoted: msg });
-      }
-    } catch (e) { /* fall through to healthy socket fallback */ }
 
     return sock.sendMessage(chatId, { text }, { quoted: msg });
   },
@@ -116,16 +128,28 @@ const switchBot = {
       }, { quoted: msg });
     }
 
-    const target = args[0];
-    if (!target) {
+    const current = PersonalityManager.getActiveBot(chatId);
+    if (!current) {
       return sock.sendMessage(chatId, {
-        text: '❌ Usage: /switch <botname>\nExample: /switch gojo',
+        text: '❌ No bot is currently active in this group!\nUse /start <botname> first to activate a bot.',
       }, { quoted: msg });
     }
 
-    const current = PersonalityManager.getActiveBot(chatId);
-    const result = PersonalityManager.switchBot(chatId, target);
+    const target = args[0];
+    if (!target) {
+      return sock.sendMessage(chatId, {
+        text: '❌ Usage: /switch <botname>\nExample: /switch kira',
+      }, { quoted: msg });
+    }
 
+    const resolvedTarget = PersonalityManager.resolvePersonality(target);
+    if (!resolvedTarget) {
+      return sock.sendMessage(chatId, {
+        text: `❌ Unknown bot: "${target}".\n\nUse /bots to see available personalities.`,
+      }, { quoted: msg });
+    }
+
+    const result = PersonalityManager.switchBot(chatId, target);
     if (!result.success) {
       return sock.sendMessage(chatId, {
         text: `❌ ${result.error}\n\nUse /bots to see available personalities.`,
@@ -133,47 +157,24 @@ const switchBot = {
     }
 
     const info = PersonalityManager.getPersonalityInfo(result.personalityKey);
-    const newKey = result.personalityKey;
+    const greeting =
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+      `✨ I am active now!\n` +
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+      `🎭 *${result.displayName}* — ${info.theme}\n` +
+      `💬 Mention me or reply to chat with me!\n` +
+      `🔄 Use /switch <name> to change bots\n` +
+      `🛑 Use /stop to deactivate\n` +
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
 
-    // Send greeting from target bot if online
-    try {
-      const MSM = require('../../bots/MultiSocketManager');
-      const newBotSock = MSM.getSocket(newKey);
-      if (newBotSock && newBotSock.user?.id && newBotSock.ws?.readyState === 1) {
-        const greeting =
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-          `✨ I am active now!\n` +
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
-          `🎭 *${result.displayName}* — ${info.theme}\n` +
-          `💬 Mention me or reply to chat with me!\n` +
-          `🔄 Use /switch <name> to change bots\n` +
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
-        await newBotSock.sendMessage(chatId, { text: greeting }, { quoted: msg });
-        return;
-      }
-    } catch (e) { /* fall through to active socket response */ }
-
-    // Fallback: If target bot is offline/banned, the current healthy socket sends confirmation
-    const prevName = current ? PersonalityManager.getDisplayName(current) : null;
-    return sock.sendMessage(chatId, {
-      text: [
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-        `🔄 *Bot Switched*`,
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-        prevName ? `📤 Previous: ${prevName}` : null,
-        `📥 Active: *${result.displayName}*`,
-        `🎭 Theme: ${info.theme}`,
-        `⚠️ _Note: ${result.displayName}'s socket is currently offline or unlinked._`,
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-      ].filter(Boolean).join('\n'),
-    }, { quoted: msg });
+    return sock.sendMessage(chatId, { text: greeting }, { quoted: msg });
   },
 };
 
 // ── /hi — all present bots respond ───────────────────────────────────────────
 const hi = {
   name: 'hi',
-  description: 'All present bots greet the group',
+  description: 'All present bots greet the group independently',
 
   async execute(sock, msg, args, getDatabase, saveDatabase, sender) {
     const chatId = msg.key.remoteJid;
@@ -338,16 +339,18 @@ const bots = {
     lines.push(`📌 /start <name> — activate a bot`);
     lines.push(`🔄 /switch <name> — switch active bot`);
     lines.push(`👋 /hi — all present bots respond`);
+    lines.push(`🛑 /stop — deactivate bot in group`);
     lines.push(`━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
 
     return sock.sendMessage(chatId, { text: lines.join('\n') }, { quoted: msg });
   },
 };
 
-// ── /stopbot — deactivate all bots in this GC ────────────────────────────────
+// ── /stop /stopbot — deactivate all bots in this GC ──────────────────────────
 const stopbot = {
-  name: 'stopbot',
-  description: 'Deactivate all bots in this group (Mods / Admins / Pro only)',
+  name: 'stop',
+  aliases: ['stopbot'],
+  description: 'Deactivate active bot in this group (Mods / Admins / Pro only)',
 
   async execute(sock, msg, args, getDatabase, saveDatabase, sender) {
     const chatId = msg.key.remoteJid;
@@ -355,16 +358,16 @@ const stopbot = {
 
     if (!(await isModLevel(sock, sender, chatId, db))) {
       return sock.sendMessage(chatId, {
-        text: '❌ Only bot owners, bot mods, Pro players, or group admins can use /stopbot.',
+        text: '❌ Only bot owners, bot mods, Pro players, or group admins can use /stop.',
       }, { quoted: msg });
     }
 
     PersonalityManager.deactivateAll(chatId);
 
     return sock.sendMessage(chatId, {
-      text: '💤 All bots deactivated in this group. Use /start <name> to reactivate.',
+      text: '💤 Bot deactivated in this group. Use /start <name> to activate a bot again.',
     }, { quoted: msg });
   },
 };
 
-module.exports = { start, switchBot, hi, setainame, bots, stopbot };
+module.exports = { start, switchBot, hi, setainame, bots, stopbot, stop: stopbot };

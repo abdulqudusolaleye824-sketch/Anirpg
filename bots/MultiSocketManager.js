@@ -34,6 +34,11 @@ const pairingSessions = {};
 const reconnectAttempts = {};
 let hostBotKey = null;
 
+function getFirstOnlineSocketKey() {
+  const keys = Object.keys(botSockets).filter(k => botSockets[k]?.user?.id && botSockets[k]?.ws?.readyState === 1).sort();
+  return keys[0] || null;
+}
+
 function getHostSocket() {
   if (hostBotKey && botSockets[hostBotKey]?.user?.id && botSockets[hostBotKey]?.ws?.readyState === 1) {
     return botSockets[hostBotKey];
@@ -498,41 +503,62 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
     ]);
     const isBootstrap = BOOTSTRAP_COMMANDS.has(commandName);
 
-    // Active bot check with automatic failover
+    // Active bot determination with strict /start and /switch handling
     const rawActiveKey = isGroup ? PersonalityManager.getActiveBot(chatId) : null;
-    const presentInGroup = isGroup ? PersonalityManager.getPresentBots(chatId) : [];
-    const isOnlineActive = rawActiveKey &&
-      !!(botSockets[rawActiveKey]?.user?.id && botSockets[rawActiveKey]?.ws?.readyState === 1) &&
-      presentInGroup.includes(rawActiveKey);
-
+    const isOnlineActive = rawActiveKey && !!(botSockets[rawActiveKey]?.user?.id && botSockets[rawActiveKey]?.ws?.readyState === 1);
     const activeKey = isOnlineActive ? rawActiveKey : null;
 
-    // Check if command is targeting a specific bot personality (e.g. /switch kira or /start kira)
     let isTargetMentionedBot = false;
-    let hasOnlineTargetBot = false;
+    let resolvedTarget = null;
+
     if (isGroup && isCommand && (commandName === 'switch' || commandName === 'start')) {
       const parts = messageText.slice(config.prefix.length).trim().split(/\s+/);
       const targetArg = parts[1];
       if (targetArg) {
-        const resolvedTarget = PersonalityManager.resolvePersonality(targetArg);
-        if (resolvedTarget && botSockets[resolvedTarget]?.user?.id && botSockets[resolvedTarget]?.ws?.readyState === 1) {
-          hasOnlineTargetBot = true;
+        resolvedTarget = PersonalityManager.resolvePersonality(targetArg);
+        if (resolvedTarget) {
+          const targetSock = botSockets[resolvedTarget];
+          const isTargetOnline = targetSock?.user?.id && targetSock.ws?.readyState === 1;
+
+          if (!isTargetOnline) {
+            // STRICT RULE: "if the bot mentioned is dead silence should be observed"
+            // Mentioned target bot is offline/dead -> SILENCE IS OBSERVED! NO BOT RESPONDS!
+            return;
+          }
+
+          // Mentioned target bot IS online -> ONLY mentioned bot handles this /start or /switch!
           isTargetMentionedBot = (personalityKey === resolvedTarget);
         }
       }
     }
 
-    let isActive = true;
-    if (isGroup) {
-      if (isTargetMentionedBot) {
-        isActive = true;
-      } else if (hasOnlineTargetBot && !isTargetMentionedBot) {
-        isActive = false;
-      } else if (activeKey) {
+    let isActive = false;
+    if (!isGroup) {
+      isActive = true;
+    } else if (commandName === 'hi') {
+      // /hi is the ONLY command that works in group chat without /start first!
+      // All connected present bots process individually and respond independently.
+      isActive = true;
+    } else if (isCommand && (commandName === 'start' || commandName === 'switch')) {
+      if (resolvedTarget) {
+        isActive = isTargetMentionedBot;
+      } else {
+        const firstKey = getFirstOnlineSocketKey();
+        isActive = isOnlineActive ? (personalityKey === activeKey) : (personalityKey === firstKey);
+      }
+    } else if (isCommand) {
+      if (isOnlineActive) {
         isActive = (personalityKey === activeKey);
       } else {
-        // No valid active bot online/present in group -> receiving socket handles it automatically
-        isActive = _bootstrapDispatcher(personalityKey, chatId);
+        const firstKey = getFirstOnlineSocketKey();
+        isActive = (personalityKey === firstKey);
+      }
+    } else {
+      // AI chat messages
+      if (isOnlineActive) {
+        isActive = (personalityKey === activeKey);
+      } else {
+        isActive = false;
       }
     }
 

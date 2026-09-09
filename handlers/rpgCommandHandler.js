@@ -282,8 +282,8 @@ module.exports = async (sock, msg, messageText, config, getDatabase, saveDatabas
     'maintenance', 'banned', 'ban', 'unban', 'mute', 'unmute',
     'setgroup', 'setgc', 'ssub', 'renew', 'allowgc', 'groupinfo',
     'setdungeon', 'removedungeon', 'dungeons', 'set', 'settings', 'gcset',
-    'help', 'menu', 'reset', 'start', 'switch', 'stopbot',
-    'bots', 'hi', 'setainame', 'promotedm', 'demotedm', 'profaq', 'botstats'
+    'help', 'menu', 'reset', 'start', 'switch', 'stop', 'stopbot',
+    'bots', 'hi', 'setainame', 'promotedm', 'demotedm', 'profaq', 'botstats', 'clearactivebots'
   ]);
 
   const isDM = !chatId.endsWith('@g.us');
@@ -580,6 +580,27 @@ module.exports = async (sock, msg, messageText, config, getDatabase, saveDatabas
       {
         text: `❌ Command *${commandName}* is disabled.\n(by @${disabled.by.split('@')[0]})`,
         mentions: [disabled.by],
+      },
+      { quoted: msg }
+    );
+  }
+
+  const PersonalityManager = require('../bots/PersonalityManager');
+  const activeKey = chatId.endsWith('@g.us') ? PersonalityManager.getActiveBot(chatId) : null;
+
+  const BOOTSTRAP_COMMANDS = new Set([
+    'start', 'switch', 'stop', 'stopbot', 'bots', 'hi', 'setainame',
+    'setgroup', 'setgc', 'ssub', 'renew', 'allowgc', 'groupinfo', 'groupstatus',
+    'setdungeon', 'removedungeon', 'dungeons', 'set', 'settings', 'gcset',
+    'help', 'menu', 'reset', 'spawnstatus', 'spawnsstatus', 'killspawn',
+    'cctv', 'statusreport', 'botid', 'disable', 'enable', 'restart', 'clearactivebots'
+  ]);
+
+  if (chatId.endsWith('@g.us') && !activeKey && !BOOTSTRAP_COMMANDS.has(commandName) && !BOOTSTRAP_COMMANDS.has(resolvedCommand)) {
+    return sock.sendMessage(
+      chatId,
+      {
+        text: `💤 *NO BOT ACTIVE IN THIS GROUP*\n\nBot commands require an active bot in this group chat.\nUse */start <botname>* to activate a bot personality!\n\n📋 Type */bots* to see available personalities.`
       },
       { quoted: msg }
     );

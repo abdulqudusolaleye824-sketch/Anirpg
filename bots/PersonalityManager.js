@@ -525,6 +525,20 @@ function getPersonalityInfo(key) {
   };
 }
 
+function clearAllActive(db, saveDatabase) {
+  for (const k of Object.keys(activeBots)) {
+    if (k !== '__lastTouch') delete activeBots[k];
+  }
+  for (const k of Object.keys(presentBots)) {
+    delete presentBots[k];
+  }
+  if (db) {
+    db.botActive = {};
+    db.botPresent = {};
+    if (saveDatabase) saveDatabase();
+  }
+}
+
 module.exports = {
   PERSONALITIES,
   SYSTEM_VOICE_PROMPT,
@@ -538,6 +552,7 @@ module.exports = {
   activateBot,
   switchBot,
   deactivateAll,
+  clearAllActive,
   bindPersistence,
   loadPersisted,
   getPresentBots,
