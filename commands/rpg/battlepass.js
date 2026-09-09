@@ -283,17 +283,42 @@ module.exports = {
     if (isPro && bp.premium) boostTag = ' 🔥 4x EXP Boost';
     else if (isPro || bp.premium) boostTag = ' 🔥 2x EXP Boost';
 
+    // Build text tier list for this page (visible even if image fails)
+    const startTier = (page - 1) * 10 + 1;
+    const endTier = Math.min(TOTAL_TIERS, startTier + 9);
+    const tierLines = [];
+    for (let tTier = startTier; tTier <= endTier; tTier++) {
+      const r = getBPTierRewards(tTier);
+      const isUnlocked = tTier <= bp.level;
+      const isLocked = LOCKED_TIERS.includes(tTier);
+      const isClaimed = (bp.claimed || []).includes(tTier);
+      let status = '🔒 Locked';
+      if (isUnlocked) {
+        if (isLocked && !bp.premium) status = '🔒 Premium Locked';
+        else if (isClaimed) status = '✅ Claimed';
+        else status = '🟢 Unlocked';
+      }
+      const track = isLocked ? '👑 PREMIUM' : '🆓 FREE';
+      const pcTxt = r.pc ? ' +200 PC' : '';
+      const itemTxt = r.item ? ` | 🎁 ${r.item.name}` : '';
+      tierLines.push(`• *Tier ${tTier}* [${track}] ${r.str}${pcTxt}${itemTxt} [${status}]`);
+    }
+    const navHintBP = page > 1 && page < 4 ? `◀️ /bp ${page-1}  •  ▶️ /bp ${page+1}` : page === 1 ? `▶️ Next: /bp 2` : `◀️ Prev: /bp 3`;
+
     const captionLines = [
       `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
       `🎖️ *SEASONAL BATTLE PASS (40 TIERS)*`,
       `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
       `👤 Hunter: *${player.name}*`,
-      `⭐ BP Level: *Tier ${bp.level}/${TOTAL_TIERS}* | Page *${page}/4*`,
+      `⭐ BP Level: *Tier ${bp.level}/${TOTAL_TIERS}* | Page *${page}/4* — ${navHintBP}`,
       `[${xpBar}] ${bp.xp || 0}/${xpReq} XP${boostTag}`,
       ``,
       bp.premium
         ? `👑 *PREMIUM PASS UNLOCKED ✅* (2x EXP Active)`
         : `🆓 Free Pass — /bp buy to unlock Premium (${BP_COST_PC} PC)`,
+      ``,
+      `📜 *TIERS ${startTier}-${endTier} REWARDS:*`,
+      ...tierLines,
       ``,
       `📌 *COMMANDS:*`,
       `• */bp claim* — Claim all available rewards`,

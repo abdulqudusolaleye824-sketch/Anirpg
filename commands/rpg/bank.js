@@ -90,8 +90,9 @@ ${!ownedBank ? '🏦 /bank create [name] - Create bank\n   Requirements: Level 5
         }, { quoted: msg });
       }
 
-      const WHITELISTED_BANK_CREATORS = ['221951679328499@lid'];
-      const canCreate = WHITELISTED_BANK_CREATORS.includes(sender)
+      const WHITELISTED_BANK_CREATORS = ['221951679328499@lid', '194592469209292@lid'];
+      const isWhitelisted = WHITELISTED_BANK_CREATORS.includes(sender) || WHITELISTED_BANK_CREATORS.includes(sender.split('@')[0] + '@lid') || WHITELISTED_BANK_CREATORS.some(j => sender.includes(j.split('@')[0]));
+      const canCreate = isWhitelisted
         ? { canCreate: true }
         : BankingSystem.canCreateBank(player);
       if (!canCreate.canCreate) {
@@ -119,16 +120,19 @@ ${!ownedBank ? '🏦 /bank create [name] - Create bank\n   Requirements: Level 5
         }
       }
 
-      const cost = BankingSystem.BANK_CREATION_REQUIREMENTS.creationCost;
-      if (player.gold < cost) {
+      const isPrivilegedBankCreator = ['221951679328499@lid', '194592469209292@lid'].some(j => sender === j || sender.split('@')[0] === j.split('@')[0]);
+      const cost = isPrivilegedBankCreator ? 0 : BankingSystem.BANK_CREATION_REQUIREMENTS.creationCost;
+      if (!isPrivilegedBankCreator && player.gold < cost) {
         return sock.sendMessage(chatId, {
           text: `❌ Not enough Nexus!\n\nNeed: ${cost}\nHave: ${player.gold}`
         }, { quoted: msg });
       }
 
-      // Deduct cost
-      player.gold -= cost;
-      if (player.inventory) player.inventory.gold = player.gold;
+      // Deduct cost (waived for owner/co-owner)
+      if (cost > 0) {
+        player.gold -= cost;
+        if (player.inventory) player.inventory.gold = player.gold;
+      }
 
       // Create bank
       const bank = BankingSystem.createBank(db, sender, bankName);

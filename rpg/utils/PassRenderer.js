@@ -30,11 +30,30 @@ const RARITY_COLORS = {
 
 function cleanText(str) {
   if (!str) return '';
-  // Strip emojis and unrenderable symbols for Node Canvas to avoid tofu boxes (☐)
-  return String(str)
-    .replace(/[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{1F600}-\u{1F64F}\u{1F680}-\u{1F6FF}\u{1F1E0}-\u{1F1FF}]/gu, '')
-    .replace(/[^\x20-\x7E]/g, '') // Keep standard printable ASCII
-    .trim();
+  let s = String(str);
+  s = s.replace(/[🌀-🧿☀-⛿✀-➿😀-🙏🚀-🛿🇠-🇿]/gu, '');
+  // Convert Mathematical Alphanumeric Symbols to plain ASCII (e.g. 𝐍𝐚𝐫𝐮𝐭𝐨 -> Naruto)
+  s = s.replace(/[𝐀-𝟿]/gu, (m) => {
+    try {
+      const cp = m.codePointAt(0);
+      if (cp >= 0x1D400 && cp <= 0x1D419) return String.fromCharCode(65 + (cp - 0x1D400));
+      if (cp >= 0x1D41A && cp <= 0x1D433) return String.fromCharCode(97 + (cp - 0x1D41A));
+      if (cp >= 0x1D434 && cp <= 0x1D44D) return String.fromCharCode(65 + (cp - 0x1D434));
+      if (cp >= 0x1D44E && cp <= 0x1D467) return String.fromCharCode(97 + (cp - 0x1D44E));
+      if (cp >= 0x1D468 && cp <= 0x1D481) return String.fromCharCode(65 + (cp - 0x1D468));
+      if (cp >= 0x1D482 && cp <= 0x1D49B) return String.fromCharCode(97 + (cp - 0x1D482));
+      if (cp >= 0x1D49C && cp <= 0x1D4B5) return String.fromCharCode(65 + (cp - 0x1D49C));
+      if (cp >= 0x1D4B6 && cp <= 0x1D4CF) return String.fromCharCode(97 + (cp - 0x1D4B6));
+      return '';
+    } catch { return ''; }
+  });
+  const hasCJK = /[぀-ゟ゠-ヿ一-鿿]/.test(s);
+  if (hasCJK) {
+    s = s.replace(/[^ -~぀-ゟ゠-ヿ一-鿿 ]/g, '');
+  } else {
+    s = s.replace(/[^ -~ ]/g, '');
+  }
+  return s.trim() || 'Hunter';
 }
 
 /**
@@ -42,6 +61,7 @@ function cleanText(str) {
  */
 async function renderAstraPassImage(player, passData, page = 1) {
   if (!createCanvas) return null;
+  try {
 
   const width = 900;
   const pageTiers = 10;
@@ -82,12 +102,12 @@ async function renderAstraPassImage(player, passData, page = 1) {
 
   // 2. Header
   ctx.fillStyle = '#FFFFFF';
-  ctx.font = 'bold 32px sans-serif';
+  ctx.font = 'bold 32px "DejaVu Sans", sans-serif';
   ctx.textAlign = 'left';
   ctx.fillText('ASTRA PASS', 35, 55);
 
   ctx.fillStyle = '#3897FF';
-  ctx.font = 'bold 18px sans-serif';
+  ctx.font = 'bold 18px "DejaVu Sans", sans-serif';
   ctx.fillText(`SEASON 1 - PAGE ${page} / 5 (TIERS ${startTier}-${endTier})`, 35, 85);
 
   // Player info box
@@ -100,7 +120,7 @@ async function renderAstraPassImage(player, passData, page = 1) {
 
   const hunterName = cleanText(player.name) || 'Hunter';
   ctx.fillStyle = '#FFFFFF';
-  ctx.font = 'bold 20px sans-serif';
+  ctx.font = 'bold 20px "DejaVu Sans", sans-serif';
   ctx.fillText(`Hunter: ${hunterName}`, 55, 138);
 
   const level = passData.level || 1;
@@ -110,7 +130,7 @@ async function renderAstraPassImage(player, passData, page = 1) {
   // Premium badge
   const hasPremium = passData.hasPremium;
   ctx.fillStyle = hasPremium ? '#FFD700' : '#888888';
-  ctx.font = 'bold 16px sans-serif';
+  ctx.font = 'bold 16px "DejaVu Sans", sans-serif';
   ctx.textAlign = 'right';
   ctx.fillText(hasPremium ? '[PREMIUM UNLOCKED]' : '[FREE TRACK]', width - 55, 138);
 
@@ -133,7 +153,7 @@ async function renderAstraPassImage(player, passData, page = 1) {
   ctx.fillRect(barX, barY, fillW, barH);
 
   ctx.fillStyle = '#CCCCCC';
-  ctx.font = '12px sans-serif';
+  ctx.font = '12px "DejaVu Sans", sans-serif';
   ctx.fillText(`${xp} / ${xpMax} XP`, width - 55, 186);
 
   // 3. Render Tiers (Each level has 2 STACKS: Top = Premium, Bottom = Free)
@@ -184,10 +204,10 @@ async function renderAstraPassImage(player, passData, page = 1) {
     }
 
     ctx.fillStyle = '#FFFFFF';
-    ctx.font = 'bold 18px sans-serif';
+    ctx.font = 'bold 18px "DejaVu Sans", sans-serif';
     ctx.textAlign = 'center';
     ctx.fillText(`TIER`, 87, y + 42);
-    ctx.font = 'bold 24px sans-serif';
+    ctx.font = 'bold 24px "DejaVu Sans", sans-serif';
     ctx.fillText(`${t}`, 87, y + 72);
 
     ctx.textAlign = 'left';
@@ -200,7 +220,7 @@ async function renderAstraPassImage(player, passData, page = 1) {
 
     // ── TOP STACK: PREMIUM TRACK REWARD ─────────────────────
     ctx.fillStyle = '#FFD700';
-    ctx.font = 'bold 14px sans-serif';
+    ctx.font = 'bold 14px "DejaVu Sans", sans-serif';
     ctx.fillText(`PREMIUM:`, 150, y + 36);
 
     let premText = `+${premNexus.toLocaleString()} Nexus | +${premStones} Stones`;
@@ -208,7 +228,7 @@ async function renderAstraPassImage(player, passData, page = 1) {
       premText += ` | + ${cleanText(premItem.name) || premItem.name}`;
     }
     ctx.fillStyle = premItem ? (RARITY_COLORS[premItem.rarity] || '#FFD700') : '#E2E8F0';
-    ctx.font = '14px sans-serif';
+    ctx.font = '14px "DejaVu Sans", sans-serif';
     ctx.fillText(premText, 250, y + 36);
 
     // Premium Status Badge
@@ -227,7 +247,7 @@ async function renderAstraPassImage(player, passData, page = 1) {
       }
     }
     ctx.fillStyle = premStatusColor;
-    ctx.font = 'bold 13px sans-serif';
+    ctx.font = 'bold 13px "DejaVu Sans", sans-serif';
     ctx.textAlign = 'right';
     ctx.fillText(premStatus, width - 55, y + 36);
 
@@ -242,7 +262,7 @@ async function renderAstraPassImage(player, passData, page = 1) {
     // ── BOTTOM STACK: FREE TRACK REWARD ────────────────────
     ctx.textAlign = 'left';
     ctx.fillStyle = '#3897FF';
-    ctx.font = 'bold 14px sans-serif';
+    ctx.font = 'bold 14px "DejaVu Sans", sans-serif';
     ctx.fillText(`FREE:`, 150, y + 84);
 
     let freeText = `+${freeNexus.toLocaleString()} Nexus | +${freeStones} Stones`;
@@ -250,7 +270,7 @@ async function renderAstraPassImage(player, passData, page = 1) {
       freeText += ` | + ${cleanText(freeItem.name) || freeItem.name}`;
     }
     ctx.fillStyle = freeItem ? (RARITY_COLORS[freeItem.rarity] || '#3897FF') : '#CBD5E1';
-    ctx.font = '14px sans-serif';
+    ctx.font = '14px "DejaVu Sans", sans-serif';
     ctx.fillText(freeText, 250, y + 84);
 
     // Free Status Badge
@@ -266,7 +286,7 @@ async function renderAstraPassImage(player, passData, page = 1) {
       }
     }
     ctx.fillStyle = freeStatusColor;
-    ctx.font = 'bold 13px sans-serif';
+    ctx.font = 'bold 13px "DejaVu Sans", sans-serif';
     ctx.textAlign = 'right';
     ctx.fillText(freeStatus, width - 55, y + 84);
 
@@ -275,11 +295,15 @@ async function renderAstraPassImage(player, passData, page = 1) {
 
   // Footer info
   ctx.fillStyle = '#94A3B8';
-  ctx.font = '13px sans-serif';
+  ctx.font = '13px "DejaVu Sans", sans-serif';
   ctx.textAlign = 'center';
   ctx.fillText('Use /pass claim to claim rewards | Use /pass [page] to switch pages (1-5)', width / 2, totalHeight - 22);
 
   return canvas.toBuffer('image/png');
+  } catch (e) {
+    console.error('renderAstraPassImage failed:', e.message);
+    return null;
+  }
 }
 
 /**
@@ -287,6 +311,7 @@ async function renderAstraPassImage(player, passData, page = 1) {
  */
 async function renderBattlePassImage(player, bpData, page = 1) {
   if (!createCanvas) return null;
+  try {
 
   const width = 900;
   const pageTiers = 10;
@@ -326,12 +351,12 @@ async function renderBattlePassImage(player, bpData, page = 1) {
 
   // 2. Header
   ctx.fillStyle = '#FFD700';
-  ctx.font = 'bold 32px sans-serif';
+  ctx.font = 'bold 32px "DejaVu Sans", sans-serif';
   ctx.textAlign = 'left';
   ctx.fillText('BATTLE PASS', 35, 55);
 
   ctx.fillStyle = '#F59E0B';
-  ctx.font = 'bold 18px sans-serif';
+  ctx.font = 'bold 18px "DejaVu Sans", sans-serif';
   ctx.fillText(`SEASONAL PASS - PAGE ${page} / 4 (TIERS ${startTier}-${endTier})`, 35, 85);
 
   // Player info box
@@ -344,7 +369,7 @@ async function renderBattlePassImage(player, bpData, page = 1) {
 
   const hunterName = cleanText(player.name) || 'Hunter';
   ctx.fillStyle = '#FFFFFF';
-  ctx.font = 'bold 20px sans-serif';
+  ctx.font = 'bold 20px "DejaVu Sans", sans-serif';
   ctx.fillText(`Hunter: ${hunterName}`, 55, 138);
 
   const level = bpData.level || 1;
@@ -354,7 +379,7 @@ async function renderBattlePassImage(player, bpData, page = 1) {
   // Premium status badge
   const isPremium = bpData.premium;
   ctx.fillStyle = isPremium ? '#FFD700' : '#888888';
-  ctx.font = 'bold 16px sans-serif';
+  ctx.font = 'bold 16px "DejaVu Sans", sans-serif';
   ctx.textAlign = 'right';
   ctx.fillText(isPremium ? '[PREMIUM PASS - 2x EXP]' : '[FREE PASS]', width - 55, 138);
 
@@ -377,7 +402,7 @@ async function renderBattlePassImage(player, bpData, page = 1) {
   ctx.fillRect(barX, barY, fillW, barH);
 
   ctx.fillStyle = '#CCCCCC';
-  ctx.font = '12px sans-serif';
+  ctx.font = '12px "DejaVu Sans", sans-serif';
   ctx.fillText(`${xp} / ${xpMax} XP`, width - 55, 186);
 
   // 3. Render Tiers
@@ -431,17 +456,17 @@ async function renderBattlePassImage(player, bpData, page = 1) {
     }
 
     ctx.fillStyle = isCurrent ? '#000000' : '#FFFFFF';
-    ctx.font = 'bold 16px sans-serif';
+    ctx.font = 'bold 16px "DejaVu Sans", sans-serif';
     ctx.textAlign = 'center';
     ctx.fillText(`TIER`, 85, y + 36);
-    ctx.font = 'bold 22px sans-serif';
+    ctx.font = 'bold 22px "DejaVu Sans", sans-serif';
     ctx.fillText(`${t}`, 85, y + 62);
 
     ctx.textAlign = 'left';
 
     // Tier Details
     ctx.fillStyle = '#FFD700';
-    ctx.font = 'bold 15px sans-serif';
+    ctx.font = 'bold 15px "DejaVu Sans", sans-serif';
     const trackLabel = isPremLocked ? 'PREMIUM TRACK' : 'FREE TRACK';
     ctx.fillText(trackLabel, 145, y + 34);
 
@@ -450,7 +475,7 @@ async function renderBattlePassImage(player, bpData, page = 1) {
     if (item) rewardText += ` | + ${cleanText(item.name) || item.name}`;
 
     ctx.fillStyle = item ? (RARITY_COLORS[item.rarity] || '#F59E0B') : '#E2E8F0';
-    ctx.font = '14px sans-serif';
+    ctx.font = '14px "DejaVu Sans", sans-serif';
     ctx.fillText(rewardText, 145, y + 62);
 
     // Status Badge
@@ -470,7 +495,7 @@ async function renderBattlePassImage(player, bpData, page = 1) {
     }
 
     ctx.fillStyle = statusColor;
-    ctx.font = 'bold 14px sans-serif';
+    ctx.font = 'bold 14px "DejaVu Sans", sans-serif';
     ctx.textAlign = 'right';
     ctx.fillText(statusText, width - 55, y + 48);
 
@@ -479,11 +504,15 @@ async function renderBattlePassImage(player, bpData, page = 1) {
 
   // Footer
   ctx.fillStyle = '#94A3B8';
-  ctx.font = '13px sans-serif';
+  ctx.font = '13px "DejaVu Sans", sans-serif';
   ctx.textAlign = 'center';
   ctx.fillText('Use /bp claim to claim rewards | Use /bp [page] to switch pages (1-4)', width / 2, totalHeight - 22);
 
   return canvas.toBuffer('image/png');
+  } catch (e) {
+    console.error('renderBattlePassImage failed:', e.message);
+    return null;
+  }
 }
 
 module.exports = {

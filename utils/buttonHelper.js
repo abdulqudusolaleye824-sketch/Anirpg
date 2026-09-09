@@ -156,23 +156,34 @@ async function sendWithButtons(sock, chatId, content, buttons, quoted) {
     }
   } catch (e) {
     console.error('⚠️ templateButtons send failed, falling back to plain:', e.message);
-    // Fallback: plain text with manual command hints
+    // Fallback: plain text with manual command hints — handle image vs text correctly
     try {
-      const fallbackText = (content.caption || content.text || '') + '\n\n' +
-        buttons.map(b => {
-          const qr = b.quickReplyButton;
-          if (qr) return `▶️ ${qr.displayText}: ${qr.id}`;
-          const url = b.urlButton;
-          if (url) return `🔗 ${url.displayText}: ${url.url}`;
-          return '';
-        }).filter(Boolean).join('\n');
+      const buttonHints = buttons.map(b => {
+        const qr = b.quickReplyButton;
+        if (qr) return `▶️ ${qr.displayText}: ${qr.id}`;
+        const url = b.urlButton;
+        if (url) return `🔗 ${url.displayText}: ${url.url}`;
+        return '';
+      }).filter(Boolean).join('\n');
+      const baseText = content.caption || content.text || '';
+      const fallbackText = baseText + (buttonHints ? '\n\n' + buttonHints : '');
+      if (hasImage) {
+        return await sock.sendMessage(chatId, {
+          image: content.image,
+          caption: fallbackText,
+          mimetype: content.mimetype || 'image/png'
+        }, quoted ? { quoted } : {});
+      }
       return await sock.sendMessage(chatId, {
-        text: fallbackText,
-        ...(content.image ? { image: content.image } : {})
+        text: fallbackText
       }, quoted ? { quoted } : {});
     } catch (e2) {
       console.error('Fallback send also failed:', e2.message);
-      return sock.sendMessage(chatId, content, quoted ? { quoted } : {});
+      // Final fallback without buttons
+      if (hasImage) {
+        return sock.sendMessage(chatId, { image: content.image, caption: content.caption || content.text || '', mimetype: content.mimetype || 'image/png' }, quoted ? { quoted } : {});
+      }
+      return sock.sendMessage(chatId, { text: content.text || content.caption || '' }, quoted ? { quoted } : {});
     }
   }
 }

@@ -323,17 +323,39 @@ module.exports = {
     const xpPct = Math.min(100, Math.floor(((ap.xp || 0) / xpReq) * 100));
     const xpBar = '█'.repeat(Math.floor(xpPct / 5)) + '░'.repeat(20 - Math.floor(xpPct / 5));
 
+    // Build text tier list for this page (so rewards are visible even if image is tofu)
+    const startTier = (page - 1) * 10 + 1;
+    const endTier = Math.min(TOTAL_TIERS, startTier + 9);
+    const tierLines = [];
+    for (let tTier = startTier; tTier <= endTier; tTier++) {
+      const tInfo = getTierDisplay(tTier);
+      const isUnlocked = tTier <= ap.level;
+      const freeClaimed = (ap.claimedFree || []).includes(tTier);
+      const premClaimed = (ap.claimedPremium || []).includes(tTier);
+      let freeStatus = isUnlocked ? (freeClaimed ? '✅ Claimed' : '🟢 Unlocked') : '🔒 Locked';
+      let premStatus = !hasPremium && isUnlocked ? '🔒 Need Premium' : isUnlocked ? (premClaimed ? '✅ Claimed' : '🟢 Unlocked') : '🔒 Locked';
+      // Clean item names for text (avoid tofu)
+      const freeItemTxt = tInfo.freeItem ? ` | 📦 ${tInfo.freeItem.name}` : '';
+      const premItemTxt = tInfo.premItem ? ` | 🎁 ${tInfo.premItem.name}` : '';
+      tierLines.push(`• *Tier ${tTier}* ${isUnlocked ? '🟢' : '🔒'} | 🆓 ${tInfo.freeStr}${freeItemTxt} [${freeStatus}]`);
+      tierLines.push(`  👑 ${tInfo.premStr}${premItemTxt} [${premStatus}]`);
+    }
+    const navHint = page > 1 && page < 5 ? `◀️ /pass ${page-1}  •  ▶️ /pass ${page+1}` : page === 1 ? `▶️ Next: /pass 2` : `◀️ Prev: /pass 4`;
+
     const captionLines = [
       `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
       `🏛️ *ASTRA PASS (SEASON 1 — 40 DAYS)*`,
       `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
       `👤 Hunter: *${player.name}*`,
-      `⭐ Level: *Tier ${ap.level}/${TOTAL_TIERS}* | Page *${page}/5*`,
+      `⭐ Level: *Tier ${ap.level}/${TOTAL_TIERS}* | Page *${page}/5* — ${navHint}`,
       `[${xpBar}] ${ap.xp || 0}/${xpReq} XP`,
       ``,
       hasPremium
         ? `👑 *PREMIUM UNLOCKED* (PRO Card Active)`
         : `🆓 *FREE TRACK* — Upgrade to PRO (/prostore) for Auto-Premium!`,
+      ``,
+      `📜 *TIERS ${startTier}-${endTier} REWARDS:*`,
+      ...tierLines,
       ``,
       `📌 *COMMANDS:*`,
       `• */pass claim* — Claim all unlocked rewards`,
