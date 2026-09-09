@@ -1,7 +1,7 @@
 /**
  * ╔══════════════════════════════════════════════════════╗
  * ║           Astra — Bot Personality Commands          ║
- * ║  /start /switch /hi /setainame /bots                 ║
+ * ║  /start /switch /hi /setainame /bots /stopbot        ║
  * ╚══════════════════════════════════════════════════════╝
  */
 
@@ -15,26 +15,49 @@ function normaliseJid(jid) {
   return jid.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
 }
 
-function isPrivileged(sender, db) {
+async function isModLevel(sock, sender, chatId, db) {
   const sNum = normaliseJid(sender);
-  let ok = false;
+
+  // 1. Bot Owner / Co-Owner / Bot Mod
   try {
     const Perms = require('../../utils/permissions');
-    ok = Perms.isBotOwner(db, sender) || (db.botMods || []).some(a => normaliseJid(a) === sNum);
+    if (Perms.isBotOwner(db, sender) || Perms.isBotMod(db, sender)) return true;
   } catch (e) {
-    ok = (db.botMods || []).some(a => normaliseJid(a) === sNum);
+    if ((db.botMods || []).some(a => normaliseJid(a) === sNum)) return true;
   }
-  return ok;
+
+  // 2. Pro Player
+  const player = db.users?.[sender] || db.users?.[sNum];
+  if (player && (player.isPro || player.proStatus) && player.proExpiresAt && player.proExpiresAt > Date.now()) {
+    return true;
+  }
+
+  // 3. Group Admin
+  if (chatId && chatId.endsWith('@g.us') && sock && typeof sock.groupMetadata === 'function') {
+    try {
+      const meta = await sock.groupMetadata(chatId);
+      const p = meta.participants?.find(m => m.id === sender || normaliseJid(m.id) === sNum);
+      if (p && (p.admin === 'admin' || p.admin === 'superadmin')) return true;
+    } catch (e) {}
+  }
+
+  return false;
 }
 
 // ── /start <botname> ─────────────────────────────────────────────────────────
 const start = {
   name: 'start',
-  description: 'Activate a bot personality in this group',
+  description: 'Activate a bot personality in this group (Mods / Admins / Pro only)',
 
   async execute(sock, msg, args, getDatabase, saveDatabase, sender) {
     const chatId = msg.key.remoteJid;
     const db = getDatabase();
+
+    if (!(await isModLevel(sock, sender, chatId, db))) {
+      return sock.sendMessage(chatId, {
+        text: '❌ Only bot owners, bot mods, Pro players, or group admins can use /start.',
+      }, { quoted: msg });
+    }
 
     const target = args[0];
     if (!target) {
@@ -81,11 +104,17 @@ const start = {
 // ── /switch <botname> ────────────────────────────────────────────────────────
 const switchBot = {
   name: 'switch',
-  description: 'Switch the active bot in this group',
+  description: 'Switch the active bot in this group (Mods / Admins / Pro only)',
 
   async execute(sock, msg, args, getDatabase, saveDatabase, sender) {
     const chatId = msg.key.remoteJid;
     const db = getDatabase();
+
+    if (!(await isModLevel(sock, sender, chatId, db))) {
+      return sock.sendMessage(chatId, {
+        text: '❌ Only bot owners, bot mods, Pro players, or group admins can use /switch.',
+      }, { quoted: msg });
+    }
 
     const target = args[0];
     if (!target) {
@@ -206,16 +235,18 @@ const hi = {
 // ── /setainame <personality> <newname> ───────────────────────────────────────
 const setainame = {
   name: 'setainame',
-  description: 'Set a custom name for a bot personality',
+  description: 'Set a custom name for a bot personality (Owners / Mods only)',
   ownerOnly: true,
 
   async execute(sock, msg, args, getDatabase, saveDatabase, sender) {
     const chatId = msg.key.remoteJid;
     const db = getDatabase();
 
-    if (!isPrivileged(sender, db)) {
+    const Perms = require('../../utils/permissions');
+    const isOwnerOrMod = Perms.isBotOwner(db, sender) || Perms.isBotMod(db, sender);
+    if (!isOwnerOrMod) {
       return sock.sendMessage(chatId, {
-        text: '❌ Only the owner or co-owner can rename bots.',
+        text: '❌ Only the bot owner, co-owner, or bot mods can rename bots.',
       }, { quoted: msg });
     }
 
@@ -316,15 +347,15 @@ const bots = {
 // ── /stopbot — deactivate all bots in this GC ────────────────────────────────
 const stopbot = {
   name: 'stopbot',
-  description: 'Deactivate all bots in this group',
+  description: 'Deactivate all bots in this group (Mods / Admins / Pro only)',
 
   async execute(sock, msg, args, getDatabase, saveDatabase, sender) {
     const chatId = msg.key.remoteJid;
     const db = getDatabase();
 
-    if (!isPrivileged(sender, db)) {
+    if (!(await isModLevel(sock, sender, chatId, db))) {
       return sock.sendMessage(chatId, {
-        text: '❌ Only the owner or co-owner can stop bots.',
+        text: '❌ Only bot owners, bot mods, Pro players, or group admins can use /stopbot.',
       }, { quoted: msg });
     }
 
