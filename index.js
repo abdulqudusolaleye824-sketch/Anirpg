@@ -1056,7 +1056,7 @@ async function startup() {
   // and don't show as "dormant".
   const ALL_PERSONALITY_KEYS = PersonalityManager.getAllPersonalities();
   const linkedKeys = [];
-  for (const key of PERSONALITY_KEYS) {
+  for (const key of ALL_PERSONALITY_KEYS) {
     if (process.env['BOT_' + key.toUpperCase()]) linkedKeys.push(key);
   }
   // Also include any personality with a saved AstraLink session (creds.json
@@ -1069,6 +1069,15 @@ async function startup() {
         if (!linkedKeys.includes(key)) linkedKeys.push(key);
       }
     } catch (e) { /* no saved session for this personality */ }
+  }
+  // Also check db.linkedBots
+  const db = getDatabase();
+  if (db && db.linkedBots) {
+    for (const key of Object.keys(db.linkedBots)) {
+      if (!linkedKeys.includes(key) && ALL_PERSONALITY_KEYS.includes(key)) {
+        linkedKeys.push(key);
+      }
+    }
   }
 
   if (linkedKeys.length === 0) {
