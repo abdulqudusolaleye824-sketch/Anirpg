@@ -9,6 +9,7 @@
 
 const { readScroll, formatScrollRead, checkMaterials } = require('../../rpg/utils/CraftingSystem');
 const SerfManager = require('../../rpg/utils/SerfManager');
+const { stripDevice } = require('../../utils/constants');
 
 module.exports = {
   name: 'scroll',
@@ -127,23 +128,34 @@ module.exports = {
     let MultiSocketManager = null;
     try { MultiSocketManager = require('../../bots/MultiSocketManager'); } catch (e) {}
 
-    const hasSerf = SerfManager.hasApprovedSerf(db, sender);
     const serf = SerfManager.getSerf(db, sender);
+    const hasSerf = !!serf;
     const serfSock = serf?.botKey && MultiSocketManager ? MultiSocketManager.getSocket(serf.botKey) : null;
     const targetSock = serfSock || (MultiSocketManager ? MultiSocketManager.getAnySocket() : null) || sock;
 
-    const dmJid = `${sender.split('@')[0]}@s.whatsapp.net`;
+    const cleanSender = stripDevice(sender);
+    const bareNum = cleanSender.split('@')[0].replace(/[^0-9]/g, '');
+
+    const candidateJids = Array.from(new Set([
+      cleanSender,
+      bareNum ? `${bareNum}@s.whatsapp.net` : null,
+      player?.jid ? stripDevice(player.jid) : null,
+      player?.id ? stripDevice(player.id) : null,
+    ].filter(Boolean)));
+
     let dmSent = false;
 
-    try {
-      await targetSock.sendMessage(dmJid, { text: fullText });
-      dmSent = true;
-    } catch (e) {
+    for (const targetJid of candidateJids) {
       try {
-        await sock.sendMessage(dmJid, { text: fullText });
+        await targetSock.sendMessage(targetJid, { text: fullText });
         dmSent = true;
-      } catch (err) {
-        dmSent = false;
+        break;
+      } catch (e) {
+        try {
+          await sock.sendMessage(targetJid, { text: fullText });
+          dmSent = true;
+          break;
+        } catch (err) {}
       }
     }
 
@@ -151,25 +163,27 @@ module.exports = {
       if (dmSent) {
         const serfText = hasSerf ? ` via your Serf` : ``;
         return sock.sendMessage(chatId, {
-          text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n📬 *RECIPE DISPATCHED TO DM*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n@${sender.split('@')[0]}, your Recipe Scroll #${idx + 1} (*${scroll.recipe.output}*) details and craft key have been sent directly to your DM${serfText}!\n\n${!hasSerf ? '💡 *Tip:* Set up an official Serf with */setserf @bot* for guaranteed DM delivery!' : ''}`,
+          text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n📬 *RECIPE DISPATCHED TO DM*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n@${sender.split('@')[0]}, your Recipe Scroll #${idx + 1} (*${scroll.recipe?.output || 'Item'}*) details and craft key have been sent directly to your DM${serfText}!\n\n${!hasSerf ? '💡 *Tip:* Set up an official Serf with */setserf @bot* for guaranteed DM delivery!' : ''}`,
           mentions: [sender]
         }, { quoted: msg });
       } else {
-        // DM blocked or failed because no Serf / non-contact DM blocked
+        // DM failed or blocked
         return sock.sendMessage(chatId, {
           text: [
             `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-            `🔒 *SERF REQUIRED FOR PRIVATE DMS*`,
+            `⚠️ *PRIVATE DM DELIVERY FAILED*`,
             `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
             ``,
-            `@${sender.split('@')[0]}, private DM delivery failed because you have not set up a Serf bot yet!`,
+            `@${sender.split('@')[0]}, WhatsApp blocked the private DM delivery!`,
             ``,
-            `⚓ *How to set up your Serf:*`,
-            `1. Run: */setserf @botname*`,
-            `2. Once approved, your Serf can send recipe scrolls, keys, and alerts directly to your DM!`,
+            `⚓ *Solution 1 (Recommended):*`,
+            `Set up your Serf with */setserf @botname* so the bot can DM you safely.`,
             ``,
-            `💡 *Or message the bot in DMs directly* and run:`,
-            `*/scroll read ${idx + 1}*`,
+            `📩 *Solution 2:*`,
+            `Send a DM directly to the bot first, or read your scroll in DM: */scroll read ${idx + 1}*`,
+            ``,
+            `📜 *Scroll Details:*`,
+            fullText,
             `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
           ].join('\n'),
           mentions: [sender]

@@ -111,7 +111,18 @@ function cancelRequest(db, playerJid) {
 }
 
 function getSerf(db, playerJid) {
-  return db?.serfs?.assignments?.[playerJid] || null;
+  if (!db?.serfs?.assignments || !playerJid) return null;
+  const assignments = db.serfs.assignments;
+  if (assignments[playerJid]) return assignments[playerJid];
+  const clean = String(playerJid).split(':')[0];
+  if (assignments[clean]) return assignments[clean];
+  const bareNumber = clean.split('@')[0].replace(/[^0-9]/g, '');
+  if (!bareNumber) return null;
+  for (const [k, v] of Object.entries(assignments)) {
+    const kBare = String(k).split(':')[0].split('@')[0].replace(/[^0-9]/g, '');
+    if (kBare === bareNumber) return v;
+  }
+  return null;
 }
 
 function getSerfBotKey(db, playerJid) {
