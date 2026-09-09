@@ -61,7 +61,67 @@ function resolveCode(code, db = null) {
   if (!keyData) return { ok: false, error: '❌ Gate code not found. Check the code and try again.' };
   if (keyData.claimed || keyData.raidComplete) return { ok: false, error: '❌ This gate key has already been cleared or claimed!' };
   if (keyData.expired || Date.now() > keyData.expiresAt) return { ok: false, error: '⚠️ This gate code has expired. The gate has collapsed.' };
-  const gate = GateManager.getGate(keyData.gateId);
+  let gate = GateManager.getGate(keyData.gateId);
+  // FIX: reconstruct gate if missing (e.g., after restart) or broken prematurely but key still valid — fixes "no longer active" for valid keys
+  if (!gate) {
+    const rank = keyData.gateRank || 'C';
+    const rd = GATE_RANKS[rank] || GATE_RANKS['E'];
+    const totalFloors = rd.floors || 5;
+    try {
+      const { MONSTER_DROPS } = require('../data/MonsterDrops');
+      const pool = (MONSTER_DROPS[rank] && MONSTER_DROPS[rank].monsters) || MONSTER_DROPS['E'].monsters;
+      const bossPool = (MONSTER_DROPS[rank] && MONSTER_DROPS[rank].bosses) || MONSTER_DROPS['E'].bosses;
+      const bossData = bossPool[Math.floor(Math.random()*bossPool.length)];
+      const monsters = [];
+      const count = totalFloors * 3;
+      const [minHp, maxHp] = rd.monsterRange || [15,45];
+      for (let i=0;i<count;i++) {
+        const monsterData = pool[Math.floor(Math.random()*pool.length)];
+        const hp = Math.floor(minHp + Math.random()*(maxHp-minHp));
+        monsters.push({ name: monsterData.name, hp, maxHp: hp, atk: Math.floor(hp*0.15), def: Math.floor(hp*0.05), floor: Math.floor(i/3)+1, defeated:false });
+      }
+      gate = {
+        id: keyData.gateId,
+        chatId: keyData.spawnChatId || keyData.dungeonChatId || 'unknown@g.us',
+        rank, rankData: rd,
+        spawnTime: keyData.purchasedAt || Date.now(),
+        breakTime: keyData.expiresAt || (Date.now()+ 7*24*60*60*1000),
+        currency: rd.currency || 'nexus',
+        isFree: false, isDisaster:false,
+        owned: true, ownedBy: keyData.guildName || null,
+        purchasedAt: keyData.purchasedAt,
+        purchasePrice: 0, manaPrice:0,
+        nexusLoot:0, crystalLoot:0,
+        cleared:false, broken:false, active:true,
+        raiders: [], guildRaiders:[], externalRaiders:[], pendingApplicants:[],
+        raidStarted:false, raidStartTime:null,
+        currentFloor:0, totalFloors,
+        monsters,
+        boss: { name: bossData.name, hp: rd.bossHp, maxHp: rd.bossHp, defeated:false },
+        bossLoot: [],
+        lootDistributed:false,
+        monstersKilled:0, damageDealt:{},
+        raid: null
+      };
+      GateManager.activeGates[gate.id] = gate;
+      if (gate.chatId && gate.chatId.endsWith('@g.us')) {
+        if (!GateManager.gatesByChat[gate.chatId]) GateManager.gatesByChat[gate.chatId]=[];
+        if (!GateManager.gatesByChat[gate.chatId].includes(gate.id)) GateManager.gatesByChat[gate.chatId].push(gate.id);
+      }
+      if (keyData.dungeonChatId && keyData.dungeonChatId !== gate.chatId) {
+        if (!GateManager.gatesByChat[keyData.dungeonChatId]) GateManager.gatesByChat[keyData.dungeonChatId]=[];
+        if (!GateManager.gatesByChat[keyData.dungeonChatId].includes(gate.id)) GateManager.gatesByChat[keyData.dungeonChatId].push(gate.id);
+      }
+    } catch (e) {
+      return { ok:false, error:'❌ This gate is no longer active. (Gate data lost — please contact admin)' };
+    }
+  }
+  // FIX: if gate was marked broken but key still valid, revive it (fixes premature break)
+  if (gate.broken && !gate.cleared && keyData && !keyData.expired && Date.now() < keyData.expiresAt && !keyData.raidComplete) {
+    gate.broken = false;
+    gate.active = true;
+    gate.breakTime = keyData.expiresAt;
+  }
   if (!gate || gate.cleared || gate.broken) return { ok: false, error: '❌ This gate is no longer active.' };
   return { ok: true, key, keyData, gate };
 }

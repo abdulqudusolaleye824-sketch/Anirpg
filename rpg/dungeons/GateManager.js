@@ -203,6 +203,7 @@ class GateManager {
     for (const gateId of (this.gatesByChat[chatId] || [])) {
       const gate = this.activeGates[gateId];
       if (!gate || gate.cleared || gate.broken) continue;
+      if (gate.purchased || gate.owned) continue; // FIX: purchased gates governed by key expiry, not break time (fixes codes expiring early)
       if (Date.now() >= gate.breakTime) {
         gate.broken = true; gate.active = false;
         if (sock) {

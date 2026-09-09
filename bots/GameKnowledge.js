@@ -79,20 +79,39 @@ Each class has a unique weapon upgrade path (see /class and the shop). Use /clas
 • Lifesteal — % of damage dealt restored as HP
 Use /stats to view. /allocate to spend points.
 
---- DUNGEONS ---
-Team raids of up to 5 players across 20 floors.
-• /party create to form a party, /party invite to add members
-• Boss every 5 floors — defeat it to advance or leave
-• 8 dungeon types with unique monsters and themes
-• Rewards: XP, Nexus, gear drops, pet eggs, quest progress
-• Use /dungeon to start (party must be formed first)
+--- DUNGEONS (Classic) vs GATES (Key) ---
+• Classic Dungeons: Team raids via /dungeon (party of 2–5, 20 floors, boss every 5 floors, 8 themed types). Use /party create then /dungeon. Rewards XP/Nexus/gear/pet eggs.
+• Gate Raids: Key-driven raids via /party create --<8-char CODE> in a registered dungeon GC. Gates have ranks E→S with fixed floors (E3/D4/C5/B6/A7/S8). Party creation follows the rules above. Combat via /gateraid <CODE> ... . Clearing a gate distributes loot and marks the key as raidComplete. Do not confuse /dungeon with /gateraid.
 
---- GATES ---
-Dimensional rifts that spawn in group chats every 25-50 minutes.
-• Gate ranks: F, E, D, C, B, A, S, plus rare DISASTER rank
-• Your awakening rank determines which gates you can enter
-• Guild leaders buy gates for guild raids with /gates buy [ID]
-• /gates apply [ID] to join; /gates to list active gates
+--- GATES — TO THE LETTER ---
+Gates are dimensional rifts that spawn randomly in registered group chats. An image + caption is posted when one appears.
+
+• Gate Ranks (weakest→strongest): E (⚫ 3F), D (🟤 4F), C (🔵 5F), B (🟢 6F), A (🟡 7F), S (🔴 8F). No F-rank, DISASTER is disabled. Rank sets price and loot.
+  - E: 3,000–6,000 Nexus only
+  - D: 8,000–16,000 Nexus only
+  - C: 20,000–40,000 Nexus only
+  - B: 50,000–100,000 Nexus + 100–300 Mana Stones
+  - A: 150,000–300,000 Nexus + 500–1,200 Mana Stones
+  - S: 500,000–1,000,000 Nexus + 2,000–5,000 Mana Stones
+  All gates break in 26h if not bought. Once bought, they do NOT break early — the key's 7–14 day stability governs expiry.
+
+• Who can buy: ONLY Guild Officers (Guildmaster / Vice GM / Officer of your guild) or a Granted Affiliate, AND you must have an approved Serf (@bot via /setserf) to receive the key DM. Costs are taken from guild treasury first (if officer), otherwise your wallet. Reply to the gate spawn image with /gate buy (or /gates buy). If multiple gates are active, you must reply to the specific gate image.
+
+• What you get: an 8-character GATE KEY (A-Z/2-9, e.g. MPQRQTH8). The key is stored under you and is stable for a random 7–14 days from purchase. Expiry is precise to the minute. The bot DMs the key via your Serf (📬 via serf bot). Do NOT share the code if you want to keep it private.
+
+• Where to use: Go to a registered DUNGEON GC (a group registered via /setdungeon by the owner/co-owner). Then run /party create --<CODE> (note the double dash). The bot creates:
+  - Solo hunters (no guild + no affiliate) → instant SOLO raid, skip party.
+  - Guild members → GUILD PARTY for your guild (only guild members or affiliates of that guild can /party join).
+  - Affiliates → AFFILIATE PARTY (only solo hunters can join).
+  Party: /party join <CODE>, /party ready, leader /party raid. Combat: /gateraid <CODE> attack|skill|status|boss. Loot is split per rank.
+
+• Viewing keys: /gate keys (aliases /gate key list, /gate keylist) lists YOUR UNUSED keys — not expired, not cleared. Each entry shows: Rank emoji+label, Code, Guild, Bought (WAT), Expires (WAT), Time left (e.g. 5d 16h 23m — days/hours/minutes). The list is sent to the group AND also DM'd to you via your Serf.
+  /gate status --<CODE> shows a single key: owner, guild, time remaining, status (unused / raid in progress / cleared / expired), party size.
+  /gate (or /gate list) lists ACTIVE gates in the current chat.
+
+• Expiry & validity: /party create validates the code: invalid format → error, not found → error, already cleared/claimed → error, expired (keyData.expired or now > expiresAt) → "gate has collapsed", gate object cleared/broken → "no longer active". If a gate object was lost due to a restart, the system reconstructs it from the valid key so the code still works until its key expiry. Clearing a key is final.
+
+• /clear (admin): /clear then /clear confirm wipes EVERYTHING — players, banks, guilds, invites, bans, cooldowns, pets, quests, AND gate keys + dungeon GCs + affiliates (both DB and in-memory). After this, you must /register again and re-obtain gates. Gate keys do NOT survive a clear.
 
 --- PvP ---
 Challenge other hunters to 1v1 combat.
@@ -148,10 +167,15 @@ Two currencies: Nexus 💠 and Mana Stones 💎.
 • Bundles: Starter Pack, Dungeon Kit, PvP Bundle, Mana Stone Bundle, Mega Pack
 
 --- GUILDS ---
-• /guild create [name] — costs Nexus + Mana Stones, requires level 20
-• /guild invite @user / /guild join [name] / /guild leave
-• /guild info — view stats
-• Guilds can buy gates and compete in guild wars
+• /guild create [name] — costs Nexus + Mana Stones, requires level 20. Creates with 10 slots (upgrade to 50 via /guild upgrade).
+• /guild request [guild name] — apply to a guild; your profile/stats are DM'd to the Guildmaster/Vice GM via their Serf. They hire you with /guild hire @you <nexus> <mana> || <weeks>.
+• /guild hire @user <nexus> | <mana> || <weeks> — officer offer (GM/Vice only), 5-min expiry. Candidate uses /guild accept or /guild decline.
+• /guild promote @user <officer|vice> or /guild promote vice @user — promote member. Officer can promote to Officer; ONLY Guildmaster can promote to Vice. Both syntax orders work (vice @user and @user vice).
+• /guild leave, /guild disband (leader), /guild info, /guild members, /guild list, /guild upgrade (size/shop), /guild shop, /guild deposit/withdraw (treasury is guild bank).
+• Guild DMs (applications) are sent ONLY via the leader's Serf — if the leader has no Serf or it's offline, no DM is sent and the applicant is warned in the group.
+
+--- CLEAR (Admin) ---
+• /clear then /clear confirm — wipes ALL data including gate keys, dungeon GC registrations, affiliates, guilds, banks, players. Gate keys bought yesterday will NOT survive a clear — they are deleted from DB and memory. This is intentional (nuclear reset).
 
 --- PETS ---
 Pets hatch from eggs found in dungeons (after level 3).

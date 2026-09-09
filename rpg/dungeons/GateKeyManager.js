@@ -326,9 +326,13 @@ function getKey(key, db = null) {
 }
 
 function formatStability(ms) {
-  const days  = Math.floor(ms / 86400000);
-  const hours = Math.floor((ms % 86400000) / 3600000);
-  return days > 0 ? `${days}d ${hours}h` : `${hours}h`;
+  const totalMs = Math.max(0, ms);
+  const days  = Math.floor(totalMs / 86400000);
+  const hours = Math.floor((totalMs % 86400000) / 3600000);
+  const minutes = Math.floor((totalMs % 3600000) / 60000);
+  if (days > 0) return `${days}d ${hours}h ${minutes}m`;
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  return `${minutes}m`;
 }
 
 module.exports = {

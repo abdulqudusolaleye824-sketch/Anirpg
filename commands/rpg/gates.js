@@ -73,10 +73,14 @@ const gate = {
       allKeys.forEach(([key, k], i) => {
         const rd = GATE_RANKS[k.gateRank] || { emoji: '🚪', label: `${k.gateRank}-Rank` };
         const timeLeft = GKM.formatStability(Math.max(0, k.expiresAt - Date.now()));
+        const boughtAt = k.purchasedAt ? new Date(k.purchasedAt).toUTCString().replace(' GMT', ' WAT') : 'Unknown';
+        const expiresAtStr = k.expiresAt ? new Date(k.expiresAt).toUTCString().replace(' GMT', ' WAT') : 'Unknown';
         lines.push(`${i + 1}. ${rd.emoji} *${rd.label}*`);
         lines.push(`   🔑 Code: \`${key}\``);
         lines.push(`   🏰 Guild: *${k.guildName || 'Solo/Affiliate'}*`);
-        lines.push(`   ⏳ Expires in: *${timeLeft}*`);
+        lines.push(`   🕒 Bought: *${boughtAt}*`);
+        lines.push(`   ⏳ Expires: *${expiresAtStr}*`);
+        lines.push(`   ⏱️ Time left: *${timeLeft}*`);
         lines.push(``);
       });
 
@@ -86,7 +90,20 @@ const gate = {
       lines.push(`/party create --<CODE>`);
       lines.push(`━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
 
-      return sock.sendMessage(chatId, { text: lines.join('\n') }, { quoted: msg });
+      const fullText = lines.join('\n');
+      // FIX: also DM the list to user's serf (user requested DM copy)
+      try {
+        const MSM = require('../../bots/MultiSocketManager');
+        const serf = SerfManager.getSerf(db, sender);
+        const serfSock = serf?.botKey ? MSM.getSocket(serf.botKey) : null;
+        const dmSock = serfSock || sock;
+        // Only DM if chat is a group (avoid duplicate in DM)
+        if (chatId.endsWith('@g.us') && dmSock) {
+          await dmSock.sendMessage(sender, { text: fullText }).catch(()=>{});
+        }
+      } catch (e) {}
+
+      return sock.sendMessage(chatId, { text: fullText }, { quoted: msg });
     }
 
     // ── /gate (list) ──────────────────────────────────────────────────────────
@@ -208,6 +225,7 @@ const gate = {
       gateObj.owned       = true;
       gateObj.purchasedBy = sender;
       gateObj.keyId       = result.key;
+      gateObj.breakTime   = result.keyData.expiresAt; // FIX: sync gate break with key expiry (fixes "no longer active" before key expires)
 
       const rd          = GATE_RANKS[gateObj.rank];
       const stability   = GKM.formatStability(result.stabilityMs);

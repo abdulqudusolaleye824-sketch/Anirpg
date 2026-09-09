@@ -128,7 +128,29 @@ To cancel, just don't type anything.
       db.bypassCooldowns = {};
       db.banlist         = {};
       db.christmasEvent  = {};
+      db.gateKeys        = {};
+      db.dungeonGCs      = {};
+      db.affiliates      = {};
+      db.gateSpawns      = {};
+      db.pendingGuildHires = {};
       db.botMods = ['221951679328499@lid', '194592469209292@lid'];
+
+      // FIX: clear in-memory GateKeyManager & GateManager state (fixes /clear not clearing gate keys)
+      try {
+        const GKM = require('../../rpg/dungeons/GateKeyManager');
+        if (GKM.activeKeys) Object.keys(GKM.activeKeys).forEach(k=>delete GKM.activeKeys[k]);
+        if (GKM.dungeonGCs) Object.keys(GKM.dungeonGCs).forEach(k=>delete GKM.dungeonGCs[k]);
+        if (GKM.affiliates) Object.keys(GKM.affiliates).forEach(k=>delete GKM.affiliates[k]);
+      } catch (e) {}
+      try {
+        const { GateManager } = require('../../rpg/dungeons/GateManager');
+        if (GateManager.activeGates) Object.keys(GateManager.activeGates).forEach(k=>delete GateManager.activeGates[k]);
+        GateManager.gatesByChat = {};
+      } catch (e) {}
+      try {
+        const GR = require('../../rpg/dungeons/GateRaid');
+        // clear any raid gate references held in GateManager (already cleared above)
+      } catch (e) {}
 
       const dataDir = pathLib.join(__dirname, '../../rpg/data');
       ['achievements.json', 'playerPets.json', 'playerQuests.json'].forEach(file => {
