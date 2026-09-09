@@ -371,13 +371,35 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
 
     if (_isOwnBotNumber(bareSender, getDatabase)) return;
 
+    const config = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'config.json'), 'utf-8'));
+    const isCommand = messageText.startsWith(config.prefix);
+
+    const commandName = isCommand
+      ? messageText.slice(config.prefix.length).trim().split(/\s+/)[0].toLowerCase()
+      : '';
+
     // Active bot check with automatic offline fallback
     const rawActiveKey = isGroup ? PersonalityManager.getActiveBot(chatId) : null;
     const isOnlineActive = rawActiveKey && !!botSockets[rawActiveKey]?.user?.id;
     const activeKey = isOnlineActive ? rawActiveKey : null;
 
+    // Check if command is targeting a specific bot personality (e.g. /switch gojo or /start gojo)
+    let isTargetMentionedBot = false;
+    let hasOnlineTargetBot = false;
+    if (isGroup && isCommand && (commandName === 'switch' || commandName === 'start')) {
+      const parts = messageText.slice(config.prefix.length).trim().split(/\s+/);
+      const targetArg = parts[1];
+      if (targetArg) {
+        const resolvedTarget = PersonalityManager.resolvePersonality(targetArg);
+        if (resolvedTarget && botSockets[resolvedTarget]?.user?.id) {
+          hasOnlineTargetBot = true;
+          isTargetMentionedBot = (personalityKey === resolvedTarget);
+        }
+      }
+    }
+
     const isActive = isGroup
-      ? (activeKey ? activeKey === personalityKey : _bootstrapDispatcher(personalityKey, chatId))
+      ? (isTargetMentionedBot || (!hasOnlineTargetBot && (activeKey ? activeKey === personalityKey : _bootstrapDispatcher(personalityKey, chatId))))
       : true;
 
     if (isGroup) {
@@ -392,12 +414,6 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
       } catch (e) { /* best effort */ }
     }
 
-    const config = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'config.json'), 'utf-8'));
-    const isCommand = messageText.startsWith(config.prefix);
-
-    const commandName = isCommand
-      ? messageText.slice(config.prefix.length).trim().split(/\s+/)[0].toLowerCase()
-      : '';
     const BOOTSTRAP_COMMANDS = new Set([
       'start', 'switch', 'stopbot', 'bots', 'setainame', 'hi',
       'link', 'unlink', 'help', 'menu', 'restart', 'groupstatus', 'gstatus', 'set', 'setgroup'
