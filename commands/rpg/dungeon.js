@@ -33,7 +33,7 @@ const SerfManager = require('../../rpg/utils/SerfManager');
 
 async function notifyAchievements(sock, playerId, player, achievements) {
   if (!achievements?.length) return;
-  const n = AchievementManager.buildNotification(achievements, db.users[playerId] || {name: playerId.split('@')[0], id: playerId});
+  const n = AchievementManager.buildNotification(achievements, player);
   if (n) {
     const targetJid = playerId.includes('@') ? playerId : `${playerId}@s.whatsapp.net`;
     try { await sock.sendMessage(targetJid, { text: n }); } catch(e) {}
