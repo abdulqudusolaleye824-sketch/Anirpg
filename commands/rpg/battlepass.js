@@ -10,6 +10,7 @@
 'use strict';
 
 const { renderBattlePassImage } = require('../../rpg/utils/PassRenderer');
+const ButtonHelper = (()=>{ try { return require('../../utils/buttonHelper'); } catch(e){ return null; } })();
 
 const TOTAL_TIERS = 40;
 const BP_COST_PC = 1000;
@@ -303,7 +304,24 @@ module.exports = {
       `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
     ];
 
+    // ── Build Next/Prev buttons (and Claim) ────────────────────────
+    let bpButtons = null;
+    try {
+      if (ButtonHelper?.buildPassButtons) {
+        bpButtons = ButtonHelper.buildPassButtons(page, 4, 'bp');
+      }
+    } catch {}
+
     if (imageBuffer) {
+      if (bpButtons && ButtonHelper?.sendWithButtons) {
+        return ButtonHelper.sendWithButtons(sock, chatId, {
+          image: imageBuffer,
+          caption: captionLines.join('\n'),
+          mimetype: 'image/png',
+          footer: `Page ${page}/4 • Tier ${bp.level}/${TOTAL_TIERS}`,
+          page
+        }, bpButtons, msg);
+      }
       return sock.sendMessage(chatId, {
         image: imageBuffer,
         caption: captionLines.join('\n'),
@@ -311,6 +329,12 @@ module.exports = {
       }, { quoted: msg });
     }
 
+    if (bpButtons && ButtonHelper?.sendWithButtons) {
+      return ButtonHelper.sendWithButtons(sock, chatId, {
+        text: captionLines.join('\n'),
+        footer: `Page ${page}/4 • Tier ${bp.level}/${TOTAL_TIERS}`
+      }, bpButtons, msg);
+    }
     return sock.sendMessage(chatId, { text: captionLines.join('\n') }, { quoted: msg });
   }
 };

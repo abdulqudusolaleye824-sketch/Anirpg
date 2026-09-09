@@ -28,6 +28,7 @@ const SerfManager        = require('../rpg/utils/SerfManager');
 const Perms              = require('../utils/permissions');
 const QRCode             = require('qrcode');
 const QRTerminal = (()=>{ try { return require('qrcode-terminal'); } catch(e){ return null; } })();
+const ButtonHelper = (()=>{ try { return require('../utils/buttonHelper'); } catch(e){ return null; } })();
 
 const botSockets = {};
 const pairingSessions = {};
@@ -266,6 +267,24 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
     retryRequestDelayMs: 3_000,       // Auto retry failed stanzas after 3s
     maxMsgRetryCount: 5,              // Retry stanzas up to 5 times
     getMessage: async () => ({ conversation: '' }),
+    // Enable buttons/templateMessages/buttonsMessage (required for Baileys 6+)
+    patchMessageBeforeSending: (msg) => {
+      try {
+        if (ButtonHelper?.patchMessageBeforeSending) return ButtonHelper.patchMessageBeforeSending(msg);
+      } catch {}
+      const requiresPatch = !!(msg.buttonsMessage || msg.templateMessage || msg.listMessage || msg.templateButtons || msg.buttons);
+      if (requiresPatch) {
+        return {
+          viewOnceMessage: {
+            message: {
+              messageContextInfo: { deviceListMetadataVersion: 2, deviceListMetadata: {} },
+              ...msg,
+            },
+          },
+        };
+      }
+      return msg;
+    },
   });
 
   let pairingCodeRequested = false;
@@ -477,6 +496,8 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
       msg.message.buttonsResponseMessage?.selectedButtonId ||
       msg.message.listResponseMessage?.singleSelectReply?.selectedRowId ||
       msg.message.templateButtonReplyMessage?.selectedId ||
+      msg.message.interactiveResponseMessage?.nativeFlowResponseMessage?.paramsJson && (()=>{ try { const p=JSON.parse(msg.message.interactiveResponseMessage.nativeFlowResponseMessage.paramsJson); return p.id || p.display_text || ''; } catch{ return ''; } })() ||
+      msg.message.buttonsResponseMessage?.selectedDisplayText ||
       '';
 
     const db = getDatabase();
@@ -521,8 +542,12 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
           const isTargetOnline = targetSock?.user?.id && targetSock.ws?.readyState === 1;
 
           if (!isTargetOnline) {
-            // STRICT RULE: "if the bot mentioned is dead silence should be observed"
-            // Mentioned target bot is offline/dead -> SILENCE IS OBSERVED! NO BOT RESPONDS!
+            // FIX: Instead of silent ignore, tell user the bot is offline
+            try {
+              await sock.sendMessage(chatId, {
+                text: `⚠️ *${resolvedTarget}* is offline / not linked.\n\n📋 *Online bots:* ${Object.keys(botSockets).filter(k=>botSockets[k]?.user?.id).join(', ') || 'none'}\n\nTry */bots* to see all personalities.`,
+              }, { quoted: msg });
+            } catch (e) { console.error('offline target reply fail:', e.message); }
             return;
           }
 
@@ -638,14 +663,20 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
       if (isGroup) {
         shouldHandle = isActive || (isBootstrap && _bootstrapDispatcher(personalityKey, chatId));
       } else {
-        // DM Handling: ONLY Bot Owners, Co-Owners, and Bot Mods can use commands in DM (no exceptions for Pro or regular users)
-        shouldHandle = Perms.isBotOwner(db, sender) || Perms.isBotMod(db, sender);
+        // DM Handling: FIX — always delegate to handler so users get a visible error
+        // instead of silent ignore. Handler does the Perms check and replies:
+        // "COMMANDS DISABLED IN DM" or "PLAYER COMMANDS DISABLED IN DM".
+        // This fixes the "DMs being ignored" bug where non-mods got complete silence.
+        shouldHandle = true;
       }
       if (shouldHandle) {
         try {
           await options.rpgCommandHandler(sock, msg, messageText, config, getDatabase, saveDatabase);
         } catch (e) {
           console.error(`❌ [${displayName}] command handler error:`, e.message);
+          try {
+            await sock.sendMessage(chatId, { text: `❌ Error: ${e.message}` }, { quoted: msg });
+          } catch {}
         }
       }
       return;

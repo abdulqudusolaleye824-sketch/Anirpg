@@ -586,7 +586,19 @@ module.exports = async (sock, msg, messageText, config, getDatabase, saveDatabas
   }
 
   const PersonalityManager = require('../bots/PersonalityManager');
-  const activeKey = chatId.endsWith('@g.us') ? PersonalityManager.getActiveBot(chatId) : null;
+  // ── FIX: Active bot failover — if stored active bot is offline/dead, treat as null and auto-assign
+  let activeKey = chatId.endsWith('@g.us') ? PersonalityManager.getActiveBot(chatId) : null;
+  if (activeKey) {
+    try {
+      const MSM = require('../bots/MultiSocketManager');
+      const s = MSM.getSocket(activeKey);
+      const isOnline = s?.user?.id && s.ws?.readyState === 1;
+      if (!isOnline) {
+        console.log(`🔄 Active bot ${activeKey} is offline in ${chatId}, clearing for failover`);
+        activeKey = null;
+      }
+    } catch (e) { /* ignore — keep activeKey */ }
+  }
 
   const BOOTSTRAP_COMMANDS = new Set([
     'start', 'switch', 'stop', 'stopbot', 'bots', 'hi', 'setainame',
@@ -597,13 +609,42 @@ module.exports = async (sock, msg, messageText, config, getDatabase, saveDatabas
   ]);
 
   if (chatId.endsWith('@g.us') && !activeKey && !BOOTSTRAP_COMMANDS.has(commandName) && !BOOTSTRAP_COMMANDS.has(resolvedCommand)) {
-    return sock.sendMessage(
-      chatId,
-      {
-        text: `💤 *NO BOT ACTIVE IN THIS GROUP*\n\nBot commands require an active bot in this group chat.\nUse */start <botname>* to activate a bot personality!\n\n📋 Type */bots* to see available personalities.`
-      },
-      { quoted: msg }
-    );
+    // FIX: Auto-activate failover instead of blocking — fixes "bot not responding in gcs"
+    let failoverKey = null;
+    try {
+      const MSM = require('../bots/MultiSocketManager');
+      if (MSM.getFirstOnlineSocketKey) failoverKey = MSM.getFirstOnlineSocketKey();
+      if (!failoverKey && MSM.getAllSockets) {
+        const all = MSM.getAllSockets();
+        failoverKey = Object.keys(all).find(k => all[k]?.user?.id && all[k].ws?.readyState === 1) || null;
+      }
+      // Also try any key that is marked present in this group
+      if (!failoverKey) {
+        try {
+          const present = PersonalityManager.getPresentBots?.(chatId);
+          if (present && present.size) failoverKey = [...present][0];
+        } catch {}
+      }
+    } catch (e) {}
+    if (failoverKey) {
+      try {
+        PersonalityManager.activateBot(chatId, failoverKey);
+        console.log(`🔄 Auto-activated ${failoverKey} in ${chatId} (no active bot, failover)`);
+        activeKey = failoverKey;
+        // allow command to continue instead of blocking
+      } catch (e) {
+        console.error('Auto-activate failover error:', e.message);
+      }
+    }
+    if (!activeKey) {
+      return sock.sendMessage(
+        chatId,
+        {
+          text: `💤 *NO BOT ACTIVE IN THIS GROUP*\n\nBot commands require an active bot in this group chat.\nUse */start <botname>* to activate a bot personality!\n\n📋 Type */bots* to see available personalities.`
+        },
+        { quoted: msg }
+      );
+    }
   }
 
   const AstralGroups = require('../rpg/utils/AstralGroups');

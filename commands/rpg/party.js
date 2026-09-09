@@ -17,6 +17,7 @@
 const GR = require('../../rpg/dungeons/GateRaid');
 const GKM = require('../../rpg/dungeons/GateKeyManager');
 const { GATE_RANKS } = require('../../rpg/dungeons/GateManager');
+const ButtonHelper = (()=>{ try { return require('../../utils/buttonHelper'); } catch(e){ return null; } })();
 
 function normaliseJid(jid) {
   return GKM.normaliseJid(jid);
@@ -120,8 +121,7 @@ module.exports = {
         saveDatabase();
 
         const rd = GATE_RANKS[keyData.gateRank] || GATE_RANKS['E'];
-        return sock.sendMessage(chatId, {
-          text: [
+        const affText = [
             `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
             `👥 *AFFILIATE PARTY CREATED!*`,
             `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
@@ -130,13 +130,21 @@ module.exports = {
             `🏰 Guild: *${affData.guildName}*`,
             ``,
             `📌 *PARTY ACCESS RULE:*`,
-            `• Hunters WITHOUT guilds (solo) can join using */party join ${key}*`,
+            `• Hunters WITHOUT guilds (solo) can join — tap Join below!`,
             `• Hunters in guilds CANNOT join affiliate-led parties.`,
             `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
             `📌 Run */party ready* when ready. Leader uses */party raid* to launch!`,
             `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-          ].join('\n'),
-        }, { quoted: msg });
+          ].join('\n');
+        try {
+          if (ButtonHelper?.buildPartyJoinButton) {
+            const buttons = ButtonHelper.buildPartyJoinButton(key);
+            if (ButtonHelper.sendWithButtons) {
+              return await ButtonHelper.sendWithButtons(sock, chatId, { text: affText, footer: `Affiliate Party • ${key}` }, buttons, msg);
+            }
+          }
+        } catch(e){ console.error('Party button error:', e.message); }
+        return sock.sendMessage(chatId, { text: affText }, { quoted: msg });
       }
 
       // ── SCENARIO C: Guild Member User ─────────────────────────────
@@ -157,8 +165,7 @@ module.exports = {
       saveDatabase();
 
       const rd = GATE_RANKS[keyData.gateRank] || GATE_RANKS['E'];
-      return sock.sendMessage(chatId, {
-        text: [
+      const guildText = [
           `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
           `👥 *GUILD PARTY CREATED!*`,
           `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
@@ -167,12 +174,20 @@ module.exports = {
           `🏰 Guild: *${playerGuild}*`,
           ``,
           `📌 *PARTY ACCESS RULE:*`,
-          `• Members of *${playerGuild}* or assigned affiliates can join using */party join ${key}*`,
+          `• Members of *${playerGuild}* or assigned affiliates — tap Join below!`,
           `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
           `📌 Run */party ready* when ready. Leader uses */party raid* to launch!`,
           `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-        ].join('\n'),
-      }, { quoted: msg });
+        ].join('\n');
+      try {
+        if (ButtonHelper?.buildPartyJoinButton) {
+          const buttons = ButtonHelper.buildPartyJoinButton(key);
+          if (ButtonHelper.sendWithButtons) {
+            return await ButtonHelper.sendWithButtons(sock, chatId, { text: guildText, footer: `Guild Party • ${key} • ${playerGuild}` }, buttons, msg);
+          }
+        }
+      } catch(e){ console.error('Party button error:', e.message); }
+      return sock.sendMessage(chatId, { text: guildText }, { quoted: msg });
     }
 
     // ═══════════════════════════════════════════════════════════════
