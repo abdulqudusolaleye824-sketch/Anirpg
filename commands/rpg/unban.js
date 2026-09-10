@@ -62,11 +62,5 @@ module.exports = {
       ].join('\n'),
       mentions: mentionedJid ? [targetId, sender] : [sender],
     }, { quoted: msg });
-
-    try {
-      await sock.sendMessage(targetId, {
-        text: '✅ You have been *unbanned*. You can use the bot again.',
-      });
-    } catch (_) {}
   },
 };

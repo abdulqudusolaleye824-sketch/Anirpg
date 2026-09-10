@@ -39,8 +39,60 @@ module.exports = {
     const action   = args[0]?.toLowerCase();
 
     // ═══════════════════════════════════════
-    // 🏆 USE GUILD VICTORY CARDS (GVC)
+    // 🛠️ USE MENDING STONE
     // ═══════════════════════════════════════
+    if (action === 'mending' || fullText.includes('mending')) {
+      const items = player.inventory?.items || [];
+      const mendingIdx = items.findIndex(i => i.name && i.name.toLowerCase().includes('mending'));
+      const hasDirectCount = (player.inventory?.mendingStones || 0) > 0;
+
+      if (mendingIdx === -1 && !hasDirectCount) {
+        return sock.sendMessage(chatId, {
+          text: '❌ You do not have a Mending Stone!\n\nMending Stones restore gear durability to 100% and can be found in Daily System Item Drops or Gate Raids.'
+        }, { quoted: msg });
+      }
+
+      if (mendingIdx !== -1) {
+        player.inventory.items.splice(mendingIdx, 1);
+      } else if (hasDirectCount) {
+        player.inventory.mendingStones--;
+      }
+
+      // Restore durability on equipped gear & inventory gear
+      const slots = ['weapon', 'armor', 'helmet', 'accessory', 'boots', 'ring'];
+      let repairedCount = 0;
+
+      for (const slot of slots) {
+        for (const gearMap of [player.equipped, player.gear, player.equippedGear]) {
+          if (gearMap && gearMap[slot]) {
+            const g = gearMap[slot];
+            g.durability = g.maxDurability || 100;
+            repairedCount++;
+          }
+        }
+      }
+
+      for (const item of (player.inventory?.items || [])) {
+        if (item.isGear || item.type === 'gear' || item.maxDurability) {
+          item.durability = item.maxDurability || 100;
+          repairedCount++;
+        }
+      }
+
+      saveDatabase();
+
+      return sock.sendMessage(chatId, {
+        text: [
+          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          `✨ *MENDING STONE USED!* ✨`,
+          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          `👤 Hunter: *${player.name}*`,
+          ``,
+          `🛠️ *Gear Restored:* Repaired durability to 100% on ${repairedCount > 0 ? repairedCount + ' gear items' : 'all gear'}!`,
+          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        ].join('\n'),
+      }, { quoted: msg });
+    }
     if (action === 'gvc' || action === 'gvc_gold' || action === 'gvc_silver' || action === 'gvc_bronze' ||
         fullText.includes('gold') || fullText.includes('silver') || fullText.includes('bronze')) {
 
