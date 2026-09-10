@@ -737,17 +737,19 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
       } catch (e) { /* best effort */ }
     }
 
-    // ── RPG Command handling (Active bot only) ─────────────────────────
+    // ── RPG Command handling ──────────────────────────────────────────
     if (isCommand && options.rpgCommandHandler) {
       let shouldHandle = false;
       if (isGroup) {
         shouldHandle = isActive || (isBootstrap && _bootstrapDispatcher(personalityKey, chatId));
       } else {
-        // DM Handling: FIX — always delegate to handler so users get a visible error
-        // instead of silent ignore. Handler does the Perms check and replies:
-        // "COMMANDS DISABLED IN DM" or "PLAYER COMMANDS DISABLED IN DM".
-        // This fixes the "DMs being ignored" bug where non-mods got complete silence.
-        shouldHandle = true;
+      if (isGroup) {
+        shouldHandle = isActive || (isBootstrap && _bootstrapDispatcher(personalityKey, chatId));
+      } else {
+        // DM Handling: Route DM command to the host socket so it always responds cleanly
+        const hostKey = getHostKey() || getFirstOnlineSocketKey();
+        shouldHandle = (personalityKey === hostKey);
+      }
       }
       if (shouldHandle) {
         try {

@@ -109,6 +109,14 @@ const start = {
       }, { quoted: msg });
     }
 
+    if (!db.registeredGCs) db.registeredGCs = {};
+    db.registeredGCs[chatId] = {
+      registeredAt: Date.now(),
+      activeBot: result.personalityKey,
+      registeredBy: sender
+    };
+    saveDatabase();
+
     const info = PersonalityManager.getPersonalityInfo(result.personalityKey);
     const text = [
       `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
@@ -142,15 +150,13 @@ const switchBot = {
     }
 
     const current = PersonalityManager.getActiveBot(chatId);
-    // If no current, treat /switch as /start (auto-activate) for UX
-    let currentOnline = false;
-    try { const MSM = require('../../bots/MultiSocketManager'); const s = MSM.getSocket(current); currentOnline = !!(s?.user?.id); } catch {}
-    if (!current || !currentOnline) {
-      // No active or active is offline — allow switch as start
-      // fall through to activation logic below
-      if (!current) {
-        // will be handled as fresh activation
-      }
+    const current = PersonalityManager.getActiveBot(chatId);
+    const isRegisteredGC = db.registeredGCs && db.registeredGCs[chatId];
+    if (!current || !isRegisteredGC) {
+      return sock.sendMessage(chatId, {
+        text: '❌ No bot is currently active or registered in this group!\nUse /start <botname> first to register and activate a bot.',
+      }, { quoted: msg });
+    }
     }
 
     const target = args[0];
