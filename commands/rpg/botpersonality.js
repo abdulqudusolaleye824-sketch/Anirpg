@@ -150,13 +150,11 @@ const switchBot = {
     }
 
     const current = PersonalityManager.getActiveBot(chatId);
-    const current = PersonalityManager.getActiveBot(chatId);
     const isRegisteredGC = db.registeredGCs && db.registeredGCs[chatId];
     if (!current || !isRegisteredGC) {
       return sock.sendMessage(chatId, {
         text: '❌ No bot is currently active or registered in this group!\nUse /start <botname> first to register and activate a bot.',
       }, { quoted: msg });
-    }
     }
 
     const target = args[0];

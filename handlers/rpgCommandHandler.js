@@ -608,7 +608,6 @@ module.exports = async (sock, msg, messageText, config, getDatabase, saveDatabas
       { quoted: msg }
     );
   }
-  }
 
   const AstralGroups = require('../rpg/utils/AstralGroups');
   const manageCmds = new Set([
