@@ -272,12 +272,12 @@ function getAllSockets() {
 
 function _bootstrapDispatcher(personalityKey, chatId) {
   const active = PersonalityManager.getActiveBot(chatId);
-  if (active && botSockets[active]?.user?.id && botSockets[active]?.ws?.readyState === 1) {
+  if (active && botSockets[active]?.user?.id) {
     return active === personalityKey;
   }
 
   const sockets = getAllSockets();
-  const keys = Object.keys(sockets).filter(k => !!(sockets[k]?.user?.id && sockets[k]?.ws?.readyState === 1)).sort();
+  const keys = Object.keys(sockets).filter(k => !!sockets[k]?.user?.id).sort();
   if (keys.length === 0) return false;
 
   const chosenKey = keys.includes(personalityKey) ? personalityKey : keys[0];
@@ -474,7 +474,7 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
       botSockets[personalityKey] = sock;
       const jid = sock.user?.id || null;
 
-      if (!hostBotKey || !botSockets[hostBotKey] || botSockets[hostBotKey].ws?.readyState !== 1) {
+      if (!hostBotKey || !botSockets[hostBotKey] || !botSockets[hostBotKey]?.user?.id) {
         hostBotKey = personalityKey;
         console.log(`🌟 AstraLink Host assigned to live bot: [${displayName}]`);
       }
@@ -743,13 +743,9 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
       if (isGroup) {
         shouldHandle = isActive || (isBootstrap && _bootstrapDispatcher(personalityKey, chatId));
       } else {
-      if (isGroup) {
-        shouldHandle = isActive || (isBootstrap && _bootstrapDispatcher(personalityKey, chatId));
-      } else {
         // DM Handling: Route DM command to the host socket so it always responds cleanly
         const hostKey = getHostKey() || getFirstOnlineSocketKey();
         shouldHandle = (personalityKey === hostKey);
-      }
       }
       if (shouldHandle) {
         try {
