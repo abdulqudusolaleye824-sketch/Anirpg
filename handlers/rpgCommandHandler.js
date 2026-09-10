@@ -226,6 +226,19 @@ function cleanJid(jid) {
 }
 
 module.exports = async (sock, msg, messageText, config, getDatabase, saveDatabase) => {
+  const chatId = cleanJid(msg.key.remoteJid);
+
+  const OfflineBackupManager = require('../rpg/utils/OfflineBackupManager');
+  if (OfflineBackupManager.isLockdown()) {
+    return sock.sendMessage(
+      chatId,
+      {
+        text: OfflineBackupManager.getLockdownMessage()
+      },
+      { quoted: msg }
+    );
+  }
+
   const args = messageText.slice(config.prefix.length).trim().split(/ +/);
   const commandName = args.shift()?.toLowerCase();
 
@@ -245,7 +258,6 @@ module.exports = async (sock, msg, messageText, config, getDatabase, saveDatabas
     : msg.key.remoteJid;
 
   const sender = cleanJid(rawSender);
-  const chatId = cleanJid(msg.key.remoteJid);
 
   const isValidSender = isGroup
     ? !!sender

@@ -1010,6 +1010,19 @@ async function startup() {
     console.error('⚠️ Could not restore personality mappings:', e.message);
   }
 
+  // ── Offline 3-Day Database Backup & Daily Item Spawner Schedulers ────
+  try {
+    const OfflineBackupManager = require('./rpg/utils/OfflineBackupManager');
+    OfflineBackupManager.startScheduler(getDatabase, saveDatabase);
+    console.log('🔒 Offline 3-day database backup scheduler initialized');
+
+    const DailyItemSpawner = require('./handlers/itemSpawner');
+    DailyItemSpawner.startScheduler(MultiSocketManager, getDatabase, saveDatabase);
+    console.log('📦 Daily item spawner scheduler initialized');
+  } catch (e) {
+    console.error('⚠️ Scheduler init error:', e.message);
+  }
+
   setInterval(() => {
     try {
       GateKeyManager.checkExpiredKeys(null, getDatabase(), saveDatabase);
