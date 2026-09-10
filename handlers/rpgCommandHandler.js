@@ -36,11 +36,17 @@ const cctvCmds = {
 const CHUNK_SIZE = 3500;
 
 async function sendChunked(sock, chatId, text, options = {}) {
-  if (!text || text.length <= CHUNK_SIZE) {
-    return sock.sendMessage(chatId, { text, ...options });
-  }
   const cleanOptions = { ...options };
   delete cleanOptions.text;
+
+  if (!text || text.length <= CHUNK_SIZE) {
+    try {
+      return await sock.sendMessage(chatId, { text, ...cleanOptions });
+    } catch (e) {
+      delete cleanOptions.quoted;
+      return await sock.sendMessage(chatId, { text, ...cleanOptions });
+    }
+  }
 
   const parts = [];
   let remaining = text;
@@ -55,11 +61,19 @@ async function sendChunked(sock, chatId, text, options = {}) {
 
   for (let i = 0; i < parts.length; i++) {
     const isFirst = i === 0;
-    await sock.sendMessage(chatId, {
-      ...cleanOptions,
-      text: parts[i] + (parts.length > 1 ? `\n_(${i+1}/${parts.length})_` : ''),
-      ...(isFirst ? options.quoted ? { quoted: options.quoted } : {} : {})
-    });
+    try {
+      await sock.sendMessage(chatId, {
+        ...cleanOptions,
+        text: parts[i] + (parts.length > 1 ? `\n_(${i+1}/${parts.length})_` : ''),
+        ...(isFirst ? options.quoted ? { quoted: options.quoted } : {} : {})
+      });
+    } catch (e) {
+      delete cleanOptions.quoted;
+      await sock.sendMessage(chatId, {
+        ...cleanOptions,
+        text: parts[i] + (parts.length > 1 ? `\n_(${i+1}/${parts.length})_` : ''),
+      });
+    }
     if (i < parts.length - 1) await new Promise(r => setTimeout(r, 600));
   }
 }
@@ -777,7 +791,13 @@ module.exports = async (sock, msg, messageText, config, getDatabase, saveDatabas
             if (!hasMedia && content.text && content.text.length > CHUNK_SIZE) {
               return sendChunked(target, jid, content.text, opts);
             }
-            return target.sendMessage(jid, content, opts);
+            try {
+              return await target.sendMessage(jid, content, opts);
+            } catch (err) {
+              const cleanOpts = { ...opts };
+              delete cleanOpts.quoted;
+              return await target.sendMessage(jid, content, cleanOpts);
+            }
           };
         }
         return typeof target[prop] === 'function' ? target[prop].bind(target) : target[prop];
