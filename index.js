@@ -1080,49 +1080,30 @@ async function startup() {
     console.error('startup restore error:', e.message);
   }
 
-  // Also include any personality with a saved, registered AstraLink session
+  // Also include any personality with a saved, registered AstraLink session or DB backup
   for (const key of ALL_PERSONALITY_KEYS) {
     const authDir = path.join(AUTH_DIR, key);
     const credsFile = path.join(authDir, 'creds.json');
     try {
       if (fs.existsSync(credsFile)) {
         const creds = JSON.parse(fs.readFileSync(credsFile, 'utf8'));
-        if (creds && creds.registered && creds.me) {
+        if (creds && (creds.registered || creds.me)) {
           if (!linkedKeys.includes(key)) linkedKeys.push(key);
-        } else {
-          // Stale / un-registered session folder -> clean up!
-          try { fs.rmSync(authDir, { recursive: true, force: true }); } catch (_) {}
-          // Also clear stale backup for unregistered creds
-          try {
-            const db2 = getDatabase();
-            if (db2?.authBackups?.[key]) { delete db2.authBackups[key]; saveDatabase(); }
-          } catch {}
         }
       }
-    } catch (e) {
-      try { fs.rmSync(authDir, { recursive: true, force: true }); } catch (_) {}
-    }
+    } catch (e) {}
   }
 
-  // Also check db.linkedBots — only keep keys that actually have registered creds on disk
-  // (but now disk may have been restored from backup above, so re-check)
+  // Also check db.linkedBots and db.authBackups
   const db = getDatabase();
-  if (db && db.linkedBots) {
-    for (const key of Object.keys(db.linkedBots)) {
-      if (ALL_PERSONALITY_KEYS.includes(key)) {
-        const authDir = path.join(AUTH_DIR, key);
-        const credsFile = path.join(authDir, 'creds.json');
-        if (fs.existsSync(credsFile)) {
-          if (!linkedKeys.includes(key)) linkedKeys.push(key);
-        } else if (db.authBackups?.[key]?.files) {
-          // Has backup but file still missing after restore attempt → keep entry, will restore on next connect
-          console.log(`⏳ [startup] ${key} has DB backup but no file yet — keeping linked entry`);
-          if (!linkedKeys.includes(key)) linkedKeys.push(key);
-        } else {
-          // DB entry exists but disk session is missing/dead and no backup -> purge from db.linkedBots!
-          delete db.linkedBots[key];
-          saveDatabase();
-        }
+  if (db) {
+    const botKeysFromDB = new Set([
+      ...Object.keys(db.linkedBots || {}),
+      ...Object.keys(db.authBackups || {})
+    ]);
+    for (const key of botKeysFromDB) {
+      if (ALL_PERSONALITY_KEYS.includes(key) && !linkedKeys.includes(key)) {
+        linkedKeys.push(key);
       }
     }
   }

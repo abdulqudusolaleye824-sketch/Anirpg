@@ -413,24 +413,24 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
 
     if (connection === 'close') {
       const code = lastDisconnect?.error?.output?.statusCode;
-      const loggedOut = code === DisconnectReason.loggedOut || code === 401 || code === 403 || code === 428;
+      const isLoggedOut = code === DisconnectReason.loggedOut || code === 401;
       const restartRequired = code === DisconnectReason.restartRequired || code === 515;
       delete botSockets[personalityKey];
 
       let credsRegistered = false;
       try {
         const creds = JSON.parse(fs.readFileSync(path.join(botAuthDir, 'creds.json'), 'utf8'));
-        credsRegistered = !!(creds.registered && creds.me);
+        credsRegistered = !!(creds.registered || creds.me);
       } catch (_) {}
 
-      if (!loggedOut && (credsRegistered || restartRequired || options.pairingPhone)) {
+      if (!isLoggedOut) {
         const attempt = (reconnectAttempts[personalityKey] || 0) + 1;
         reconnectAttempts[personalityKey] = attempt;
         const backoffMs = restartRequired ? 1200 : Math.min(30000, attempt * 2000 + 1000);
 
         console.log(`📡 AstraLink [${displayName}] connection closed (code ${code || 'unknown'}). Reconnecting in ${Math.round(backoffMs / 1000)}s (attempt #${attempt})…`);
 
-        const nextOpts = credsRegistered
+        const nextOpts = (credsRegistered || fs.existsSync(path.join(botAuthDir, 'creds.json')))
           ? { ...options, pairingMode: null, pairingPhone: null }
           : options;
 
@@ -438,18 +438,17 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
           connectBot(personalityKey, authDir, getDatabase, saveDatabase, nextOpts);
         }, backoffMs);
       } else {
-        console.log(`❌ AstraLink [${displayName}] connection permanently closed / logged out (code ${code}). Session cleared.`);
+        console.log(`❌ AstraLink [${displayName}] connection permanently logged out (code ${code}). Session cleared.`);
         reconnectAttempts[personalityKey] = 0;
         delete botSockets[personalityKey];
         if (hostBotKey === personalityKey) {
           hostBotKey = null;
         }
 
-        // Purge dead session directory from disk so server does not attempt booting dead bots on restart
         try {
           if (fs.existsSync(botAuthDir)) {
             fs.rmSync(botAuthDir, { recursive: true, force: true });
-            console.log(`🧹 Purged dead session directory for [${displayName}] (${botAuthDir})`);
+            console.log(`🧹 Purged logged-out session directory for [${displayName}] (${botAuthDir})`);
           }
         } catch (e) {
           console.error(`⚠️ Could not purge auth dir for [${displayName}]:`, e.message);
