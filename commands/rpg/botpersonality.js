@@ -149,14 +149,6 @@ const switchBot = {
       }, { quoted: msg });
     }
 
-    const current = PersonalityManager.getActiveBot(chatId);
-    const isRegisteredGC = db.registeredGCs && db.registeredGCs[chatId];
-    if (!current || !isRegisteredGC) {
-      return sock.sendMessage(chatId, {
-        text: '❌ No bot is currently active or registered in this group!\nUse /start <botname> first to register and activate a bot.',
-      }, { quoted: msg });
-    }
-
     const target = args[0];
     if (!target) {
       return sock.sendMessage(chatId, {
@@ -177,6 +169,14 @@ const switchBot = {
         text: `❌ ${result.error}\n\nUse /bots to see available personalities.`,
       }, { quoted: msg });
     }
+
+    if (!db.registeredGCs) db.registeredGCs = {};
+    db.registeredGCs[chatId] = {
+      registeredAt: Date.now(),
+      activeBot: result.personalityKey,
+      registeredBy: sender
+    };
+    saveDatabase();
 
     const info = PersonalityManager.getPersonalityInfo(result.personalityKey);
     const greeting =

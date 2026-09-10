@@ -596,10 +596,33 @@ module.exports = async (sock, msg, messageText, config, getDatabase, saveDatabas
   }
 
   const PersonalityManager = require('../bots/PersonalityManager');
-  const activeKey = chatId.endsWith('@g.us') ? PersonalityManager.getActiveBot(chatId) : null;
-  const isGCRegistered = chatId.endsWith('@g.us') ? !!(db.registeredGCs && db.registeredGCs[chatId]) : true;
+  let activeKey = chatId.endsWith('@g.us') ? PersonalityManager.getActiveBot(chatId) : null;
 
-  if (chatId.endsWith('@g.us') && (!activeKey || !isGCRegistered) && commandName !== 'hi' && commandName !== 'start') {
+  if (chatId.endsWith('@g.us') && activeKey) {
+    try {
+      const MSM = require('../bots/MultiSocketManager');
+      const activeSock = MSM.getSocket(activeKey);
+      const isOnline = !!(activeSock?.user?.id);
+      if (!isOnline) {
+        const failoverKey = MSM.getFirstOnlineSocketKey();
+        if (failoverKey) {
+          PersonalityManager.activateBot(chatId, failoverKey);
+          activeKey = failoverKey;
+          console.log(`🔄 Failover active bot in ${chatId} to online bot: ${failoverKey}`);
+        }
+      }
+    } catch (e) {}
+  }
+
+  const BOOTSTRAP_COMMANDS = new Set([
+    'start', 'switch', 'stop', 'stopbot', 'bots', 'hi', 'setainame',
+    'setgroup', 'setgc', 'ssub', 'renew', 'allowgc', 'groupinfo', 'groupstatus',
+    'setdungeon', 'removedungeon', 'dungeons', 'set', 'settings', 'gcset',
+    'help', 'menu', 'reset', 'spawnstatus', 'spawnsstatus', 'killspawn',
+    'cctv', 'statusreport', 'botid', 'disable', 'enable', 'restart', 'clearactivebots'
+  ]);
+
+  if (chatId.endsWith('@g.us') && !activeKey && !BOOTSTRAP_COMMANDS.has(commandName) && !BOOTSTRAP_COMMANDS.has(resolvedCommand)) {
     return sock.sendMessage(
       chatId,
       {
