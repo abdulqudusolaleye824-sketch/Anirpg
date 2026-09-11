@@ -734,10 +734,10 @@ function handlePvpVictory(sock, chatId, winner, loser, wId, lId, db, saveDatabas
   rewardNexus = Math.floor(rewardNexus * proMultPvP);
   rewardStones = Math.floor(rewardStones * proMultPvP);
   rewardXP = Math.floor(rewardXP * proMultPvP);
-  // PvP win: +15 GP to the WINNER (personal). The winner's guild total is
-  // derived as the sum of members' GP inside addGuildGP. Flat — the loser
-  // pays no GP (aura 10-15 stays the loser's only deduction).
-  const pvpGP = 15;
+  // PvP win: +50 GP to the WINNER (personal), +100 for Pro winners. The
+  // winner's guild total is derived as the sum of members' GP inside
+  // addGuildGP. The loser pays no GP (aura 10-15 stays the only deduction).
+  const pvpGP = isProWinner ? 100 : 50;
   let _guildTotal = 0, _guildName = '';
   try {
     const GPS = require('../../rpg/utils/GuildPointsSystem');

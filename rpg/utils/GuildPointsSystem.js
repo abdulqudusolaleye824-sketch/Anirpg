@@ -11,7 +11,7 @@
  *   - Member donation: +1 GP per 5,000 Nexus donated
  *   - Daily quest completion: +5 GP
  *   - World boss contribution: +20 GP
- *   - PvP win: +15 GP (personal — guild total = sum of members' GP)
+ *   - PvP win: +50 GP (+100 Pro, personal — guild total = sum of members' GP)
  *
  * Guild War Points (WP):
  *   - Win a Guild War: +100 WP
@@ -127,7 +127,7 @@ function formatGuildPoints(guild) {
     `  +1  — Per 5,000 Nexus donated`,
     `  +5  — Daily quest complete`,
     `  +20 — World boss contribution`,
-    `  +15 — PvP win (personal GP)`,
+    `  +50 — PvP win (+100 Pro, personal GP)`,
     ``,
     `🏰 Guild total = sum of all members' GP`,
     ``,
