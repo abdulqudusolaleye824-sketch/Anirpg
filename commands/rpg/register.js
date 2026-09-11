@@ -1,8 +1,9 @@
 // ═══════════════════════════════════════════════════════════════
-// REGISTER — Astra Awakening
-// - Requires hunter name + date of birth
-// - Random awakening rank assigned
-// - Nigerian time (WAT UTC+1) for all timestamps
+// REGISTER — Astra Awakening (multi-message flow)
+// /register [name]            → BEGINNING REGISTRATION, asks for DOB reply
+// <plain DD/MM/YYYY reply>    → 13+ age gate, asks for referral-code reply
+// <plain CODE / NIL reply>    → SUCCESSFULLY REGISTERED → COMPLETE
+// One-shot /register Name DD/MM/YYYY [CODE] still works.
 // - After registration completes, the active bot DMs the player
 //   a welcome message (the only DM that bypasses the serf gate)
 // ═══════════════════════════════════════════════════════════════
@@ -15,6 +16,8 @@ const {
   AWAKENING_RANKS,
 } = require('../../rpg/utils/SoloLevelingCore');
 const MultiSocketManager = require('../../bots/MultiSocketManager');
+const RegState = require('../../rpg/utils/RegistrationState');
+const Referrals = require('../../rpg/utils/ReferralSystem');
 const UI = require('../../rpg/utils/UI');
 
 function getNigerianTimestamp() {
@@ -49,19 +52,8 @@ function parseDOB(str) {
   };
 }
 
-const pendingReg = {};
-
-setInterval(() => {
-  const now = Date.now();
-  let pruned = 0;
-  for (const sender of Object.keys(pendingReg)) {
-    if (now > pendingReg[sender].expiresAt) {
-      delete pendingReg[sender];
-      pruned++;
-    }
-  }
-  if (pruned > 0) console.log(`🧹 Pruned ${pruned} expired pending registrations`);
-}, 5 * 60 * 1000);
+const DOB_RE = /^\d{1,2}[\/-]\d{1,2}[\/-]\d{4}$/;
+const SKIP_RE = /^(nil|none|no|skip|continue|n\/a|-)$/i;
 
 const RANK_BONUSES = {
   E: { manaStones: 500,   upgradePoints: 3  },
@@ -72,8 +64,8 @@ const RANK_BONUSES = {
   S: { manaStones: 6000,  upgradePoints: 20 },
 };
 
-function buildPlayer(sender, name, rank, stats, bonus, dob) {
-  return {
+function buildPlayer(sender, name, rank, stats, bonus, dob, db) {
+  const p = {
     name,
     id:              sender,
     registeredAt:    Date.now(),
@@ -123,17 +115,23 @@ function buildPlayer(sender, name, rank, stats, bonus, dob) {
     banned:          false,
     afk:             false,
     pvpStreak:       0,
+    // Starter kit: 1 name-change card + 1 seticon token (500 PC value each)
+    cards:           { namechange: 1, seticon: 1 },
+    referredBy:      null,
+    referralLvl3Paid: false,
   };
+  try { Referrals.ensureProfile(db, p); } catch (e) {}
+  return p;
 }
 
-function buildSuccessMsg(name, dob, rank, power, bonus) {
+function buildSuccessMsg(name, dob, rank, power, bonus, extra = {}) {
   const rankData = AWAKENING_RANKS[rank];
   const isRare   = ['B', 'A', 'S'].includes(rank);
   const systemMsg = getAwakeningMessage(rank);
 
   return [
     UI.FREE_BAR,
-    isRare ? `‼️ *RARE AWAKENING DETECTED* ‼️` : `「System」 *AWAKENING COMPLETE*`,
+    isRare ? `‼️ *RARE AWAKENING DETECTED* ‼️` : `「System」 *SUCCESSFULLY REGISTERED*`,
     UI.FREE_BAR,
     ``,
     systemMsg,
@@ -147,6 +145,9 @@ function buildSuccessMsg(name, dob, rank, power, bonus) {
     `💠 *START BONUS:*`,
     `💎 ${bonus.manaStones.toLocaleString()} Mana Stones`,
     `📈 ${bonus.upgradePoints} Upgrade Points`,
+    `✏️ 1 Name-Change Card (for /setname)`,
+    `🖼️ 1 Seticon Token (for /seticon)`,
+    extra.referrerName ? `🔗 Referred by: *${extra.referrerName}*` : null,
     ``,
     `🎭 Class: *Not yet assigned*`,
     `   ↳ Your class reveals itself as you grow stronger.`,
@@ -160,6 +161,22 @@ function buildSuccessMsg(name, dob, rank, power, bonus) {
     UI.FREE_BAR,
     rankData.description ? `\n${rankData.description}` : '',
   ].filter(l => l !== null).join('\n') + `\n${UI.upsell()}`;
+}
+
+function buildCompleteMsg(name, rank) {
+  const rankData = AWAKENING_RANKS[rank] || {};
+  return [
+    UI.FREE_BAR,
+    `✅ *REGISTRATION COMPLETE*`,
+    UI.FREE_BAR,
+    ``,
+    `Welcome to the System, *${name}*! ${rankData.emoji || ''}`,
+    `Your hunter journey has begun.`,
+    ``,
+    `🎟️ Your referral code: use */code* to view & share it.`,
+    `💠 Earn *10,000 Nexus* every time a recruit hits Lv.3!`,
+    UI.FREE_BAR,
+  ].join('\n');
 }
 
 function buildWelcomeDM(name, rank) {
@@ -211,6 +228,115 @@ async function sendWelcomeDM(sock, sender, name, rank) {
   }
 }
 
+function rollPending(name) {
+  const rank  = rollAwakeningRank(name + Date.now());
+  const stats = buildStartingStats(rank);
+  const bonus = RANK_BONUSES[rank];
+  const power = calculatePowerRating(stats);
+  return { name, rank, stats, bonus, power };
+}
+
+function beginningMsg(name, sender) {
+  return [
+    `「System」 *BEGINNING REGISTRATION*`,
+    UI.FREE_BAR,
+    ``,
+    `👤 Hunter Name: *${name}*`,
+    `_(wrong name? /register <correct name> to restart)_`,
+    ``,
+    `📅 *How old are you? Reply with your date of birth:*`,
+    ``,
+    `Format: DD/MM/YYYY`,
+    `Example: 15/08/2000`,
+    ``,
+    `⚠️ You must be at least *13 years old* to play.`,
+    `⏳ This prompt expires in ${RegState.minutesLeft(sender)} minutes.`,
+    UI.FREE_BAR,
+    UI.upsell(),
+  ].join('\n');
+}
+
+function referralAskMsg(dob) {
+  return [
+    UI.FREE_BAR,
+    `✅ *Age verified: ${dob.age} years old*`,
+    UI.FREE_BAR,
+    ``,
+    `🎟️ *Do you have a referral code?*`,
+    ``,
+    `Reply with the code (e.g. ANI-X7K2P9)`,
+    `or reply *NIL* to continue without one.`,
+    UI.FREE_BAR,
+  ].join('\n');
+}
+
+// Finalize a registration. Returns the send payloads (group sends happen here).
+async function finalize(sock, chatId, msg, db, saveDatabase, sender, pending, dob, referrerId) {
+  const { name, rank, stats, bonus, power } = pending;
+  const player = buildPlayer(sender, name, rank, stats, bonus, dob, db);
+  let referrerName = null;
+  if (referrerId && db.users[referrerId]) {
+    player.referredBy = referrerId;
+    referrerName = db.users[referrerId].name;
+    try { Referrals.recordSignup(db, referrerId, sender); } catch (e) {}
+  }
+  db.users[sender] = player;
+  try { saveDatabase(); } catch (e) {}
+  RegState.clear(sender);
+  await sendWelcomeDM(sock, sender, name, rank);
+  await sock.sendMessage(chatId, { text: buildSuccessMsg(name, dob, rank, power, bonus, { referrerName }) }, { quoted: msg });
+  await sock.sendMessage(chatId, { text: buildCompleteMsg(name, rank) });
+  return player;
+}
+
+// ── Plain-text reply driver (called by MultiSocketManager for the ──
+// ── active bot, BEFORE menu/AI handling). Returns true if consumed. ──
+async function handlePlainReply(sock, msg, chatId, sender, text, getDatabase, saveDatabase) {
+  const db = getDatabase();
+  if (db.users && db.users[sender]) return false; // already registered
+  const pending = RegState.get(sender);
+  if (!pending) return false;
+  const t = String(text || '').trim();
+  if (!t) return false;
+
+  // ── Step 1: DOB reply ──
+  if (pending.step === 'dob' || !pending.step) {
+    if (!DOB_RE.test(t)) return false; // not a DOB — let AI/menus have it
+    const dob = parseDOB(t);
+    if (!dob) {
+      await sock.sendMessage(chatId, { text: `❌ Invalid date. Use DD/MM/YYYY\nExample: 15/08/2000` }, { quoted: msg });
+      return true;
+    }
+    if (dob.error === 'too_young') {
+      RegState.clear(sender);
+      await sock.sendMessage(chatId, { text: `❌ You must be at least 13 years old to play Astra.\n\nRegistration cancelled.` }, { quoted: msg });
+      return true;
+    }
+    RegState.set(sender, { ...pending, step: 'referral', dob });
+    await sock.sendMessage(chatId, { text: referralAskMsg(dob) }, { quoted: msg });
+    return true;
+  }
+
+  // ── Step 2: referral-code reply (or NIL to skip) ──
+  if (pending.step === 'referral') {
+    // Pure menu digits belong to numbered menus, not to registration
+    if (/^\d{1,2}$/.test(t)) return false;
+    if (SKIP_RE.test(t)) {
+      await finalize(sock, chatId, msg, db, saveDatabase, sender, pending, pending.dob, null);
+      return true;
+    }
+    // Accept anything code-shaped; validate before finalizing
+    const found = Referrals.findByCode(db, t);
+    if (!found) {
+      await sock.sendMessage(chatId, { text: `❌ Unknown referral code: "${t}"\n\nCheck the code and try again, or reply *NIL* to continue without one.` }, { quoted: msg });
+      return true;
+    }
+    await finalize(sock, chatId, msg, db, saveDatabase, sender, pending, pending.dob, found.id);
+    return true;
+  }
+  return false;
+}
+
 module.exports = {
   name: 'register',
   aliases: ['reg', 'join'],
@@ -219,6 +345,7 @@ module.exports = {
   async execute(sock, msg, args, getDatabase, saveDatabase, sender) {
     const chatId = msg.key?.remoteJid;
     const db     = getDatabase();
+    RegState.prune();
 
     if (db.users[sender]) {
       const p        = db.users[sender];
@@ -240,63 +367,61 @@ module.exports = {
       }, { quoted: msg });
     }
 
-    const pending = pendingReg[sender];
+    // ── Resume a pending multi-message registration ──
+    const pending = RegState.get(sender);
     if (pending) {
-      if (Date.now() > pending.expiresAt) {
-        delete pendingReg[sender];
-      } else {
-        const dobArg = args[0];
-        if (!dobArg) {
-          return sock.sendMessage(chatId, {
-            text: `${UI.FREE_BAR}\n📅 *COMPLETE YOUR AWAKENING*\n${UI.FREE_BAR}\n\n👤 Hunter: *${pending.name}*\n\nPlease enter your date of birth.\n\nFormat: /register DD/MM/YYYY\nExample: /register 15/08/2000\n\n⏳ Expires in ${Math.ceil((pending.expiresAt - Date.now()) / 60000)} min.\n${UI.FREE_BAR}\n${UI.upsell()}`,
-          }, { quoted: msg });
-        }
-
-        const dob = parseDOB(dobArg);
+      const step = pending.step || 'dob';
+      const first = (args[0] || '').trim();
+      // Allow completing the DOB step via command too (backward compat)
+      if (step === 'dob' && first && DOB_RE.test(first)) {
+        const dob = parseDOB(first);
         if (!dob) {
-          return sock.sendMessage(chatId, {
-            text: `❌ Invalid format. Use DD/MM/YYYY\nExample: /register 15/08/2000`,
-          }, { quoted: msg });
+          return sock.sendMessage(chatId, { text: `❌ Invalid format. Use DD/MM/YYYY\nExample: /register 15/08/2000` }, { quoted: msg });
         }
         if (dob.error === 'too_young') {
-          return sock.sendMessage(chatId, {
-            text: `❌ You must be at least 13 years old to play Astra.`,
-          }, { quoted: msg });
+          RegState.clear(sender);
+          return sock.sendMessage(chatId, { text: `❌ You must be at least 13 years old to play Astra.\n\nRegistration cancelled.` }, { quoted: msg });
         }
-
-        const { name, rank, stats, bonus, power } = pending;
-        delete pendingReg[sender];
-
-        db.users[sender] = buildPlayer(sender, name, rank, stats, bonus, dob);
-        saveDatabase();
-
-        await sendWelcomeDM(sock, sender, name, rank);
-
-        return sock.sendMessage(chatId, {
-          text: buildSuccessMsg(name, dob, rank, power, bonus),
-        }, { quoted: msg });
+        RegState.set(sender, { ...pending, step: 'referral', dob });
+        return sock.sendMessage(chatId, { text: referralAskMsg(dob) }, { quoted: msg });
       }
+      // Allow completing the referral step via command too
+      if (step === 'referral' && first) {
+        if (SKIP_RE.test(first)) {
+          await finalize(sock, chatId, msg, db, saveDatabase, sender, pending, pending.dob, null);
+          return;
+        }
+        const found = Referrals.findByCode(db, first);
+        if (!found) {
+          return sock.sendMessage(chatId, { text: `❌ Unknown referral code: "${first}"\n\nCheck the code and try again, or /register NIL to continue without one.` }, { quoted: msg });
+        }
+        await finalize(sock, chatId, msg, db, saveDatabase, sender, pending, pending.dob, found.id);
+        return;
+      }
+      // Otherwise re-show the current step prompt
+      if (step === 'referral') {
+        return sock.sendMessage(chatId, { text: referralAskMsg(pending.dob) }, { quoted: msg });
+      }
+      return sock.sendMessage(chatId, { text: beginningMsg(pending.name, sender) }, { quoted: msg });
     }
 
+    // ── Fresh /register [name] [DOB] [CODE] ──
     let nameArgs = [];
     let dobArg   = null;
+    let codeArg  = null;
 
     for (const arg of args) {
-      if (/^\d{1,2}[\/\-]\d{1,2}[\/\-]\d{4}$/.test(arg)) {
-        dobArg = arg;
-      } else {
-        nameArgs.push(arg);
-      }
+      if (DOB_RE.test(arg)) dobArg = arg;
+      else if (/^ANI-/i.test(arg)) codeArg = arg;
+      else nameArgs.push(arg);
     }
 
     const name = (nameArgs.join(' ').trim() || msg.pushName || 'Hunter')
       .substring(0, 50).replace(/[<>]/g, '');
 
-    const rank  = rollAwakeningRank(sender);
-    const stats = buildStartingStats(rank);
-    const bonus = RANK_BONUSES[rank];
-    const power = calculatePowerRating(stats);
+    const fresh = rollPending(name);
 
+    // One-shot with DOB (optional code)
     if (dobArg) {
       const dob = parseDOB(dobArg);
       if (!dob) {
@@ -309,35 +434,23 @@ module.exports = {
           text: `❌ You must be at least 13 years old to play Astra.`,
         }, { quoted: msg });
       }
-
-      db.users[sender] = buildPlayer(sender, name, rank, stats, bonus, dob);
-      saveDatabase();
-
-      await sendWelcomeDM(sock, sender, name, rank);
-
-      return sock.sendMessage(chatId, {
-        text: buildSuccessMsg(name, dob, rank, power, bonus),
-      }, { quoted: msg });
+      let referrerId = null;
+      if (codeArg) {
+        const found = Referrals.findByCode(db, codeArg);
+        if (!found) {
+          return sock.sendMessage(chatId, { text: `❌ Unknown referral code: "${codeArg}"\n\nOmit the code or check it and try again.` }, { quoted: msg });
+        }
+        referrerId = found.id;
+      }
+      await finalize(sock, chatId, msg, db, saveDatabase, sender, fresh, dob, referrerId);
+      return;
     }
 
-    pendingReg[sender] = { name, rank, stats, bonus, power, expiresAt: Date.now() + 300000 };
-
-    return sock.sendMessage(chatId, {
-      text: [
-        `「System」 *AWAKENING INITIATED*`,
-        UI.FREE_BAR,
-        ``,
-        `👤 Hunter Name: *${name}*`,
-        ``,
-        `📅 *Enter your date of birth to complete:*`,
-        ``,
-        `Format: /register DD/MM/YYYY`,
-        `Example: /register 15/08/2000`,
-        ``,
-        `⏳ This prompt expires in 5 minutes.`,
-        UI.FREE_BAR,
-        UI.upsell(),
-      ].join('\n'),
-    }, { quoted: msg });
+    // Multi-message start
+    RegState.set(sender, { ...fresh, step: 'dob' });
+    return sock.sendMessage(chatId, { text: beginningMsg(name, sender) }, { quoted: msg });
   },
+
+  handlePlainReply,
+  parseDOB,
 };

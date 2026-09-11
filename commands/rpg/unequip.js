@@ -2,7 +2,7 @@
 // /unequip <name> [slot] — Unequip gear by item name
 // Same-name conflicts (one name equipped in two slots) are resolved by
 // listing every match and asking for the slot: /unequip <name> <slot>.
-// NOTE: like /gear unequip, removed pieces are DESTROYED (not returned).
+// NOTE: like /gear unequip, removed pieces RETURN to inventory at current durability (never destroyed).
 // ═══════════════════════════════════════════════════════════════
 
 'use strict';

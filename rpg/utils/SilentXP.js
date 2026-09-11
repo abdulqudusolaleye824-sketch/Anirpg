@@ -146,8 +146,9 @@ function awardXP(player, action = 'command', saveDatabase, sock, chatId, extraMu
     ? Math.floor(_astraFlat * (isPro ? 2 : 1))
     : Math.max(10, Math.floor(amount * 0.15));
   player.astraPass.xp = (player.astraPass.xp || 0) + astraXpGained;
-  while (player.astraPass.xp >= 1000 && player.astraPass.level < 50) {
-    player.astraPass.xp -= 1000;
+  const { xpForLevel: _apNeed } = require('./AstraPass');
+  while (player.astraPass.level < 50 && player.astraPass.xp >= _apNeed(player.astraPass.level)) {
+    player.astraPass.xp -= _apNeed(player.astraPass.level);
     player.astraPass.level++;
   }
 
@@ -167,8 +168,9 @@ function awardXP(player, action = 'command', saveDatabase, sock, chatId, extraMu
     const bpMult = (isPro ? 2 : 1) * (_bpPrem ? 2 : 1);
     const bpXpGained = Math.floor((BP_BATTLE_FLAT[action] || 0) * bpMult);
     player.battlePass.xp = (player.battlePass.xp || 0) + bpXpGained;
-    while (player.battlePass.xp >= 500 && player.battlePass.level < 40) {
-      player.battlePass.xp -= 500;
+    const { xpForLevel: _bpNeed } = require('./BattlePass');
+    while (player.battlePass.level < 40 && player.battlePass.xp >= _bpNeed(player.battlePass.level)) {
+      player.battlePass.xp -= _bpNeed(player.battlePass.level);
       player.battlePass.level++;
     }
   }

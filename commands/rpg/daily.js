@@ -143,6 +143,15 @@ module.exports = {
     // Level up check via LevelUpManager (unlocks skills, weapons, UP)
     const levelResult = LevelUpManager.checkAndApplyLevelUps(player, saveDatabase, sock, chatId);
     const levelUps = levelResult?.levelsGained || 0;
+    // Referral: recruit hitting Lv.3 pays the referrer 10k Nexus immediately
+    try {
+      const _ref = require('../../rpg/utils/ReferralSystem').onLevelUp(db, player);
+      if (_ref) {
+        saveDatabase();
+        lines.push('');
+        lines.push(`🔗 *REFERRAL REWARD!* @${_ref.referrerId.split('@')[0]} earned *10,000 Nexus* — recruit *${_ref.recruitName}* hit Lv.3!`);
+      }
+    } catch (e) {}
 
     // Track achievement
     const AchMgr = AchievementManager;

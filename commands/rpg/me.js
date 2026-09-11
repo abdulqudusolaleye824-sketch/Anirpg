@@ -15,9 +15,13 @@ module.exports = {
     const cls = p.class?.name || p.class || '?';
     const titleDisp = TitleSys ? TitleSys.getTitleDisplay(p) : '';
     const elo = p.pvpElo || 1000;
-    const hpPct = Math.floor((p.stats.hp / p.stats.maxHp) * 100);
-    const hpBar = UI.bar(p.stats.hp, p.stats.maxHp, 10, pro);
-    const xpNeeded = Math.floor(200 * Math.pow(p.level, 1.8));
+    let _eff = null;
+    try { _eff = require('../../rpg/utils/GearSystem').getEffectiveStats(p); } catch (e) {}
+    const _maxHp = _eff ? _eff.maxHp : p.stats.maxHp;
+    const hpPct = Math.floor((p.stats.hp / _maxHp) * 100);
+    const hpBar = UI.bar(p.stats.hp, _maxHp, 10, pro);
+    let xpNeeded = 50000;
+    try { xpNeeded = require('../../rpg/utils/SoloLevelingCore').getXpRequired(p.level || 1); } catch (e) {}
     const xpPct = Math.min(100, Math.floor((p.xp / xpNeeded) * 100));
 
     // Daily claim status
@@ -29,11 +33,11 @@ module.exports = {
 
     return sock.sendMessage(chatId, {
       text: (pro ? `${UI.PRO_BAR}\n👤 *${p.name}*${titleDisp?' ['+titleDisp+']':''} [${cls} Lv.${p.level}] 💎\n${UI.PRO_BAR}\n` +
-        `❤️ HP: ${hpBar} ${p.stats.hp}/${p.stats.maxHp}\n` : `👤 *${p.name}*${titleDisp?' ['+titleDisp+']':''} [${cls} Lv.${p.level}]\n${UI.FREE_BAR}\n` +
-        `❤️ HP: ${hpBar} ${p.stats.hp}/${p.stats.maxHp}\n`) +
+        `❤️ HP: ${hpBar} ${p.stats.hp}/${_maxHp}\n` : `👤 *${p.name}*${titleDisp?' ['+titleDisp+']':''} [${cls} Lv.${p.level}]\n${UI.FREE_BAR}\n` +
+        `❤️ HP: ${hpBar} ${p.stats.hp}/${_maxHp}\n`) +
         `✨ XP: ${p.xp}/${xpNeeded} (${xpPct}%)\n` +
         `${FRAME}\n` +
-        `⚔️ ATK: ${p.stats.atk} | 🛡️ DEF: ${p.stats.def} | 💨 SPD: ${p.stats.speed}\n` +
+        `⚔️ ATK: ${_eff ? _eff.atk : p.stats.atk} | 🛡️ DEF: ${_eff ? _eff.def : p.stats.def} | 💨 SPD: ${_eff ? _eff.speed : p.stats.speed}\n` +
         `💠 Nexus: ${(p.gold||0).toLocaleString()} | 💎 Mana Stones: ${p.manaCrystals||0}\n` +
         `🏆 ELO: ${elo} | 📊 ${p.pvpWins||0}W/${p.pvpLosses||0}L\n` +
         `🔥 Daily Streak: ${p.dailyQuest?.streak||0} days | ${dailyStatus}\n` +

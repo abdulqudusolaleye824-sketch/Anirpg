@@ -60,9 +60,18 @@ function calcMoveDamage(attacker, defender, move) {
     return { damage: 0, missed: true, crit: false, effective: 'missed' };
   }
 
-  // Base ATK vs DEF
-  const atkBase = attacker.stats?.atk || attacker.stats?.attack || 50;
-  const defBase = defender.stats?.def || defender.stats?.defense || 20;
+  // Base ATK vs DEF — equipped gear always counts (players AND monsters
+  // flow through here; monsters simply have no equippedGear → +0).
+  let _gearAtk = 0, _gearDef = 0, _gearSpdA = 0, _gearSpdD = 0;
+  try {
+    const { getEquippedBonuses } = require('./GearSystem');
+    const ga = getEquippedBonuses(attacker) || {};
+    const gd = getEquippedBonuses(defender) || {};
+    _gearAtk = ga.atk || 0; _gearDef = gd.def || 0;
+    _gearSpdA = ga.speed || 0; _gearSpdD = gd.speed || 0;
+  } catch (e) {}
+  const atkBase = (attacker.stats?.atk || attacker.stats?.attack || 50) + _gearAtk;
+  const defBase = (defender.stats?.def || defender.stats?.defense || 20) + _gearDef;
 
   // Multipliers from attack pattern
   const atkMult = move.atkMult || 1;
@@ -115,8 +124,8 @@ function calcMoveDamage(attacker, defender, move) {
   if (critMult > 1.6) critChance += 0.05;
   if (critMult > 2.0) critChance += 0.07;
   // Speed difference adds crit chance slightly
-  const atkSpd = attacker.stats?.speed || 50;
-  const defSpd = defender.stats?.speed || 50;
+  const atkSpd = (attacker.stats?.speed || 50) + _gearSpdA;
+  const defSpd = (defender.stats?.speed || 50) + _gearSpdD;
   if (atkSpd > defSpd) critChance += 0.02;
 
   const isCrit = Math.random() < critChance;

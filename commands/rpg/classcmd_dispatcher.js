@@ -235,7 +235,9 @@ async function defaultHandler(sock, msg, player, skill, db, saveDatabase, getDat
 
   if (skill.damage && skill.damage > 0) {
     // Damage skill
-    const atk = player.stats.atk || 10;
+    let _gAtkCC = 0;
+    try { _gAtkCC = require('../../rpg/utils/GearSystem').getEquippedBonuses(player).atk || 0; } catch (e) {}
+    const atk = (player.stats.atk || 10) + _gAtkCC;
     const damage = Math.floor(skill.damage * (1 + (atk / 100)));
     resultText += `\n💥 Dealt *${damage.toLocaleString()}* damage!`;
   }

@@ -1,5 +1,6 @@
 module.exports = {
   name: 'leaderboard',
+  aliases: ['lb'],
   description: 'View top hunters ranking',
   
   async execute(sock, msg, args, getDatabase, saveDatabase, sender) {
@@ -106,16 +107,44 @@ module.exports = {
         break;
       }
 
+      case 'referrals':
+      case 'referral':
+      case 'ref':
+      case 'recruit':
+      case 'recruits': {
+        // Monthly race — resets every calendar month. Winner takes a Weekly Pro Card.
+        let monthLabel = '';
+        try {
+          const Ref = require('../../rpg/utils/ReferralSystem');
+          Ref.getSeason(db);
+          monthLabel = ` (${Ref.monthKey()})`;
+          players.forEach(pp => { try { Ref.ensureProfile(db, pp); } catch(e){} });
+        } catch(e){}
+        title = `🔗 TOP RECRUITERS${monthLabel}`;
+        sortBy = (a, b) => {
+          const am = (a.referralMonthly && a.referralMonthly.count) || 0;
+          const bm = (b.referralMonthly && b.referralMonthly.count) || 0;
+          return (bm - am) || ((b.referralPoints || 0) - (a.referralPoints || 0));
+        };
+        formatter = (p, rank) => {
+          const medal = rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : '  ';
+          const m = (p.referralMonthly && p.referralMonthly.count) || 0;
+          return `${medal} ${rank}. ${p.name} - ${m} this month (${p.referralPoints || 0} pts)`;
+        };
+        break;
+      }
+
       default:
-        return sock.sendMessage(chatId, { 
+        return sock.sendMessage(chatId, {
           text: `❌ Invalid category!
 
 📊 Available categories:
-- level  — Top by level
-- gate   — Most gates cleared
-- boss   — Most bosses defeated
-- wealth — Most Nexus
-- pvp    — Top ELO fighters
+- level     — Top by level
+- gate      — Most gates cleared
+- boss      — Most bosses defeated
+- wealth    — Most Nexus
+- pvp       — Top ELO fighters
+- referrals — Top monthly recruiters
 
 Example: /leaderboard pvp`
         }, { quoted: msg });
@@ -153,6 +182,7 @@ ${FRAME}
 /leaderboard boss
 /leaderboard wealth
 /leaderboard pvp
+/leaderboard referrals
 ${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO STANDINGS* — #${playerRank} ${category}` : `\n${UI.upsell()}`);
 
     return sock.sendMessage(chatId, { 

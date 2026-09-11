@@ -30,6 +30,11 @@ module.exports = {
       const player = db.users[sender];
       if (!player) return sock.sendMessage(chatId, { text: '❌ Register first.' }, { quoted: msg });
 
+      if (!player.cards) player.cards = {};
+      if ((player.cards.seticon || 0) < 1) {
+        return sock.sendMessage(chatId, { text: `❌ *No Seticon Token!*\n\nChanging your profile icon costs 1 🖼️ Seticon Token.\n\n🛍️ Get one: /prostore buy seticon (500 PC)` }, { quoted: msg });
+      }
+
       const downloadMediaMessage = getDownloader();
       if (!downloadMediaMessage) {
         return sock.sendMessage(chatId, { text: '❌ Media download module not available.' }, { quoted: msg });
@@ -68,9 +73,10 @@ module.exports = {
           return sock.sendMessage(chatId, { text: '❌ Image too large (max 2 MB). Send a smaller image.' }, { quoted: msg });
         }
         player.profileImage = buf.toString('base64');
+        player.cards.seticon -= 1;
         saveDatabase();
         return sock.sendMessage(chatId, {
-          text: `✅ *Profile icon updated!* ${bare(sender) === sender.split('@')[0] ? '' : ''}\n\nView it: /profile`,
+          text: `✅ *Profile icon updated!*\n\n🖼️ 1 Seticon Token used (${player.cards.seticon} left)\nView it: /profile`,
         }, { quoted: msg });
       } catch (err) {
         console.error('[seticon] download error:', err.message);
@@ -89,6 +95,11 @@ module.exports = {
       const player = db.users[sender];
       if (!player) return sock.sendMessage(chatId, { text: '❌ Register first.' }, { quoted: msg });
 
+      if (!player.cards) player.cards = {};
+      if ((player.cards.namechange || 0) < 1) {
+        return sock.sendMessage(chatId, { text: `❌ *No Name-Change Card!*\n\nChanging your name costs 1 ✏️ Name-Change Card.\n\n🛍️ Get one: /prostore buy namechange (500 PC)` }, { quoted: msg });
+      }
+
       const name = args.join(' ').trim();
       if (!name) {
         return sock.sendMessage(chatId, {
@@ -101,9 +112,10 @@ module.exports = {
 
       const oldName = player.name;
       player.name = name;
+      player.cards.namechange -= 1;
       saveDatabase();
       return sock.sendMessage(chatId, {
-        text: `✅ *Name changed!*\n\n${oldName} → *${name}*`,
+        text: `✅ *Name changed!*\n\n${oldName} → *${name}*\n\n✏️ 1 Name-Change Card used (${player.cards.namechange} left)`,
       }, { quoted: msg });
     },
   },

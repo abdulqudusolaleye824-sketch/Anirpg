@@ -11,7 +11,7 @@
 'use strict';
 
 const { renderAstraPassImage } = require('../../rpg/utils/PassRenderer');
-const ButtonHelper = (()=>{ try { return require('../../utils/buttonHelper'); } catch(e){ return null; } })();
+const TextMenu = (()=>{ try { return require('../../utils/textMenu'); } catch(e){ return null; } })();
 
 const SEASON_DAYS = 40;
 const TOTAL_TIERS = 50;
@@ -399,36 +399,28 @@ module.exports = {
       ...(pro ? [FRAME] : [FRAME, UI.upsell()]),
     ];
 
-    // ── Build Next/Prev buttons (and Claim) ────────────────────────
-    let passButtons = null;
-    try {
-      if (ButtonHelper?.buildPassButtons) {
-        passButtons = ButtonHelper.buildPassButtons(page, 5, 'pass');
-      }
-    } catch {}
-
-    if (imageBuffer) {
-      if (passButtons && ButtonHelper?.sendWithButtons) {
-        return ButtonHelper.sendWithButtons(sock, chatId, {
-          image: imageBuffer,
-          caption: captionLines.join('\n'),
-          mimetype: 'image/png',
+    // ── Numbered menu (Prev / Next / Claim) — reply with the number ──
+    const passOptions = [];
+    if (page > 1) passOptions.push({ label: `⬅️ Prev (page ${page - 1})`, command: `/pass ${page - 1}` });
+    if (page < 5) passOptions.push({ label: `Next (page ${page + 1}) ➡️`, command: `/pass ${page + 1}` });
+    passOptions.push({ label: `🎁 Claim rewards`, command: `/pass claim` });
+    if (TextMenu?.sendMenu) {
+      try {
+        await TextMenu.sendMenu(sock, chatId, {
+          body: captionLines.join('\n'),
+          options: passOptions,
           footer: `Page ${page}/5 • Tier ${ap.level}/${TOTAL_TIERS}`,
-          page
-        }, passButtons, msg);
-      }
+          image: imageBuffer || null, mimetype: 'image/png',
+        }, msg);
+        return;
+      } catch (e) { console.error('pass menu send failed:', e.message); }
+    }
+    if (imageBuffer) {
       return sock.sendMessage(chatId, {
         image: imageBuffer,
         caption: captionLines.join('\n'),
         mimetype: 'image/png',
       }, { quoted: msg });
-    }
-
-    if (passButtons && ButtonHelper?.sendWithButtons) {
-      return ButtonHelper.sendWithButtons(sock, chatId, {
-        text: captionLines.join('\n'),
-        footer: `Page ${page}/5 • Tier ${ap.level}/${TOTAL_TIERS}`
-      }, passButtons, msg);
     }
     return sock.sendMessage(chatId, { text: captionLines.join('\n') }, { quoted: msg });
   }

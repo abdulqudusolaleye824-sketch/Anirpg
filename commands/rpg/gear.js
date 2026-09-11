@@ -24,12 +24,11 @@ module.exports = {
     const sub = (args[0] || '').toLowerCase();
 
     // ── /gear (no args) — show equipped + gear inventory ──────
+    // Gear subcategory, newest first (same recency order as /inv).
+    const byRecency = (arr) => { try { return require('./inventory')._byRecency(arr); } catch (e) { return [...arr].reverse(); } };
     if (!sub || sub === 'show') {
-      const gearItems = player.inventory.items.filter(i => i.isGear);
+      const gearItems = byRecency(player.inventory.items.filter(i => i.isGear));
       const bonuses = getEquippedBonuses(player);
-
-      const rarityOrder = { mythic:0, legendary:1, epic:2, rare:3, uncommon:4, common:5 };
-      gearItems.sort((a,b) => (rarityOrder[a.rarity]||6) - (rarityOrder[b.rarity]||6));
 
       let msg2 = pro ? `${UI.PRO_BAR}\n⚔️ *GEAR* 💎\n${UI.PRO_BAR}\n\n` : `⚔️ *GEAR*\n${UI.FREE_BAR}\n\n`;
 
@@ -85,9 +84,7 @@ module.exports = {
       const num = parseInt(args[1]);
       if (!num || isNaN(num)) return sock.sendMessage(chatId, { text: '❌ Usage: /gear equip <number>\nUse /gear to see your list.' }, { quoted: msg });
 
-      const gearItems = player.inventory.items.filter(i => i.isGear);
-      const rarityOrder = { mythic:0, legendary:1, epic:2, rare:3, uncommon:4, common:5 };
-      gearItems.sort((a,b) => (rarityOrder[a.rarity]||6) - (rarityOrder[b.rarity]||6));
+      const gearItems = byRecency(player.inventory.items.filter(i => i.isGear));
 
       if (num < 1 || num > gearItems.length) {
         return sock.sendMessage(chatId, { text: `❌ Invalid number. You have ${gearItems.length} gear item(s).` }, { quoted: msg });
@@ -130,7 +127,7 @@ module.exports = {
       player.inventory.items.push(piece);
       saveDatabase();
       return sock.sendMessage(chatId, {
-        text: `📦 *${piece.name}* removed from ${SLOT_INFO[slotName].emoji} ${slotName} slot and returned to your inventory.\n🔧 Durability: *${piece.durability ?? '?'}/${piece.maxDurability ?? '?'}*`
+        text: `📦 *${piece.name}* removed from ${(SLOT_INFO[slotName] || {}).emoji || '🎒'} ${slotName} slot and returned to your inventory.\n🔧 Durability: *${piece.durability ?? '?'}/${piece.maxDurability ?? '?'}*`
       }, { quoted: msg });
     }
 
@@ -147,9 +144,7 @@ module.exports = {
       const target = db.users[mentioned];
       if (!target) return sock.sendMessage(chatId, { text: '❌ That player is not registered.' }, { quoted: msg });
 
-      const gearItems = player.inventory.items.filter(i => i.isGear);
-      const rarityOrder = { mythic:0, legendary:1, epic:2, rare:3, uncommon:4, common:5 };
-      gearItems.sort((a,b) => (rarityOrder[a.rarity]||6) - (rarityOrder[b.rarity]||6));
+      const gearItems = byRecency(player.inventory.items.filter(i => i.isGear));
 
       if (num < 1 || num > gearItems.length) return sock.sendMessage(chatId, { text: `❌ Invalid number. You have ${gearItems.length} gear item(s).` }, { quoted: msg });
 

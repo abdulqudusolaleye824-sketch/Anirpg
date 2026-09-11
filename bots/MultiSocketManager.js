@@ -28,12 +28,70 @@ const SerfManager        = require('../rpg/utils/SerfManager');
 const Perms              = require('../utils/permissions');
 const QRCode             = require('qrcode');
 const QRTerminal = (()=>{ try { return require('qrcode-terminal'); } catch(e){ return null; } })();
-const ButtonHelper = (()=>{ try { return require('../utils/buttonHelper'); } catch(e){ return null; } })();
+// NOTE: the WhatsApp interactive-button system was deleted (unreliable renders).
+// Numbered text menus (utils/textMenu) replaced it — no button code remains.
 
 const botSockets = {};
 const pairingSessions = {};
+// IDs of messages OUR OWN sockets sent (all personalities, this process).
+// WhatsApp echoes sibling-bot messages back to us with fromMe=false, so this
+// registry is the bulletproof sibling-recognition layer: no JID matching,
+// no LID/PN ambiguity — if we sent it, we ignore it.
+const _sentIds = new Map(); // id -> timestamp
+function _recordSentId(id) {
+  if (!id) return;
+  try {
+    _sentIds.set(String(id), Date.now());
+    if (_sentIds.size > 3000) {
+      const cutoff = Date.now() - 10 * 60 * 1000;
+      for (const [k, t] of _sentIds) {
+        if (t < cutoff) _sentIds.delete(k);
+        if (_sentIds.size <= 2000) break;
+      }
+    }
+  } catch (e) {}
+}
+function _wasSentByUs(id) {
+  if (!id) return false;
+  try {
+    const t = _sentIds.get(String(id));
+    if (!t) return false;
+    if (Date.now() - t > 10 * 60 * 1000) { _sentIds.delete(String(id)); return false; }
+    return true;
+  } catch (e) { return false; }
+}
 const reconnectAttempts = {};
+const _bootParams = {};   // personalityKey -> { authDir, getDatabase, saveDatabase, options }
+const _connecting = new Set(); // keys with a connect already in flight
+const _loggedOut = new Set();  // keys WhatsApp logged out (need manual relink — never auto-reconnect)
 let hostBotKey = null;
+
+// Single guarded reconnect path used by BOTH the close handler and the
+// heartbeat monitor. Guards: logged-out keys, already-online keys, and
+// in-flight connects (double-connecting one session causes 401 flaps).
+function _scheduleReconnect(personalityKey, backoffMs, reason) {
+  setTimeout(() => {
+    try {
+      if (_loggedOut.has(personalityKey)) return;
+      if (botSockets[personalityKey]?.user?.id) return;
+      if (_connecting.has(personalityKey)) return;
+      const bp = _bootParams[personalityKey];
+      if (!bp) return;
+      _connecting.add(personalityKey);
+      console.log(`📡 AstraLink [${personalityKey}] auto-reconnecting (${reason || 'dead socket'})…`);
+      connectBot(personalityKey, bp.authDir, bp.getDatabase, bp.saveDatabase, bp.options)
+        .catch(e => console.error(`❌ AstraLink [${personalityKey}] reconnect failed:`, e.message))
+        .finally(() => _connecting.delete(personalityKey));
+    } catch (e) {}
+  }, Math.max(0, backoffMs || 2000));
+}
+
+function _credsRegistered(authDir, personalityKey) {
+  try {
+    const creds = JSON.parse(require('fs').readFileSync(require('path').join(authDir, personalityKey, 'creds.json'), 'utf8'));
+    return !!(creds.registered || creds.me);
+  } catch (_) { return false; }
+}
 
 function getFirstOnlineSocketKey() {
   const keys = Object.keys(botSockets).filter(k => !!botSockets[k]?.user?.id).sort();
@@ -59,13 +117,25 @@ function getHostKey() {
 }
 
 // ── Background WebSocket Heartbeat & Auto-Healing Monitor ──────
+// NOTE: this used to just DELETE dead sockets and log "auto-healing" while
+// reconnecting nothing — every silently-dropped socket stayed dead until a
+// process restart, which is the "ALL commands ignored, bot looks up" outage.
+// Now a reaped socket is genuinely resurrected via _scheduleReconnect.
 setInterval(() => {
   for (const [key, sock] of Object.entries(botSockets)) {
     if (!sock || !sock.ws) continue;
     const isClosed = sock.ws.readyState === 2 || sock.ws.readyState === 3; // CLOSING or CLOSED
     if (isClosed) {
-      console.warn(`⚠️ AstraLink [${key}] detected silent dead WebSocket. Initiating auto-healing reconnect…`);
+      console.warn(`⚠️ AstraLink [${key}] detected silent dead WebSocket. Reaping + resurrecting…`);
+      try { sock.end?.(undefined); } catch (e) {}
       delete botSockets[key];
+      if (_loggedOut.has(key)) continue; // needs manual relink, not a loop
+      const bp = _bootParams[key];
+      if (!bp) continue; // never booted through connectBot — nothing to restore
+      if (!_credsRegistered(bp.authDir, key)) continue; // pairing flow owns it
+      const attempt = (reconnectAttempts[key] || 0) + 1;
+      reconnectAttempts[key] = attempt;
+      _scheduleReconnect(key, Math.min(30000, attempt * 2000 + 1000), 'heartbeat reap');
     }
   }
 }, 25000);
@@ -280,21 +350,34 @@ function _bootstrapDispatcher(personalityKey, chatId) {
   const keys = Object.keys(sockets).filter(k => !!sockets[k]?.user?.id).sort();
   if (keys.length === 0) return false;
 
-  const chosenKey = keys.includes(personalityKey) ? personalityKey : keys[0];
+  // Deterministic SINGLE handler: first-online ONLY. (The old self-pick —
+  // keys.includes(personalityKey) ? personalityKey : keys[0] — returned true
+  // on EVERY socket, so every bot ran /switch, /bots, join notices, ...).
+  if (keys[0] !== personalityKey) return false;
   try {
-    PersonalityManager.activateBot(chatId, chosenKey);
+    PersonalityManager.activateBot(chatId, keys[0]);
   } catch (e) {}
-  return chosenKey === personalityKey;
+  return true;
 }
 
-function _isOwnBotNumber(bareNumber) {
+// Every known bot identity (PN id + LID + linked numbers), as bare numbers.
+// Incoming senders arrive in EITHER form, so the sibling-bot guard must know both.
+function _botBares() {
+  const set = new Set();
+  const add = (jid) => { if (jid) set.add(String(jid).split(':')[0].split('@')[0]); };
   for (const key of Object.keys(botSockets)) {
-    const sock = botSockets[key];
-    const jid = sock?.user?.id;
-    if (!jid) continue;
-    if (String(jid).split(':')[0].split('@')[0] === bareNumber) return true;
+    const u = botSockets[key]?.user || {};
+    add(u.id);
+    add(u.lid);
   }
-  return false;
+  try {
+    for (const j of Object.keys(PersonalityManager.linkedNumbers || {})) add(j);
+  } catch (e) {}
+  return set;
+}
+function _isOwnBotNumber(bareNumber) {
+  if (!bareNumber) return false;
+  return _botBares().has(String(bareNumber).split(':')[0].split('@')[0]);
 }
 
 function getAnySocket() {
@@ -304,6 +387,12 @@ function getAnySocket() {
 }
 
 async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, options = {}) {
+  // Remember how this key boots so the heartbeat can resurrect it.
+  // Pairing intent is stripped: resurrection must never re-trigger pairing.
+  try {
+    const { pairingMode, pairingPhone, ...rest } = options || {};
+    _bootParams[personalityKey] = { authDir, getDatabase, saveDatabase, options: rest };
+  } catch (e) {}
   const botAuthDir = path.join(authDir, personalityKey);
   // Restore from DB backup if ephemeral FS was wiped (Railway redeploy fix)
   try { restoreAuthFromDB(personalityKey, authDir, getDatabase); } catch {}
@@ -338,25 +427,37 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
     retryRequestDelayMs: 3_000,       // Auto retry failed stanzas after 3s
     maxMsgRetryCount: 5,              // Retry stanzas up to 5 times
     getMessage: async () => ({ conversation: '' }),
-    // Enable buttons/templateMessages/buttonsMessage (required for Baileys 6+)
-    patchMessageBeforeSending: (msg) => {
-      try {
-        if (ButtonHelper?.patchMessageBeforeSending) return ButtonHelper.patchMessageBeforeSending(msg);
-      } catch {}
-      const requiresPatch = !!(msg.buttonsMessage || msg.templateMessage || msg.listMessage || msg.templateButtons || msg.buttons);
-      if (requiresPatch) {
-        return {
-          viewOnceMessage: {
-            message: {
-              messageContextInfo: { deviceListMetadataVersion: 2, deviceListMetadata: {} },
-              ...msg,
-            },
-          },
-        };
-      }
-      return msg;
-    },
+    // Identity patch — the button system was deleted; every send is plain
+    // text/media, which needs no viewOnce wrapping.
+    patchMessageBeforeSending: (msg) => msg,
   });
+
+  // ── Send wrapper: empty-guard + own-send registry ────────────────
+  // Any text/caption payload that is empty (and carries no media or other
+  // functional keys like delete/react/poll) is dropped + logged instead of
+  // being sent as a blank message. Every successful send is ALSO recorded
+  // so sibling sockets never process our own messages as user chat.
+  try {
+    const _rawSend = sock.sendMessage.bind(sock);
+    sock.sendMessage = async (jid, content = {}, options = {}) => {
+      try {
+        const c = content || {};
+        const keys = Object.keys(c);
+        const hasMedia = !!(c.image || c.video || c.audio || c.document || c.sticker || c.ptv || c.gifPlayback);
+        const functional = keys.some(k => !['text', 'caption', 'conversation', 'mentions', 'footer', 'mimetype'].includes(k));
+        if (!hasMedia && !functional) {
+          const txt = c.text ?? c.caption ?? c.conversation ?? '';
+          if (!String(txt).trim()) {
+            console.error(`🚫 [${personalityKey}] blocked EMPTY send to ${jid} (empty text/caption, no media)`);
+            return null;
+          }
+        }
+      } catch (e) {}
+      const _res = await _rawSend(jid, content, options);
+      try { _recordSentId(_res?.key?.id); } catch (e) {}
+      return _res;
+    };
+  } catch (e) {}
 
   let pairingCodeRequested = false;
 
@@ -434,11 +535,10 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
           ? { ...options, pairingMode: null, pairingPhone: null }
           : options;
 
-        setTimeout(() => {
-          connectBot(personalityKey, authDir, getDatabase, saveDatabase, nextOpts);
-        }, backoffMs);
+        _scheduleReconnect(personalityKey, backoffMs, `close code ${code || 'unknown'}`);
       } else {
-        console.log(`❌ AstraLink [${displayName}] connection permanently logged out (code ${code}). Session cleared.`);
+        console.log(`❌ AstraLink [${displayName}] connection permanently logged out (code ${code}). Session cleared — manual relink required.`);
+        _loggedOut.add(personalityKey);
         reconnectAttempts[personalityKey] = 0;
         delete botSockets[personalityKey];
         if (hostBotKey === personalityKey) {
@@ -470,6 +570,7 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
       }
     } else if (connection === 'open') {
       reconnectAttempts[personalityKey] = 0; // Reset reconnect count on successful connection!
+      _loggedOut.delete(personalityKey);
       botSockets[personalityKey] = sock;
       const jid = sock.user?.id || null;
 
@@ -532,6 +633,8 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
     if (type !== 'notify') return;
     const msg = messages[0];
     if (!msg.message || msg.key.fromMe) return;
+    // Own-send echo (a SIBLING bot's message arriving back): never process.
+    if (msg.key?.id && _wasSentByUs(msg.key.id)) return;
 
     // Unwrap Baileys message containers (ephemeralMessage, viewOnceMessage, documentWithCaptionMessage, editedMessage, etc.)
     const realMessage = unwrapMessage(msg);
@@ -581,8 +684,19 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
     const config = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'config.json'), 'utf-8'));
     const isCommand = messageText.startsWith(config.prefix);
 
-    // Only apply _isOwnBotNumber loop prevention for non-command messages (e.g. AI chat)
-    if (!isCommand && _isOwnBotNumber(bareSender)) return;
+    // Sibling-bot loop prevention for non-command messages (e.g. AI chat).
+    // Every sender form is checked — a sibling bot's message must NEVER be
+    // treated as user chat (the "Seraph poems at Kira's messages" bug).
+    // NOTE: contextInfo.participant is NOT checked (that's the quoted author —
+    // quoting a bot must not silence the user).
+    if (!isCommand) {
+      const _forms = [bareSender];
+      try {
+        if (msg.key?.participant) _forms.push(String(msg.key.participant).split(':')[0].split('@')[0]);
+        if (msg.participant) _forms.push(String(msg.participant).split(':')[0].split('@')[0]);
+      } catch (e) {}
+      if (_forms.some(f => f && _isOwnBotNumber(f))) return;
+    }
 
     const commandName = isCommand
       ? messageText.slice(config.prefix.length).trim().split(/\s+/)[0].toLowerCase()
@@ -606,31 +720,40 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
 
     let isTargetMentionedBot = false;
     let resolvedTarget = null;
+    let hasSwitchTarget = false;
 
     if (isGroup && isCommand && (commandName === 'switch' || commandName === 'start')) {
       const parts = messageText.slice(config.prefix.length).trim().split(/\s+/);
       const targetArg = parts[1];
       if (targetArg) {
+        hasSwitchTarget = true;
         resolvedTarget = PersonalityManager.resolvePersonality(targetArg);
-        if (resolvedTarget) {
-          const targetSock = botSockets[resolvedTarget];
-          // FIX: Use same online check as Online list (user?.id) to avoid false offline when ws.readyState flaps
-          const isTargetOnline = !!targetSock?.user?.id;
-
-          if (!isTargetOnline) {
-            // FIX: Chorus — all online bots respond (as you requested)
-            const onlineList = Object.keys(botSockets).filter(k=>botSockets[k]?.user?.id).sort().join(', ') || 'none';
-            try {
-              await sock.sendMessage(chatId, {
-                text: `⚠️ *${resolvedTarget}* is offline / not linked.\n\n📋 *Online bots:* ${onlineList}\n\nTry */bots* to see all personalities.`,
-              }, { quoted: msg });
-            } catch (e) { console.error('offline target reply fail:', e.message); }
-            return;
-          }
-
-          // Mentioned target bot IS online -> ONLY mentioned bot handles this /start or /switch!
-          isTargetMentionedBot = (personalityKey === resolvedTarget);
+        const _onlineList = () => Object.keys(botSockets).filter(k=>botSockets[k]?.user?.id).sort().join(', ') || 'none';
+        // EVERY socket runs this block, so every live bot sends the chorus.
+        const _offlineChorus = async (why) => {
+          try {
+            await sock.sendMessage(chatId, {
+              text: `🚫 *THAT BOT IS OFFLINE*\n\n${why}\nThe /${commandName} command couldn't be processed.\n\n📋 *Online bots:* ${_onlineList()}\n\nTry */bots* to see all personalities.`,
+            }, { quoted: msg });
+          } catch (e) { console.error('offline chorus fail:', e.message); }
+        };
+        if (!resolvedTarget) {
+          // Invalid name → ALL live bots respond, command dies here.
+          await _offlineChorus(`"${targetArg}" doesn't match any bot.`);
+          return;
         }
+        const targetSock = botSockets[resolvedTarget];
+        // FIX: Use same online check as Online list (user?.id) to avoid false offline when ws.readyState flaps
+        const isTargetOnline = !!targetSock?.user?.id;
+
+        if (!isTargetOnline) {
+          // Valid name but not linked/online → ALL live bots respond.
+          await _offlineChorus(`*${resolvedTarget}* is offline / not linked.`);
+          return;
+        }
+
+        // Mentioned target bot IS online -> ONLY mentioned bot handles this /start or /switch!
+        isTargetMentionedBot = (personalityKey === resolvedTarget);
       }
     }
 
@@ -740,7 +863,9 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
     if (isCommand && options.rpgCommandHandler) {
       let shouldHandle = false;
       if (isGroup) {
-        shouldHandle = isActive || (isBootstrap && _bootstrapDispatcher(personalityKey, chatId));
+        // Targeted /switch + /start are handled by the mentioned bot ONLY —
+        // the dispatcher must not hand them to the active/first bot as well.
+        shouldHandle = isActive || (isBootstrap && !hasSwitchTarget && _bootstrapDispatcher(personalityKey, chatId));
       } else {
         // DM Handling: Route DM command to the host socket so it always responds cleanly
         const hostKey = getHostKey() || getFirstOnlineSocketKey();
@@ -780,6 +905,30 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
       const g = AstralGroups.gate(getDatabase(), chatId);
       if (!g.allow) return;
     } catch (e) { /* best effort */ }
+
+    // ── Multi-message registration replies (DOB / referral code) ───
+    // Active bot only, so exactly one bot consumes the reply.
+    try {
+      const RegCmd = require('../commands/rpg/register');
+      if (RegCmd?.handlePlainReply) {
+        const consumed = await RegCmd.handlePlainReply(sock, msg, chatId, sender, messageText, getDatabase, saveDatabase);
+        if (consumed) return;
+      }
+    } catch (e) { console.error('registration reply error:', e.message); }
+
+    // ── Numbered-menu replies (button replacement) ────────────────
+    // Quote-reply with the number, or just send the number (2-min window).
+    try {
+      const TextMenu = require('../utils/textMenu');
+      if (TextMenu?.resolve && /^\d{1,2}$/.test(messageText.trim()) && options.rpgCommandHandler) {
+        const _ci = msg.message?.extendedTextMessage?.contextInfo || null;
+        const sel = TextMenu.resolve(chatId, messageText.trim(), _ci?.stanzaId || null);
+        if (sel && sel.command) {
+          await options.rpgCommandHandler(sock, msg, sel.command, config, getDatabase, saveDatabase);
+          return;
+        }
+      }
+    } catch (e) { console.error('menu reply error:', e.message); }
 
     const botDisplayName = PersonalityManager.getDisplayName(personalityKey);
     const botJid = sock.user?.id;
@@ -990,4 +1139,9 @@ module.exports = {
   getActiveSocket,
   backupAuthToDB,
   restoreAuthFromDB,
+  _bootstrapDispatcher,
+  _isOwnBotNumber,
+  _recordSentId,
+  _wasSentByUs,
+  _sockets: () => botSockets,
 };

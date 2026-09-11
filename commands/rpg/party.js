@@ -17,7 +17,7 @@
 const GR = require('../../rpg/dungeons/GateRaid');
 const GKM = require('../../rpg/dungeons/GateKeyManager');
 const { GATE_RANKS } = require('../../rpg/dungeons/GateManager');
-const ButtonHelper = (()=>{ try { return require('../../utils/buttonHelper'); } catch(e){ return null; } })();
+const TextMenu = (()=>{ try { return require('../../utils/textMenu'); } catch(e){ return null; } })();
 
 function normaliseJid(jid) {
   return GKM.normaliseJid(jid);
@@ -159,13 +159,18 @@ module.exports = {
             ...(pro ? [FRAME, UI.PRO_MINI, `💎 *PRO MUSTER* — recruiting up to ${GR.MAX_PARTY} hunters`] : [FRAME, UI.upsell()]),
           ].join('\n');
         try {
-          if (ButtonHelper?.buildPartyJoinButton) {
-            const buttons = ButtonHelper.buildPartyJoinButton(key);
-            if (ButtonHelper.sendWithButtons) {
-              return await ButtonHelper.sendWithButtons(sock, chatId, { text: affText, footer: `Affiliate Party • ${key}` }, buttons, msg);
-            }
+          if (TextMenu?.sendMenu) {
+            await TextMenu.sendMenu(sock, chatId, {
+              body: affText,
+              options: [
+                { label: `✅ Join Party`, command: `/party join ${key}` },
+                { label: `📊 Party Status`, command: `/party status` },
+              ],
+              footer: `Affiliate Party • ${key}`,
+            }, msg);
+            return;
           }
-        } catch(e){ console.error('Party button error:', e.message); }
+        } catch(e){ console.error('Party menu error:', e.message); }
         return sock.sendMessage(chatId, { text: affText }, { quoted: msg });
       }
 
@@ -200,13 +205,18 @@ module.exports = {
           ...(pro ? [FRAME, UI.PRO_MINI, `💎 *PRO MUSTER* — recruiting up to ${GR.MAX_PARTY} hunters`] : [FRAME, UI.upsell()]),
         ].join('\n');
       try {
-        if (ButtonHelper?.buildPartyJoinButton) {
-          const buttons = ButtonHelper.buildPartyJoinButton(key);
-          if (ButtonHelper.sendWithButtons) {
-            return await ButtonHelper.sendWithButtons(sock, chatId, { text: guildText, footer: `Guild Party • ${key} • ${playerGuild}` }, buttons, msg);
-          }
+        if (TextMenu?.sendMenu) {
+          await TextMenu.sendMenu(sock, chatId, {
+            body: guildText,
+            options: [
+              { label: `✅ Join Party`, command: `/party join ${key}` },
+              { label: `📊 Party Status`, command: `/party status` },
+            ],
+            footer: `Guild Party • ${key} • ${playerGuild}`,
+          }, msg);
+          return;
         }
-      } catch(e){ console.error('Party button error:', e.message); }
+      } catch(e){ console.error('Party menu error:', e.message); }
       return sock.sendMessage(chatId, { text: guildText }, { quoted: msg });
     }
 

@@ -113,14 +113,15 @@ function getEquippedBonuses(player) {
   for (const slot of GEAR_SLOTS) {
     const piece = equipped[slot];
     if (!piece) continue;
-    if (piece.stats.hp)           bonuses.hp           += piece.stats.hp;
-    if (piece.stats.atk)          bonuses.atk          += piece.stats.atk;
-    if (piece.stats.def)          bonuses.def          += piece.stats.def;
-    if (piece.stats.speed)        bonuses.speed        += piece.stats.speed;
-    if (piece.stats.crit)         bonuses.crit         += piece.stats.crit;
-    if (piece.stats.critDmg)      bonuses.critDmg      += piece.stats.critDmg;
-    if (piece.stats.evasion)      bonuses.evasion      += piece.stats.evasion;
-    if (piece.stats.statusResist) bonuses.statusResist += piece.stats.statusResist;
+    const st = piece.stats || {};
+    if (st.hp)           bonuses.hp           += st.hp;
+    if (st.atk)          bonuses.atk          += st.atk;
+    if (st.def)          bonuses.def          += st.def;
+    if (st.speed)        bonuses.speed        += st.speed;
+    if (st.crit)         bonuses.crit         += st.crit;
+    if (st.critDmg)      bonuses.critDmg      += st.critDmg;
+    if (st.evasion)      bonuses.evasion      += st.evasion;
+    if (st.statusResist) bonuses.statusResist += st.statusResist;
     if (piece.special)            bonuses.specials.push(piece.special);
   }
   return bonuses;
@@ -175,11 +176,11 @@ function formatEquipped(player) {
     const piece = equipped[slot];
     if (piece) {
       const rc = RARITY_CONFIG[piece.rarity] || RARITY_CONFIG.common;
-      const statLines = Object.entries(piece.stats)
+      const statLines = Object.entries(piece.stats || {})
         .filter(([k]) => k !== 'special')
         .map(([k,v]) => `+${v} ${k.toUpperCase()}`)
         .join(', ');
-      const dur = `${piece.durability}/${piece.maxDurability}`;
+      const dur = `${piece.durability ?? '?'}/${piece.maxDurability ?? '?'}`;
       msg += `${info.emoji} *${info.name}*: ${rc.emoji} ${piece.name}\n`;
       msg += `   📊 ${statLines} | 🔧 Durability: ${dur}\n`;
       if (piece.special) msg += `   ✨ ${piece.special.desc}\n`;
@@ -190,9 +191,31 @@ function formatEquipped(player) {
   return msg;
 }
 
+// Effective battle stats = base stats + equipped-gear bonuses.
+// Use this everywhere stats are DISPLAYED or FOUGHT with so equipped
+// gear always reflects (profile, /me, combat damage, power rating).
+function getEffectiveStats(player) {
+  const b = (player && player.stats) || {};
+  let g = { hp: 0, atk: 0, def: 0, speed: 0, crit: 0, critDmg: 0, evasion: 0, statusResist: 0 };
+  try { g = getEquippedBonuses(player) || g; } catch (e) {}
+  return {
+    hp:         b.hp || 0,
+    maxHp:      (b.maxHp || 100) + (g.hp || 0),
+    atk:        (b.atk || 0) + (g.atk || 0),
+    def:        (b.def || 0) + (g.def || 0),
+    speed:      (b.speed || 0) + (g.speed || 0),
+    critChance: (b.critChance || 0) + (g.crit || 0),
+    critDamage: b.critDamage || 150,
+    magicPower: b.magicPower || 0,
+    lifesteal:  b.lifesteal || 0,
+    energy:     b.energy || 0,
+    maxEnergy:  b.maxEnergy || 100,
+  };
+}
+
 module.exports = {
   GEAR_SLOTS, SLOT_INFO, RARITY_CONFIG,
   generateGear, generateGearForSlot,
-  getEquippedBonuses, tickDurability,
+  getEquippedBonuses, getEffectiveStats, tickDurability,
   equipGear, unequipGear, formatEquipped
 };

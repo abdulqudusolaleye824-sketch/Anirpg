@@ -27,9 +27,16 @@ function getPassState(player) {
   return ap;
 }
 
+// XP needed to advance FROM `level` TO `level+1`. Linear ramp: 750 first,
+// +30 per tier (tier 50 costs 2,220). Season total 0→50 = 74,250 XP:
+// consistent free grinding (~46k) lands ~72%, Pro (2x) clears it.
+function xpForLevel(level) {
+  return 750 + 30 * Math.max(0, level || 0);
+}
+
 function _levelUp(ap) {
-  while (ap.xp >= XP_PER_LEVEL && ap.level < PASS_LEVELS) {
-    ap.xp -= XP_PER_LEVEL;
+  while (ap.level < PASS_LEVELS && ap.xp >= xpForLevel(ap.level)) {
+    ap.xp -= xpForLevel(ap.level);
     ap.level++;
   }
   if (ap.level >= PASS_LEVELS) ap.xp = 0;
@@ -51,7 +58,7 @@ function addPassXPAmount(player, amount) {
 
 module.exports = {
   XP_PER_LEVEL,
-  PASS_LEVELS,
+  PASS_LEVELS, xpForLevel,
   getPassState,
   addPassXP,
   addPassXPAmount,

@@ -10,7 +10,7 @@
 'use strict';
 
 const { renderBattlePassImage } = require('../../rpg/utils/PassRenderer');
-const ButtonHelper = (()=>{ try { return require('../../utils/buttonHelper'); } catch(e){ return null; } })();
+const TextMenu = (()=>{ try { return require('../../utils/textMenu'); } catch(e){ return null; } })();
 
 const TOTAL_TIERS = 40;
 const BP_COST_PC = 1000;
@@ -357,36 +357,28 @@ module.exports = {
       ...(pro ? [FRAME] : [FRAME, UI.upsell()]),
     ];
 
-    // ── Build Next/Prev buttons (and Claim) ────────────────────────
-    let bpButtons = null;
-    try {
-      if (ButtonHelper?.buildPassButtons) {
-        bpButtons = ButtonHelper.buildPassButtons(page, 4, 'bp');
-      }
-    } catch {}
-
-    if (imageBuffer) {
-      if (bpButtons && ButtonHelper?.sendWithButtons) {
-        return ButtonHelper.sendWithButtons(sock, chatId, {
-          image: imageBuffer,
-          caption: captionLines.join('\n'),
-          mimetype: 'image/png',
+    // ── Numbered menu (Prev / Next / Claim) — reply with the number ──
+    const bpOptions = [];
+    if (page > 1) bpOptions.push({ label: `⬅️ Prev (page ${page - 1})`, command: `/bp ${page - 1}` });
+    if (page < 4) bpOptions.push({ label: `Next (page ${page + 1}) ➡️`, command: `/bp ${page + 1}` });
+    bpOptions.push({ label: `🎁 Claim rewards`, command: `/bp claim` });
+    if (TextMenu?.sendMenu) {
+      try {
+        await TextMenu.sendMenu(sock, chatId, {
+          body: captionLines.join('\n'),
+          options: bpOptions,
           footer: `Page ${page}/4 • Tier ${bp.level}/${TOTAL_TIERS}`,
-          page
-        }, bpButtons, msg);
-      }
+          image: imageBuffer || null, mimetype: 'image/png',
+        }, msg);
+        return;
+      } catch (e) { console.error('bp menu send failed:', e.message); }
+    }
+    if (imageBuffer) {
       return sock.sendMessage(chatId, {
         image: imageBuffer,
         caption: captionLines.join('\n'),
         mimetype: 'image/png',
       }, { quoted: msg });
-    }
-
-    if (bpButtons && ButtonHelper?.sendWithButtons) {
-      return ButtonHelper.sendWithButtons(sock, chatId, {
-        text: captionLines.join('\n'),
-        footer: `Page ${page}/4 • Tier ${bp.level}/${TOTAL_TIERS}`
-      }, bpButtons, msg);
     }
     return sock.sendMessage(chatId, { text: captionLines.join('\n') }, { quoted: msg });
   }

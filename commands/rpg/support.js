@@ -8,7 +8,7 @@ const supportCooldown = new Map();
 const AstralGroups = require('../../rpg/utils/AstralGroups');
 const SerfDM = require('../../rpg/utils/SerfDM');
 const MultiSocketManager = require('../../bots/MultiSocketManager');
-const ButtonHelper = (()=>{ try { return require('../../utils/buttonHelper'); } catch(e){ return null; } })();
+const TextMenu = (()=>{ try { return require('../../utils/textMenu'); } catch(e){ return null; } })();
 const UI = require('../../rpg/utils/UI');
 
 function getAstraSupportImage(){
@@ -91,8 +91,8 @@ module.exports = {
       }
     }
 
-    // Names only — invite links ride on the URL buttons below (raw links are kept
-    // ONLY as a last-resort fallback when button delivery throws).
+    // Names + tappable invite links as plain text (renders on every client —
+    // this replaces the old URL-button delivery, which silently failed).
     const dmPro = UI.isPro(db.users?.[sender]);
     const fullDmText = [
       ...(dmPro ? [UI.PRO_BAR, `🛡️ *ASTRA SUPPORT GROUPS* 💎`, UI.PRO_BAR] : [`🛡️ *ASTRA SUPPORT GROUPS*`, UI.FREE_BAR]),
@@ -104,38 +104,23 @@ module.exports = {
     ].join('\n');
     const supportImage = getAstraSupportImage();
 
-    // URL buttons: EVERY --main GC gets a NAME+LINK button (chunked 3 per
-    // message by the helper — nothing is cut off at 3 anymore).
-    let supportButtons = null;
+    let linksBlock = '';
     try {
-      if (ButtonHelper?.buildSupportButtons && buttonGroups.length) {
-        supportButtons = ButtonHelper.buildSupportButtons(buttonGroups);
+      if (TextMenu?.linkLines && buttonGroups.length) {
+        linksBlock = '\n\n' + TextMenu.linkLines(buttonGroups.map(g => [g.groupName, g.inviteLink]));
+      } else if (buttonGroups.length) {
+        linksBlock = '\n\n' + buttonGroups.map(g => `🔗 ${g.groupName}: ${g.inviteLink}`).join('\n');
       }
-    } catch {}
-
+    } catch (e) {
+      linksBlock = buttonGroups.length ? '\n\n' + buttonGroups.map(g => `🔗 ${g.groupName}: ${g.inviteLink}`).join('\n') : '';
+    }
+    const linksText = linksBlock;
     const dmPayload = supportImage
-      ? { image: supportImage, caption: fullDmText, mimetype: 'image/jpeg', footer: 'Astra™ 2026' }
-      : { text: fullDmText, footer: 'Astra™ 2026' };
-    const linksText = buttonGroups.length ? '\n\n' + buttonGroups.map(g => `🔗 ${g.groupName}: ${g.inviteLink}`).join('\n') : '';
-    const fallbackWithLinks = supportImage
-      ? { image: supportImage, caption: fullDmText + linksText, mimetype: 'image/jpeg' }
-      : { text: fullDmText + linksText };
+      ? { image: supportImage, caption: fullDmText + linksBlock, mimetype: 'image/jpeg' }
+      : { text: fullDmText + linksBlock };
 
     // ── Deliver via serf, THEN report the real result ──────────────────
-    const serfRes = SerfDM.getSerfSocket(db, sender);
-    let dmRes;
-    if (!serfRes.ok) {
-      dmRes = { ok: false, reason: serfRes.reason, detail: serfRes.detail };
-    } else if (supportButtons && supportButtons.length && ButtonHelper?.sendWithButtons) {
-      try {
-        await ButtonHelper.sendWithButtons(serfRes.serfSock, sender, dmPayload, supportButtons, null);
-        dmRes = { ok: true, via: 'serf' };
-      } catch (e) {
-        dmRes = await SerfDM.sendSerfDM(sock, db, sender, fallbackWithLinks);
-      }
-    } else {
-      dmRes = await SerfDM.sendSerfDM(sock, db, sender, fallbackWithLinks);
-    }
+    const dmRes = await SerfDM.sendSerfDM(sock, db, sender, dmPayload);
 
     // Notify in group chat (no links) — with the honest delivery result.
     if (chatId.endsWith('@g.us')) {

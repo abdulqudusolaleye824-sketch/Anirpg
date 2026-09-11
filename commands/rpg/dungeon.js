@@ -81,10 +81,12 @@ function executeMonsterAI(monster, player) {
 
   let atkMult = ability ? 1.5 : 1.0;
   const baseDmg  = Math.floor(monster.stats.atk * atkMult);
-  const defReduc = Math.floor(player.stats.def * 0.4);
+  let _gearDef0 = 0, _gearSpd0 = 0;
+  try { const _gb = require('../../rpg/utils/GearSystem').getEquippedBonuses(player); _gearDef0 = _gb.def || 0; _gearSpd0 = _gb.speed || 0; } catch (e) {}
+  const defReduc = Math.floor(((player.stats.def || 0) + _gearDef0) * 0.4);
 
   // Player dodge
-  const speedDiff = (player.stats.speed || 100) - (monster.stats.speed || 80);
+  const speedDiff = ((player.stats.speed || 100) + _gearSpd0) - (monster.stats.speed || 80);
   const dodge     = Math.max(0, Math.min(0.30, speedDiff / 200));
   if (dodge > 0 && Math.random() < dodge) {
     return `\n${FRAME}\n🔄 ${monster.name.toUpperCase()}'S TURN${mPro ? ' 💎' : ''}\n${FRAME}\n${monster.emoji} ${monster.name} ${ability ? 'uses *' + ability + '*!' : 'attacks!'}\n💬 "${line}"\n💨 *DODGED!* You were too fast!\n❤️ Your HP: ${player.stats.hp}/${player.stats.maxHp}\n${FRAME}`;
@@ -408,6 +410,13 @@ module.exports = {
           delete db.soloDungeons[sender];
           saveDatabase();
           LevelUpManager.checkAndApplyLevelUps(player, saveDatabase, sock, chatId);
+          try {
+            const _ref = require('../../rpg/utils/ReferralSystem').onLevelUp(db, player);
+            if (_ref) { saveDatabase(); await sock.sendMessage(chatId, { text: `🔗 *REFERRAL REWARD!*
+
+*${_ref.recruitName}* hit Lv.3!
+💠 @${_ref.referrerId.split('@')[0]} earned *10,000 Nexus*!`, mentions: [_ref.referrerId] }); }
+          } catch (e) {}
           return sock.sendMessage(chatId, {
             text: (pro ? `${UI.PRO_BAR}\n🏆 *SOLO DUNGEON COMPLETE!* 💎\n${UI.PRO_BAR}\n` : `🏆 *SOLO DUNGEON COMPLETE!*\n${UI.FREE_BAR}\n`) + `✅ All 10 floors cleared!\n\n📊 *TOTAL REWARDS:*\n💠 Nexus: +${sd.totalNexus.toLocaleString()}\n💎 Mana Stones: +${sd.totalCrystals}\n${FRAME}\n💪 Well done, solo hunter!` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO DELVER* — run total ${UI.num(sd.totalNexus)} 💠` : `\n${UI.upsell()}`)
           }, { quoted: msg });
@@ -494,6 +503,13 @@ module.exports = {
         delete db.soloDungeons[sender];
         saveDatabase();
         LevelUpManager.checkAndApplyLevelUps(player, saveDatabase, sock, chatId);
+        try {
+          const _ref = require('../../rpg/utils/ReferralSystem').onLevelUp(db, player);
+          if (_ref) { saveDatabase(); await sock.sendMessage(chatId, { text: `🔗 *REFERRAL REWARD!*
+
+*${_ref.recruitName}* hit Lv.3!
+💠 @${_ref.referrerId.split('@')[0]} earned *10,000 Nexus*!`, mentions: [_ref.referrerId] }); }
+        } catch (e) {}
         return sock.sendMessage(chatId, {
           text: (pro ? `${UI.PRO_BAR}\n🚪 *EXITED SOLO DUNGEON* 💎\n${UI.PRO_BAR}\n` : `🚪 *EXITED SOLO DUNGEON*\n${UI.FREE_BAR}\n`) + `Cleared ${sd.currentFloor - 1} floor(s)\n\n📦 *REWARDS KEPT:*\n💠 Nexus: +${sd.totalNexus.toLocaleString()}\n💎 Mana Stones: +${sd.totalCrystals}\n${FRAME}` + (pro ? '' : `\n${UI.upsell()}`)
         }, { quoted: msg });
@@ -765,8 +781,10 @@ module.exports = {
         const modsSolo = StatusEffectManager.getStatModifiers(player);
         let consAtkSolo = 0;
         try { const CS=require('../../rpg/utils/ConstellationSystem'); consAtkSolo=CS.getSponsorBonus(player).atk||0; } catch(e) {}
-        const effAtkSolo = Math.floor((player.stats.atk + weapAtkSolo + artAtkSolo + petAtkSolo + consAtkSolo) * modsSolo.atkMod);
-        const isCritSolo = Math.random() < ((player.stats.critChance || 10) / 100);
+        let _gearAtkSolo = 0, _gearCritSolo = 0;
+        try { const _gb = require('../../rpg/utils/GearSystem').getEquippedBonuses(player); _gearAtkSolo = _gb.atk || 0; _gearCritSolo = _gb.crit || 0; } catch (e) {}
+        const effAtkSolo = Math.floor((player.stats.atk + weapAtkSolo + artAtkSolo + petAtkSolo + consAtkSolo + _gearAtkSolo) * modsSolo.atkMod);
+        const isCritSolo = Math.random() < (((player.stats.critChance || 10) + _gearCritSolo) / 100);
         const critMSolo  = 1.5 + (player.statAllocations?.critDamage || 0) * 0.01;
         const playerDmg  = Math.max(1, Math.floor(effAtkSolo * (isCritSolo ? critMSolo : 1.0)) - Math.floor(monster.stats.def * 0.4));
 
@@ -914,7 +932,9 @@ module.exports = {
       const mods   = StatusEffectManager.getStatModifiers(player);
       let consAtkDungeon = 0;
       try { const CS=require('../../rpg/utils/ConstellationSystem'); consAtkDungeon=CS.getSponsorBonus(player).atk||0; } catch(e) {}
-      const effAtk = Math.floor((player.stats.atk + weapAtk + artAtk + petAtk + consAtkDungeon) * mods.atkMod);
+      let _gearAtkD = 0;
+      try { _gearAtkD = require('../../rpg/utils/GearSystem').getEquippedBonuses(player).atk || 0; } catch (e) {}
+      const effAtk = Math.floor((player.stats.atk + weapAtk + artAtk + petAtk + consAtkDungeon + _gearAtkD) * mods.atkMod);
       const isCrit  = Math.random() < (0.10 + (player.statAllocations?.critChance || 0) * 0.005);
       const critM   = 1.5 + (player.statAllocations?.critDamage || 0) * 0.01;
       let dmg       = Math.max(1, Math.floor(effAtk * (isCrit ? critM : 1.0)) - Math.floor(monster.stats.def * 0.4));
@@ -995,10 +1015,12 @@ module.exports = {
         // Build player entity with artifact bonuses applied
         const _artStats = ArtifactSystem?.getEquippedArtifactStats ? ArtifactSystem.getEquippedArtifactStats(player) : {};
         const _atkBoost = BuffManager?.getAtkBoost ? BuffManager.getAtkBoost(player) : 0;
+        let _gearB = {};
+        try { _gearB = require('../../rpg/utils/GearSystem').getEquippedBonuses(player) || {}; } catch (e) {}
         const pStats = { ...player.stats,
-          atk: (player.stats.atk || 0) + (_artStats.atk || 0) + _atkBoost,
-          def: (player.stats.def || 0) + (_artStats.def || 0),
-          critChance: (player.stats.critChance || 0) + (_artStats.critChance || 0)
+          atk: (player.stats.atk || 0) + (_artStats.atk || 0) + _atkBoost + (_gearB.atk || 0),
+          def: (player.stats.def || 0) + (_artStats.def || 0) + (_gearB.def || 0),
+          critChance: (player.stats.critChance || 0) + (_artStats.critChance || 0) + (_gearB.crit || 0)
         };
         const pEnt = { name: player.name, stats: pStats, skills: player.skills, class: { name: className }, energyType: player.energyType || 'Energy', statusEffects: player.statusEffects || [], weapon: player.weapon };
         const mEnt = { name: monster.name, stats: monster.stats, skills: {}, abilities: monster.abilities || [], statusEffects: monster.statusEffects || [] };

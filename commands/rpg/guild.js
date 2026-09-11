@@ -263,7 +263,8 @@ module.exports = {
     // ═══════════════════════════════════════════════════════════════════
     if (!action || action === 'info') {
       if (!playerGuild) {
-        const canFound = (player.level || 1) >= 20 && (player.gold || 0) >= 1000000;
+        const _lvlReq = pro ? 10 : 15;
+        const canFound = (player.level || 1) >= _lvlReq && (player.gold || 0) >= 1000000;
         const text = UI.card(player, {
           icon: '🏰', title: 'GUILD SYSTEM',
           lines: [
@@ -271,7 +272,7 @@ module.exports = {
             ``,
             `📌 *GET STARTED:*`,
             `• /guild list — View all registered guilds`,
-            `• /guild create [name] — Found one (1,000,000💠 + 100,000💎 | Lv.20)`,
+            `• /guild create [name] — Found one (1,000,000💠 + 100,000💎 | Lv.${_lvlReq}${pro ? ' Pro' : ''})`,
             `• /guild request [name] — Apply to a guild`,
             ``,
             `🏆 *GUILD BENEFITS:*`,
@@ -279,7 +280,7 @@ module.exports = {
             `• Exclusive Guild Shop (up to 25% OFF)`,
             `• Shared treasury & Guild Wars!`,
           ],
-          proLines: canFound ? [`💎 *PRO CHARTER* — you meet the founding cost`] : [`💎 *PRO CHARTER* — need Lv.20 + 1M 💠 to found`],
+          proLines: canFound ? [`💎 *PRO CHARTER* — you meet the founding cost`] : [`💎 *PRO CHARTER* — need Lv.${_lvlReq} + 1M 💠 to found`],
           tip: 'Guild Wars pay GP and glory',
         });
         return sock.sendMessage(chatId, { text }, { quoted: msg });
@@ -334,7 +335,7 @@ module.exports = {
       const isOwner = Perms.isBotOwner(db, sender);
       const isAuthorized = isOwner || db.authorizedGuildMasters.includes(sender);
 
-      const LEVEL_REQ = 20;
+      const LEVEL_REQ = pro ? 10 : 15; // Pro founders: Lv.10 · Regular: Lv.15
       const NEXUS_REQ = 1_000_000; // 1 Million Nexus
       const MANA_REQ  = 100_000;   // 100,000 Mana Stones (100kms)
       const START_NEXUS = 100_000;

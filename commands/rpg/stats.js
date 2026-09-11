@@ -99,7 +99,8 @@ module.exports = {
     const breakdown = (base, bonus) => bonus > 0 ? ` _(${base} + ${bonus})_` : '';
 
     // ── XP progress ───────────────────────────────────────────
-    const nextLevelXp  = Math.floor(200 * Math.pow(player.level, 1.8));
+    const { getXpRequired } = require('../../rpg/utils/SoloLevelingCore');
+    const nextLevelXp  = getXpRequired(player.level || 1);
     const xpProgress   = Math.min(100, Math.floor(((player.xp || 0) / nextLevelXp) * 100));
     const xpBarFilled  = Math.floor(xpProgress / 10);
     const xpBar = UI.bar(player.xp || 0, nextLevelXp, 10, pro);
@@ -255,11 +256,12 @@ module.exports = {
     try {
       const BP = require('../../rpg/utils/BattlePass');
       const bp  = BP.getPassState(player);
-      const pct = Math.min(100, Math.floor((bp.xp / BP.XP_PER_LEVEL) * 100));
-      const bar = UI.bar(bp.xp, BP.XP_PER_LEVEL, 10, pro);
+      const _need = BP.xpForLevel ? BP.xpForLevel(bp.level || 0) : BP.XP_PER_LEVEL;
+      const pct = Math.min(100, Math.floor((bp.xp / _need) * 100));
+      const bar = UI.bar(bp.xp, _need, 10, pro);
       msg2 += `\n${FRAME}\n🎖️ *BATTLE PASS*`;
       msg2 += `\n${bp.premium?'💎 Premium':'🆓 Free'} | Level *${bp.level}/${BP.PASS_LEVELS}*`;
-      msg2 += `\n${bar} ${bp.xp}/${BP.XP_PER_LEVEL}`;
+      msg2 += `\n${bar} ${bp.xp}/${_need}`;
     } catch(e) {}
 
     if (pro) {

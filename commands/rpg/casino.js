@@ -353,15 +353,12 @@ ${FRAME}`
             : `❌ Could not launch your flight — your bet was refunded. Try again!`
         }, { quoted: msg });
       }
-      // Cash-out button (separate message — the flight message itself is edited live)
+      // Cash-out prompt (plain text — always renders; /cashout always works)
       try {
-        const BH = require('../../utils/buttonHelper');
-        if (BH?.sendWithButtons && BH?.buildQuickReplies) {
-          await BH.sendWithButtons(sock, chatId,
-            { text: `💰 *${player.name}* is flying — tap to cash out!\n(or type */cashout*)`, footer: `Aviator • bet ${betAmount}` },
-            BH.buildQuickReplies([['💰 CASH OUT', '/cashout']]), msg);
-        }
-      } catch (e) { /* button is a convenience — /cashout always works */ }
+        await sock.sendMessage(chatId, {
+          text: `💰 *${player.name}* is flying — type */cashout* to cash out!`
+        }, { quoted: msg });
+      } catch (e) { /* prompt is a convenience — /cashout always works */ }
       return;
     }
 

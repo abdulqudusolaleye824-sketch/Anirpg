@@ -7,7 +7,7 @@
 // WALL in MultiSocketManager.safeSendDM). Callers MUST surface the result:
 // success → "SUCCESSFULLY SENT VIA SERF", failure → the stated reason.
 // getSerfSocket(db, sender) exposes the live serf socket for callers that
-// need relay-level sends (e.g. interactive buttons in DMs).
+// need the raw serf socket for multi-step DM flows.
 // ═══════════════════════════════════════════════════════════════
 
 'use strict';

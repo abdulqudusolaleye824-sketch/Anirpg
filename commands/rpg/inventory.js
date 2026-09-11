@@ -1,6 +1,10 @@
 // ═══════════════════════════════════════════════════════════════
-// /inventory (/inv alias) — Sectioned display + slot detail view
-// /inv <number> — shows full item detail with lore (mythic support)
+// /inventory (/inv alias) — UNIFIED numbered list, most-recent first
+// /inv        — every holding (gear + consumables + materials +
+//               potions + pet food) numbered by most-recently-obtained
+// /inv <#>    — full detail for that serial
+// /inv info   — currencies, passes & full dashboard
+// /items and /gear are subcategory views; /equip <#> reads these serials.
 // ═══════════════════════════════════════════════════════════════
 
 const UI = require('../../rpg/utils/UI');
@@ -10,6 +14,12 @@ const RARITY_ORDER = { mythic: 0, legendary: 1, epic: 2, rare: 3, uncommon: 4, c
 // resolve through this so a serial number means the same thing everywhere.
 function sortGear(arr) {
   return [...arr].sort((a, b) => (RARITY_ORDER[a.rarity] || 6) - (RARITY_ORDER[b.rarity] || 6));
+}
+// Newest-first ordering shared by /inv and /gear. Items stamped with
+// acquiredAt (all modern grants) sort by it; legacy unstamped items keep
+// reverse-array order (pushes append, so later index = newer).
+function byRecency(arr) {
+  return [...arr].reverse().sort((a, b) => ((b.acquiredAt || 0) - (a.acquiredAt || 0)));
 }
 function collectBuckets(player) {
   const inv = player.inventory || {};
@@ -21,6 +31,52 @@ function collectBuckets(player) {
   const consumables  = [...items.filter(i => !i.isGear && i.type !== 'gear' && !i.isPetFood && i.type !== 'PetFood'), ...legacyMats];
   const petFoodItems = items.filter(i => i.isPetFood || i.type === 'PetFood');
   return { gearItems, consumables, petFoodItems };
+}
+
+// ── Unified serial list: EVERYTHING, numbered, newest first ───────
+// Entry: { kind, name, rarity, slot, count, acquiredAt, ref }
+// kind: gear (individual) | stack (consumables/materials/petfood) | potion
+function serialList(player) {
+  const inv = player.inventory || {};
+  const { gearItems, consumables, petFoodItems } = collectBuckets(player);
+  const entries = [];
+
+  for (const g of gearItems) {
+    entries.push({
+      kind: 'gear', name: g.name, rarity: g.rarity || 'common', slot: g.slot || '?',
+      count: 1, acquiredAt: g.acquiredAt || g.droppedAt || 0, ref: g,
+    });
+  }
+
+  const stackInto = (arr, kind) => {
+    const m = {};
+    const order = [];
+    for (const it of arr) {
+      if (!m[it.name]) { m[it.name] = { kind, name: it.name, rarity: it.rarity || 'common', count: 0, acquiredAt: 0, ref: it }; order.push(it.name); }
+      const e = m[it.name];
+      e.count++;
+      e.acquiredAt = Math.max(e.acquiredAt, it.acquiredAt || 0);
+      if ((it.acquiredAt || 0) >= e.acquiredAt) e.ref = it;
+    }
+    for (const k of order) entries.push(m[k]);
+  };
+  stackInto(consumables, 'stack');
+  stackInto(petFoodItems, 'petfood');
+
+  // Legacy potion counters (no per-unit date — listed after dated items)
+  if ((inv.healthPotions || 0) > 0) entries.push({ kind: 'potion', name: 'Health Potion', rarity: 'common', count: inv.healthPotions, acquiredAt: 0, ref: null });
+  if ((inv.energyPotions || inv.manaPotions || 0) > 0) entries.push({ kind: 'potion', name: 'Energy Potion', rarity: 'common', count: inv.energyPotions || inv.manaPotions, acquiredAt: 0, ref: null });
+  if ((inv.reviveTokens || 0) > 0) entries.push({ kind: 'potion', name: 'Revive Token', rarity: 'uncommon', count: inv.reviveTokens, acquiredAt: 0, ref: null });
+  // Materials stored as counters
+  const mats = player.materials || {};
+  for (const k of Object.keys(mats)) {
+    if ((mats[k] || 0) > 0) entries.push({ kind: 'stack', name: k, rarity: 'common', count: mats[k], acquiredAt: 0, ref: null });
+  }
+
+  // Stable newest-first: dated by stamp desc, undated keep insertion order at the end
+  const dated = entries.filter(e => e.acquiredAt > 0).sort((a, b) => b.acquiredAt - a.acquiredAt);
+  const undated = entries.filter(e => !e.acquiredAt);
+  return [...dated, ...undated];
 }
 
 module.exports = {
@@ -40,62 +96,85 @@ module.exports = {
     const FRAME = pro ? UI.PRO_BAR : UI.FREE_BAR;
 
     const inv   = player.inventory || {};
-    const items = inv.items || [];
 
     const rarityEmoji = { mythic:'🌌', legendary:'🟠', epic:'🟣', rare:'🔵', uncommon:'🟢', common:'⚪' };
     const rarityOrder = { mythic:0, legendary:1, epic:2, rare:3, uncommon:4, common:5 };
 
-    const { gearItems, consumables, petFoodItems } = collectBuckets(player);
+    const serials = serialList(player);
 
-    // ── /inv <number> — detail view for a gear item ─────────────
+    // ── /inv <number> — detail view for a serial ────────────────
     const slotArg = parseInt(args[0]);
     if (!isNaN(slotArg) && slotArg > 0) {
-      const sorted = sortGear(gearItems);
-      const item   = sorted[slotArg - 1];
-      if (!item) {
-        return sock.sendMessage(chatId, { text: `❌ No gear item in slot ${slotArg}.\nYou have ${sorted.length} gear items.\nUse /inv to see your full inventory.` }, { quoted: msg });
+      const entry = serials[slotArg - 1];
+      if (!entry) {
+        return sock.sendMessage(chatId, { text: `❌ No item at serial ${slotArg}.\nYou have ${serials.length} entries.\nUse /inv to see your full inventory.` }, { quoted: msg });
       }
-      const re      = rarityEmoji[item.rarity] || '📦';
-      const rarName = (item.rarity||'common').charAt(0).toUpperCase() + (item.rarity||'common').slice(1);
+      const item = entry.ref || {};
+      const re      = rarityEmoji[entry.rarity] || '📦';
+      const rarName = (entry.rarity||'common').charAt(0).toUpperCase() + (entry.rarity||'common').slice(1);
 
-      let detail = pro ? `${UI.PRO_BAR}\n${re} *${item.name}* 💎\n${UI.PRO_BAR}\n` : `${re} *${item.name}*\n${UI.FREE_BAR}\n`;
+      let detail = pro ? `${UI.PRO_BAR}\n${re} *${entry.name}* 💎\n${UI.PRO_BAR}\n` : `${re} *${entry.name}*\n${UI.FREE_BAR}\n`;
       detail += `🏷️ Rarity: *${rarName}*\n`;
-      if (item.slot) detail += `🔹 Slot: *${item.slot}*\n`;
-      detail += `🔧 Durability: *${item.durability || '?'}/${item.maxDurability || item.durability || '?'}*\n`;
+      if (entry.count > 1) detail += `📦 Owned: *×${entry.count}*\n`;
+      if (entry.kind === 'gear') {
+        if (entry.slot) detail += `🔹 Slot: *${entry.slot}*\n`;
+        detail += `🔧 Durability: *${item.durability || '?'}/${item.maxDurability || item.durability || '?'}*\n`;
 
-      // Stats
-      const statKeys = Object.entries(item.stats || {}).filter(([k]) => k !== 'special' && k !== 'bonus');
-      if (statKeys.length > 0 || item.stats?.bonus) {
-        detail += `\n📊 *STATS*\n`;
-        if (item.stats?.bonus || item.stats?.atk) {
-          const atk = item.stats.atk || item.stats.bonus || 0;
-          if (atk > 0) detail += `  ⚔️ ATK: +${atk}\n`;
+        // Stats
+        const statKeys = Object.entries(item.stats || {}).filter(([k]) => k !== 'special' && k !== 'bonus');
+        if (statKeys.length > 0 || item.stats?.bonus) {
+          detail += `\n📊 *STATS*\n`;
+          if (item.stats?.bonus || item.stats?.atk) {
+            const atk = item.stats.atk || item.stats.bonus || 0;
+            if (atk > 0) detail += `  ⚔️ ATK: +${atk}\n`;
+          }
+          for (const [k, v] of statKeys.filter(([k]) => k !== 'atk')) {
+            if (v === 0) continue;
+            const labels = { def:'🛡️ DEF', hp:'❤️ HP', speed:'💨 SPD', magicPower:'✨ MAGIC', critChance:'💥 CRIT', lifesteal:'💚 LIFESTEAL', def2:'🛡️ DEF+' };
+            const label = labels[k] || k.toUpperCase();
+            const sign  = v > 0 ? '+' : '';
+            detail += `  ${label}: ${sign}${v}\n`;
+          }
         }
-        for (const [k, v] of statKeys.filter(([k]) => k !== 'atk')) {
-          if (v === 0) continue;
-          const labels = { def:'🛡️ DEF', hp:'❤️ HP', speed:'💨 SPD', magicPower:'✨ MAGIC', critChance:'💥 CRIT', lifesteal:'💚 LIFESTEAL', def2:'🛡️ DEF+' };
-          const label = labels[k] || k.toUpperCase();
-          const sign  = v > 0 ? '+' : '';
-          detail += `  ${label}: ${sign}${v}\n`;
+
+        // Lore (mythic items have it)
+        if (item.lore || item.rarity === 'mythic') {
+          detail += `\n📖 *LORE*\n`;
+          detail += `_${item.lore || 'No lore recorded for this item.'}_\n`;
+        }
+
+        // Special effects
+        if (item.stats?.special) {
+          detail += `\n⚡ *SPECIAL EFFECT*\n  ${item.stats.special}\n`;
+        }
+
+        // Equipped check
+        const equippedSlot = entry.slot ? player.equippedGear?.[entry.slot] : null;
+        const isEquipped   = equippedSlot && equippedSlot.name === entry.name;
+        detail += `\n${isEquipped ? '✅ *EQUIPPED*' : '⭕ Not equipped'}\n`;
+        if (!isEquipped) detail += `💡 /equip ${slotArg} to equip this item\n`;
+      } else {
+        // Consumable / potion / material stack detail
+        const desc = item.desc || item.description || null;
+        if (desc) detail += `\n_${desc}_\n`;
+        if (entry.kind === 'potion') {
+          if (entry.name === 'Health Potion') detail += `\n💚 Restores 50% HP. Use: /equip use (see /items)\n`;
+          else if (entry.name === 'Energy Potion') detail += `\n⚡ Restores 50% Energy. Use: /equip use (see /items)\n`;
+          else if (entry.name === 'Revive Token') detail += `\n💿 Auto-used on death in dungeons.\n`;
+        } else {
+          // Cross-reference the /items serial for use/gift
+          let useHint = '';
+          try {
+            const itemsMod = require('./items');
+            if (itemsMod._buildList) {
+              const il = itemsMod._buildList(player);
+              const ix = il.findIndex(e => e.name === entry.name);
+              if (ix >= 0) useHint = `/equip use ${ix + 1}`;
+            }
+          } catch (e) {}
+          detail += `\n💡 ${useHint ? `Use: ${useHint} · ` : ''}See /items for all Usables\n`;
         }
       }
-
-      // Lore (mythic items have it)
-      if (item.lore || item.rarity === 'mythic') {
-        detail += `\n📖 *LORE*\n`;
-        detail += `_${item.lore || 'No lore recorded for this item.'}_\n`;
-      }
-
-      // Special effects
-      if (item.stats?.special) {
-        detail += `\n⚡ *SPECIAL EFFECT*\n  ${item.stats.special}\n`;
-      }
-
-      // Equipped check
-      const equippedSlot = item.slot ? player.equippedGear?.[item.slot] : null;
-      const isEquipped   = equippedSlot && equippedSlot.name === item.name;
-      detail += `\n${isEquipped ? '✅ *EQUIPPED*' : '⭕ Not equipped'}\n`;
-      if (!isEquipped) detail += `💡 /equip ${slotArg} to equip this item\n`;
       detail += pro ? UI.PRO_BAR : `${UI.FREE_BAR}\n${UI.upsell()}`;
 
       return sock.sendMessage(chatId, { text: detail }, { quoted: msg });
@@ -103,50 +182,36 @@ module.exports = {
 
     const sub = String(args[0] || '').toLowerCase();
 
-    // ── /inv (default) — simple list of OWNED ITEMS only ───────
-    // No currencies, no passes, no extras — those live on /inv info.
+    // ── /inv (default) — unified numbered list, newest first ────
     if (sub !== 'info' && sub !== 'dashboard') {
-      const sg = sortGear(gearItems);
+      const MAX_SHOW = 40;
       let simple = pro
         ? `${UI.PRO_BAR}\n🎒 *INVENTORY* — ${player.name} 💎\n${UI.PRO_BAR}\n`
         : `🎒 *INVENTORY* — ${player.name}\n${UI.FREE_BAR}\n`;
-      simple += `\n⚔️ *GEAR* (${sg.length})\n`;
-      if (sg.length === 0) {
-        simple += `  _None — clear dungeons to find gear!_\n`;
+      simple += `\n🆕 *ALL ITEMS — newest first* (${serials.length})\n`;
+      if (serials.length === 0) {
+        simple += `  _Empty — clear dungeons to find loot!_\n`;
       } else {
-        sg.forEach((g, i) => {
-          const eq = player.equippedGear?.[g.slot]?.name === g.name ? ' ✅' : '';
-          simple += `  *${i + 1}.* ${rarityEmoji[g.rarity] || '📦'} ${g.name} [${g.slot || '?'}]${eq}\n`;
+        serials.slice(0, MAX_SHOW).forEach((e, i) => {
+          const eq = e.kind === 'gear' && player.equippedGear?.[e.slot]?.name === e.name ? ' ✅' : '';
+          const cnt = e.count > 1 ? ` ×${e.count}` : '';
+          const slot = e.kind === 'gear' ? ` [${e.slot || '?'}]` : '';
+          const dur = e.kind === 'gear' && e.ref ? ` 🔧${e.ref.durability ?? '?'}/${e.ref.maxDurability ?? e.ref.durability ?? '?'}` : '';
+          simple += `  *${i + 1}.* ${rarityEmoji[e.rarity] || '📦'} ${e.name}${slot}${cnt}${dur}${eq}\n`;
         });
+        if (serials.length > MAX_SHOW) simple += `  _...and ${serials.length - MAX_SHOW} more_\n`;
       }
-      const _stack = (arr) => {
-        const m = {};
-        for (const it of arr) {
-          if (!m[it.name]) m[it.name] = { name: it.name, rarity: it.rarity || 'common', count: 0 };
-          m[it.name].count++;
-        }
-        return Object.values(m).sort((x, y) => (rarityOrder[x.rarity] || 6) - (rarityOrder[y.rarity] || 6));
-      };
-      simple += `\n💊 *CONSUMABLES*\n`;
-      const _cons = _stack(consumables);
-      if ((inv.healthPotions || 0) > 0) simple += `  💚 Health Potion ×${inv.healthPotions}\n`;
-      if ((inv.energyPotions || inv.manaPotions || 0) > 0) simple += `  ⚡ Energy Potion ×${inv.energyPotions || inv.manaPotions}\n`;
-      if ((inv.reviveTokens || 0) > 0) simple += `  💿 Revive Token ×${inv.reviveTokens}\n`;
-      if (_cons.length === 0 && !(inv.healthPotions || inv.energyPotions || inv.manaPotions || inv.reviveTokens)) simple += `  _None_\n`;
-      for (const c of _cons) simple += `  ${rarityEmoji[c.rarity] || '📦'} ${c.name}${c.count > 1 ? ` ×${c.count}` : ''}\n`;
-      simple += `\n🐾 *PET FOOD*\n`;
-      const _food = _stack(petFoodItems);
-      if (_food.length === 0) simple += `  _None_\n`;
-      for (const f of _food) simple += `  ${rarityEmoji[f.rarity] || '🐾'} ${f.name} ×${f.count}\n`;
       simple += `\n${FRAME}\n`;
-      simple += `📌 /inv <#> — item detail + lore\n`;
+      simple += `📌 /inv <#> — item detail\n`;
       simple += `📌 /inv info — currencies, passes & full dashboard\n`;
       simple += `📌 /equip <#> — equip gear by serial\n`;
+      simple += `📌 /items · /gear — subcategory views\n`;
       simple += pro ? FRAME : `${FRAME}\n${UI.upsell()}`;
       return sock.sendMessage(chatId, { text: simple }, { quoted: msg });
     }
 
     // ── /inv info — full dashboard ───────────────────────────
+    const { gearItems, consumables, petFoodItems } = collectBuckets(player);
     let message = pro
       ? `${UI.PRO_BAR}\n🎒 *INVENTORY* — ${player.name} 💎\n${UI.PRO_BAR}\n`
       : `🎒 *INVENTORY* — ${player.name}\n${UI.FREE_BAR}\n`;
@@ -215,14 +280,25 @@ module.exports = {
     }
     message += `\n`;
 
+    // ── Cards (name-change / seticon / pro cards) ───────────────
+    const cards = player.cards || {};
+    const cardTotal = (cards.namechange || 0) + (cards.seticon || 0) + (cards.pro_weekly || 0);
+    if (cardTotal > 0) {
+      message += `🃏 *CARDS* (${cardTotal})\n`;
+      if (cards.namechange) message += `  ✏️ Name-Change Card ×${cards.namechange} — /setname <new name>\n`;
+      if (cards.seticon)    message += `  🖼️ Seticon Token ×${cards.seticon} — /seticon (reply to image)\n`;
+      if (cards.pro_weekly) message += `  🎫 Weekly Pro Card ×${cards.pro_weekly} — /prostore use weekly\n`;
+      message += `\n`;
+    }
+
     // ── Guild Victory Cards ──────────────────────────────────────
-    const cards = inv.cards || {};
-    const gvcTotal = (cards.gvc_gold || 0) + (cards.gvc_silver || 0) + (cards.gvc_bronze || 0);
+    const gcards = inv.cards || {};
+    const gvcTotal = (gcards.gvc_gold || 0) + (gcards.gvc_silver || 0) + (gcards.gvc_bronze || 0);
     if (gvcTotal > 0) {
       message += `🃏 *GUILD VICTORY CARDS* (${gvcTotal})\n`;
-      if (cards.gvc_gold)   message += `  🥇 Gold ×${cards.gvc_gold} — /use GVC --gold (15k 💠 + 3k 💎 + 2× EXP buff)\n`;
-      if (cards.gvc_silver) message += `  🥈 Silver ×${cards.gvc_silver} — /use GVC --silver (10k 💠 + 2k 💎 + 1.5× EXP buff)\n`;
-      if (cards.gvc_bronze) message += `  🥉 Bronze ×${cards.gvc_bronze} — /use GVC --bronze (5k 💠 + 2k 💎 + 1.25× EXP buff)\n`;
+      if (gcards.gvc_gold)   message += `  🥇 Gold ×${gcards.gvc_gold} — /use GVC --gold (15k 💠 + 3k 💎 + 2× EXP buff)\n`;
+      if (gcards.gvc_silver) message += `  🥈 Silver ×${gcards.gvc_silver} — /use GVC --silver (10k 💠 + 2k 💎 + 1.5× EXP buff)\n`;
+      if (gcards.gvc_bronze) message += `  🥉 Bronze ×${gcards.gvc_bronze} — /use GVC --bronze (5k 💠 + 2k 💎 + 1.25× EXP buff)\n`;
       message += `\n`;
     }
 
@@ -292,8 +368,6 @@ module.exports = {
     }
     const mending = player.inventory?.mendingStones || 0;
     if (mending>0) message += `  🛠️ Mending Stones: ${mending} — use /use mending stone to restore durability\n`;
-    // Daily spawn info
-    const lastSpawn = (getArgDb => { try { const db2=require('../../database'); return db2?.globalSpawn?.lastSpawnAt; } catch(e){return null;} })();
     message += `  🎁 Item Spawns: common→epic 1/day globally (requires /set spawn --true) — claim with /claim\n`;
 
     if (pro) {
@@ -303,7 +377,7 @@ module.exports = {
       message += `\n${UI.PRO_MINI}\n💎 *PRO HOARD* — ${sortedGear.length} gear · ${consSorted.length} stacks\n  ${rarStr || '_No gear yet_'}\n`;
     }
     message += `\n${FRAME}\n`;
-    message += `📌 /inv — owned items (simple)\n`;
+    message += `📌 /inv — all items (newest first)\n`;
     message += `📌 /gear · /summon · /attacks\n`;
     message += pro ? FRAME : `${FRAME}\n${UI.upsell()}`;
 
@@ -313,4 +387,6 @@ module.exports = {
 
 module.exports._collectBuckets = collectBuckets;
 module.exports._sortGear = sortGear;
+module.exports._byRecency = byRecency;
+module.exports._serialList = serialList;
 module.exports._rarityOrder = RARITY_ORDER;

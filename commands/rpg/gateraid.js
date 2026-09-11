@@ -509,7 +509,9 @@ module.exports = {
       // Monster counter-attack (frozen/stunned monsters lose their turn)
       let _monCanAct = { canAct: true, reason: null };
       try { _monCanAct = require('../../rpg/utils/UnifiedCombat').canAct({ statusEffects: target.statusEffects || [] }); } catch(e){}
-      const def = (player.stats?.def || 5) + (player.equipped?.armor?.def || 0);
+      let _gDefGR = 0;
+      try { _gDefGR = require('../../rpg/utils/GearSystem').getEquippedBonuses(player).def || 0; } catch (e) {}
+      const def = (player.stats?.def || 5) + (player.equipped?.armor?.def || 0) + _gDefGR;
       const dmg = _monCanAct.canAct ? GR.monsterDamage(target, def) : 0;
       if (_monCanAct.canAct) player.stats.hp = Math.max(0, (player.stats.hp || 0) - dmg);
 
@@ -676,7 +678,9 @@ module.exports = {
           lines.push(UI.PRO_MINI, topRaider && topRaider[0] === sender ? `💎 *PRO SLAYER* — TOP raid damage: ${UI.num(topRaider[1])}! 🔥` : `💎 *PRO SLAYER* — top: ${topName} (${topRaider ? UI.num(topRaider[1]) : 0})`);
         } else lines.push(UI.upsell());
       } else {
-        const def = (player.stats?.def || 5) + (player.equipped?.armor?.def || 0);
+        let _gDefGR2 = 0;
+        try { _gDefGR2 = require('../../rpg/utils/GearSystem').getEquippedBonuses(player).def || 0; } catch (e) {}
+        const def = (player.stats?.def || 5) + (player.equipped?.armor?.def || 0) + _gDefGR2;
         const bossAtk = Math.floor(GATE_RANKS[gate.rank].monsterRange[1] * 0.20);
         const dmg = Math.max(10, bossAtk - Math.floor(def * 0.4));
         player.stats.hp = Math.max(0, (player.stats.hp || 0) - dmg);

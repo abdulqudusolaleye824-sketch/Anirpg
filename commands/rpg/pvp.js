@@ -166,13 +166,15 @@ module.exports = {
       const p2Spd = (player.stats?.speed || 10) + (player.equipped?.weapon?.speed || 0);
 
       const cPro = UI.isPro(challenger);
+      let _eff1 = null, _eff2 = null;
+      try { const GE = require('../../rpg/utils/GearSystem'); _eff1 = GE.getEffectiveStats(challenger); _eff2 = GE.getEffectiveStats(player); } catch (e) {}
       const stats1 = [
         ...(cPro ? [UI.PRO_BAR, `⚔️ *FIGHTER 1 BATTLE STATS* 💎`, UI.PRO_BAR] : [`⚔️ *FIGHTER 1 BATTLE STATS*`, UI.FREE_BAR]),
         `👤 Name: *${getPlayerName(challenger)}*`,
         `🎭 Class: *${getClassName(challenger)}* (Lv.${challenger.level || 1})`,
         `⭐ ELO: ${challenger.pvpElo || 1000}`,
         `❤️ HP: ${challenger.stats?.hp || 100}/${challenger.stats?.maxHp || 100}`,
-        `⚔️ ATK: ${challenger.stats?.atk || 10} | 🛡️ DEF: ${challenger.stats?.def || 5}`,
+        `⚔️ ATK: ${_eff1 ? _eff1.atk : (challenger.stats?.atk || 10)} | 🛡️ DEF: ${_eff1 ? _eff1.def : (challenger.stats?.def || 5)}`,
         `⚡ Speed: ${p1Spd}`,
         cPro ? UI.PRO_BAR : UI.FREE_BAR,
       ].join('\n');
@@ -183,7 +185,7 @@ module.exports = {
         `🎭 Class: *${getClassName(player)}* (Lv.${player.level || 1})`,
         `⭐ ELO: ${player.pvpElo || 1000}`,
         `❤️ HP: ${player.stats?.hp || 100}/${player.stats?.maxHp || 100}`,
-        `⚔️ ATK: ${player.stats?.atk || 10} | 🛡️ DEF: ${player.stats?.def || 5}`,
+        `⚔️ ATK: ${_eff2 ? _eff2.atk : (player.stats?.atk || 10)} | 🛡️ DEF: ${_eff2 ? _eff2.def : (player.stats?.def || 5)}`,
         `⚡ Speed: ${p2Spd}`,
         `${FRAME}`,
       ].join('\n');
@@ -672,8 +674,15 @@ async function resolveTurn(sock, chatId, p1, p2, db, saveDatabase) {
 }
 
 function calcMoveDamage(attacker, defender, act) {
-  const atk = (attacker.stats?.atk || 10) + (attacker.equipped?.weapon?.atk || attacker.equipped?.weapon?.bonus || 0);
-  const def = (defender.stats?.def || 5) + (defender.equipped?.armor?.def || 0);
+  let _gAtk = 0, _gDef = 0, _gCrit = 0;
+  try {
+    const { getEquippedBonuses } = require('../../rpg/utils/GearSystem');
+    _gAtk = (getEquippedBonuses(attacker) || {}).atk || 0;
+    _gDef = (getEquippedBonuses(defender) || {}).def || 0;
+    _gCrit = (getEquippedBonuses(attacker) || {}).crit || 0;
+  } catch (e) {}
+  const atk = (attacker.stats?.atk || 10) + (attacker.equipped?.weapon?.atk || attacker.equipped?.weapon?.bonus || 0) + _gAtk;
+  const def = (defender.stats?.def || 5) + (defender.equipped?.armor?.def || 0) + _gDef;
   let dmgMult = 1.0;
   let moveLabel = 'Basic Attack';
   const patternId = parseInt(act?.patternId || act?.arg);
@@ -685,7 +694,7 @@ function calcMoveDamage(attacker, defender, act) {
     }
   }
   let rawDmg = Math.floor(atk * dmgMult * (0.9 + Math.random() * 0.20));
-  const critChance = (attacker.stats?.critChance || 5) / 100;
+  const critChance = ((attacker.stats?.critChance || 5) + _gCrit) / 100;
   const isCrit = Math.random() < critChance;
   if (isCrit) {
     const critMult = (attacker.stats?.critDamage || 150) / 100;
@@ -776,6 +785,10 @@ function handlePvpVictory(sock, chatId, winner, loser, wId, lId, db, saveDatabas
 
   // Also give general exp via LevelUpManager check
   try { const LUM = require('../../rpg/utils/LevelUpManager'); LUM.checkAndApplyLevelUps(winner, saveDatabase, sock, chatId); } catch(e){}
+  try {
+    const _ref = require('../../rpg/utils/ReferralSystem').onLevelUp(db, winner);
+    if (_ref) { saveDatabase(); try { const _pr = sock.sendMessage(chatId, { text: `🔗 *REFERRAL REWARD!*\n\n*${_ref.recruitName}* hit Lv.3!\n💠 @${_ref.referrerId.split('@')[0]} earned *10,000 Nexus*!`, mentions: [_ref.referrerId] }); if (_pr && _pr.catch) _pr.catch(() => {}); } catch (_e) {} }
+  } catch (e) {}
 
   // Reset battle state
   winner.pvpBattle = null;

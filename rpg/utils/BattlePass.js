@@ -6,7 +6,15 @@
 
 const SEASON_DURATION_DAYS = 30;
 const PASS_LEVELS = 50; // 0→50 levels per season
-const XP_PER_LEVEL = 500;
+const XP_PER_LEVEL = 500; // base only — real cost scales (see xpForLevel)
+
+// XP needed to advance FROM `level` TO `level+1`. Linear ramp: 500 for the
+// first tier, +50 per tier after (tier 40 costs 2,450). Season total 0→40 =
+// 59,000 XP: a consistent free grinder (~37k/season) lands ~75%, a Pro
+// grinding the same (2x) clears it, Pro+premium (4x) clears it twice over.
+function xpForLevel(level) {
+  return 500 + 50 * Math.max(0, level || 0);
+}
 
 // ── Current season config (update monthly) ────────────────────────
 const CURRENT_SEASON = {
@@ -114,9 +122,9 @@ function addPassXP(player, source, multiplier = 1) {
   const { bp, mult } = _rewardMult(player);
   const gained = Math.floor(baseXP * (multiplier || 1) * mult);
   bp.xp += gained;
-  // Level up
-  while (bp.xp >= XP_PER_LEVEL && bp.level < PASS_LEVELS) {
-    bp.xp  -= XP_PER_LEVEL;
+  // Level up (scaling thresholds)
+  while (bp.level < PASS_LEVELS && bp.xp >= xpForLevel(bp.level)) {
+    bp.xp  -= xpForLevel(bp.level);
     bp.level++;
   }
   if (bp.level >= PASS_LEVELS) bp.xp = 0;
@@ -130,8 +138,8 @@ function addPassXPAmount(player, amount) {
   const { bp, mult } = _rewardMult(player);
   const final = Math.floor(amount * mult);
   bp.xp += final;
-  while (bp.xp >= XP_PER_LEVEL && bp.level < PASS_LEVELS) {
-    bp.xp -= XP_PER_LEVEL;
+  while (bp.level < PASS_LEVELS && bp.xp >= xpForLevel(bp.level)) {
+    bp.xp -= xpForLevel(bp.level);
     bp.level++;
   }
   if (bp.level >= PASS_LEVELS) bp.xp = 0;
@@ -167,6 +175,6 @@ function claimReward(player, level) {
 }
 
 module.exports = {
-  CURRENT_SEASON, PASS_LEVELS, XP_PER_LEVEL, XP_SOURCES, SEASON_DURATION_DAYS,
+  CURRENT_SEASON, PASS_LEVELS, XP_PER_LEVEL, XP_SOURCES, SEASON_DURATION_DAYS, xpForLevel,
   getRewardTrack, getPassState, addPassXP, addPassXPAmount, claimReward,
 };

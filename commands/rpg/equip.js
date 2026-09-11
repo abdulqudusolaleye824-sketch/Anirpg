@@ -26,26 +26,36 @@ module.exports = {
     }
 
     // ── /equip <#> — equip gear by /inv serial ─────────────
-    // Serials match /inv numbering EXACTLY (shared collector + sort).
+    // Serials match /inv numbering EXACTLY (shared unified list).
     if (/^\d+$/.test(subCmd)) {
       const serial = parseInt(subCmd);
       try { require('../../rpg/utils/RewardInventory').repairGearSlots(player); } catch (e) {}
       try { require('../../rpg/utils/RewardInventory').migrateLegacy(player); } catch (e) {}
-      let sorted = [];
+      let serials = [];
       try {
-        const invMod = require('./inventory');
-        const { gearItems } = invMod._collectBuckets(player);
-        sorted = invMod._sortGear(gearItems);
+        serials = require('./inventory')._serialList(player);
       } catch (e) {
-        const _ro = { mythic: 0, legendary: 1, epic: 2, rare: 3, uncommon: 4, common: 5 };
-        sorted = [...(player.inventory?.items || []).filter(x => x.isGear)].sort((a, b) => (_ro[a.rarity] || 6) - (_ro[b.rarity] || 6));
+        serials = [];
       }
-      if (serial < 1 || serial > sorted.length) {
+      if (serial < 1 || serial > serials.length) {
         return sock.sendMessage(chatId, {
-          text: `❌ Invalid serial! You have ${sorted.length} gear item(s).\n\nUse /inv to see the list.`
+          text: `❌ Invalid serial! You have ${serials.length} inventoried entr${serials.length === 1 ? 'y' : 'ies'}.\n\nUse /inv to see the list.`
         }, { quoted: msg });
       }
-      const picked = sorted[serial - 1];
+      const pickedEntry = serials[serial - 1];
+      if (!pickedEntry || pickedEntry.kind !== 'gear' || !pickedEntry.ref) {
+        const nm = pickedEntry ? pickedEntry.name : 'that';
+        let useHint = '';
+        try {
+          const il = require('./items')._buildList(player);
+          const ix = il.findIndex(e => e.name === pickedEntry.name);
+          if (ix >= 0) useHint = `\n💡 Use it with /equip use ${ix + 1} (see /items).`;
+        } catch (e) {}
+        return sock.sendMessage(chatId, {
+          text: `❌ *${nm}* is not gear — only gear can be equipped.\n\nSee /items for Usables.${useHint}`
+        }, { quoted: msg });
+      }
+      const picked = pickedEntry.ref;
       // Resolve the REAL instance in items[] (legacy views are copies).
       const pool = player.inventory?.items || [];
       const real = pool.find(x => x.isGear && (picked.id ? x.id === picked.id : (x.name === picked.name && x.slot === picked.slot)));
@@ -78,44 +88,10 @@ module.exports = {
         }, { quoted: msg });
       }
 
-      // Build the same list /items shows (no pet food, stacked, sorted by rarity)
-      const PET_FOOD_NAMES = new Set([
-        'Gel','Water','Meat','Bone','Coal','Fish','Fire Gem','Electric Mana Stone',
-        'Metal','Shadow Essence','Dragon Meat','Rare Gems','Spirit Essence',
-        'Celestial Fruit','Ice Mana Stone','Phoenix Tears','Chaos Shard',
-        'Ancient Stone','Void Mana Stone','Star Dust','Primordial Essence','Existence Shard'
-      ]);
-
+      // Same Usables list /items shows (shared builder — numbers match exactly)
       const allItems = player.inventory?.items || [];
       const inv = player.inventory || {};
-
-      // Add old-style potions as virtual items
-      const synthetic = [];
-      for (let i = 0; i < (inv.healthPotions || 0); i++)  synthetic.push({ name: 'Health Potion', type: 'Potion', rarity: 'common', _synthetic: 'healthPotions' });
-      for (let i = 0; i < (inv.energyPotions || inv.manaPotions || 0); i++) synthetic.push({ name: 'Energy Potion', type: 'Potion', rarity: 'common', _synthetic: 'energyPotions' });
-      for (let i = 0; i < (inv.reviveTokens || 0); i++) synthetic.push({ name: 'Revive Token', type: 'Consumable', rarity: 'uncommon', _synthetic: 'reviveTokens' });
-
-      // Filter out pet food from real items
-      const equippable = allItems.filter(item =>
-        !item.isPetFood &&
-        (item.type || '').toLowerCase() !== 'petfood' &&
-        !PET_FOOD_NAMES.has(item.name)
-      );
-
-      const combined = [...equippable, ...synthetic];
-
-      // Stack by name (same as /items display)
-      const rarityOrder = { mythic:0, legendary:1, epic:2, rare:3, uncommon:4, common:5 };
-      const stacked = {};
-      for (const item of combined) {
-        if (!stacked[item.name]) stacked[item.name] = { ...item, count: 0, _synthetic: item._synthetic };
-        stacked[item.name].count++;
-      }
-      const sorted = Object.values(stacked).sort((a, b) => {
-        const ra = rarityOrder[(a.rarity||'').toLowerCase()] ?? 6;
-        const rb = rarityOrder[(b.rarity||'').toLowerCase()] ?? 6;
-        return ra - rb || a.name.localeCompare(b.name);
-      });
+      const sorted = require('./items')._buildList(player);
 
       if (itemNum < 1 || itemNum > sorted.length) {
         return sock.sendMessage(chatId, {
@@ -247,31 +223,9 @@ module.exports = {
     if (subCmd === 'gift') {
       const itemNum = parseInt(args[1]);
 
-      const PET_FOOD_NAMES = new Set([
-        'Gel','Water','Meat','Bone','Coal','Fish','Fire Gem','Electric Mana Stone',
-        'Metal','Shadow Essence','Dragon Meat','Rare Gems','Spirit Essence',
-        'Celestial Fruit','Ice Mana Stone','Phoenix Tears','Chaos Shard',
-        'Ancient Stone','Void Mana Stone','Star Dust','Primordial Essence','Existence Shard'
-      ]);
-
       const allItems = player.inventory?.items || [];
-      const equippable = allItems.filter(item =>
-        !item.isPetFood &&
-        (item.type || '').toLowerCase() !== 'petfood' &&
-        !PET_FOOD_NAMES.has(item.name)
-      );
-
-      const rarityOrder = { mythic:0, legendary:1, epic:2, rare:3, uncommon:4, common:5 };
-      const stacked = {};
-      for (const item of equippable) {
-        if (!stacked[item.name]) stacked[item.name] = { ...item, count: 0 };
-        stacked[item.name].count++;
-      }
-      const sorted = Object.values(stacked).sort((a, b) => {
-        const ra = rarityOrder[(a.rarity||'').toLowerCase()] ?? 6;
-        const rb = rarityOrder[(b.rarity||'').toLowerCase()] ?? 6;
-        return ra - rb || a.name.localeCompare(b.name);
-      });
+      // Full /items list (numbers match /items exactly — synthetics guarded below)
+      const sorted = require('./items')._buildList(player);
 
       if (!itemNum || itemNum < 1 || itemNum > sorted.length) {
         return sock.sendMessage(chatId, {
@@ -290,6 +244,9 @@ module.exports = {
       const recipient = db.users[recipientId];
       if (!recipient) return sock.sendMessage(chatId, { text: `❌ That player is not registered!` }, { quoted: msg });
 
+      if (sorted[itemNum - 1]._synthetic) {
+        return sock.sendMessage(chatId, { text: `❌ *${sorted[itemNum - 1].name}* can't be gifted (bound supply).\n\nUse it yourself with /equip use ${itemNum}.` }, { quoted: msg });
+      }
       const selectedName = sorted[itemNum - 1].name;
       const idx = allItems.findIndex(i => i.name === selectedName);
       if (idx === -1) return sock.sendMessage(chatId, { text: `❌ Item not found!` }, { quoted: msg });

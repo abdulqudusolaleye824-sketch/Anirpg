@@ -555,7 +555,9 @@ async function resolveRaidTurn(sock, chatId, party, db, saveDatabase) {
         if (atkWb.description) log += `_${atkWb.description.slice(0,120)}_\n`;
       } else {
         const isCrit = Math.random() < 0.12;
-        dmg = Math.max(1, Math.floor(pl.stats.atk * (isCrit ? 1.5 : 1.0)) - Math.floor(boss.stats.def * 0.3));
+        let _gAtkWB = 0;
+        try { _gAtkWB = require('../../rpg/utils/GearSystem').getEquippedBonuses(pl).atk || 0; } catch (e) {}
+        dmg = Math.max(1, Math.floor(((pl.stats.atk || 0) + _gAtkWB) * (isCrit ? 1.5 : 1.0)) - Math.floor(boss.stats.def * 0.3));
         const art = ArtifactSystem.calculateCombatBonusFromPlayer?.(pl);
         if (art?.bonuses?.atk) dmg += art.bonuses.atk;
         boss.stats.hp -= dmg;
@@ -565,7 +567,9 @@ async function resolveRaidTurn(sock, chatId, party, db, saveDatabase) {
     } else if (act.type === 'skill') {
       // simplified skill: 1.8x atk
       const isCrit = Math.random() < 0.15;
-      dmg = Math.max(1, Math.floor(pl.stats.atk * (isCrit ? 2.7 : 1.8)) - Math.floor(boss.stats.def * 0.2));
+      let _gAtkWB2 = 0;
+      try { _gAtkWB2 = require('../../rpg/utils/GearSystem').getEquippedBonuses(pl).atk || 0; } catch (e) {}
+      dmg = Math.max(1, Math.floor(((pl.stats.atk || 0) + _gAtkWB2) * (isCrit ? 2.7 : 1.8)) - Math.floor(boss.stats.def * 0.2));
       boss.stats.hp -= dmg;
       totalDmg += dmg;
       log += `✨ *${m.name}* uses *${act.skillName || 'Skill'}* for *${dmg.toLocaleString()}* dmg${isCrit ? ' 💥 CRIT!' : ''}!\n`;
@@ -612,7 +616,9 @@ async function resolveRaidTurn(sock, chatId, party, db, saveDatabase) {
         if (pl.stats.hp <= 0) continue;
         const defending = m.defending;
         const baseDmg   = Math.floor(boss.stats.atk * telegraph.dmgMult * (defending ? 0.4 : 1.0));
-        const finalDmg  = Math.max(1, baseDmg - Math.floor(pl.stats.def * 0.35));
+        let _gDefWB = 0;
+        try { _gDefWB = require('../../rpg/utils/GearSystem').getEquippedBonuses(pl).def || 0; } catch (e) {}
+        const finalDmg  = Math.max(1, baseDmg - Math.floor(((pl.stats.def || 0) + _gDefWB) * 0.35));
         pl.stats.hp = Math.max(0, pl.stats.hp - finalDmg);
         log += `💥 *${m.name}* takes *${finalDmg.toLocaleString()}* from AOE${defending ? ' (🛡️ reduced!)' : ''}!\n`;
       }
@@ -649,7 +655,9 @@ async function resolveRaidTurn(sock, chatId, party, db, saveDatabase) {
       const target = members.filter(m => m.player.stats.hp > 0)[Math.floor(Math.random() * members.length)];
       if (target) {
         const defending = target.defending;
-        const dmg = Math.max(1, Math.floor(boss.stats.atk * telegraph.dmgMult * (defending ? 0.4 : 1.0)) - Math.floor(target.player.stats.def * 0.35));
+        let _gDefWB4 = 0;
+        try { _gDefWB4 = require('../../rpg/utils/GearSystem').getEquippedBonuses(target.player).def || 0; } catch (e) {}
+        const dmg = Math.max(1, Math.floor(boss.stats.atk * telegraph.dmgMult * (defending ? 0.4 : 1.0)) - Math.floor(((target.player.stats.def || 0) + _gDefWB4) * 0.35));
         target.player.stats.hp = Math.max(0, target.player.stats.hp - dmg);
         log += `💥 *CHARGED STRIKE* hits *${target.name}* for *${dmg.toLocaleString()}*${defending ? ' (🛡️ reduced!)' : ''}!\n`;
       }
@@ -662,7 +670,9 @@ async function resolveRaidTurn(sock, chatId, party, db, saveDatabase) {
       const defending = target.defending;
       const phase    = boss.phases[boss.currentPhase];
       const baseDmg  = Math.floor(boss.stats.atk * phase.atkMult);
-      const dmg      = Math.max(1, Math.floor(baseDmg * (defending ? 0.4 : 1.0)) - Math.floor(target.player.stats.def * 0.35));
+      let _gDefWB3 = 0;
+      try { _gDefWB3 = require('../../rpg/utils/GearSystem').getEquippedBonuses(target.player).def || 0; } catch (e) {}
+      const dmg      = Math.max(1, Math.floor(baseDmg * (defending ? 0.4 : 1.0)) - Math.floor(((target.player.stats.def || 0) + _gDefWB3) * 0.35));
       target.player.stats.hp = Math.max(0, target.player.stats.hp - dmg);
       const ability  = boss.abilities[Math.floor(Math.random() * boss.abilities.length)];
       log += `👹 *${boss.name}* uses *${ability}* on *${target.name}*!\n💥 ${dmg.toLocaleString()} damage${defending ? ' (🛡️ defended!)' : ''}!\n`;
@@ -755,6 +765,10 @@ async function handleRaidVictory(sock, chatId, party, db, saveDatabase, log) {
     if (!member.inventory) member.inventory = {};
     member.inventory.gold = member.gold;
     LevelUpManager.checkAndApplyLevelUps(member, saveDatabase, sock, chatId);
+    try {
+      const _ref = require('../../rpg/utils/ReferralSystem').onLevelUp(db, member);
+      if (_ref) { saveDatabase(); try { const _pr = sock.sendMessage(chatId, { text: `🔗 *REFERRAL REWARD!*\n\n*${_ref.recruitName}* hit Lv.3!\n💠 @${_ref.referrerId.split('@')[0]} earned *10,000 Nexus*!`, mentions: [_ref.referrerId] }); if (_pr && _pr.catch) _pr.catch(() => {}); } catch (_e) {} }
+    } catch (e) {}
     // Track achievement
     try { AchievementManager.track(member, 'boss_kill', 1); } catch(e) {}
     try { if (DC) DC.trackProgress(member, 'boss_kill', 1); } catch(e) {}

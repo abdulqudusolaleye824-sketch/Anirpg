@@ -296,6 +296,50 @@ module.exports = async (sock, msg, messageText, config, getDatabase, saveDatabas
   console.log(`[COMMAND] ${resolvedCommand}${resolvedCommand !== commandName ? ` (alias: ${commandName})` : ''} | Sender: ${sender} | Chat: ${chatId}`);
 
   const db = getDatabase();
+
+  // ── Referral safety net: settle any pending Lv.3 payout for the sender ──
+  // (Battle sites celebrate it loudly; this silent settle guarantees the
+  // 10k Nexus can never be missed no matter where the level-up happened.)
+  try {
+    const _r = require('../rpg/utils/ReferralSystem').onLevelUp(db, db.users?.[sender]);
+    if (_r) { try { saveDatabase(); } catch (e) {} }
+  } catch (e) {}
+
+  // ── Monthly referral contest: finalize on month rollover + announce ──
+  try {
+    const Ref = require('../rpg/utils/ReferralSystem');
+    const fin = Ref.finalizeIfNewMonth(db);
+    if (fin) {
+      try { saveDatabase(); } catch (e) {}
+      if (fin.winner) {
+        const ann = [
+          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          `👑 *MONTHLY TOP RECRUITER — ${fin.closedMonth}*`,
+          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          ``,
+          `🎉 Congratulations *${fin.winner.name}* — *${fin.count}* successful referrals!`,
+          ``,
+          `🎫 Reward: *Weekly Pro Card* (added to your cards — use /prostore use weekly when ready)`,
+          ``,
+          `🔗 New race is on! Share your code: /code`,
+          `📊 Standings: /lb referrals`,
+          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        ].join('\n');
+        try {
+          const MSM = require('../bots/MultiSocketManager');
+          const all = MSM.getAllSockets ? MSM.getAllSockets() : {};
+          const firstKey = Object.keys(all).find(k => all[k]?.user?.id);
+          const bsock = (firstKey && all[firstKey]) || sock;
+          const gcs = Object.keys(db.registeredGCs || {});
+          for (const gc of gcs.slice(0, 20)) {
+            try { await bsock.sendMessage(gc, { text: ann }); } catch (e) {}
+          }
+          if (!gcs.includes(chatId)) { try { await sock.sendMessage(chatId, { text: ann }); } catch (e) {} }
+        } catch (e) {}
+      }
+    }
+  } catch (e) {}
+
   const Perms = require('../utils/permissions');
   const isPrivilegedUser = Perms.isBotOwner(db, sender) || Perms.isBotMod(db, sender);
 

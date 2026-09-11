@@ -155,12 +155,21 @@ class LevelUpManager {
       }
     }
 
+    // ── Referral: flag when a referred hunter first reaches Lv.3 ──
+    // The caller (which owns db access) settles the 10k Nexus payout via
+    // ReferralSystem.onLevelUp — see daily/dungeon/pvp/worldboss call sites
+    // plus the rpgCommandHandler safety net.
+    let refLvl3Crossed = false;
+    try {
+      refLvl3Crossed = !!(player.referredBy && !player.referralLvl3Paid && (player.level || 1) >= 3);
+    } catch (e) {}
     return {
       leveledUp: levelsGained > 0,
       levelsGained,
       newSkills,
       upgradePointsAwarded: totalUPAwarded,
       classAssigned,
+      refLvl3Crossed,
     };
   }
 
