@@ -1,3 +1,5 @@
+const UI = require('../../rpg/utils/UI');
+
 module.exports = {
   name: 'gcpromote',
   description: 'Promote a user to group admin',
@@ -29,7 +31,17 @@ module.exports = {
       }
 
       await sock.groupParticipantsUpdate(chatId, [target], 'promote');
-      return sock.sendMessage(chatId, { text: '✅ Promoted to group admin!' }, { quoted: msg });
+      const _pro = UI.isPro(getDatabase().users[sender]);
+      return sock.sendMessage(chatId, {
+        text: [
+          (_pro ? UI.PRO_BAR : UI.FREE_BAR),
+          '⭐ *PROMOTED*',
+          `✅ @${target.split('@')[0]} is now a group admin!`,
+          _pro ? (UI.PRO_MINI + '\n⭐ PRO GAVEL') : null,
+          _pro ? `👮 Promoted by @${sender.split('@')[0]}` : null,
+          (_pro ? UI.PRO_BAR : UI.FREE_BAR),
+        ].filter(x => x !== null).join('\n'),
+      }, { quoted: msg });
     } catch(e) {
       return sock.sendMessage(chatId, { text: '❌ Failed: ' + e.message }, { quoted: msg });
     }

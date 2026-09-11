@@ -3,6 +3,7 @@
 //   /antilink on|off     → enable/disable for THIS group (also auto-on for --main groups)
 //   /antilink add <domain> / /antilink rm <domain>  → manage allowed domains
 const Perms = require('../../utils/permissions');
+const UI = require('../../rpg/utils/UI');
 
 // Socials always allowed by default (Instagram / Pinterest / YouTube / TikTok / WhatsApp).
 const DEFAULT_ALLOWED = ['instagram.com', 'pinterest.', 'pinterest.com', 'youtube.com', 'youtu.be', 'tiktok.com', 'chat.whatsapp.com', 'wa.me'];
@@ -15,6 +16,7 @@ module.exports = {
   async execute(sock, msg, args, getDatabase, saveDatabase, sender) {
     const chatId = msg.key.remoteJid;
     const db = getDatabase();
+    const proL = UI.isPro(db.users[sender]);
     const PermsHelper = Perms;
 
     if (!PermsHelper.isBotMod(db, sender)) return sock.sendMessage(chatId, { text: '❌ Admins only.' }, { quoted: msg });
@@ -33,10 +35,11 @@ module.exports = {
     if (!sub || sub === 'status' || sub === 'view') {
       return sock.sendMessage(chatId, {
         text: [
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          (proL ? UI.PRO_BAR : UI.FREE_BAR),
           `🔗 *ANTI-LINK — ${chatId}`,
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
           `Status: *${gs.antiLink ? 'ON ⛔' : 'OFF'}*`,
+          proL ? (UI.PRO_MINI + '\n🔗 PRO SHIELD') : null,
+          proL ? `✅ *${allowed.length}* domains whitelisted` : null,
           ``,
           `✅ Allowed domains (default socials):`,
           ...allowed.map(d => `   • ${d}`),
@@ -44,8 +47,8 @@ module.exports = {
           `📌 /antilink on|off`,
           `📌 /antilink add <domain>`,
           `📌 /antilink rm <domain>`,
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-        ].join('\n'),
+          (proL ? UI.PRO_BAR : UI.FREE_BAR),
+        ].filter(x => x !== null).join('\n'),
       }, { quoted: msg });
     }
 

@@ -714,38 +714,42 @@ function handlePvpVictory(sock, chatId, winner, loser, wId, lId, db, saveDatabas
   winner.pvpStreak = (winner.pvpStreak || 0) + 1;
   loser.pvpStreak = 0;
 
-  // Loser stakes: aura slips 10–15 (flat — never Pro-doubled),
-  // loser's guild drops 10 GP (flat).
+  // WINNER-TAKES economy: the ONLY thing deducted from the loser is 10-15
+  // aura (plus the win/loss record and ELO ladder moving). No GP, no Nexus,
+  // no Mana Stones leave the loser. The winner gains Nexus + Mana Stones on
+  // top of XP/aura/pass progression.
   const _auraLoss = 10 + Math.floor(Math.random() * 6);
   loser.aura = Math.max(0, (loser.aura || 0) - _auraLoss);
 
   const isProWinner = !!((winner.isPro || winner.proStatus) && winner.proExpiresAt && Date.now() < winner.proExpiresAt);
   const proMultPvP = isProWinner ? 2 : 1;
-  // Winner's guild cut doubles for Pro winners; loser's guild always −10.
-  const winnerGP = 15 * proMultPvP;
-  try {
-    const GPS = require('../../rpg/utils/GuildPointsSystem');
-    GPS.addGuildGP(db, wId, winnerGP, 'PvP win vs ' + loserName, { quest: true, sock, jid: wId, chatId });
-    GPS.addGuildGP(db, lId, -10, 'PvP loss vs ' + winnerName);
-  } catch(e){}
 
   let rewardNexus = 1000 + Math.floor((loser.level || 1) * 50);
+  let rewardStones = 100 + Math.floor((loser.level || 1) * 10);
   let rewardXP = 500 + Math.floor((loser.level || 1) * 30);
   let rewardBp = 100;
   let rewardPass = 50;
   // Winner aura: +[20-35], doubled for Pro (→ [40-70]).
   let rewardAura = 20 + Math.floor(Math.random() * 16);
   rewardNexus = Math.floor(rewardNexus * proMultPvP);
+  rewardStones = Math.floor(rewardStones * proMultPvP);
   rewardXP = Math.floor(rewardXP * proMultPvP);
-  rewardBp = Math.floor(rewardBp * proMultPvP);
+  // NOTE: rewardBp stays BASE (100) — addPassXPAmount applies Pro x premium (1x/2x/4x) inside.
   rewardPass = Math.floor(rewardPass * proMultPvP);
   rewardAura = Math.floor(rewardAura * proMultPvP);
 
   winner.gold = (winner.gold || 0) + rewardNexus;
+  winner.manaCrystals = (winner.manaCrystals || 0) + rewardStones;
   winner.xp = (winner.xp || 0) + rewardXP;
+  try {
+    const { logTransaction } = require('../../rpg/utils/TransactionLog');
+    logTransaction(winner, { type: 'pvp_reward', amount: rewardNexus, currency: '💠', note: `vs ${loserName}` });
+    logTransaction(winner, { type: 'pvp_reward', amount: rewardStones, currency: '💎', note: `vs ${loserName}` });
+  } catch (e) {}
   winner.aura = (winner.aura || 0) + rewardAura;
   // Battle Pass XP (direct amount — NOT multiplied by the source table)
-  try { const BP = require('../../rpg/utils/BattlePass'); if (BP.addPassXPAmount) { BP.addPassXPAmount(winner, rewardBp); } else if (BP.addPassXP) { BP.addPassXP(winner, 'pvp_win'); } else { winner.battlePassXp = (winner.battlePassXp||0)+rewardBp; } } catch(e){ winner.battlePassXp=(winner.battlePassXp||0)+rewardBp; }
+  let _bpGained = 0;
+  try { const BP = require('../../rpg/utils/BattlePass'); if (BP.addPassXPAmount) { _bpGained = BP.addPassXPAmount(winner, rewardBp); } else if (BP.addPassXP) { _bpGained = BP.addPassXP(winner, 'pvp_win'); } else { winner.battlePassXp = (winner.battlePassXp||0)+rewardBp; _bpGained = rewardBp; } } catch(e){ winner.battlePassXp=(winner.battlePassXp||0)+rewardBp; _bpGained = rewardBp; }
   // Astra Pass (direct amount into the pass object)
   try { const AP = require('../../rpg/utils/AstraPass'); if (AP.addPassXPAmount) AP.addPassXPAmount(winner, rewardPass); else winner.astraPassXp=(winner.astraPassXp||0)+rewardPass; } catch(e){ winner.astraPassXp=(winner.astraPassXp||0)+rewardPass; }
 
@@ -780,11 +784,11 @@ function handlePvpVictory(sock, chatId, winner, loser, wId, lId, db, saveDatabas
     ``,
     `🎁 *REWARDS:*${isProWinner?' 🌟 PRO 2×':''}`,
     `💠 Nexus: +${rewardNexus.toLocaleString()}${isProWinner?' (2×)':''}`,
+    `💎 Mana Stones: +${rewardStones.toLocaleString()}${isProWinner?' (2×)':''}`,
+    `📉 ${loserName} aura: \u2212${_auraLoss} (only deduction)`,
     `✨ XP: +${rewardXP.toLocaleString()}${isProWinner?' (2×)':''} (general)`,
     `🌀 Aura: +${rewardAura.toLocaleString()}${isProWinner?' (2×)':''}`,
-    `🏰 Guild: +${winnerGP} GP (winner)${isProWinner?' (2×)':''} | −10 GP (loser)`,
-    `📉 ${loserName} aura: −${_auraLoss}`,
-    `🎖️ Battle Pass XP: +${rewardBp}${isProWinner?' (2×)':''}`,
+    `🎖️ Battle Pass XP: +${(_bpGained || rewardBp).toLocaleString()}${_bpGained > rewardBp ? ` (${_bpGained / rewardBp}×)` : ''}`,
     `🌟 Astra Pass: +${rewardPass}${isProWinner?' (2×)':''}`,
     `${FRAME}`,
   ].join('\n');

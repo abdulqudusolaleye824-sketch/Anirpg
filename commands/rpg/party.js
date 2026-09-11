@@ -41,7 +41,13 @@ module.exports = {
     const FRAME = pro ? UI.PRO_BAR : UI.FREE_BAR;
 
     const action = (args[0] || 'status').toLowerCase();
-    const rawKey = (args[1] || (args[0] && args[0].length === 8 ? args[0] : '')).toUpperCase().replace(/^--/, '').trim();
+    // Gate-key parse: scan ALL args for an 8-char token, stripping every
+    // dash variant WhatsApp autocorrect produces (hyphen, en/em-dash) plus
+    // any formatting. `/party create --KEY`, `--KEY`, `-KEY` all resolve.
+    const _stripKey = (v) => String(v || '').toUpperCase().replace(/^[-\s\u2013\u2014\u2015\u2212]+/, '').replace(/[^A-Z0-9]/g, '');
+    let rawKey = '';
+    for (const _a of args) { const _t = _stripKey(_a); if (_t.length === 8) { rawKey = _t; break; } }
+    const _bare0 = _stripKey(args[0]);
 
     // ── Find active gate in current chat ──────────────────────────
     const gc = GKM.getDungeonGC(chatId);
@@ -54,8 +60,8 @@ module.exports = {
     // ═══════════════════════════════════════════════════════════════
     // /party create --<KEY>
     // ═══════════════════════════════════════════════════════════════
-    if (action === 'create' || action === 'open' || (action.length === 8 && !activeKey)) {
-      const key = rawKey || (args[0] && args[0].length === 8 ? args[0].toUpperCase().replace(/^--/, '') : '');
+    if (action === 'create' || action === 'open' || _bare0.length === 8) {
+      const key = rawKey || _bare0;
       if (!key || key.length !== 8) {
         return sock.sendMessage(chatId, {
           text: '❌ Usage: /party create --<gate key>\nExample: /party create --2K7SN2N8'

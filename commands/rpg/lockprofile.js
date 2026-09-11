@@ -4,6 +4,8 @@
 
 'use strict';
 
+const UI = require('../../rpg/utils/UI');
+
 function isProPlayer(player) {
   if (!player) return false;
   return !!((player.isPro || player.proStatus) && player.proExpiresAt && player.proExpiresAt > Date.now());
@@ -26,14 +28,15 @@ module.exports = {
 
     player.profileLocked = !player.profileLocked;
     saveDatabase();
+    const proL = UI.isPro(player);
 
     if (player.profileLocked) {
       return sock.sendMessage(chatId, {
-        text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🔒 *PROFILE LOCKED*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\nYour profile is now locked in Private DM Mode.\nWhen you or others use /profile in a Group Chat, Serf will send your card directly to your DM!`
+        text: `${(proL ? UI.PRO_BAR : UI.FREE_BAR)}\n🔒 *PROFILE LOCKED*\n\nYour profile is now locked in Private DM Mode.\nWhen you or others use /profile in a Group Chat, Serf will send your card directly to your DM!\n${proL ? `${UI.PRO_MINI}\n🔒 PRO VAULT\n⏳ Pro active until *${new Date(player.proExpiresAt).toLocaleDateString()}*\n` : ''}${(proL ? UI.PRO_BAR : UI.FREE_BAR)}`
       }, { quoted: msg });
     } else {
       return sock.sendMessage(chatId, {
-        text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🔓 *PROFILE UNLOCKED*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\nYour profile is now public and visible in group chats.`
+        text: `${(proL ? UI.PRO_BAR : UI.FREE_BAR)}\n🔓 *PROFILE UNLOCKED*\n\nYour profile is now public and visible in group chats.\n${proL ? `${UI.PRO_MINI}\n🔓 PRO VAULT\n⏳ Pro active until *${new Date(player.proExpiresAt).toLocaleDateString()}*\n` : ''}${(proL ? UI.PRO_BAR : UI.FREE_BAR)}`
       }, { quoted: msg });
     }
   }

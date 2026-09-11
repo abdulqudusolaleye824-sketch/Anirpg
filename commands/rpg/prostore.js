@@ -33,6 +33,17 @@ const PRO_TIERS = {
   }
 };
 
+// Pass products (also bought with PC, right here in the Pro Store).
+const PASS_PRODUCTS = {
+  battlepass: {
+    aliases: ['bp', 'battle'],
+    name: 'Battle Pass Premium',
+    cost: 1000,
+    emoji: '🎖️',
+    blurb: 'Premium track for the current season + 50% bonus EXP while active',
+  },
+};
+
 module.exports = {
   name: 'prostore',
   aliases: ['proshop', 'buypro'],
@@ -63,7 +74,14 @@ module.exports = {
         txt += `   📌 Command: /prostore buy ${key}\n\n`;
       });
 
-      txt += `${FRAME}\n💡 Use /profaq to read all Pro benefits & perks!`;
+      txt += `🎖️ *PASS UPGRADES (PC)*\n`;
+      for (const [pkey, prod] of Object.entries(PASS_PRODUCTS)) {
+        txt += `${prod.emoji} *${prod.name.toUpperCase()}*\n`;
+        txt += `   💰 Cost: *${prod.cost.toLocaleString()} PC*\n`;
+        txt += `   ✨ ${prod.blurb}\n`;
+        txt += `   📌 Command: /prostore buy ${pkey}\n\n`;
+      }
+      txt += `${FRAME}\n💡 Use /profaq for Pro perks \u2022 /prosub for your subscriptions`;
       return sock.sendMessage(chatId, { text: txt }, { quoted: msg });
     }
 
@@ -71,8 +89,43 @@ module.exports = {
       const option = (args[1] || '').toLowerCase();
       const tier = PRO_TIERS[option];
 
+      // ── Pass products ────────────────────────────
+      const passKey = Object.keys(PASS_PRODUCTS).find(k => k === option || PASS_PRODUCTS[k].aliases.includes(option));
+      if (!tier && passKey) {
+        const prod = PASS_PRODUCTS[passKey];
+        if ((player.procoin || 0) < prod.cost) {
+          return sock.sendMessage(chatId, {
+            text: `❌ Insufficient PC!\nNeed: *${prod.cost.toLocaleString()} PC*\nHave: *${(player.procoin || 0).toLocaleString()} PC*`
+          }, { quoted: msg });
+        }
+        if (passKey === 'battlepass') {
+          const BP = require('../../rpg/utils/BattlePass');
+          const bp = BP.getPassState(player);
+          if (bp.premium) {
+            return sock.sendMessage(chatId, { text: `✅ You already own *Battle Pass Premium* for ${BP.CURRENT_SEASON?.name || 'this season'}!` }, { quoted: msg });
+          }
+          player.procoin -= prod.cost;
+          try { require('../../rpg/utils/TransactionLog').logTransaction(player, { type: 'prostore_buy', amount: prod.cost, currency: 'PC', note: `Battle Pass Premium` }); } catch (e) {};
+          bp.premium = true;
+          bp.premiumSince = Date.now();
+          saveDatabase();
+          const text = UI.card(player, {
+            icon: '🎖️', title: 'BATTLE PASS PREMIUM ACTIVATED!',
+            lines: [
+              `🎫 Season: *${BP.CURRENT_SEASON?.name || 'current'}*`,
+              `✨ Premium track unlocked + *50% bonus EXP* on all gains!`,
+              ``,
+              `📌 Use /bp to view & claim premium rewards.`,
+            ],
+            tip: '/prosub to see time left',
+          });
+          return sock.sendMessage(chatId, { text }, { quoted: msg });
+        }
+        // NOTE: Astra Pass Premium is NOT sold here — it comes with Pro.
+      }
+
       if (!tier) {
-        return sock.sendMessage(chatId, { text: '❌ Invalid Pro option! Choose: weekly, monthly, or yearly.\nExample: /prostore buy weekly' }, { quoted: msg });
+        return sock.sendMessage(chatId, { text: '❌ Invalid option! Pro: weekly, monthly, yearly \u2022 Pass: battlepass.\nExample: /prostore buy weekly' }, { quoted: msg });
       }
 
       if ((player.procoin || 0) < tier.cost) {
@@ -84,11 +137,18 @@ module.exports = {
       player.procoin -= tier.cost;
       player.gold = (player.gold || 0) + tier.nexus;
       player.manaCrystals = (player.manaCrystals || 0) + tier.crystals;
+      try { require('../../rpg/utils/TransactionLog').logTransaction(player, { type: 'prostore_buy', amount: tier.cost, currency: 'PC', note: `${tier.name}` }); } catch (e) {};
+      try { require('../../rpg/utils/TransactionLog').logTransaction(player, { type: 'prostore_bonus', amount: tier.nexus, currency: '💠', note: `${tier.name}` }); } catch (e) {};
+      try { require('../../rpg/utils/TransactionLog').logTransaction(player, { type: 'prostore_bonus', amount: tier.crystals, currency: '💎', note: `${tier.name}` }); } catch (e) {};
 
       player.isPro = true;
       player.proStatus = option;
       const durationMs = tier.days * 86400 * 1000;
       player.proExpiresAt = (player.proExpiresAt && player.proExpiresAt > Date.now() ? player.proExpiresAt : Date.now()) + durationMs;
+      player.proTier = option;
+      if (!player.proActivatedAt || !(player.proExpiresAt && player.proExpiresAt - durationMs > Date.now())) {
+        player.proActivatedAt = Date.now(); // fresh sub (extensions keep the original date)
+      }
 
       saveDatabase();
 
@@ -117,6 +177,6 @@ module.exports = {
       return sock.sendMessage(chatId, { text }, { quoted: msg });
     }
 
-    return sock.sendMessage(chatId, { text: '❌ Usage: /prostore or /prostore buy [weekly|monthly|yearly]' }, { quoted: msg });
+    return sock.sendMessage(chatId, { text: '❌ Usage: /prostore or /prostore buy [weekly|monthly|yearly|battlepass]' }, { quoted: msg });
   }
 };

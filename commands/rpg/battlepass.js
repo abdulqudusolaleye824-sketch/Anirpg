@@ -159,6 +159,7 @@ module.exports = {
       }
 
       player.procoin -= BP_COST_PC;
+      try { require('../../rpg/utils/TransactionLog').logTransaction(player, { type: 'prostore_buy', amount: BP_COST_PC, currency: 'PC', note: `Battle Pass Premium (/bp buy)` }); } catch (e) {};
       bp.premium = true;
       saveDatabase();
       return sock.sendMessage(chatId, {
@@ -176,6 +177,7 @@ module.exports = {
       if (isNaN(targetLvl)) {
         let totalClaimed = 0;
         const gained = [];
+        let _logN = 0, _logC = 0, _logP = 0;
 
         for (let t = 1; t <= Math.min(TOTAL_TIERS, bp.level); t++) {
           if (bp.claimed.includes(t)) continue;
@@ -191,6 +193,7 @@ module.exports = {
           player.manaCrystals = (player.manaCrystals || 0) + r.stones;
           player.manaStones = player.manaCrystals;
           if (r.pc > 0) player.procoin = (player.procoin || 0) + r.pc;
+          _logN += r.gold || 0; _logC += r.stones || 0; _logP += r.pc || 0;
           if (r.item) addItemToInventory(player, r.item);
 
           let str = `Tier ${t}: +${r.gold.toLocaleString()} 💠 | +${r.stones} 💎`;
@@ -207,6 +210,15 @@ module.exports = {
           return sock.sendMessage(chatId, { text: '❌ No unclaimed Battle Pass rewards available.' }, { quoted: msg });
         }
 
+        if (_logN > 0) {
+          try { require('../../rpg/utils/TransactionLog').logTransaction(player, { type: 'bp_claim', amount: _logN, currency: '💠', note: `tiers` }); } catch (e) {};
+        }
+        if (_logC > 0) {
+          try { require('../../rpg/utils/TransactionLog').logTransaction(player, { type: 'bp_claim', amount: _logC, currency: '💎', note: `tiers` }); } catch (e) {};
+        }
+        if (_logP > 0) {
+          try { require('../../rpg/utils/TransactionLog').logTransaction(player, { type: 'bp_claim', amount: _logP, currency: 'PC', note: `PC refund` }); } catch (e) {};
+        }
         saveDatabase();
         return sock.sendMessage(chatId, {
           text: `${FRAME}\n🎁 *BATTLE PASS REWARDS CLAIMED!*\n${FRAME}\n\nClaimed *${totalClaimed}* Tier(s)!\n\n${gained.join('\n')}\n${FRAME}`
@@ -235,6 +247,15 @@ module.exports = {
       player.manaCrystals = (player.manaCrystals || 0) + r.stones;
       player.manaStones = player.manaCrystals;
       if (r.pc > 0) player.procoin = (player.procoin || 0) + r.pc;
+      if ((r.gold || 0) > 0) {
+        try { require('../../rpg/utils/TransactionLog').logTransaction(player, { type: 'bp_claim', amount: r.gold, currency: '💠', note: `tier ${targetLvl}` }); } catch (e) {};
+      }
+      if ((r.stones || 0) > 0) {
+        try { require('../../rpg/utils/TransactionLog').logTransaction(player, { type: 'bp_claim', amount: r.stones, currency: '💎', note: `tier ${targetLvl}` }); } catch (e) {};
+      }
+      if ((r.pc || 0) > 0) {
+        try { require('../../rpg/utils/TransactionLog').logTransaction(player, { type: 'bp_claim', amount: r.pc, currency: 'PC', note: `tier ${targetLvl} refund` }); } catch (e) {};
+      }
       if (r.item) addItemToInventory(player, r.item);
 
       let str = `Tier ${targetLvl}: +${r.gold.toLocaleString()} 💠 Nexus | +${r.stones} 💎 Mana Stones`;

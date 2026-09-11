@@ -159,9 +159,11 @@ module.exports = {
       const tax       = Math.floor(listing.price * MARKET_TAX);
       const sellerGet = listing.price - tax;
       player.gold    -= listing.price;
+      try { require('../../rpg/utils/TransactionLog').logTransaction(player, { type: 'market_buy', amount: listing.price, currency: '💠', note: `bought ${listing.item?.name || `item #${listing.id}`}` }); } catch (e) {};
       const seller    = db.users[listing.sellerId];
       if (seller) {
         seller.gold = (seller.gold || 0) + sellerGet;
+        try { require('../../rpg/utils/TransactionLog').logTransaction(seller, { type: 'market_sell', amount: sellerGet, currency: '💠', note: `sold ${listing.item?.name || `item #${listing.id}`}` }); } catch (e) {};
         // Seller's quest credit (silent — seller usually isn't in this chat)
         try {
           const _DQ = require('../../rpg/utils/DailyQuestSystem');
@@ -243,6 +245,7 @@ module.exports = {
 
       // Create listing
       player.gold -= LISTING_FEE;
+      try { require('../../rpg/utils/TransactionLog').logTransaction(player, { type: 'market_fee', amount: LISTING_FEE, currency: '💠', note: `listing` }); } catch (e) {};
       const id = market.counter++;
       market.listings[id] = {
         id,

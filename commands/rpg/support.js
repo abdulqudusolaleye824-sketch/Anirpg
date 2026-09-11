@@ -6,7 +6,7 @@ const path = require('path');
 const COOLDOWN = 5 * 60 * 1000; // 5 minutes
 const supportCooldown = new Map();
 const AstralGroups = require('../../rpg/utils/AstralGroups');
-const SerfManager = require('../../rpg/utils/SerfManager');
+const SerfDM = require('../../rpg/utils/SerfDM');
 const MultiSocketManager = require('../../bots/MultiSocketManager');
 const ButtonHelper = (()=>{ try { return require('../../utils/buttonHelper'); } catch(e){ return null; } })();
 const UI = require('../../rpg/utils/UI');
@@ -59,20 +59,22 @@ module.exports = {
       return;
     }
 
-    // Get all --main tagged groups excluding mods GC
+    // Get all --main tagged groups excluding mods GC.
+    // Display = the ACTUAL registered GC name (entry.groupName), NEVER the
+    // type tag — this fixes "Support" rendering as "Arise" and vice versa.
     const allMain = AstralGroups.getAll(db).filter(g => g.isMain && g.type !== 'mods');
 
-    // Build clean list for GC/DM text (no raw links) + button payload
     const groupLinesText = [];
     const buttonGroups = [];
     for (const g of allMain) {
       const info = AstralGroups.typeInfo(g.type);
-      groupLinesText.push(`${info.emoji} *${info.name}*`);
+      const displayName = g.groupName || info.name || g.type;
+      groupLinesText.push(`${info.emoji} *${displayName}*`);
       if (g.inviteLink) {
         buttonGroups.push({
-          type: g.type,
           inviteLink: g.inviteLink,
-          typeInfo: info
+          groupName: displayName,
+          typeInfo: info,
         });
       }
     }
@@ -82,8 +84,8 @@ module.exports = {
       if (supportLink) {
         groupLinesText.push(`🛡️ *✦ 𝐀𝐬𝐭𝐫𝐚™ Arise Support*`);
         buttonGroups.push({
-          type: 'support',
           inviteLink: supportLink,
+          groupName: 'Arise Support',
           typeInfo: { emoji: '🛡️', name: 'Arise Support' }
         });
       }
@@ -102,55 +104,49 @@ module.exports = {
     ].join('\n');
     const supportImage = getAstraSupportImage();
 
-    // Build URL buttons for DM — no messy links in text!
+    // URL buttons: EVERY --main GC gets a NAME+LINK button (chunked 3 per
+    // message by the helper — nothing is cut off at 3 anymore).
     let supportButtons = null;
     try {
       if (ButtonHelper?.buildSupportButtons && buttonGroups.length) {
-        // FIX: limit to 3 per WhatsApp Business template limit; extra links remain as plain text above
-        const limitedGroups = buttonGroups.slice(0, 3);
-        supportButtons = ButtonHelper.buildSupportButtons(limitedGroups);
+        supportButtons = ButtonHelper.buildSupportButtons(buttonGroups);
       }
     } catch {}
 
-    // Notify in group chat (no links)
-    if (chatId.endsWith('@g.us')) {
-      await sock.sendMessage(chatId, {
-        text: `📩 Main community group links sent to your DM, @${sender.split('@')[0]}! Tap the buttons in DM to join.`,
-        mentions: [sender]
-      }, { quoted: msg });
+    const dmPayload = supportImage
+      ? { image: supportImage, caption: fullDmText, mimetype: 'image/jpeg', footer: 'Astra™ 2026' }
+      : { text: fullDmText, footer: 'Astra™ 2026' };
+    const linksText = buttonGroups.length ? '\n\n' + buttonGroups.map(g => `🔗 ${g.groupName}: ${g.inviteLink}`).join('\n') : '';
+    const fallbackWithLinks = supportImage
+      ? { image: supportImage, caption: fullDmText + linksText, mimetype: 'image/jpeg' }
+      : { text: fullDmText + linksText };
+
+    // ── Deliver via serf, THEN report the real result ──────────────────
+    const serfRes = SerfDM.getSerfSocket(db, sender);
+    let dmRes;
+    if (!serfRes.ok) {
+      dmRes = { ok: false, reason: serfRes.reason, detail: serfRes.detail };
+    } else if (supportButtons && supportButtons.length && ButtonHelper?.sendWithButtons) {
+      try {
+        await ButtonHelper.sendWithButtons(serfRes.serfSock, sender, dmPayload, supportButtons, null);
+        dmRes = { ok: true, via: 'serf' };
+      } catch (e) {
+        dmRes = await SerfDM.sendSerfDM(sock, db, sender, fallbackWithLinks);
+      }
+    } else {
+      dmRes = await SerfDM.sendSerfDM(sock, db, sender, fallbackWithLinks);
     }
 
-    // DM user via their Serf bot — with URL buttons! (with image like screenshot)
-    const serfKey = SerfManager.getSerfBotKey(db, sender);
-    const serfSock = serfKey ? MultiSocketManager.getSocket(serfKey) : null;
-    // Use image + caption if available (Astra gold A logo)
-    const dmPayload = supportImage ? { image: supportImage, caption: fullDmText, mimetype: 'image/jpeg', footer: 'Astra™ 2026' } : { text: fullDmText, footer: 'Astra™ 2026' };
-
-    if (serfSock && supportButtons && supportButtons.length) {
-      try {
-        if (ButtonHelper?.sendWithButtons) {
-          await ButtonHelper.sendWithButtons(serfSock, sender, dmPayload, supportButtons, null);
-        } else {
-          await serfSock.sendMessage(sender, supportImage ? { image: supportImage, caption: fullDmText, mimetype: 'image/jpeg' } : { text: fullDmText });
-        }
-      } catch (e) {
-        // Fallback: append links if buttons fail
-        await serfSock.sendMessage(sender, supportImage ? { image: supportImage, caption: fullDmText + (buttonGroups.length ? '\n\n' + buttonGroups.map(g=>`🔗 ${g.typeInfo.name}: ${g.inviteLink}`).join('\n') : ''), mimetype: 'image/jpeg' } : { text: fullDmText + (buttonGroups.length ? '\n\n' + buttonGroups.map(g=>`🔗 ${g.typeInfo.name}: ${g.inviteLink}`).join('\n') : '') });
-      }
-    } else if (serfSock) {
-      await serfSock.sendMessage(sender, supportImage ? { image: supportImage, caption: fullDmText, mimetype: 'image/jpeg' } : { text: fullDmText });
-    } else {
-      // No serf: try buttons via current sock, but always include links as text fallback
-      const fallbackWithLinks = supportImage ? { image: supportImage, caption: fullDmText + '\n\n' + buttonGroups.map(g=>`🔗 ${g.typeInfo.name}: ${g.inviteLink}`).join('\n'), mimetype: 'image/jpeg' } : { text: fullDmText + '\n\n' + buttonGroups.map(g=>`🔗 ${g.typeInfo.name}: ${g.inviteLink}`).join('\n') };
-      if (supportButtons && supportButtons.length && ButtonHelper?.sendWithButtons) {
-        try {
-          await ButtonHelper.sendWithButtons(sock, sender, dmPayload, supportButtons, null);
-        } catch {
-          await MultiSocketManager.safeSendDM(sock, sender, fallbackWithLinks, { getDatabase });
-        }
-      } else {
-        await MultiSocketManager.safeSendDM(sock, sender, fallbackWithLinks, { getDatabase });
-      }
+    // Notify in group chat (no links) — with the honest delivery result.
+    if (chatId.endsWith('@g.us')) {
+      await sock.sendMessage(chatId, {
+        text: `@${sender.split('@')[0]}\n` + SerfDM.resultNotice('📩 SUPPORT LINKS', dmRes),
+        mentions: [sender]
+      }, { quoted: msg });
+    } else if (!dmRes.ok) {
+      await sock.sendMessage(chatId, {
+        text: SerfDM.resultNotice('📩 SUPPORT LINKS', dmRes) + `\n\n${linksText.trim()}`,
+      }, { quoted: msg });
     }
 
     // Silent owner log

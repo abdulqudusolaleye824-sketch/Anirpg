@@ -142,6 +142,7 @@ ${FRAME}`;
       // Deduct cost (waived for owner/co-owner)
       if (cost > 0) {
         player.gold -= cost;
+        try { require('../../rpg/utils/TransactionLog').logTransaction(player, { type: 'bank_fee', amount: cost, currency: '💠', note: `bank creation` }); } catch (e) {};
         if (player.inventory) player.inventory.gold = player.gold;
       }
 
@@ -226,6 +227,7 @@ ${FRAME}`
         }
         // Transfer all Nexus to bank
         player.gold = 0;
+        try { require('../../rpg/utils/TransactionLog').logTransaction(player, { type: 'bank_deposit', amount: initialDeposit, currency: '💠', note: `account opening` }); } catch (e) {};
         if (player.inventory) player.inventory.gold = 0;
       }
 
@@ -302,6 +304,7 @@ ${FRAME}`
           }, { quoted: msg });
         }
         player.manaCrystals = haveMana - amount;
+        try { require('../../rpg/utils/TransactionLog').logTransaction(player, { type: 'bank_deposit', amount: amount, currency: '💎', note: `bank ${bank.name}` }); } catch (e) {};
         player.manaStones = player.manaCrystals;
         const resultM = BankingSystem.deposit(bank, sender, amount, 'mana');
         saveDatabase();
@@ -319,6 +322,7 @@ ${FRAME}`
 
       // ✅ FIX: Deduct Nexus FIRST, then deposit
       player.gold -= amount;
+      try { require('../../rpg/utils/TransactionLog').logTransaction(player, { type: 'bank_deposit', amount: amount, currency: '💠', note: `bank ${bank.name}` }); } catch (e) {};
       if (player.gold < 0) player.gold = 0; // Safety check
       if (player.inventory) player.inventory.gold = player.gold;
 
@@ -369,20 +373,24 @@ ${FRAME}`
 
       if (result.currency==='mana') {
         player.manaCrystals = (player.manaCrystals||0) + result.withdrawn;
+        try { require('../../rpg/utils/TransactionLog').logTransaction(player, { type: 'bank_withdraw', amount: result.withdrawn, currency: '💎', note: `bank ${bank.name}` }); } catch (e) {};
         player.manaStones = player.manaCrystals;
         const ownerM = db.users[bank.owner];
         if (ownerM) {
           ownerM.manaCrystals = (ownerM.manaCrystals||0) + result.interest;
+          try { require('../../rpg/utils/TransactionLog').logTransaction(ownerM, { type: 'bank_interest', amount: result.interest, currency: '💎', note: `bank ${bank.name}` }); } catch (e) {};
           ownerM.manaStones = ownerM.manaCrystals;
         }
       } else {
         // Give player the Nexus (after 10% fee)
         player.gold = (player.gold || 0) + result.withdrawn;
+        try { require('../../rpg/utils/TransactionLog').logTransaction(player, { type: 'bank_withdraw', amount: result.withdrawn, currency: '💠', note: `bank ${bank.name}` }); } catch (e) {};
         if (player.inventory) player.inventory.gold = player.gold;
         // Give bank owner the interest
         const owner = db.users[bank.owner];
         if (owner) {
           owner.gold = (owner.gold || 0) + result.interest;
+          try { require('../../rpg/utils/TransactionLog').logTransaction(owner, { type: 'bank_interest', amount: result.interest, currency: '💠', note: `bank ${bank.name}` }); } catch (e) {};
           if (owner.inventory) owner.inventory.gold = owner.gold;
         }
       }

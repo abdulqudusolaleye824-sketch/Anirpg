@@ -60,6 +60,10 @@ module.exports = {
       // Charge and grant
       player.gold         -= price.gold;
       player.manaCrystals -= (price.crystals || 0);
+      if (price.gold > 0) {
+        try { require('../../rpg/utils/TransactionLog').logTransaction(player, { type: 'shop_buy', amount: price.gold, currency: '💠', note: `title ${titleId}` }); } catch (e) {}; }
+      if ((price.crystals || 0) > 0) {
+        try { require('../../rpg/utils/TransactionLog').logTransaction(player, { type: 'shop_buy', amount: (price.crystals || 0), currency: '💎', note: `title ${titleId}` }); } catch (e) {}; }
       player.titles.push(titleId);
       saveDatabase();
       return sock.sendMessage(chatId, {

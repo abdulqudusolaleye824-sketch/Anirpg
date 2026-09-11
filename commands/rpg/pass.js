@@ -217,6 +217,7 @@ module.exports = {
         // Claim all unlocked
         let count = 0;
         const rewardsGained = [];
+        let _logN = 0, _logC = 0;
         for (let t = 1; t <= Math.min(TOTAL_TIERS, ap.level); t++) {
           const tInfo = getTierDisplay(t);
           if (!ap.claimedFree.includes(t)) {
@@ -225,6 +226,7 @@ module.exports = {
             player.nexus = player.gold;
             player.manaCrystals = (player.manaCrystals || 0) + tInfo.freeStones;
             player.manaStones = player.manaCrystals;
+            _logN += tInfo.freeNexus || 0; _logC += tInfo.freeStones || 0;
             let str = `Tier ${t} Free: +${tInfo.freeNexus.toLocaleString()} 💠 | +${tInfo.freeStones} 💎`;
             if (tInfo.freeItem) {
               addItemToInventory(player, tInfo.freeItem);
@@ -239,6 +241,7 @@ module.exports = {
             player.nexus = player.gold;
             player.manaCrystals = (player.manaCrystals || 0) + tInfo.premStones;
             player.manaStones = player.manaCrystals;
+            _logN += tInfo.premNexus || 0; _logC += tInfo.premStones || 0;
             let str = `Tier ${t} Premium: +${tInfo.premNexus.toLocaleString()} 💠 | +${tInfo.premStones} 💎`;
             if (tInfo.premItem) {
               addItemToInventory(player, tInfo.premItem);
@@ -249,6 +252,12 @@ module.exports = {
           }
         }
         if (count === 0) return sock.sendMessage(chatId, { text: '❌ No unclaimed Astra Pass rewards available right now.' }, { quoted: msg });
+        if (_logN > 0) {
+          try { require('../../rpg/utils/TransactionLog').logTransaction(player, { type: 'pass_claim', amount: _logN, currency: '💠', note: `tiers` }); } catch (e) {};
+        }
+        if (_logC > 0) {
+          try { require('../../rpg/utils/TransactionLog').logTransaction(player, { type: 'pass_claim', amount: _logC, currency: '💎', note: `tiers` }); } catch (e) {};
+        }
         saveDatabase();
         return sock.sendMessage(chatId, {
           text: `${FRAME}\n🎁 *ASTRA PASS REWARDS CLAIMED!*\n${FRAME}\n\nClaimed *${count}* reward(s):\n\n${rewardsGained.join('\n')}\n${FRAME}`
@@ -261,6 +270,7 @@ module.exports = {
 
       const gained = [];
       const tInfo = getTierDisplay(tier);
+      let _tN = 0, _tC = 0;
 
       if (!ap.claimedFree.includes(tier)) {
         ap.claimedFree.push(tier);
@@ -268,6 +278,7 @@ module.exports = {
         player.nexus = player.gold;
         player.manaCrystals = (player.manaCrystals || 0) + tInfo.freeStones;
         player.manaStones = player.manaCrystals;
+        _tN += tInfo.freeNexus || 0; _tC += tInfo.freeStones || 0;
         let str = `Free: +${tInfo.freeNexus.toLocaleString()} 💠 Nexus | +${tInfo.freeStones} 💎 Mana Stones`;
         if (tInfo.freeItem) {
           addItemToInventory(player, tInfo.freeItem);
@@ -281,6 +292,7 @@ module.exports = {
         player.nexus = player.gold;
         player.manaCrystals = (player.manaCrystals || 0) + tInfo.premStones;
         player.manaStones = player.manaCrystals;
+        _tN += tInfo.premNexus || 0; _tC += tInfo.premStones || 0;
         let str = `Premium: +${tInfo.premNexus.toLocaleString()} 💠 Nexus | +${tInfo.premStones} 💎 Mana Stones`;
         if (tInfo.premItem) {
           addItemToInventory(player, tInfo.premItem);
@@ -290,6 +302,12 @@ module.exports = {
       }
 
       if (gained.length === 0) return sock.sendMessage(chatId, { text: `❌ Tier ${tier} rewards already claimed!` }, { quoted: msg });
+      if (_tN > 0) {
+        try { require('../../rpg/utils/TransactionLog').logTransaction(player, { type: 'pass_claim', amount: _tN, currency: '💠', note: `tier ${tier}` }); } catch (e) {};
+      }
+      if (_tC > 0) {
+        try { require('../../rpg/utils/TransactionLog').logTransaction(player, { type: 'pass_claim', amount: _tC, currency: '💎', note: `tier ${tier}` }); } catch (e) {};
+      }
       saveDatabase();
       return sock.sendMessage(chatId, { text: `✅ *Tier ${tier} Claimed!*\n\n${gained.join('\n')}` }, { quoted: msg });
     }

@@ -44,14 +44,20 @@ module.exports = {
       return sock.sendMessage(chatId, { text: `✅ Already cashed out — the payout is on its way!` }, { quoted: msg });
     }
 
-    const profit = res.payout - (Aviator.getFlight(sender)?.bet || 0);
-    return sock.sendMessage(chatId, {
-      text: [
-        ...(pro ? [UI.PRO_BAR, `💰 *CASHED OUT @ ${res.mult.toFixed(2)}x!* 💎`, UI.PRO_BAR] : [`💰 *CASHED OUT @ ${res.mult.toFixed(2)}x!*`, UI.FREE_BAR]),
-        `💼 Payout: *${res.payout}* Nexus${profit > 0 ? ` (*+${profit}*)` : ''}`,
-        ...(pro ? [FRAME, UI.PRO_MINI, `💎 *PRO PILOT* — lifetime +${UI.num(player.casino?.totalWon)} / -${UI.num(player.casino?.totalLost)}`] : [FRAME, UI.upsell()]),
-      ].join('\n'),
-      mentions: [sender],
-    }, { quoted: msg });
+    // Slim ack only — the full CASHED OUT card is edited onto the flight
+    // message itself by the engine (a second full card here reads as a
+    // double payout). Payout is settled exactly once (flight.ended guard).
+    const bet = Aviator.getFlight(sender)?.bet || 0;
+    const profit = res.payout - bet;
+    const ack = pro
+      ? `✅ *CASHED OUT @ ${res.mult.toFixed(2)}x!* 💎\n💼 *+${res.payout}* Nexus landing on your flight message above!${profit !== 0 ? ` (*${profit > 0 ? '+' : ''}${profit}*)` : ''}\n${UI.PRO_MINI} 💎 *PRO PILOT*`
+      : `✅ *CASHED OUT @ ${res.mult.toFixed(2)}x!*\n💼 *+${res.payout}* Nexus landing on your flight message above!${profit !== 0 ? ` (*${profit > 0 ? '+' : ''}${profit}*)` : ''}`;
+    try {
+      return await sock.sendMessage(chatId, { text: ack, mentions: [sender] }, { quoted: msg });
+    } catch (e) {
+      // Even if the ack can't send (rate-overlimit), the payout already
+      // settled in the engine — never throw, never double-settle.
+      return null;
+    }
   }
 };

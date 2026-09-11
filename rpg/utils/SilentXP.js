@@ -100,7 +100,15 @@ function awardXP(player, action = 'command', saveDatabase, sock, chatId, extraMu
     extraMult *= 2.0;
   }
 
-  const amount   = Math.floor(rand(range[0], range[1]) * rankMult * extraMult);
+  // ── Premium Pass EXP ──────────────────────────────────────────────
+  // Astra Pass premium comes WITH Pro — it is NOT an extra double. Only
+  // Battle Pass premium doubles on top of Pro. Hard rule: NO 8x anywhere.
+  // free 1x · Pro 2x · BP-premium 2x · Pro + BP-premium 4x (max).
+  const _bpPrem = !!(player.battlePass && player.battlePass.premium);
+  if (_bpPrem) extraMult *= 2.0;
+
+  const baseRoll = rand(range[0], range[1]) * rankMult;
+  const amount   = Math.floor(baseRoll * extraMult);
 
   // Add XP immediately — synchronous
   player.xp = (player.xp || 0) + amount;
@@ -128,11 +136,10 @@ function awardXP(player, action = 'command', saveDatabase, sock, chatId, extraMu
     if (!player.battlePass) {
       player.battlePass = { level: 1, xp: 0, claimed: [], premium: false };
     }
-    let bpMult = 1.0;
-    if (player.battlePass?.premium) {
-      bpMult *= 2.0; // BP Premium 2x boost!
-    }
-    const bpXpGained = Math.max(15, Math.floor(amount * 0.20 * bpMult));
+    // EXACT rule: Pro 2x, BP-premium 2x, both combined 4x — computed from
+    // the BASE roll so EXP multipliers never compound into pass XP.
+    const bpMult = (isPro ? 2 : 1) * (_bpPrem ? 2 : 1);
+    const bpXpGained = Math.max(15, Math.floor(baseRoll * 0.20 * bpMult));
     player.battlePass.xp = (player.battlePass.xp || 0) + bpXpGained;
     while (player.battlePass.xp >= 500 && player.battlePass.level < 40) {
       player.battlePass.xp -= 500;

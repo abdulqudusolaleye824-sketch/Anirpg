@@ -7,6 +7,7 @@
 'use strict';
 
 const GroupAdmin = require('../../rpg/utils/GroupAdmin');
+const UI = require('../../rpg/utils/UI');
 
 module.exports = {
   name: 'promote',
@@ -20,6 +21,7 @@ module.exports = {
     const chatId = msg.key.remoteJid;
     const db = getDatabase();
 
+    const proP = UI.isPro(db.users[sender]);
     const gate = await GroupAdmin.requireGroupAdmin(sock, chatId, sender, db);
     if (!gate.ok) return sock.sendMessage(chatId, { text: gate.err }, { quoted: msg });
 
@@ -34,7 +36,16 @@ module.exports = {
 
     try {
       await sock.groupParticipantsUpdate(chatId, [target], 'promote');
-      return sock.sendMessage(chatId, { text: '✅ Promoted to group admin!' }, { quoted: msg });
+      return sock.sendMessage(chatId, {
+        text: [
+          (proP ? UI.PRO_BAR : UI.FREE_BAR),
+          '⭐ *PROMOTED*',
+          `✅ @${GroupAdmin.bare(target)} is now a group admin!`,
+          proP ? (UI.PRO_MINI + '\n⭐ PRO GAVEL') : null,
+          proP ? `👮 Promoted by @${GroupAdmin.bare(sender)}` : null,
+          (proP ? UI.PRO_BAR : UI.FREE_BAR),
+        ].filter(x => x !== null).join('\n'),
+      }, { quoted: msg });
     } catch (e) {
       return sock.sendMessage(chatId, { text: '❌ Failed to promote: ' + e.message }, { quoted: msg });
     }

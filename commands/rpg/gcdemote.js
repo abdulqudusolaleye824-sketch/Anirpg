@@ -1,3 +1,5 @@
+const UI = require('../../rpg/utils/UI');
+
 module.exports = {
   name: 'gcdemote',
   description: 'Demote a user from group admin',
@@ -29,7 +31,17 @@ module.exports = {
       }
 
       await sock.groupParticipantsUpdate(chatId, [target], 'demote');
-      return sock.sendMessage(chatId, { text: '✅ Demoted from group admin.' }, { quoted: msg });
+      const _pro = UI.isPro(getDatabase().users[sender]);
+      return sock.sendMessage(chatId, {
+        text: [
+          (_pro ? UI.PRO_BAR : UI.FREE_BAR),
+          '⬇️ *DEMOTED*',
+          `✅ @${target.split('@')[0]} is no longer a group admin.`,
+          _pro ? (UI.PRO_MINI + '\n⬇️ PRO GAVEL') : null,
+          _pro ? `👮 Demoted by @${sender.split('@')[0]}` : null,
+          (_pro ? UI.PRO_BAR : UI.FREE_BAR),
+        ].filter(x => x !== null).join('\n'),
+      }, { quoted: msg });
     } catch(e) {
       return sock.sendMessage(chatId, { text: '❌ Failed: ' + e.message }, { quoted: msg });
     }

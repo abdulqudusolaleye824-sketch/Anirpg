@@ -8,6 +8,7 @@
 
 const Mod = require('../../rpg/utils/ModerationUtils');
 const GroupAdmin = require('../../rpg/utils/GroupAdmin');
+const UI = require('../../rpg/utils/UI');
 
 module.exports = {
   name: 'unmute',
@@ -20,6 +21,7 @@ module.exports = {
   async execute(sock, msg, args, getDatabase, saveDatabase, sender) {
     const chatId = msg.key.remoteJid;
     const db = getDatabase();
+    const proN = UI.isPro(db.users[sender]);
 
     if (!Mod.canModerate(db, sender)) {
       return sock.sendMessage(chatId, {
@@ -37,13 +39,17 @@ module.exports = {
     if (!targetId) {
       return sock.sendMessage(chatId, {
         text: [
+          (proN ? UI.PRO_BAR : UI.FREE_BAR),
           '🔊 *UNMUTE A USER*',
-          '',
+          proN ? (UI.PRO_MINI + '\n🔊 PRO GAVEL') : null,
+          proN ? `📊 Muted in this group: *${Object.keys(db.groupMutes?.[chatId] || {}).length}*` : null,
+          proN ? '' : null,
           '📌 Usage:',
           '  /unmute @user',
           '',
           'Reply to their message and type /unmute.',
-        ].join('\n'),
+          (proN ? UI.PRO_BAR : UI.FREE_BAR),
+        ].filter(x => x !== null).join('\n'),
       }, { quoted: msg });
     }
 
@@ -65,15 +71,15 @@ module.exports = {
     const u = Mod.getUser(db, targetId);
     return sock.sendMessage(chatId, {
       text: [
-        '━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+        (proN ? UI.PRO_BAR : UI.FREE_BAR),
         '🔊 *USER UNMUTED* 🔊',
-        '━━━━━━━━━━━━━━━━━━━━━━━━━━━',
         `👤 User: ${u?.name || '@' + Mod.bare(targetId)}`,
         `👮 By: @${Mod.bare(sender)}`,
-        '━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+        proN ? (UI.PRO_MINI + '\n🔊 PRO GAVEL') : null,
+        proN ? `📊 Muted in this group: *${Object.keys(db.groupMutes?.[chatId] || {}).length}*` : null,
         '_They can use the bot in this group again._',
-        '━━━━━━━━━━━━━━━━━━━━━━━━━━━',
-      ].join('\n'),
+        (proN ? UI.PRO_BAR : UI.FREE_BAR),
+      ].filter(x => x !== null).join('\n'),
       mentions: mentionedJid ? [targetId, sender] : [sender],
     }, { quoted: msg });
   },

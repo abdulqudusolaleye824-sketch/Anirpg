@@ -94,7 +94,9 @@ module.exports = {
       }
 
       const piece = gearItems[num - 1];
-      const si = SLOT_INFO[piece.slot];
+      // Heal bad-slot gear from earlier builds, then resolve defensively.
+      try { require('../../rpg/utils/RewardInventory').repairGearSlots(player); } catch (e) {}
+      const si = SLOT_INFO[piece.slot] || { emoji: '🎒', name: piece.slot || 'Gear' };
       const hadOld = player.equippedGear[piece.slot];
 
       equipGear(player, piece);
@@ -121,9 +123,14 @@ module.exports = {
         return sock.sendMessage(chatId, { text: `❌ Nothing equipped in ${slotName} slot.` }, { quoted: msg });
       }
 
+      // Return to inventory at CURRENT durability (never destroyed).
+      if (!player.inventory) player.inventory = {};
+      if (!Array.isArray(player.inventory.items)) player.inventory.items = [];
+      if (!piece.id) piece.id = 'g' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+      player.inventory.items.push(piece);
       saveDatabase();
       return sock.sendMessage(chatId, {
-        text: `🗑️ *${piece.name}* removed from ${SLOT_INFO[slotName].emoji} ${slotName} slot and destroyed.`
+        text: `📦 *${piece.name}* removed from ${SLOT_INFO[slotName].emoji} ${slotName} slot and returned to your inventory.\n🔧 Durability: *${piece.durability ?? '?'}/${piece.maxDurability ?? '?'}*`
       }, { quoted: msg });
     }
 

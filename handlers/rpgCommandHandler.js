@@ -299,6 +299,11 @@ module.exports = async (sock, msg, messageText, config, getDatabase, saveDatabas
   const Perms = require('../utils/permissions');
   const isPrivilegedUser = Perms.isBotOwner(db, sender) || Perms.isBotMod(db, sender);
 
+  // /start is MODS + OWNERS ONLY (group admins and Pro users included in the block).
+  if ((commandName === 'start' || resolvedCommand === 'start') && !isPrivilegedUser) {
+    return sock.sendMessage(chatId, { text: '\u274C Only bot mods and the owner can use /start.' }, { quoted: msg });
+  }
+
   // ── DM Command Access Control (Only Owner / Co-Owner / Mods allowed in DM, ONLY for Mod commands) ──
   const MOD_DM_COMMANDS = new Set([
     'killspawn', 'spawnstatus', 'spawnsstatus', 'gstatus', 'groupstatus',
@@ -348,7 +353,10 @@ module.exports = async (sock, msg, messageText, config, getDatabase, saveDatabas
       }
 
       // Random 25% chance for 🌟 star reaction (triggers 100% /aurafarm for the next 5s!)
-      if (Math.random() < 0.25) {
+      // — but NEVER while the aura-farm cooldown is still running (a star you
+      // can't use is just noise).
+      const _farmOnCd = (Date.now() - (player.cooldowns?.auraFarm || 0)) < (5 * 60 * 60 * 1000);
+      if (!_farmOnCd && Math.random() < 0.25) {
         player.auraFarmBoostUntil = Date.now() + 5000;
         try {
           sock.sendMessage(chatId, { react: { text: '🌟', key: msg.key } }).catch(() => {});
@@ -843,16 +851,23 @@ module.exports = async (sock, msg, messageText, config, getDatabase, saveDatabas
     } catch (error) {
       console.error(`❌ Error executing ${resolvedCommand}:`, error);
 
-      await sock.sendMessage(
-        chatId,
-        {
-          text:
-            '❌ An error occurred while executing the command.\n\n' +
-            `Command: ${resolvedCommand}\n` +
-            `Error: ${error.message}`,
-        },
-        { quoted: msg }
-      );
+      // Hardened: if the error card itself can't send (e.g. WhatsApp
+      // rate-overlimit), swallow it instead of rejecting unhandled (which
+      // surfaces to the user as total command silence).
+      try {
+        await sock.sendMessage(
+          chatId,
+          {
+            text:
+              '❌ An error occurred while executing the command.\n\n' +
+              `Command: ${resolvedCommand}\n` +
+              `Error: ${error.message}`,
+          },
+          { quoted: msg }
+        );
+      } catch (sendErr) {
+        console.error(`❌ Error-card send failed for ${resolvedCommand}:`, sendErr.message);
+      }
     }
   } else {
     const allCmds = Object.keys(commands);

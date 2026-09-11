@@ -37,8 +37,18 @@ module.exports = {
     const pro = UI.isPro(player);
     const FRAME = pro ? UI.PRO_BAR : UI.FREE_BAR;
 
+    // Sessions persist in db (a restart wipes the in-memory Map). Restore here
+    // and lazily expire — an open casino survives deploys, an expired one
+    // reads as closed even if its auto-close timer died with the process.
+    if (!db.casinoSessions) db.casinoSessions = {};
+    for (const [cid, sess] of Object.entries(db.casinoSessions)) {
+      if (!sess || sess.endTime <= Date.now()) delete db.casinoSessions[cid];
+      else if (!activeCasinoSessions.has(cid)) activeCasinoSessions.set(cid, sess);
+    }
+
     const game = args[0]?.toLowerCase();
     const betAmount = parseInt(args[1]);
+    let _auraHit = 0; // casino-loss aura hit (10-20), set in each loss branch
 
     // ============================================
     // ADMIN COMMAND: /casino open [minutes]
@@ -90,12 +100,15 @@ module.exports = {
         openedBy: player.name,
         wasLocked
       });
+      db.casinoSessions[chatId] = activeCasinoSessions.get(chatId);
+      try { saveDatabase(); } catch (e) {}
 
       // Auto-close after time expires (re-locks the group if it was locked)
       setTimeout(async () => {
         if (activeCasinoSessions.has(chatId)) {
           const sess = activeCasinoSessions.get(chatId);
           activeCasinoSessions.delete(chatId);
+          try { if (db.casinoSessions) delete db.casinoSessions[chatId]; } catch (e) {}
           let lockNote = '';
           if (sess?.wasLocked) {
             try { await sock.groupSettingUpdate(chatId, 'announcement'); lockNote = '\n🔒 Group re-locked.'; }
@@ -131,7 +144,7 @@ ${FRAME}
 
 ${FRAME}
 💠 Min bet: 50 Nexus
-💠 Max bet: 30,000 Nexus
+💠 Max bet: 5,000 Nexus (10,000 for PRO)
 ⏱️ Cooldown: 3 seconds
 
 🎉 Good luck everyone! 🎉${muteNote}
@@ -158,6 +171,7 @@ ${FRAME}`
 
       const closingSess = activeCasinoSessions.get(chatId);
       activeCasinoSessions.delete(chatId);
+      try { if (db.casinoSessions) delete db.casinoSessions[chatId]; saveDatabase(); } catch (e) {}
       let closeLockNote = '';
       if (closingSess?.wasLocked) {
         try { await sock.groupSettingUpdate(chatId, 'announcement'); closeLockNote = '\n🔒 Group re-locked.'; }
@@ -263,7 +277,7 @@ ${FRAME}`
           `2️⃣ 🃏 BLACKJACK — /casino blackjack [bet] · 2x/2.5x`,
           `3️⃣ 🎡 ROULETTE — /casino roulette [bet] [choice] · 2x-36x`,
           `4️⃣ 🎲 DICE — /casino dice [bet] [over/under] [#]`,
-          `5️⃣ ✈️ AVIATOR — /casino aviator [bet] · up to 100x!`,
+          `5️⃣ ✈️ AVIATOR — /casino aviator [bet] · up to 50x!`,
           ``,
           `📊 *YOUR CASINO STATS*`,
           `🎮 Games: *${UI.num(player.casino.gamesPlayed)}* · 🏆 Biggest: *${UI.num(player.casino.biggestWin)}* · 💎 Jackpots: *${UI.num(player.casino.jackpotsHit)}*`,
@@ -301,9 +315,12 @@ ${FRAME}`
       }, { quoted: msg });
     }
 
-    if (betAmount > 30000) {
-      return sock.sendMessage(chatId, { 
-        text: '❌ Maximum bet is 30,000 Nexus!' 
+    // Max bet: 5,000 Nexus (10,000 for Pro). Casino payouts are NEVER
+    // Pro-doubled — the higher cap is the Pro casino perk.
+    const maxBet = pro ? 10000 : 5000;
+    if (betAmount > maxBet) {
+      return sock.sendMessage(chatId, {
+        text: `❌ Maximum bet is ${maxBet.toLocaleString()} Nexus${pro ? '' : ' (10,000 for PRO)'}!`
       }, { quoted: msg });
     }
 
@@ -420,6 +437,9 @@ ${FRAME}`
         try{if(winAmount>0)require('./weekly').trackWeeklyProgress(player,'earn_gold',winAmount);}catch(e){}
       } else if (winAmount < 0) {
         logTransaction(player, { type: 'casino_loss', amount: Math.abs(winAmount), currency: '💠', note: `${game} -${Math.abs(winAmount)} 💠` });
+        // Losing money in the casino costs 10-20 aura.
+        _auraHit = 10 + Math.floor(Math.random() * 11);
+        player.aura = Math.max(0, (player.aura || 0) - _auraHit);
       }
       DC.trackProgress(player, 'casino_play', 1);
       
@@ -448,7 +468,7 @@ ${message}
 
 ${FRAME}
 💠 Bet: ${betAmount} Nexus
-${winAmount >= 0 ? `💵 Won: ${winAmount} gold` : `💸 Lost: ${Math.abs(winAmount)} gold`}
+${winAmount >= 0 ? `💵 Won: ${winAmount} gold` : `💸 Lost: ${Math.abs(winAmount)} gold · 🌀 Aura \u2212${_auraHit}`}
 💼 Balance: ${player.gold || 0} Nexus
 ${FRAME}${isJackpot ? '\n🏆 JACKPOT WINNER! 🏆' : ''}`;
 
@@ -481,7 +501,7 @@ ${FRAME}${isJackpot ? '\n🏆 JACKPOT WINNER! 🏆' : ''}`;
               `💠 Bet: ${betAmount.toLocaleString()} gold`,
               winAmount >= 0
                 ? `💵 Won: +${winAmount.toLocaleString()} gold`
-                : `💸 Lost: ${Math.abs(winAmount).toLocaleString()} gold`,
+                : `💸 Lost: ${Math.abs(winAmount).toLocaleString()} gold · 🌀 Aura \u2212${_auraHit}`,
               `💼 Balance: *${(player.gold || 0).toLocaleString()}* gold`,
               ...(pro ? [`📊 Lifetime: +${UI.num(player.casino.totalWon)} / -${UI.num(player.casino.totalLost)}`] : []),
               isJackpot ? `\n🏆 *JACKPOT WINNER!* 🏆` : '',
@@ -578,6 +598,9 @@ ${FRAME}${isJackpot ? '\n🏆 JACKPOT WINNER! 🏆' : ''}`;
         try{if(winAmount>0)require('./weekly').trackWeeklyProgress(player,'earn_gold',winAmount);}catch(e){}
       } else if (winAmount < 0) {
         logTransaction(player, { type: 'casino_loss', amount: Math.abs(winAmount), currency: '💠', note: `${game} -${Math.abs(winAmount)} 💠` });
+        // Losing money in the casino costs 10-20 aura.
+        _auraHit = 10 + Math.floor(Math.random() * 11);
+        player.aura = Math.max(0, (player.aura || 0) - _auraHit);
       }
       DC.trackProgress(player, 'casino_play', 1);
       
@@ -608,7 +631,7 @@ ${FRAME}
 ${result}
 ${FRAME}
 💠 Bet: ${betAmount} Nexus
-${winAmount > 0 ? `💵 Won: ${winAmount} gold` : winAmount < 0 ? `💸 Lost: ${Math.abs(winAmount)} gold` : `➖ No change`}
+${winAmount > 0 ? `💵 Won: ${winAmount} gold` : winAmount < 0 ? `💸 Lost: ${Math.abs(winAmount)} gold · 🌀 Aura \u2212${_auraHit}` : `➖ No change`}
 💼 Balance: ${player.gold || 0} Nexus
 ${FRAME}`;
 
@@ -644,7 +667,7 @@ ${FRAME}`;
               winAmount > 0
                 ? `💵 Won: +${winAmount.toLocaleString()} gold`
                 : winAmount < 0
-                  ? `💸 Lost: ${Math.abs(winAmount).toLocaleString()} gold`
+                  ? `💸 Lost: ${Math.abs(winAmount).toLocaleString()} gold · 🌀 Aura \u2212${_auraHit}`
                   : `➖ No change`,
               `💼 Balance: *${(player.gold || 0).toLocaleString()}* gold`,
               ...(pro ? [`📊 Lifetime: +${UI.num(player.casino.totalWon)} / -${UI.num(player.casino.totalLost)}`] : []),
@@ -730,6 +753,9 @@ ${FRAME}`
         try{if(winAmount>0)require('./weekly').trackWeeklyProgress(player,'earn_gold',winAmount);}catch(e){}
       } else if (winAmount < 0) {
         logTransaction(player, { type: 'casino_loss', amount: Math.abs(winAmount), currency: '💠', note: `${game} -${Math.abs(winAmount)} 💠` });
+        // Losing money in the casino costs 10-20 aura.
+        _auraHit = 10 + Math.floor(Math.random() * 11);
+        player.aura = Math.max(0, (player.aura || 0) - _auraHit);
       }
       DC.trackProgress(player, 'casino_play', 1);
       
@@ -763,7 +789,7 @@ Result: ${spin} (${spin === 0 ? 'Green' : isRed ? 'Red' : 'Black'})
 ${won ? `🎉 YOU WIN! ${multiplier}x payout! 🎉` : `❌ Better luck next time!`}
 ${FRAME}
 💠 Bet: ${betAmount} Nexus
-${winAmount > 0 ? `💵 Won: ${winAmount} gold` : `💸 Lost: ${Math.abs(winAmount)} gold`}
+${winAmount > 0 ? `💵 Won: ${winAmount} gold` : `💸 Lost: ${Math.abs(winAmount)} gold · 🌀 Aura \u2212${_auraHit}`}
 💼 Balance: ${player.gold || 0} Nexus
 ${FRAME}`;
 
@@ -798,7 +824,7 @@ ${FRAME}`;
               `💠 Bet: ${betAmount.toLocaleString()} gold`,
               winAmount > 0
                 ? `💵 Won: +${winAmount.toLocaleString()} gold`
-                : `💸 Lost: ${Math.abs(winAmount).toLocaleString()} gold`,
+                : `💸 Lost: ${Math.abs(winAmount).toLocaleString()} gold · 🌀 Aura \u2212${_auraHit}`,
               `💼 Balance: *${(player.gold || 0).toLocaleString()}* gold`,
               ...(pro ? [`📊 Lifetime: +${UI.num(player.casino.totalWon)} / -${UI.num(player.casino.totalLost)}`] : []),
               `${FRAME}`,
@@ -876,6 +902,9 @@ ${FRAME}`
         try{if(winAmount>0)require('./weekly').trackWeeklyProgress(player,'earn_gold',winAmount);}catch(e){}
       } else if (winAmount < 0) {
         logTransaction(player, { type: 'casino_loss', amount: Math.abs(winAmount), currency: '💠', note: `${game} -${Math.abs(winAmount)} 💠` });
+        // Losing money in the casino costs 10-20 aura.
+        _auraHit = 10 + Math.floor(Math.random() * 11);
+        player.aura = Math.max(0, (player.aura || 0) - _auraHit);
       }
       DC.trackProgress(player, 'casino_play', 1);
       
@@ -907,7 +936,7 @@ ${won ? `✅ YOU WIN! Roll is ${prediction} ${target}!` : `❌ YOU LOSE! Roll is
 ${FRAME}
 💠 Bet: ${betAmount} Nexus
 🎰 Multiplier: ${multiplier.toFixed(2)}x
-${winAmount > 0 ? `💵 Won: ${winAmount} gold` : `💸 Lost: ${Math.abs(winAmount)} gold`}
+${winAmount > 0 ? `💵 Won: ${winAmount} gold` : `💸 Lost: ${Math.abs(winAmount)} gold · 🌀 Aura \u2212${_auraHit}`}
 💼 Balance: ${player.gold || 0} Nexus
 ${FRAME}`;
 
@@ -951,7 +980,7 @@ ${FRAME}`;
               `🎰 Multiplier: ${multiplier.toFixed(2)}x`,
               winAmount > 0
                 ? `💵 Won: +${winAmount.toLocaleString()} gold`
-                : `💸 Lost: ${Math.abs(winAmount).toLocaleString()} gold`,
+                : `💸 Lost: ${Math.abs(winAmount).toLocaleString()} gold · 🌀 Aura \u2212${_auraHit}`,
               `💼 Balance: *${(player.gold || 0).toLocaleString()}* gold`,
               ...(pro ? [`📊 Lifetime: +${UI.num(player.casino.totalWon)} / -${UI.num(player.casino.totalLost)}`] : []),
               `${FRAME}`,

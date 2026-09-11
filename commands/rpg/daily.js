@@ -136,6 +136,10 @@ module.exports = {
       player.xp = (player.xp || 0) + extraXp;
     }
     player.manaCrystals = (player.manaCrystals || 0) + finalCrystals;
+    if (finalNexus > 0) {
+      try { require('../../rpg/utils/TransactionLog').logTransaction(player, { type: 'daily_claim', amount: finalNexus, currency: '💠', note: `daily` }); } catch (e) {} }
+    if (finalCrystals > 0) {
+      try { require('../../rpg/utils/TransactionLog').logTransaction(player, { type: 'daily_claim', amount: finalCrystals, currency: '💎', note: `daily` }); } catch (e) {} }
 
     // Level up check via LevelUpManager (unlocks skills, weapons, UP)
     const levelResult = LevelUpManager.checkAndApplyLevelUps(player, saveDatabase, sock, chatId);
@@ -175,10 +179,12 @@ module.exports = {
 
       if (milestone.gold) {
         player.gold += milestone.gold;
+        try { require('../../rpg/utils/TransactionLog').logTransaction(player, { type: 'daily_claim', amount: milestone.gold, currency: '💠', note: `day ${milestone.day} milestone` }); } catch (e) {};
         lines.push(`💠 +${milestone.gold.toLocaleString()} Bonus Nexus`);
       }
       if (milestone.crystals) {
         player.manaCrystals += milestone.crystals;
+        try { require('../../rpg/utils/TransactionLog').logTransaction(player, { type: 'daily_claim', amount: milestone.crystals, currency: '💎', note: `day ${milestone.day} milestone` }); } catch (e) {};
         lines.push(`💎 +${milestone.crystals.toLocaleString()} Bonus Mana Stones`);
       }
       if (milestone.items) {

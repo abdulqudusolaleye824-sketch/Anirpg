@@ -1,3 +1,5 @@
+const UI = require('../../rpg/utils/UI');
+
 module.exports = {
   name: 'slowmode',
   description: '⏳ Enable or disable command slowmode in a group',
@@ -5,6 +7,7 @@ module.exports = {
   async execute(sock, msg, args, getDatabase, saveDatabase, sender) {
     const chatId = msg.key.remoteJid;
     const db = getDatabase();
+    const proS = UI.isPro(db.users[sender]);
 
     const BOT_OWNER = '221951679328499@lid';
     const isGroup = chatId.endsWith('@g.us');
@@ -22,7 +25,14 @@ module.exports = {
 
     if (isNaN(seconds) || seconds < 0) {
       return sock.sendMessage(chatId, {
-        text: '❌ Usage: /slowmode [seconds]\nExample: /slowmode 10\nUse 0 to disable.'
+        text: [
+          (proS ? UI.PRO_BAR : UI.FREE_BAR),
+          '⏳ *SLOWMODE*',
+          '📌 Usage: /slowmode [seconds]',
+          'Example: /slowmode 10',
+          'Use 0 to disable.',
+          (proS ? UI.PRO_BAR : UI.FREE_BAR),
+        ].join('\n')
       }, { quoted: msg });
     }
 
@@ -33,9 +43,14 @@ module.exports = {
     saveDatabase();
 
     await sock.sendMessage(chatId, {
-      text: seconds === 0
-        ? '✅ Slowmode disabled.'
-        : `⏳ Slowmode enabled: ${seconds}s between commands.`
+      text: [
+        (proS ? UI.PRO_BAR : UI.FREE_BAR),
+        seconds === 0 ? '✅ *SLOWMODE OFF*' : '⏳ *SLOWMODE ON*',
+        seconds === 0 ? 'Commands flow freely.' : `⏱️ *${seconds}s* between commands.`,
+        proS ? (UI.PRO_MINI + '\n⏳ PRO THROTTLE') : null,
+        proS ? `⏱️ Current gate: *${seconds}s* between commands` : null,
+        (proS ? UI.PRO_BAR : UI.FREE_BAR),
+      ].filter(x => x !== null).join('\n')
     }, { quoted: msg });
   }
 };

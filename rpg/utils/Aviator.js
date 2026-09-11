@@ -1,8 +1,12 @@
 // ═══════════════════════════════════════════════════════════════
 // Astra — Aviator crash-game engine (shared by /casino aviator + /cashout)
-// One live flight per player. The multiplier ticks up via message edits
-// that accelerate as it climbs; the crash point is hidden (max 100x,
-// 5% of flights soar past 25x). Cash out before the crash to win.
+// One live flight per player. The multiplier ticks up via slow message
+// edits (≥1.4s apart — fast edits trip WhatsApp rate-overlimit and break
+// the flight into multi-message spam). Crash distribution (house-tuned):
+//   5% instant bust @ 1.00x · ~1% moonshot 10–50x · rest 1–10x skewed low.
+// If the edit channel ever breaks (ban/rate-limit/delete), the flight
+// goes QUIET: no tick messages at all, exactly ONE final settle message.
+// Cash out before the crash to win.
 // ═══════════════════════════════════════════════════════════════
 
 'use strict';
@@ -17,11 +21,13 @@ const flights = new Map();   // sender -> live flight state
 const lastCrash = new Map(); // sender -> { mult, at } (for "too late" cashouts)
 
 function genCrashPoint() {
-  const r = Math.random();
-  let c;
-  if (r < 0.05) c = 25 + Math.random() * 75;     // 5%: moonshot 25–100x
-  else c = 1 + 24 * Math.pow(Math.random(), 3);  // 95%: 1–25x, skewed low
-  return Math.min(100, Math.max(1, Math.floor(c * 100) / 100));
+  if (Math.random() < 0.05) return 1.0;              // 5%: instant bust
+  if (Math.random() < 0.01) {                       // ~1%: moonshot 10-50x
+    return Math.floor((10 + Math.random() * 40) * 100) / 100;
+  }
+  // ~94%: 1.30-10x, heavily low (floor 1.30 keeps every non-bust escapable)
+  const c = 1.3 + 8.7 * Math.pow(Math.random(), 3.5);
+  return Math.floor(c * 100) / 100;
 }
 
 function planeFor(mult) {
@@ -56,6 +62,7 @@ function crashedText(f) {
   return [
     ...(f.pro ? [UI.PRO_BAR, `💥 *CRASHED @ ${f.crash.toFixed(2)}x!* 💎`, UI.PRO_BAR] : [`💥 *CRASHED @ ${f.crash.toFixed(2)}x!*`, UI.FREE_BAR]),
     `${f.playerName} lost *${f.bet}* Nexus.`,
+       `🌀 Aura cost: −${f.auraHit || 0}`,
     ``,
     `Better luck next flight! ✈️`,
     f.pro ? UI.PRO_BAR : UI.FREE_BAR,
@@ -85,13 +92,20 @@ function lastCrashFor(sender) {
   return c;
 }
 
-async function pushEdit(sock, flight, text) {
-  // Edit the flight message; if the key is gone (or the edit fails),
-  // fall back to a fresh message so the flight still resolves visibly.
+async function pushEdit(sock, flight, text, isFinal = false) {
+  // Edit the flight message. If the edit channel breaks (rate-overlimit,
+  // ban, deleted message...), go QUIET: mid-flight ticks stay silent and
+  // only the settle sends ONE final message. This is what stops a broken
+  // flight from degrading into multi-message spam.
+  if (flight.quiet && !isFinal) return;
   if (flight.key) {
     try { await editMessage(sock, flight.chatId, flight.key, text); return; }
-    catch (e) { /* fall through to fresh send */ }
+    catch (e) {
+      flight.quiet = true;
+      if (!isFinal) return;
+    }
   }
+  if (!isFinal) return; // mid-flight: never spawn extra messages
   try {
     const sent = await sock.sendMessage(flight.chatId, { text });
     if (sent?.key) flight.key = sent.key;
@@ -111,11 +125,13 @@ function settleCrash(sock, flight, saveDatabase) {
   ensureCasinoStats(player);
   player.casino.gamesPlayed++;
   player.casino.totalLost += flight.bet;
+  flight.auraHit = 10 + Math.floor(Math.random() * 11);
+  player.aura = Math.max(0, (player.aura || 0) - flight.auraHit);
   logTransaction(player, { type: 'casino_loss', amount: flight.bet, currency: '💠', note: `aviator -${flight.bet} 💠` });
   DC.trackProgress(player, 'casino_play', 1);
   try { saveDatabase(); } catch (e) {}
 
-  pushEdit(sock, flight, crashedText(flight)).catch(() => {});
+  pushEdit(sock, flight, crashedText(flight), true).catch(() => {});
 }
 
 function settleCashout(sock, flight, saveDatabase) {
@@ -144,7 +160,7 @@ function settleCashout(sock, flight, saveDatabase) {
   DC.trackProgress(player, 'casino_play', 1);
   try { saveDatabase(); } catch (e) {}
 
-  pushEdit(sock, flight, cashedText(flight, payout, profit)).catch(() => {});
+  pushEdit(sock, flight, cashedText(flight, payout, profit), true).catch(() => {});
 }
 
 function tick(sock, flight, saveDatabase) {
@@ -152,13 +168,13 @@ function tick(sock, flight, saveDatabase) {
   // Cash-out landed between ticks → settle at the last DISPLAYED multiplier
   if (flight.cashed) { settleCashout(sock, flight, saveDatabase); return; }
   // Advance (growth accelerates with altitude)
-  flight.mult = Math.floor((flight.mult + 0.05 + flight.mult * 0.045 + Math.random() * 0.04) * 100) / 100;
+  flight.mult = Math.floor((flight.mult + 0.08 + flight.mult * 0.06 + Math.random() * 0.05) * 100) / 100;
   if (flight.mult >= flight.crash) { settleCrash(sock, flight, saveDatabase); return; }
   flight.ticks = (flight.ticks || 0) + 1;
   if (flight.ticks > 120) { settleCrash(sock, flight, saveDatabase); return; } // safety cap
   pushEdit(sock, flight, liveText(flight)).catch(() => {});
   // Edit-rate speeds up as the multiplier climbs
-  const delay = Math.max(220, Math.floor(1150 - flight.mult * 70));
+  const delay = Math.max(1400, Math.floor(2600 - flight.mult * 90));
   flight.timer = setTimeout(() => tick(sock, flight, saveDatabase), delay);
 }
 
@@ -187,7 +203,7 @@ async function startFlight({ sock, chatId, sender, bet, player, saveDatabase, qu
   }
   flights.set(sender, flight);
   try { saveDatabase(); } catch (e) {}
-  flight.timer = setTimeout(() => tick(sock, flight, saveDatabase), 1150);
+  flight.timer = setTimeout(() => tick(sock, flight, saveDatabase), 2400);
   return { ok: true };
 }
 

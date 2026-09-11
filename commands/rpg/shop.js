@@ -279,6 +279,7 @@ ${FRAME}`
       if(!val.valid) return sock.sendMessage(chatId,{text:val.message},{quoted:msg});
       const tax=TaxSystem.applyTax(db,w.cost,'gold',saveDatabase);
       updatePlayerNexus(player,-w.cost,saveDatabase);
+      try { require('../../rpg/utils/TransactionLog').logTransaction(player, { type: 'shop_buy', amount: w.cost, currency: '💠', note: `${w.name}` }); } catch (e) {};
       player.weapon={name:w.name,bonus:w.bonus,attack:w.bonus,defense:w.defBonus||0};
       if(w.defBonus){player.stats.def=(player.stats.def||5)+w.defBonus;}
       saveDatabase();
@@ -304,6 +305,7 @@ ${FRAME}`
         }
         if (player.manaStones !== undefined) player.manaStones -= scrollItem.cost;
         else player.manaCrystals -= scrollItem.cost;
+        try { require('../../rpg/utils/TransactionLog').logTransaction(player, { type: 'shop_buy', amount: scrollItem.cost, currency: '💎', note: `${scrollItem.name}` }); } catch (e) {};
         if (!player.inventory) player.inventory = {};
         if (!player.inventory.scrolls) player.inventory.scrolls = [];
         const newScroll = buyScroll(scrollItem.rarity);
@@ -325,6 +327,7 @@ ${FRAME}`
         if(!val.valid) return sock.sendMessage(chatId,{text:val.message},{quoted:msg});
         const tax=TaxSystem.applyTax(db,cost,'gold',saveDatabase);
         updatePlayerNexus(player,-cost,null);
+        try { require('../../rpg/utils/TransactionLog').logTransaction(player, { type: 'shop_buy', amount: cost, currency: '💠', note: `${amount}x ${item.name}` }); } catch (e) {};
         if(item.key==='lowerHealthPotions' || item.key==='healthPotions') {
           player.inventory.lowerHealthPotions = (player.inventory.lowerHealthPotions || 0) + amount;
           player.inventory.healthPotions = (player.inventory.healthPotions || 0) + amount;
@@ -352,7 +355,9 @@ ${FRAME}`
           const val=validatePurchase(player,item.goldCost,'gold');
           if(!val.valid) return sock.sendMessage(chatId,{text:val.message},{quoted:msg});
           updatePlayerNexus(player,-item.goldCost,null);
+          try { require('../../rpg/utils/TransactionLog').logTransaction(player, { type: 'shop_buy', amount: item.goldCost, currency: '💠', note: `${item.name}` }); } catch (e) {};
           player.manaCrystals=(player.manaCrystals||0)+item.amount;
+          try { require('../../rpg/utils/TransactionLog').logTransaction(player, { type: 'shop_swap', amount: item.amount, currency: '💎', note: `${item.name}` }); } catch (e) {};
           try { require('../../rpg/utils/QuestDispatcher').trackAndNotify(player, 'shop', 1, sock, sender, chatId); } catch(e){}
           saveDatabase();
           return sock.sendMessage(chatId,{text:`✅ *+${item.amount} Mana Stones!*\n💎 Total: ${player.manaCrystals}`},{quoted:msg});
@@ -361,6 +366,7 @@ ${FRAME}`
           const val=validatePurchase(player,item.cost,'crystals');
           if(!val.valid) return sock.sendMessage(chatId,{text:val.message},{quoted:msg});
           player.manaCrystals-=item.cost;
+          try { require('../../rpg/utils/TransactionLog').logTransaction(player, { type: 'shop_buy', amount: item.cost, currency: '💎', note: `summon ticket` }); } catch (e) {};
           player.summonTickets=(player.summonTickets||0)+1;
           try { require('../../rpg/utils/QuestDispatcher').trackAndNotify(player, 'shop', 1, sock, sender, chatId); } catch(e){}
           saveDatabase();
@@ -369,6 +375,7 @@ ${FRAME}`
         const val=validatePurchase(player,item.cost,'crystals');
         if(!val.valid) return sock.sendMessage(chatId,{text:val.message},{quoted:msg});
         player.manaCrystals-=item.cost;
+        try { require('../../rpg/utils/TransactionLog').logTransaction(player, { type: 'shop_buy', amount: item.cost, currency: '💎', note: `${item.name}` }); } catch (e) {};
         if(item.stat==='atk') player.stats.atk=(player.stats.atk||10)+item.amount;
         else if(item.stat==='def') player.stats.def=(player.stats.def||5)+item.amount;
         else if(item.stat==='hp'){player.stats.maxHp=(player.stats.maxHp||100)+item.amount;player.stats.hp=Math.min(player.stats.hp+item.amount,player.stats.maxHp);}
@@ -389,6 +396,7 @@ ${FRAME}`
         if(!val.valid) return sock.sendMessage(chatId,{text:val.message},{quoted:msg});
         const tax=TaxSystem.applyTax(db,bundle.cost,'gold',saveDatabase);
         updatePlayerNexus(player,-bundle.cost,null);
+        try { require('../../rpg/utils/TransactionLog').logTransaction(player, { type: 'shop_buy', amount: bundle.cost, currency: '💠', note: `${bundle.name || `bundle`}` }); } catch (e) {};
         let received='';
         if(bundle.id===1){player.inventory.healthPotions=(player.inventory.healthPotions||0)+5;if(player.inventory.energyPotions!==undefined)player.inventory.energyPotions=(player.inventory.energyPotions||0)+5;else player.inventory.manaPotions=(player.inventory.manaPotions||0)+5;player.inventory.reviveTokens=(player.inventory.reviveTokens||0)+1;received='🩹 5 HP Potions\n⚡ 5 Energy Potions\n🎫 1 Revive Token';}
         else if(bundle.id===2){player.inventory.healthPotions=(player.inventory.healthPotions||0)+10;player.inventory.reviveTokens=(player.inventory.reviveTokens||0)+5;player.inventory.items.push({name:'XP Booster',type:'Consumable',isXpBooster:true,charges:3});received='🩹 10 HP Potions\n🎫 5 Revive Tokens\n✨ 1 XP Booster';}

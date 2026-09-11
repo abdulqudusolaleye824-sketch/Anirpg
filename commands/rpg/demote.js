@@ -8,6 +8,7 @@
 
 const GroupAdmin = require('../../rpg/utils/GroupAdmin');
 const Perms = require('../../utils/permissions');
+const UI = require('../../rpg/utils/UI');
 
 module.exports = {
   name: 'demote',
@@ -21,6 +22,7 @@ module.exports = {
     const chatId = msg.key.remoteJid;
     const db = getDatabase();
 
+    const proD = UI.isPro(db.users[sender]);
     const gate = await GroupAdmin.requireGroupAdmin(sock, chatId, sender, db);
     if (!gate.ok) return sock.sendMessage(chatId, { text: gate.err }, { quoted: msg });
 
@@ -38,7 +40,16 @@ module.exports = {
 
     try {
       await sock.groupParticipantsUpdate(chatId, [target], 'demote');
-      return sock.sendMessage(chatId, { text: '✅ Demoted from group admin.' }, { quoted: msg });
+      return sock.sendMessage(chatId, {
+        text: [
+          (proD ? UI.PRO_BAR : UI.FREE_BAR),
+          '⬇️ *DEMOTED*',
+          `✅ @${GroupAdmin.bare(target)} is no longer a group admin.`,
+          proD ? (UI.PRO_MINI + '\n⬇️ PRO GAVEL') : null,
+          proD ? `👮 Demoted by @${GroupAdmin.bare(sender)}` : null,
+          (proD ? UI.PRO_BAR : UI.FREE_BAR),
+        ].filter(x => x !== null).join('\n'),
+      }, { quoted: msg });
     } catch (e) {
       return sock.sendMessage(chatId, { text: '❌ Failed to demote: ' + e.message }, { quoted: msg });
     }

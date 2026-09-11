@@ -93,19 +93,15 @@ const gate = {
       } else lines.push(FRAME, UI.upsell());
 
       const fullText = lines.join('\n');
-      // FIX: also DM the list to user's serf (user requested DM copy)
-      try {
-        const MSM = require('../../bots/MultiSocketManager');
-        const serf = SerfManager.getSerf(db, sender);
-        const serfSock = serf?.botKey ? MSM.getSocket(serf.botKey) : null;
-        const dmSock = serfSock || sock;
-        // Only DM if chat is a group (avoid duplicate in DM)
-        if (chatId.endsWith('@g.us') && dmSock) {
-          await dmSock.sendMessage(sender, { text: fullText }).catch(()=>{});
-        }
-      } catch (e) {}
-
-      return sock.sendMessage(chatId, { text: fullText }, { quoted: msg });
+      // DM-ONLY: keys never post in the group. In a DM chat, show directly.
+      if (!chatId.endsWith('@g.us')) {
+        return sock.sendMessage(chatId, { text: fullText }, { quoted: msg });
+      }
+      const SerfDM = require('../../rpg/utils/SerfDM');
+      const dmRes = await SerfDM.sendSerfDM(sock, db, sender, { text: fullText });
+      return sock.sendMessage(chatId, {
+        text: SerfDM.resultNotice(`🔑 ${allKeys.length} GATE KEY${allKeys.length === 1 ? '' : 'S'}`, dmRes),
+      }, { quoted: msg });
     }
 
     // ── /gate (list) ──────────────────────────────────────────────────────────
@@ -232,19 +228,6 @@ const gate = {
       const stability   = GKM.formatStability(result.stabilityMs);
       const paidFrom    = result.keyData.paymentSource === 'guild' ? `*${result.keyData.guildName}* guild treasury` : 'your personal balance';
 
-      // GC Output: Do NOT reveal the gate key in public!
-      await sock.sendMessage(chatId, {
-        text: [
-          ...(pro ? [UI.PRO_BAR, `🔑 *GATE PURCHASED!* 💎`, UI.PRO_BAR] : [`🔑 *GATE PURCHASED!*`, UI.FREE_BAR]),
-          `${rd.emoji} Gate: *${rd.label}* [${gateId}]`,
-          `💠 Paid from: ${paidFrom}`,
-          `⏳ Gate stable for: *${stability}*`,
-          ``,
-          `📬 *Your gate key has been sent privately to your DM via your serf bot!*`,
-          ...(pro ? [FRAME, UI.PRO_MINI, `💎 *PRO CLAIM* — ${rd.label} · stable ${stability}`] : [FRAME, UI.upsell()]),
-        ].join('\n'),
-      }, { quoted: msg });
-
       const expiresDate = new Date(result.keyData.expiresAt).toUTCString().replace(' GMT', ' WAT');
       
       const keyDmText = [
@@ -265,13 +248,27 @@ const gate = {
         ...(pro ? [FRAME] : [FRAME, UI.upsell()]),
       ].join('\n');
 
-      try {
-        const MultiSocketManager = require('../../bots/MultiSocketManager');
-        const serfSock = serf.botKey ? MultiSocketManager.getSocket(serf.botKey) : sock;
-        if (serfSock) {
-          await serfSock.sendMessage(sender, { text: keyDmText }).catch(() => {});
-        }
-      } catch (e) {}
+      // Deliver the key through the serf FIRST, then report the real result.
+      const SerfDM2 = require('../../rpg/utils/SerfDM');
+      const keyDmRes = await SerfDM2.sendSerfDM(sock, db, sender, { text: keyDmText });
+      const keyDmNotice = keyDmRes.ok
+        ? `📬 *Your gate key was SUCCESSFULLY SENT VIA SERF!* 🔥 Check your DM!`
+        : `❌ *Key DM failed:* ${keyDmRes.detail || keyDmRes.reason} \n\u2003\u2003Run /gate keys in my DM to retrieve it.`;
+
+      // GC Output: Do NOT reveal the gate key in public!
+      await sock.sendMessage(chatId, {
+        text: [
+          ...(pro ? [UI.PRO_BAR, `🔑 *GATE PURCHASED!* 💎`, UI.PRO_BAR] : [`🔑 *GATE PURCHASED!*`, UI.FREE_BAR]),
+          `${rd.emoji} Gate: *${rd.label}* [${gateId}]`,
+          `💠 Paid from: ${paidFrom}`,
+          `⏳ Gate stable for: *${stability}*`,
+          ``,
+          keyDmNotice,
+          ...(pro ? [FRAME, UI.PRO_MINI, `💎 *PRO CLAIM* — ${rd.label} · stable ${stability}`] : [FRAME, UI.upsell()]),
+        ].join('\n'),
+      }, { quoted: msg });
+
+
 
       return;
     }

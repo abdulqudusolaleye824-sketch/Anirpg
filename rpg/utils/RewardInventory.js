@@ -10,7 +10,50 @@
 
 'use strict';
 
-const WEARABLE = ['weapon', 'weapons', 'armor', 'accessory', 'accessories', 'ring'];
+// CRITICAL: slots MUST be GearSystem slots (helmet/chestplate/boots/cloak/
+// vambrace/ring) — /gear equip reads SLOT_INFO[slot].emoji and crashes on
+// anything else. Reward-type → real-slot map:
+const SLOT_MAP = {
+  weapon: 'vambrace', weapons: 'vambrace',   // striking arm (ATK/crit)
+  armor: 'chestplate',                        // core armor (DEF/HP)
+  ring: 'ring',                               // jewelry
+  accessory: 'ring', accessories: 'ring',     // trinkets ride the ring slot
+};
+const VALID_SLOTS = new Set(['helmet', 'chestplate', 'boots', 'cloak', 'vambrace', 'ring']);
+
+// Repair pass: remap any gear already stored with a non-GearSystem slot
+// (e.g. 'weapon'/'armor'/'accessory' from earlier builds) and rescue
+// pieces parked under bogus equippedGear keys back into items.
+function repairGearSlots(player) {
+  if (!player) return 0;
+  let fixed = 0;
+  const items = player.inventory?.items;
+  if (Array.isArray(items)) {
+    for (const it of items) {
+      if (!it || !it.isGear) continue;
+      if (!VALID_SLOTS.has(it.slot)) {
+        it.slot = SLOT_MAP[it.slot] || SLOT_MAP[it.type] || 'vambrace';
+        fixed++;
+      }
+      if (!it.stats || typeof it.stats !== 'object') { it.stats = {}; fixed++; }
+      // equipGear removes by id — id-less gear would delete the WRONG item.
+      if (!it.id) { it.id = 'g' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8); fixed++; }
+    }
+  }
+  if (player.equippedGear && typeof player.equippedGear === 'object') {
+    for (const k of Object.keys(player.equippedGear)) {
+      if (VALID_SLOTS.has(k)) continue;
+      const piece = player.equippedGear[k];
+      delete player.equippedGear[k];
+      const real = VALID_SLOTS.has(piece?.slot) ? piece.slot : (SLOT_MAP[k] || 'vambrace');
+      if (piece) piece.slot = real;
+      if (piece && !player.equippedGear[real]) player.equippedGear[real] = piece;
+      else if (piece && Array.isArray(items)) items.push(piece);
+      fixed++;
+    }
+  }
+  return fixed;
+}
 const LEGACY_BUCKETS = ['weapons', 'armor', 'accessories', 'materials'];
 
 function ensureInventory(player) {
@@ -27,12 +70,13 @@ function grantItem(player, item, source = 'reward', extra = {}) {
   if (!item) return null;
   const inv = ensureInventory(player);
   const type = String(item.type || 'material').toLowerCase();
-  if (!WEARABLE.includes(type)) {
+  if (!SLOT_MAP[type]) {
     const entry = { ...item, type: item.type || 'material', rarity: item.rarity || 'common', source: item.source || source, acquiredAt: Date.now() };
     inv.items.push(entry);
     return entry;
   }
-  const slot = (type === 'weapon' || type === 'weapons') ? 'weapon' : (type === 'armor' ? 'armor' : 'accessory');
+  repairGearSlots(player); // heal any bad-slot gear from earlier builds
+  const slot = SLOT_MAP[type];
   const stats = {};
   const atk = item.stats?.atk ?? item.stats?.bonus ?? item.atk ?? item.bonus ?? 0;
   if (atk) stats.atk = atk;
@@ -45,6 +89,7 @@ function grantItem(player, item, source = 'reward', extra = {}) {
   }
   if (item.special || item.stats?.special) stats.special = item.special || item.stats.special;
   const entry = {
+    id: item.id || ('g' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8)),
     name: item.name, type: 'gear', isGear: true, slot,
     rarity: item.rarity || 'rare',
     durability: item.durability || 100,
@@ -113,4 +158,4 @@ function consumeMaterial(player, name, qty) {
   return remaining === 0;
 }
 
-module.exports = { ensureInventory, grantItem, migrateLegacy, countMaterial, consumeMaterial };
+module.exports = { ensureInventory, grantItem, migrateLegacy, countMaterial, consumeMaterial, repairGearSlots, SLOT_MAP, VALID_SLOTS };

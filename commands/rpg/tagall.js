@@ -7,6 +7,7 @@
 'use strict';
 
 const Mod = require('../../rpg/utils/ModerationUtils');
+const UI = require('../../rpg/utils/UI');
 
 module.exports = {
   name: 'tagall',
@@ -16,6 +17,7 @@ module.exports = {
   async execute(sock, msg, args, getDatabase, saveDatabase, sender) {
     const chatId = msg.key.remoteJid;
     const db = getDatabase();
+    const proT = UI.isPro(db.users[sender]);
 
     if (!chatId.endsWith('@g.us')) {
       return sock.sendMessage(chatId, {
@@ -55,10 +57,14 @@ module.exports = {
       }
 
       const text = [
+        (proT ? UI.PRO_BAR : UI.FREE_BAR),
         '📢 *GROUP ANNOUNCEMENT* 📢',
-        '',
+        proT ? (UI.PRO_MINI + '\n📢 PRO HERALD') : null,
+        proT ? `👥 Pinging *${participants.length}* members` : null,
+        proT ? '' : null,
         message,
-      ].join('\n');
+        (proT ? UI.PRO_BAR : UI.FREE_BAR),
+      ].filter(x => x !== null).join('\n');
 
       await sock.sendMessage(chatId, {
         text,

@@ -43,7 +43,7 @@ function buildSupportButtons(groups) {
   let idx = 1;
   for (const g of groups) {
     if (!g.inviteLink) continue;
-    const name = (g.typeInfo?.name || g.type || 'Group').replace(/[^a-zA-Z0-9 ]/g, '').trim().slice(0, 18) || g.type;
+    const name = (g.groupName || g.typeInfo?.name || g.type || 'Group').replace(/[^a-zA-Z0-9 ]/g, '').trim().slice(0, 18) || g.type;
     const emoji = g.typeInfo?.emoji || '🔗';
     buttons.push({ index: idx++, urlButton: { displayText: `${emoji} ${name}`.slice(0, 30), url: g.inviteLink } });
     if (idx > 10) break;
@@ -71,15 +71,15 @@ function buildPartyButtons(key, options = {}) {
  * to interactive (nativeFlow) at send time.
  */
 function buildQuickReplies(pairs) {
-  return (pairs || []).slice(0, 5).map(([text, id], i) => ({
+  return (pairs || []).slice(0, 10).map(([text, id], i) => ({
     index: i + 1,
-    quickReplyButton: { displayText: String(text).slice(0, 30), id: String(id) },
+    quickReplyButton: { displayText: String(text).slice(0, 25), id: String(id) },
   }));
 }
 function buildUrlButtons(pairs) {
-  return (pairs || []).slice(0, 5).map(([text, url], i) => ({
+  return (pairs || []).slice(0, 10).map(([text, url], i) => ({
     index: i + 1,
-    urlButton: { displayText: String(text).slice(0, 30), url: String(url) },
+    urlButton: { displayText: String(text).slice(0, 25), url: String(url) },
   }));
 }
 
@@ -111,50 +111,23 @@ function templateToInteractive(templateButtons) {
 }
 
 /**
- * Try to send via interactiveMessage (nativeFlow) — the currently
- * working method for WhatsApp Business. Returns true on success, false on failure.
+ * Send via interactiveMessage (nativeFlow) — the currently working method
+ * for WhatsApp Business. No viewOnce wrapper (plain interactive renders on
+ * every client); buttons chunked 3-per-message so nothing is ever dropped.
+ * Returns the number of interactive messages relayed (0 = failed).
  */
 async function trySendInteractive(sock, chatId, content, interactiveButtons, quoted) {
-  if (!generateWAMessageFromContent || !proto) return false;
+  if (!generateWAMessageFromContent || !proto) return 0;
+  if (!sock || typeof sock.relayMessage !== 'function') return 0;
   const hasImage = !!content.image;
   const bodyText = content.caption || content.text || '';
   const footerText = content.footer || 'Astra™ 2026';
-  const titleText = content.title || undefined;
+
+  const CHUNK = 3;
+  const chunks = [];
+  for (let i = 0; i < interactiveButtons.length; i += CHUNK) chunks.push(interactiveButtons.slice(i, i + CHUNK));
 
   try {
-    let header = undefined;
-    let body = { text: bodyText };
-    let footer = footerText ? { text: footerText } : undefined;
-
-    // Build nativeFlow buttons
-    const nativeFlowMessage = proto.Message.InteractiveMessage.NativeFlowMessage.create({
-      buttons: interactiveButtons
-    });
-
-    if (hasImage) {
-      // For media interactive, header hasMediaAttachment = true and we attach image via generateWAMessage
-      // We'll use the approach from shizo-devs example: pass image as media with caption
-      header = proto.Message.InteractiveMessage.Header.create({
-        title: titleText || bodyText.slice(0, 30) || 'Astra',
-        subtitle: undefined,
-        hasMediaAttachment: true
-      });
-    } else {
-      header = proto.Message.InteractiveMessage.Header.create({
-        title: titleText || undefined,
-        subtitle: undefined,
-        hasMediaAttachment: false
-      });
-      if (titleText) body = { text: bodyText };
-    }
-
-    const interactiveMessage = proto.Message.InteractiveMessage.create({
-      body: proto.Message.InteractiveMessage.Body.create({ text: bodyText }),
-      footer: footer ? proto.Message.InteractiveMessage.Footer.create(footer) : undefined,
-      header: header,
-      nativeFlowMessage
-    });
-
     if (hasImage) {
       // Media + interactive in a single message needs an uploaded-media header,
       // so deliver in two guaranteed steps: the image first, then the buttons.
@@ -162,36 +135,27 @@ async function trySendInteractive(sock, chatId, content, interactiveButtons, quo
       // Baileys 7 drops the unknown key and reports success with no buttons.)
       const mtype = content.mimetype || 'image/jpeg';
       await sock.sendMessage(chatId, { image: content.image, caption: bodyText, mimetype: mtype }, quoted ? { quoted } : {});
-      const waMsg2 = generateWAMessageFromContent(chatId, {
-        viewOnceMessage: {
-          message: {
-            messageContextInfo: { deviceListMetadataVersion: 2, deviceListMetadata: {} },
-            interactiveMessage: proto.Message.InteractiveMessage.create({
-              body: proto.Message.InteractiveMessage.Body.create({ text: `Tap a button below:` }),
-              footer: proto.Message.InteractiveMessage.Footer.create({ text: footerText }),
-              header: proto.Message.InteractiveMessage.Header.create({ title: 'Astra™', subtitle: undefined, hasMediaAttachment: false }),
-              nativeFlowMessage
-            })
-          }
-        }
-      }, {});
-      await sock.relayMessage(chatId, waMsg2.message, { messageId: waMsg2.key.id });
-      return true;
-    } else {
-      const waMsg = generateWAMessageFromContent(chatId, {
-        viewOnceMessage: {
-          message: {
-            messageContextInfo: { deviceListMetadataVersion: 2, deviceListMetadata: {} },
-            interactiveMessage
-          }
-        }
-      }, { quoted: quoted || undefined });
-      await sock.relayMessage(chatId, waMsg.message, { messageId: waMsg.key.id });
-      return true;
     }
+    let sent = 0;
+    for (let ci = 0; ci < chunks.length; ci++) {
+      const nativeFlowMessage = proto.Message.InteractiveMessage.NativeFlowMessage.create({
+        buttons: chunks[ci]
+      });
+      const first = ci === 0 && !hasImage;
+      const im = proto.Message.InteractiveMessage.create({
+        body: proto.Message.InteractiveMessage.Body.create({ text: first ? bodyText : 'Tap a button below:' }),
+        footer: footerText ? proto.Message.InteractiveMessage.Footer.create({ text: footerText }) : undefined,
+        header: hasImage ? proto.Message.InteractiveMessage.Header.create({ title: 'Astra™', subtitle: undefined, hasMediaAttachment: false }) : undefined,
+        nativeFlowMessage
+      });
+      const waMsg = generateWAMessageFromContent(chatId, { interactiveMessage: im }, quoted ? { quoted } : {});
+      await sock.relayMessage(chatId, waMsg.message, { messageId: waMsg.key.id });
+      sent++;
+    }
+    return sent;
   } catch (e) {
     console.error('⚠️ interactive send failed:', e.message);
-    return false;
+    return 0;
   }
 }
 
@@ -203,7 +167,8 @@ async function trySendInteractive(sock, chatId, content, interactiveButtons, quo
  */
 async function sendWithButtons(sock, chatId, content, buttons, quoted) {
   if (!buttons || buttons.length === 0) {
-    return sock.sendMessage(chatId, content, quoted ? { quoted } : {});
+    await sock.sendMessage(chatId, content, quoted ? { quoted } : {});
+    return { mode: 'plain', chunks: 0 };
   }
 
   const hasImage = !!content.image;
@@ -216,8 +181,8 @@ async function sendWithButtons(sock, chatId, content, buttons, quoted) {
   // swallow the buttons AND skip every fallback below. Those keys are
   // therefore never attempted here.
   if (interactiveButtons.length > 0) {
-    const ok = await trySendInteractive(sock, chatId, content, interactiveButtons, quoted);
-    if (ok) return;
+    const sent = await trySendInteractive(sock, chatId, content, interactiveButtons, quoted);
+    if (sent > 0) return { mode: 'interactive', chunks: sent };
     console.error('⚠️ interactive relay failed, falling back to plain text with hints');
   }
 
@@ -235,9 +200,11 @@ async function sendWithButtons(sock, chatId, content, buttons, quoted) {
     const baseText = content.caption || content.text || '';
     const fallbackText = baseText + (buttonHints ? '\n\n' + buttonHints : '');
     if (hasImage) {
-      return await sock.sendMessage(chatId, { image: content.image, caption: fallbackText, mimetype: content.mimetype || 'image/png' }, quoted ? { quoted } : {});
+      await sock.sendMessage(chatId, { image: content.image, caption: fallbackText, mimetype: content.mimetype || 'image/png' }, quoted ? { quoted } : {});
+    } else {
+      await sock.sendMessage(chatId, { text: fallbackText }, quoted ? { quoted } : {});
     }
-    return await sock.sendMessage(chatId, { text: fallbackText }, quoted ? { quoted } : {});
+    return { mode: 'plain', chunks: 0 };
   } catch (e2) {
     console.error('Fallback send also failed:', e2.message);
     if (hasImage) return sock.sendMessage(chatId, { image: content.image, caption: content.caption || content.text || '', mimetype: content.mimetype || 'image/png' }, quoted ? { quoted } : {});

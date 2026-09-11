@@ -95,6 +95,10 @@ module.exports = {
       if (!claimed) return sock.sendMessage(chatId, { text: '❌ No completed weekly challenges to claim!' }, { quoted: msg });
       if (totalNexus > 0) {
         try { require('../../rpg/utils/QuestDispatcher').trackAndNotify(player, 'goldEarn', totalNexus, sock, sender, chatId); } catch(e){}
+        try { require('../../rpg/utils/TransactionLog').logTransaction(player, { type: 'weekly_claim', amount: totalNexus, currency: '💠', note: `weekly challenges` }); } catch (e) {};
+      }
+      if (totalCrystals > 0) {
+        try { require('../../rpg/utils/TransactionLog').logTransaction(player, { type: 'weekly_claim', amount: totalCrystals, currency: '💎', note: `weekly challenges` }); } catch (e) {};
       }
       saveDatabase();
       let rewardMsg = `💠 +${totalNexus.toLocaleString()}g\n💎 +${totalCrystals}`;

@@ -5,6 +5,7 @@
 'use strict';
 
 const UI = require('../../rpg/utils/UI');
+const { formatTx } = require('../../rpg/utils/TransactionLog');
 
 function bare(jid) {
   return String(jid).split(':')[0].split('@')[0];
@@ -42,7 +43,8 @@ module.exports = {
     const name = player.name || targetId.split('@')[0];
 
     const viewer = db.users[sender];
-    const txs = Array.isArray(player.transactions) ? player.transactions.slice(-3).reverse() : [];
+    // transactions are newest-first (unshift) — take the first 3 as-is.
+    const txs = Array.isArray(player.transactions) ? player.transactions.slice(0, 3) : [];
     const text = UI.card(viewer, {
       icon: '💠',
       title: isSelf ? 'YOUR BALANCE' : 'PLAYER BALANCE',
@@ -54,7 +56,7 @@ module.exports = {
       ],
       proLines: txs.length
         ? [`💎 *PRO LEDGER — last ${txs.length}*`,
-           ...txs.map((t) => `  • ${t.label || t.type || 'Transaction'}${typeof t.amount === 'number' ? `: ${t.amount >= 0 ? '+' : ''}${UI.num(t.amount)}` : ''}`)]
+           ...txs.map((t) => formatTx(t))]
         : [`💎 *PRO LEDGER*`, `  _No transactions recorded yet._`],
       tip: isSelf ? 'Your wallet, at a glance' : `Viewing ${name}'s wallet`,
     });

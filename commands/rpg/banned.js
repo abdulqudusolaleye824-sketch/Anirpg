@@ -6,6 +6,7 @@
 'use strict';
 
 const Mod = require('../../rpg/utils/ModerationUtils');
+const UI = require('../../rpg/utils/UI');
 
 module.exports = {
   name: 'banned',
@@ -15,6 +16,7 @@ module.exports = {
   async execute(sock, msg, args, getDatabase, saveDatabase, sender) {
     const chatId = msg.key.remoteJid;
     const db = getDatabase();
+    const proB = UI.isPro(db.users[sender]);
 
     if (!Mod.canModerate(db, sender)) {
       return sock.sendMessage(chatId, {
@@ -27,11 +29,16 @@ module.exports = {
     const entries = Object.entries(db.bannedUsers); // [key, rec]
     if (entries.length === 0) {
       return sock.sendMessage(chatId, {
-        text: '✅ *No banned users.*',
+        text: [
+          (proB ? UI.PRO_BAR : UI.FREE_BAR),
+          '✅ *No banned users.*',
+          (proB ? UI.PRO_BAR : UI.FREE_BAR),
+        ].join('\n'),
       }, { quoted: msg });
     }
 
-    const lines = ['━━━━━━━━━━━━━━━━━━━━━━━━━━━', '🚫 *BANNED USERS* 🚫', '━━━━━━━━━━━━━━━━━━━━━━━━━━━', `Total: ${entries.length}`, '━━━━━━━━━━━━━━━━━━━━━━━━━━━'];
+    const lines = [(proB ? UI.PRO_BAR : UI.FREE_BAR), '🚫 *BANNED USERS* 🚫', `Total: ${entries.length}`,
+      ...(proB ? [(UI.PRO_MINI + '\n🚫 PRO GAVEL'), `📊 *${entries.length}* banned users on record`, ''] : [])];
     const mentions = [];
 
     entries.forEach(([key, rec], i) => {
@@ -50,9 +57,8 @@ module.exports = {
       if (rec.bannedBy) mentions.push(rec.bannedBy);
     });
 
-    lines.push('━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     lines.push('Use /unban [user] to unban someone.');
-    lines.push('━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    lines.push((proB ? UI.PRO_BAR : UI.FREE_BAR));
 
     await sock.sendMessage(chatId, {
       text: lines.join('\n'),

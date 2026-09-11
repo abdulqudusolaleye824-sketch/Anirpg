@@ -100,11 +100,19 @@ function getPassState(player) {
   return bp;
 }
 
+// Reward multiplier, centralized: Pro 2x, BP-premium 2x, both 4x.
+// (Callers pass base amounts only — no manual doubling at call sites.)
+function _rewardMult(player) {
+  const bp = getPassState(player); // also rolls the season when due
+  const isPro = !!((player.isPro || player.proStatus) && player.proExpiresAt && player.proExpiresAt > Date.now());
+  return { bp, mult: (isPro ? 2 : 1) * (bp.premium ? 2 : 1) };
+}
+
 function addPassXP(player, source, multiplier = 1) {
   const baseXP = XP_SOURCES[source] || 0;
   if (!baseXP) return 0;
-  const gained = Math.floor(baseXP * multiplier);
-  const bp = getPassState(player);
+  const { bp, mult } = _rewardMult(player);
+  const gained = Math.floor(baseXP * (multiplier || 1) * mult);
   bp.xp += gained;
   // Level up
   while (bp.xp >= XP_PER_LEVEL && bp.level < PASS_LEVELS) {
@@ -115,18 +123,19 @@ function addPassXP(player, source, multiplier = 1) {
   return gained;
 }
 
-// Direct-amount XP: credit an exact number of BP XP (no source-table multiply).
-// Use this when the caller already computed the reward (pvp, battle rewards, ...).
+// Direct-amount XP: credit a BASE number of BP XP — the Pro x premium
+// multiplier (1x/2x/4x) is applied inside. Callers must NOT pre-double.
 function addPassXPAmount(player, amount) {
   if (!player || !amount || amount <= 0) return 0;
-  const bp = getPassState(player);
-  bp.xp += Math.floor(amount);
+  const { bp, mult } = _rewardMult(player);
+  const final = Math.floor(amount * mult);
+  bp.xp += final;
   while (bp.xp >= XP_PER_LEVEL && bp.level < PASS_LEVELS) {
     bp.xp -= XP_PER_LEVEL;
     bp.level++;
   }
   if (bp.level >= PASS_LEVELS) bp.xp = 0;
-  return Math.floor(amount);
+  return final;
 }
 
 function claimReward(player, level) {

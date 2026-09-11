@@ -21,9 +21,53 @@ module.exports = {
     // ── Default: show help ─────────────────────────────────────
     if (!subCmd) {
       return sock.sendMessage(chatId, {
-        text: (pro ? `${UI.PRO_BAR}\n🎒 *EQUIP COMMANDS* 💎\n${UI.PRO_BAR}\n\n/items — view equippable items\n/items -tier — sorted by rarity\n/equip use [#] — equip/use item\n/equip gift [#] @player — gift item\n${UI.PRO_BAR}\n${UI.PRO_MINI}\n💎 *PRO KIT* — manage your loadout` : `🎒 *EQUIP COMMANDS*\n${UI.FREE_BAR}\n\n/items — view equippable items\n/items -tier — sorted by rarity\n/equip use [#] — equip/use item\n/equip gift [#] @player — gift item\n${UI.FREE_BAR}\n${UI.upsell()}`)
+        text: (pro ? `${UI.PRO_BAR}\n🎒 *EQUIP COMMANDS* 💎\n${UI.PRO_BAR}\n\n/items — view equippable items\n/items -tier — sorted by rarity\n/equip [#] — equip gear by /inv serial\n/equip use [#] — equip/use item\n/equip gift [#] @player — gift item\n${UI.PRO_BAR}\n${UI.PRO_MINI}\n💎 *PRO KIT* — manage your loadout` : `🎒 *EQUIP COMMANDS*\n${UI.FREE_BAR}\n\n/items — view equippable items\n/items -tier — sorted by rarity\n/equip [#] — equip gear by /inv serial\n/equip use [#] — equip/use item\n/equip gift [#] @player — gift item\n${UI.FREE_BAR}\n${UI.upsell()}`)
       }, { quoted: msg });
     }
+
+    // ── /equip <#> — equip gear by /inv serial ─────────────
+    // Serials match /inv numbering EXACTLY (shared collector + sort).
+    if (/^\d+$/.test(subCmd)) {
+      const serial = parseInt(subCmd);
+      try { require('../../rpg/utils/RewardInventory').repairGearSlots(player); } catch (e) {}
+      try { require('../../rpg/utils/RewardInventory').migrateLegacy(player); } catch (e) {}
+      let sorted = [];
+      try {
+        const invMod = require('./inventory');
+        const { gearItems } = invMod._collectBuckets(player);
+        sorted = invMod._sortGear(gearItems);
+      } catch (e) {
+        const _ro = { mythic: 0, legendary: 1, epic: 2, rare: 3, uncommon: 4, common: 5 };
+        sorted = [...(player.inventory?.items || []).filter(x => x.isGear)].sort((a, b) => (_ro[a.rarity] || 6) - (_ro[b.rarity] || 6));
+      }
+      if (serial < 1 || serial > sorted.length) {
+        return sock.sendMessage(chatId, {
+          text: `❌ Invalid serial! You have ${sorted.length} gear item(s).\n\nUse /inv to see the list.`
+        }, { quoted: msg });
+      }
+      const picked = sorted[serial - 1];
+      // Resolve the REAL instance in items[] (legacy views are copies).
+      const pool = player.inventory?.items || [];
+      const real = pool.find(x => x.isGear && (picked.id ? x.id === picked.id : (x.name === picked.name && x.slot === picked.slot)));
+      if (!real) {
+        return sock.sendMessage(chatId, {
+          text: `❌ *${picked.name}* is no longer in your inventory (already equipped?).\n\nUse /inv to see the list.`
+        }, { quoted: msg });
+      }
+      const { SLOT_INFO, equipGear } = require('../../rpg/utils/GearSystem');
+      const si = SLOT_INFO[real.slot];
+      if (!si) {
+        return sock.sendMessage(chatId, { text: `❌ *${real.name}* has an unknown slot (${real.slot || '?'}). Try /inv info, or report this.` }, { quoted: msg });
+      }
+      const hadOld = player.equippedGear?.[real.slot];
+      equipGear(player, real);
+      saveDatabase();
+      let reply = pro ? `${UI.PRO_BAR}\n✅ *GEAR EQUIPPED!* 💎\n${UI.PRO_BAR}\n\n✅ Equipped *${real.name}*!\n` : `✅ Equipped *${real.name}*!\n`;
+      if (hadOld) reply += `⚠️ Previous ${si.name} (${hadOld.name}) was destroyed.\n`;
+      reply += `\n${si.emoji} ${si.name} slot now active.\n${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO GEAR* — ${si.name} active` : `\n${UI.upsell()}`);
+      return sock.sendMessage(chatId, { text: reply }, { quoted: msg });
+    }
+
 
     // ── /equip use [#] ─────────────────────────────────────────
     if (subCmd === 'use') {
@@ -263,7 +307,7 @@ module.exports = {
     }
 
     return sock.sendMessage(chatId, {
-      text: (pro ? `${UI.PRO_BAR}\n🎒 *EQUIP COMMANDS* 💎\n${UI.PRO_BAR}\n\n/items — view your items\n/equip use [#] — use/equip item\n/equip gift [#] @player — gift item\n${UI.PRO_BAR}\n${UI.PRO_MINI}\n💎 *PRO KIT* — manage your loadout` : `🎒 *EQUIP COMMANDS*\n${UI.FREE_BAR}\n\n/items — view your items\n/equip use [#] — use/equip item\n/equip gift [#] @player — gift item\n${UI.FREE_BAR}\n${UI.upsell()}`)
+      text: (pro ? `${UI.PRO_BAR}\n🎒 *EQUIP COMMANDS* 💎\n${UI.PRO_BAR}\n\n/items — view your items\n/equip [#] — equip gear by /inv serial\n/equip use [#] — use/equip item\n/equip gift [#] @player — gift item\n${UI.PRO_BAR}\n${UI.PRO_MINI}\n💎 *PRO KIT* — manage your loadout` : `🎒 *EQUIP COMMANDS*\n${UI.FREE_BAR}\n\n/items — view your items\n/equip [#] — equip gear by /inv serial\n/equip use [#] — use/equip item\n/equip gift [#] @player — gift item\n${UI.FREE_BAR}\n${UI.upsell()}`)
     }, { quoted: msg });
   }
 };

@@ -39,13 +39,14 @@ module.exports = {
     txt += `${FRAME}\n💡 */support* — get the support group link in your DM\n💡 */help* — all commands` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO NETWORK* — ${groups.length} groups` : `\n${UI.upsell()}`);
 
     if (chatId.endsWith('@g.us')) {
+      const SerfDMc = require('../../rpg/utils/SerfDM');
+      const dmResc = await SerfDMc.sendSerfDM(sock, db, sender, { text: txt });
       await sock.sendMessage(chatId, {
-        text: `📩 Community links sent to your DM, @${sender.split('@')[0]}!`,
+        text: `@${sender.split('@')[0]}` + '\n' + SerfDMc.resultNotice('📩 COMMUNITY LINKS', dmResc),
         mentions: [sender]
       }, { quoted: msg });
-      try {
-        await sock.sendMessage(sender, { text: txt });
-      } catch(e) {
+      if (!dmResc.ok) {
+        // Public links anyway - the user still gets them in-group.
         await sock.sendMessage(chatId, { text: txt }, { quoted: msg });
       }
     } else {

@@ -8,6 +8,7 @@
 
 const Mod = require('../../rpg/utils/ModerationUtils');
 const GroupAdmin = require('../../rpg/utils/GroupAdmin');
+const UI = require('../../rpg/utils/UI');
 
 module.exports = {
   name: 'kick',
@@ -21,6 +22,7 @@ module.exports = {
   async execute(sock, msg, args, getDatabase, saveDatabase, sender) {
     const chatId = msg.key.remoteJid;
     const db = getDatabase();
+    const proK = UI.isPro(db.users[sender]);
 
     const gate = await GroupAdmin.requireGroupAdmin(sock, chatId, sender, db);
     if (!gate.ok) return sock.sendMessage(chatId, { text: gate.err }, { quoted: msg });
@@ -31,7 +33,15 @@ module.exports = {
 
     if (!targetId) {
       return sock.sendMessage(chatId, {
-        text: '👢 *KICK A USER*\n\n📌 Usage: /kick @user\n\nReply to their message and type /kick.',
+        text: [
+          (proK ? UI.PRO_BAR : UI.FREE_BAR),
+          '👢 *KICK A USER*',
+          '',
+          '📌 Usage: /kick @user',
+          '',
+          'Reply to their message and type /kick.',
+          (proK ? UI.PRO_BAR : UI.FREE_BAR),
+        ].join('\n'),
       }, { quoted: msg });
     }
 
@@ -49,13 +59,14 @@ module.exports = {
       const u = Mod.getUser(db, targetId);
       return sock.sendMessage(chatId, {
         text: [
-          '━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+          (proK ? UI.PRO_BAR : UI.FREE_BAR),
           '👢 *USER KICKED* 👢',
-          '━━━━━━━━━━━━━━━━━━━━━━━━━━━',
           `👤 User: ${u?.name || '@' + Mod.bare(targetId)}`,
           `👮 By: @${Mod.bare(sender)}`,
-          '━━━━━━━━━━━━━━━━━━━━━━━━━━━',
-        ].join('\n'),
+          proK ? (UI.PRO_MINI + '\n👢 PRO GAVEL') : null,
+          proK ? `📋 Group removal — they can rejoin; /ban blocks bot-wide` : null,
+          (proK ? UI.PRO_BAR : UI.FREE_BAR),
+        ].filter(x => x !== null).join('\n'),
         mentions: mentionedJid ? [targetId, sender] : [sender],
       }, { quoted: msg });
     } catch (error) {

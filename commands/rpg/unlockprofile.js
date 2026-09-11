@@ -5,6 +5,8 @@
 
 'use strict';
 
+const UI = require('../../rpg/utils/UI');
+
 function isProPlayer(player) {
   if (!player) return false;
   return !!((player.isPro || player.proStatus) && player.proExpiresAt && player.proExpiresAt > Date.now());
@@ -26,14 +28,16 @@ module.exports = {
     }
 
     if (!player.profileLocked) {
-      return sock.sendMessage(chatId, { text: `🔓 *PROFILE ALREADY UNLOCKED*\n\nYour profile is already public and visible in group chats via /profile.` }, { quoted: msg });
+      const proA = UI.isPro(player);
+      return sock.sendMessage(chatId, { text: `${(proA ? UI.PRO_BAR : UI.FREE_BAR)}\n🔓 *PROFILE ALREADY UNLOCKED*\n\nYour profile is already public and visible in group chats via /profile.\n${(proA ? UI.PRO_BAR : UI.FREE_BAR)}` }, { quoted: msg });
     }
 
     player.profileLocked = false;
     saveDatabase();
+    const proU = UI.isPro(player);
 
     return sock.sendMessage(chatId, {
-      text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🔓 *PROFILE UNLOCKED*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\nYour profile is now public and visible in group chats.\nAnyone can use /profile and see your card in the GC.\n\n💡 Use /lockprofile to lock it again (DM only).`
+      text: `${(proU ? UI.PRO_BAR : UI.FREE_BAR)}\n🔓 *PROFILE UNLOCKED*\n\nYour profile is now public and visible in group chats.\nAnyone can use /profile and see your card in the GC.\n\n💡 Use /lockprofile to lock it again (DM only).\n${proU ? `${UI.PRO_MINI}\n🔓 PRO VAULT\n⏳ Pro active until *${new Date(player.proExpiresAt).toLocaleDateString()}*\n` : ''}${(proU ? UI.PRO_BAR : UI.FREE_BAR)}`
     }, { quoted: msg });
   }
 };
