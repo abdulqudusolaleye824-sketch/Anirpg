@@ -38,17 +38,40 @@ module.exports = {
       return sock.sendMessage(chatId, { text: '❌ Cannot demote an Owner/Co-Owner.' }, { quoted: msg });
     }
 
+    // Display names first (registered RPG names, LID/PN-agnostic); raw @tags
+    // only for unregistered users — and ALWAYS with a real mentions array so
+    // the tag actually renders instead of showing a bare LID number.
+    const displayFor = (jid) => {
+      const forms = [
+        jid,
+        String(jid).replace(/@lid$/, '@s.whatsapp.net'),
+        String(jid).replace(/@s.whatsapp.net$/, '@lid'),
+      ];
+      for (const f of forms) {
+        const u = db.users?.[f];
+        if (u?.name) return { label: `*${u.name}*`, mention: null };
+      }
+      const b = GroupAdmin.bare(jid);
+      const hit = Object.entries(db.users || {}).find(([id, u]) => u?.name && GroupAdmin.bare(id) === b);
+      if (hit) return { label: `*${hit[1].name}*`, mention: null };
+      return { label: `@${b}`, mention: jid };
+    };
+    const tDisp = displayFor(target);
+    const sDisp = displayFor(sender);
+    const mentions = [tDisp.mention, sDisp.mention].filter(Boolean);
+
     try {
       await sock.groupParticipantsUpdate(chatId, [target], 'demote');
       return sock.sendMessage(chatId, {
         text: [
           (proD ? UI.PRO_BAR : UI.FREE_BAR),
           '⬇️ *DEMOTED*',
-          `✅ @${GroupAdmin.bare(target)} is no longer a group admin.`,
+          `✅ ${tDisp.label} is no longer a group admin.`,
           proD ? (UI.PRO_MINI + '\n⬇️ PRO GAVEL') : null,
-          proD ? `👮 Demoted by @${GroupAdmin.bare(sender)}` : null,
+          proD ? `👮 Demoted by ${sDisp.label}` : null,
           (proD ? UI.PRO_BAR : UI.FREE_BAR),
         ].filter(x => x !== null).join('\n'),
+        mentions,
       }, { quoted: msg });
     } catch (e) {
       return sock.sendMessage(chatId, { text: '❌ Failed to demote: ' + e.message }, { quoted: msg });

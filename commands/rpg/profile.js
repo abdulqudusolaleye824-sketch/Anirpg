@@ -10,6 +10,7 @@ const path = require('path');
 const { AWAKENING_RANKS, calculatePowerRating, getPowerLabel } = require('../../rpg/utils/SoloLevelingCore');
 const { getQualityLabel } = require('../../rpg/utils/ClassSystem');
 const UI = require('../../rpg/utils/UI');
+const Buttons = (()=>{ try { return require('../../utils/buttons'); } catch(e){ return null; } })();
 
 // Default /profile image (WA0052 — Astra gold "A" logo).
 const DEFAULT_PROFILE_IMG = path.join(__dirname, '..', '..', 'assets', 'profile_default.jpg');
@@ -255,6 +256,17 @@ module.exports = {
       try { imageBuffer = fs.readFileSync(DEFAULT_PROFILE_IMG); } catch (e) { imageBuffer = null; }
     }
 
+    // Stats cross-link button on both the image card and the text card.
+    if (Buttons?.sendButtons) {
+      try {
+        await Buttons.sendButtons(sock, chatId, {
+          text: caption,
+          image: (imageBuffer && imageBuffer.length > 0) ? imageBuffer : null, mimetype: 'image/jpeg',
+          buttons: Buttons.quickReplies([[`📊 View Stats`, `/stats`]]),
+        }, msg);
+        return;
+      } catch (e) { console.error('profile buttons send failed:', e.message); }
+    }
     if (imageBuffer && imageBuffer.length > 0) {
       return sock.sendMessage(chatId, { image: imageBuffer, caption }, { quoted: msg });
     }

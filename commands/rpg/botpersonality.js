@@ -257,15 +257,32 @@ const hi = {
       }, { quoted: msg });
     }
 
+    // The chorus reports exactly which greetings landed; gap-fill ONLY the
+    // missing ones — each via its OWN socket when possible, prefixed via
+    // this socket only as a last resort. Duplicates are impossible: a
+    // delivered greeting is never re-sent.
+    let delivered = [];
     try {
       const MultiSocketManager = require('../../bots/MultiSocketManager');
-      await MultiSocketManager.sendHiChorus(chatId, responses, msg);
-    } catch(e) {
-      for (let i = 0; i < responses.length; i++) {
-        const { displayName, text } = responses[i];
-        if (text) await sock.sendMessage(chatId, { text: `*${displayName}:* ${text}` }, { quoted: msg });
-        if (i < responses.length - 1) await new Promise(r => setTimeout(r, 800));
+      const report = await MultiSocketManager.sendHiChorus(chatId, responses, msg);
+      delivered = (report && report.delivered) || [];
+    } catch (e) { delivered = []; }
+    const missing = responses.filter((r) => !delivered.includes(r.personalityKey));
+    for (let i = 0; i < missing.length; i++) {
+      const r = missing[i];
+      let sent = false;
+      try {
+        const MultiSocketManager = require('../../bots/MultiSocketManager');
+        const own = MultiSocketManager.getSocket(r.personalityKey);
+        if (own && own.user?.id && r.text) {
+          await own.sendMessage(chatId, { text: r.text }, { quoted: msg });
+          sent = true;
+        }
+      } catch (e) { sent = false; }
+      if (!sent && r.text) {
+        try { await sock.sendMessage(chatId, { text: `*${r.displayName}:* ${r.text}` }, { quoted: msg }); } catch (e) {}
       }
+      if (i < missing.length - 1) await new Promise((rr) => setTimeout(rr, 800));
     }
   },
 };

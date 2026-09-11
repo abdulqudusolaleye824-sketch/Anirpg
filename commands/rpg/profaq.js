@@ -4,6 +4,8 @@
 
 'use strict';
 
+const Buttons = (()=>{ try { return require('../../utils/buttons'); } catch(e){ return null; } })();
+
 module.exports = {
   name: 'profaq',
   aliases: ['pro', 'proinfo', 'prohelp'],
@@ -15,8 +17,7 @@ module.exports = {
     const pro = UI.isPro(getDatabase()?.users?.[sender] || {});
     const FRAME = pro ? UI.PRO_BAR : UI.FREE_BAR;
 
-    return sock.sendMessage(chatId, {
-      text: [
+    const faqText = [
         ...(pro ? [UI.PRO_BAR, `🌟 *ASTRA PRO SYSTEM & PERKS FAQ* 💎`, UI.PRO_BAR] : [`🌟 *ASTRA PRO SYSTEM & PERKS FAQ*`, UI.FREE_BAR]),
         ``,
         `💳 *PRO SUBSCRIPTION CARDS:*`,
@@ -50,7 +51,18 @@ module.exports = {
         `🛍️ Use */prostore* to purchase Pro subscription cards!`,
         FRAME,
         ...(pro ? [UI.PRO_MINI, `💎 *PRO INSIDER* — you're living the perks`] : [UI.upsell()]),
-      ].join('\n'),
-    }, { quoted: msg });
+      ].join('\n');
+    // Buy-Pro buttons (menu/plain fallbacks underneath).
+    try {
+      if (Buttons?.sendButtons) {
+        await Buttons.sendButtons(sock, chatId, {
+          text: faqText,
+          footer: 'Astra Pro',
+          buttons: Buttons.quickReplies([[`🎫 Weekly Pro`, `/prostore buy weekly`], [`📜 Monthly Pro`, `/prostore buy monthly`], [`👑 Yearly Pro`, `/prostore buy yearly`]]),
+        }, msg);
+        return;
+      }
+    } catch (e) { console.error('profaq buttons send failed:', e.message); }
+    return sock.sendMessage(chatId, { text: faqText }, { quoted: msg });
   }
 };

@@ -15,6 +15,9 @@ function extractKey(sentMsgOrKey) {
 async function editMessage(sock, chatId, sentMsgOrKey, newText) {
   const key = extractKey(sentMsgOrKey);
   if (!key || !key.id) throw new Error('editMessage: no message key to edit');
+  if (!String(newText ?? '').replace(/[\u200b-\u200f\u2060-\u206f\ufeff\u061c]/g, '').trim()) {
+    throw new Error('editMessage: refusing to blank a message (empty newText)');
+  }
   return sock.sendMessage(chatId, { text: newText, edit: key });
 }
 

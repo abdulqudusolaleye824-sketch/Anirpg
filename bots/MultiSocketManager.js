@@ -446,14 +446,35 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
       try {
         const c = content || {};
         const keys = Object.keys(c);
-        const hasMedia = !!(c.image || c.video || c.audio || c.document || c.sticker || c.ptv || c.gifPlayback);
-        const functional = keys.some(k => !['text', 'caption', 'conversation', 'mentions', 'footer', 'mimetype'].includes(k));
-        if (!hasMedia && !functional) {
-          const txt = c.text ?? c.caption ?? c.conversation ?? '';
-          if (!String(txt).trim()) {
-            console.error(`🚫 [${personalityKey}] blocked EMPTY send to ${jid} (empty text/caption, no media)`);
-            return null;
-          }
+        const _bufLen = (v) => {
+          if (!v) return -1;
+          if (typeof Buffer !== 'undefined' && Buffer.isBuffer(v)) return v.length;
+          if (typeof Uint8Array !== 'undefined' && v instanceof Uint8Array) return v.length;
+          return -1;
+        };
+        const _mediaVals = [c.image, c.video, c.audio, c.document, c.sticker, c.ptv];
+        const hasMedia = _mediaVals.some((v) => !!v && _bufLen(v) !== 0);
+        const hasEmptyMedia = _mediaVals.some((v) => !!v && _bufLen(v) === 0);
+        // Envelope-only keys: content carrying ONLY these + blank text can
+        // only render as an empty bubble. NOTE 'edit' is deliberately here —
+        // an edit with empty text blanks the target message instead of being
+        // caught. True functional keys (delete/react/poll/...) still pass.
+        const functional = keys.some((k) => !['text', 'caption', 'conversation', 'mentions', 'footer', 'mimetype', 'edit', 'viewOnce', 'contextInfo', 'forwardingScore', 'isForwarded', 'ephemeralExpiration', 'disappearingMessagesInChat'].includes(k));
+        // Hollow rich payloads (empty vcard / poll / location) also render blank.
+        let hollow = false;
+        if (c.contacts) {
+          const _cl = (c.contacts && c.contacts.contacts) || [];
+          hollow = !_cl.length || _cl.every((x) => !String((x && x.vcard) || '').trim());
+        } else if (c.poll) {
+          hollow = !String(c.poll.name || '').trim() || !((c.poll.values || []).filter((v) => String(v).trim()).length);
+        } else if (c.location) {
+          hollow = c.location.degreesLatitude == null || c.location.degreesLongitude == null;
+        }
+        // Zero-width/format chars are invisible — strip before the blank check.
+        const _vis = (s) => String(s ?? '').replace(/[\u200b-\u200f\u2060-\u206f\ufeff\u061c]/g, '').trim();
+        if (hasEmptyMedia || hollow || (!hasMedia && !functional && !_vis(c.text ?? c.caption ?? c.conversation ?? ''))) {
+          console.error(`🚫 [${personalityKey}] blocked EMPTY send to ${jid} (empty text/caption, no media)`);
+          return null;
         }
       } catch (e) {}
       const _res = await _rawSend(jid, content, options);
@@ -1095,24 +1116,36 @@ async function safeSendDM(sock, playerJid, content, opts = {}) {
 }
 
 async function sendHiChorus(chatId, responses, quotedMsg) {
+  // Per-response isolation: one dead socket must NEVER abort the chorus or
+  // cause duplicates — failures are collected and reported so the caller
+  // can gap-fill ONLY the missing greetings. Never throws for send faults.
+  const delivered = [];
+  const failed = [];
   for (let i = 0; i < responses.length; i++) {
     const { personalityKey, displayName, text, attachment } = responses[i];
-    const sock = botSockets[personalityKey];
-    if (!sock) continue;
+    try {
+      const sock = botSockets[personalityKey];
+      if (!sock || !sock.user?.id) { failed.push(personalityKey); continue; }
 
-    const replyOpts = quotedMsg ? { quoted: quotedMsg } : {};
-    if (text) {
-      await sock.sendMessage(chatId, { text }, replyOpts);
-    }
+      const replyOpts = quotedMsg ? { quoted: quotedMsg } : {};
+      if (text) {
+        await sock.sendMessage(chatId, { text }, replyOpts);
+      }
 
-    if (attachment) {
-      await sendAttachment(sock, chatId, attachment);
+      if (attachment) {
+        await sendAttachment(sock, chatId, attachment);
+      }
+      delivered.push(personalityKey);
+    } catch (e) {
+      console.error(`❌ sendHiChorus [${personalityKey}] failed:`, e.message);
+      failed.push(personalityKey);
     }
 
     if (i < responses.length - 1) {
       await new Promise(r => setTimeout(r, 800));
     }
   }
+  return { delivered, failed };
 }
 
 function getActiveSocket(chatId) {

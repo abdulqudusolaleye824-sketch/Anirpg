@@ -142,7 +142,7 @@ function _chunk(buttons) {
   return out;
 }
 
-function _buildContent(bodyText, footerText, title, chunk) {
+function _buildContent(bodyText, footerText, title, chunk, mentions) {
   const im = {
     nativeFlowMessage: {
       buttons: chunk.map((b) => ({ name: b.name || 'quick_reply', buttonParamsJson: b.buttonParamsJson })),
@@ -151,6 +151,7 @@ function _buildContent(bodyText, footerText, title, chunk) {
   if (title) im.header = { title: String(title).slice(0, TITLE_MAX) };
   if (bodyText) im.body = { text: bodyText };
   im.footer = { text: footerText || FOOTER_DEFAULT };
+  if (mentions && mentions.length) im.contextInfo = { mentionedJid: mentions.slice() };
   return { interactiveMessage: im };
 }
 
@@ -213,7 +214,7 @@ function _linkBlock(links) {
 }
 
 /**
- * Send text + native buttons. opts = { text, footer?, title?, image?,
+ * Send text + native buttons. opts = { text, footer?, title?, image?, mentions?,
  * mimetype?, buttons }. Returns { mode, chunks, ids } where mode is
  * 'interactive' (native buttons relayed), 'menu' (numbered fallback),
  * or 'plain' (text/link fallback). Throws only if every layer fails.
@@ -225,12 +226,14 @@ async function sendButtons(sock, chatId, opts, quoted) {
   const title = o.title || null;
   const image = o.image || null;
   const mimetype = o.mimetype || 'image/jpeg';
+  const mentions = Array.isArray(o.mentions) ? o.mentions.filter(Boolean) : [];
   const clean = (o.buttons || []).filter((b) => b && b.buttonParamsJson).slice(0, MAX_TOTAL);
 
   if (!clean.length) {
     let sent;
-    if (image) sent = await sock.sendMessage(chatId, { image, caption: text || '', mimetype }, quoted ? { quoted } : {});
-    else sent = await sock.sendMessage(chatId, { text: text || '.' }, quoted ? { quoted } : {});
+    const _m = mentions.length ? { mentions } : {};
+    if (image) sent = await sock.sendMessage(chatId, { image, caption: text || '', mimetype, ..._m }, quoted ? { quoted } : {});
+    else sent = await sock.sendMessage(chatId, { text: text || '.', ..._m }, quoted ? { quoted } : {});
     return { mode: 'plain', chunks: 0, ids: [(sent && sent.key && sent.key.id) || null] };
   }
 
@@ -240,13 +243,13 @@ async function sendButtons(sock, chatId, opts, quoted) {
     try {
       const group = _isGroup(chatId);
       if (image) {
-        await sock.sendMessage(chatId, { image, caption: text || '', mimetype }, quoted ? { quoted } : {});
+        await sock.sendMessage(chatId, { image, caption: text || '', mimetype, ...(mentions.length ? { mentions } : {}) }, quoted ? { quoted } : {});
       }
       const chunks = _chunk(clean);
       const ids = [];
       for (let i = 0; i < chunks.length; i++) {
         const body = i === 0 ? (text || 'Tap a button below:') : 'More options:';
-        const content = _buildContent(body, footer, i === 0 ? title : null, chunks[i]);
+        const content = _buildContent(body, footer, i === 0 ? title : null, chunks[i], mentions);
         ids.push(await _relayChunk(sock, chatId, content, i === 0 ? quoted : null, group));
       }
       return { mode: 'interactive', chunks: chunks.length, ids };
@@ -266,7 +269,7 @@ async function sendButtons(sock, chatId, opts, quoted) {
     try {
       const TextMenu = require('./textMenu');
       if (TextMenu && typeof TextMenu.sendMenu === 'function') {
-        const id = await TextMenu.sendMenu(sock, chatId, { body, options: plan.options, footer, image: image || null, mimetype }, quoted);
+        const id = await TextMenu.sendMenu(sock, chatId, { body, options: plan.options, footer, image: image || null, mimetype, mentions }, quoted);
         return { mode: 'menu', chunks: 0, ids: [id] };
       }
     } catch (e) {
@@ -274,8 +277,9 @@ async function sendButtons(sock, chatId, opts, quoted) {
     }
   }
   let sent;
-  if (image) sent = await sock.sendMessage(chatId, { image, caption: body, mimetype }, quoted ? { quoted } : {});
-  else sent = await sock.sendMessage(chatId, { text: body }, quoted ? { quoted } : {});
+  const _m2 = mentions.length ? { mentions } : {};
+  if (image) sent = await sock.sendMessage(chatId, { image, caption: body, mimetype, ..._m2 }, quoted ? { quoted } : {});
+  else sent = await sock.sendMessage(chatId, { text: body, ..._m2 }, quoted ? { quoted } : {});
   return { mode: 'plain', chunks: 0, ids: [(sent && sent.key && sent.key.id) || null] };
 }
 

@@ -19,6 +19,42 @@ const GAME_COOLDOWNS = {
 
 // ✅ NEW: Store active casino sessions per group chat
 const activeCasinoSessions = new Map();
+const casinoTimers = new Map(); // chatId -> auto-close timeout (re-armed after restarts)
+
+// Shared casino closer: clears state + timer, re-locks a locked group,
+// announces the close. Used by the auto-close timer AND /casino close.
+async function finishCasinoSession(sock, chatId, getDatabase, saveDatabase, opts = {}) {
+  const db = getDatabase();
+  const sess = activeCasinoSessions.get(chatId);
+  activeCasinoSessions.delete(chatId);
+  try { if (db && db.casinoSessions) delete db.casinoSessions[chatId]; } catch (e) {}
+  try { if (casinoTimers.has(chatId)) { clearTimeout(casinoTimers.get(chatId)); casinoTimers.delete(chatId); } } catch (e) {}
+  try { saveDatabase(); } catch (e) {}
+  const frame = opts.frame || (sess && sess.frame) || '━━━━━━━━━━━━━━━━━━━━━━━';
+  let lockNote = '';
+  if (sess && sess.wasLocked) {
+    try { await sock.groupSettingUpdate(chatId, 'announcement'); lockNote = '\n🔒 Group re-locked.'; }
+    catch (e) { lockNote = '\n⚠️ Could not re-lock group (bot needs admin).'; }
+  }
+  const headline = opts.headline || `⏰ Time's up! The casino has closed.`;
+  return sock.sendMessage(chatId, {
+    text: `${frame}\n🎰 CASINO CLOSED 🎰\n${frame}\n${headline}\n\nThanks for playing! 🎲${lockNote}\n${frame}`
+  }, opts.quoted ? { quoted: opts.quoted } : {});
+}
+
+// Arm (or re-arm) the auto-close timer. Safe to call repeatedly — any
+// previous timer for the chat is cleared first, so timers never stack.
+function armAutoClose(sock, chatId, getDatabase, saveDatabase) {
+  try { if (casinoTimers.has(chatId)) clearTimeout(casinoTimers.get(chatId)); } catch (e) {}
+  const db = getDatabase();
+  const sess = activeCasinoSessions.get(chatId) || (db && db.casinoSessions && db.casinoSessions[chatId]);
+  if (!sess || !sess.endTime) return;
+  const delay = Math.max(1000, sess.endTime - Date.now());
+  casinoTimers.set(chatId, setTimeout(() => {
+    if (!activeCasinoSessions.has(chatId)) return;
+    finishCasinoSession(sock, chatId, getDatabase, saveDatabase).catch(() => {});
+  }, delay));
+}
 
 module.exports = {
   name: 'casino',
@@ -43,8 +79,17 @@ module.exports = {
     // reads as closed even if its auto-close timer died with the process.
     if (!db.casinoSessions) db.casinoSessions = {};
     for (const [cid, sess] of Object.entries(db.casinoSessions)) {
-      if (!sess || sess.endTime <= Date.now()) delete db.casinoSessions[cid];
-      else if (!activeCasinoSessions.has(cid)) activeCasinoSessions.set(cid, sess);
+      if (!sess || sess.endTime <= Date.now()) {
+        // Expired while the process was down: best-effort silent re-lock so
+        // the group isn't left open forever, then drop the dead session.
+        if (sess && sess.wasLocked && String(cid).endsWith('@g.us')) {
+          try { await sock.groupSettingUpdate(cid, 'announcement'); } catch (e) {}
+        }
+        delete db.casinoSessions[cid];
+      } else if (!activeCasinoSessions.has(cid)) {
+        activeCasinoSessions.set(cid, sess);
+        armAutoClose(sock, cid, getDatabase, saveDatabase);
+      }
     }
 
     const game = args[0]?.toLowerCase();
@@ -71,7 +116,17 @@ module.exports = {
         }, { quoted: msg });
       }
 
-      const minutes = parseInt(args[1]) || 10; // Default 10 minutes
+      // Duration: first numeric token after `open` — `/casino open 60`,
+      // `/casino open | 60`, `60m`, `2h` all work (default 10 minutes).
+      let minutes = 10;
+      for (const tok of args.slice(1)) {
+        const dm = String(tok).match(/^(\d+)\s*(m|min|mins|minute|minutes|h|hr|hrs|hour|hours)?$/i);
+        if (dm) {
+          const n = parseInt(dm[1], 10);
+          minutes = dm[2] && /^h/i.test(dm[2]) ? n * 60 : n;
+          break;
+        }
+      }
       
       if (minutes < 1 || minutes > 1440) { // Max 24 hours
         return sock.sendMessage(chatId, { 
@@ -81,16 +136,18 @@ module.exports = {
 
       const endTime = Date.now() + (minutes * 60 * 1000);
 
-      // Unmute the group for betting (re-locked on close/expiry if it was locked)
+      // Unmute the group for betting (re-locked on close/expiry if it was locked).
+      // The unmute is ALWAYS attempted — the lock flag only decides the re-lock.
       let wasLocked = false, muteNote = '';
       if (chatId.endsWith('@g.us')) {
         try {
           const meta = await sock.groupMetadata(chatId);
-          wasLocked = !!meta.announce;
-          if (wasLocked) {
-            await sock.groupSettingUpdate(chatId, 'not_announcement');
-            muteNote = '\n🔓 Group unmuted for betting — re-locks when the casino closes.';
-          }
+          const ann = meta ? meta.announce : undefined;
+          wasLocked = ann === true || ann === 'true' || ann === 1 || ann === '1';
+          await sock.groupSettingUpdate(chatId, 'not_announcement');
+          muteNote = wasLocked
+            ? '\n🔓 Group unmuted for betting — re-locks when the casino closes.'
+            : '\n🔓 Group is open for betting.';
         } catch (e) { muteNote = '\n⚠️ Could not unmute group (bot needs admin).'; }
       }
 
@@ -99,33 +156,14 @@ module.exports = {
         endTime: endTime,
         duration: minutes,
         openedBy: player.name,
-        wasLocked
+        wasLocked,
+        frame: FRAME
       });
       db.casinoSessions[chatId] = activeCasinoSessions.get(chatId);
       try { saveDatabase(); } catch (e) {}
 
-      // Auto-close after time expires (re-locks the group if it was locked)
-      setTimeout(async () => {
-        if (activeCasinoSessions.has(chatId)) {
-          const sess = activeCasinoSessions.get(chatId);
-          activeCasinoSessions.delete(chatId);
-          try { if (db.casinoSessions) delete db.casinoSessions[chatId]; } catch (e) {}
-          let lockNote = '';
-          if (sess?.wasLocked) {
-            try { await sock.groupSettingUpdate(chatId, 'announcement'); lockNote = '\n🔒 Group re-locked.'; }
-            catch (e) { lockNote = '\n⚠️ Could not re-lock group (bot needs admin).'; }
-          }
-          sock.sendMessage(chatId, {
-            text: `${FRAME}
-🎰 CASINO CLOSED 🎰
-${FRAME}
-⏰ Time's up! The casino has closed.
-
-Thanks for playing! 🎲${lockNote}
-${FRAME}`
-          });
-        }
-      }, minutes * 60 * 1000);
+      // Auto-close when time expires (re-locks the group if it was locked).
+      armAutoClose(sock, chatId, getDatabase, saveDatabase);
 
       return sock.sendMessage(chatId, { 
         text: `${FRAME}
@@ -170,24 +208,9 @@ ${FRAME}`
         }, { quoted: msg });
       }
 
-      const closingSess = activeCasinoSessions.get(chatId);
-      activeCasinoSessions.delete(chatId);
-      try { if (db.casinoSessions) delete db.casinoSessions[chatId]; saveDatabase(); } catch (e) {}
-      let closeLockNote = '';
-      if (closingSess?.wasLocked) {
-        try { await sock.groupSettingUpdate(chatId, 'announcement'); closeLockNote = '\n🔒 Group re-locked.'; }
-        catch (e) { closeLockNote = '\n⚠️ Could not re-lock group (bot needs admin).'; }
-      }
-
-      return sock.sendMessage(chatId, {
-        text: `${FRAME}
-🚪 CASINO CLOSED 🚪
-${FRAME}
-Closed by: ${player.name}
-
-Thanks for playing! 🎲${closeLockNote}
-${FRAME}` 
-      }, { quoted: msg });
+      return finishCasinoSession(sock, chatId, getDatabase, saveDatabase, {
+        headline: `Closed by: ${player.name}`, frame: FRAME, quoted: msg,
+      });
     }
 
     // ============================================

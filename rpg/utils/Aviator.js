@@ -93,6 +93,7 @@ function lastCrashFor(sender) {
 }
 
 async function pushEdit(sock, flight, text, isFinal = false) {
+  if (!String(text ?? '').trim()) return; // never blank the flight message
   // Edit the flight message. If the edit channel breaks (rate-overlimit,
   // ban, deleted message...), go QUIET: mid-flight ticks stay silent and
   // only the settle sends ONE final message. This is what stops a broken

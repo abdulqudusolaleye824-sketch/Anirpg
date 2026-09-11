@@ -29,7 +29,7 @@ function prune() {
  * Returns the sent-message key id (or null).
  */
 async function sendMenu(sock, chatId, opts = {}, quoted) {
-  const { body = '', options = [], footer = '', image = null, mimetype = 'image/jpeg' } = opts;
+  const { body = '', options = [], footer = '', image = null, mimetype = 'image/jpeg', mentions = [] } = opts;
   const lines = [body];
   const clean = (options || []).slice(0, 10);
   clean.forEach((o, i) => {
@@ -40,11 +40,12 @@ async function sendMenu(sock, chatId, opts = {}, quoted) {
   if (footer) { lines.push(footer); }
   const text = lines.join('\n');
 
+  const _extra = (mentions && mentions.length) ? { mentions } : {};
   let sent = null;
   if (image) {
-    sent = await sock.sendMessage(chatId, { image, caption: text, mimetype }, quoted ? { quoted } : {});
+    sent = await sock.sendMessage(chatId, { image, caption: text, mimetype, ..._extra }, quoted ? { quoted } : {});
   } else {
-    sent = await sock.sendMessage(chatId, { text }, quoted ? { quoted } : {});
+    sent = await sock.sendMessage(chatId, { text, ..._extra }, quoted ? { quoted } : {});
   }
   try {
     prune();

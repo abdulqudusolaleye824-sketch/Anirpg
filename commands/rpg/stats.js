@@ -5,6 +5,7 @@ const { applyAllocationsToStats } = require('../../rpg/utils/StatAllocationSyste
 const { AWAKENING_RANKS, calculatePowerRating, getPowerLabel } = require('../../rpg/utils/SoloLevelingCore');
 const { getQualityLabel } = require('../../rpg/utils/ClassSystem');
 const UI = require('../../rpg/utils/UI');
+const Buttons = (()=>{ try { return require('../../utils/buttons'); } catch(e){ return null; } })();
 
 module.exports = {
   name: 'stats',
@@ -275,6 +276,16 @@ module.exports = {
     msg2 += `\n${FRAME}\n💡 /profile — social card · /attacks · /gear · /skills`;
     msg2 += pro ? `\n${FRAME}` : `\n${FRAME}\n${UI.upsell()}`;
 
+    // Profile cross-link button (menu/plain fallbacks underneath).
+    try {
+      if (Buttons?.sendButtons) {
+        await Buttons.sendButtons(sock, chatId, {
+          text: msg2,
+          buttons: Buttons.quickReplies([[`📋 View Profile`, `/profile`]]),
+        }, msg);
+        return;
+      }
+    } catch (e) { console.error('stats buttons send failed:', e.message); }
     return sock.sendMessage(chatId, { text: msg2 }, { quoted: msg });
   }
 };

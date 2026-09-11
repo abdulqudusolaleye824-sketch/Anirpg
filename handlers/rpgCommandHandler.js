@@ -390,9 +390,19 @@ module.exports = async (sock, msg, messageText, config, getDatabase, saveDatabas
     const isPro = !!((player.isPro || player.proStatus) && player.proExpiresAt && player.proExpiresAt > Date.now());
 
     if (isPro) {
-      if (player.customEmoji) {
+      // Custom-emoji reacts must be real emoji — arbitrary stored text can
+      // render as a blank bubble on some clients, so validate before reacting.
+      // (Permissive here so old-but-fine values keep working; /setcustom now
+      // enforces a single emoji for all new values.)
+      const _ce = player.customEmoji;
+      let _ceOk = false;
+      try {
+        _ceOk = typeof _ce === 'string' && !!_ce && /\p{Extended_Pictographic}/u.test(_ce) &&
+          [...new Intl.Segmenter().segment(_ce)].length <= 2;
+      } catch (e) { _ceOk = false; }
+      if (_ceOk) {
         try {
-          sock.sendMessage(chatId, { react: { text: player.customEmoji, key: msg.key } }).catch(() => {});
+          sock.sendMessage(chatId, { react: { text: _ce, key: msg.key } }).catch(() => {});
         } catch (_) {}
       }
 

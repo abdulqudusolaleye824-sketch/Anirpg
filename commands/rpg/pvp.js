@@ -15,6 +15,7 @@
 'use strict';
 
 const DB = require('../../rpg/utils/AttackPatternDB');
+const Buttons = (()=>{ try { return require('../../utils/buttons'); } catch(e){ return null; } })();
 
 function bare(jid) {
   return String(jid || '').split(':')[0].split('@')[0].replace(/[^0-9]/g, '');
@@ -132,6 +133,17 @@ module.exports = {
         ...(pro ? [FRAME, UI.PRO_MINI, `💎 *PRO SCOUT* — ELO ${player.pvpElo || 1000} (you) vs ${opp.pvpElo || 1000} (${targetRank.name})`] : [FRAME, UI.upsell()]),
       ].join('\n');
 
+      // One-tap Accept / Reject (numbered-menu fallback happens inside).
+      try {
+        if (Buttons?.sendButtons) {
+          await Buttons.sendButtons(sock, chatId, {
+            text: guideText,
+            mentions: [targetJid],
+            buttons: Buttons.quickReplies([[`✅ Accept`, `/pvp accept`], [`❌ Reject`, `/pvp reject`]]),
+          }, msg);
+          return;
+        }
+      } catch (e) { console.error('pvp buttons send failed:', e.message); }
       return sock.sendMessage(chatId, { text: guideText, mentions: [targetJid] }, { quoted: msg });
     }
 

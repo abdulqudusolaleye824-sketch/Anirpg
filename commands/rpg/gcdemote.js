@@ -1,4 +1,5 @@
 const UI = require('../../rpg/utils/UI');
+const GroupAdmin = require('../../rpg/utils/GroupAdmin');
 
 module.exports = {
   name: 'gcdemote',
@@ -30,17 +31,40 @@ module.exports = {
         return sock.sendMessage(chatId, { text: '❌ Cannot demote that user.' }, { quoted: msg });
       }
 
+      const _db = getDatabase();
+      // Display names first (registered RPG names, LID/PN-agnostic); raw @tags
+      // only for unregistered users — and ALWAYS with a real mentions array so
+      // the tag actually renders instead of showing a bare LID number.
+      const displayFor = (jid) => {
+      const forms = [
+        jid,
+        String(jid).replace(/@lid$/, '@s.whatsapp.net'),
+        String(jid).replace(/@s.whatsapp.net$/, '@lid'),
+      ];
+      for (const f of forms) {
+        const u = _db.users?.[f];
+        if (u?.name) return { label: `*${u.name}*`, mention: null };
+      }
+      const b = GroupAdmin.bare(jid);
+      const hit = Object.entries(_db.users || {}).find(([id, u]) => u?.name && GroupAdmin.bare(id) === b);
+      if (hit) return { label: `*${hit[1].name}*`, mention: null };
+      return { label: `@${b}`, mention: jid };
+    };
+      const tDisp = displayFor(target);
+      const sDisp = displayFor(sender);
+      const mentions = [tDisp.mention, sDisp.mention].filter(Boolean);
       await sock.groupParticipantsUpdate(chatId, [target], 'demote');
-      const _pro = UI.isPro(getDatabase().users[sender]);
+      const _pro = UI.isPro(_db.users[sender]);
       return sock.sendMessage(chatId, {
         text: [
           (_pro ? UI.PRO_BAR : UI.FREE_BAR),
           '⬇️ *DEMOTED*',
-          `✅ @${target.split('@')[0]} is no longer a group admin.`,
+          `✅ ${tDisp.label} is no longer a group admin.`,
           _pro ? (UI.PRO_MINI + '\n⬇️ PRO GAVEL') : null,
-          _pro ? `👮 Demoted by @${sender.split('@')[0]}` : null,
+          _pro ? `👮 Demoted by ${sDisp.label}` : null,
           (_pro ? UI.PRO_BAR : UI.FREE_BAR),
         ].filter(x => x !== null).join('\n'),
+        mentions,
       }, { quoted: msg });
     } catch(e) {
       return sock.sendMessage(chatId, { text: '❌ Failed: ' + e.message }, { quoted: msg });

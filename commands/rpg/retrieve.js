@@ -135,7 +135,7 @@ module.exports = {
           mimetype: doc.mimetype || 'application/octet-stream',
           caption: '💾 *Retrieved view-once document*'
         }, { quoted: msg });
-      } else if (contact) {
+      } else if (contact && contact.vcard) { // empty vcard renders as a blank bubble — skip instead
         await sock.sendMessage(chatId, {
           contacts: { displayName: contact.displayName || 'Retrieved contact', contacts: [{ vcard: contact.vcard }] }
         }, { quoted: msg });
