@@ -18,6 +18,7 @@ const GR = require('../../rpg/dungeons/GateRaid');
 const GKM = require('../../rpg/dungeons/GateKeyManager');
 const { GATE_RANKS } = require('../../rpg/dungeons/GateManager');
 const TextMenu = (()=>{ try { return require('../../utils/textMenu'); } catch(e){ return null; } })();
+const Buttons = (()=>{ try { return require('../../utils/buttons'); } catch(e){ return null; } })();
 
 function normaliseJid(jid) {
   return GKM.normaliseJid(jid);
@@ -159,6 +160,14 @@ module.exports = {
             ...(pro ? [FRAME, UI.PRO_MINI, `💎 *PRO MUSTER* — recruiting up to ${GR.MAX_PARTY} hunters`] : [FRAME, UI.upsell()]),
           ].join('\n');
         try {
+          if (Buttons?.sendButtons) {
+            await Buttons.sendButtons(sock, chatId, {
+              text: affText,
+              footer: `Affiliate Party • ${key}`,
+              buttons: Buttons.quickReplies([[`✅ Join Party`, `/party join ${key}`], [`📊 Party Status`, `/party status`]]),
+            }, msg);
+            return;
+          }
           if (TextMenu?.sendMenu) {
             await TextMenu.sendMenu(sock, chatId, {
               body: affText,
@@ -205,6 +214,14 @@ module.exports = {
           ...(pro ? [FRAME, UI.PRO_MINI, `💎 *PRO MUSTER* — recruiting up to ${GR.MAX_PARTY} hunters`] : [FRAME, UI.upsell()]),
         ].join('\n');
       try {
+        if (Buttons?.sendButtons) {
+          await Buttons.sendButtons(sock, chatId, {
+            text: guildText,
+            footer: `Guild Party • ${key} • ${playerGuild}`,
+            buttons: Buttons.quickReplies([[`✅ Join Party`, `/party join ${key}`], [`📊 Party Status`, `/party status`]]),
+          }, msg);
+          return;
+        }
         if (TextMenu?.sendMenu) {
           await TextMenu.sendMenu(sock, chatId, {
             body: guildText,

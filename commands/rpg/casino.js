@@ -1,6 +1,7 @@
 const { updatePlayerNexus } = require('../../rpg/utils/NexusManager');
 const { logTransaction } = require('../../rpg/utils/TransactionLog');
 const DC = require('../../rpg/utils/DailyChallenges');
+const Buttons = (()=>{ try { return require('../../utils/buttons'); } catch(e){ return null; } })();
 
 // Anti-spam: Per-game cooldowns (ms)
 const lastPlayTime = new Map(); // key: `${sender}:${game}`
@@ -353,12 +354,24 @@ ${FRAME}`
             : `❌ Could not launch your flight — your bet was refunded. Try again!`
         }, { quoted: msg });
       }
-      // Cash-out prompt (plain text — always renders; /cashout always works)
+      // Cash-out prompt — one-tap button first, plain text underneath
+      // (/cashout always works no matter what renders).
       try {
-        await sock.sendMessage(chatId, {
-          text: `💰 *${player.name}* is flying — type */cashout* to cash out!`
-        }, { quoted: msg });
-      } catch (e) { /* prompt is a convenience — /cashout always works */ }
+        if (Buttons?.sendButtons) {
+          await Buttons.sendButtons(sock, chatId, {
+            text: `💰 *${player.name}* is flying — tap below or type */cashout* to cash out!`,
+            buttons: Buttons.quickReplies([[`💰 Cash Out`, `/cashout`]]),
+          }, msg);
+        } else {
+          throw new Error('no-buttons');
+        }
+      } catch (e) {
+        try {
+          await sock.sendMessage(chatId, {
+            text: `💰 *${player.name}* is flying — type */cashout* to cash out!`
+          }, { quoted: msg });
+        } catch (e2) { /* prompt is a convenience — /cashout always works */ }
+      }
       return;
     }
 

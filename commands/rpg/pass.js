@@ -12,6 +12,7 @@
 
 const { renderAstraPassImage } = require('../../rpg/utils/PassRenderer');
 const TextMenu = (()=>{ try { return require('../../utils/textMenu'); } catch(e){ return null; } })();
+const Buttons = (()=>{ try { return require('../../utils/buttons'); } catch(e){ return null; } })();
 
 const SEASON_DAYS = 40;
 const TOTAL_TIERS = 50;
@@ -404,6 +405,19 @@ module.exports = {
     if (page > 1) passOptions.push({ label: `⬅️ Prev (page ${page - 1})`, command: `/pass ${page - 1}` });
     if (page < 5) passOptions.push({ label: `Next (page ${page + 1}) ➡️`, command: `/pass ${page + 1}` });
     passOptions.push({ label: `🎁 Claim rewards`, command: `/pass claim` });
+    // Native buttons first (numbered-menu fallback happens inside), then the
+    // menu directly, then plain — delivery is guaranteed at every layer.
+    if (Buttons?.sendButtons) {
+      try {
+        await Buttons.sendButtons(sock, chatId, {
+          text: captionLines.join('\n'),
+          footer: `Page ${page}/5 • Tier ${ap.level}/${TOTAL_TIERS}`,
+          image: imageBuffer || null, mimetype: 'image/png',
+          buttons: Buttons.quickReplies(passOptions.map(o => [o.label, o.command])),
+        }, msg);
+        return;
+      } catch (e) { console.error('pass buttons send failed:', e.message); }
+    }
     if (TextMenu?.sendMenu) {
       try {
         await TextMenu.sendMenu(sock, chatId, {

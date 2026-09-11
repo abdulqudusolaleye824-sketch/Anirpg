@@ -9,6 +9,7 @@ const AstralGroups = require('../../rpg/utils/AstralGroups');
 const SerfDM = require('../../rpg/utils/SerfDM');
 const MultiSocketManager = require('../../bots/MultiSocketManager');
 const TextMenu = (()=>{ try { return require('../../utils/textMenu'); } catch(e){ return null; } })();
+const Buttons = (()=>{ try { return require('../../utils/buttons'); } catch(e){ return null; } })();
 const UI = require('../../rpg/utils/UI');
 
 function getAstraSupportImage(){
@@ -120,7 +121,24 @@ module.exports = {
       : { text: fullDmText + linksBlock };
 
     // ── Deliver via serf, THEN report the real result ──────────────────
-    const dmRes = await SerfDM.sendSerfDM(sock, db, sender, dmPayload);
+    // Buttons first: real tappable URL buttons on the serf DM. The links
+    // stay in the body too, so every client can join either way.
+    let dmRes = null;
+    try {
+      const serf = Buttons?.sendButtons ? SerfDM.getSerfSocket(db, sender) : null;
+      if (serf && serf.ok && serf.serfSock && buttonGroups.length) {
+        // Throws only if EVERY layer failed — reaching the next line means
+        // the DM landed (interactive, menu, or plain-with-links).
+        await Buttons.sendButtons(serf.serfSock, sender, {
+          text: fullDmText,
+          footer: 'Astra Support',
+          image: supportImage || null, mimetype: 'image/jpeg',
+          buttons: Buttons.urlButtons(buttonGroups.map(g => [g.groupName, g.inviteLink])),
+        });
+        dmRes = { ok: true, via: 'serf-buttons' };
+      }
+    } catch (e) { dmRes = null; }
+    if (!dmRes) dmRes = await SerfDM.sendSerfDM(sock, db, sender, dmPayload);
 
     // Notify in group chat (no links) — with the honest delivery result.
     if (chatId.endsWith('@g.us')) {

@@ -11,6 +11,7 @@
 
 const { renderBattlePassImage } = require('../../rpg/utils/PassRenderer');
 const TextMenu = (()=>{ try { return require('../../utils/textMenu'); } catch(e){ return null; } })();
+const Buttons = (()=>{ try { return require('../../utils/buttons'); } catch(e){ return null; } })();
 
 const TOTAL_TIERS = 40;
 const BP_COST_PC = 1000;
@@ -362,6 +363,19 @@ module.exports = {
     if (page > 1) bpOptions.push({ label: `⬅️ Prev (page ${page - 1})`, command: `/bp ${page - 1}` });
     if (page < 4) bpOptions.push({ label: `Next (page ${page + 1}) ➡️`, command: `/bp ${page + 1}` });
     bpOptions.push({ label: `🎁 Claim rewards`, command: `/bp claim` });
+    // Native buttons first (numbered-menu fallback happens inside), then the
+    // menu directly, then plain — delivery is guaranteed at every layer.
+    if (Buttons?.sendButtons) {
+      try {
+        await Buttons.sendButtons(sock, chatId, {
+          text: captionLines.join('\n'),
+          footer: `Page ${page}/4 • Tier ${bp.level}/${TOTAL_TIERS}`,
+          image: imageBuffer || null, mimetype: 'image/png',
+          buttons: Buttons.quickReplies(bpOptions.map(o => [o.label, o.command])),
+        }, msg);
+        return;
+      } catch (e) { console.error('bp buttons send failed:', e.message); }
+    }
     if (TextMenu?.sendMenu) {
       try {
         await TextMenu.sendMenu(sock, chatId, {

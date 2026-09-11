@@ -28,8 +28,11 @@ const SerfManager        = require('../rpg/utils/SerfManager');
 const Perms              = require('../utils/permissions');
 const QRCode             = require('qrcode');
 const QRTerminal = (()=>{ try { return require('qrcode-terminal'); } catch(e){ return null; } })();
-// NOTE: the WhatsApp interactive-button system was deleted (unreliable renders).
-// Numbered text menus (utils/textMenu) replaced it — no button code remains.
+// NOTE: native interactive buttons are back (utils/buttons) — relayed with the
+// stanza nodes WhatsApp requires (biz/interactive + the DM bot node), so they
+// render; numbered text menus (utils/textMenu) remain as automatic fallback.
+// Tap-backs arrive as their button id (= a /command) and flow through the
+// normal pipeline below — no separate dispatch needed.
 
 const botSockets = {};
 const pairingSessions = {};
@@ -427,8 +430,8 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
     retryRequestDelayMs: 3_000,       // Auto retry failed stanzas after 3s
     maxMsgRetryCount: 5,              // Retry stanzas up to 5 times
     getMessage: async () => ({ conversation: '' }),
-    // Identity patch — the button system was deleted; every send is plain
-    // text/media, which needs no viewOnce wrapping.
+    // Identity patch — plain text/media sends need no wrapping; interactive
+    // sends are built + MD-patched explicitly inside utils/buttons.
     patchMessageBeforeSending: (msg) => msg,
   });
 
