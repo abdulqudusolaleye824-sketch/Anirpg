@@ -39,13 +39,18 @@ const FOOTER_DEFAULT = 'Astra™ 2026';
 // generateWAMessageFromContent — lazy/optional so the module loads anywhere.
 // _injectBaileys() lets tests (and future Baileys majors) supply it.
 let _genWA = null;
+let _prepMedia = null;
 try {
   const b = require('@whiskeysockets/baileys');
   _genWA = (b && b.generateWAMessageFromContent) || null;
-} catch (e) { _genWA = null; }
+  _prepMedia = (b && b.prepareWAMessageMedia) || null;
+} catch (e) { _genWA = null; _prepMedia = null; }
 function _injectBaileys(obj) {
   if (obj && typeof obj.generateWAMessageFromContent === 'function') {
     _genWA = obj.generateWAMessageFromContent;
+  }
+  if (obj && typeof obj.prepareWAMessageMedia === 'function') {
+    _prepMedia = obj.prepareWAMessageMedia;
   }
 }
 
@@ -142,13 +147,16 @@ function _chunk(buttons) {
   return out;
 }
 
-function _buildContent(bodyText, footerText, title, chunk, mentions) {
+function _buildContent(bodyText, footerText, title, chunk, mentions, imageMessage) {
   const im = {
     nativeFlowMessage: {
       buttons: chunk.map((b) => ({ name: b.name || 'quick_reply', buttonParamsJson: b.buttonParamsJson })),
     },
   };
-  if (title) im.header = { title: String(title).slice(0, TITLE_MAX) };
+  // A header is EITHER text or media — imageMessage wins and the caller
+  // folds the title into the body (batch-22 single-message sends).
+  if (imageMessage) im.header = { imageMessage, hasMediaAttachment: true };
+  else if (title) im.header = { title: String(title).slice(0, TITLE_MAX) };
   if (bodyText) im.body = { text: bodyText };
   im.footer = { text: footerText || FOOTER_DEFAULT };
   if (mentions && mentions.length) im.contextInfo = { mentionedJid: mentions.slice() };
@@ -216,7 +224,8 @@ function _linkBlock(links) {
 /**
  * Send text + native buttons. opts = { text, footer?, title?, image?, mentions?,
  * mimetype?, buttons }. Returns { mode, chunks, ids } where mode is
- * 'interactive' (native buttons relayed), 'menu' (numbered fallback),
+ * 'interactive' (native buttons relayed), 'interactive-media' (image
+ * header + buttons in ONE message), 'menu' (numbered fallback),
  * or 'plain' (text/link fallback). Throws only if every layer fails.
  */
 async function sendButtons(sock, chatId, opts, quoted) {
@@ -242,17 +251,34 @@ async function sendButtons(sock, chatId, opts, quoted) {
   if (canInteractive) {
     try {
       const group = _isGroup(chatId);
+      // Batch-22: ONE message (image header + buttons) when the socket can
+      // upload media; otherwise the classic image-then-buttons 2-step.
+      let headerMedia = null;
       if (image) {
+        try {
+          const up = (sock && typeof sock.waUploadToServer === 'function')
+            ? (...a) => sock.waUploadToServer(...a)
+            : null;
+          if (_prepMedia && up) {
+            const up1 = await _prepMedia({ image, mimetype }, { upload: up });
+            if (up1 && up1.imageMessage) headerMedia = up1.imageMessage;
+          }
+        } catch (e) { headerMedia = null; }
+      }
+      if (image && !headerMedia) {
         await sock.sendMessage(chatId, { image, caption: text || '', mimetype, ...(mentions.length ? { mentions } : {}) }, quoted ? { quoted } : {});
       }
       const chunks = _chunk(clean);
       const ids = [];
       for (let i = 0; i < chunks.length; i++) {
-        const body = i === 0 ? (text || 'Tap a button below:') : 'More options:';
-        const content = _buildContent(body, footer, i === 0 ? title : null, chunks[i], mentions);
+        let body = i === 0 ? (text || 'Tap a button below:') : 'More options:';
+        const t0 = i === 0 ? title : null;
+        const hm = i === 0 ? headerMedia : null;
+        if (hm && t0) body = `*${t0}*\n\n${body}`;
+        const content = _buildContent(body, footer, hm ? null : t0, chunks[i], mentions, hm);
         ids.push(await _relayChunk(sock, chatId, content, i === 0 ? quoted : null, group));
       }
-      return { mode: 'interactive', chunks: chunks.length, ids };
+      return { mode: headerMedia ? 'interactive-media' : 'interactive', chunks: chunks.length, ids };
     } catch (e) {
       console.error('buttons interactive failed, menu fallback:', e.message);
     }

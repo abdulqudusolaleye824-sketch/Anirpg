@@ -76,6 +76,37 @@ module.exports = {
     const pro = UI.isPro(player);
     const FRAME = pro ? UI.PRO_BAR : UI.FREE_BAR;
 
+    // ── /items giftconfirm / giftcancel (batch-22 PRO epic+ flow) ──
+    if (args[0]?.toLowerCase() === 'giftconfirm' || args[0]?.toLowerCase() === 'giftcancel') {
+      const _gcSub = args[0].toLowerCase();
+      const GC = require('../../rpg/utils/GiftConfirm');
+      const got = GC.take(sender);
+      if (got.error || !got.pending) {
+        return sock.sendMessage(chatId, { text: _gcSub === 'giftcancel' ? 'ℹ️ You have no pending gift to cancel.' : '❌ No pending gift (it expired or was already handled).' }, { quoted: msg });
+      }
+      const p = got.pending;
+      if (_gcSub === 'giftcancel') {
+        return sock.sendMessage(chatId, { text: `❌ Gift cancelled — *${p.itemName}* stays in your inventory.` }, { quoted: msg });
+      }
+      const target = db.users[p.recipientId];
+      if (!target) {
+        return sock.sendMessage(chatId, { text: `❌ *${p.itemName}* could not be sent (recipient no longer registered). The item stays with you.` }, { quoted: msg });
+      }
+      const _pool = player.inventory?.items || [];
+      const _ix = _pool.findIndex(i => i.name === p.itemName && !i.isGear && (i.type || '').toLowerCase() !== 'gear');
+      if (_ix === -1) {
+        return sock.sendMessage(chatId, { text: `❌ *${p.itemName}* is no longer in your inventory — gift cancelled.` }, { quoted: msg });
+      }
+      const [_item] = _pool.splice(_ix, 1);
+      if (!target.inventory) target.inventory = {};
+      if (!target.inventory.items) target.inventory.items = [];
+      target.inventory.items.push({ ..._item, acquiredAt: Date.now() });
+      saveDatabase();
+      return sock.sendMessage(chatId, {
+        text: (pro ? `${UI.PRO_BAR}\n🎁 *ITEM SENT!* 💎\n${UI.PRO_BAR}\n\nSent *${getTypeEmoji(_item.type)} ${_item.name}* to *${target.name}*!` : `🎁 Sent *${getTypeEmoji(_item.type)} ${_item.name}* to *${target.name}*!`) + `\n\nThey'll find it in their /inv (newest first).\n${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO GIFT* — sent ${_item.name}` : `\n${UI.upsell()}`)
+      }, { quoted: msg });
+    }
+
     // ── /items give <#> @user ────────────────────────────────
     if (args[0]?.toLowerCase() === 'give') {
       const itemNum = parseInt(args[1]);
@@ -129,6 +160,13 @@ module.exports = {
         return sock.sendMessage(chatId, {
           text: '❌ Item not found in inventory!'
         }, { quoted: msg });
+      }
+      // PRO epic-and-up gifts need an explicit confirmation (batch-22).
+      const _giveItem = allItems[idx];
+      if (require('../../rpg/utils/GiftConfirm').needsConfirm(pro, _giveItem.rarity)) {
+        return require('../../rpg/utils/GiftConfirm').offer(sock, chatId, msg, sender, {
+          item: _giveItem, recipientId: mentioned, recipientName: target.name || 'them', cmd: '/items', itemNum,
+        });
       }
       const [item] = allItems.splice(idx, 1);
 

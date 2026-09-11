@@ -338,8 +338,8 @@ module.exports = {
       const LEVEL_REQ = pro ? 10 : 15; // Pro founders: Lv.10 · Regular: Lv.15
       const NEXUS_REQ = 1_000_000; // 1 Million Nexus
       const MANA_REQ  = 100_000;   // 100,000 Mana Stones (100kms)
-      const START_NEXUS = 100_000;
-      const START_MANA  = 10_000;
+      const START_NEXUS = 1_000_000; // batch-22: new guilds start rich
+      const START_MANA  = 100_000;
 
       const playerLevel = player.level || 1;
       const playerNexus = player.gold || 0;
@@ -1132,26 +1132,41 @@ ${FRAME}\n`;
       };
       saveDatabase();
 
-      return sock.sendMessage(chatId, {
-        text: [
-          `${FRAME}`,
-          `📜 *GUILD CONTRACT OFFER*`,
-          `${FRAME}`,
-          `🏰 Guild: *${playerGuild.name}*`,
-          `👤 Candidate: *@${targetId.split('@')[0]}*`,
-          `💠 Weekly Nexus: *${weeklyNexus.toLocaleString()}*`,
-          `💎 Weekly Mana: *${weeklyMana.toLocaleString()}*`,
-          `⏳ Contract Length: *${weeks} week${weeks > 1 ? 's' : ''}*`,
-          ``,
-          `👉 *@${targetId.split('@')[0]}*, respond with:`,
-          `  • \`/guild accept\` to join and sign contract`,
-          `  • \`/guild decline\` to reject offer`,
-          ``,
-          `⏳ Offer expires in 5 minutes.`,
-          `${FRAME}`,
-        ].join('\n'),
-        mentions: [targetId],
-      }, { quoted: msg });
+      const _offerText = [
+        `${FRAME}`,
+        `📜 *GUILD CONTRACT OFFER*`,
+        `${FRAME}`,
+        `🏰 Guild: *${playerGuild.name}*`,
+        `👤 Candidate: *@${targetId.split('@')[0]}*`,
+        `💠 Weekly Nexus: *${weeklyNexus.toLocaleString()}*`,
+        `💎 Weekly Mana: *${weeklyMana.toLocaleString()}*`,
+        `⏳ Contract Length: *${weeks} week${weeks > 1 ? 's' : ''}*`,
+        ``,
+        `👉 *@${targetId.split('@')[0]}*, respond with:`,
+        `  • \`/guild accept\` to join and sign contract`,
+        `  • \`/guild decline\` to reject offer`,
+        ``,
+        `⏳ Offer expires in 5 minutes.`,
+        `${FRAME}`,
+      ].join('\n');
+      // Accept/Reject buttons tap back to /guild accept + decline, which
+      // only honor the candidate's own pending offer (batch-22).
+      try {
+        const Buttons = require('../../utils/buttons');
+        if (Buttons && Buttons.sendButtons) {
+          await Buttons.sendButtons(sock, chatId, {
+            title: '📜 GUILD CONTRACT OFFER',
+            text: _offerText,
+            mentions: [targetId],
+            buttons: Buttons.quickReplies([
+              ['✅ Accept contract', '/guild accept'],
+              ['❌ Decline', '/guild decline'],
+            ]),
+          }, msg);
+          return;
+        }
+      } catch (e) { /* plain fallback below */ }
+      return sock.sendMessage(chatId, { text: _offerText, mentions: [targetId] }, { quoted: msg });
     }
 
     // ═══════════════════════════════════════════════════════════════════

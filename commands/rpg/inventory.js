@@ -73,6 +73,18 @@ function serialList(player) {
     if ((mats[k] || 0) > 0) entries.push({ kind: 'stack', name: k, rarity: 'common', count: mats[k], acquiredAt: 0, ref: null });
   }
 
+  // Cards (registration grants + pro rewards) — appended LAST so every
+  // existing serial keeps its number (batch-22: cards visible in /inv).
+  const cards = player.cards || {};
+  const cardDefs = [
+    ['namechange', 'Name-Change Card', 'uncommon', '💡 Rename yourself with /setname <new name>'],
+    ['seticon', 'Seticon Token', 'uncommon', '💡 Personalize with /seticon (reply to an image)'],
+    ['pro_weekly', 'Weekly Pro Card', 'rare', '💡 Redeem with /prostore use weekly'],
+  ];
+  for (const [ckey, clabel, crarity, chint] of cardDefs) {
+    if ((cards[ckey] || 0) > 0) entries.push({ kind: 'card', name: clabel, rarity: crarity, count: cards[ckey], acquiredAt: 0, ref: { cardKey: ckey, useHint: chint } });
+  }
+
   // Stable newest-first: dated by stamp desc, undated keep insertion order at the end
   const dated = entries.filter(e => e.acquiredAt > 0).sort((a, b) => b.acquiredAt - a.acquiredAt);
   const undated = entries.filter(e => !e.acquiredAt);
@@ -153,6 +165,11 @@ module.exports = {
         const isEquipped   = equippedSlot && equippedSlot.name === entry.name;
         detail += `\n${isEquipped ? '✅ *EQUIPPED*' : '⭕ Not equipped'}\n`;
         if (!isEquipped) detail += `💡 /equip ${slotArg} to equip this item\n`;
+      } else if (entry.kind === 'card') {
+        // Registration / pro cards (batch-22) — point at the command that spends them.
+        detail += `\n🃏 *CARD*\n`;
+        if (item.useHint) detail += `${item.useHint}\n`;
+        detail += `📌 Also listed under CARDS in /inv info\n`;
       } else {
         // Consumable / potion / material stack detail
         const desc = item.desc || item.description || null;
@@ -197,7 +214,8 @@ module.exports = {
           const cnt = e.count > 1 ? ` ×${e.count}` : '';
           const slot = e.kind === 'gear' ? ` [${e.slot || '?'}]` : '';
           const dur = e.kind === 'gear' && e.ref ? ` 🔧${e.ref.durability ?? '?'}/${e.ref.maxDurability ?? e.ref.durability ?? '?'}` : '';
-          simple += `  *${i + 1}.* ${rarityEmoji[e.rarity] || '📦'} ${e.name}${slot}${cnt}${dur}${eq}\n`;
+          const emo = e.kind === 'card' ? '🃏' : (rarityEmoji[e.rarity] || '📦');
+          simple += `  *${i + 1}.* ${emo} ${e.name}${slot}${cnt}${dur}${eq}\n`;
         });
         if (serials.length > MAX_SHOW) simple += `  _...and ${serials.length - MAX_SHOW} more_\n`;
       }
