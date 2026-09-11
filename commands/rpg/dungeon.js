@@ -405,7 +405,6 @@ module.exports = {
           awardXP(player, 'dungeon_complete', saveDatabase, sock, chatId);
           player.gold = (player.gold || 0) + sd.totalNexus;
           player.manaCrystals = (player.manaCrystals || 0) + sd.totalCrystals;
-          try { require('../../rpg/utils/BattlePass').addPassXP(player, 'dungeon_clear'); } catch(e) {}
           delete db.soloDungeons[sender];
           saveDatabase();
           LevelUpManager.checkAndApplyLevelUps(player, saveDatabase, sock, chatId);
@@ -486,10 +485,10 @@ module.exports = {
 
     // ── LEAVE (voluntary exit) ────────────────────────────────
     if (sub === 'leave') {
-      // Solo leave
+      // Solo leave — loot kept is the leave reward. NO completion bonus
+      // (leaving early is not clearing; this was a free-XP exploit).
       if (db.soloDungeons && db.soloDungeons[sender]) {
         const sd = db.soloDungeons[sender];
-        awardXP(player, 'dungeon_complete', saveDatabase, sock, chatId);
         player.gold = (player.gold || 0) + sd.totalNexus;
         player.manaCrystals = (player.manaCrystals || 0) + sd.totalCrystals;
         delete db.soloDungeons[sender];
@@ -844,7 +843,6 @@ module.exports = {
           }
           awardXP(player, 'dungeon_complete', saveDatabase, sock, chatId);
             player.gold         = (player.gold          || 0) + sd.totalNexus;
-            try { const BP2=require('../../rpg/utils/BattlePass'); BP2.addPassXP(player,'dungeon_clear'); } catch(e) {}
             player.manaCrystals = (player.manaCrystals  || 0) + sd.totalCrystals;
             delete db.soloDungeons[sender];
             saveDatabase();

@@ -78,8 +78,8 @@ const XP_SOURCES = {
   dungeon_floor:  20,   // per floor
   dungeon_clear: 300,   // full dungeon
   boss_kill:     200,
-  world_boss:    500,
-  daily_claim:    100,
+  world_boss:    300,
+  daily_claim:    25,
   challenge_done: 100,
   casino_win:     25,
   summon_pull:    10,   // per pull

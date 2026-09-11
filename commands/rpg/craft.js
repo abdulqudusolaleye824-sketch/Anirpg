@@ -64,7 +64,7 @@ module.exports = {
 
     // Award Weekly GP (central ledger) + Battle Pass XP for crafting
     try { require('../../rpg/utils/WeeklyGuildWar').addGP(db, sender, 75, saveDatabase); } catch(e) {}
-    try { const _BP = require('../../rpg/utils/BattlePass'); if (_BP.addPassXPAmount) _BP.addPassXPAmount(player, 100); } catch(e) {}
+    try { const _BP = require('../../rpg/utils/BattlePass'); if (_BP.addPassXPAmount) _BP.addPassXPAmount(player, 50); } catch(e) {}
     // Daily quest: item crafted (exactly once)
     try { require('../../rpg/utils/QuestDispatcher').trackAndNotify(player, 'craft', 1, sock, sender, chatId); } catch(e){}
 

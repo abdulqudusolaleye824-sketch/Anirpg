@@ -39,6 +39,27 @@ const RANK_XP_MULT = {
   S: 2.0,
 };
 
+// ── FLAT pass-XP tables (BASE amounts; multipliers applied below) ────────
+// Battle pass-XP used to scale at 20% of the player-EXP roll — one dungeon
+// clear (10k-40k EXP) paid 4-128 BP levels and completed the whole pass.
+// It is now FLAT per action. Actions that already have a dedicated direct
+// award (PvP wins → pvp.js, world boss kills → worldboss.js) are 0 here so
+// no event ever pays twice.
+const BP_BATTLE_FLAT = {
+  dungeon_floor: 15, dungeon_boss: 40, dungeon_complete: 100,
+  gate_boss: 40, gate_complete: 60,
+  pvp_win: 0, pvp_loss: 10, duel_win: 40,
+  worldboss_hit: 5, worldboss_kill: 0,
+};
+// Astra pass had the same bug class (15% of EXP on EVERYTHING) — flat for
+// battle actions. Non-battle keeps the old 15% (bounded ranges only).
+const ASTRA_BATTLE_FLAT = {
+  dungeon_floor: 25, dungeon_boss: 60, dungeon_complete: 200,
+  gate_boss: 80, gate_complete: 120,
+  pvp_win: 0, pvp_loss: 15, duel_win: 60,
+  worldboss_hit: 10, worldboss_kill: 0,
+};
+
 // ── XP ranges per action ──────────────────────────────────────────────────────
 const XP_RANGES = {
   command:           [1,      100    ],
@@ -118,7 +139,12 @@ function awardXP(player, action = 'command', saveDatabase, sock, chatId, extraMu
   if (!player.astraPass) {
     player.astraPass = { level: 1, xp: 0, claimedFree: [], claimedPremium: [] };
   }
-  const astraXpGained = Math.max(10, Math.floor(amount * 0.15));
+  // Battle actions pay FLAT astra XP (Pro 2x); everything else keeps the
+  // old 15%-of-EXP (safe — non-battle ranges are small and bounded).
+  const _astraFlat = ASTRA_BATTLE_FLAT[action];
+  const astraXpGained = (_astraFlat != null)
+    ? Math.floor(_astraFlat * (isPro ? 2 : 1))
+    : Math.max(10, Math.floor(amount * 0.15));
   player.astraPass.xp = (player.astraPass.xp || 0) + astraXpGained;
   while (player.astraPass.xp >= 1000 && player.astraPass.level < 50) {
     player.astraPass.xp -= 1000;
@@ -139,7 +165,7 @@ function awardXP(player, action = 'command', saveDatabase, sock, chatId, extraMu
     // EXACT rule: Pro 2x, BP-premium 2x, both combined 4x — computed from
     // the BASE roll so EXP multipliers never compound into pass XP.
     const bpMult = (isPro ? 2 : 1) * (_bpPrem ? 2 : 1);
-    const bpXpGained = Math.max(15, Math.floor(baseRoll * 0.20 * bpMult));
+    const bpXpGained = Math.floor((BP_BATTLE_FLAT[action] || 0) * bpMult);
     player.battlePass.xp = (player.battlePass.xp || 0) + bpXpGained;
     while (player.battlePass.xp >= 500 && player.battlePass.level < 40) {
       player.battlePass.xp -= 500;

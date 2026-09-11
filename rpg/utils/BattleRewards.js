@@ -15,11 +15,12 @@ function giveBattleWinRewards(player, db, type='generic', baseLevel=1) {
   // Base rewards scaled by level
   const lvl = baseLevel || player.level || 1;
   let aura = (type==='pvp'? 50 : type==='dungeon'? 30 : type==='gate'? 40 : type==='worldboss'? 60 : 20) + Math.floor(lvl*1.5);
-  let bp = (type==='pvp'? 100 : type==='dungeon'? 60 : type==='gate'? 80 : type==='worldboss'? 120 : 50);
+  // NOTE: bp stays BASE — BattlePass.addPassXPAmount applies Pro x premium
+  // (1x/2x/4x) inside. (Pre-doubling here paid Pro+premium 8x — fixed.)
+  let bp = (type==='pvp'? 100 : type==='dungeon'? 60 : type==='gate'? 60 : type==='worldboss'? 120 : 50);
   let pass = (type==='pvp'? 50 : type==='dungeon'? 30 : type==='gate'? 40 : type==='worldboss'? 60 : 25);
   let xp = (type==='pvp'? 500 : 300) + lvl*30;
   aura = Math.floor(aura * mult);
-  bp = Math.floor(bp * mult);
   pass = Math.floor(pass * mult);
   xp = Math.floor(xp * mult);
 

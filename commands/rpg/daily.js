@@ -108,7 +108,6 @@ module.exports = {
     try { const { trackAndNotify } = require('../../rpg/utils/QuestDispatcher'); trackAndNotify(player, 'daily', 1, sock, sender, chatId); } catch(e){}
     DC.trackProgress(player, 'claim_daily', 1);
     try { const WK=require('./weekly'); WK.trackWeeklyProgress(player,'daily_streak',1); } catch(e) {}
-    try { const BP2=require('../../rpg/utils/BattlePass'); BP2.addPassXP(player,'daily_claim'); } catch(e) {}
     try { if (TitleSystem) { const nt=TitleSystem.checkAndAwardTitles(player); if (nt.length) { const nm=nt.map(id=>TitleSystem.TITLES[id]?.display||id).join(', '); sock.sendMessage(chatId,{text:`🎖️ *NEW TITLE UNLOCKED!*\n${nm}\n\n/title to equip it!`,mentions:[sender]}); } } } catch(e) {}
 
     const streak = player.dailyQuest.streak;
