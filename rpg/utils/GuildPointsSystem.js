@@ -11,6 +11,7 @@
  *   - Member donation: +1 GP per 5,000 Nexus donated
  *   - Daily quest completion: +5 GP
  *   - World boss contribution: +20 GP
+ *   - PvP win: +15 GP (personal — guild total = sum of members' GP)
  *
  * Guild War Points (WP):
  *   - Win a Guild War: +100 WP
@@ -126,6 +127,9 @@ function formatGuildPoints(guild) {
     `  +1  — Per 5,000 Nexus donated`,
     `  +5  — Daily quest complete`,
     `  +20 — World boss contribution`,
+    `  +15 — PvP win (personal GP)`,
+    ``,
+    `🏰 Guild total = sum of all members' GP`,
     ``,
     `📊 *HOW TO EARN WP:*`,
     `  +100 — Win a Guild War`,
@@ -159,10 +163,21 @@ function addGuildGP(db, playerId, points, reason, opts = {}) {
     }
     const guild = findPlayerGuild(playerId, db);
     if (guild) {
-      guild.weeklyGP = Math.max(0, (guild.weeklyGP || 0) + points);
-      guild.totalGP  = Math.max(0, (guild.totalGP  || 0) + points);
-      awardGP(guild, points, reason || 'GP adjustment');
-      if (guild.guildPoints < 0) guild.guildPoints = 0;
+      // GUILD TOTAL = SUM OF MEMBERS' ACCUMULATED GP (derived, never a
+      // separate counter — it cannot drift from what members earned).
+      const members = guild.members || [];
+      let wSum = 0, tSum = 0;
+      for (const m of members) {
+        const id = (m && typeof m === 'object') ? m.id : m;
+        const u = id && db.users ? db.users[id] : null;
+        if (u) { wSum += u.weeklyGP || 0; tSum += u.totalGP || 0; }
+      }
+      guild.weeklyGP = Math.max(0, wSum);
+      guild.totalGP  = Math.max(0, tSum);
+      guild.guildPoints = Math.max(0, tSum); // rank ladder tracks the same total
+      if (!guild.gpLog) guild.gpLog = [];
+      guild.gpLog.push({ amount: points, reason: reason || 'GP adjustment', at: Date.now() });
+      if (guild.gpLog.length > 50) guild.gpLog = guild.gpLog.slice(-50);
     }
     // Daily-quest wiring: GP earned counts toward Guild Pillar etc.
     if (opts.quest && points > 0 && player) {

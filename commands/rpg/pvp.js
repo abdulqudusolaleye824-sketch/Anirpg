@@ -734,6 +734,17 @@ function handlePvpVictory(sock, chatId, winner, loser, wId, lId, db, saveDatabas
   rewardNexus = Math.floor(rewardNexus * proMultPvP);
   rewardStones = Math.floor(rewardStones * proMultPvP);
   rewardXP = Math.floor(rewardXP * proMultPvP);
+  // PvP win: +15 GP to the WINNER (personal). The winner's guild total is
+  // derived as the sum of members' GP inside addGuildGP. Flat — the loser
+  // pays no GP (aura 10-15 stays the loser's only deduction).
+  const pvpGP = 15;
+  let _guildTotal = 0, _guildName = '';
+  try {
+    const GPS = require('../../rpg/utils/GuildPointsSystem');
+    GPS.addGuildGP(db, wId, pvpGP, 'PvP win vs ' + loserName, { quest: true, sock, jid: wId, chatId });
+    const _g = GPS.findPlayerGuild(wId, db);
+    if (_g) { _guildTotal = _g.totalGP || 0; _guildName = _g.name || ''; }
+  } catch(e){}
   // NOTE: rewardBp stays BASE (100) — addPassXPAmount applies Pro x premium (1x/2x/4x) inside.
   rewardPass = Math.floor(rewardPass * proMultPvP);
   rewardAura = Math.floor(rewardAura * proMultPvP);
@@ -789,6 +800,7 @@ function handlePvpVictory(sock, chatId, winner, loser, wId, lId, db, saveDatabas
     `✨ XP: +${rewardXP.toLocaleString()}${isProWinner?' (2×)':''} (general)`,
     `🌀 Aura: +${rewardAura.toLocaleString()}${isProWinner?' (2×)':''}`,
     `🎖️ Battle Pass XP: +${(_bpGained || rewardBp).toLocaleString()}${_bpGained > rewardBp ? ` (${_bpGained / rewardBp}×)` : ''}`,
+    `🏰 Guild Points: +${pvpGP} GP (you: ${((winner.totalGP || 0)).toLocaleString()} total)${_guildName ? ` → ${_guildName}: ${_guildTotal.toLocaleString()} GP` : ''}`,
     `🌟 Astra Pass: +${rewardPass}${isProWinner?' (2×)':''}`,
     `${FRAME}`,
   ].join('\n');
