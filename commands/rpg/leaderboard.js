@@ -8,10 +8,13 @@ module.exports = {
     const player = db.users[sender];
 
     if (!player) {
-      return sock.sendMessage(chatId, { 
-        text: '❌ You are not registered!\nUse /register to start.' 
+      return sock.sendMessage(chatId, {
+        text: '❌ You are not registered!\nUse /register to start.'
       }, { quoted: msg });
     }
+    const UI = require('../../rpg/utils/UI');
+    const pro = UI.isPro(player);
+    const FRAME = pro ? UI.PRO_BAR : UI.FREE_BAR;
 
     const category = args[0]?.toLowerCase() || 'level';
 
@@ -124,9 +127,7 @@ Example: /leaderboard pvp`
     // Find player rank
     const playerRank = players.findIndex(p => p.userId === sender) + 1;
 
-    let message = `━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🏆 ${title} 🏆
-━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
+    let message = pro ? `${UI.PRO_BAR}\n🏆 ${title} 🏆 💎\n${UI.PRO_BAR}\n\n` : `🏆 ${title} 🏆\n${UI.FREE_BAR}\n\n`;
 
     if (top10.length === 0) {
       message += `No hunters found in this category!\n\n`;
@@ -136,7 +137,7 @@ Example: /leaderboard pvp`
       });
     }
 
-    message += `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+    message += `${FRAME}\n`;
     
     if (playerRank > 0 && playerRank <= 10) {
       message += `🎉 You're in the top 10! (#${playerRank})\n`;
@@ -144,15 +145,15 @@ Example: /leaderboard pvp`
       message += `📍 Your Rank: #${playerRank}\n`;
     }
 
-    message += `━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    message += `${FRAME}
 📊 OTHER CATEGORIES
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${FRAME}
 /leaderboard level
 /leaderboard gate
 /leaderboard boss
 /leaderboard wealth
 /leaderboard pvp
-━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO STANDINGS* — #${playerRank} ${category}` : `\n${UI.upsell()}`);
 
     return sock.sendMessage(chatId, { 
       text: message

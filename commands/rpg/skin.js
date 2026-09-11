@@ -23,6 +23,7 @@ const {
 } = require('../../rpg/skins/SkinCatalog');
 
 const { buildProfileCard, buildGearData } = require('../../rpg/skins/RigRenderer');
+const UI = require('../../rpg/utils/UI');
 
 module.exports = {
   name: 'skin',
@@ -46,23 +47,21 @@ module.exports = {
       const owned    = player.skins.owned.length;
       const equipped = player.skins.equipped;
 
+      const proS = UI.isPro(player);
       const text = [
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-        `🎭 *YOUR SKIN*`,
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        (proS ? UI.PRO_BAR : UI.FREE_BAR),
+        '🎭 *YOUR SKIN*',
+        `🗂️ Collection: *${owned}* skins owned`,
+        proS ? (UI.PRO_MINI + '\n' + '🎭 PRO WARDROBE') : null,
+        proS ? `🎰 Total summons: *${player.skins.totalPulls || 0}* · toward pity: *${player.skins.pulls || 0}*` : null,
         ``,
         formatSkinCard(skin, true, true),
         ``,
-        `🗂️ Collection: *${owned}* skins owned`,
-        ``,
         `*COMMANDS*`,
-        `/skin list       — All owned skins`,
-        `/skin equip <id> — Equip a skin`,
-        `/skin view <id>  — View skin details`,
-        `/skin shop       — Browse shop`,
-        `/summon          — Pull new skins`,
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-      ].join('\n');
+        `/skin list · equip <id> · view <id> · shop`,
+        `/summon — Pull new skins`,
+        (proS ? UI.PRO_BAR : UI.FREE_BAR),
+      ].filter(x => x !== null).join('\n');
 
       // Try to render profile card with skin
       try {
@@ -80,12 +79,13 @@ module.exports = {
       const inventory = formatSkinInventory(player);
       return sock.sendMessage(chatId, {
         text: [
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-          `🗂️ *SKIN COLLECTION*`,
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          (UI.isPro(player) ? UI.PRO_BAR : UI.FREE_BAR),
+          '🗂️ *SKIN COLLECTION*',
+          UI.isPro(player) ? `🗂️ *${player.skins.owned.length}* owned / *${Object.keys(SKIN_MAP).length}* total skins` : null,
+          UI.isPro(player) ? '' : null,
           inventory,
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-        ].join('\n'),
+          (UI.isPro(player) ? UI.PRO_BAR : UI.FREE_BAR),
+        ].filter(x => x !== null).join('\n'),
       }, { quoted: msg });
     }
 
@@ -123,11 +123,11 @@ module.exports = {
         const cardBuf  = await buildProfileCard(player, skinData, gearData);
         await sock.sendMessage(chatId, {
           image: cardBuf,
-          caption: `✅ Equipped *${skin.name}* ${emoji}\n🎌 ${skin.theme} · ${RARITY_LABEL[skin.rarity]}`,
+          caption: `✅ Equipped *${skin.name}* ${emoji}\n🎌 ${skin.theme} · ${RARITY_LABEL[skin.rarity]}${UI.isPro(player) ? `\n⚔️ Archetype: *${skin.archetype}*` : ''}`,
         }, { quoted: msg });
       } catch (e) {
         await sock.sendMessage(chatId, {
-          text: `✅ Equipped *${skin.name}* ${emoji}\n🎌 ${skin.theme} · ${RARITY_LABEL[skin.rarity]}`,
+          text: `✅ Equipped *${skin.name}* ${emoji}\n🎌 ${skin.theme} · ${RARITY_LABEL[skin.rarity]}${UI.isPro(player) ? `\n⚔️ Archetype: *${skin.archetype}*` : ''}`,
         }, { quoted: msg });
       }
       return;
@@ -151,10 +151,10 @@ module.exports = {
 
       return sock.sendMessage(chatId, {
         text: [
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-          `🎭 *SKIN DETAILS*`,
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-          ``,
+          (UI.isPro(player) ? UI.PRO_BAR : UI.FREE_BAR),
+          '🎭 *SKIN DETAILS*',
+          UI.isPro(player) ? `🔮 Shop price: *${skin.cost?.manaStones ? skin.cost.manaStones + ' Mana Stones' : 'not in shop'}*` : null,
+          UI.isPro(player) ? '' : null,
           formatSkinCard(skin, owned, equip),
           ``,
           owned
@@ -164,7 +164,7 @@ module.exports = {
               : skin.source === 'gacha'
                 ? `🎰 Obtainable via */summon*`
                 : `🏆 Achievement unlock only`,
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          (UI.isPro(player) ? UI.PRO_BAR : UI.FREE_BAR),
         ].join('\n'),
       }, { quoted: msg });
     }
@@ -191,6 +191,7 @@ module.exports = {
       const emoji = RARITY_EMOJI[result.skin.rarity];
       return sock.sendMessage(chatId, {
         text: [
+          (UI.isPro(player) ? UI.PRO_BAR : UI.FREE_BAR),
           `✅ *Purchased!*`,
           ``,
           `${emoji} *${result.skin.name}*`,
@@ -199,6 +200,7 @@ module.exports = {
           `🔮 Remaining: *${player.manaStones}*`,
           ``,
           `Use */skin equip ${result.skin.id}* to wear it!`,
+          (UI.isPro(player) ? UI.PRO_BAR : UI.FREE_BAR),
         ].join('\n'),
       }, { quoted: msg });
     }
@@ -219,13 +221,14 @@ module.exports = {
         return sock.sendMessage(chatId, { text: `❌ No shop skins found for rarity: *${rarityFilter}*` }, { quoted: msg });
       }
 
+      const shopPro = UI.isPro(player);
       const lines = [
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-        `🏪 *SKIN SHOP*`,
+        (shopPro ? UI.PRO_BAR : UI.FREE_BAR),
+        '🏪 *SKIN SHOP*',
         filter ? `Showing: ${RARITY_LABEL[filter]} skins` : 'All rarities',
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        shopPro ? `🔮 Your Mana Stones: *${player.manaStones || 0}*` : null,
         ``,
-      ];
+      ].filter(x => x !== null);
 
       const grouped = {};
       for (const s of shopSkins) {
@@ -245,7 +248,7 @@ module.exports = {
       lines.push(`💡 */skin buy <id>* to purchase`);
       lines.push(`💡 */skin view <id>* to preview`);
       lines.push(`🎰 */summon* for rare/epic/legendary/mythic skins`);
-      lines.push(`━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+      lines.push((shopPro ? UI.PRO_BAR : UI.FREE_BAR));
 
       return sock.sendMessage(chatId, { text: lines.join('\n') }, { quoted: msg });
     }
@@ -253,9 +256,8 @@ module.exports = {
     // ── Unknown subcommand ─────────────────────────────────────────────────────
     return sock.sendMessage(chatId, {
       text: [
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-        `🎭 *SKIN COMMANDS*`,
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        (UI.isPro(player) ? UI.PRO_BAR : UI.FREE_BAR),
+        '🎭 *SKIN COMMANDS*',
         `/skin            — Your equipped skin`,
         `/skin list       — All owned skins`,
         `/skin equip <id> — Equip a skin`,
@@ -263,7 +265,7 @@ module.exports = {
         `/skin buy <id>   — Buy from shop`,
         `/skin shop       — Browse shop`,
         `/summon          — Pull new skins`,
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        (UI.isPro(player) ? UI.PRO_BAR : UI.FREE_BAR),
       ].join('\n'),
     }, { quoted: msg });
   },

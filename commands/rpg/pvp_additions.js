@@ -2,6 +2,8 @@
 // PVP ADDITIONS MODULE — v3.0 THRILLING UPGRADE
 // ═══════════════════════════════════════════════════════════════
 
+const UI = require('../../rpg/utils/UI');
+
 const activeBets       = new Map();
 const spectators       = new Map();
 const battleTimers     = new Map();
@@ -569,8 +571,10 @@ function updateBattleStats(stats, dmgDealt, dmgTaken, isCrit, actionType, status
 }
 
 function buildStatsBlock(winner, loser, wStats, lStats, totalTurns) {
+  const proV = UI.isPro(winner) || UI.isPro(loser);
   return (
-    `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n📊 *BATTLE STATS*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+    `${(proV ? UI.PRO_BAR : UI.FREE_BAR)}\n${'📊 *BATTLE STATS*'}\n` +
+    (proV ? `${(UI.PRO_MINI + '\n' + '⚔️ PRO ARCHIVE')}\n🔥 Combined damage: *${(wStats.totalDamageDealt + lStats.totalDamageDealt).toLocaleString()}* · 🔗 Total combos: *${wStats.combosActivated + lStats.combosActivated}*\n` : '') +
     `👑 *${winner.name}*\n   💥 Dealt: ${wStats.totalDamageDealt} | 🎯 Crits: ${wStats.critsLanded}\n` +
     `   ⚡ Skills: ${wStats.skillsUsed} | 🌟 Specials: ${wStats.specialsUsed}\n` +
     `   🔥 Highest hit: ${wStats.highestHit}` +

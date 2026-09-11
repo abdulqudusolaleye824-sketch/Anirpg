@@ -23,11 +23,14 @@ module.exports = {
     const db = getDatabase();
     const player = db.users[sender];
     if (!player) return sock.sendMessage(chatId, { text: '❌ Register first.' }, { quoted: msg });
+    const UI = require('../../rpg/utils/UI');
+    const pro = UI.isPro(player);
+    const FRAME = pro ? UI.PRO_BAR : UI.FREE_BAR;
 
     const token = (args[0] || '').trim();
     if (!token) {
       return sock.sendMessage(chatId, {
-        text: `🪤 *WILD PET CATCH*\n\nUsage: /caught <token>\n\nA token is shown on the gate-clear message.\nThe pet flees in 60s!`,
+        text: (pro ? `${UI.PRO_BAR}\n🪤 *WILD PET CATCH* 💎\n${UI.PRO_BAR}\n\nUsage: /caught <token>\n\nA token is shown on the gate-clear message.\nThe pet flees in 60s!\n${UI.PRO_BAR}\n${UI.PRO_MINI}\n💎 *PRO CATCH* — token ready?` : `🪤 *WILD PET CATCH*\n${UI.FREE_BAR}\n\nUsage: /caught <token>\n\nA token is shown on the gate-clear message.\nThe pet flees in 60s!\n${UI.FREE_BAR}\n${UI.upsell()}`),
       }, { quoted: msg });
     }
 
@@ -72,7 +75,7 @@ module.exports = {
     if (!result.success) {
       saveDatabase();
       return sock.sendMessage(chatId, {
-        text: `💨 *${wild.name}* broke free! (${Math.floor(Math.max(5, (petTemplate.catchRate || 50) * 0.5))}% catch rate)\n\n💸 Attempt cost: ${cost.gold.toLocaleString()} 💠 + ${cost.crystals} 💎\nTry /caught ${token} again!`,
+        text: (pro ? `${UI.PRO_BAR}\n💨 *BROKE FREE!* 💎\n${UI.PRO_BAR}\n\n*${wild.name}* broke free! (${Math.floor(Math.max(5, (petTemplate.catchRate || 50) * 0.5))}% catch rate)\n\n💸 Attempt cost: ${cost.gold.toLocaleString()} 💠 + ${cost.crystals} 💎\nTry /caught ${token} again!\n${UI.PRO_BAR}\n${UI.PRO_MINI}\n💎 *PRO CATCH* — retry the token` : `💨 *${wild.name}* broke free! (${Math.floor(Math.max(5, (petTemplate.catchRate || 50) * 0.5))}% catch rate)\n\n💸 Attempt cost: ${cost.gold.toLocaleString()} 💠 + ${cost.crystals} 💎\nTry /caught ${token} again!\n${UI.FREE_BAR}\n${UI.upsell()}`),
       }, { quoted: msg });
     }
 
@@ -88,9 +91,7 @@ module.exports = {
 
     return sock.sendMessage(chatId, {
       text: [
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-        `🎉 *PET CAUGHT!*`,
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        ...(pro ? [UI.PRO_BAR, `🎉 *PET CAUGHT!* 💎`, UI.PRO_BAR] : [`🎉 *PET CAUGHT!*`, UI.FREE_BAR]),
         ``,
         `${result.pet.emoji} You caught a *${result.pet.name}*!`,
         `⭐ Rarity: ${result.pet.rarity.toUpperCase()}`,
@@ -100,7 +101,8 @@ module.exports = {
         result.isFirstPet ? `\n✨ This is your first pet!` : ``,
         ``,
         `Use /pet list to view it.`,
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        FRAME,
+        ...(pro ? [UI.PRO_MINI, `💎 *PRO CATCH* — ${result.pet.name}`] : [UI.upsell()]),
       ].filter(l => l !== '').join('\n'),
     }, { quoted: msg });
   },

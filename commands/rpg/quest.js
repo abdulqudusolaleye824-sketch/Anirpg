@@ -21,6 +21,9 @@ module.exports = {
           text: '❌ You don\'t have a character! Use `/register` to start your adventure.'
         }, { quoted: msg });
       }
+      const UI = require('../../rpg/utils/UI');
+      const pro = UI.isPro(player);
+      const FRAME = pro ? UI.PRO_BAR : UI.FREE_BAR;
 
       // ── Auto-activate daily quests ──────────────────────────────
       const dailyRefreshed = ensureDailyQuests(player);
@@ -40,7 +43,7 @@ module.exports = {
         }
         saveDatabase();
         return sock.sendMessage(chatId, {
-          text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🎁 *DAILY QUEST REWARD!*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n✅ ${claimResult.quest.name}\n\n💠 +${(claimResult.reward.gold||0).toLocaleString()} Nexus\n💎 +${(claimResult.reward.crystals||0)} Mana Stones\n━━━━━━━━━━━━━━━━━━━━━━━━━━━`
+          text: (pro ? `${UI.PRO_BAR}\n🎁 *DAILY QUEST REWARD!* 💎\n${UI.PRO_BAR}\n` : `🎁 *DAILY QUEST REWARD!*\n${UI.FREE_BAR}\n`) + `✅ ${claimResult.quest.name}\n\n💠 +${(claimResult.reward.gold||0).toLocaleString()} Nexus\n💎 +${(claimResult.reward.crystals||0)} Mana Stones\n${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO STREAK* — ${player.dailyQuests?.streak || 0}-day streak` : `\n${UI.upsell()}`)
         }, { quoted: msg });
       }
 

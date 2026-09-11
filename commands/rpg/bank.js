@@ -14,6 +14,9 @@ module.exports = {
         text: '❌ You are not registered! Use /register'
       }, { quoted: msg });
     }
+    const UI = require('../../rpg/utils/UI');
+    const pro = UI.isPro(player);
+    const FRAME = pro ? UI.PRO_BAR : UI.FREE_BAR;
 
     const action = args[0]?.toLowerCase();
 
@@ -24,11 +27,9 @@ module.exports = {
       const ownedBank = BankingSystem.getPlayerBank(db, sender);
       const accountBank = BankingSystem.getAccountBank(db, sender);
       
-      let menu = `━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🏦 BANKING SYSTEM 🏦
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-💠 Your Nexus: ${(player.gold||0).toLocaleString()} | 💎 Mana Stones: ${(player.manaCrystals||player.manaStones||0).toLocaleString()}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+      const menuHead = pro ? `${UI.PRO_BAR}\n🏦 BANKING SYSTEM 🏦 💎\n${UI.PRO_BAR}\n` : `🏦 BANKING SYSTEM 🏦\n${UI.FREE_BAR}\n`;
+      let menu = menuHead + `💠 Your Nexus: ${(player.gold||0).toLocaleString()} | 💎 Mana Stones: ${(player.manaCrystals||player.manaStones||0).toLocaleString()}
+${FRAME}\n`;
 
       if (ownedBank) {
         const stats = BankingSystem.getBankStats(ownedBank);
@@ -36,7 +37,7 @@ module.exports = {
 👥 Accounts: ${stats.accounts}
 💠 Total Deposits: ${stats.totalDeposits} | 💎 Mana: ${stats.totalDepositsMana||0}
 💸 Interest Earned: ${stats.interestCollected} | 💎 Mana Interest: ${stats.interestCollectedMana||0}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+${FRAME}\n`;
       }
 
       if (accountBank) {
@@ -44,11 +45,11 @@ module.exports = {
         menu += `\n💳 YOUR ACCOUNT
 🏦 Bank: ${accountBank.name}
 💠 Balance: ${account.balance||0} | 💎 Mana Stones: ${account.balanceMana||0}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+${FRAME}\n`;
       }
 
       menu += `\n📌 COMMANDS
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${FRAME}
 ${!ownedBank ? '🏦 /bank create [name] - Create bank\n   Requirements: Level 50 OR 20k Nexus\n   Cost: 10,000 Nexus\n\n' : ''}${!accountBank ? '💳 /bank register [bank] - Open account\n\n' : ''}`;
 
       if (accountBank) {
@@ -68,14 +69,23 @@ ${!ownedBank ? '🏦 /bank create [name] - Create bank\n   Requirements: Level 5
       }
 
       menu += `🏦 /bank list - View all banks
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${FRAME}
 💡 HOW IT WORKS
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${FRAME}
 1️⃣ High level players create banks
 2️⃣ Other players deposit Nexus safely
 3️⃣ Bank owner earns 10% on withdrawals
 4️⃣ Everyone's Nexus is protected!
-━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+${FRAME}`;
+      if (pro && ownedBank) {
+        try {
+          const _st = BankingSystem.getBankStats(ownedBank);
+          menu += `${UI.PRO_MINI}\n💎 *PRO VAULT* — ${_st.accounts} accounts · ${UI.num(_st.totalDeposits)} 💠 held\n`;
+        } catch (e) {}
+      } else if (pro && accountBank) {
+        menu += `${UI.PRO_MINI}\n💎 *PRO SHIELD* — your deposits are safe from /rob\n`;
+      }
+      if (!pro) menu += `${UI.upsell()}\n`;
 
       return sock.sendMessage(chatId, { text: menu }, { quoted: msg });
     }
@@ -141,24 +151,24 @@ ${!ownedBank ? '🏦 /bank create [name] - Create bank\n   Requirements: Level 5
 
       // Announce in group
       await sock.sendMessage(chatId, {
-        text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        text: `${FRAME}
 🏦 NEW BANK OPENED! 🏦
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${FRAME}
 🏦 Bank: ${bankName}
 👑 Owner: ${player.name}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${FRAME}
 💠 BENEFITS
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${FRAME}
 ✅ Safe Nexus storage
 ✅ Protected from theft
 ✅ 10% interest to bank owner
 ✅ 1 hr withdrawal system
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${FRAME}
 📌 TO JOIN
 /bank register ${bankName}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${FRAME}
 @everyone - Secure your Nexus now!
-━━━━━━━━━━━━━━━━━━━━━━━━━━━`
+${FRAME}`
       }, { quoted: msg });
 
       return;
@@ -224,21 +234,21 @@ ${!ownedBank ? '🏦 /bank create [name] - Create bank\n   Requirements: Level 5
       saveDatabase();
 
       await sock.sendMessage(chatId, {
-        text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        text: `${FRAME}
 ✅ ACCOUNT OPENED! ✅
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${FRAME}
 🏦 Bank: ${bank.name}
 💠 Initial Deposit: ${initialDeposit}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${FRAME}
 💡 YOUR GOLD IS NOW SAFE!
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${FRAME}
 📌 IMPORTANT
 - Bank owner earns 10% on withdrawals
 - 1 hr cooldown between withdrawals
 - All earnings auto-deposit to bank
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${FRAME}
 Use /bank deposit to add more!
-━━━━━━━━━━━━━━━━━━━━━━━━━━━`
+${FRAME}`
       }, { quoted: msg });
 
       // Notify bank owner — serf-only (fix non-serfbot DMs on new member join)
@@ -296,7 +306,7 @@ Use /bank deposit to add more!
         const resultM = BankingSystem.deposit(bank, sender, amount, 'mana');
         saveDatabase();
         return sock.sendMessage(chatId, {
-          text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n✅ DEPOSIT SUCCESS! ✅\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🏦 Bank: ${bank.name}\n💎 Deposited: ${amount} Mana Stones\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n💳 Bank Mana Balance: ${resultM.newBalance}\n💎 Wallet Mana: ${player.manaCrystals}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━`
+          text: `${FRAME}\n✅ DEPOSIT SUCCESS! ✅\n${FRAME}\n🏦 Bank: ${bank.name}\n💎 Deposited: ${amount} Mana Stones\n${FRAME}\n💳 Bank Mana Balance: ${resultM.newBalance}\n💎 Wallet Mana: ${player.manaCrystals}\n${FRAME}`
         }, { quoted: msg });
       }
 
@@ -316,15 +326,15 @@ Use /bank deposit to add more!
       saveDatabase();
 
       return sock.sendMessage(chatId, {
-        text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        text: `${FRAME}
 ✅ DEPOSIT SUCCESS! ✅
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${FRAME}
 🏦 Bank: ${bank.name}
 💠 Deposited: ${amount}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${FRAME}
 💳 Bank Balance: ${result.newBalance}
 💠 Wallet: ${player.gold}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━`
+${FRAME}`
       }, { quoted: msg });
     }
 
@@ -380,19 +390,19 @@ Use /bank deposit to add more!
       saveDatabase();
 
       await sock.sendMessage(chatId, {
-        text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        text: `${FRAME}
 ✅ WITHDRAWAL SUCCESS! ✅
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${FRAME}
 🏦 Bank: ${bank.name}
 💠 Requested: ${amount}
 💸 Bank Fee (10%): ${result.interest}
 💠 Received: ${result.withdrawn}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${FRAME}
 💳 Bank Balance: ${result.newBalance}
 💠 Wallet: ${player.gold}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${FRAME}
 ⏰ Next withdrawal: 1 hr
-━━━━━━━━━━━━━━━━━━━━━━━━━━━`
+${FRAME}`
       }, { quoted: msg });
 
       // Notify bank owner — serf-only (fix non-serfbot DMs on withdraw interest)
@@ -431,22 +441,22 @@ Use /bank deposit to add more!
       const daysOld = Math.floor((Date.now() - bank.createdAt) / (24 * 60 * 60 * 1000));
 
       return sock.sendMessage(chatId, {
-        text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        text: `${FRAME}
 🏦 BANK DETAILS 🏦
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${FRAME}
 🏦 Name: ${bank.name}
 👑 Owner: ${player.name}
 📅 Age: ${daysOld} days
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${FRAME}
 📊 STATISTICS
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${FRAME}
 👥 Accounts: ${stats.accounts}
 💠 Total Deposits: ${stats.totalDeposits}
 📊 Avg Deposit: ${stats.avgDeposit}
 💸 Interest Earned: ${stats.interestCollected}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${FRAME}
 Use /bank accounts to see customers!
-━━━━━━━━━━━━━━━━━━━━━━━━━━━`
+${FRAME}`
       }, { quoted: msg });
     }
 
@@ -467,11 +477,11 @@ Use /bank accounts to see customers!
         }, { quoted: msg });
       }
 
-      let list = `━━━━━━━━━━━━━━━━━━━━━━━━━━━
+      let list = `${FRAME}
 👥 BANK ACCOUNTS 👥
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${FRAME}
 🏦 ${bank.name}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
+${FRAME}\n\n`;
 
       bank.accounts.forEach((acc, i) => {
         list += `${i + 1}. ${acc.userName}\n`;
@@ -479,7 +489,7 @@ Use /bank accounts to see customers!
         list += `   📊 Total Deposited: ${acc.totalDeposited}\n\n`;
       });
 
-      list += `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+      list += `${FRAME}\n`;
       list += `Total: ${bank.accounts.length} accounts`;
 
       return sock.sendMessage(chatId, { text: list }, { quoted: msg });
@@ -495,9 +505,9 @@ Use /bank accounts to see customers!
         }, { quoted: msg });
       }
 
-      let list = `━━━━━━━━━━━━━━━━━━━━━━━━━━━
+      let list = `${FRAME}
 🏦 ALL BANKS 🏦
-━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
+${FRAME}\n\n`;
 
       Object.values(db.banks).forEach((bank, i) => {
         const owner = db.users[bank.owner];
@@ -509,7 +519,7 @@ Use /bank accounts to see customers!
         list += `   💠 Deposits: ${stats.totalDeposits}\n\n`;
       });
 
-      list += `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+      list += `${FRAME}\n`;
       list += `Join with: /bank register [bank name]`;
 
       return sock.sendMessage(chatId, { text: list }, { quoted: msg });
@@ -542,18 +552,18 @@ Use /bank accounts to see customers!
       saveDatabase();
 
       return sock.sendMessage(chatId, {
-        text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        text: `${FRAME}
 💠 MONTHLY INTEREST! 💰
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${FRAME}
 🏦 ${bank.name}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${FRAME}
 💸 Interest Collected: ${result.interest}
 💠 Your Nexus: ${player.gold}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${FRAME}
 📊 Total Interest Earned: ${bank.interestCollected}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${FRAME}
 Next collection: 30 days
-━━━━━━━━━━━━━━━━━━━━━━━━━━━`
+${FRAME}`
       }, { quoted: msg });
     }
 

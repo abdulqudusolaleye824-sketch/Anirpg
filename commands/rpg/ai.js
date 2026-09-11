@@ -6,6 +6,7 @@
 // summarise. Requires GROQ_API_KEY in .env.
 
 const https = require('https');
+const UI = require('../../rpg/utils/UI');
 
 function httpPost(hostname, urlPath, headers, body) {
   return new Promise((resolve, reject) => {
@@ -50,11 +51,24 @@ module.exports = {
 
   async execute(sock, msg, args, getDatabase, saveDatabase, sender) {
     const chatId = msg.key.remoteJid;
+    const proA = UI.isPro(getDatabase().users[sender]);
     const question = (args || []).join(' ').trim();
 
     if (!question) {
       return sock.sendMessage(chatId, {
-        text: '❌ Usage: /ai <question>\n\nExample:\n/ai what is the capital of France?\n/ai summarise the plot of Naruto Shippuden',
+        text: [
+          (proA ? UI.PRO_BAR : UI.FREE_BAR),
+          '🤖 *ASK THE AI*',
+          proA ? (UI.PRO_MINI + '\n' + '🤖 PRO ORACLE') : null,
+          proA ? `🌐 Live web search: *${process.env.TAVILY_API_KEY ? 'ON (Tavily)' : 'OFF'}* · 🧠 Provider: *${(process.env.AI_PROVIDER || 'groq').toLowerCase()}*` : null,
+          proA ? '' : null,
+          '📌 Usage: /ai <question>',
+          '',
+          'Example:',
+          '/ai what is the capital of France?',
+          '/ai summarise the plot of Naruto Shippuden',
+          (proA ? UI.PRO_BAR : UI.FREE_BAR),
+        ].filter(x => x !== null).join('\n'),
       }, { quoted: msg });
     }
 

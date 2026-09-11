@@ -7,6 +7,9 @@ module.exports = {
     const chatId = msg.key.remoteJid;
     const db = getDatabase();
     if (!db.users[sender]) return sock.sendMessage(chatId, { text: '❌ Not registered!' }, { quoted: msg });
+    const UI = require('../../rpg/utils/UI');
+    const pro = UI.isPro(db.users[sender]);
+    const FRAME = pro ? UI.PRO_BAR : UI.FREE_BAR;
 
     const players = Object.values(db.users).filter(p => p?.name && p.level);
 
@@ -25,16 +28,16 @@ module.exports = {
     const myEloRank  = players.slice().sort((a,b)=>(b.pvpElo||1000)-(a.pvpElo||1000)).findIndex(p=>p.name===db.users[sender].name)+1;
 
     return sock.sendMessage(chatId, {
-      text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-        `🏆 *ANI R.P.G TOP HUNTERS*\n` +
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+      text: (pro ? `${UI.PRO_BAR}\n🏆 *ANI R.P.G TOP HUNTERS* 💎\n${UI.PRO_BAR}\n\n` :
+        `🏆 *ANI R.P.G TOP HUNTERS*\n${UI.FREE_BAR}\n\n`) +
         `⭐ *LEVEL*\n${fmt(lvlTop, p => `Lv.${p.level}`)}\n\n` +
         `⚔️ *PVP ELO*\n${fmt(eloTop, p => `${p.pvpElo||1000} ELO (${p.pvpWins||0}W)`)}\n\n` +
         `💠 *WEALTH*\n${fmt(goldTop, p => `${(p.gold||0).toLocaleString()} 💠`)}\n\n` +
         `🏰 *GATES CLEARED*\n${fmt(gateTop, p => `${p.dungeon?.gatesCleared||0} gates`)}\n\n` +
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+        `${FRAME}\n` +
         `📍 Your rank: #${myLvlRank} level | #${myEloRank} ELO\n` +
-        `💡 /leaderboard [level/pvp/gate/boss/wealth] — full list`
+        `💡 /leaderboard [level/pvp/gate/boss/wealth] — full list` +
+        (pro ? `\n${UI.PRO_MINI}\n💎 *PRO STANDINGS* — #${myLvlRank} level · #${myEloRank} ELO` : `\n${UI.upsell()}`)
     }, { quoted: msg });
   }
 };

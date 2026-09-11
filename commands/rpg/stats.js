@@ -4,6 +4,7 @@ const { getEquippedBonuses } = require('../../rpg/utils/GearSystem');
 const { applyAllocationsToStats } = require('../../rpg/utils/StatAllocationSystem');
 const { AWAKENING_RANKS, calculatePowerRating, getPowerLabel } = require('../../rpg/utils/SoloLevelingCore');
 const { getQualityLabel } = require('../../rpg/utils/ClassSystem');
+const UI = require('../../rpg/utils/UI');
 
 module.exports = {
   name: 'stats',
@@ -16,6 +17,8 @@ module.exports = {
     if (!player) {
       return sock.sendMessage(chatId, { text: '❌ You are not registered! Use /register to start.' }, { quoted: msg });
     }
+    const pro = UI.isPro(player);
+    const FRAME = pro ? UI.PRO_BAR : UI.FREE_BAR;
 
     // ── COMPARE MODE: /stats @user ────────────────────────────
     const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid?.[0];
@@ -48,24 +51,24 @@ module.exports = {
 
       return sock.sendMessage(chatId, {
         text: [
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          `${FRAME}`,
           `⚔️ *STAT COMPARISON*`,
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          `${FRAME}`,
           ``,
           `${pRank.emoji} *${player.name}*  vs  ${oRank.emoji} *${other.name}*`,
           `📖 ${pClass} Lv.${player.level}  ↔  ${oClass} Lv.${other.level}`,
           `⭐ ELO: ${pElo}  ↔  ${oElo}`,
           ``,
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          `${FRAME}`,
           `❤️  HP:    ${cmp(ps.hp,os.hp)} *${ps.hp}*  ↔  *${os.hp}* ${cmp(os.hp,ps.hp)}`,
           `⚔️  ATK:   ${cmp(ps.atk,os.atk)} *${ps.atk}*  ↔  *${os.atk}* ${cmp(os.atk,ps.atk)}`,
           `🛡️  DEF:   ${cmp(ps.def,os.def)} *${ps.def}*  ↔  *${os.def}* ${cmp(os.def,ps.def)}`,
           `💨 SPD:   ${cmp(ps.spd,os.spd)} *${ps.spd}*  ↔  *${os.spd}* ${cmp(os.spd,ps.spd)}`,
           `💥 CRIT:  ${cmp(ps.crit,os.crit)} *${ps.crit}%*  ↔  *${os.crit}%* ${cmp(os.crit,ps.crit)}`,
           `💪 PWR:   ${cmp(pPow,oPow)} *${pPow}*  ↔  *${oPow}* ${cmp(oPow,pPow)}`,
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          `${FRAME}`,
           `🟢 = Higher  🔴 = Lower  🟡 = Equal`,
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          `${FRAME}`,
         ].join('\n'),
         mentions: [sender, mentioned],
       }, { quoted: msg });
@@ -99,7 +102,7 @@ module.exports = {
     const nextLevelXp  = Math.floor(200 * Math.pow(player.level, 1.8));
     const xpProgress   = Math.min(100, Math.floor(((player.xp || 0) / nextLevelXp) * 100));
     const xpBarFilled  = Math.floor(xpProgress / 10);
-    const xpBar        = '█'.repeat(xpBarFilled) + '░'.repeat(10 - xpBarFilled);
+    const xpBar = UI.bar(player.xp || 0, nextLevelXp, 10, pro);
 
     // ── Awakening rank ────────────────────────────────────────
     const rankKey   = player.awakenRank || 'E';
@@ -118,14 +121,12 @@ module.exports = {
 
     // ══ Build message ═════════════════════════════════════════
     let msg2 = [
-      `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-      `⚔️ *BATTLE STATS*`,
-      `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+      ...(pro ? [UI.PRO_BAR, `⚔️ *BATTLE STATS* 💎`, UI.PRO_BAR] : [`⚔️ *BATTLE STATS*`, UI.FREE_BAR]),
       `👤 *${player.name}*`,
       `${rankEmoji} Awakening: *${rankLabel}*`,
       `⭐ Level: *${player.level}*`,
       ``,
-      `📊 [${xpBar}] ${xpProgress}%`,
+      pro ? `📊 ${xpBar}` : `📊 [${xpBar}] ${xpProgress}%`,
     ].join('\n');
 
     if (className) {
@@ -139,7 +140,7 @@ module.exports = {
 
     msg2 += `\n${powerLabel.emoji} Power: *${powerRating.toLocaleString()}* (${powerLabel.label})`;
 
-    msg2 += `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n💪 *COMBAT STATS*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+    msg2 += `\n${FRAME}\n💪 *COMBAT STATS*\n${FRAME}`;
     msg2 += `\n❤️  HP:    *${player.stats.hp}/${totalHp}*${breakdown(player.stats.maxHp, (gear.hp||0)+(titleBonus.maxHp||0)+(consBonus.maxHp||0))}`;
     msg2 += `\n⚔️  ATK:   *${totalAtk}*${breakdown(player.stats.atk, (gear.atk||0)+weaponBonus+(titleBonus.atk||0)+(consBonus.atk||0))}`;
     msg2 += `\n🛡️  DEF:   *${totalDef}*${breakdown(player.stats.def, (gear.def||0)+(titleBonus.def||0)+(consBonus.def||0))}`;
@@ -154,7 +155,7 @@ module.exports = {
     const ownedPatterns = player.attackPatterns?.owned || [];
     const equippedPat   = player.attackPatterns?.equipped || [];
     if (ownedPatterns.length > 0) {
-      msg2 += `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🥋 *ATTACK PATTERNS*`;
+      msg2 += `\n${FRAME}\n🥋 *ATTACK PATTERNS*`;
       msg2 += `\n📦 Owned: *${ownedPatterns.length}* | 🎯 Equipped: *${equippedPat.length}*`;
       if (equippedPat.length > 0) {
         const { generateAttack, RANK_EMOJI } = require('../../rpg/utils/AttackPatternDB');
@@ -171,7 +172,7 @@ module.exports = {
     }
 
     // ── Equipment ─────────────────────────────────────────────
-    msg2 += `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🗡️ *EQUIPMENT*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+    msg2 += `\n${FRAME}\n🗡️ *EQUIPMENT*\n${FRAME}`;
     if (player.weapon?.name) {
       msg2 += `\n🗡️ ${player.weapon.name} (+${weaponBonus} ATK)`;
       if (player.weapon.passive) msg2 += `\n   ⚡ *${player.weapon.passive.name}* — ${player.weapon.passive.desc}`;
@@ -194,7 +195,7 @@ module.exports = {
     // ── Class Skills ──────────────────────────────────────────
     const classSkills = player.classSkills || [];
     if (classSkills.length > 0) {
-      msg2 += `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🎭 *CLASS SKILLS* (${className})`;
+      msg2 += `\n${FRAME}\n🎭 *CLASS SKILLS* (${className})`;
       classSkills.forEach((s, i) => {
         msg2 += `\n  ${i+1}. *${s.name}* — ${s.desc}`;
       });
@@ -203,7 +204,7 @@ module.exports = {
     // ── Active skills ─────────────────────────────────────────
     const activeSkills = player.skills?.active || [];
     if (activeSkills.length > 0) {
-      msg2 += `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n✨ *SKILLS* (${activeSkills.length})`;
+      msg2 += `\n${FRAME}\n✨ *SKILLS* (${activeSkills.length})`;
       activeSkills.forEach(skill => {
         const cost = skill.energyCost || skill.manaCost || 10;
         msg2 += `\n🔮 *${skill.name}* [Lv.${skill.level}/${skill.maxLevel||10}]`;
@@ -214,7 +215,7 @@ module.exports = {
     // ── Passives ──────────────────────────────────────────────
     const passives = player.skills?.passive || [];
     if (passives.length > 0) {
-      msg2 += `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🌟 *PASSIVE ABILITIES*`;
+      msg2 += `\n${FRAME}\n🌟 *PASSIVE ABILITIES*`;
       passives.forEach(p => { msg2 += `\n⚡ ${p.name}: ${p.effect}`; });
     }
 
@@ -227,7 +228,7 @@ module.exports = {
       {name:'Grandmaster',min:2100,emoji:'🌟'},
     ];
     const tier = PVP_TIERS.slice().reverse().find(t => elo >= t.min) || PVP_TIERS[0];
-    msg2 += `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n⚔️ *PVP RECORD*`;
+    msg2 += `\n${FRAME}\n⚔️ *PVP RECORD*`;
     msg2 += `\n${tier.emoji} *${tier.name}* — ${elo} ELO`;
     msg2 += `\n📊 ${player.pvpWins||0}W / ${player.pvpLosses||0}L`;
     if ((player.pvpStreak||0) > 2) msg2 += ` | 🔥 ${player.pvpStreak} streak`;
@@ -239,7 +240,7 @@ module.exports = {
       const owned    = player.titles || [];
       const equipped = player.equippedTitle;
       if (owned.length) {
-        msg2 += `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🎖️ *TITLES* (${owned.length})`;
+        msg2 += `\n${FRAME}\n🎖️ *TITLES* (${owned.length})`;
         if (equipped && TS.TITLES[equipped]) {
           const td = TS.TITLES[equipped];
           msg2 += `\n✅ *${td.display}* ← EQUIPPED\n   ⚡ ${td.boostDesc}`;
@@ -255,13 +256,22 @@ module.exports = {
       const BP = require('../../rpg/utils/BattlePass');
       const bp  = BP.getPassState(player);
       const pct = Math.min(100, Math.floor((bp.xp / BP.XP_PER_LEVEL) * 100));
-      const bar = '█'.repeat(Math.floor(pct/10)) + '░'.repeat(10 - Math.floor(pct/10));
-      msg2 += `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🎖️ *BATTLE PASS*`;
+      const bar = UI.bar(bp.xp, BP.XP_PER_LEVEL, 10, pro);
+      msg2 += `\n${FRAME}\n🎖️ *BATTLE PASS*`;
       msg2 += `\n${bp.premium?'💎 Premium':'🆓 Free'} | Level *${bp.level}/${BP.PASS_LEVELS}*`;
-      msg2 += `\n[${bar}] ${bp.xp}/${BP.XP_PER_LEVEL}`;
+      msg2 += `\n${bar} ${bp.xp}/${BP.XP_PER_LEVEL}`;
     } catch(e) {}
 
-    msg2 += `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n💡 /profile — social card\n💡 /attacks — attack patterns\n💡 /gear — manage equipment\n💡 /skills — manage skills\n━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+    if (pro) {
+      const pw = player.pvpWins || 0, pl = player.pvpLosses || 0;
+      const wr = (pw + pl) > 0 ? Math.round((pw / (pw + pl)) * 100) : 0;
+      const nextTier = PVP_TIERS.find(t => elo < t.min);
+      msg2 += `\n${UI.PRO_MINI}\n💎 *PRO INSIGHT*`;
+      msg2 += `\n📊 Win rate: *${wr}%* over ${pw + pl} battles`;
+      if (nextTier) msg2 += `\n⏭️ Next: *${nextTier.name}* ${UI.bar(elo, nextTier.min, 8, true)}`;
+    }
+    msg2 += `\n${FRAME}\n💡 /profile — social card · /attacks · /gear · /skills`;
+    msg2 += pro ? `\n${FRAME}` : `\n${FRAME}\n${UI.upsell()}`;
 
     return sock.sendMessage(chatId, { text: msg2 }, { quoted: msg });
   }

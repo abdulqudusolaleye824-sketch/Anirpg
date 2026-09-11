@@ -11,6 +11,9 @@ module.exports = {
     const db = getDatabase();
     const player = db.users[sender];
     if (!player) return sock.sendMessage(chatId, { text: '❌ Not registered!' }, { quoted: msg });
+    const UI = require('../../rpg/utils/UI');
+    const pro = UI.isPro(player);
+    const FRAME = pro ? UI.PRO_BAR : UI.FREE_BAR;
 
     const sponsored = player.constellations || {};
     const sub = (args[0] || '').toLowerCase();
@@ -26,11 +29,11 @@ module.exports = {
           `${have ? '✅' : '🔒'} ${RARITY_EMOJI[con.rarity]} ${dom?.emoji||''} *${con.name}*${con.limited ? ' ⏰' : ''}${have ? ` Fav.${fav}` : ''}`
         );
       }
-      let txt = `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🌌 *ALL CONSTELLATIONS*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n✅=Sponsored | 🔒=Unknown | ⏰=Limited\n\n`;
+      let txt = pro ? `${UI.PRO_BAR}\n🌌 *ALL CONSTELLATIONS* 💎\n${UI.PRO_BAR}\n✅=Sponsored | 🔒=Unknown | ⏰=Limited\n\n` : `🌌 *ALL CONSTELLATIONS*\n${UI.FREE_BAR}\n✅=Sponsored | 🔒=Unknown | ⏰=Limited\n\n`;
       txt += `🟡 *ABSOLUTE / MYTH TIER*\n${cats.legendary.join('\n')}\n\n`;
       txt += `🟣 *HIGHEST TIER*\n${cats.epic.join('\n')}\n\n`;
       txt += `🔵 *ADVANCED TIER*\n${cats.rare.join('\n')}\n\n`;
-      txt += `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n💡 Pull constellations with /summon\n/constellation [name] — view details`;
+      txt += `${FRAME}\n💡 Pull constellations with /summon\n/constellation [name] — view details` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO SPONSOR* — ${Object.keys(sponsored).length}/${Object.keys(CONSTELLATIONS).length} sponsored` : `\n${UI.upsell()}`);
       return sock.sendMessage(chatId, { text: txt }, { quoted: msg });
     }
 
@@ -44,18 +47,18 @@ module.exports = {
 
       const have = sponsored[match.id];
       const dom  = DOMAINS[match.domain];
-      let txt = `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n${RARITY_EMOJI[match.rarity]} *${match.name}*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+      let txt = pro ? `${UI.PRO_BAR}\n${RARITY_EMOJI[match.rarity]} *${match.name}* 💎\n${UI.PRO_BAR}\n` : `${RARITY_EMOJI[match.rarity]} *${match.name}*\n${UI.FREE_BAR}\n`;
       txt += `${dom?.emoji||''} *Domain:* ${dom?.name||match.domain} | *Tier:* ${match.tier}\n`;
       txt += `💎 *Rarity:* ${match.rarity.toUpperCase()}${match.limited?' ⏰ LIMITED':''}\n\n`;
       txt += `📖 *Lore:*\n${match.lore}\n\n`;
-      txt += `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+      txt += `${FRAME}\n`;
       txt += `⚡ *SPONSOR SKILL: ${match.sponsorSkill.name}*\n${match.sponsorSkill.desc}\n\n`;
       txt += `📊 *BASE SPONSORSHIP BONUS*\n`;
       for (const [stat, val] of Object.entries(match.baseBonus)) txt += `  +${val} ${stat.toUpperCase()}\n`;
       txt += `\n💛 *Per Favorability Level:*\n`;
       for (const [stat, val] of Object.entries(match.favorabilityBonus||{})) txt += `  +${val} ${stat.toUpperCase()}\n`;
       if (have) {
-        txt += `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n✅ *YOU ARE SPONSORED*\n`;
+        txt += `\n${FRAME}\n✅ *YOU ARE SPONSORED*\n`;
         txt += `${favBar(have.favorability)}\n`;
         const totalBonus = {};
         for (const [s,v] of Object.entries(match.baseBonus)) totalBonus[s]=(totalBonus[s]||0)+v;
@@ -65,21 +68,21 @@ module.exports = {
         txt += `Current total bonus: `;
         txt += Object.entries(totalBonus).map(([s,v])=>`+${v} ${s.toUpperCase()}`).join(', ')+'\n';
       } else {
-        txt += `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🔒 *NOT YET SPONSORED*\nPull with /summon to earn their sponsorship!\n`;
+        txt += `\n${FRAME}\n🔒 *NOT YET SPONSORED*\nPull with /summon to earn their sponsorship!\n`;
       }
-      txt += `━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+      txt += `${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO SPONSOR* — ${have ? `Fav.${have.favorability}` : 'unsponsored'}` : `\n${UI.upsell()}`);
       return sock.sendMessage(chatId, { text: txt }, { quoted: msg });
     }
 
     // ── /constellation (your roster) ──────────────────────────
     if (!Object.keys(sponsored).length) {
       return sock.sendMessage(chatId, {
-        text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🌌 *YOUR SPONSORSHIPS*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n📭 No constellations yet!\n\nYou are a lone Incarnation — unsponsored.\nPull constellations from /summon to gain their power!\n\n/constellation all — see all constellations\n━━━━━━━━━━━━━━━━━━━━━━━━━━━`
+        text: (pro ? `${UI.PRO_BAR}\n🌌 *YOUR SPONSORSHIPS* 💎\n${UI.PRO_BAR}\n\n📭 No constellations yet!` : `🌌 *YOUR SPONSORSHIPS*\n${UI.FREE_BAR}\n\n📭 No constellations yet!`)+`\n\nYou are a lone Incarnation — unsponsored.\nPull constellations from /summon to gain their power!\n\n/constellation all — see all constellations\n${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO SPONSOR* — unsponsored` : `\n${UI.upsell()}`)
       }, { quoted: msg });
     }
 
     const totalBonus = getSponsorBonus(player);
-    let txt = `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🌌 *YOUR SPONSORSHIPS* (${Object.keys(sponsored).length})\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+    let txt = pro ? `${UI.PRO_BAR}\n🌌 *YOUR SPONSORSHIPS* (${Object.keys(sponsored).length}) 💎\n${UI.PRO_BAR}\n` : `🌌 *YOUR SPONSORSHIPS* (${Object.keys(sponsored).length})\n${UI.FREE_BAR}\n`;
     txt += `📊 *Total Sponsor Bonus:*\n`;
     for (const [stat, val] of Object.entries(totalBonus)) {
       if (val > 0) txt += `  +${val} ${stat.toUpperCase()}\n`;
@@ -100,7 +103,7 @@ module.exports = {
       txt += `   ${favBar(data.favorability)}\n`;
       txt += `   ⚡ ${con.sponsorSkill.name}\n\n`;
     }
-    txt += `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n/constellation [name] — view details\n/constellation all    — all constellations\n/summon               — pull more`;
+    txt += `${FRAME}\n/constellation [name] — view details\n/constellation all    — all constellations\n/summon               — pull more` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO SPONSOR* — ${Object.keys(sponsored).length} sponsors` : `\n${UI.upsell()}`);
     return sock.sendMessage(chatId, { text: txt }, { quoted: msg });
   }
 };

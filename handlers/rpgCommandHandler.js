@@ -377,7 +377,9 @@ module.exports = async (sock, msg, messageText, config, getDatabase, saveDatabas
 
   if (db.bannedUsers?.[Mod.bare(sender)]) {
     const rec = db.bannedUsers[Mod.bare(sender)] || db.bannedUsers[sender];
-    const bannedBy = rec.bannedBy ? '@' + Mod.bare(rec.bannedBy) : 'Unknown';
+    const _youName = db.users?.[sender]?.name || ('@' + Mod.bare(sender));
+    const _bannerName = rec.bannedBy ? (db.users?.[rec.bannedBy]?.name || ('@' + Mod.bare(rec.bannedBy))) : 'Unknown';
+    const bannedBy = rec.bannedBy ? (_bannerName + ' (@' + Mod.bare(rec.bannedBy) + ')') : 'Unknown';
     const gmt = rec.bannedAtGMT || (rec.bannedAt ? new Date(rec.bannedAt).toUTCString() : 'Unknown');
     const gcName = rec.gcName || rec.gc || 'Unknown';
     return sock.sendMessage(
@@ -387,14 +389,14 @@ module.exports = async (sock, msg, messageText, config, getDatabase, saveDatabas
           `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
           `🚫 *YOU ARE BANNED*\n` +
           `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-          `👤 You: @${Mod.bare(sender)}\n` +
+          `👤 You: ${_youName} (@${Mod.bare(sender)})\n` +
           `📝 Reason: ${rec.reason || 'No reason provided'}\n` +
           `👮 Banned by: ${bannedBy}\n` +
           `📍 GC: ${gcName}\n` +
           `🕒 Time (GMT): ${gmt}\n` +
           `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
           `_Contact a mod to appeal._`,
-        mentions: rec.bannedBy ? [rec.bannedBy] : undefined
+        mentions: [sender].concat(rec.bannedBy ? [rec.bannedBy] : [])
       },
       { quoted: msg }
     );
@@ -827,36 +829,12 @@ module.exports = async (sock, msg, messageText, config, getDatabase, saveDatabas
         awardCommandXP(player, saveDatabase, chunkedSock, chatId);
 
         try {
-          const { trackActivity, checkSnapshotAchievements } = require('../rpg/utils/ActivityTracker');
-          const questTypeByCommand = {
-            // daily handled manually in daily.js only on successful claim (not on Already Claimed)
-            summon:    'summon',
-            shop:      'shop',
-            buy:       'shop',
-            sell:      'sell',
-            craft:     'craft',
-            forge:     'craft',
-            pvp:       'pvp',
-            attack:    'pattern',
-            attacks:   'pattern',
-            feed:      'feed',
-            train:     'pet',
-            pet:       'pet',
-            dungeon:   'dungeon',
-            worldboss: 'boss',
-            gw:        'gw',
-            guildwar:  'gw',
-            donate:    'donate',
-            rep:       'rep',
-            heal:      'heal',
-            scroll:    'scroll',
-            read:      'scroll',
-            open:      'scroll',
-          };
-          const qType = questTypeByCommand[resolvedCommand];
-          if (qType) {
-            await trackActivity(player, qType, 1, {}, chunkedSock, sender, chatId);
-          }
+          const { checkSnapshotAchievements } = require('../rpg/utils/ActivityTracker');
+          // NOTE: daily-quest progress is tracked at the point of ACTUAL completion
+          // inside each command (kill on kill, pvp on win, craft on craft, ...).
+          // The old generic per-command map counted mere command INVOCATIONS
+          // (e.g. /pvp status counted as a duel win, /attacks shop as pattern
+          // use) and double-counted alongside in-command dispatches — removed.
           await checkSnapshotAchievements(player, chunkedSock, sender, chatId);
           saveDatabase();
         } catch(e) {}

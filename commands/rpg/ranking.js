@@ -8,6 +8,9 @@ module.exports = {
     const db = getDatabase();
     const me = db.users[sender];
     if (!me) return sock.sendMessage(chatId, { text: '❌ Not registered! Use /register first.' }, { quoted: msg });
+    const UI = require('../../rpg/utils/UI');
+    const pro = UI.isPro(me);
+    const FRAME = pro ? UI.PRO_BAR : UI.FREE_BAR;
 
     const players = Object.values(db.users).filter(p => p?.name && p.level);
     const myId = sender;
@@ -28,24 +31,27 @@ module.exports = {
     const boss  = rankIn((a,b) => (b.bossesDefeated||0) - (a.bossesDefeated||0));
 
     const fmt = (r) => `#${r.rank} of ${r.total}`;
-    const bar = (r) => {
-      const pct = Math.max(0, Math.min(10, Math.round(((r.total - r.rank) / r.total) * 10)));
-      return '█'.repeat(pct) + '░'.repeat(10 - pct);
-    };
+    const bar = (r) => UI.bar(r.total - r.rank, r.total, 10, pro);
 
     const cls = me.class?.name || me.class || '?';
     const pvpWins = me.pvpWins || 0;
     const pvpLosses = me.pvpLosses || 0;
 
     return sock.sendMessage(chatId, {
-      text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n📊 *${me.name}'s RANKING*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n👤 ${cls} | Lv.${me.level} | ELO ${me.pvpElo||1000}\n\n` +
+      text: (pro ? `${UI.PRO_BAR}\n📊 *${me.name}'s RANKING* 💎\n${UI.PRO_BAR}\n` : `📊 *${me.name}'s RANKING*\n${UI.FREE_BAR}\n`) + `👤 ${cls} | Lv.${me.level} | ELO ${me.pvpElo||1000}\n\n` +
         `⭐ *Level:*   [${bar(lvl)}] ${fmt(lvl)}\n` +
         `⚔️ *PvP ELO:* [${bar(elo)}] ${fmt(elo)} (${pvpWins}W/${pvpLosses}L)\n` +
-        `💠 *Wealth:*  [${bar(gold)}] ${fmt(gold)}\n` +
+        `💠 *Wealth:*  [${bar(Nexus)}] ${fmt(Nexus)}\n` +
         `🏰 *Gates:*   [${bar(gates)}] ${fmt(gates)}\n` +
         `👹 *Bosses:*  [${bar(boss)}] ${fmt(boss)}\n\n` +
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-        `💡 /top — see who's #1 | /leaderboard — full list`
+        `${FRAME}\n` +
+        `💡 /top — see who's #1 | /leaderboard — full list` +
+        (() => {
+          if (!pro) return `\n${UI.upsell()}`;
+          const cats = [['Level', lvl], ['PvP', elo], ['Wealth', Nexus], ['Gates', gates], ['Bosses', boss]];
+          cats.sort((a, b) => a[1].rank - b[1].rank);
+          return `\n${UI.PRO_MINI}\n💎 *PRO CLIMB* — best: #${cats[0][1].rank} ${cats[0][0]}`;
+        })()
     }, { quoted: msg });
   }
 };

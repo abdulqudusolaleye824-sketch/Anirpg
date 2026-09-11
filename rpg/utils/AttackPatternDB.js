@@ -31,7 +31,7 @@ const EFFECTS = {
   paralyze: { label: 'Paralyzed',   emoji: '🔱', desc: 'Speed/dodge -50%',  statKey: 'paralyzed'   },
   burn:     { label: 'Burning',     emoji: '🔥', desc: 'Burns for 5% max HP per turn', statKey: 'burn' },
   poison:   { label: 'Poisoned',    emoji: '☠️', desc: 'Poison 3% max HP per turn', statKey: 'poison' },
-  freeze:   { label: 'Frozen',      emoji: '❄️', desc: 'Cannot act, -20% DEF', statKey: 'freeze' },
+  freeze:   { label: 'Frozen',      emoji: '❄️', desc: 'Cannot act + frost damage, -20% DEF', statKey: 'freeze' },
 };
 
 // ── Rank config — 2.5x more expensive, unique pricing via variation ───────

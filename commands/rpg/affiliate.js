@@ -31,6 +31,9 @@ module.exports = {
     if (!player) {
       return sock.sendMessage(chatId, { text: '❌ You are not registered! Use /register' }, { quoted: msg });
     }
+    const UI = require('../../rpg/utils/UI');
+    const pro = UI.isPro(player);
+    const FRAME = pro ? UI.PRO_BAR : UI.FREE_BAR;
 
     if (!db.affiliateOffers) db.affiliateOffers = {};
     if (!db.affiliates) db.affiliates = {};
@@ -122,9 +125,7 @@ module.exports = {
 
       return sock.sendMessage(chatId, {
         text: [
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-          `🤝 *AFFILIATE HIRE OFFER SENT*`,
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          ...(pro ? [UI.PRO_BAR, `🤝 *AFFILIATE HIRE OFFER SENT* 💎`, UI.PRO_BAR] : [`🤝 *AFFILIATE HIRE OFFER SENT*`, UI.FREE_BAR]),
           `👑 Leader: *${player.name}*`,
           `👤 Target: *@${targetJid.split('@')[0]}*`,
           `🔑 Party Key: \`${activeKey}\``,
@@ -132,9 +133,10 @@ module.exports = {
           `📊 *LOOT SPLIT:*`,
           `• Party/Leader Cut: *${leaderPct}%*`,
           `• Affiliate Cut: *${affiliatePct}%*`,
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          FRAME,
           `📩 *@${targetJid.split('@')[0]}*, type */affiliate accept* or */affiliate reject* to respond!`,
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          FRAME,
+          ...(pro ? [UI.PRO_MINI, `💎 *PRO DEAL* — ${affiliatePct}% cut offered`] : [UI.upsell()]),
         ].join('\n'),
         mentions: [targetJid],
       }, { quoted: msg });
@@ -195,9 +197,7 @@ module.exports = {
 
       return sock.sendMessage(chatId, {
         text: [
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-          `📜 *GUILD AFFILIATE GRANT OFFER*`,
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          ...(pro ? [UI.PRO_BAR, `📜 *GUILD AFFILIATE GRANT OFFER* 💎`, UI.PRO_BAR] : [`📜 *GUILD AFFILIATE GRANT OFFER*`, UI.FREE_BAR]),
           `🏰 Guild: *${guildName}*`,
           `👑 Offered by: *${player.name}*`,
           `👤 Target: *@${targetJid.split('@')[0]}*`,
@@ -207,9 +207,10 @@ module.exports = {
           `• Granted Affiliate Cut: *${affiliatePct}%*`,
           `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
           `💡 *How it works:* When you buy and clear gate keys under *${guildName}*'s name, ${guildPct}% of loot goes to the guild treasury and ${affiliatePct}% is yours!`,
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          FRAME,
           `📩 *@${targetJid.split('@')[0]}*, type */affiliate accept* or */affiliate reject*!`,
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          FRAME,
+          ...(pro ? [UI.PRO_MINI, `💎 *PRO DEAL* — ${affiliatePct}% affiliate cut`] : [UI.upsell()]),
         ].join('\n'),
         mentions: [targetJid],
       }, { quoted: msg });
@@ -240,15 +241,14 @@ module.exports = {
 
         return sock.sendMessage(chatId, {
           text: [
-            `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-            `🎉 *OFFER ACCEPTED — AFFILIATE GRANTED!*`,
-            `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+            ...(pro ? [UI.PRO_BAR, `🎉 *OFFER ACCEPTED — AFFILIATE GRANTED!* 💎`, UI.PRO_BAR] : [`🎉 *OFFER ACCEPTED — AFFILIATE GRANTED!*`, UI.FREE_BAR]),
             `👤 Hunter: *${player.name}*`,
             `🏰 Guild: *${offer.guildName}*`,
             `📊 Agreed Split: *${offer.guildPct}% Guild / ${offer.affiliatePct}% Affiliate*`,
-            `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+            FRAME,
             `✅ You are now an official Granted Affiliate of *${offer.guildName}*!`,
-            `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+            FRAME,
+            ...(pro ? [UI.PRO_MINI, `💎 *PRO DEAL* — ${offer.affiliatePct}% cut secured`] : [UI.upsell()]),
           ].join('\n'),
         }, { quoted: msg });
       }
@@ -275,15 +275,14 @@ module.exports = {
 
         return sock.sendMessage(chatId, {
           text: [
-            `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-            `🤝 *HIRE OFFER ACCEPTED!*`,
-            `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+            ...(pro ? [UI.PRO_BAR, `🤝 *HIRE OFFER ACCEPTED!* 💎`, UI.PRO_BAR] : [`🤝 *HIRE OFFER ACCEPTED!*`, UI.FREE_BAR]),
             `👤 Hunter: *${player.name}*`,
             `🔑 Party Key: \`${offer.partyKey}\``,
             `💰 Negotiated Loot Cut: *${offer.affiliatePct}%*`,
-            `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+            FRAME,
             `✅ You joined the party as a hired affiliate! Run */party ready* when ready.`,
-            `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+            FRAME,
+            ...(pro ? [UI.PRO_MINI, `💎 *PRO DEAL* — ${offer.affiliatePct}% cut · /party ready`] : [UI.upsell()]),
           ].join('\n'),
         }, { quoted: msg });
       }
@@ -318,9 +317,7 @@ module.exports = {
         : [];
 
       const lines = [
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-        `🤝 *GUILD AFFILIATE SYSTEM*`,
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        ...(pro ? [UI.PRO_BAR, `🤝 *GUILD AFFILIATE SYSTEM* 💎`, UI.PRO_BAR] : [`🤝 *GUILD AFFILIATE SYSTEM*`, UI.FREE_BAR]),
       ];
 
       if (myAff) {
@@ -348,7 +345,7 @@ module.exports = {
       lines.push(`/affiliate grant @user 60|40 — Guildmaster/Vice grant affiliate`);
       lines.push(`/affiliate accept            — Accept pending offer`);
       lines.push(`/affiliate reject            — Reject pending offer`);
-      lines.push(`━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+      lines.push(FRAME, ...(pro ? [UI.PRO_MINI, `💎 *PRO DEAL* — ${guildAffs.length} affiliates`] : [UI.upsell()]));
 
       return sock.sendMessage(chatId, { text: lines.join('\n') }, { quoted: msg });
     }

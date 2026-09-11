@@ -15,6 +15,7 @@ const {
   AWAKENING_RANKS,
 } = require('../../rpg/utils/SoloLevelingCore');
 const MultiSocketManager = require('../../bots/MultiSocketManager');
+const UI = require('../../rpg/utils/UI');
 
 function getNigerianTimestamp() {
   return new Date(Date.now() + 3600000)
@@ -131,13 +132,13 @@ function buildSuccessMsg(name, dob, rank, power, bonus) {
   const systemMsg = getAwakeningMessage(rank);
 
   return [
-    `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+    UI.FREE_BAR,
     isRare ? `‼️ *RARE AWAKENING DETECTED* ‼️` : `「System」 *AWAKENING COMPLETE*`,
-    `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+    UI.FREE_BAR,
     ``,
     systemMsg,
     ``,
-    `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+    UI.FREE_BAR,
     `👤 Hunter: *${name}*`,
     `📅 D.O.B: *${dob.formatted}*`,
     `${rankData.emoji} Rank: *${rankData.label}*`,
@@ -150,23 +151,23 @@ function buildSuccessMsg(name, dob, rank, power, bonus) {
     `🎭 Class: *Not yet assigned*`,
     `   ↳ Your class reveals itself as you grow stronger.`,
     ``,
-    `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+    UI.FREE_BAR,
     `📌 *NEXT STEPS:*`,
     `/daily — Claim daily reward`,
     `/gates — View active gates`,
     `/profile — View your profile`,
     `/guild — Find or create a guild`,
-    `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+    UI.FREE_BAR,
     rankData.description ? `\n${rankData.description}` : '',
-  ].filter(l => l !== null).join('\n');
+  ].filter(l => l !== null).join('\n') + `\n${UI.upsell()}`;
 }
 
 function buildWelcomeDM(name, rank) {
   const rankData = AWAKENING_RANKS[rank];
   return [
-    `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+    UI.FREE_BAR,
     `👋 *WELCOME TO ANI R.P.G, ${name.toUpperCase()}!*`,
-    `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+    UI.FREE_BAR,
     ``,
     `You just awakened as a *${rankData.label}* hunter. The System is now active for you.`,
     ``,
@@ -178,9 +179,9 @@ function buildWelcomeDM(name, rank) {
     `→ \`/shop\`    — buy potions & gear`,
     `→ \`/summon\`  — gacha pulls for artifacts`,
     ``,
-    `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+    UI.FREE_BAR,
     `⚓ *PICK YOUR SERF*`,
-    `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+    UI.FREE_BAR,
     `Want a bot to DM you (quest alerts, daily reminders, etc.)?`,
     ``,
     `1. Go to any group where the bot is active.`,
@@ -191,11 +192,11 @@ function buildWelcomeDM(name, rank) {
     `Mods and owners can DM you freely regardless.`,
     `This welcome DM is the ONLY DM exception.`,
     ``,
-    `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+    UI.FREE_BAR,
     `📌 See ALL commands: \`/help\``,
     `⚔️ Good luck, hunter!`,
-    `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-  ].join('\n');
+    UI.FREE_BAR,
+  ].join('\n') + `\n${UI.upsell()}`;
 }
 
 async function sendWelcomeDM(sock, sender, name, rank) {
@@ -223,17 +224,18 @@ module.exports = {
       const p        = db.users[sender];
       const rankData = AWAKENING_RANKS[p.awakenRank || 'E'] || { emoji:'⬜', label:'E-Rank' };
       const power    = calculatePowerRating(p.stats || {});
+      const pPro = UI.isPro(p);
+      const pFRAME = pPro ? UI.PRO_BAR : UI.FREE_BAR;
       return sock.sendMessage(chatId, {
         text: [
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-          `「System」 *ALREADY AWAKENED*`,
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          ...(pPro ? [UI.PRO_BAR, `「System」 *ALREADY AWAKENED* 💎`, UI.PRO_BAR] : [`「System」 *ALREADY AWAKENED*`, UI.FREE_BAR]),
           ``,
           `👤 *${p.name}* | ${rankData.emoji} ${rankData.label}`,
           `⚡ Level ${p.level || 1} | Power: ${power.toLocaleString()}`,
           ``,
           `📌 Use /profile to view your full profile`,
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          pFRAME,
+          ...(pPro ? [UI.PRO_MINI, `💎 *PRO AWAKENED* — ${rankData.label} · Lv.${p.level || 1}`] : [UI.upsell()]),
         ].join('\n'),
       }, { quoted: msg });
     }
@@ -246,7 +248,7 @@ module.exports = {
         const dobArg = args[0];
         if (!dobArg) {
           return sock.sendMessage(chatId, {
-            text: `📅 Please enter your date of birth to complete registration.\n\nFormat: /register DD/MM/YYYY\nExample: /register 15/08/2000\n\n⏳ Expires in ${Math.ceil((pending.expiresAt - Date.now()) / 60000)} min.`,
+            text: `${UI.FREE_BAR}\n📅 *COMPLETE YOUR AWAKENING*\n${UI.FREE_BAR}\n\n👤 Hunter: *${pending.name}*\n\nPlease enter your date of birth.\n\nFormat: /register DD/MM/YYYY\nExample: /register 15/08/2000\n\n⏳ Expires in ${Math.ceil((pending.expiresAt - Date.now()) / 60000)} min.\n${UI.FREE_BAR}\n${UI.upsell()}`,
           }, { quoted: msg });
         }
 
@@ -322,9 +324,8 @@ module.exports = {
 
     return sock.sendMessage(chatId, {
       text: [
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
         `「System」 *AWAKENING INITIATED*`,
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        UI.FREE_BAR,
         ``,
         `👤 Hunter Name: *${name}*`,
         ``,
@@ -334,7 +335,8 @@ module.exports = {
         `Example: /register 15/08/2000`,
         ``,
         `⏳ This prompt expires in 5 minutes.`,
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        UI.FREE_BAR,
+        UI.upsell(),
       ].join('\n'),
     }, { quoted: msg });
   },

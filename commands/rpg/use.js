@@ -29,6 +29,9 @@ module.exports = {
       await sock.sendMessage(chatId, { text: '❌ You are not registered! Use /register' }, { quoted: msg });
       return;
     }
+    const UI = require('../../rpg/utils/UI');
+    const pro = UI.isPro(player);
+    const FRAME = pro ? UI.PRO_BAR : UI.FREE_BAR;
 
     if (!player.inventory) {
       player.inventory = { lowerHealthPotions: 0, mediumHealthPotions: 0, higherHealthPotions: 0, healthPotions: 0, energyPotions: 0, reviveTokens: 0, cards: {} };
@@ -83,13 +86,13 @@ module.exports = {
 
       return sock.sendMessage(chatId, {
         text: [
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          `${FRAME}`,
           `✨ *MENDING STONE USED!* ✨`,
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          `${FRAME}`,
           `👤 Hunter: *${player.name}*`,
           ``,
           `🛠️ *Gear Restored:* Repaired durability to 100% on ${repairedCount > 0 ? repairedCount + ' gear items' : 'all gear'}!`,
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          `${FRAME}`,
         ].join('\n'),
       }, { quoted: msg });
     }
@@ -147,17 +150,15 @@ module.exports = {
 
       return sock.sendMessage(chatId, {
         text: [
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-          `${emoji} *${label} USED!*`,
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          ...(pro ? [UI.PRO_BAR, `${emoji} *${label} USED!* 💎`, UI.PRO_BAR] : [`${emoji} *${label} USED!*`, UI.FREE_BAR]),
           `👤 Hunter: *${player.name}*`,
           ``,
           `✨ *REWARDS RECEIVED:*`,
           `💠 Nexus: *+${nexusReward.toLocaleString()}*`,
           `💎 Mana Stones: *+${manaReward.toLocaleString()}*`,
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          FRAME,
           `💳 Cards Remaining: *${player.inventory.cards[cardType]}*`,
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          ...(pro ? [FRAME] : [FRAME, UI.upsell()]),
         ].join('\n'),
       }, { quoted: msg });
     }
@@ -183,10 +184,8 @@ module.exports = {
         else battleStatus = '\n⚔️ *IN BATTLE* - Potions active!\n';
       }
 
-      const menu = `━━━━━━━━━━━━━━━━━━━━━━━━━━━
-💊 USE ITEMS MENU 💊
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-📊 YOUR HEALTH POTIONS:
+      const menuHead = pro ? `${UI.PRO_BAR}\n💊 USE ITEMS MENU 💊 💎\n${UI.PRO_BAR}\n` : `💊 USE ITEMS MENU 💊\n${UI.FREE_BAR}\n`;
+      let menu = menuHead + `📊 YOUR HEALTH POTIONS:
 🩹 Lower HP Potion (10%): ${lowerCount + legacyCount}
 🧪 Medium HP Potion (25%): ${mediumCount}
 🍷 Higher HP Potion (50%): ${higherCount}
@@ -200,9 +199,9 @@ ${player.energyColor || '💙'} ${player.energyType || 'Mana'} Potions: ${player
 🥇 Gold Guild Victory Cards: ${goldCards}
 🥈 Silver Guild Victory Cards: ${silverCards}
 🥉 Bronze Guild Victory Cards: ${bronzeCards}
-${battleStatus}━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${battleStatus}${FRAME}
 💡 COMMANDS
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${FRAME}
 /use lower         - Use Lower HP Potion (10% HP)
 /use medium        - Use Medium HP Potion (25% HP)
 /use higher        - Use Higher HP Potion (50% HP)
@@ -212,7 +211,10 @@ ${battleStatus}━━━━━━━━━━━━━━━━━━━━━�
 /use GVC --gold    - Use Gold Victory Card (15k Nexus + 3k MS)
 /use GVC --silver  - Use Silver Victory Card (10k Nexus + 2k MS)
 /use GVC --bronze  - Use Bronze Victory Card (10k Nexus + 2k MS)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+${FRAME}`;
+      const _healPct = (lowerCount + legacyCount) * 10 + mediumCount * 25 + higherCount * 50;
+      if (pro) menu += `\n${UI.PRO_MINI}\n💎 *PRO FIELD KIT* — ~${_healPct}% HP + ${player.inventory.reviveTokens || 0} revives stocked`;
+      if (!pro) menu += `\n${UI.upsell()}`;
 
       await sock.sendMessage(chatId, { text: menu }, { quoted: msg });
       return;
@@ -293,15 +295,15 @@ ${battleStatus}━━━━━━━━━━━━━━━━━━━━━�
 
         return sock.sendMessage(chatId, {
           text: [
-            `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+            `${FRAME}`,
             `🩸 *PVP CORRUPTED POTION!*`,
-            `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+            `${FRAME}`,
             `${tierEmoji} *${player.name}* used a ${tierName}!`,
             ``,
             `☠️ In PvP battles, health potions corrupt and deal damage!`,
             `💥 Dealt *${damage} damage* (${Math.floor(pct * 100)}% Max HP) to *${opponent ? opponent.name : 'Opponent'}*!`,
             opponent ? `❤️ Opponent HP: *${opponent.stats.hp}/${opponent.stats.maxHp}*` : ``,
-            `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+            `${FRAME}`,
           ].filter(Boolean).join('\n'),
         }, { quoted: msg });
       }
@@ -332,15 +334,15 @@ ${battleStatus}━━━━━━━━━━━━━━━━━━━━━�
 
       return sock.sendMessage(chatId, {
         text: [
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          `${FRAME}`,
           `💚 *${tierName.toUpperCase()} USED* 💚`,
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          `${FRAME}`,
           `${tierEmoji} *${player.name}* used ${tierName}!`,
           ``,
           `✨ Restored: *+${actualHeal} HP* (+${Math.floor(pct * 100)}%)`,
           `❤️ HP: *${player.stats.hp}/${player.stats.maxHp}*`,
           inBattleInfo ? `\n⚔️ Used in ${inBattleInfo.type}!` : ``,
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          `${FRAME}`,
         ].join('\n'),
       }, { quoted: msg });
     }
@@ -380,14 +382,14 @@ ${battleStatus}━━━━━━━━━━━━━━━━━━━━━�
 
       return sock.sendMessage(chatId, {
         text: [
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          `${FRAME}`,
           `${player.energyColor || '💙'} *${(player.energyType || 'Mana').toUpperCase()} POTION USED* ${player.energyColor || '💙'}`,
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          `${FRAME}`,
           `💙 *${player.name}* used ${player.energyType || 'Mana'} Potion!`,
           ``,
           `✨ Restored: *+${actualRestore} ${player.energyType || 'Mana'}*`,
           `${player.energyColor || '💙'} ${player.energyType || 'Mana'}: *${player.stats.energy}/${player.stats.maxEnergy}*`,
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          `${FRAME}`,
         ].join('\n'),
       }, { quoted: msg });
     }
@@ -426,14 +428,14 @@ ${battleStatus}━━━━━━━━━━━━━━━━━━━━━�
       saveDatabase();
 
       await sock.sendMessage(chatId, {
-        text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        text: `${FRAME}
 🎫 REVIVE TOKEN USED 🎫
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${FRAME}
 💫 *${player.name}* used a Revive Token!
 
 ✨ Restored: *${player.stats.hp}/${player.stats.maxHp} HP*
 🎫 Tokens Left: ${player.inventory.reviveTokens}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━`
+${FRAME}`
       }, { quoted: msg });
       return;
     }

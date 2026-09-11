@@ -14,6 +14,9 @@ module.exports = {
     const player = db.users[sender];
 
     if (!player) return sock.sendMessage(chatId, { text: '❌ Not registered! Use /register [name]' }, { quoted: msg });
+    const UI = require('../../rpg/utils/UI');
+    const pro = UI.isPro(player);
+    const FRAME = pro ? UI.PRO_BAR : UI.FREE_BAR;
     if (!player.inventory) player.inventory = {};
     if (!player.inventory.items) player.inventory.items = [];
     if (!player.equippedGear) player.equippedGear = {};
@@ -28,9 +31,7 @@ module.exports = {
       const rarityOrder = { mythic:0, legendary:1, epic:2, rare:3, uncommon:4, common:5 };
       gearItems.sort((a,b) => (rarityOrder[a.rarity]||6) - (rarityOrder[b.rarity]||6));
 
-      let msg2 = '━━━━━━━━━━━━━━━━━━━━━━━━━━━\n';
-      msg2 += '⚔️ *GEAR*\n';
-      msg2 += '━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n';
+      let msg2 = pro ? `${UI.PRO_BAR}\n⚔️ *GEAR* 💎\n${UI.PRO_BAR}\n\n` : `⚔️ *GEAR*\n${UI.FREE_BAR}\n\n`;
 
       msg2 += '🛡️ *EQUIPPED*\n';
       msg2 += formatEquipped(player);
@@ -51,7 +52,7 @@ module.exports = {
         msg2 += '\n';
       }
 
-      msg2 += '━━━━━━━━━━━━━━━━━━━━━━━━━━━\n';
+      msg2 += `${FRAME}\n`;
       msg2 += '📦 *GEAR INVENTORY*\n\n';
 
       if (gearItems.length === 0) {
@@ -70,11 +71,11 @@ module.exports = {
         });
       }
 
-      msg2 += '━━━━━━━━━━━━━━━━━━━━━━━━━━━\n';
+      msg2 += `${FRAME}\n`;
       msg2 += '/gear equip <#> — equip from list\n';
       msg2 += '/gear unequip <slot> — e.g. /gear unequip helmet\n';
       msg2 += '/gear give <#> @user — transfer gear\n';
-      msg2 += '━━━━━━━━━━━━━━━━━━━━━━━━━━━';
+      msg2 += `${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO GEAR* — ${Object.values(player.equippedGear).length} equipped · ${gearItems.length} banked` : `\n${UI.upsell()}`);
 
       return sock.sendMessage(chatId, { text: msg2 }, { quoted: msg });
     }
@@ -99,9 +100,9 @@ module.exports = {
       equipGear(player, piece);
       saveDatabase();
 
-      let reply = `✅ Equipped *${piece.name}*!\n`;
+      let reply = pro ? `${UI.PRO_BAR}\n✅ *GEAR EQUIPPED!* 💎\n${UI.PRO_BAR}\n\n✅ Equipped *${piece.name}*!\n` : `✅ Equipped *${piece.name}*!\n`;
       if (hadOld) reply += `⚠️ Previous ${si.name} (${hadOld.name}) was destroyed.\n`;
-      reply += `\n${si.emoji} ${si.name} slot now active.`;
+      reply += `\n${si.emoji} ${si.name} slot now active.\n${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO GEAR* — ${si.name} active` : `\n${UI.upsell()}`);
 
       return sock.sendMessage(chatId, { text: reply }, { quoted: msg });
     }
@@ -160,12 +161,12 @@ module.exports = {
 
       const rc = RARITY_CONFIG[piece.rarity] || RARITY_CONFIG.common;
       return sock.sendMessage(chatId, {
-        text: `📦 Sent *${rc.emoji} ${piece.name}* to *${target.name}*!\n\nThey'll find it in their /gear inventory.`
+        text: (pro ? `${UI.PRO_BAR}\n📦 *GEAR SENT!* 💎\n${UI.PRO_BAR}\n\nSent *${rc.emoji} ${piece.name}* to *${target.name}*!\n\nThey'll find it in their /gear inventory.\n${UI.PRO_BAR}\n${UI.PRO_MINI}\n💎 *PRO GEAR* — sent ${piece.name}` : `📦 Sent *${rc.emoji} ${piece.name}* to *${target.name}*!\n\nThey'll find it in their /gear inventory.\n${UI.FREE_BAR}\n${UI.upsell()}`)
       }, { quoted: msg });
     }
 
     return sock.sendMessage(chatId, {
-      text: '❌ Unknown subcommand.\n\n/gear — view gear\n/gear equip <#>\n/gear unequip <slot>\n/gear give <#> @user'
+      text: (pro ? `${UI.PRO_BAR}\n⚔️ *GEAR COMMANDS* 💎\n${UI.PRO_BAR}\n\n/gear — view gear\n/gear equip <#>\n/gear unequip <slot>\n/gear give <#> @user\n${UI.PRO_BAR}\n${UI.PRO_MINI}\n💎 *PRO GEAR* — manage your kit` : `⚔️ *GEAR COMMANDS*\n${UI.FREE_BAR}\n\n/gear — view gear\n/gear equip <#>\n/gear unequip <slot>\n/gear give <#> @user\n${UI.FREE_BAR}\n${UI.upsell()}`)
     }, { quoted: msg });
   }
 };

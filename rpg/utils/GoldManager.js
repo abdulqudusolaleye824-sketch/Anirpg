@@ -40,6 +40,11 @@ function updatePlayerNexus(player, amount, saveDatabase) {
     player.inventory.gold = player.gold;
   }
 
+  // Daily quest: Nexus earned (any source) — silent track, no sock here
+  if (amount > 0) {
+    try { require('./DailyQuestSystem').trackQuestProgress(player, 'goldEarn', Math.floor(amount)); } catch(e){}
+  }
+
   // Save
   if (saveDatabase) {
     try {

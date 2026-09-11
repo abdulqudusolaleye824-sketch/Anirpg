@@ -9,6 +9,7 @@ const fs = require('fs');
 const path = require('path');
 const { AWAKENING_RANKS, calculatePowerRating, getPowerLabel } = require('../../rpg/utils/SoloLevelingCore');
 const { getQualityLabel } = require('../../rpg/utils/ClassSystem');
+const UI = require('../../rpg/utils/UI');
 
 // Default /profile image (WA0052 — Astra gold "A" logo).
 const DEFAULT_PROFILE_IMG = path.join(__dirname, '..', '..', 'assets', 'profile_default.jpg');
@@ -95,12 +96,9 @@ function buildCard(player, db, targetId, mentionedId, isOwnProfile) {
       ? new Date(player.registeredAt + 3600000).toISOString().slice(0, 10)
       : 'Unknown';
 
-  return [
-    `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-    `👤 *${player.name}*`,
+  const pro = UI.isPro(player);
+  const rows = [
     equippedTitle !== 'None' ? `🎖️ "${equippedTitle}"` : null,
-    `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-    ``,
     `${rankData.emoji} *Rank:* ${rankDisplay}`,
     `⭐ *Level:* ${player.level || 1}`,
     `⚡ *Power:* ${power.toLocaleString()} ${powerLabel.emoji} ${powerLabel.label}`,
@@ -109,20 +107,14 @@ function buildCard(player, db, targetId, mentionedId, isOwnProfile) {
     `🏰 *Guild:* ${guildDisplay}`,
     `🏢 *Status:* ${employmentStatus}`,
     ``,
-    `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-    `💠 *WEALTH*`,
-    `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+    UI.section('WEALTH', '💠', pro),
     `💠 Nexus: *${Nexus}*`,
     `💎 Mana Stones: *${manaStones}*`,
     ``,
-    `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-    `⚡ *SKILLS (${skillsTotal} total)*`,
-    `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+    UI.section(`SKILLS (${skillsTotal} total)`, '⚡', pro),
     ...skillLines,
     ``,
-    `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-    `📋 *HUNTER INFO*`,
-    `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+    UI.section('HUNTER INFO', '📋', pro),
     player.dateOfBirth ? `📅 D.O.B: *${player.dateOfBirth}*` : null,
     `🐾 Pets Owned: *${petsTotal}*`,
     petDisplay !== 'None' ? `🐾 Active Pet: ${petDisplay}` : null,
@@ -130,9 +122,20 @@ function buildCard(player, db, targetId, mentionedId, isOwnProfile) {
     `⭐ Pro Status: *${proLabel}*`,
     isBanned ? `🚫 Banned: *True*` : null,
     `📆 Joined: *${regDate}*`,
-    ``,
-    `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-  ].filter(l => l !== null).join('\n');
+  ].filter(l => l !== null);
+  const nextXp = UI.xpForLevel(player.level);
+  const elo = player.pvpElo || 1000;
+  const pw = player.pvpWins || 0, pl = player.pvpLosses || 0;
+  const proLines = [
+    `💎 *PRO INSIGHT*`,
+    `⚔️ PvP: *${UI.num(elo)}* ELO (${pw}W/${pl}L${(pw + pl) > 0 ? `, ${Math.round((pw / (pw + pl)) * 100)}%` : ''})`,
+    `📊 XP: ${UI.bar(player.xp, nextXp, 10, true)} (${UI.num(player.xp)}/${UI.num(nextXp)})`,
+    `🔥 Power: *${UI.num(power)}* ${powerLabel.emoji}`,
+  ];
+  return UI.card(player, {
+    icon: '👤', title: player.name, lines: rows, proLines,
+    tip: isOwnProfile ? '/stats for battle detail' : `Viewing ${player.name}'s journey`,
+  });
 }
 
 module.exports = {

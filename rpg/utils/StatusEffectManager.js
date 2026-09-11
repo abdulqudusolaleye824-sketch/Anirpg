@@ -9,7 +9,7 @@ class StatusEffectManager {
     burn:      { name: 'Burn',      emoji: '🔥', damagePerTurn: 15, duration: 3 },
     bleed:     { name: 'Bleed',     emoji: '🩸', damagePerTurn: 12, duration: 4 },
     stun:      { name: 'Stun',      emoji: '⭐', skipTurnChance: 1.0, duration: 1 },
-    freeze:    { name: 'Freeze',    emoji: '❄️', skipTurnChance: 0.5, duration: 2 },
+    freeze:    { name: 'Freeze',    emoji: '❄️', damagePerTurn: 12, skipTurnChance: 1.0, duration: 2 },
     weaken:    { name: 'Weaken',    emoji: '💔', atkReduction: 0.3, duration: 3 },
     enfeeble:  { name: 'Enfeeble',  emoji: '🐢', defReduction: 0.3, duration: 3 },
     fear:      { name: 'Fear',      emoji: '😱', skipTurnChance: 0.4, atkReduction: 0.2, duration: 2 },
@@ -17,6 +17,7 @@ class StatusEffectManager {
     silence:   { name: 'Silence',   emoji: '🤐', noSkills: true, duration: 2 },
     blind:     { name: 'Blind',     emoji: '🌫️', accuracyReduction: 0.5, duration: 2 },
     paralyze:  { name: 'Paralyze',  emoji: '⚡', skipTurnChance: 0.7, duration: 2 },
+    curse:     { name: 'Curse',     emoji: '💀', defReduction: 0.15, duration: 3 },
     lifesteal: { name: 'Lifesteal', emoji: '💚', isPassive: true, duration: 3 }
   };
 
@@ -51,15 +52,27 @@ class StatusEffectManager {
     let totalDamage = 0, canAct = true, canUseSkills = true;
     const messages = [];
     for (const effect of entity.statusEffects) {
+      // Bridge: UnifiedCombat-applied freeze has no damagePerTurn — use 3% max HP
+      if ((effect.type || '').toLowerCase() === 'freeze' && !(effect.damagePerTurn > 0) && entity.stats) {
+        const _fdmg = Math.floor((entity.stats.maxHp || 100) * 0.03);
+        entity.stats.hp = Math.max(0, entity.stats.hp - _fdmg);
+        totalDamage += _fdmg;
+        messages.push((effect.emoji || '❄️') + ' ' + entity.name + ' suffers ' + _fdmg + ' Freeze damage!');
+      }
       if (effect.damagePerTurn > 0) {
         const dmg = effect.damagePerTurn;
         entity.stats.hp = Math.max(0, entity.stats.hp - dmg);
         totalDamage += dmg;
         messages.push(effect.emoji + ' ' + entity.name + ' suffers ' + dmg + ' ' + effect.name + ' damage!');
       }
-      if (effect.skipTurnChance > 0 && Math.random() < effect.skipTurnChance) {
+      const _fxType = (effect.type || '').toLowerCase();
+      // Bridge: UnifiedCombat-applied freeze/stun (no skipTurnChance field) still hard-skip
+      const _hardSkip = _fxType === 'freeze' || _fxType === 'stun';
+      if (_hardSkip || (effect.skipTurnChance > 0 && Math.random() < effect.skipTurnChance)) {
         canAct = false;
-        messages.push(effect.emoji + ' ' + entity.name + ' is ' + effect.name.toLowerCase() + 'd and cannot act!');
+        const past = { stun: 'stunned', freeze: 'frozen', paralyze: 'paralyzed', fear: 'feared' }[_fxType]
+          || ((effect.name || effect.type || 'afflicted').toLowerCase() + 'd');
+        messages.push((effect.emoji || '✨') + ' ' + entity.name + ' is ' + past + ' and cannot act!');
       }
       if (effect.noSkills) {
         canUseSkills = false;
@@ -69,7 +82,7 @@ class StatusEffectManager {
     }
     const expired = entity.statusEffects.filter(e => e.duration <= 0);
     entity.statusEffects = entity.statusEffects.filter(e => e.duration > 0);
-    for (const e of expired) messages.push(e.emoji + ' ' + entity.name + "'s " + e.name + ' wore off!');
+    for (const e of expired) messages.push((e.emoji || '✨') + ' ' + entity.name + "'s " + (e.name || e.type) + ' wore off!');
     return { damage: totalDamage, messages, canAct, canUseSkills };
   }
 

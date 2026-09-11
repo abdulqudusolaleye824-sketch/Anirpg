@@ -52,18 +52,20 @@ module.exports = {
                   || '';
 
     const isAddCmd = command === 'addprocoin' || command === 'addpc';
+    const UI = require('../../rpg/utils/UI');
+    const pro = UI.isPro(db.users?.[sender] || db.users?.[normaliseJid(sender)] || {});
+    const FRAME = pro ? UI.PRO_BAR : UI.FREE_BAR;
 
     // ── /addprocoin / /addpc ───────────────────────────────────────────────────
     if (isAddCmd) {
       if (!isPrivileged(sender)) {
         return sock.sendMessage(chatId, {
           text: [
-            `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-            `💠 *PROCOIN — ACCESS DENIED*`,
-            `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+            ...(pro ? [UI.PRO_BAR, `💠 *PROCOIN — ACCESS DENIED* 💎`, UI.PRO_BAR] : [`💠 *PROCOIN — ACCESS DENIED*`, UI.FREE_BAR]),
             ``,
             `❌ Only the *Owner* or *Co-Owner* can grant Procoins.`,
-            `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+            FRAME,
+            ...(pro ? [UI.PRO_MINI, `💎 *PRO MINT* — grants are owner-only`] : [UI.upsell()]),
           ].join('\n'),
         }, { quoted: msg });
       }
@@ -73,16 +75,15 @@ module.exports = {
       if (!amount || amount <= 0) {
         return sock.sendMessage(chatId, {
           text: [
-            `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-            `💠 *GRANT PROCOIN*`,
-            `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+            ...(pro ? [UI.PRO_BAR, `💠 *GRANT PROCOIN* 💎`, UI.PRO_BAR] : [`💠 *GRANT PROCOIN*`, UI.FREE_BAR]),
             ``,
             `❌ Please specify a valid amount.`,
             ``,
             `*Usage:*`,
             `/addpc 2000 @user`,
             `/addpc 500  _(reply to a message)_`,
-            `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+            FRAME,
+            ...(pro ? [UI.PRO_MINI, `💎 *PRO MINT* — owner grants`] : [UI.upsell()]),
           ].join('\n'),
         }, { quoted: msg });
       }
@@ -95,15 +96,14 @@ module.exports = {
       if (!targetJid) {
         return sock.sendMessage(chatId, {
           text: [
-            `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-            `💠 *GRANT PROCOIN*`,
-            `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+            ...(pro ? [UI.PRO_BAR, `💠 *GRANT PROCOIN* 💎`, UI.PRO_BAR] : [`💠 *GRANT PROCOIN*`, UI.FREE_BAR]),
             ``,
             `❌ No target found.`,
             `@mention a player or reply to their message.`,
             ``,
             `*Example:* /addpc 2000 @user`,
-            `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+            FRAME,
+            ...(pro ? [UI.PRO_MINI, `💎 *PRO MINT* — owner grants`] : [UI.upsell()]),
           ].join('\n'),
         }, { quoted: msg });
       }
@@ -127,16 +127,15 @@ module.exports = {
 
       return sock.sendMessage(chatId, {
         text: [
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-          `💠 *PROCOIN GRANTED*`,
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          ...(pro ? [UI.PRO_BAR, `💠 *PROCOIN GRANTED* 💎`, UI.PRO_BAR] : [`💠 *PROCOIN GRANTED*`, UI.FREE_BAR]),
           ``,
           `👤 *Player:* ${targetPlayer.name}`,
           `💠 *Granted:* +${amount.toLocaleString()} PC`,
           `💼 *New Balance:* ${targetPlayer.procoin.toLocaleString()} PC`,
           ``,
           `✦ Granted by: *${grantorName}*`,
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          FRAME,
+          ...(pro ? [UI.PRO_MINI, `💎 *PRO MINT* — +${amount.toLocaleString()} PC to ${targetPlayer.name}`] : [UI.upsell()]),
         ].join('\n'),
         mentions: mentionedJids.length ? mentionedJids : undefined,
       }, { quoted: msg });
@@ -159,14 +158,13 @@ module.exports = {
 
     return sock.sendMessage(chatId, {
       text: [
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-        `💠 *PROCOIN BALANCE*`,
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        ...(pro ? [UI.PRO_BAR, `💠 *PROCOIN BALANCE* 💎`, UI.PRO_BAR] : [`💠 *PROCOIN BALANCE*`, UI.FREE_BAR]),
         ``,
         `👤 *${player.name}*`,
         `💠 *Procoin (PC):* ${player.procoin.toLocaleString()} PC`,
         privNote,
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        FRAME,
+        ...(pro ? [UI.PRO_MINI, `💎 *PRO MINT* — ${player.procoin.toLocaleString()} PC`] : [UI.upsell()]),
       ].join('\n'),
     }, { quoted: msg });
   },

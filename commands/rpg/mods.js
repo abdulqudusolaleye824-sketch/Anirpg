@@ -34,17 +34,20 @@ module.exports = {
 
     const coOwnerNum = cleanBare(COOWNER_JID);
     const visibleOwners = owners.filter(j => cleanBare(j) !== coOwnerNum);
+    const UI = require('../../rpg/utils/UI');
+    const pro = UI.isPro(db.users?.[sender] || {});
+    const FRAME = pro ? UI.PRO_BAR : UI.FREE_BAR;
 
-    let txt = `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n👑 *BOT STAFF* 👑\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+    let txt = pro ? `${UI.PRO_BAR}\n👑 *BOT STAFF* 👑 💎\n${UI.PRO_BAR}\n` : `👑 *BOT STAFF* 👑\n${UI.FREE_BAR}\n`;
     txt += `👑 Owner: ${visibleOwners.length}\n`;
     txt += `⭐ Mods:  ${mods.length}\n`;
-    txt += `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
+    txt += `${FRAME}\n\n`;
 
     const mentions = [];
 
     // ── Owner ─────────────────────────────────────────────
     txt += `👑 *OWNER*\n`;
-    txt += `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+    txt += `${FRAME}\n`;
     for (let i = 0; i < visibleOwners.length; i++) {
       const jid = visibleOwners[i];
       const bareNum = cleanBare(jid);
@@ -62,7 +65,7 @@ module.exports = {
 
     // ── Mods ───────────────────────────────────────────────
     txt += `⭐ *MODS* (${mods.length})\n`;
-    txt += `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+    txt += `${FRAME}\n`;
     if (mods.length === 0) {
       txt += `_No mods registered yet._\n_Add one with_ \`/set --mod @user --true\` _ (owner-only)_\n`;
     } else {
@@ -82,11 +85,11 @@ module.exports = {
       }
     }
 
-    txt += `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+    txt += `${FRAME}\n`;
     txt += `💡 *MANAGEMENT COMMANDS:*\n`;
     txt += `/set --mod @user --true   — promote to mod (owner)\n`;
     txt += `/set --mod @user --false  — demote mod (owner)\n`;
-    txt += `━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+    txt += `${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO STAFF* — ${visibleOwners.length} owners · ${mods.length} mods` : `\n${UI.upsell()}`);
 
     if (COOWNER_JID) mentions.push(`${coOwnerNum}@s.whatsapp.net`);
 

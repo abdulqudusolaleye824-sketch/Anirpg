@@ -41,11 +41,14 @@ module.exports = {
     const chatId = msg.key.remoteJid;
     const db = getDatabase();
     const player = db.users[sender];
+    const UI = require('../../rpg/utils/UI');
+    const pro = UI.isPro(player || {});
+    const FRAME = pro ? UI.PRO_BAR : UI.FREE_BAR;
     const cur = isValidTz(player?.timezone) || DEFAULT_TZ;
 
     if (args.length === 0) {
       return sock.sendMessage(chatId, {
-        text: `🕐 Your timezone: *${cur}*\n\n⏰ Daily quests *(${dayKey(cur)})* and weekly challenges reset at midnight in YOUR timezone, so the bot is accurate for players worldwide.\n\nTo change it: /timezone <zone>\n\nExamples:\n/timezone America/New_York\n/timezone Asia/Tokyo\n/timezone list`,
+        text: (pro ? `${UI.PRO_BAR}\n🕐 *YOUR TIMEZONE* 💎\n${UI.PRO_BAR}\n\nNow: *${cur}*\n\n⏰ Daily quests *(${dayKey(cur)})* and weekly challenges reset at midnight in YOUR timezone.\n\nTo change it: /timezone <zone>\nExamples: /timezone America/New_York · /timezone Asia/Tokyo · /timezone list\n${UI.PRO_BAR}\n${UI.PRO_MINI}\n💎 *PRO CLOCK* — ${cur}` : `🕐 Your timezone: *${cur}*\n${UI.FREE_BAR}\n\n⏰ Daily quests *(${dayKey(cur)})* and weekly challenges reset at midnight in YOUR timezone.\n\nTo change it: /timezone <zone>\n\nExamples:\n/timezone America/New_York\n/timezone Asia/Tokyo\n/timezone list\n${UI.FREE_BAR}\n${UI.upsell()}`),
       }, { quoted: msg });
     }
 
@@ -54,7 +57,7 @@ module.exports = {
     if (arg === 'list') {
       const list = COMMON.map(([z, n]) => `• ${z}  — ${n}`).join('\n');
       return sock.sendMessage(chatId, {
-        text: `🗺️ *Common timezones:*\n${list}\n\n(Any IANA zone works, e.g. /timezone Asia/Kolkata)`,
+        text: (pro ? `${UI.PRO_BAR}\n🗺️ *COMMON TIMEZONES* 💎\n${UI.PRO_BAR}\n\n${list}\n\n(Any IANA zone works, e.g. /timezone Asia/Kolkata)\n${UI.PRO_BAR}\n${UI.PRO_MINI}\n💎 *PRO CLOCK* — now: ${cur}` : `🗺️ *Common timezones:*\n${UI.FREE_BAR}\n\n${list}\n\n(Any IANA zone works, e.g. /timezone Asia/Kolkata)\n${UI.FREE_BAR}\n${UI.upsell()}`),
       }, { quoted: msg });
     }
 
@@ -68,7 +71,8 @@ module.exports = {
       'germany': 'Europe/Berlin', 'paris': 'Europe/Paris', 'france': 'Europe/Paris',
       'brazil': 'America/Sao_Paulo', 'australia': 'Australia/Sydney', 'ghana': 'Africa/Accra',
     };
-    const zone = isValidTz(arg) ? arg
+    const zone = isValidTz(args[0]) ? args[0]
+               : isValidTz(arg) ? arg
                : isValidTz(aliases[arg]) ? aliases[arg]
                : null;
 
@@ -87,7 +91,7 @@ module.exports = {
     player.timezone = zone;
     saveDatabase();
     return sock.sendMessage(chatId, {
-      text: `✅ Timezone set to *${zone}*.\n\nYour daily quests and weekly challenges now reset at midnight your time.\nToday (your zone): ${dayKey(zone)}`,
+      text: (pro ? `${UI.PRO_BAR}\n✅ *TIMEZONE SET!* 💎\n${UI.PRO_BAR}\n\nNow: *${zone}*.\n\nYour daily quests and weekly challenges now reset at midnight your time.\nToday (your zone): ${dayKey(zone)}\n${UI.PRO_BAR}\n${UI.PRO_MINI}\n💎 *PRO CLOCK* — ${zone}` : `✅ Timezone set to *${zone}*.\n${UI.FREE_BAR}\n\nYour daily quests and weekly challenges now reset at midnight your time.\nToday (your zone): ${dayKey(zone)}\n${UI.FREE_BAR}\n${UI.upsell()}`),
     }, { quoted: msg });
   },
 };

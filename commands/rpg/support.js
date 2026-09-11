@@ -9,6 +9,7 @@ const AstralGroups = require('../../rpg/utils/AstralGroups');
 const SerfManager = require('../../rpg/utils/SerfManager');
 const MultiSocketManager = require('../../bots/MultiSocketManager');
 const ButtonHelper = (()=>{ try { return require('../../utils/buttonHelper'); } catch(e){ return null; } })();
+const UI = require('../../rpg/utils/UI');
 
 function getAstraSupportImage(){
   const candidates = [
@@ -66,7 +67,7 @@ module.exports = {
     const buttonGroups = [];
     for (const g of allMain) {
       const info = AstralGroups.typeInfo(g.type);
-      groupLinesText.push(`${info.emoji} *${info.name}* (${g.type.toUpperCase()})`);
+      groupLinesText.push(`${info.emoji} *${info.name}*`);
       if (g.inviteLink) {
         buttonGroups.push({
           type: g.type,
@@ -88,28 +89,16 @@ module.exports = {
       }
     }
 
-    // Screenshot-style text: simple header + tap prompt (matches Sapphire example)
-    // FIX: always include invite links as plain text so Business clients without button rendering can still join
-    const inviteLines = buttonGroups.map(g=>`🔗 ${g.typeInfo?.name || g.type}: ${g.inviteLink}`).join('\n');
-    const dmText = [
-      `📌 *Astra™ Arise Support Groups*`,
-      ``,
-      `Tap a group below to join.`,
-      ``,
-      ...(inviteLines ? [inviteLines] : []),
-    ].join('\n');
-    // Keep detailed version as fallback if no buttons? But use simple for image caption
-    // FIX: fullDmText now always includes invite links as plain text so Business clients without button rendering still get clickable links ( Sapphire on Business used template but non-Business Kira does not render interactive)
+    // Names only — invite links ride on the URL buttons below (raw links are kept
+    // ONLY as a last-resort fallback when button delivery throws).
+    const dmPro = UI.isPro(db.users?.[sender]);
     const fullDmText = [
-      `━━━━━━━━━━━━━━━━━━━━━━━`,
-      `🛡️ *ASTRA SUPPORT GROUPS*`,
-      `━━━━━━━━━━━━━━━━━━━━━━━`,
+      ...(dmPro ? [UI.PRO_BAR, `🛡️ *ASTRA SUPPORT GROUPS* 💎`, UI.PRO_BAR] : [`🛡️ *ASTRA SUPPORT GROUPS*`, UI.FREE_BAR]),
       `Tap a group below to join.`,
       ``,
       ...(groupLinesText.length ? groupLinesText : ['⚠️ No main community groups configured yet. Ask the owner to set them using `/setgroup <type> --main`.']),
       ``,
-      ...(buttonGroups.length ? ['━━━━━━━━━━━━━━━━━━━━━━━', ...buttonGroups.map(g=>`🔗 ${g.typeInfo?.name || g.type}: ${g.inviteLink}`), ''] : []),
-      `━━━━━━━━━━━━━━━━━━━━━━━`,
+      dmPro ? UI.PRO_BAR : UI.FREE_BAR,
     ].join('\n');
     const supportImage = getAstraSupportImage();
 

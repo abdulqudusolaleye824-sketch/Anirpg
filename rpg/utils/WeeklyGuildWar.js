@@ -156,6 +156,11 @@ function awardVictoryCardToGuildMembers(db, guild, cardType) {
 }
 
 function addGP(db, playerId, points, saveDatabase) {
+  // Central ledger: weekly + lifetime + guild.guildPoints + gp quest stay in sync
+  try {
+    const GPS = require('./GuildPointsSystem');
+    if (GPS.addGuildGP) { GPS.addGuildGP(db, playerId, points, 'Weekly war GP', { saveDatabase, quest: points > 0, jid: playerId }); return; }
+  } catch(e){}
   try {
     if (!db || !playerId || !points) return;
     checkWeeklyReset(db, saveDatabase);

@@ -11,6 +11,7 @@
 'use strict';
 
 const https = require('https');
+const UI = require('../../rpg/utils/UI');
 
 // Per-user cooldown: 20 seconds
 const cooldowns = new Map();
@@ -57,19 +58,24 @@ module.exports = {
 
   async execute(sock, msg, args, getDatabase, saveDatabase, sender) {
     const chatId = msg.key.remoteJid;
+    const proI = UI.isPro(getDatabase().users[sender]);
 
     if (!args.length) {
       return sock.sendMessage(chatId, {
         text: [
-          '🎨 *AI Image Generator (Ultra Sharp Flux)*',
-          '',
+          (proI ? UI.PRO_BAR : UI.FREE_BAR),
+          '🎨 *AI IMAGE GENERATOR*',
+          proI ? (UI.PRO_MINI + '\n' + '🎨 PRO STUDIO') : null,
+          proI ? '⚡ Flux 1024×1024 · ⏳ 20s cooldown between renders' : null,
+          proI ? '' : null,
           '📌 Usage: /imagine <prompt>',
           '',
           '💡 Examples:',
           '  /imagine Shadow Monarch Sung Jinwoo with purple aura',
           '  /imagine anime girl with silver hair in a crystal dungeon',
           '  /imagine Solo Leveling gate opening over Tokyo skyline',
-        ].join('\n'),
+          (proI ? UI.PRO_BAR : UI.FREE_BAR),
+        ].filter(x => x !== null).join('\n'),
       }, { quoted: msg });
     }
 

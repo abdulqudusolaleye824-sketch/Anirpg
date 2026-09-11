@@ -13,6 +13,7 @@
 const Perms = require('../../utils/permissions');
 const { stripDevice, OWNER_JID, COOWNER_JID } = require('../../utils/constants');
 const Mod = require('../../rpg/utils/ModerationUtils');
+const UI = require('../../rpg/utils/UI');
 
 module.exports = {
   name: 'set',
@@ -22,6 +23,7 @@ module.exports = {
   async execute(sock, msg, args, getDatabase, saveDatabase, sender) {
     const chatId = msg.key.remoteJid;
     const db = getDatabase();
+    const proSet = UI.isPro(db.users[sender]);
 
     // Must be at least a mod to use /set
     if (!Perms.isBotMod(db, sender)) {
@@ -50,9 +52,9 @@ module.exports = {
     if (!requestedFlag) requestedFlag = Object.keys(flags)[0] || null;
     if (!requestedFlag) {
       return sock.sendMessage(chatId, {
-        text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━
-⚙️ *SET COMMANDS*
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        text: `${(proSet ? UI.PRO_BAR : UI.FREE_BAR)}
+${'⚙️ *SET COMMANDS*'}
+${proSet ? `⭐ *${(db.botMods || []).length}* mods · 🛠️ Maintenance *${db.system && db.system.maintenance ? 'ON' : 'OFF'}* · 🚪 *${Object.keys(db.gateSpawns || {}).filter(k => db.gateSpawns[k]).length}* spawn GCs\n\n` : ''}⭐ *MOD MANAGEMENT* (owner-only)
 
 ⭐ *MOD MANAGEMENT* (owner-only)
 \`/set --mod @user --true\`    promote
@@ -70,7 +72,7 @@ _Owners (Senku + Naruto) are permanent and cannot be modified._
 \`/set spawn --true\`        allow gates to spawn in THIS group
 \`/set spawn --false\`       stop gates spawning here
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━`
+${(proSet ? UI.PRO_BAR : UI.FREE_BAR)}`
       }, { quoted: msg });
     }
 
@@ -105,9 +107,9 @@ _Owners (Senku + Naruto) are permanent and cannot be modified._
       db.system.maintenance = want;
       saveDatabase();
       return sock.sendMessage(chatId, {
-        text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🔧 *MAINTENANCE MODE: ${want ? 'ON' : 'OFF'}*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n${want
+        text: `${(proSet ? UI.PRO_BAR : UI.FREE_BAR)}\n${`🔧 *MAINTENANCE MODE: ${want ? 'ON' : 'OFF'}*`}\n\n${want
   ? '🚧 Non-mod commands will be silently ignored.\nMods/owners can still use all commands.'
-  : '✅ Bot is back to normal. Everyone can use commands.'}\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━`
+  : '✅ Bot is back to normal. Everyone can use commands.'}\n${proSet ? (UI.PRO_MINI + '\n' + '👑 PRO CONSOLE') + '\n' + `🛠️ Flag state saved — all GCs updated instantly.` + '\n' : ''}\n${(proSet ? UI.PRO_BAR : UI.FREE_BAR)}`
       }, { quoted: msg });
     }
 
@@ -148,9 +150,9 @@ _Owners (Senku + Naruto) are permanent and cannot be modified._
       }
       saveDatabase();
       return sock.sendMessage(chatId, {
-        text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🚪 *SPAWN SYSTEM: ${want ? 'ON' : 'OFF'}*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n${want
+        text: `${(proSet ? UI.PRO_BAR : UI.FREE_BAR)}\n${`🚪 *SPAWN SYSTEM: ${want ? 'ON' : 'OFF'}*`}\n\n${want
           ? '✅ *Gates* will now spawn in this group. First gate in a few minutes.\n🎁 *Item Spawns* (common→epic, Mending Stone & materials) enabled — *ONCE daily globally* across all enabled GCs. Use /claim to grab them.\n💎 Mending Stones restore durability — use /use mending stone'
-          : '🛑 Gates and daily item spawns disabled in this group.'}\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━`
+          : '🛑 Gates and daily item spawns disabled in this group.'}\n\n${(proSet ? UI.PRO_BAR : UI.FREE_BAR)}`
       }, { quoted: msg });
     }
 
@@ -172,6 +174,7 @@ _Owners (Senku + Naruto) are permanent and cannot be modified._
 
 async function handleModFlag(sock, msg, db, saveDatabase, sender, rawArgs) {
   const chatId = msg.key.remoteJid;
+  const proH = UI.isPro(db.users[sender]);
   const args   = rawArgs || [];
 
   let value = true;
@@ -218,7 +221,7 @@ async function handleModFlag(sock, msg, db, saveDatabase, sender, rawArgs) {
     }
 
     return sock.sendMessage(chatId, {
-      text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n⭐ *MOD PROMOTED*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n👤 @${targetBare} is now a mod.\n\n💰 *Promotion reward:*\n${rewardLine}\n\nThey can now use: /ban, /mute, /kick, /tagall, /set, /mods\n━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+      text: `${(proH ? UI.PRO_BAR : UI.FREE_BAR)}\n${'⭐ *MOD PROMOTED*'}\n\n👤 @${targetBare} is now a mod.\n\n💰 *Promotion reward:*\n${rewardLine}\n\nThey can now use: /ban, /mute, /kick, /tagall, /set, /mods\n${(proH ? UI.PRO_BAR : UI.FREE_BAR)}`,
       mentions: [target, sender]
     }, { quoted: msg });
   } else {
@@ -228,7 +231,7 @@ async function handleModFlag(sock, msg, db, saveDatabase, sender, rawArgs) {
     db.botMods = db.botMods.filter(j => Mod.bare(j) !== targetBare);
     saveDatabase();
     return sock.sendMessage(chatId, {
-      text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n❌ *MOD DEMOTED*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n👤 @${targetBare} is no longer a mod.\n━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+      text: `${(proH ? UI.PRO_BAR : UI.FREE_BAR)}\n${'❌ *MOD DEMOTED*'}\n\n👤 @${targetBare} is no longer a mod.\n${(proH ? UI.PRO_BAR : UI.FREE_BAR)}`,
       mentions: [target, sender]
     }, { quoted: msg });
   }
@@ -242,6 +245,7 @@ function extractTarget(msg) {
 
 async function handleTitleGrant(sock, msg, db, saveDatabase, sender, args) {
   const chatId = msg.key.remoteJid;
+  const proT = UI.isPro(db.users[sender]);
   const { TITLES, RARITIES } = require('../../rpg/utils/TitleSystem');
 
   const userToken = args.find(a => a.startsWith('@') || a.includes('@s.whatsapp.net') || a.includes('@lid'));
@@ -291,7 +295,7 @@ async function handleTitleGrant(sock, msg, db, saveDatabase, sender, args) {
   const def = TITLES[match];
   const rarity = RARITIES[def.rarity] || RARITIES.common;
   return sock.sendMessage(chatId, {
-    text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n👑 *TITLE GRANTED*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n${rarity.code} *${def.display}*\n\n👤 Granted to: @${targetId.split('@')[0]}\n⚡ Stat Boost: ${def.boostDesc}\n\nUse \`/title equip ${match}\` to equip it.\n━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+    text: `${(proT ? UI.PRO_BAR : UI.FREE_BAR)}\n${'👑 *TITLE GRANTED*'}\n\n${rarity.code} *${def.display}*\n\n👤 Granted to: @${targetId.split('@')[0]}\n⚡ Stat Boost: ${def.boostDesc}\n\nUse \`/title equip ${match}\` to equip it.\n${(proT ? UI.PRO_BAR : UI.FREE_BAR)}`,
     mentions: [targetId, sender]
   }, { quoted: msg });
 }

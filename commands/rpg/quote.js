@@ -60,11 +60,31 @@ module.exports = {
     COOLDOWNS.set(sender, now);
 
     // ── Extract quoted message universally ─────────────────────────
-    const { contextInfo, quoted } = extractContextAndQuoted(msg);
+    let { contextInfo, quoted } = extractContextAndQuoted(msg);
+    // Tag mode: /q @user <text> — a reply (with text) always wins over a tag
+    if (!quoted) {
+      const cmdCtx = msg.message?.extendedTextMessage?.contextInfo || null;
+      const tagged = cmdCtx?.mentionedJid?.[0];
+      const tagText = args.join(' ').replace(/@\d[\d\s]*/g, '').trim();
+      if (tagged && tagText) {
+        quoted = { conversation: tagText };
+        contextInfo = { participant: tagged, mentionedJid: cmdCtx.mentionedJid };
+      }
+    }
     if (!contextInfo || !quoted) {
-      return sock.sendMessage(chatId, {
-        text: '📌 *Reply to a message* to turn it into a quote sticker.\nUsage: /q (reply to someone\'s text)'
-      }, { quoted: msg });
+      const UI = require('../../rpg/utils/UI');
+      const text = UI.card(db?.users?.[sender], {
+        icon: '📌', title: 'QUOTE STICKER',
+        lines: [
+          `*Reply to a message* to turn it into a quote sticker.`,
+          ``,
+          `/q (reply to text) — quote it`,
+          `/q @user <text> — quote anyone`,
+        ],
+        proLines: [`💎 *PRO QUOTES* — priority render queue`],
+        tip: 'works on text, captions & button replies',
+      });
+      return sock.sendMessage(chatId, { text }, { quoted: msg });
     }
 
     // ── Extract text from quoted message ────────────────────────
@@ -94,6 +114,12 @@ module.exports = {
 
     if (senderName === 'Unknown' && db?.users?.[quotedParticipant]?.name) {
       senderName = db.users[quotedParticipant].name;
+    }
+
+    // WA-name fallback: match the sender by bare number (covers LID/PN JID mismatches)
+    if (senderName === 'Unknown' && quotedNumStr && db?.users) {
+      const hit = Object.entries(db.users).find(([jid, u]) => u?.name && String(jid).replace(/[^0-9]/g, '') === quotedNumStr);
+      if (hit) senderName = hit[1].name;
     }
 
     if (senderName === 'Unknown' && chatId.endsWith('@g.us')) {

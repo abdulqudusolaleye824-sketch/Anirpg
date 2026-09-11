@@ -56,6 +56,9 @@ module.exports = {
           text: '❌ You don\'t have a character! Use `/register` to start.'
         }, { quoted: msg });
       }
+      const UI = require('../../rpg/utils/UI');
+      const pro = UI.isPro(thief);
+      const FRAME = pro ? UI.PRO_BAR : UI.FREE_BAR;
 
       const contextInfo = msg.message?.extendedTextMessage?.contextInfo;
       const mentionedJids = contextInfo?.mentionedJid || [];
@@ -80,11 +83,12 @@ module.exports = {
         }, { quoted: msg });
       }
 
-      const cooldownTime = 30 * 60 * 1000;
+      const _isProThief = !!((thief.isPro || thief.proStatus) && thief.proExpiresAt && thief.proExpiresAt > Date.now());
+      const cooldownTime = (_isProThief ? 15 : 30) * 60 * 1000;
       if (thief.stealCooldown && Date.now() < thief.stealCooldown) {
         const remaining = Math.ceil((thief.stealCooldown - Date.now()) / 60000);
         return await sock.sendMessage(chatId, {
-          text: `⏰ Cooldown active! Wait *${remaining}* more minute${remaining > 1 ? 's' : ''} before robbing again.`
+          text: `⏰ Cooldown active! Wait *${remaining}* more minute${remaining > 1 ? 's' : ''} before robbing again.` + (_isProThief ? '' : '\n💡 PRO cuts this cooldown in half (15m)!')
         }, { quoted: msg });
       }
 
@@ -124,15 +128,17 @@ module.exports = {
         saveDatabase();
 
         return await sock.sendMessage(chatId, {
-          text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🥷 *SUCCESSFUL ROBBERY!*
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-You stealthily robbed *@${targetJid.split('@')[0]}*!
+          text: (pro ? `${UI.PRO_BAR}
+🥷 *SUCCESSFUL ROBBERY!* 💎
+${UI.PRO_BAR}
+` : `🥷 *SUCCESSFUL ROBBERY!*
+${UI.FREE_BAR}
+`) + `You stealthily robbed *@${targetJid.split('@')[0]}*!
 
 💰 Stolen: *${actualStolen.toLocaleString()}* Nexus 💠
 🎯 Success Chance: ${Math.round(successChance)}%
-⏰ Next rob: 30 minutes
-━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+⏰ Next rob: ${pro ? 15 : 30} minutes
+${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO HEIST* — speed ${thiefSpeed} vs ${victimSpeed}` : `\n${UI.upsell()}`),
           mentions: [targetJid]
         }, { quoted: msg });
       } else {
@@ -145,15 +151,17 @@ You stealthily robbed *@${targetJid.split('@')[0]}*!
         saveDatabase();
 
         return await sock.sendMessage(chatId, {
-          text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🚨 *CAUGHT RED-HANDED!*
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-You were caught trying to rob *@${targetJid.split('@')[0]}*!
+          text: (pro ? `${UI.PRO_BAR}
+🚨 *CAUGHT RED-HANDED!* 💎
+${UI.PRO_BAR}
+` : `🚨 *CAUGHT RED-HANDED!*
+${UI.FREE_BAR}
+`) + `You were caught trying to rob *@${targetJid.split('@')[0]}*!
 
 💸 Fine Paid to Victim: *${actualPenalty.toLocaleString()}* Nexus 💠
 🎯 Success Chance: ${Math.round(successChance)}%
-⏰ Next rob: 30 minutes
-━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+⏰ Next rob: ${pro ? 15 : 30} minutes
+${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO HEIST* — speed ${thiefSpeed} vs ${victimSpeed}` : `\n${UI.upsell()}`),
           mentions: [targetJid]
         }, { quoted: msg });
       }

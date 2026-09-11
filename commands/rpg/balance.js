@@ -4,6 +4,8 @@
 
 'use strict';
 
+const UI = require('../../rpg/utils/UI');
+
 function bare(jid) {
   return String(jid).split(':')[0].split('@')[0];
 }
@@ -39,20 +41,23 @@ module.exports = {
     const isSelf = bare(targetId) === bare(sender);
     const name = player.name || targetId.split('@')[0];
 
-    return sock.sendMessage(chatId, {
-      text: [
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-        `💠 *${isSelf ? 'YOUR BALANCE' : 'PLAYER BALANCE'}*`,
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-        ``,
+    const viewer = db.users[sender];
+    const txs = Array.isArray(player.transactions) ? player.transactions.slice(-3).reverse() : [];
+    const text = UI.card(viewer, {
+      icon: '💠',
+      title: isSelf ? 'YOUR BALANCE' : 'PLAYER BALANCE',
+      lines: [
         `👤 *${name}*`,
-        `💠 *Nexus:* ${(player.gold || 0).toLocaleString()}`,
-        `💎 *Mana Stones:* ${(player.manaCrystals || 0).toLocaleString()}`,
-        `⬆️ *Upgrade Points:* ${(player.upgradePoints || 0).toLocaleString()}`,
-        ``,
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-      ].join('\n'),
-      mentions: isSelf ? undefined : [targetId],
-    }, { quoted: msg });
+        `💠 *Nexus:* ${UI.num(player.gold)}`,
+        `💎 *Mana Stones:* ${UI.num(player.manaCrystals)}`,
+        `⬆️ *Upgrade Points:* ${UI.num(player.upgradePoints)}`,
+      ],
+      proLines: txs.length
+        ? [`💎 *PRO LEDGER — last ${txs.length}*`,
+           ...txs.map((t) => `  • ${t.label || t.type || 'Transaction'}${typeof t.amount === 'number' ? `: ${t.amount >= 0 ? '+' : ''}${UI.num(t.amount)}` : ''}`)]
+        : [`💎 *PRO LEDGER*`, `  _No transactions recorded yet._`],
+      tip: isSelf ? 'Your wallet, at a glance' : `Viewing ${name}'s wallet`,
+    });
+    return sock.sendMessage(chatId, { text, mentions: isSelf ? undefined : [targetId] }, { quoted: msg });
   },
 };

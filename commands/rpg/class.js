@@ -16,6 +16,10 @@ module.exports = {
   async execute(sock, msg, args, getDatabase, saveDatabase, sender) {
     const chatId = msg.key?.remoteJid;
     const db     = getDatabase();
+    const UI = require('../../rpg/utils/UI');
+    const viewer = db.users?.[sender];
+    const pro = UI.isPro(viewer || {});
+    const FRAME = pro ? UI.PRO_BAR : UI.FREE_BAR;
 
     const firstArg = (args[0] || '').toLowerCase().trim();
 
@@ -29,15 +33,14 @@ module.exports = {
 
       return sock.sendMessage(chatId, {
         text: [
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-          `🎭 *HUNTER CLASS DIRECTORY (${ALL_CLASSES.length} CLASSES)*`,
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          ...(pro ? [UI.PRO_BAR, `🎭 *HUNTER CLASS DIRECTORY (${ALL_CLASSES.length} CLASSES)* 💎`, UI.PRO_BAR] : [`🎭 *HUNTER CLASS DIRECTORY (${ALL_CLASSES.length} CLASSES)*`, UI.FREE_BAR]),
           ``,
           ...classList,
           ``,
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          FRAME,
           `💡 Use */class <ClassName>* to view specific class details & skills!`,
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          FRAME,
+          ...(pro ? [UI.PRO_MINI, `💎 *PRO CLASS* — ${ALL_CLASSES.length} classes`] : [UI.upsell()]),
         ].join('\n'),
       }, { quoted: msg });
     }
@@ -60,19 +63,18 @@ module.exports = {
 
       return sock.sendMessage(chatId, {
         text: [
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-          `${data.emoji || '🎭'} *${matchedClass.toUpperCase()} CLASS GUIDE*`,
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          ...(pro ? [UI.PRO_BAR, `${data.emoji || '🎭'} *${matchedClass.toUpperCase()} CLASS GUIDE* 💎`, UI.PRO_BAR] : [`${data.emoji || '🎭'} *${matchedClass.toUpperCase()} CLASS GUIDE*`, UI.FREE_BAR]),
           ``,
           `📜 *Description:*`,
           `_${data.lore || data.description || 'A powerful awakener class.'}_`,
           ``,
           `📌 *In-Battle Command:* */${cmd} <skill_name>*`,
           ``,
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          FRAME,
           `⚡ *CLASS SKILLS:*`,
           ...skillDetails,
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          FRAME,
+          ...(pro ? [UI.PRO_MINI, `💎 *PRO CLASS* — ${matchedClass} · ${skills.length} skills`] : [UI.upsell()]),
         ].join('\n'),
       }, { quoted: msg });
     }
@@ -96,9 +98,7 @@ module.exports = {
 
       return sock.sendMessage(chatId, {
         text: [
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-          `🎭 *CLASS STATUS*`,
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          ...(pro ? [UI.PRO_BAR, `🎭 *CLASS STATUS* 💎`, UI.PRO_BAR] : [`🎭 *CLASS STATUS*`, UI.FREE_BAR]),
           ``,
           `${player.name} has not awakened a class yet.`,
           ``,
@@ -111,7 +111,8 @@ module.exports = {
           `Neither can be changed.`,
           ``,
           `💡 Use */class list* to view all available classes!`,
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          FRAME,
+          ...(pro ? [UI.PRO_MINI, remaining !== null ? `💎 *PRO CLASS* — ${remaining.toLocaleString()} XP to go` : `💎 *PRO CLASS* — keep grinding`] : [UI.upsell()]),
         ].join('\n'),
       }, { quoted: msg });
     }
@@ -153,9 +154,7 @@ module.exports = {
 
     return sock.sendMessage(chatId, {
       text: [
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-        `${data.emoji || '🎭'} *${player.name}'s CLASS GUIDE*`,
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        ...(pro ? [UI.PRO_BAR, `${data.emoji || '🎭'} *${player.name}'s CLASS GUIDE* 💎`, UI.PRO_BAR] : [`${data.emoji || '🎭'} *${player.name}'s CLASS GUIDE*`, UI.FREE_BAR]),
         ``,
         `🎭 Class: *${player.class}*`,
         `📜 Description: _${data.lore || data.description || 'A unique awakener class.'}_`,
@@ -164,15 +163,15 @@ module.exports = {
         `   ${qualLabel}`,
         `📅 Awakened: ${awakenDate}`,
         ``,
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        FRAME,
         `📊 *STAT BONUSES:*`,
         ...bonusLines,
         ``,
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        FRAME,
         `⚡ *CLASS SKILLS:*`,
         ...skillLines,
         ``,
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        FRAME,
         `⚔️ *IN-BATTLE SKILL ACTIVATION:*`,
         `📌 Your Class Trigger: */${playerCmd} <skill_name>*`,
         `📌 Example: */${playerCmd} ${exampleSkill}*`,
@@ -202,7 +201,8 @@ module.exports = {
         `• Monk: /meditate <skill>`,
         `• Ranger: /hunt <skill>`,
         `• Senku: /science <skill>`,
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        FRAME,
+        ...(pro ? [UI.PRO_MINI, `💎 *PRO CLASS* — ${player.class} ${quality}% ${stars}`] : [UI.upsell()]),
       ].join('\n'),
     }, { quoted: msg });
   },

@@ -11,12 +11,13 @@ module.exports = {
 
   async execute(sock, msg, args, getDatabase, saveDatabase, sender) {
     const chatId = msg.key.remoteJid;
+    const UI = require('../../rpg/utils/UI');
+    const pro = UI.isPro(getDatabase()?.users?.[sender] || {});
+    const FRAME = pro ? UI.PRO_BAR : UI.FREE_BAR;
 
     return sock.sendMessage(chatId, {
       text: [
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-        `🌟 *ASTRA PRO SYSTEM & PERKS FAQ*`,
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        ...(pro ? [UI.PRO_BAR, `🌟 *ASTRA PRO SYSTEM & PERKS FAQ* 💎`, UI.PRO_BAR] : [`🌟 *ASTRA PRO SYSTEM & PERKS FAQ*`, UI.FREE_BAR]),
         ``,
         `💳 *PRO SUBSCRIPTION CARDS:*`,
         `🎫 *Weekly Pro Card* ($2 equivalent)`,
@@ -31,7 +32,7 @@ module.exports = {
         `   • Price: *60,000 PC* | Duration: *365 Days*`,
         `   • Bonus: *20,000,000 Nexus* & *2,000,000 Mana Stones*`,
         ``,
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        FRAME,
         `✨ *ALL PRO EXCLUSIVE PERKS:*`,
         `1. ⏱️ *50% Reduced Attack Cooldowns* — All martial attacks (up to 10 min base) are halved for Pro (max 5 min). Applies to PvP, Dungeons, Gates, World Boss — all battle systems use the same calculation. Status effects still tick -1 per turn. (Daily is excluded).`,
         `2. 💠 *2× Daily Rewards* — /daily gives double Nexus, Mana Stones, and XP for Pro.`,
@@ -45,9 +46,10 @@ module.exports = {
         `10. 🛠️ *Emergency Serf Switch* — Allowed to change Serf assistants in emergencies.`,
         `11. ❤️ *Access to Pro Battle UI*`,
         ``,
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        FRAME,
         `🛍️ Use */prostore* to purchase Pro subscription cards!`,
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        FRAME,
+        ...(pro ? [UI.PRO_MINI, `💎 *PRO INSIDER* — you're living the perks`] : [UI.upsell()]),
       ].join('\n'),
     }, { quoted: msg });
   }

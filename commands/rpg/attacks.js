@@ -88,6 +88,9 @@ module.exports = {
     const db     = getDatabase();
     const player = db.users?.[sender];
     if (!player) return sock.sendMessage(chatId, { text: '❌ Register first!' }, { quoted: msg });
+    const UI = require('../../rpg/utils/UI');
+    const pro = UI.isPro(player);
+    const FRAME = pro ? UI.PRO_BAR : UI.FREE_BAR;
 
     const ap  = initAP(player);
     const sub = (args[0] || '').toLowerCase();
@@ -123,16 +126,15 @@ module.exports = {
       if (ap.equipped.length === 0) {
         return sock.sendMessage(chatId, {
           text: [
-            `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-            `🥋 *ATTACK PATTERNS*`,
-            `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+            ...(pro ? [UI.PRO_BAR, `🥋 *ATTACK PATTERNS* 💎`, UI.PRO_BAR] : [`🥋 *ATTACK PATTERNS*`, UI.FREE_BAR]),
             ``,
             `No patterns equipped.`,
             `Owned: ${ap.owned.length} | Slots: 0/${MAX_EQUIPPED}`,
             ``,
             `📌 /attacks shop — browse today's shop`,
             `📌 /attacks buy <#> — purchase a pattern`,
-            `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+            FRAME,
+            ...(pro ? [UI.PRO_MINI, `💎 *PRO ARSENAL* — ${ap.owned.length} owned`] : [UI.upsell()]),
           ].join('\n'),
         }, { quoted: msg });
       }
@@ -147,9 +149,7 @@ module.exports = {
 
       return sock.sendMessage(chatId, {
         text: [
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-          `🥋 *${player.name}'s ATTACK PATTERNS*`,
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          ...(pro ? [UI.PRO_BAR, `🥋 *${player.name}'s ATTACK PATTERNS* 💎`, UI.PRO_BAR] : [`🥋 *${player.name}'s ATTACK PATTERNS*`, UI.FREE_BAR]),
           `Slots: ${ap.equipped.length}/${MAX_EQUIPPED} | Owned: ${ap.owned.length}`,
           ``,
           ...lines,
@@ -157,7 +157,8 @@ module.exports = {
           `📌 /attack <#> — execute in active combat`,
           `📌 /attacks all — see all owned`,
           `📌 /attacks equip <#> — equip a pattern`,
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          FRAME,
+          ...(pro ? [UI.PRO_MINI, `💎 *PRO ARSENAL* — ${ap.equipped.length}/${MAX_EQUIPPED} slots`] : [UI.upsell()]),
         ].join('\n'),
       }, { quoted: msg });
     }
@@ -182,14 +183,13 @@ module.exports = {
 
       return sock.sendMessage(chatId, {
         text: [
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-          `🥋 *ALL OWNED PATTERNS (${ap.owned.length})*`,
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          ...(pro ? [UI.PRO_BAR, `🥋 *ALL OWNED PATTERNS (${ap.owned.length})* 💎`, UI.PRO_BAR] : [`🥋 *ALL OWNED PATTERNS (${ap.owned.length})*`, UI.FREE_BAR]),
           `✅ = equipped`,
           ``,
           ...chunk,
           more,
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          FRAME,
+          ...(pro ? [UI.PRO_MINI, `💎 *PRO ARSENAL* — ${ap.owned.length} owned`] : [UI.upsell()]),
         ].join('\n'),
       }, { quoted: msg });
     }
@@ -208,11 +208,12 @@ module.exports = {
 
       return sock.sendMessage(chatId, {
         text: [
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          ...(pro ? [UI.PRO_BAR] : [UI.FREE_BAR]),
           DB.formatAttack(atk),
           ``,
           owned    ? `✅ *Owned*${equipped ? ' | ⚔️ Equipped' : ''}` : `❌ Not owned`,
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          FRAME,
+          ...(pro ? [UI.PRO_MINI, equipped ? `💎 *PRO ARSENAL* — equipped` : owned ? `💎 *PRO ARSENAL* — owned` : `💎 *PRO ARSENAL* — not owned`] : [UI.upsell()]),
         ].join('\n'),
       }, { quoted: msg });
     }
@@ -240,11 +241,13 @@ module.exports = {
       const atk = DB.generateAttack(num);
       return sock.sendMessage(chatId, {
         text: [
-          `✅ *Attack #${num} Equipped*`,
+          ...(pro ? [UI.PRO_BAR, `✅ *Attack #${num} Equipped* 💎`, UI.PRO_BAR] : [`✅ *Attack #${num} Equipped*`, UI.FREE_BAR]),
           `${DB.RANK_EMOJI[atk.rank]} ${atk.name}`,
           `Slot ${ap.equipped.length}/${MAX_EQUIPPED}`,
           ``,
           `Use in combat: */attack ${num}*`,
+          FRAME,
+          ...(pro ? [UI.PRO_MINI, `💎 *PRO ARSENAL* — ${ap.equipped.length}/${MAX_EQUIPPED} slots`] : [UI.upsell()]),
         ].join('\n'),
       }, { quoted: msg });
     }
@@ -286,9 +289,7 @@ module.exports = {
 
       return sock.sendMessage(chatId, {
         text: [
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-          `${DB.RANK_EMOJI[rankArg]} *${rankArg}-Rank Attack Patterns*`,
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          ...(pro ? [UI.PRO_BAR, `${DB.RANK_EMOJI[rankArg]} *${rankArg}-Rank Attack Patterns* 💎`, UI.PRO_BAR] : [`${DB.RANK_EMOJI[rankArg]} *${rankArg}-Rank Attack Patterns*`, UI.FREE_BAR]),
           `Range: #${cfg.range[0]}–#${cfg.range[1]}`,
           `Currency: ${costInfo}`,
           cfg.hasEffect ? `⚡ Has special effects` : ``,
@@ -298,7 +299,8 @@ module.exports = {
           ``,
           `📌 /attacks info <#> for full details`,
           `📌 /attacks shop for today's available patterns`,
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          FRAME,
+          ...(pro ? [UI.PRO_MINI, `💎 *PRO ARSENAL* — ${rankArg}-Rank range`] : [UI.upsell()]),
         ].filter(l => l !== '').join('\n'),
       }, { quoted: msg });
     }
@@ -325,9 +327,7 @@ module.exports = {
 
       return sock.sendMessage(chatId, {
         text: [
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-          `🥋 *ATTACK PATTERN SHOP*`,
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          ...(pro ? [UI.PRO_BAR, `🥋 *ATTACK PATTERN SHOP* 💎`, UI.PRO_BAR] : [`🥋 *ATTACK PATTERN SHOP*`, UI.FREE_BAR]),
           `Resets daily at WAT midnight`,
           `N = Nexus | MS = Mana Stones`,
           `✅ = already owned`,
@@ -336,7 +336,8 @@ module.exports = {
           ``,
           `📌 /attacks buy <#> — purchase`,
           `📌 /attacks info <#> — view details`,
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          FRAME,
+          ...(pro ? [UI.PRO_MINI, `💎 *PRO ARSENAL* — ${items.length} in stock`] : [UI.upsell()]),
         ].join('\n'),
       }, { quoted: msg });
     }
@@ -358,9 +359,7 @@ module.exports = {
 
       return sock.sendMessage(chatId, {
         text: [
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-          `🥋 *ATTACK PATTERN ACQUIRED*`,
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          ...(pro ? [UI.PRO_BAR, `🥋 *ATTACK PATTERN ACQUIRED* 💎`, UI.PRO_BAR] : [`🥋 *ATTACK PATTERN ACQUIRED*`, UI.FREE_BAR]),
           ``,
           `${re} *#${atk.id} — ${atk.name}*`,
           `Rank: ${atk.rank}-Rank | ×${atk.dmgMult} ATK`,
@@ -370,7 +369,8 @@ module.exports = {
           ``,
           `📌 /attacks equip ${num} — equip it now`,
           `📌 /attack ${num} — use in active combat`,
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          FRAME,
+          ...(pro ? [UI.PRO_MINI, `💎 *PRO ARSENAL* — #${atk.id} · ${ap.owned.length} owned`] : [UI.upsell()]),
         ].join('\n'),
       }, { quoted: msg });
     }
@@ -378,9 +378,7 @@ module.exports = {
     // ── Fallback ──────────────────────────────────────────────────────────────
     return sock.sendMessage(chatId, {
       text: [
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-        `🥋 *ATTACK PATTERN COMMANDS*`,
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        ...(pro ? [UI.PRO_BAR, `🥋 *ATTACK PATTERN COMMANDS* 💎`, UI.PRO_BAR] : [`🥋 *ATTACK PATTERN COMMANDS*`, UI.FREE_BAR]),
         `/attacks              — equipped patterns`,
         `/attacks all          — all owned patterns`,
         `/attacks info <#>     — view any pattern`,
@@ -389,7 +387,8 @@ module.exports = {
         `/attacks rank <rank>  — browse by rank`,
         `/attacks shop         — today's shop`,
         `/attacks buy <#>      — purchase`,
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        FRAME,
+        ...(pro ? [UI.PRO_MINI, `💎 *PRO ARSENAL* — ${ap.equipped.length}/${MAX_EQUIPPED} equipped`] : [UI.upsell()]),
       ].join('\n'),
     }, { quoted: msg });
   },

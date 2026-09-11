@@ -13,6 +13,9 @@ module.exports = {
     const db = getDatabase();
     const player = db.users[sender];
     if (!player) return sock.sendMessage(chatId, { text: '❌ Not registered! Use /register first.' }, { quoted: msg });
+    const UI = require('../../rpg/utils/UI');
+    const pro = UI.isPro(player);
+    const FRAME = pro ? UI.PRO_BAR : UI.FREE_BAR;
 
     const sub = (args[0] || '').toLowerCase();
 
@@ -47,7 +50,7 @@ module.exports = {
       const def = TITLES[match];
       const badge = getRarityBadge(match);
       return sock.sendMessage(chatId, {
-        text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🎖️ *TITLE EQUIPPED!*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n${badge.code} ${def.display}\n\n⚡ *Stat Boost:* ${def.boostDesc}\n\n💡 Your title shows in /profile, /rank, and PvP!\n━━━━━━━━━━━━━━━━━━━━━━━━━━━`
+        text: (pro ? `${UI.PRO_BAR}\n🎖️ *TITLE EQUIPPED!* 💎\n${UI.PRO_BAR}\n\n${badge.code} ${def.display}` : `🎖️ *TITLE EQUIPPED!*\n${UI.FREE_BAR}\n\n${badge.code} ${def.display}`)+`\n\n⚡ *Stat Boost:* ${def.boostDesc}\n\n💡 Your title shows in /profile, /rank, and PvP!\n${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO SHOWCASE* — ${def.display} equipped` : `\n${UI.upsell()}`)
       }, { quoted: msg });
     }
 
@@ -69,7 +72,7 @@ module.exports = {
         byRarity[def.rarity].push({ id, ...def });
       }
       const order = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic'];
-      let txt = `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🎖️ *ALL TITLES* (${Object.keys(TITLES).length})\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+      let txt = pro ? `${UI.PRO_BAR}\n🎖️ *ALL TITLES* (${Object.keys(TITLES).length}) 💎\n${UI.PRO_BAR}\n` : `🎖️ *ALL TITLES* (${Object.keys(TITLES).length})\n${UI.FREE_BAR}\n`;
       for (const rarity of order) {
         const list = byRarity[rarity] || [];
         if (!list.length) continue;
@@ -83,7 +86,7 @@ module.exports = {
           txt += `${icon}${shopTag} ${t.display}\n   _${t.desc}_\n   ⚡ ${t.boostDesc}\n`;
         }
       }
-      txt += `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n✅ = Equipped  🔓 = Owned  🔒 = Locked\n🛒 = Shop  👑 = Owner-grant\n━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+      txt += `\n${FRAME}\n✅ = Equipped  🔓 = Owned  🔒 = Locked\n🛒 = Shop  👑 = Owner-grant\n${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO SHOWCASE* — ${owned.length}/${Object.keys(TITLES).length} collected` : `\n${UI.upsell()}`);
       return sock.sendMessage(chatId, { text: txt }, { quoted: msg });
     }
 
@@ -93,7 +96,7 @@ module.exports = {
       const list = Object.entries(TITLES).filter(([_, def]) => def.rarity === rarity);
       if (!list.length) return sock.sendMessage(chatId, { text: `❌ No ${rarity} titles defined.` }, { quoted: msg });
       const badge = RARITIES[rarity];
-      let txt = `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n${badge.code} *${badge.label.toUpperCase()} TITLES* ${badge.code}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+      let txt = pro ? `${UI.PRO_BAR}\n${badge.code} *${badge.label.toUpperCase()} TITLES* ${badge.code} 💎\n${UI.PRO_BAR}\n` : `${badge.code} *${badge.label.toUpperCase()} TITLES* ${badge.code}\n${UI.FREE_BAR}\n`;
       for (const [id, def] of list) {
         const have = owned.includes(id);
         const eq   = equipped === id;
@@ -101,18 +104,18 @@ module.exports = {
         const shopTag = def.shop ? ' 🛒' : (def.grant === 'owner-only' ? ' 👑' : '');
         txt += `${icon}${shopTag} ${def.display}\n   _${def.desc}_\n   ⚡ ${def.boostDesc}\n`;
       }
-      txt += `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+      txt += `\n${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO SHOWCASE* — ${owned.length} collected` : `\n${UI.upsell()}`);
       return sock.sendMessage(chatId, { text: txt }, { quoted: msg });
     }
 
     // ── /title (main view — your earned titles) ─────────
     if (!owned.length) {
       return sock.sendMessage(chatId, {
-        text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🎖️ *YOUR TITLES*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n📭 No titles yet!\n\n💡 Titles are earned through gameplay:\n• Win PvP battles\n• Clear dungeons\n• Defeat world bosses\n• Reach level milestones\n• Pull legendaries in gacha\n• Buy from /titleshop (legendary)\n• Get granted by Senku/Naruto (mythic)\n\n/title all — see all available titles\n━━━━━━━━━━━━━━━━━━━━━━━━━━━`
+        text: (pro ? `${UI.PRO_BAR}\n🎖️ *YOUR TITLES* 💎\n${UI.PRO_BAR}\n\n📭 No titles yet!` : `🎖️ *YOUR TITLES*\n${UI.FREE_BAR}\n\n📭 No titles yet!`)+`\n\n💡 Titles are earned through gameplay:\n• Win PvP battles\n• Clear dungeons\n• Defeat world bosses\n• Reach level milestones\n• Pull legendaries in gacha\n• Buy from /titleshop (legendary)\n• Get granted by Senku/Naruto (mythic)\n\n/title all — see all available titles\n${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO SHOWCASE* — earn your first title` : `\n${UI.upsell()}`)
       }, { quoted: msg });
     }
 
-    let txt = `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🎖️ *YOUR TITLES* (${owned.length})\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
+    let txt = pro ? `${UI.PRO_BAR}\n🎖️ *YOUR TITLES* (${owned.length}) 💎\n${UI.PRO_BAR}\n\n` : `🎖️ *YOUR TITLES* (${owned.length})\n${UI.FREE_BAR}\n\n`;
     // Sort by rarity tier
     const sorted = [...owned].sort((a, b) => {
       const ta = RARITIES[TITLES[a]?.rarity]?.tier || 0;
@@ -129,7 +132,7 @@ module.exports = {
     }
 
     if (newTitles.length) {
-      txt += `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🎊 *JUST UNLOCKED!*\n`;
+      txt += `${FRAME}\n🎊 *JUST UNLOCKED!*\n`;
       for (const id of newTitles) {
         const b = getRarityBadge(id);
         txt += `🆕 ${b.code} ${TITLES[id]?.display || id}\n`;
@@ -137,7 +140,7 @@ module.exports = {
       txt += '\n';
     }
 
-    txt += `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n/title equip [name] — equip a title\n/title all          — see all titles\n/title <rarity>     — filter by rarity (common→mythic)\n━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+    txt += `${FRAME}\n/title equip [name] — equip a title\n/title all          — see all titles\n/title <rarity>     — filter by rarity (common→mythic)\n${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO SHOWCASE* — ${owned.length} titles · ${equipped ? TITLES[equipped]?.display || equipped : 'none equipped'}` : `\n${UI.upsell()}`);
     return sock.sendMessage(chatId, { text: txt }, { quoted: msg });
   }
 };

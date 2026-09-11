@@ -9,11 +9,14 @@ module.exports = {
   async execute(sock, msg, args, getDatabase, saveDatabase, sender) {
     const chatId = msg.key.remoteJid;
     const db = getDatabase();
+    const UI = require('../../rpg/utils/UI');
+    const pro = UI.isPro(db.users?.[sender] || {});
+    const FRAME = pro ? UI.PRO_BAR : UI.FREE_BAR;
 
     const groups = AstralGroups.getAll(db);
     const ordered = ['pvp', 'casino', 'dungeon', 'guild', 'support'];
 
-    let txt = `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🌐 *✦ 𝐀𝐬𝐭𝐫𝐚™ COMMUNITY*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🎮 *Server:* ✦ 𝐀𝐬𝐭𝐫𝐚™\nWelcome to the ✦ 𝐀𝐬𝐭𝐫𝐚™ universe!\n\n`;
+    let txt = pro ? `${UI.PRO_BAR}\n🌐 *✦ 𝐀𝐬𝐭𝐫𝐚™ COMMUNITY* 💎\n${UI.PRO_BAR}\n🎮 *Server:* ✦ 𝐀𝐬𝐭𝐫𝐚™\nWelcome to the ✦ 𝐀𝐬𝐭𝐫𝐚™ universe!\n\n` : `🌐 *✦ 𝐀𝐬𝐭𝐫𝐚™ COMMUNITY*\n${UI.FREE_BAR}\n🎮 *Server:* ✦ 𝐀𝐬𝐭𝐫𝐚™\nWelcome to the ✦ 𝐀𝐬𝐭𝐫𝐚™ universe!\n\n`;
 
     let any = false;
     for (const type of ordered) {
@@ -33,7 +36,7 @@ module.exports = {
     }
     if (!any) txt += `⚠️ No community groups registered yet.\n\n`;
 
-    txt += `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n💡 */support* — get the support group link in your DM\n💡 */help* — all commands`;
+    txt += `${FRAME}\n💡 */support* — get the support group link in your DM\n💡 */help* — all commands` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO NETWORK* — ${groups.length} groups` : `\n${UI.upsell()}`);
 
     if (chatId.endsWith('@g.us')) {
       await sock.sendMessage(chatId, {

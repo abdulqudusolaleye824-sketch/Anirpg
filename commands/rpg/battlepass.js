@@ -81,28 +81,13 @@ function getBPTierRewards(t) {
   return { str, item, pc, gold: goldAmt, stones: stoneAmt };
 }
 
+const RI = require('../../rpg/utils/RewardInventory');
+
+// All BP rewards commit to inventory.items (normalized gear shape) so
+// /gear, /equip, /inv and crafting can all see them. Legacy buckets
+// from old claims are migrated in at claim time (see below).
 function addItemToInventory(player, item) {
-  if (!item) return;
-  if (!player.inventory) {
-    player.inventory = { weapons: [], armor: [], potions: [], artifacts: [], accessories: [], materials: [], scrolls: [], keyStones: [], items: [] };
-  }
-  const type = (item.type || 'material').toLowerCase();
-  if (type === 'weapon' || type === 'weapons') {
-    if (!Array.isArray(player.inventory.weapons)) player.inventory.weapons = [];
-    player.inventory.weapons.push({ ...item, acquiredAt: Date.now() });
-  } else if (type === 'armor') {
-    if (!Array.isArray(player.inventory.armor)) player.inventory.armor = [];
-    player.inventory.armor.push({ ...item, acquiredAt: Date.now() });
-  } else if (type === 'accessory' || type === 'ring') {
-    if (!Array.isArray(player.inventory.accessories)) player.inventory.accessories = [];
-    player.inventory.accessories.push({ ...item, acquiredAt: Date.now() });
-  } else if (type === 'material' || type === 'materials') {
-    if (!Array.isArray(player.inventory.materials)) player.inventory.materials = [];
-    player.inventory.materials.push({ ...item, acquiredAt: Date.now() });
-  } else {
-    if (!Array.isArray(player.inventory.items)) player.inventory.items = [];
-    player.inventory.items.push({ ...item, acquiredAt: Date.now() });
-  }
+  return RI.grantItem(player, item, 'battlepass');
 }
 
 module.exports = {
@@ -115,6 +100,9 @@ module.exports = {
     const db = getDatabase();
     const player = db.users[sender];
     if (!player) return sock.sendMessage(chatId, { text: '❌ Register first! Use /register' }, { quoted: msg });
+    const UI = require('../../rpg/utils/UI');
+    const pro = UI.isPro(player);
+    const FRAME = pro ? UI.PRO_BAR : UI.FREE_BAR;
 
     if (!player.battlePass) {
       player.battlePass = { level: 1, xp: 0, claimed: [], premium: false, seasonStart: Date.now() };
@@ -131,28 +119,30 @@ module.exports = {
       if (isPro && isPrem) expRate = '4x (PRO 2x × BP Premium 2x)';
       else if (isPro || isPrem) expRate = '2x Boost Active';
 
-      const infoText = [
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-        `🎖️ *BATTLE PASS — XP & SYSTEM INFO*`,
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-        ``,
-        `⚔️ *HOW TO EARN BATTLE PASS XP:*`,
-        `Earn Battle Pass XP strictly from *BATTLE ACTIVITIES*:`,
-        `• ⚔️ PvP Wins & Duels: 100–500 BP XP`,
-        `• 🏰 Gate Raids & Dungeons: 200–800 BP XP`,
-        `• 🐉 World Boss Battles & Kills: 500–2,000 BP XP`,
-        ``,
-        `🔥 *EXP BOOSTS & MULTIPLIERS:*`,
-        `• 🆓 *Standard User:* 1x BP EXP`,
-        `• 👑 *BP Premium:* **2x BP EXP** boost on all battle activities!`,
-        `• 🌟 *PRO Player + BP Premium:* **4x BP EXP** (Pro 2x × BP Premium 2x = 4x)!`,
-        `• ⚡ *Your Current Rate:* **${expRate}**`,
-        ``,
-        `💰 *PREMIUM REFUND TRACK:*`,
-        `• Unlock Premium for **1,000 PC** (/bp buy)`,
-        `• Tiers 8, 16, 24, 32, and 40 return **200 PC each** (Full 1,000 PC Refunded at Tier 40!).`,
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-      ].join('\n');
+      const claimedN = (bp.claimed || []).filter(t => t <= bp.level).length;
+      const unlockedN = Math.min(bp.level, TOTAL_TIERS);
+      const infoText = UI.card(player, {
+        icon: '🎖️', title: 'BATTLE PASS — XP & SYSTEM INFO',
+        lines: [
+          `⚔️ *HOW TO EARN BATTLE PASS XP:*`,
+          `Earn Battle Pass XP strictly from *BATTLE ACTIVITIES*:`,
+          `• ⚔️ PvP Wins & Duels: 100–500 BP XP`,
+          `• 🏰 Gate Raids & Dungeons: 200–800 BP XP`,
+          `• 🐉 World Boss Battles & Kills: 500–2,000 BP XP`,
+          ``,
+          `🔥 *EXP BOOSTS & MULTIPLIERS:*`,
+          `• 🆓 *Standard User:* 1x BP EXP`,
+          `• 👑 *BP Premium:* **2x BP EXP** boost on all battle activities!`,
+          `• 🌟 *PRO Player + BP Premium:* **4x BP EXP** (Pro 2x × BP Premium 2x = 4x)!`,
+          `• ⚡ *Your Current Rate:* **${expRate}**`,
+          ``,
+          `💰 *PREMIUM REFUND TRACK:*`,
+          `• Unlock Premium for **1,000 PC** (/bp buy)`,
+          `• Tiers 8, 16, 24, 32, and 40 return **200 PC each** (Full 1,000 PC Refunded at Tier 40!).`,
+        ],
+        proLines: [`💎 *PRO TRACK*`, `  ⚡ Rate: **${expRate}** · ✅ ${claimedN}/${unlockedN} claimed`],
+        tip: '/bp to view your tiers',
+      });
       return sock.sendMessage(chatId, { text: infoText }, { quoted: msg });
     }
 
@@ -163,7 +153,7 @@ module.exports = {
       }
       if ((player.procoin || 0) < BP_COST_PC) {
         return sock.sendMessage(chatId, {
-          text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🎖️ *PREMIUM BATTLE PASS UNLOCK*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n💰 Cost: *${BP_COST_PC.toLocaleString()} PC*\n💼 Your Balance: *${(player.procoin || 0).toLocaleString()} PC*\n\n✨ *PREMIUM PERKS:*` +
+          text: `${FRAME}\n🎖️ *PREMIUM BATTLE PASS UNLOCK*\n${FRAME}\n\n💰 Cost: *${BP_COST_PC.toLocaleString()} PC*\n💼 Your Balance: *${(player.procoin || 0).toLocaleString()} PC*\n\n✨ *PREMIUM PERKS:*` +
             `\n• Unlocks all 20 Premium-Locked Tiers\n• **2x BP EXP Boost** on all Battle XP!\n• Combine with PRO for **4x BP EXP**!\n• Receive 200 PC back at Tiers 8, 16, 24, 32, 40 (1,000 PC Total Refund!)\n\n💡 Use /prostore to get PC, or buy with /bp buy when ready!`
         }, { quoted: msg });
       }
@@ -172,12 +162,15 @@ module.exports = {
       bp.premium = true;
       saveDatabase();
       return sock.sendMessage(chatId, {
-        text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🌟 *PREMIUM BATTLE PASS ACTIVATED!*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n✅ Premium Track Unlocked for ${BP_COST_PC} PC!\nAll 20 locked levels can now be claimed!\n\n🔥 **2x BP EXP Boost Activated!**\n💡 Claim 200 PC back at Tiers 8, 16, 24, 32, and 40!\n━━━━━━━━━━━━━━━━━━━━━━━━━━━`
+        text: `${FRAME}\n🌟 *PREMIUM BATTLE PASS ACTIVATED!*\n${FRAME}\n\n✅ Premium Track Unlocked for ${BP_COST_PC} PC!\nAll 20 locked levels can now be claimed!\n\n🔥 **2x BP EXP Boost Activated!**\n💡 Claim 200 PC back at Tiers 8, 16, 24, 32, and 40!\n${FRAME}`
       }, { quoted: msg });
     }
 
     // ── CLAIM REWARDS ───────────────────────────────────────────
     if (sub === 'claim') {
+      // Rescue pre-fix legacy-bucket items (idempotent); persist even
+      // when there is nothing new to claim.
+      if (RI.migrateLegacy(player) > 0) saveDatabase();
       const targetLvl = parseInt(args[1]);
 
       if (isNaN(targetLvl)) {
@@ -216,7 +209,7 @@ module.exports = {
 
         saveDatabase();
         return sock.sendMessage(chatId, {
-          text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🎁 *BATTLE PASS REWARDS CLAIMED!*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\nClaimed *${totalClaimed}* Tier(s)!\n\n${gained.join('\n')}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━`
+          text: `${FRAME}\n🎁 *BATTLE PASS REWARDS CLAIMED!*\n${FRAME}\n\nClaimed *${totalClaimed}* Tier(s)!\n\n${gained.join('\n')}\n${FRAME}`
         }, { quoted: msg });
       }
 
@@ -312,15 +305,18 @@ module.exports = {
       tierLines.push(``);
     }
     const navHintBP = page > 1 && page < 4 ? `◀️ /bp ${page-1}  •  ▶️ /bp ${page+1}` : page === 1 ? `▶️ Next: /bp 2` : `◀️ Prev: /bp 3`;
+    const seasonProgBP = Math.min(1, Math.max(0, (Date.now() - (bp.seasonStart || Date.now())) / (30 * 86400000)));
+    const claimedBP = (bp.claimed || []).filter(t => t <= bp.level).length;
 
     const seasonRemainingBP = (()=>{ const s=bp.seasonStart||Date.now(); const e=s+30*24*60*60*1000; const d=e-Date.now(); if(d<=0) return 'Ended'; const days=Math.floor(d/(24*60*60*1000)); const hrs=Math.floor((d%(24*60*60*1000))/(60*60*1000)); return `${days}d ${hrs}h`; })();
     const captionLines = [
-      `🎫 *BATTLE PASS VISUALIZATION*`,
+      ...(pro ? [UI.PRO_BAR, `🎫 *BATTLE PASS VISUALIZATION* 💎`, UI.PRO_BAR] : [`🎫 *BATTLE PASS VISUALIZATION*`, UI.FREE_BAR]),
       ``,
       `📊 Level: ${bp.level}/${TOTAL_TIERS}`,
-      `⭐ XP: ${bp.xp||0}/${xpReq}`,
+      `⭐ XP: ${UI.bar(bp.xp||0, xpReq, 10, pro)} ${bp.xp||0}/${xpReq}`,
       `💎 Premium: ${bp.premium ? 'YES ✅' : 'NO ❌'}`,
       `⏰ Season Ends: ${seasonRemainingBP}`,
+      ...(pro ? [`📊 Season: ${UI.bar(seasonProgBP, 1, 8, true)}`, `💎 *PRO TRACK* — ${claimedBP}/${Math.min(bp.level, TOTAL_TIERS)} claimed`] : []),
       ``,
       `Legend:`,
       `🟣 Current | ✅ Claimed | 🔒 Locked`,
@@ -331,13 +327,13 @@ module.exports = {
       `📋 *ALL REWARDS (Page ${page}/4):*`,
       ``,
       ...tierLines,
-      `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+      FRAME,
       `📌 *COMMANDS:*`,
       `• /bp claim — Claim all available rewards`,
       `• /bp claim [num] — Claim specific tier`,
       `• /bp buy — Unlock Premium (1,000 PC)`,
       `• /bp [page] — View Page 1–4 (10 tiers per page)`,
-      `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+      ...(pro ? [FRAME] : [FRAME, UI.upsell()]),
     ];
 
     // ── Build Next/Prev buttons (and Claim) ────────────────────────

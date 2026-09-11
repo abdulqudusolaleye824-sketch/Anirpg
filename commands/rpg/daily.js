@@ -10,6 +10,7 @@ const DC = require('../../rpg/utils/DailyChallenges');
 const { canClaimDaily, formatDuration, timestampWAT } = require('../../rpg/utils/NigerianTime');
 const { awardXP } = require('../../rpg/utils/SilentXP');
 let TitleSystem; try { TitleSystem = require('../../rpg/utils/TitleSystem'); } catch(e) {}
+const UI = require('../../rpg/utils/UI');
 
 // Daily uses a ROLLING 24h window: claimable again exactly 24h after the
 // player's last claim (NOT a WAT-midnight reset). Each player's own timing
@@ -64,6 +65,7 @@ module.exports = {
         text: '❌ You are not registered!\nUse /register [name] to begin your journey.'
       }, { quoted: msg });
     }
+    const pro = UI.isPro(player);
 
     // Ensure daily data exists on player object
     if (!player.dailyQuest) player.dailyQuest = { lastClaimed: 0, streak: 0 };
@@ -77,20 +79,21 @@ module.exports = {
     const { canClaim, msRemaining } = canClaimDaily(last);
 
     if (!canClaim) {
-      return sock.sendMessage(chatId, {
-        text: [
-          '━━━━━━━━━━━━━━━━━━━━━━━━━━━',
-          '⏳ *ALREADY CLAIMED*',
-          '━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+      const _st = player.dailyQuest.streak || 0;
+      const _nd = [10, 20, 30, 50, 100, 200, 365, 500, 700, 1000].find(d => d > _st);
+      const _nml = _nd ? getMilestoneReward(_nd) : null;
+      const text = UI.card(player, {
+        icon: '⏳', title: 'ALREADY CLAIMED',
+        lines: [
+          `Next claim in *${formatDuration(msRemaining)}*.`,
+          `📊 ${UI.bar(86400000 - msRemaining, 86400000, 10, pro)}`,
           '',
-          `You already claimed your daily rewards.`,
-          `Next claim in 24h — *${formatDuration(msRemaining)}* remaining.`,
-          '',
-          `🔥 Current Streak: *${player.dailyQuest.streak} day${player.dailyQuest.streak===1?'':'s'}*`,
-          "Don't break it — the rewards only get better.",
-          '━━━━━━━━━━━━━━━━━━━━━━━━━━━'
-        ].join('\n')
-      }, { quoted: msg });
+          `🔥 Streak: *${_st} day${_st === 1 ? '' : 's'}*`,
+        ],
+        proLines: _nml ? [`⏭️ Next milestone: *Day ${_nml.day} — ${_nml.label}* (${_nml.day - _st}d away)`] : [`🌌 *All milestones conquered — mythic loyalty!*`],
+        tip: "Don't break it — the rewards only get better.",
+      });
+      return sock.sendMessage(chatId, { text }, { quoted: msg });
     }
 
     // Streak logic — if the gap from the last claim exceeds 2 full windows
@@ -109,6 +112,8 @@ module.exports = {
     try { if (TitleSystem) { const nt=TitleSystem.checkAndAwardTitles(player); if (nt.length) { const nm=nt.map(id=>TitleSystem.TITLES[id]?.display||id).join(', '); sock.sendMessage(chatId,{text:`🎖️ *NEW TITLE UNLOCKED!*\n${nm}\n\n/title to equip it!`,mentions:[sender]}); } } } catch(e) {}
 
     const streak = player.dailyQuest.streak;
+    const _ndC = [10, 20, 30, 50, 100, 200, 365, 500, 700, 1000].find(d => d > streak);
+    const _nmlC = _ndC ? getMilestoneReward(_ndC) : null;
     const base = getBaseReward(streak);
     const milestone = getMilestoneReward(streak);
 
@@ -150,10 +155,9 @@ module.exports = {
     const streakTitle = streak >= 365 ? '🌌 MYTHIC' : streak >= 100 ? '🏆 LEGENDARY' :
                         streak >= 30  ? '🔥 BLAZING' : streak >= 7 ? '⚡ RISING' : '📅 ACTIVE';
 
+    const FRAME = pro ? UI.PRO_BAR : UI.FREE_BAR;
     const lines = [
-      '━━━━━━━━━━━━━━━━━━━━━━━━━━━',
-      '☀️  *DAILY REWARD CLAIMED*',
-      '━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+      ...(pro ? [UI.PRO_BAR, '☀️  *DAILY REWARD CLAIMED* 💎', UI.PRO_BAR] : ['☀️  *DAILY REWARD CLAIMED*', UI.FREE_BAR]),
       '',
       `🔥 Streak: *${streak} day${streak===1?'':'s'}* — ${streakTitle}${isProDaily ? ' 🌟 PRO 2×' : ''}`,
       '',
@@ -165,9 +169,9 @@ module.exports = {
 
     if (milestone) {
       lines.push('');
-      lines.push('━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      lines.push(FRAME);
       lines.push(`🌟 *DAY ${milestone.day} MILESTONE — ${milestone.label.toUpperCase()}!*`);
-      lines.push('━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      lines.push(FRAME);
 
       if (milestone.gold) {
         player.gold += milestone.gold;
@@ -206,9 +210,11 @@ module.exports = {
 
     const next10 = 10 - (streak % 10);
     lines.push('');
-    lines.push(`📅 *${streak} / 1000 days*`);
-    lines.push(`⏭️ Next milestone bonus in ${next10} day${next10 === 1 ? '' : 's'}`);
-    lines.push('━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    lines.push(`📅 *${streak} / 1000 days*  ${UI.bar(streak, 1000, 8, pro)}`);
+    if (pro && _nmlC) lines.push(`⏭️ Next: *Day ${_nmlC.day} — ${_nmlC.label}*`);
+    else lines.push(`⏭️ Next milestone bonus in ${next10} day${next10 === 1 ? '' : 's'}`);
+    lines.push(FRAME);
+    if (!pro) lines.push(UI.upsell());
 
     await sock.sendMessage(chatId, { text: lines.join('\n') }, { quoted: msg });
 

@@ -50,6 +50,9 @@ module.exports = {
     if (!player) {
       return sock.sendMessage(chatId, { text: '❌ You need to register first!' }, { quoted: msg });
     }
+    const UI = require('../../rpg/utils/UI');
+    const pro = UI.isPro(player);
+    const FRAME = pro ? UI.PRO_BAR : UI.FREE_BAR;
 
     const sBare = bare(sender);
     const now = Date.now();
@@ -78,14 +81,13 @@ module.exports = {
     if (!petId) {
       return sock.sendMessage(chatId, {
         text: [
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-          `🪤 *WILD PET CATCH*`,
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          ...(pro ? [UI.PRO_BAR, `🪤 *WILD PET CATCH* 💎`, UI.PRO_BAR] : [`🪤 *WILD PET CATCH*`, UI.FREE_BAR]),
           `❌ No active wild pet to catch nearby!`,
           ``,
           `Wild pets appear after clearing dungeons or gate raids.`,
           `They flee after *60 seconds*!`,
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          FRAME,
+          ...(pro ? [UI.PRO_MINI, `💎 *PRO CATCH* — no wild pets nearby`] : [UI.upsell()]),
         ].join('\n'),
       }, { quoted: msg });
     }
@@ -103,16 +105,15 @@ module.exports = {
     if ((player.gold || 0) < cost.gold || (player.manaCrystals || 0) < cost.crystals) {
       return sock.sendMessage(chatId, {
         text: [
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-          `❌ *INSUFFICIENT FUNDS TO CATCH!*`,
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          ...(pro ? [UI.PRO_BAR, `❌ *INSUFFICIENT FUNDS TO CATCH!* 💎`, UI.PRO_BAR] : [`❌ *INSUFFICIENT FUNDS TO CATCH!*`, UI.FREE_BAR]),
           `${petTemplate.emoji} Target: *${petTemplate.name}* (${rarity.toUpperCase()})`,
           ``,
           `💸 Required: ${cost.gold.toLocaleString()} 💠 Nexus + ${cost.crystals.toLocaleString()} 💎 Mana Stones`,
           `💼 You have: ${(player.gold || 0).toLocaleString()} 💠 Nexus + ${(player.manaCrystals || 0).toLocaleString()} 💎 Mana Stones`,
           ``,
           `⚠️ The pet will flee if you don't catch it in 60s!`,
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          FRAME,
+          ...(pro ? [UI.PRO_MINI, `💎 *PRO CATCH* — target: ${petTemplate.name}`] : [UI.upsell()]),
         ].join('\n'),
       }, { quoted: msg });
     }
@@ -177,9 +178,7 @@ module.exports = {
       } catch (e) {}
 
       resultMsg = [
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-        `🎉 *PET CAUGHT SUCCESSFULLY!*`,
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        ...(pro ? [UI.PRO_BAR, `🎉 *PET CAUGHT SUCCESSFULLY!* 💎`, UI.PRO_BAR] : [`🎉 *PET CAUGHT SUCCESSFULLY!*`, UI.FREE_BAR]),
         `${petTemplate.emoji} You caught a *${petTemplate.name}*!`,
         `⭐ Rarity: ${rarity.toUpperCase()}`,
         `🔮 Type: ${petTemplate.type || 'Companion'}`,
@@ -191,7 +190,8 @@ module.exports = {
         ...rolls,
         ``,
         `📌 Use */pet list* to view your active pets!`,
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        FRAME,
+        ...(pro ? [UI.PRO_MINI, `💎 *PRO CATCH* — ${petTemplate.name} · ${rarity.toUpperCase()}`] : [UI.upsell()]),
       ].filter(l => l !== '').join('\n');
     } else {
       // Failed all 3 rolls
@@ -201,9 +201,7 @@ module.exports = {
       saveDatabase();
 
       resultMsg = [
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-        `💨 *WILD PET ESCAPED!*`,
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        ...(pro ? [UI.PRO_BAR, `💨 *WILD PET ESCAPED!* 💎`, UI.PRO_BAR] : [`💨 *WILD PET ESCAPED!*`, UI.FREE_BAR]),
         `${petTemplate.emoji} *${petTemplate.name}* broke free and fled!`,
         `⭐ Rarity: ${rarity.toUpperCase()}`,
         ``,
@@ -214,7 +212,8 @@ module.exports = {
         ...rolls,
         ``,
         `🏃 The wild pet escaped into the shadows. Better luck next time!`,
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        FRAME,
+        ...(pro ? [UI.PRO_MINI, `💎 *PRO CATCH* — ${petTemplate.name} fled`] : [UI.upsell()]),
       ].filter(l => l !== '').join('\n');
     }
 

@@ -13,6 +13,7 @@
 'use strict';
 
 const Mod = require('../../rpg/utils/ModerationUtils');
+const UI = require('../../rpg/utils/UI');
 
 module.exports = {
   name: 'ban',
@@ -22,6 +23,7 @@ module.exports = {
   async execute(sock, msg, args, getDatabase, saveDatabase, sender) {
     const chatId = msg.key.remoteJid;
     const db = getDatabase();
+    const proBn = UI.isPro(db.users[sender]);
 
     if (!db.bannedUsers) db.bannedUsers = {};
 
@@ -40,14 +42,18 @@ module.exports = {
     if (!targetId) {
       return sock.sendMessage(chatId, {
         text: [
+          (proBn ? UI.PRO_BAR : UI.FREE_BAR),
           '🚫 *BAN A USER*',
-          '',
+          proBn ? (UI.PRO_MINI + '\n' + '🚫 PRO GAVEL') : null,
+          proBn ? `📊 Currently banned: *${Object.keys(db.bannedUsers || {}).length}*` : null,
+          proBn ? '' : null,
           '📌 Usage:',
           '  /ban @user [reason]',
           '  /ban @user spamming',
           '',
           'Reply to their message and type /ban [reason] or /ban | <reason>.',
-        ].join('\n'),
+          (proBn ? UI.PRO_BAR : UI.FREE_BAR),
+        ].filter(x => x !== null).join('\n'),
       }, { quoted: msg });
     }
 
@@ -93,18 +99,18 @@ module.exports = {
 
     await sock.sendMessage(chatId, {
       text: [
-        '━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+        (proBn ? UI.PRO_BAR : UI.FREE_BAR),
         '🚫 *USER BANNED* 🚫',
-        '━━━━━━━━━━━━━━━━━━━━━━━━━━━',
         `👤 User: ${name} (@${key})`,
         `📝 Reason: ${reason}`,
         `👮 Banned by: @${Mod.bare(sender)}`,
         `📍 GC: ${gcName} (${chatId})`,
         `🕒 Time (GMT): ${bannedAtGMT}`,
-        '━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+        proBn ? (UI.PRO_MINI + '\n' + '🚫 PRO GAVEL') : null,
+        proBn ? `📊 Total banned: *${Object.keys(db.bannedUsers || {}).length}*` : null,
         '_They can no longer use any bot command._',
-        '━━━━━━━━━━━━━━━━━━━━━━━━━━━',
-      ].join('\n'),
+        (proBn ? UI.PRO_BAR : UI.FREE_BAR),
+      ].filter(x => x !== null).join('\n'),
       mentions: mentionedJid ? [targetId, sender] : [sender],
     }, { quoted: msg });
 
@@ -112,14 +118,12 @@ module.exports = {
     try {
       await sock.sendMessage(targetId, {
         text: [
-          '━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+          (UI.isPro(Mod.getUser(db, targetId)) ? UI.PRO_BAR : UI.FREE_BAR),
           '🚫 *YOU HAVE BEEN BANNED* 🚫',
-          '━━━━━━━━━━━━━━━━━━━━━━━━━━━',
           `📝 Reason: ${reason}`,
-          '━━━━━━━━━━━━━━━━━━━━━━━━━━━',
           'You can no longer use bot commands.',
           'Contact a mod to appeal.',
-          '━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+          (UI.isPro(Mod.getUser(db, targetId)) ? UI.PRO_BAR : UI.FREE_BAR),
         ].join('\n'),
       });
     } catch (_) {}

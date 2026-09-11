@@ -12,13 +12,16 @@ module.exports = {
         text: '❌ You are not registered!'
       }, { quoted: msg });
     }
+    const UI = require('../../rpg/utils/UI');
+    const pro = UI.isPro(player);
+    const FRAME = pro ? UI.PRO_BAR : UI.FREE_BAR;
 
     const subCmd = args[0]?.toLowerCase();
 
     // ── Default: show help ─────────────────────────────────────
     if (!subCmd) {
       return sock.sendMessage(chatId, {
-        text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🎒 *EQUIP COMMANDS*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n/items — view equippable items\n/items -tier — sorted by rarity\n/equip use [#] — equip/use item\n/equip gift [#] @player — gift item\n━━━━━━━━━━━━━━━━━━━━━━━━━━━`
+        text: (pro ? `${UI.PRO_BAR}\n🎒 *EQUIP COMMANDS* 💎\n${UI.PRO_BAR}\n\n/items — view equippable items\n/items -tier — sorted by rarity\n/equip use [#] — equip/use item\n/equip gift [#] @player — gift item\n${UI.PRO_BAR}\n${UI.PRO_MINI}\n💎 *PRO KIT* — manage your loadout` : `🎒 *EQUIP COMMANDS*\n${UI.FREE_BAR}\n\n/items — view equippable items\n/items -tier — sorted by rarity\n/equip use [#] — equip/use item\n/equip gift [#] @player — gift item\n${UI.FREE_BAR}\n${UI.upsell()}`)
       }, { quoted: msg });
     }
 
@@ -175,9 +178,7 @@ module.exports = {
       allItems.splice(idx, 1);
       saveDatabase();
 
-      let message = `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
-      message += `✅ *ITEM EQUIPPED!*\n`;
-      message += `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
+      let message = pro ? `${UI.PRO_BAR}\n✅ *ITEM EQUIPPED!* 💎\n${UI.PRO_BAR}\n\n` : `✅ *ITEM EQUIPPED!*\n${UI.FREE_BAR}\n\n`;
       message += `${getTypeEmoji(item.type)} *${item.name}*\n`;
       message += `⭐ Rarity: ${item.rarity}\n\n`;
 
@@ -193,7 +194,7 @@ module.exports = {
 
       message += `⚔️ ATK: ${player.stats.atk}  🛡️ DEF: ${player.stats.def}\n`;
       message += `❤️ Max HP: ${player.stats.maxHp}  💙 Max ${player.energyType||'Energy'}: ${player.stats.maxEnergy}\n`;
-      message += `━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+      message += `${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO KIT* — ${statResult.changes.length} stats up` : `\n${UI.upsell()}`);
 
       return sock.sendMessage(chatId, { text: message }, { quoted: msg });
     }
@@ -256,13 +257,13 @@ module.exports = {
       saveDatabase();
 
       return sock.sendMessage(chatId, {
-        text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🎁 *ITEM GIFTED!*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n${getTypeEmoji(item.type)} *${item.name}* → *${recipient.name}*!\n⭐ Rarity: ${item.rarity}\n\n💌 They can use /items to see it.\n━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        text: (pro ? `${UI.PRO_BAR}\n🎁 *ITEM GIFTED!* 💎\n${UI.PRO_BAR}\n\n${getTypeEmoji(item.type)} *${item.name}*` : `🎁 *ITEM GIFTED!*\n${UI.FREE_BAR}\n\n${getTypeEmoji(item.type)} *${item.name}*`)+` → *${recipient.name}*!\n⭐ Rarity: ${item.rarity}\n\n💌 They can use /items to see it.\n${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO KIT* — gifted ${item.name}` : `\n${UI.upsell()}`),
         mentions: [recipientId]
       }, { quoted: msg });
     }
 
     return sock.sendMessage(chatId, {
-      text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🎒 *EQUIP COMMANDS*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n/items — view your items\n/equip use [#] — use/equip item\n/equip gift [#] @player — gift item\n━━━━━━━━━━━━━━━━━━━━━━━━━━━`
+      text: (pro ? `${UI.PRO_BAR}\n🎒 *EQUIP COMMANDS* 💎\n${UI.PRO_BAR}\n\n/items — view your items\n/equip use [#] — use/equip item\n/equip gift [#] @player — gift item\n${UI.PRO_BAR}\n${UI.PRO_MINI}\n💎 *PRO KIT* — manage your loadout` : `🎒 *EQUIP COMMANDS*\n${UI.FREE_BAR}\n\n/items — view your items\n/equip use [#] — use/equip item\n/equip gift [#] @player — gift item\n${UI.FREE_BAR}\n${UI.upsell()}`)
     }, { quoted: msg });
   }
 };

@@ -14,6 +14,7 @@
 
 const Mod = require('../../rpg/utils/ModerationUtils');
 const GroupAdmin = require('../../rpg/utils/GroupAdmin');
+const UI = require('../../rpg/utils/UI');
 
 module.exports = {
   name: 'mute',
@@ -26,6 +27,7 @@ module.exports = {
   async execute(sock, msg, args, getDatabase, saveDatabase, sender) {
     const chatId = msg.key.remoteJid;
     const db = getDatabase();
+    const proM = UI.isPro(db.users[sender]);
 
     if (!Mod.canModerate(db, sender)) {
       return sock.sendMessage(chatId, {
@@ -49,8 +51,11 @@ module.exports = {
     if (!targetId) {
       return sock.sendMessage(chatId, {
         text: [
+          (proM ? UI.PRO_BAR : UI.FREE_BAR),
           '🔇 *MUTE A USER*',
-          '',
+          proM ? (UI.PRO_MINI + '\n' + '🔇 PRO GAVEL') : null,
+          proM ? `📊 Total muted: *${Object.keys(db.mutedUsers || {}).length}*` : null,
+          proM ? '' : null,
           '📌 Usage:',
           '  /mute @user [minutes]',
           '  /mute @user 60     (mute 60 min)',
@@ -59,7 +64,8 @@ module.exports = {
           'Reply to their message and type /mute [minutes].',
           '',
           '_Muted users have all their messages deleted here._',
-        ].join('\n'),
+          (proM ? UI.PRO_BAR : UI.FREE_BAR),
+        ].filter(x => x !== null).join('\n'),
       }, { quoted: msg });
     }
 
@@ -81,16 +87,16 @@ module.exports = {
     const u = Mod.getUser(db, targetId);
     return sock.sendMessage(chatId, {
       text: [
-        '━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+        (proM ? UI.PRO_BAR : UI.FREE_BAR),
         '🔇 *USER MUTED* 🔇',
-        '━━━━━━━━━━━━━━━━━━━━━━━━━━━',
         `👤 User: ${u?.name || '@' + Mod.bare(targetId)}`,
         `⏰ Duration: ${durationText}`,
         `👮 By: @${Mod.bare(sender)}`,
-        '━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+        proM ? (UI.PRO_MINI + '\n' + '🔇 PRO GAVEL') : null,
+        proM ? `📊 Total muted: *${Object.keys(db.mutedUsers || {}).length}*` : null,
         '_Their messages here will be deleted silently._',
-        '━━━━━━━━━━━━━━━━━━━━━━━━━━━',
-      ].join('\n'),
+        (proM ? UI.PRO_BAR : UI.FREE_BAR),
+      ].filter(x => x !== null).join('\n'),
       mentions: mentionedJid ? [targetId, sender] : [sender],
     }, { quoted: msg });
   },

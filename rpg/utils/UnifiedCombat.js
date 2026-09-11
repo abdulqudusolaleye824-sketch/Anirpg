@@ -53,7 +53,8 @@ function calcMoveDamage(attacker, defender, move) {
   // attacker/defender are player objects with stats
 
   // Accuracy check first
-  const acc = move.accuracy != null ? move.accuracy : 85;
+  let acc = move.accuracy != null ? move.accuracy : 85;
+  if ((attacker.statusEffects || []).some(e => (e.type || '').toLowerCase() === 'blind')) acc *= 0.5;
   const roll = Math.random() * 100;
   if (roll > acc) {
     return { damage: 0, missed: true, crit: false, effective: 'missed' };
@@ -84,6 +85,8 @@ function calcMoveDamage(attacker, defender, move) {
   if (attacker.statusEffects) {
     for (const e of attacker.statusEffects) {
       if (e.type === 'weakened') statusAtkMult *= (1 - (e.reduction || 30)/100);
+      if (e.type === 'weaken') statusAtkMult *= 0.7;
+      if (e.type === 'fear') statusAtkMult *= 0.8;
       if (e.type === 'slow') statusAtkMult *= 0.8;
       if (e.type === 'paralyze') statusAtkMult *= 0.5;
     }
@@ -92,6 +95,7 @@ function calcMoveDamage(attacker, defender, move) {
     for (const e of defender.statusEffects) {
       if (e.type === 'curse') statusDefMult *= 0.85;
       if (e.type === 'freeze') statusDefMult *= 0.8;
+      if (e.type === 'enfeeble') statusDefMult *= 0.7;
     }
   }
 
@@ -164,6 +168,15 @@ function tickStatuses(entity) {
       const dmg = Math.floor((entity.stats?.maxHp || 100) * 0.03);
       entity.stats.hp = Math.max(0, (entity.stats?.hp || 0) - dmg);
       logs.push(`☠️ Poison — ${dmg} dmg`);
+    } else if (e.type === 'freeze') {
+      // ❄️ Frozen targets also take cold damage each turn (3% max HP)
+      if (entity.stats) {
+        const dmg = Math.floor((entity.stats.maxHp || 100) * 0.03);
+        entity.stats.hp = Math.max(0, (entity.stats.hp || 0) - dmg);
+        logs.push(`❄️ Frozen — ${dmg} dmg`);
+      } else {
+        logs.push(`❄️ Frozen solid`);
+      }
     }
     e.duration -= 1;
     if (e.duration <= 0) {
@@ -176,6 +189,38 @@ function tickStatuses(entity) {
     entity.statusEffects.splice(toRemove[i], 1);
   }
   return logs;
+}
+
+// Can this entity act this turn? Frozen / stunned targets ALWAYS lose their turn.
+// Returns { canAct: boolean, reason: 'frozen' | 'stunned' | null }
+function canAct(entity) {
+  const fx = entity?.statusEffects || [];
+  if (fx.some(e => (e.type || '').toLowerCase() === 'freeze')) return { canAct: false, reason: 'frozen' };
+  if (fx.some(e => (e.type || '').toLowerCase() === 'stun'))   return { canAct: false, reason: 'stunned' };
+  if (fx.some(e => (e.type || '').toLowerCase() === 'paralyze') && Math.random() < 0.7) return { canAct: false, reason: 'paralyzed' };
+  if (fx.some(e => (e.type || '').toLowerCase() === 'fear') && Math.random() < 0.4) return { canAct: false, reason: 'feared' };
+  return { canAct: true, reason: null };
+}
+
+// Basic strike — pure ATK, no pattern multipliers. Used when a fighter
+// attacks without choosing a pattern (no free pattern stats).
+function basicStrike() {
+  return {
+    id: 0,
+    rank: 'E',
+    name: 'Basic Strike',
+    flavour: 'A plain weapon swing using pure attack power.',
+    description: 'No pattern, no technique — just a straightforward strike with pure attack power.',
+    dmgMult: 1,
+    atkMult: 1,
+    defMult: 1,
+    speedMult: 1,
+    critMult: 1.5,
+    accuracy: 100,
+    effect: null,
+    cooldownMs: 0,
+    cooldownSec: 0,
+  };
 }
 
 // Build detailed turn narrative — long description, no "faster moves first"
@@ -242,6 +287,8 @@ module.exports = {
   calcMoveDamage,
   tryApplyEffect,
   tickStatuses,
+  canAct,
+  basicStrike,
   buildTurnMessage,
   randomDelay,
   slowSend,

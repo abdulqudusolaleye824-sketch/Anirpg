@@ -69,6 +69,9 @@ module.exports = {
     const db = getDatabase();
     const player = db.users[sender];
     if (!player) return sock.sendMessage(chatId, { text: '❌ Not registered!' }, { quoted: msg });
+    const UI = require('../../rpg/utils/UI');
+    const pro = UI.isPro(player);
+    const FRAME = pro ? UI.PRO_BAR : UI.FREE_BAR;
 
     const sub = (args[0] || '').toLowerCase();
     const wc  = getPlayerWeekly(player);
@@ -90,11 +93,14 @@ module.exports = {
         claimed++;
       }
       if (!claimed) return sock.sendMessage(chatId, { text: '❌ No completed weekly challenges to claim!' }, { quoted: msg });
+      if (totalNexus > 0) {
+        try { require('../../rpg/utils/QuestDispatcher').trackAndNotify(player, 'goldEarn', totalNexus, sock, sender, chatId); } catch(e){}
+      }
       saveDatabase();
       let rewardMsg = `💠 +${totalNexus.toLocaleString()}g\n💎 +${totalCrystals}`;
       if (totalTickets) rewardMsg += `\n🎟️ +${totalTickets} Summon Ticket(s)`;
       return sock.sendMessage(chatId, {
-        text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🏆 *WEEKLY REWARDS CLAIMED!*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n✅ ${claimed} challenge(s) claimed!\n\n${rewardMsg}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━`
+        text: (pro ? `${UI.PRO_BAR}\n🏆 *WEEKLY REWARDS CLAIMED!* 💎\n${UI.PRO_BAR}\n` : `🏆 *WEEKLY REWARDS CLAIMED!*\n${UI.FREE_BAR}\n`) + `✅ ${claimed} challenge(s) claimed!\n\n${rewardMsg}\n${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO GRIND* — ${claimed} claimed this week` : `\n${UI.upsell()}`)
       }, { quoted: msg });
     }
 
@@ -104,19 +110,20 @@ module.exports = {
     const day = now.getUTCDay(); // 0=Sun, 1=Mon
     const daysLeft = day === 1 ? 7 : ((8 - day) % 7) || 7;
 
-    let txt = `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n📋 *WEEKLY CHALLENGES*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n⏰ Resets in: *${daysLeft} day(s)*\n\n`;
+    let txt = pro ? `${UI.PRO_BAR}\n📋 *WEEKLY CHALLENGES* 💎\n${UI.PRO_BAR}\n⏰ Resets in: *${daysLeft} day(s)*\n\n` : `📋 *WEEKLY CHALLENGES*\n${UI.FREE_BAR}\n⏰ Resets in: *${daysLeft} day(s)*\n\n`;
+    let wClaimable = 0;
     for (const c of challenges) {
       const prog   = wc.progress[c.id] || 0;
       const done   = prog >= c.target;
       const claimd = wc.claimed.includes(c.id);
       const icon   = claimd ? '✅' : done ? '🎁' : '⬜';
-      const barFill = Math.min(10, Math.floor((prog/c.target)*10));
-      const bar     = '█'.repeat(barFill) + '░'.repeat(10-barFill);
+      const bar = UI.bar(prog, c.target, 10, pro);
       txt += `${icon} ${c.emoji} *${c.desc}*\n`;
       txt += `   [${bar}] ${Math.min(prog,c.target)}/${c.target}\n`;
       txt += `   💠 ${c.rewards.gold.toLocaleString()} 💠  💎 ${c.rewards.crystals}${c.rewards.ticket?`  🎟️×${c.rewards.ticket}`:''}\n\n`;
+      if (done && !claimd) wClaimable++;
     }
-    txt += `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n/weekly claim — collect completed`;
+    txt += `${FRAME}\n/weekly claim — collect completed` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO GRIND* — ${wClaimable} ready to claim` : `\n${UI.upsell()}`);
     return sock.sendMessage(chatId, { text: txt }, { quoted: msg });
   }
 };

@@ -24,6 +24,7 @@ const { getClassCmdName, isClassCommand, DEFAULT_CMD_NAMES } = require('../../rp
 const CS = require('../../rpg/utils/ClassSystem');
 const SD = require('../../rpg/utils/SkillDescriptions');
 const { AuraSystem } = require('../../rpg/utils/AuraSystem');
+const UI = require('../../rpg/utils/UI');
 
 module.exports = {
   name: 'classcmd',   // Primary name (gets aliased to all class cmdNames below)
@@ -39,6 +40,8 @@ module.exports = {
     if (!player) {
       return sock.sendMessage(chatId, { text: '❌ You are not registered!' }, { quoted: msg });
     }
+    const pro = UI.isPro(player);
+    const FRAME = pro ? UI.PRO_BAR : UI.FREE_BAR;
 
     const className = typeof player.class === 'string' ? player.class : (player.class?.name || null);
 
@@ -63,27 +66,31 @@ module.exports = {
     //    We determine the actual command name from the message.
     const usedCmd = extractCommandName(msg, sender);
 
-    const isMatchingCmd = (usedCmd === playerCmd) || (className === 'Mage' && (usedCmd === 'call' || usedCmd === 'cast'));
+    // /skill (+aliases) is the universal entry point (skill.js forwards here) — always allowed through
+    const UNIVERSAL_CMDS = new Set(['skill', 'skills', 'useskill', 'castskill', 'classcmd']);
+    const isMatchingCmd = UNIVERSAL_CMDS.has(usedCmd) || (usedCmd === playerCmd) || (className === 'Mage' && (usedCmd === 'call' || usedCmd === 'cast'));
 
     if (usedCmd && !isMatchingCmd) {
       // Player used a different class's command
       const intendedClass = findClassByCmdName(usedCmd);
       return sock.sendMessage(chatId, {
-        text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━
-❌ *${usedCmd}* is the *${intendedClass}* class command.
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-🎭 Your class: *${className}*
+        text: (pro ? `${UI.PRO_BAR}
+❌ *${usedCmd}* is the *${intendedClass}* class command. 💎
+${UI.PRO_BAR}
+` : `❌ *${usedCmd}* is the *${intendedClass}* class command.
+${UI.FREE_BAR}
+`) + `🎭 Your class: *${className}*
 📌 Your class command: */${playerCmd}*
 
-${getCmdHelp(playerCmd)}`
+${getCmdHelp(playerCmd)}
+${FRAME}` + (pro ? '' : `\n${UI.upsell()}`)
       }, { quoted: msg });
     }
 
     // ── 3. No skill specified → show class skills menu ──────────
     const skillName = args[0];
     if (!skillName) {
-      return showClassSkillMenu(sock, chatId, player, className);
+      return showClassSkillMenu(sock, msg, player, className);
     }
 
     // ── 4. Find the skill on the player ───────────────────────
@@ -93,6 +100,70 @@ ${getCmdHelp(playerCmd)}`
         text: `❌ *${className}* doesn't know the skill *${skillName}*.\n\nUse */${playerCmd}* (no args) to see your class skills.`
       }, { quoted: msg });
     }
+
+    // ── 4b. Route into modern battle engines (mirrors /attack routing) ──
+    // The legacy queue in step 5 is write-only for these engines — forward instead.
+    // PvP: lock the skill as this turn's move
+    if (player.pvpBattle) {
+      const _rdy = skillReady(player, skill);
+      if (!_rdy.ok) return sock.sendMessage(chatId, { text: `❌ ${_rdy.reason}` }, { quoted: msg });
+      setSkillCooldown(player, skill);
+      const PvpCmd = require('./pvp');
+      return PvpCmd.execute(sock, msg, ['skill', skill.name], getDatabase, saveDatabase, sender);
+    }
+    // Gate raid in current chat (same detection as attacks.js)
+    try {
+      const GKM = require('../../rpg/dungeons/GateKeyManager');
+      const { GateManager } = require('../../rpg/dungeons/GateManager');
+      const sNum = normaliseJidShort(sender);
+      const gc = GKM.getDungeonGC(chatId);
+      let _gkey = null;
+      if (gc?.activeKeyId) {
+        const keyData = GKM.getKey(gc.activeKeyId) || db.gateKeys?.[gc.activeKeyId];
+        if (keyData) {
+          const gate = GateManager.getGate(keyData.gateId);
+          if (gate?.raid?.status === 'active' && gate.raid.members?.some(m => normaliseJidShort(m.id) === sNum)) _gkey = gc.activeKeyId;
+        }
+      }
+      if (!_gkey) {
+        for (const gate of Object.values(GateManager.gates || {})) {
+          if (gate?.raid?.status === 'active' && gate.raid.members?.some(m => normaliseJidShort(m.id) === sNum)) { _gkey = gate.raid.key; break; }
+        }
+      }
+      if (_gkey) {
+        const _rdy = skillReady(player, skill);
+        if (!_rdy.ok) return sock.sendMessage(chatId, { text: `❌ ${_rdy.reason}` }, { quoted: msg });
+        setSkillCooldown(player, skill);
+        const GateRaidCmd = require('./gateraid');
+        return GateRaidCmd.execute(sock, msg, [_gkey, 'skill', skill.name], getDatabase, saveDatabase, sender);
+      }
+    } catch(e){}
+    // Dungeon solo / party (modern managers)
+    try {
+      const DungeonPartyManager = require('../../rpg/dungeons/DungeonPartyManager');
+      const _inSolo = !!(db.soloDungeons && db.soloDungeons[sender]);
+      const _pty = DungeonPartyManager.getPartyByPlayer(sender);
+      if (_inSolo || (_pty && _pty.status === 'active')) {
+        const _rdy = skillReady(player, skill);
+        if (!_rdy.ok) return sock.sendMessage(chatId, { text: `❌ ${_rdy.reason}` }, { quoted: msg });
+        setSkillCooldown(player, skill);
+        const DungeonCmd = require('./dungeon');
+        return DungeonCmd.execute(sock, msg, ['classcmd', skill.name], getDatabase, saveDatabase, sender);
+      }
+    } catch(e){}
+    // World boss raid (same detection as attacks.js)
+    try {
+      const sNumW = normaliseJidShort(sender);
+      const _wbActive = db.activeWorldBoss && db.activeWorldBoss.status === 'active';
+      const _wbPart = _wbActive && (db.activeWorldBoss.participants || []).some(x => normaliseJidShort(x) === sNumW);
+      if (player.boss || player.inBossBattle || _wbPart) {
+        const _rdy = skillReady(player, skill);
+        if (!_rdy.ok) return sock.sendMessage(chatId, { text: `❌ ${_rdy.reason}` }, { quoted: msg });
+        setSkillCooldown(player, skill);
+        const WorldBossCmd = require('./worldboss');
+        return WorldBossCmd.execute(sock, msg, ['skill', skill.name], getDatabase, saveDatabase, sender);
+      }
+    } catch(e){}
 
     // ── 5. Dispatch to per-class handler (or default) ─────────
     // First, check if the player is in an active battle. If so, queue
@@ -105,15 +176,16 @@ ${getCmdHelp(playerCmd)}`
       const result = queueBattleAction(player, db, inBattle, skill.name, cmdName);
       if (result.ok) {
         return sock.sendMessage(chatId, {
-          text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━
-⚔️ *${skill.name}* queued!
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-📋 Queued for end of round in *${inBattle.type}*.
+          text: (pro ? `${UI.PRO_BAR}
+⚔️ *${skill.name}* queued! 💎
+${UI.PRO_BAR}
+` : `⚔️ *${skill.name}* queued!
+${UI.FREE_BAR}
+`) + `📋 Queued for end of round in *${inBattle.type}*.
 ⏳ Waiting for opponent's action...
 
 ${getCmdHelp(extractCommandName(msg, sender))}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━`
+${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO FOCUS* — ${skill.energyCost || 15} energy · ${skill.cooldown || 0}s CD` : `\n${UI.upsell()}`)
         }, { quoted: msg });
       } else {
         return sock.sendMessage(chatId, { text: `❌ ${result.reason}` }, { quoted: msg });
@@ -129,6 +201,7 @@ ${getCmdHelp(extractCommandName(msg, sender))}
 // ── Default handler: applies any skill generically ─────────────────────
 async function defaultHandler(sock, msg, player, skill, db, saveDatabase, getDatabase) {
   const chatId = msg.key.remoteJid;
+  const FRAME = UI.isPro(player) ? UI.PRO_BAR : UI.FREE_BAR;
 
   // Energy check
   const energyCost = skill.energyCost || 15;
@@ -190,9 +263,9 @@ async function defaultHandler(sock, msg, player, skill, db, saveDatabase, getDat
 
   saveDatabase();
   return sock.sendMessage(chatId, {
-    text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    text: `${FRAME}
 ${resultText}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${FRAME}
 ${player.energyColor || '💙'} ${player.energyType || 'Energy'}: ${player.stats.energy}/${player.stats.maxEnergy}`
   }, { quoted: msg });
 }
@@ -308,19 +381,23 @@ async function healerHandler(sock, msg, player, skill, db, saveDatabase, getData
   }
 
   saveDatabase();
+  const hPro = UI.isPro(player);
+  const hFRAME = hPro ? UI.PRO_BAR : UI.FREE_BAR;
+  const hpPct = targetStats.maxHp ? Math.round(100 * targetStats.hp / targetStats.maxHp) : 100;
 
   return sock.sendMessage(chatId, {
-    text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━
-💖 *${skill.name}* cast!
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-🎯 *Target:* ${targetJid === sender ? `${player.name} (self)` : targetName}
+    text: (hPro ? `${UI.PRO_BAR}
+💖 *${skill.name}* cast! 💎
+${UI.PRO_BAR}
+` : `💖 *${skill.name}* cast!
+${UI.FREE_BAR}
+`) + `🎯 *Target:* ${targetJid === sender ? `${player.name} (self)` : targetName}
 📜 *Effect:* ${skill.description || 'Healing'}
 ${effectText ? '\n' + effectText : ''}
 
 ❤️ *HP:* ${targetStats.hp}/${targetStats.maxHp}
 ⚡ *Energy:* ${player.stats.energy}/${player.stats.maxEnergy} (-${energyCost})
-━━━━━━━━━━━━━━━━━━━━━━━━━━━`
+${hFRAME}` + (hPro ? `\n${UI.PRO_MINI}\n💎 *PRO MEND* — target at ${hpPct}% HP` : `\n${UI.upsell()}`)
   }, { quoted: msg });
 }
 
@@ -399,7 +476,8 @@ function findPlayerSkill(player, className, skillName) {
   return null;
 }
 
-function showClassSkillMenu(sock, chatId, player, className) {
+function showClassSkillMenu(sock, msg, player, className) {
+  const chatId = msg.key.remoteJid;
   const data = CS.CLASS_DATA[className];
   if (!data) {
     return sock.sendMessage(chatId, { text: `❌ Class data not found: ${className}` }, { quoted: msg });
@@ -417,10 +495,10 @@ function showClassSkillMenu(sock, chatId, player, className) {
     });
   }
 
+  const mPro = UI.isPro(player);
+  const mFRAME = mPro ? UI.PRO_BAR : UI.FREE_BAR;
   const lines = [
-    `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-    `${data.emoji} *${className.toUpperCase()} — Class Skills*`,
-    `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+    ...(mPro ? [UI.PRO_BAR, `${data.emoji} *${className.toUpperCase()} — Class Skills* 💎`, UI.PRO_BAR] : [`${data.emoji} *${className.toUpperCase()} — Class Skills*`, UI.FREE_BAR]),
     `📌 Your class command: */${playerCmd}*`,
     ``,
     `📊 *Available Skills:*`,
@@ -440,7 +518,11 @@ function showClassSkillMenu(sock, chatId, player, className) {
   lines.push('');
   lines.push(`💡 */${playerCmd} <skill>* — use a skill`);
   lines.push(`💡 */${playerCmd} <skill> @user* — target an ally (for heals/buffs)`);
-  lines.push('━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+  lines.push(mFRAME);
+  if (mPro) {
+    const eq = skills.filter(s => s._source === 'equipped').length;
+    lines.push(UI.PRO_MINI, `💎 *PRO ARSENAL* — ${skills.length} known · ${eq} equipped`);
+  } else lines.push(UI.upsell());
 
   return sock.sendMessage(chatId, { text: lines.join('\n') }, { quoted: msg });
 }
@@ -457,6 +539,22 @@ function extractCommandName(msg, sender) {
 
 // ── Battle detection ────────────────────────────────────────────
 // Returns { type, battle } if the player is in a battle, else null.
+function normaliseJidShort(jid) {
+  return jid?.split('@')[0]?.split(':')[0]?.replace(/[^0-9]/g, '') || '';
+}
+
+// Energy + cooldown gate for routed skills (same rules queueBattleAction enforced)
+function skillReady(player, skill) {
+  const energyCost = skill.energyCost || 15;
+  if ((player.stats.energy || 0) < energyCost) return { ok: false, reason: `Not enough energy! Need ${energyCost}` };
+  if (player.skillCooldowns?.[skill.name] && Date.now() < player.skillCooldowns[skill.name]) return { ok: false, reason: `${skill.name} is on cooldown` };
+  return { ok: true };
+}
+function setSkillCooldown(player, skill) {
+  if (!player.skillCooldowns) player.skillCooldowns = {};
+  player.skillCooldowns[skill.name] = Date.now() + ((skill.cooldown || 0) * 1000);
+}
+
 // Battle types: 'dungeon_solo', 'dungeon_party', 'boss', 'worldboss', 'pvp', 'guild_raid'
 function checkInBattle(player, db) {
   // Solo dungeon battle

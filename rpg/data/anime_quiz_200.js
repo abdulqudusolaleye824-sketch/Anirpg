@@ -16,6 +16,8 @@
 
 'use strict';
 
+const UI = require('../utils/UI');
+
 const QUIZ_QUESTIONS = [
 
   // ══ NARUTO (1-12) ══════════════════════════════════════════════════════════
@@ -1308,12 +1310,12 @@ function getRandomQuestions(n = 10, { difficulty, anime } = {}) {
 /**
  * Format a question for WhatsApp display.
  */
-function formatQuestion(q, currentNum, total) {
+function formatQuestion(q, currentNum, total, pro = false) {
   return [
-    `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+    (pro ? UI.PRO_BAR : UI.FREE_BAR),
     `🎌 *ANIME QUIZ* — Question ${currentNum}/${total}`,
-    `📚 ${q.anime}  ·  ${q.difficulty.toUpperCase()}`,
-    `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+    `📚 ${q.anime}  ·  ${q.difficulty.toUpperCase()}`
+    + (pro ? `  ·  🎌 PRO SCHOLAR` : ''),
     ``,
     `❓ *${q.question}*`,
     ``,
@@ -1323,7 +1325,7 @@ function formatQuestion(q, currentNum, total) {
     `D. ${q.options.D}`,
     ``,
     `Use *!a A/B/C/D* to answer`,
-    `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+    (pro ? UI.PRO_BAR : UI.FREE_BAR),
   ].join('\n');
 }
 

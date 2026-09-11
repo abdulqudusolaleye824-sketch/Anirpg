@@ -19,6 +19,9 @@ module.exports = {
     if (!player) {
       return sock.sendMessage(chatId, { text: '❌ Register first! Use /register' }, { quoted: msg });
     }
+    const UI = require('../../rpg/utils/UI');
+    const pro = UI.isPro(player);
+    const FRAME = pro ? UI.PRO_BAR : UI.FREE_BAR;
 
     WeeklyGuildWar.checkWeeklyReset(db, saveDatabase);
 
@@ -59,22 +62,21 @@ module.exports = {
       return `${i+1}. ${rankIcon} *${m.name}* ${roleTag}\n   📊 Weekly GP: *+${m.weeklyGP.toLocaleString()} GP*`;
     });
 
+    const myIdx = members.findIndex(m => m.id === sender);
     const text = [
-      `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-      `🏰 *${guild.name.toUpperCase()} — WEEKLY GP RANKINGS*`,
-      `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+      ...(pro ? [UI.PRO_BAR, `🏰 *${guild.name.toUpperCase()} — WEEKLY GP RANKINGS* 💎`, UI.PRO_BAR] : [`🏰 *${guild.name.toUpperCase()} — WEEKLY GP RANKINGS*`, UI.FREE_BAR]),
       `👑 Leader: *${db.users?.[guild.leader]?.name || guild.leader.split('@')[0]}*`,
       `🏆 Server Rank: *${serverRankText}* of ${allGuilds.length}`,
       `📊 Guild Weekly GP: *${(guild.weeklyGP || 0).toLocaleString()} GP*`,
       `⏰ Cycle Ends In: *${days}d ${hours}h ${mins}m* (Sat 23:59)`,
-      `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+      FRAME,
       `👥 *MEMBER WEEKLY BREAKDOWN (${members.length}):*`,
       ``,
       ...memberLines,
       ``,
-      `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+      FRAME,
       `💡 *Earn GP from:* Gate Clears, Upgrades, Signings, PvP Wins, and Level Ups!`,
-      `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+      ...(pro ? [FRAME, UI.PRO_MINI, myIdx >= 0 ? `💎 *PRO CONTRIBUTOR* — you rank *#${myIdx + 1}* of ${members.length} (+${members[myIdx].weeklyGP.toLocaleString()} GP)` : `💎 *PRO CONTRIBUTOR* — earn GP to rank!`] : [FRAME, UI.upsell()]),
     ].join('\n');
 
     return sock.sendMessage(chatId, { text }, { quoted: msg });

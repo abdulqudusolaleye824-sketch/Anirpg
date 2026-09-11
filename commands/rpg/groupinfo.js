@@ -6,7 +6,10 @@ module.exports = {
   
   async execute(sock, msg, args, getDatabase, saveDatabase, sender) {
     const chatId = msg.key.remoteJid;
-    
+    const UI = require('../../rpg/utils/UI');
+    const pro = UI.isPro(getDatabase()?.users?.[sender] || {});
+    const FRAME = pro ? UI.PRO_BAR : UI.FREE_BAR;
+
     const groups = AutoRedirect.getAllGroups();
     
     if (groups.length === 0) {
@@ -15,29 +18,19 @@ module.exports = {
       }, { quoted: msg });
     }
 
-    let message = `━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🎮 GAME GROUPS 🎮
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Join the right group for each activity!
-━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
+    let message = pro ? `${UI.PRO_BAR}\n🎮 GAME GROUPS 🎮 💎\n${UI.PRO_BAR}\nJoin the right group for each activity!\n${UI.PRO_BAR}\n\n` : `🎮 GAME GROUPS 🎮\n${UI.FREE_BAR}\nJoin the right group for each activity!\n${UI.FREE_BAR}\n\n`;
 
     groups.forEach((group, index) => {
       message += `${group.emoji} *${group.groupName}*\n`;
-      message += `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+      message += `${FRAME}\n`;
       message += `📋 Commands:\n`;
-      group.commands.forEach(cmd => {
+      (group.commands || []).forEach(cmd => {
         message += `   • /${cmd}\n`;
       });
-      message += `\n🔗 Join: ${group.inviteLink}\n\n`;
+      message += `\n🔗 Join: ${group.inviteLink || '(link not set)'}\n\n`;
     });
 
-    message += `━━━━━━━━━━━━━━━━━━━━━━━━━━━
-💡 TIP
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Commands like /stats, /profile, /shop work everywhere!
-
-Special commands only work in their designated groups.
-━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+    message += `${FRAME}\n💡 TIP\n${FRAME}\nCommands like /stats, /profile, /shop work everywhere!\n\nSpecial commands only work in their designated groups.\n${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO NAVIGATOR* — ${groups.length} groups` : `\n${UI.upsell()}`);
 
     return sock.sendMessage(chatId, {
       text: message

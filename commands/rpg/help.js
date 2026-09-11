@@ -4,6 +4,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const UI = require('../../rpg/utils/UI');
 
 const KNOWN_SUBCOMMANDS = {
   reset: ['@user', 'restore', 'cooldown'],
@@ -151,33 +152,43 @@ module.exports = {
         ? rawSub.join(', ')
         : null;
 
-      const detailMessage = [
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-        `📘 *COMMAND DETAILS*`,
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-        ``,
-        `🔹 *Name:* /${command.name}`,
-        `📝 *Description:* ${command.description || 'No description available'}`,
-        `📌 *Usage:* ${command.usage || `/${command.name}`}`,
-        `🔁 *Aliases:* ${aliases}`,
-        `📂 *Category:* ${command.category || 'general'}`,
-        subcommands ? `⚡ *Subcommands:* ${subcommands}` : ``,
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-      ].filter(l => l !== '').join('\n');
+      const viewer = getDatabase()?.users?.[sender];
+      let sameCat = [];
+      try {
+        const seen = new Set();
+        for (const mod of getAllCommands().values()) {
+          if ((mod.category || 'general') === (command.category || 'general') && mod.name !== command.name && !seen.has(mod.name)) {
+            seen.add(mod.name);
+            sameCat.push('/' + mod.name);
+          }
+          if (sameCat.length >= 6) break;
+        }
+      } catch (e) {}
+      const detailMessage = UI.card(viewer, {
+        icon: '📘', title: 'COMMAND DETAILS',
+        lines: [
+          `🔹 *Name:* /${command.name}`,
+          `📝 *Description:* ${command.description || 'No description available'}`,
+          `📌 *Usage:* ${command.usage || `/${command.name}`}`,
+          `🔁 *Aliases:* ${aliases}`,
+          `📂 *Category:* ${command.category || 'general'}`,
+          ...(subcommands ? [`⚡ *Subcommands:* ${subcommands}`] : []),
+        ],
+        proLines: sameCat.length ? [`🔗 *More ${command.category || 'general'}:*`, `  ${sameCat.join(' · ')}`] : [],
+        tip: `/${command.name} to run it`,
+      });
 
       return sock.sendMessage(chatId, { text: detailMessage }, { quoted: msg });
     }
 
     // 🔹 Main Help Page (Categorized list of all main commands)
-    const message = [
-      `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-      `📋 *✦ 𝐀𝐬𝐭𝐫𝐚™ COMMAND MENU*`,
-      `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+    const viewerH = getDatabase()?.users?.[sender];
+    const menuLines = [
       `👤 *BASIC & PLAYER:*`,
       `  /register, /profile (/p, /me), /stats, /inventory (/inv), /balance (/bal), /daily, /quest, /cooldowns, /achievements`,
       ``,
       `⚔️ *COMBAT & DUNGEONS:*`,
-      `  /dungeon, /raid (/gateraid, /gr), /gate (/gates), /pvp, /duel, /worldboss (/wb), /leaderboard (/top), /coop, /party, /affiliate`,
+      `  /dungeon, /raid (/gateraid, /gr), /gate (/gates), /pvp, /worldboss (/wb), /leaderboard (/top), /coop, /party, /affiliate`,
       ``,
       `🔧 *PROGRESSION & GEAR:*`,
       `  /class, /awaken, /attacks, /summon, /craft, /forge, /enchant, /upgrade, /pet, /artifact, /aura, /constellation, /skin, /title`,
@@ -193,10 +204,13 @@ module.exports = {
       ``,
       `🤖 *SYSTEM & CONFIG:*`,
       `  /setgroup, /allowgc, /setserf, /approveserf, /renew, /ssub, /bots, /start, /switch, /restart`,
-      `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-      `💡 Type */help <command>* (or */h <cmd>*) for subcommands & details!`,
-      `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-    ].join('\n');
+    ];
+    const message = UI.card(viewerH, {
+      icon: '📋', title: '✦ 𝐀𝐬𝐭𝐫𝐚™ COMMAND MENU',
+      lines: menuLines,
+      proLines: [`${viewerH?.name ? `👋 Hey *${viewerH.name}*! ` : ''}🌟 PRO active — every card is deluxe.`],
+      tip: 'Type */help <command>* (or */h <cmd>*) for subcommands & details!',
+    });
 
     try {
       const bannerPath = path.join(__dirname, '..', '..', 'assets', 'help_banner.jpg');

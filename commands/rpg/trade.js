@@ -13,10 +13,13 @@ module.exports = {
     const BOT_OWNER_ID = COOWNER_JID;
 
     if (!player) {
-      return sock.sendMessage(chatId, { 
-        text: '❌ You are not registered!\nUse /register to start your adventure.' 
+      return sock.sendMessage(chatId, {
+        text: '❌ You are not registered!\nUse /register to start your adventure.'
       }, { quoted: msg });
     }
+    const UI = require('../../rpg/utils/UI');
+    const pro = UI.isPro(player);
+    const FRAME = pro ? UI.PRO_BAR : UI.FREE_BAR;
 
     const action = args[0]?.toLowerCase();
 
@@ -24,20 +27,19 @@ module.exports = {
     if (!db.pendingTrades) {
       db.pendingTrades = {};
     }
+    const _deskIn = db.pendingTrades[sender];
+    const _deskOut = Object.values(db.pendingTrades).find(t => t && t.from === sender);
 
     // ═══════════════════════════════════════════════════════════════════
     // TRADING MENU (No action)
     // ═══════════════════════════════════════════════════════════════════
     if (!action) {
       return sock.sendMessage(chatId, { 
-        text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🤝 TRADING SYSTEM 🤝
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Trade resources with other hunters!
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        text: (pro ? `${UI.PRO_BAR}\n🤝 TRADING SYSTEM 🤝 💎\n${UI.PRO_BAR}\n` : `🤝 TRADING SYSTEM 🤝\n${UI.FREE_BAR}\n`) + `Trade resources with other hunters!
+${FRAME}
 
 📌 COMMANDS
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${FRAME}
 /trade offer @user [amount] [type]
   Example: /trade offer @1234567890 100 Nexus
 
@@ -45,20 +47,20 @@ Trade resources with other hunters!
 /trade reject - Reject pending trade
 /trade cancel - Cancel your offer
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${FRAME}
 💠 TRADEABLE RESOURCES
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${FRAME}
 • Nexus - Currency
 • crystals - Mana Stones
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${FRAME}
 📜 TRADING RULES
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${FRAME}
 ✅ Both hunters must be registered
 ✅ Minimum trade: 50 units
 💠 5% system fee (deducted from sender)
 ⏰ Trades expire after 5 minutes
-━━━━━━━━━━━━━━━━━━━━━━━━━━━` 
+${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n` + (_deskIn ? `💎 *PRO DESK* — incoming: ${_deskIn.amount} ${_deskIn.resource}` : _deskOut ? `💎 *PRO DESK* — outgoing: ${_deskOut.amount} ${_deskOut.resource}` : `💎 *PRO DESK* — no pending trades`) : `\n${UI.upsell()}`) 
       }, { quoted: msg });
     }
 
@@ -149,34 +151,35 @@ Trade resources with other hunters!
       saveDatabase();
 
       await sock.sendMessage(chatId, { 
-        text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        text: `${FRAME}
 ✅ TRADE OFFER SENT!
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${FRAME}
 📦 Offering: ${amount} ${resourceType}
 👤 To: ${db.users[recipientId].name}
 💠 Fee: ${fee} ${resourceType} (5%)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${FRAME}
 📊 Total Cost: ${totalNeeded} ${resourceType}
 ⏰ Offer expires in 5 minutes
-━━━━━━━━━━━━━━━━━━━━━━━━━━━` 
+${FRAME}` 
       }, { quoted: msg });
 
-      // Notify recipient
+      // Notify recipient (styled by the RECIPIENT's pro status)
       try {
+        const FRAME = UI.isPro(db.users[recipientId]) ? UI.PRO_BAR : UI.FREE_BAR;
         await sock.sendMessage(recipientId, { 
-          text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━
+          text: `${FRAME}
 🔔 TRADE OFFER RECEIVED!
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${FRAME}
 👤 From: ${player.name}
 📦 You will receive: ${amount} ${resourceType}
 💠 No cost to you!
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${FRAME}
 📌 ACTIONS:
 • /trade accept - Accept trade
 • /trade reject - Reject trade
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${FRAME}
 ⏰ Offer expires in 5 minutes
-━━━━━━━━━━━━━━━━━━━━━━━━━━━` 
+${FRAME}` 
         });
       } catch (error) {
         console.log('Could not notify recipient:', error);
@@ -298,26 +301,26 @@ Trade resources with other hunters!
       saveDatabase();
 
       await sock.sendMessage(chatId, { 
-        text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        text: `${FRAME}
 ✅ TRADE COMPLETED!
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${FRAME}
 📦 Received: ${trade.amount} ${trade.resource}
 💠 No cost to you!
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${FRAME}
 👤 From: ${senderTrader.name}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━` 
+${FRAME}` 
       }, { quoted: msg });
 
       try {
         await sock.sendMessage(trade.from, { 
-          text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━
+          text: `${FRAME}
 ✅ TRADE COMPLETED!
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${FRAME}
 📦 Sent: ${trade.amount} ${trade.resource}
 💠 System Fee: ${trade.fee} ${trade.resource} (5%)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${FRAME}
 👤 To: ${recipient.name}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━` 
+${FRAME}` 
         });
       } catch (error) {
         console.log('Could not notify sender:', error);

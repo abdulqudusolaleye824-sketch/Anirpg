@@ -1,6 +1,7 @@
 const fs   = require('fs');
 const path = require('path');
 const Perms = require('../../utils/permissions');
+const UI = require('../../rpg/utils/UI');
 
 module.exports = {
   name: 'botstats',
@@ -9,6 +10,7 @@ module.exports = {
   async execute(sock, msg, args, getDatabase, saveDatabase, sender) {
     const chatId = msg.key.remoteJid;
     const db = getDatabase();
+    const proB = UI.isPro(db.users[sender]);
 
     if (!Perms.isBotMod(db, sender)) {
       return sock.sendMessage(chatId, {
@@ -108,71 +110,62 @@ module.exports = {
 
     const now = new Date();
 
-    const out = `━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    const out = `${(proB ? UI.PRO_BAR : UI.FREE_BAR)}
 📊 BOT STATISTICS 📊
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
 📅 ${now.toLocaleDateString()} ${now.toLocaleTimeString()}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-👥 HUNTERS
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${proB ? `${UI.PRO_MINI}\n👑 PRO OVERWATCH\n💹 Avg wallet/hunter: *${Math.round(totalNexus / (totalUsers || 1)).toLocaleString()}* 💠 · ⚔️ PvP win-rate: *${pvpWins + pvpLosses ? Math.round(pvpWins / (pvpWins + pvpLosses) * 100) : 0}%*` : `${(proB ? UI.PRO_MINI : UI.FREE_MINI)}
+👥 HUNTERS`}
+${proB ? `${(proB ? UI.PRO_MINI : UI.FREE_MINI)}
+👥 HUNTERS` : ''}
 👤 Total Registered: ${totalUsers}
 🟢 Active (24h): ${active24h}
 👑 Admins: ${totalAdmins}
 🚫 Banned: ${totalBanned}
 🔇 Muted: ${totalMuted}
 💤 AFK: ${totalAFK}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${(proB ? UI.PRO_MINI : UI.FREE_MINI)}
 ⭐ LEVELS
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
 📈 Average: ${avgLevel} | Max: ${maxLevel} | Min: ${minLevel}
 📊 Lv 1–10:  ${lv1_10}  |  11–30: ${lv11_30}
    Lv 31–50: ${lv31_50}  |  51+:   ${lv51p}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${(proB ? UI.PRO_MINI : UI.FREE_MINI)}
 🏆 TOP HUNTERS
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ${top3.map((p,i) => `${['🥇','🥈','🥉'][i]} ${p.name} — Lv${p.level||1} ${p.class?.name||'?'}`).join('\n')}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${(proB ? UI.PRO_MINI : UI.FREE_MINI)}
 ⚔️ CLASSES
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ${topClasses}
 💠 Common: ${rarityCount.common}  🔵 Rare: ${rarityCount.rare}
 🟣 Epic: ${rarityCount.epic}  🟡 Legendary: ${rarityCount.legendary}  ⚗️ Divine: ${rarityCount.divine}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${(proB ? UI.PRO_MINI : UI.FREE_MINI)}
 💠 ECONOMY
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
 💵 Total Wallet Nexus: ${totalNexus.toLocaleString()}
 🏦 Total Bank Nexus:   ${totalBankNexus.toLocaleString()}
 💎 Total 💎 Mana Stones:    ${totalCrystals.toLocaleString()}
 ${richestUser ? `👑 Richest: ${richestUser.name} (${(richestUser.gold||0).toLocaleString()} 💠)` : ''}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${(proB ? UI.PRO_MINI : UI.FREE_MINI)}
 🏦 BANKS
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
 🏛️ Banks: ${totalBanks}  |  Accounts: ${totalAccounts}
 💠 Total Deposits: ${totalBankNexus.toLocaleString()} 💠
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${(proB ? UI.PRO_MINI : UI.FREE_MINI)}
 🏰 GUILDS
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
 🏰 Total Guilds: ${totalGuilds}  |  Members: ${totalGuildMembers}
 ${topGuild ? `👑 Largest: ${topGuild.name} (${topGuild.members?.length||0} members)` : ''}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${(proB ? UI.PRO_MINI : UI.FREE_MINI)}
 ⚔️ COMBAT
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
 👹 Boss Kills: ${totalBossKills.toLocaleString()}
 🚪 Dungeon Clears: ${totalDungeonClears.toLocaleString()}
 ⚔️ PvP: ${pvpWins}W / ${pvpLosses}L
 🔴 Currently in Battle: ${inBossBattle}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${(proB ? UI.PRO_MINI : UI.FREE_MINI)}
 🐾 PETS & QUESTS
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
 🐾 Pet Owners: ${totalPetOwners}
 📜 Quest Players: ${totalQuestPlayers}
 🏅 Achievement Players: ${totalAchievementPlayers}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${(proB ? UI.PRO_MINI : UI.FREE_MINI)}
 🌐 GROUPS & SYSTEM
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
 📱 Groups: ${totalGroups}  |  AntiLink: ${antiLinkGroups}
 📬 Subscribers: ${totalSubs}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+${(proB ? UI.PRO_BAR : UI.FREE_BAR)}`;
 
     await sock.sendMessage(chatId, { text: out }, { quoted: msg });
   }

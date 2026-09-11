@@ -22,6 +22,7 @@
  */
 
 'use strict';
+const UI = require('./UI');
 
 // ── 50-quest pool ─────────────────────────────────────────────────────────────
 const DAILY_QUEST_POOL = [
@@ -43,8 +44,8 @@ const DAILY_QUEST_POOL = [
   { id: 'dq_dungeons10',  name: 'Dungeon Master',        desc: 'Clear 10 dungeon floors',                  type: 'dungeon',  target: 10,  reward: { gold: 1600,  crystals: 50  } },
   { id: 'dq_floor5',      name: 'Floor Conqueror',       desc: 'Reach floor 5 in a dungeon',               type: 'floor',    target: 5,   reward: { gold: 650,   crystals: 18  } },
   { id: 'dq_floor10',     name: 'Deep Diver',            desc: 'Reach floor 10 in a dungeon',              type: 'floor',    target: 10,  reward: { gold: 1100,  crystals: 33  } },
-  { id: 'dq_floor20',     name: 'Abyss Walker',          desc: 'Reach floor 20 in a dungeon',              type: 'floor',    target: 20,  reward: { gold: 2700,  crystals: 80 } },
-  { id: 'dq_fullclear',   name: 'Full Clear',            desc: 'Fully clear a dungeon (all 20 floors)',    type: 'clear',    target: 1,   reward: { gold: 2200,  crystals: 70  } },
+  { id: 'dq_floor20',     name: 'Abyss Walker',          desc: 'Reach floor 4 in a dungeon',               type: 'floor',    target: 4,   reward: { gold: 600,   crystals: 15  } },
+  { id: 'dq_fullclear',   name: 'Full Clear',            desc: 'Fully clear a dungeon',    type: 'clear',    target: 1,   reward: { gold: 2200,  crystals: 70  } },
   { id: 'dq_fullclear3',  name: 'Completionist',         desc: 'Fully clear 3 dungeons',                   type: 'clear',    target: 3,   reward: { gold: 4000,  crystals: 160 } },
 
   // ── PvP (5) ──────────────────────────────────────────────────────────────
@@ -69,8 +70,8 @@ const DAILY_QUEST_POOL = [
   // ── Healer / Support (4) ──────────────────────────────────────────────────
   { id: 'dq_heal2',       name: 'Survivalist',           desc: 'Heal 2 times during battle',               type: 'heal',     target: 2,   reward: { gold: 350,   crystals: 7   } },
   { id: 'dq_heal5',       name: 'Field Medic',           desc: 'Heal 5 times during battle',               type: 'heal',     target: 5,   reward: { gold: 700,   crystals: 17  } },
-  { id: 'dq_buff1',       name: 'Supporter',             desc: 'Apply 1 buff to a teammate',               type: 'buff',     target: 1,   reward: { gold: 350,   crystals: 8  } },
-  { id: 'dq_buff3',       name: 'Battle Cleric',         desc: 'Apply 3 buffs to teammates',               type: 'buff',     target: 3,   reward: { gold: 900,   crystals: 25  } },
+  { id: 'dq_buff1',       name: 'Supporter',             desc: 'Activate 1 buff (/buff)',               type: 'buff',     target: 1,   reward: { gold: 350,   crystals: 8  } },
+  { id: 'dq_buff3',       name: 'Battle Cleric',         desc: 'Activate 3 buffs (/buff)',               type: 'buff',     target: 3,   reward: { gold: 900,   crystals: 25  } },
 
   // ── Pets / Taming (4) ────────────────────────────────────────────────────
   { id: 'dq_pet1',        name: 'Pet Trainer',           desc: 'Train your pet once',                      type: 'pet',      target: 1,   reward: { gold: 350,   crystals: 8  } },
@@ -91,7 +92,6 @@ const DAILY_QUEST_POOL = [
   { id: 'dq_guildwar1',   name: 'War Veteran',           desc: 'Participate in 1 Guild War',               type: 'gw',       target: 1,   reward: { gold: 1300,  crystals: 35  } },
 
   // ── Reputation (1) ────────────────────────────────────────────────────────
-  { id: 'dq_questrep1',   name: 'Faction Friend',        desc: 'Gain faction reputation',                  type: 'rep',      target: 1,   reward: { gold: 200,   crystals: 8  } },
 ];
 
 // ── Streak milestones (one-time, never reset, NERFED) ────────────────────────
@@ -196,7 +196,9 @@ function trackQuestProgress(player, type, amount = 1) {
   const justClaimed = [];
   for (const q of player.dailyQuests.quests) {
     if (q.completed || q.type !== type) continue;
-    q.progress = (q.progress || 0) + amount;
+    // 'floor' quests track the DEEPEST floor reached (max), not a sum
+    if (type === 'floor') q.progress = Math.max(q.progress || 0, amount);
+    else q.progress = (q.progress || 0) + amount;
     if (q.progress >= q.target) {
       q.progress  = q.target;
       q.completed = true;
@@ -256,6 +258,8 @@ function buildProgressBar(current, max, length = 8) {
 // ── Format daily quests display ─────────────────────────────────────────────
 function formatDailyQuests(player) {
   ensureDailyQuests(player);
+  const pro = UI.isPro(player);
+  const FRAME = pro ? UI.PRO_BAR : UI.FREE_BAR;
   const quests = player.dailyQuests?.quests || [];
   const streak = player.dailyQuests?.streak || 0;
   const dayKey = player.dailyQuests?.dayKey || '—';
@@ -265,7 +269,7 @@ function formatDailyQuests(player) {
   const allStreaks = Object.keys(STREAK_MILESTONES).map(Number).sort((a,b) => a-b);
   const nextMilestone = allStreaks.find(s => s > streak);
 
-  let txt = `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n📋 *DAILY QUESTS* — ${dayKey}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+  let txt = pro ? `${UI.PRO_BAR}\n📋 *DAILY QUESTS* — ${dayKey} 💎\n${UI.PRO_BAR}\n` : `📋 *DAILY QUESTS* — ${dayKey}\n${UI.FREE_BAR}\n`;
   txt += `🔥 Streak: *${streak}* day${streak===1?'':'s'}   `;
   if (nextMilestone) txt += `(next milestone: ${nextMilestone}-day)\n`;
   else txt += `🏆 MAX MILESTONE!\n`;
@@ -273,7 +277,7 @@ function formatDailyQuests(player) {
 
   quests.forEach((q, i) => {
     const icon = q.claimed ? '✅' : q.completed ? '🎁' : '⏳';
-    const bar  = buildProgressBar(q.progress || 0, q.target);
+    const bar  = UI.bar(q.progress || 0, q.target, 8, pro);
     txt += `${icon} *${i+1}. ${q.name}*\n`;
     txt += `   ${q.desc}\n`;
     txt += `   ${bar} ${q.progress||0}/${q.target}\n`;
@@ -295,11 +299,11 @@ function formatDailyQuests(player) {
     txt += `🏆 *Milestones earned:* ${milestones.join(', ')}-day\n`;
   }
 
-  txt += `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+  txt += `${FRAME}\n`;
   txt += `💡 Quests refresh at midnight (WAT)\n`;
   txt += `💡 Rewards auto-claim when you hit 100%\n`;
   txt += `💡 Complete all 4 every day to grow your streak\n`;
-  txt += `━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+  txt += `${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO STREAK* — ${streak}-day${nextMilestone ? ` · next: ${nextMilestone}-day` : ' · MAX'}` : `\n${UI.upsell()}`);
   return txt;
 }
 

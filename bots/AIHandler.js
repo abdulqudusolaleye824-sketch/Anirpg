@@ -14,7 +14,7 @@ const Perms               = require('../utils/permissions');
 const { OWNER_JID } = require('../utils/constants');
 
 const conversationHistory = {};
-const MAX_HISTORY = 20;
+const MAX_HISTORY = 50; // per-player messages kept (was 20, shared across the whole chat)
 
 function roleOf(sender, db) {
   if (!sender) return 'guest';
@@ -59,21 +59,32 @@ function buildRoleContext(sender, senderName, db) {
   );
 }
 
-function getHistory(chatId, key) {
+// Per-player memory: chat → player → personality → last 50 messages
+function getHistory(chatId, key, sender) {
+  const who = sender || '_group';
   if (!conversationHistory[chatId]) conversationHistory[chatId] = {};
-  if (!conversationHistory[chatId][key]) conversationHistory[chatId][key] = [];
-  return conversationHistory[chatId][key];
+  if (!conversationHistory[chatId][who]) conversationHistory[chatId][who] = {};
+  if (!conversationHistory[chatId][who][key]) conversationHistory[chatId][who][key] = [];
+  return conversationHistory[chatId][who][key];
 }
 
-function addToHistory(chatId, key, role, content) {
-  const h = getHistory(chatId, key);
+function addToHistory(chatId, key, sender, role, content) {
+  const h = getHistory(chatId, key, sender);
   h.push({ role, content });
-  if (h.length > MAX_HISTORY * 2) conversationHistory[chatId][key] = h.slice(-MAX_HISTORY * 2);
+  if (h.length > MAX_HISTORY) h.splice(0, h.length - MAX_HISTORY);
   _touchHistory(chatId);
 }
 
-function clearHistory(chatId, key) {
-  if (conversationHistory[chatId]) delete conversationHistory[chatId][key];
+function clearHistory(chatId, key, sender = null) {
+  if (!conversationHistory[chatId]) return;
+  if (sender) {
+    if (conversationHistory[chatId][sender]) delete conversationHistory[chatId][sender][key];
+  } else {
+    for (const who of Object.keys(conversationHistory[chatId])) {
+      if (who.startsWith('__')) continue;
+      if (conversationHistory[chatId][who]?.[key]) delete conversationHistory[chatId][who][key];
+    }
+  }
 }
 
 function _touchHistory(chatId) {
@@ -142,6 +153,14 @@ async function callAI(systemPrompt, messages, temperature = 0.85, maxTokens = 30
   return res?.choices?.[0]?.message?.content?.trim() || '';
 }
 
+// Lewd / sexually-explicit content → gentle in-character deflection (never comply, never preach)
+const LEWD_PATTERNS = [
+  /\b(sex|porn|hentai|xxx|nsfw|nude|naked|boobs|tits|pussy|dick|cock|blowjob|handjob|masturbat|orgasm|horny|seductive|sexy pics?|nudes|rule ?34)\b/i,
+  /\b(sexy|nude|naked|hot|lewd).{0,20}\b(pics?|pictures?|photos?|images?)\b/i,
+  /\b(send|show|give me).{0,20}\b(pic|picture|photo|image).{0,20}\b(sexy|nude|naked|hot|lewd)\b/i,
+  /\b(dirty talk|phone sex|sext|erotic|fetish|bdsm|kinky)\b/i,
+];
+
 const INTENT_PATTERNS = {
   math: [
     /\b(solve|calculate|compute|what(?:'s| is)(?: the)? (?:answer|result|value)|help me with(?: the)? math|equation|integral|derivative|simplify)\b/i,
@@ -150,12 +169,9 @@ const INTENT_PATTERNS = {
   image: [
     /\b(draw|generate|create|make|design|paint|illustrate)\b.{0,30}\b(image|picture|art|wallpaper|fanart|photo)\b/i,
   ],
-  song: [
-    /\b(play|find|download|get me|send me|can you (?:find|get|send))\b.{0,30}\b(song|music|track|audio|ost|opening|ending|op\b|ed\b)\b/i,
-  ],
-  lyrics: [
-    /\b(lyrics?|words? (?:to|of)|what(?:'s| are) the (?:words|lyrics))\b/i,
-  ],
+  // NOTE: song/lyrics intents were REMOVED — they had no backend (the game has no
+  // music feature), so every match returned an EMPTY reply. Those messages now
+  // fall through to normal chat, which answers honestly in character.
   search: [
     /\b(who (?:is|was|are)|what (?:is|was|are|does)|when (?:did|was)|where (?:is|was)|why (?:is|did|does)|how (?:does|do|did))\b/i,
   ],
@@ -181,6 +197,10 @@ function detectIntent(message) {
 
 function extractPayload(message, intent) {
   let cleaned = message.replace(/^[A-Z][a-z]+[,\s]+/, '').trim();
+  if (intent === 'math') {
+    // Strip the verb so runMath gets a pure expression ("calculate 2+2" → "2+2").
+    cleaned = cleaned.replace(/^(?:please\s+)?(?:solve|calculate|compute|evaluate|simplify|what(?:'s| is)(?: the)?(?: answer| result| value)?(?: to| of| for)?)\s*/i, '').trim();
+  }
   return cleaned || message;
 }
 
@@ -202,7 +222,7 @@ async function runMath(query) {
       }
     } catch(e) {}
   }
-  return { success: true, result: 'Calculated.' };
+  return { success: false, result: null }; // not computable → fall through to chat
 }
 
 async function runSearch(query) {
@@ -213,7 +233,7 @@ async function runSearch(query) {
     );
     return { success: true, result: answer };
   } catch (e) {
-    return { success: true, result: 'Information retrieved.' };
+    return { success: false, result: null }; // search backend down → chat answers from knowledge
   }
 }
 
@@ -242,7 +262,23 @@ async function generateResponse(
 ) {
   const displayName  = PersonalityManager.getDisplayName(personalityKey);
   const systemPrompt = PersonalityManager.getSystemPrompt(personalityKey);
-  const history      = getHistory(chatId, personalityKey);
+  const history      = getHistory(chatId, personalityKey, sender);
+
+  // ── Lewd shutdown (first, before any intent/AI game handling) ──
+  if (LEWD_PATTERNS.some(re => re.test(userMessage))) {
+    let text = '';
+    try {
+      text = await callAI(
+        systemPrompt + '\n\n[SAFETY: the user message is sexually explicit or asks for lewd/erotic content. GENTLY decline in character in 1-2 short sentences — kind and brief, never preachy, never shaming, never repeating the explicit content — then playfully steer back to the adventure. Never comply with explicit requests.]',
+        [{ role: 'user', content: `[${senderName}]: ${userMessage}` }],
+        0.7, 150
+      );
+    } catch(e) { text = ''; }
+    if (!text) text = `Easy there, hunter — let's keep this adventure going instead! ⚔️`;
+    addToHistory(chatId, personalityKey, sender, 'user', `[${senderName}]: ${userMessage}`);
+    addToHistory(chatId, personalityKey, sender, 'assistant', text);
+    return { text };
+  }
 
   if (sender && getDatabase) {
     const db = getDatabase();
@@ -252,8 +288,8 @@ async function generateResponse(
       );
       if (rpgResult.handled) {
         let text = rpgResult.text;
-        addToHistory(chatId, personalityKey, 'user', `[${senderName}]: ${userMessage}`);
-        addToHistory(chatId, personalityKey, 'assistant', text);
+        addToHistory(chatId, personalityKey, sender, 'user', `[${senderName}]: ${userMessage}`);
+        addToHistory(chatId, personalityKey, sender, 'assistant', text);
         return { text, attachment: rpgResult.attachment || null };
       }
     } catch(err) {
@@ -264,29 +300,37 @@ async function generateResponse(
   const intent  = detectIntent(userMessage);
   const payload = extractPayload(userMessage, intent);
 
+  // ── Wired intents (math/search/image only — each with a real backend).
+  // Any failure or empty result falls THROUGH to normal chat below, so the
+  // player always gets an answer instead of "try again in a moment" / silence.
   if (intent !== 'chat') {
     try {
       let text = '';
       let attachment = null;
 
       if (intent === 'math') {
-        const { result } = await runMath(payload);
-        text = await callAI(DELIVERY.math(displayName, result), [], 0.85, 120);
-        text += `\n\n🧮 *${result}*`;
+        const r = await runMath(payload);
+        if (!r.success) throw new Error('math-fallback');
+        text = await callAI(DELIVERY.math(displayName, r.result), [], 0.85, 120);
+        text += `\n\n🧮 *${r.result}*`;
       } else if (intent === 'image') {
         const res = await runImageGen(payload);
         text = await callAI(DELIVERY.image(displayName, payload), [], 0.85, 100);
         attachment = { type: 'image', buffer: res.buffer };
       } else if (intent === 'search') {
-        const { result } = await runSearch(payload);
-        text = await callAI(DELIVERY.search(displayName, result), [], 0.85, 200);
+        const r = await runSearch(payload);
+        if (!r.success) throw new Error('search-fallback');
+        text = await callAI(DELIVERY.search(displayName, r.result), [], 0.85, 200);
+      } else {
+        throw new Error('unwired-intent');
       }
 
-      addToHistory(chatId, personalityKey, 'user', `[${senderName}]: ${userMessage}`);
-      addToHistory(chatId, personalityKey, 'assistant', text);
+      if (!text && !attachment) throw new Error('empty-intent');
+      addToHistory(chatId, personalityKey, sender, 'user', `[${senderName}]: ${userMessage}`);
+      addToHistory(chatId, personalityKey, sender, 'assistant', text);
       return { text, attachment };
     } catch (err) {
-      console.error(`Intent error:`, err.message);
+      console.error(`Intent error, falling through to chat:`, err.message);
     }
   }
 
@@ -305,8 +349,8 @@ async function generateResponse(
   }
 
   if (reply) {
-    addToHistory(chatId, personalityKey, 'user', `[${senderName}]: ${userMessage}`);
-    addToHistory(chatId, personalityKey, 'assistant', reply);
+    addToHistory(chatId, personalityKey, sender, 'user', `[${senderName}]: ${userMessage}`);
+    addToHistory(chatId, personalityKey, sender, 'assistant', reply);
   }
 
   return { text: reply };

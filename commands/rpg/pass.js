@@ -143,28 +143,12 @@ function getTierDisplay(t) {
   return { freeStr, premStr, freeItem, premItem, freeNexus, freeStones, premNexus, premStones };
 }
 
+const RI = require('../../rpg/utils/RewardInventory');
+
+// All pass rewards commit to inventory.items via the shared normalizer
+// (identical shape to before: gear entries carry seasonal:true).
 function addItemToInventory(player, item) {
-  if (!item) return;
-  if (!player.inventory) {
-    player.inventory = { weapons: [], armor: [], potions: [], artifacts: [], accessories: [], materials: [], scrolls: [], keyStones: [], items: [] };
-  }
-  const type = (item.type || 'material').toLowerCase();
-  if (type === 'weapon' || type === 'weapons') {
-    if (!Array.isArray(player.inventory.weapons)) player.inventory.weapons = [];
-    player.inventory.weapons.push({ ...item, acquiredAt: Date.now() });
-  } else if (type === 'armor') {
-    if (!Array.isArray(player.inventory.armor)) player.inventory.armor = [];
-    player.inventory.armor.push({ ...item, acquiredAt: Date.now() });
-  } else if (type === 'accessory' || type === 'ring') {
-    if (!Array.isArray(player.inventory.accessories)) player.inventory.accessories = [];
-    player.inventory.accessories.push({ ...item, acquiredAt: Date.now() });
-  } else if (type === 'material' || type === 'materials') {
-    if (!Array.isArray(player.inventory.materials)) player.inventory.materials = [];
-    player.inventory.materials.push({ ...item, acquiredAt: Date.now() });
-  } else {
-    if (!Array.isArray(player.inventory.items)) player.inventory.items = [];
-    player.inventory.items.push({ ...item, acquiredAt: Date.now() });
-  }
+  return RI.grantItem(player, item, 'pass', { seasonal: true });
 }
 
 module.exports = {
@@ -177,6 +161,9 @@ module.exports = {
     const db = getDatabase();
     const player = db.users[sender];
     if (!player) return sock.sendMessage(chatId, { text: '❌ Register first! Use /register' }, { quoted: msg });
+    const UI = require('../../rpg/utils/UI');
+    const pro = UI.isPro(player);
+    const FRAME = pro ? UI.PRO_BAR : UI.FREE_BAR;
 
     if (!player.astraPass) {
       player.astraPass = { level: 1, xp: 0, claimedFree: [], claimedPremium: [], seasonStart: Date.now() };
@@ -189,33 +176,41 @@ module.exports = {
 
     // ── INFO SUBCOMMAND ──────────────────────────────────────────
     if (sub === 'info' || sub === 'help' || sub === 'xp') {
-      const infoText = [
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-        `🏛️ *ASTRA PASS — XP & SYSTEM INFO*`,
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-        ``,
-        `📜 *HOW TO EARN ASTRA PASS XP:*`,
-        `Earn Astra Pass XP automatically from *ALL GAME ACTIVITIES*:`,
-        `• 💬 Commands & Interactions: 10–100 XP`,
-        `• 🌅 Daily / Weekly Claims: 100–500 XP`,
-        `• ⚒️ Crafting & Forging: 50–300 XP`,
-        `• ⚔️ PvP Battles & Duels: 100–500 XP`,
-        `• 🏰 Gate Raids & Dungeons: 500–2,000 XP`,
-        `• 🐉 World Boss Battles: 1,000–5,000 XP`,
-        ``,
-        `⚡ *EXP BOOSTS & MULTIPLIERS:*`,
-        `• 👑 *PRO Subscription:* Gives **2x Player EXP** across all actions!`,
-        `• 🏛️ *Astra Pass Premium:* Unlocks the Premium Track rewards for all 50 tiers!`,
-        ``,
-        `💡 *HOW TO UPGRADE TO PREMIUM:*`,
-        `Upgrade to PRO via */prostore* to automatically unlock Premium Astra Pass!`,
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-      ].join('\n');
+      const unclaimedI = [];
+      for (let t = 1; t <= Math.min(ap.level, TOTAL_TIERS); t++) {
+        const f = (ap.claimedFree || []).includes(t), pm = (ap.claimedPremium || []).includes(t);
+        if (!f || (hasPremium && !pm)) unclaimedI.push(t);
+      }
+      const infoText = UI.card(player, {
+        icon: '🏛️', title: 'ASTRA PASS — XP & SYSTEM INFO',
+        lines: [
+          `📜 *HOW TO EARN ASTRA PASS XP:*`,
+          `Earn Astra Pass XP automatically from *ALL GAME ACTIVITIES*:`,
+          `• 💬 Commands & Interactions: 10–100 XP`,
+          `• 🌅 Daily / Weekly Claims: 100–500 XP`,
+          `• ⚒️ Crafting & Forging: 50–300 XP`,
+          `• ⚔️ PvP Battles & Duels: 100–500 XP`,
+          `• 🏰 Gate Raids & Dungeons: 500–2,000 XP`,
+          `• 🐉 World Boss Battles: 1,000–5,000 XP`,
+          ``,
+          `⚡ *EXP BOOSTS & MULTIPLIERS:*`,
+          `• 👑 *PRO Subscription:* Gives **2x Player EXP** across all actions!`,
+          `• 🏛️ *Astra Pass Premium:* Unlocks the Premium Track rewards for all 50 tiers!`,
+          ``,
+          `💡 *HOW TO UPGRADE TO PREMIUM:*`,
+          `Upgrade to PRO via */prostore* to automatically unlock Premium Astra Pass!`,
+        ],
+        proLines: [`💎 *PRO TRACK*`, unclaimedI.length ? `  🟢 ${unclaimedI.length} tier${unclaimedI.length === 1 ? '' : 's'} ready — /pass claim` : `  ✅ All caught up!`],
+        tip: '/pass to view your tiers',
+      });
       return sock.sendMessage(chatId, { text: infoText }, { quoted: msg });
     }
 
     // ── CLAIM REWARDS ───────────────────────────────────────────
     if (sub === 'claim') {
+      // Rescue pre-fix legacy-bucket items (idempotent); persist even
+      // when there is nothing new to claim.
+      if (RI.migrateLegacy(player) > 0) saveDatabase();
       const tier = parseInt(args[1]);
 
       if (isNaN(tier)) {
@@ -256,7 +251,7 @@ module.exports = {
         if (count === 0) return sock.sendMessage(chatId, { text: '❌ No unclaimed Astra Pass rewards available right now.' }, { quoted: msg });
         saveDatabase();
         return sock.sendMessage(chatId, {
-          text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🎁 *ASTRA PASS REWARDS CLAIMED!*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\nClaimed *${count}* reward(s):\n\n${rewardsGained.join('\n')}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━`
+          text: `${FRAME}\n🎁 *ASTRA PASS REWARDS CLAIMED!*\n${FRAME}\n\nClaimed *${count}* reward(s):\n\n${rewardsGained.join('\n')}\n${FRAME}`
         }, { quoted: msg });
       }
 
@@ -322,7 +317,7 @@ module.exports = {
 
     const xpReq = 1000;
     const xpPct = Math.min(100, Math.floor(((ap.xp || 0) / xpReq) * 100));
-    const xpBar = '█'.repeat(Math.floor(xpPct / 5)) + '░'.repeat(20 - Math.floor(xpPct / 5));
+    const xpBar = UI.bar(ap.xp || 0, xpReq, 10, pro);
 
     // Build text tier list for this page - POKEMON-STYLE SPACING (10 per page, blank line between levels)
     const startTier = (page - 1) * 10 + 1;
@@ -351,15 +346,22 @@ module.exports = {
       tierLines.push(``);
     }
     const navHint = page > 1 && page < 5 ? `◀️ /pass ${page-1}  •  ▶️ /pass ${page+1}` : page === 1 ? `▶️ Next: /pass 2` : `◀️ Prev: /pass 4`;
+    const seasonProg = Math.min(1, Math.max(0, (Date.now() - (ap.seasonStart || Date.now())) / (SEASON_DAYS * 86400000)));
+    const unclaimedM = [];
+    for (let t = 1; t <= Math.min(ap.level, TOTAL_TIERS); t++) {
+      const f = (ap.claimedFree || []).includes(t), pm = (ap.claimedPremium || []).includes(t);
+      if (!f || (hasPremium && !pm)) unclaimedM.push(t);
+    }
 
     const seasonRemaining = (()=>{ const s=ap.seasonStart||Date.now(); const e=s+SEASON_DAYS*24*60*60*1000; const d=e-Date.now(); if(d<=0) return 'Ended'; const days=Math.floor(d/(24*60*60*1000)); const hrs=Math.floor((d%(24*60*60*1000))/(60*60*1000)); return `${days}d ${hrs}h`; })();
     const captionLines = [
-      `🎫 *ASTRA PASS VISUALIZATION*`,
+      ...(pro ? [UI.PRO_BAR, `🎫 *ASTRA PASS VISUALIZATION* 💎`, UI.PRO_BAR] : [`🎫 *ASTRA PASS VISUALIZATION*`, UI.FREE_BAR]),
       ``,
       `📊 Level: ${ap.level}/${TOTAL_TIERS}`,
-      `⭐ XP: ${ap.xp||0}/${xpReq}`,
+      `⭐ XP: ${xpBar} ${ap.xp||0}/${xpReq}`,
       `💎 Premium: ${hasPremium ? 'YES ✅' : 'NO ❌'}`,
       `⏰ Season Ends: ${seasonRemaining}`,
+      ...(pro ? [`📊 Season: ${UI.bar(seasonProg, 1, 8, true)}`, unclaimedM.length ? `💎 *PRO TRACK* — ${unclaimedM.length} tiers ready` : `💎 *PRO TRACK* — all caught up`] : []),
       ``,
       `Legend:`,
       `🟣 Current | ✅ Claimed | 🔒 Locked`,
@@ -370,13 +372,13 @@ module.exports = {
       `📋 *ALL REWARDS (Page ${page}/5):*`,
       ``,
       ...tierLines,
-      `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+      FRAME,
       `📌 *COMMANDS:*`,
       `• /pass claim — Claim all unlocked rewards`,
       `• /pass claim [num] — Claim specific tier`,
       `• /pass [page] — View Page 1–5 (10 tiers per page)`,
       `• /pass info — Detailed XP sources & boosts`,
-      `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+      ...(pro ? [FRAME] : [FRAME, UI.upsell()]),
     ];
 
     // ── Build Next/Prev buttons (and Claim) ────────────────────────

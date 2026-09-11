@@ -54,6 +54,9 @@ module.exports = {
     const db = getDatabase();
     const player = db.users[sender];
     if (!player) return sock.sendMessage(chatId,{text:'❌ Not registered! Use /register first.'},{quoted:msg});
+    const UI = require('../../rpg/utils/UI');
+    const pro = UI.isPro(player);
+    const FRAME = pro ? UI.PRO_BAR : UI.FREE_BAR;
 
     const sub  = (args[0]||'').toLowerCase();
     const sub2 = (args[1]||'').toLowerCase();
@@ -63,10 +66,10 @@ module.exports = {
       const limited = db.activeLimitedBanner;
       const rates = {};
       for (const bid of ['standard','weapon','limited']) rates[bid] = BS.getBannerRates(bid);
-      let txt =
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-        `🎲 *SUMMON PORTAL*\n` +
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+      let txt = pro
+        ? `${UI.PRO_BAR}\n🎲 *SUMMON PORTAL* 💎\n${UI.PRO_BAR}\n`
+        : `🎲 *SUMMON PORTAL*\n${UI.FREE_BAR}\n`;
+      txt +=
         `💎 Your 💎 Mana Stones: *${player.manaCrystals||0}*\n` +
         `🎟️ Summon Tickets: *${player.summonTickets||0}*\n\n`;
 
@@ -98,13 +101,13 @@ module.exports = {
       }
 
       txt +=
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+        `${FRAME}\n` +
         `*/summon [standard|weapon|limited] x1*\n` +
         `*/summon [banner] x10*\n` +
         `*/summon [banner] ticket* — use a ticket\n` +
         `*/summon history* — last 20 pulls\n` +
         `*/summon collection* — your items\n` +
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+        `${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO PULLER* — pity S:${ss.pity||0} W:${ws.pity||0}` : `\n${UI.upsell()}`);
       return sock.sendMessage(chatId,{text:txt},{quoted:msg});
     }
 
@@ -119,7 +122,7 @@ module.exports = {
         return `${i+1}. ${re}${el} *${h.itemName}* [${h.bannerId}] ${d.getDate()}/${d.getMonth()+1}`;
       });
       return sock.sendMessage(chatId,{
-        text:`━━━━━━━━━━━━━━━━━━━━━━━━━━━\n📜 *PULL HISTORY (last 20)*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n${lines.join('\n')}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━`
+        text:(pro ? `${UI.PRO_BAR}\n📜 *PULL HISTORY (last 20)* 💎\n${UI.PRO_BAR}\n` : `📜 *PULL HISTORY (last 20)*\n${UI.FREE_BAR}\n`) + `${lines.join('\n')}\n${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO PULLER* — ${hist.filter(h => h.rarity === 'legendary').length} legends in last 20` : `\n${UI.upsell()}`)
       },{quoted:msg});
     }
 
@@ -127,7 +130,7 @@ module.exports = {
     if (sub==='collection'||sub==='weapons'||sub==='artifacts') {
       const weaps = player.summonWeapons?Object.values(player.summonWeapons):[];
       const arts  = player.summonArtifacts||[];
-      let txt = `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🗃️ *SUMMON COLLECTION*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+      let txt = pro ? `${UI.PRO_BAR}\n🗃️ *SUMMON COLLECTION* 💎\n${UI.PRO_BAR}` : `🗃️ *SUMMON COLLECTION*\n${UI.FREE_BAR}`;
       if (weaps.length) {
         txt += `\n\n⚔️ *WEAPONS (${weaps.length})*\n`;
         weaps.forEach(w=>{
@@ -145,7 +148,7 @@ module.exports = {
         });
       }
       if (!weaps.length&&!arts.length) txt += '\n\n📭 Nothing yet — start pulling!';
-      txt += '\n━━━━━━━━━━━━━━━━━━━━━━━━━━━';
+      txt += `\n${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO ARSENAL* — wielding ${player.weapon?.name || 'nothing'}` : `\n${UI.upsell()}`);
       return sock.sendMessage(chatId,{text:txt},{quoted:msg});
     }
 
@@ -169,7 +172,7 @@ module.exports = {
     if (sub2==='pity'||sub2==='info') {
       const p=state.pity||0, hard=banner.hardPityAt, soft=banner.softPityAt;
       let txt =
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n${banner.emoji} *${banner.name} — PITY*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+        (pro ? `${UI.PRO_BAR}\n${banner.emoji} *${banner.name} — PITY* 💎\n${UI.PRO_BAR}\n\n` : `${banner.emoji} *${banner.name} — PITY*\n${UI.FREE_BAR}\n\n`) +
         `📊 Progress:\n${pityBar(p,hard)}\n\n` +
         `🟣 Soft pity at: *${soft}* pulls (higher epic/leg chance)\n` +
         `🟡 Hard pity at: *${hard}* pulls (legendary guaranteed)\n` +
@@ -178,7 +181,7 @@ module.exports = {
         txt += `\n🎰 *50/50 Status:* ${state.guaranteedRateUp?'✅ *Guaranteed rate-up!*':'🎲 Active — 50% chance for rate-up item'}`;
       }
       txt += `\n\n📊 *Actual rates:*\n🔵 Rare: ${rates.rare||'0%'} | 🟣 Epic: ${rates.epic||'0%'} | 🟡 Legendary: ${rates.legendary||'0%'}`;
-      txt += `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+      txt += `\n${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO PULLER* — ${Math.max(0, hard - p)} pulls to hard pity` : `\n${UI.upsell()}`);
       return sock.sendMessage(chatId,{text:txt},{quoted:msg});
     }
 
@@ -202,11 +205,12 @@ module.exports = {
       const outcome = BS.applyDuplicate(player,item);
       BS.recordPull(player,bannerId,item);
       try{require('../../rpg/utils/BattlePass').addPassXP(player,'summon_pull',1);}catch(e){}
+      try{const _QD=require('../../rpg/utils/QuestDispatcher');_QD.trackAndNotify(player,'summon',1,sock,sender,chatId);if(item.rarity==='legendary')_QD.trackAndNotify(player,'legendary',1,sock,sender,chatId);}catch(e){}
       saveDatabase();
       const el=BS.ELEMENT_EMOJI[item.element||'none'];
       const special = item.rarity==='legendary'?legendaryReveal(item,bannerId):item.rarity==='epic'?`\n💫 *EPIC PULL!*\n📖 _${item.lore||''}_`:'' ;
       return sock.sendMessage(chatId,{
-        text:`━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🎟️ *TICKET SUMMON*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n${buildPullLine(item,outcome,bannerId,1)}${special}\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🎟️ Tickets left: *${player.summonTickets}* | 🎯 Pity: *${state.pity}/${banner.hardPityAt}*`
+        text:(pro ? `${UI.PRO_BAR}\n🎟️ *TICKET SUMMON* 💎\n${UI.PRO_BAR}\n\n` : `🎟️ *TICKET SUMMON*\n${UI.FREE_BAR}\n\n`) + `${buildPullLine(item,outcome,bannerId,1)}${special}\n\n${FRAME}\n🎟️ Tickets left: *${player.summonTickets}* | 🎯 Pity: *${state.pity}/${banner.hardPityAt}*`
       },{quoted:msg});
     }
 
@@ -231,6 +235,7 @@ module.exports = {
     }
     try{require('../../rpg/utils/BattlePass').addPassXP(player,'summon_pull',count);}catch(e){}
     try{require('./weekly').trackWeeklyProgress(player,'summon_pull',count);}catch(e){}
+    try{const _QD=require('../../rpg/utils/QuestDispatcher');_QD.trackAndNotify(player,'summon',count,sock,sender,chatId);const _legs=results.filter(r=>r.item.rarity==='legendary').length;if(_legs)_QD.trackAndNotify(player,'legendary',_legs,sock,sender,chatId);}catch(e){}
     saveDatabase();
 
     // Single pull
@@ -242,7 +247,7 @@ module.exports = {
       else if(item.rarity==='epic') special=`\n💫 *EPIC PULL!*\n📖 _${item.lore||''}_\n${item.passive?`⚡ *Passive: ${item.passive.name}*\n   ${item.passive.desc}`:''}`;
       else if(item.lore) special=`\n📖 _${item.lore}_`;
       return sock.sendMessage(chatId,{
-        text:`━━━━━━━━━━━━━━━━━━━━━━━━━━━\n${banner.emoji} *SUMMON RESULT*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n${buildPullLine(item,outcome,bannerId,1)}${special}\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n💎 Left: *${player.manaCrystals}* | 🎯 Pity: *${state.pity}/${banner.hardPityAt}*`
+        text:(pro ? `${UI.PRO_BAR}\n${banner.emoji} *SUMMON RESULT* 💎\n${UI.PRO_BAR}\n\n` : `${banner.emoji} *SUMMON RESULT*\n${UI.FREE_BAR}\n\n`) + `${buildPullLine(item,outcome,bannerId,1)}${special}\n\n${FRAME}\n💎 Left: *${player.manaCrystals}* | 🎯 Pity: *${state.pity}/${banner.hardPityAt}*`
       },{quoted:msg});
     }
 
@@ -260,7 +265,7 @@ module.exports = {
       });
     }
     return sock.sendMessage(chatId,{
-      text:`━━━━━━━━━━━━━━━━━━━━━━━━━━━\n${banner.emoji} *10-PULL RESULTS*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n${lines}${highlight}\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n💎 Left: *${player.manaCrystals}* | 🎯 Pity: *${state.pity}/${banner.hardPityAt}*`
+      text:(pro ? `${UI.PRO_BAR}\n${banner.emoji} *10-PULL RESULTS* 💎\n${UI.PRO_BAR}\n\n` : `${banner.emoji} *10-PULL RESULTS*\n${UI.FREE_BAR}\n\n`) + `${lines}${highlight}\n\n${FRAME}\n💎 Left: *${player.manaCrystals}* | 🎯 Pity: *${state.pity}/${banner.hardPityAt}*`
     },{quoted:msg});
   }
 };

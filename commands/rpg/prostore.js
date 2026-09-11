@@ -4,6 +4,8 @@
 
 'use strict';
 
+const UI = require('../../rpg/utils/UI');
+
 const PRO_TIERS = {
   weekly: {
     name: 'Weekly Pro Card',
@@ -41,12 +43,17 @@ module.exports = {
     const db = getDatabase();
     const player = db.users[sender];
     if (!player) return sock.sendMessage(chatId, { text: '❌ Register first! Use /register' }, { quoted: msg });
+    const pro = UI.isPro(player);
+    const FRAME = pro ? UI.PRO_BAR : UI.FREE_BAR;
 
     const sub = (args[0] || '').toLowerCase();
 
     if (!sub || sub === 'list' || sub === 'menu') {
       const pc = player.procoin || 0;
-      let txt = `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n💎 *ASTRA PRO STORE*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n💼 Your Balance: *${pc.toLocaleString()} PC*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
+      const proUntil = pro && player.proExpiresAt ? new Date(player.proExpiresAt + 3600000).toISOString().slice(0, 10) : null;
+      let txt = pro
+        ? `${UI.PRO_BAR}\n💎 *ASTRA PRO STORE* 💎\n${UI.PRO_BAR}\n💼 Balance: *${pc.toLocaleString()} PC* · ⏰ Pro until *${proUntil}*\n${UI.PRO_BAR}\n\n`
+        : `💎 *ASTRA PRO STORE*\n${UI.FREE_BAR}\n💼 Your Balance: *${pc.toLocaleString()} PC*\n${UI.FREE_BAR}\n\n`;
 
       Object.entries(PRO_TIERS).forEach(([key, tier]) => {
         txt += `${tier.emoji} *${tier.name.toUpperCase()}*\n`;
@@ -56,7 +63,7 @@ module.exports = {
         txt += `   📌 Command: /prostore buy ${key}\n\n`;
       });
 
-      txt += `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n💡 Use /profaq to read all Pro benefits & perks!`;
+      txt += `${FRAME}\n💡 Use /profaq to read all Pro benefits & perks!`;
       return sock.sendMessage(chatId, { text: txt }, { quoted: msg });
     }
 
@@ -85,11 +92,9 @@ module.exports = {
 
       saveDatabase();
 
-      return sock.sendMessage(chatId, {
-        text: [
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-          `🌟 *PRO STATUS ACTIVATED!*`,
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+      const text = UI.card(player, {
+        icon: '🌟', title: 'PRO STATUS ACTIVATED!',
+        lines: [
           `🎉 Purchased: *${tier.name}*`,
           `⏰ Active for: *${tier.days} Days*`,
           ``,
@@ -106,9 +111,10 @@ module.exports = {
           `• 🏢 Self-Employed status if unguilded`,
           `• 🤖 Automatic Intent Manager Access`,
           `• 🛠️ Emergency Serf switching allowed`,
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-        ].join('\n'),
-      }, { quoted: msg });
+        ],
+        tip: '/profaq to master your perks',
+      });
+      return sock.sendMessage(chatId, { text }, { quoted: msg });
     }
 
     return sock.sendMessage(chatId, { text: '❌ Usage: /prostore or /prostore buy [weekly|monthly|yearly]' }, { quoted: msg });

@@ -35,17 +35,14 @@ function giveBattleWinRewards(player, db, type='generic', baseLevel=1) {
     try { const { AuraSystem:AS2 } = require('./AuraSystem'); AS2.getAuraTitle(player.aura); } catch(e2){}
   }
 
-  // Battle Pass XP
+  // Battle Pass XP (direct amount — the old call multiplied by the source
+  // table for pvp (150×bp!) and granted ZERO for dungeon/gate/worldboss
+  // because those '<type>_win' sources don't exist in XP_SOURCES)
   try {
     const BP = require('./BattlePass');
-    if (BP.addPassXP) {
-      const added = BP.addPassXP(player, type+'_win', bp);
-      // BP.addPassXP may return amount added or void; we still count
-      player._lastBpAdded = bp;
-    } else {
-      player.battlePassXp = (player.battlePassXp||0)+bp;
-      player._lastBpAdded = bp;
-    }
+    if (BP.addPassXPAmount) BP.addPassXPAmount(player, bp);
+    else player.battlePassXp = (player.battlePassXp||0)+bp;
+    player._lastBpAdded = bp;
   } catch(e){
     player.battlePassXp = (player.battlePassXp||0)+bp;
     player._lastBpAdded = bp;

@@ -10,10 +10,13 @@ module.exports = {
     const player = db.users[sender];
 
     if (!player) {
-      return sock.sendMessage(chatId, { 
-        text: '❌ Start your journey first with /start!' 
+      return sock.sendMessage(chatId, {
+        text: '❌ Start your journey first with /start!'
       }, { quoted: msg });
     }
+    const UI = require('../../rpg/utils/UI');
+    const pro = UI.isPro(player);
+    const FRAME = pro ? UI.PRO_BAR : UI.FREE_BAR;
 
     const action = args[0]?.toLowerCase();
 
@@ -35,32 +38,7 @@ module.exports = {
 
       if (!statName) {
         return sock.sendMessage(chatId, { 
-          text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━
-❌ SPECIFY A STAT!
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-📜 AVAILABLE STATS:
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-❤️ hp - Health Points
-⚔️ atk - Attack Power
-🛡️ def - Defense
-✨ magic - Magic Power
-💨 speed - Speed
-💥 crit - Critical Chance
-🔥 critdmg - Critical Damage
-💚 lifesteal - Lifesteal
-⚡ energy - Max Energy (+5 per point)
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-📖 USAGE:
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-/upgrade allocate <stat> <amount>
-
-Examples:
-/upgrade allocate atk 10
-/upgrade allocate hp 5
-/upgrade allocate crit 3
-━━━━━━━━━━━━━━━━━━━━━━━━━━━` 
+          text: (pro ? `${UI.PRO_BAR}\n❌ SPECIFY A STAT! 💎\n${UI.PRO_BAR}\n\n📜 AVAILABLE STATS:\n${UI.PRO_BAR}\n❤️ hp - Health Points\n⚔️ atk - Attack Power\n🛡️ def - Defense\n✨ magic - Magic Power\n💨 speed - Speed\n💥 crit - Critical Chance\n🔥 critdmg - Critical Damage\n💚 lifesteal - Lifesteal\n⚡ energy - Max Energy (+5 per point)\n\n${UI.PRO_BAR}\n📖 USAGE:\n${UI.PRO_BAR}\n/upgrade allocate <stat> <amount>\n\nExamples:\n/upgrade allocate atk 10\n/upgrade allocate hp 5\n/upgrade allocate crit 3\n${UI.PRO_BAR}\n${UI.PRO_MINI}\n💎 *PRO STATS* — ${player.upgradePoints || 0} UP banked` : `❌ SPECIFY A STAT!\n${UI.FREE_BAR}\n\n📜 AVAILABLE STATS:\n${UI.FREE_BAR}\n❤️ hp - Health Points\n⚔️ atk - Attack Power\n🛡️ def - Defense\n✨ magic - Magic Power\n💨 speed - Speed\n💥 crit - Critical Chance\n🔥 critdmg - Critical Damage\n💚 lifesteal - Lifesteal\n⚡ energy - Max Energy (+5 per point)\n\n${UI.FREE_BAR}\n📖 USAGE:\n${UI.FREE_BAR}\n/upgrade allocate <stat> <amount>\n\nExamples:\n/upgrade allocate atk 10\n/upgrade allocate hp 5\n/upgrade allocate crit 3\n${UI.FREE_BAR}\n${UI.upsell()}`) 
         }, { quoted: msg });
       }
 
@@ -148,7 +126,7 @@ Examples:
     // STAT GUIDE
     // ═══════════════════════════════════════════════════════════════
     if (action === 'guide' || action === 'help' || action === 'tips') {
-      const guide = StatAllocationSystem.getStatGuide(player.class);
+      const guide = StatAllocationSystem.getStatGuide(player.class, player);
       
       return sock.sendMessage(chatId, { text: guide }, { quoted: msg });
     }
@@ -160,15 +138,7 @@ Examples:
       const totalStats = StatAllocationSystem.getTotalStats(player);
       const className = (player.class && typeof player.class === 'object') ? player.class.name : (player.class || 'Unawakened');
       
-      let display = `━━━━━━━━━━━━━━━━━━━━━━━━━━━
-📊 DETAILED STATS
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-👤 ${player.name} | ${className} Lv.${player.level}
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-💎 STAT BREAKDOWN
-━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
+      let display = pro ? `${UI.PRO_BAR}\n📊 DETAILED STATS 💎\n${UI.PRO_BAR}\n\n👤 ${player.name} | ${className} Lv.${player.level}\n\n${UI.PRO_BAR}\n💎 STAT BREAKDOWN\n${UI.PRO_BAR}\n\n` : `📊 DETAILED STATS\n${UI.FREE_BAR}\n\n👤 ${player.name} | ${className} Lv.${player.level}\n\n${UI.FREE_BAR}\n💎 STAT BREAKDOWN\n${UI.FREE_BAR}\n\n`;
 
       // Show each stat with breakdown
       for (const [statName, config] of Object.entries(StatAllocationSystem.STAT_CONFIG)) {
@@ -184,10 +154,7 @@ Examples:
         display += `\n`;
       }
       
-      display += `━━━━━━━━━━━━━━━━━━━━━━━━━━━
-💡 TIP: Current stats include base stats,
-allocations, equipment, and artifacts!
-━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+      display += `${FRAME}\n💡 TIP: Current stats include base stats,\nallocations, equipment, and artifacts!\n${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO STATS* — ${player.upgradePoints || 0} UP banked` : `\n${UI.upsell()}`);
 
       return sock.sendMessage(chatId, { text: display }, { quoted: msg });
     }
@@ -235,34 +202,7 @@ allocations, equipment, and artifacts!
       const bonus = allocations * config.valuePerPoint;
       const percentage = Math.floor((allocations / dynamicMax) * 100);
       
-      let info = `━━━━━━━━━━━━━━━━━━━━━━━━━━━
-${config.emoji} ${config.name} INFO
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-📝 ${config.description}
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-📊 YOUR ALLOCATIONS
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Allocated: ${allocations}/${dynamicMax} (${percentage}%)
-Current Bonus: +${bonus}${actualStatName.includes('Chance') || actualStatName.includes('Damage') || actualStatName === 'lifesteal' ? '%' : ''}
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-💎 COST & VALUE
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Cost: ${config.costPerPoint} UP per allocation
-Gain: +${config.valuePerPoint} ${config.name} per allocation
-Max Allocations: ${dynamicMax} (scales with level)
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🎯 RECOMMENDED FOR
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-${config.recommended}
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-💡 TO ALLOCATE:
-/upgrade allocate ${statName} <amount>
-━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+      let info = pro ? `${UI.PRO_BAR}\n${config.emoji} ${config.name} INFO 💎\n${UI.PRO_BAR}\n\n📝 ${config.description}\n\n${UI.PRO_BAR}\n📊 YOUR ALLOCATIONS\n${UI.PRO_BAR}\nAllocated: ${allocations}/${dynamicMax} (${percentage}%)\nCurrent Bonus: +${bonus}${actualStatName.includes('Chance') || actualStatName.includes('Damage') || actualStatName === 'lifesteal' ? '%' : ''}\n\n${UI.PRO_BAR}\n💎 COST & VALUE\n${UI.PRO_BAR}\nCost: ${config.costPerPoint} UP per allocation\nGain: +${config.valuePerPoint} ${config.name} per allocation\nMax Allocations: ${dynamicMax} (scales with level)\n\n${UI.PRO_BAR}\n🎯 RECOMMENDED FOR\n${UI.PRO_BAR}\n${config.recommended}\n\n${UI.PRO_BAR}\n💡 TO ALLOCATE:\n/upgrade allocate ${statName} <amount>\n${UI.PRO_BAR}\n${UI.PRO_MINI}\n💎 *PRO STATS* — ${allocations}/${dynamicMax} ${config.name}` : `${config.emoji} ${config.name} INFO\n${UI.FREE_BAR}\n\n📝 ${config.description}\n\n${UI.FREE_BAR}\n📊 YOUR ALLOCATIONS\n${UI.FREE_BAR}\nAllocated: ${allocations}/${dynamicMax} (${percentage}%)\nCurrent Bonus: +${bonus}${actualStatName.includes('Chance') || actualStatName.includes('Damage') || actualStatName === 'lifesteal' ? '%' : ''}\n\n${UI.FREE_BAR}\n💎 COST & VALUE\n${UI.FREE_BAR}\nCost: ${config.costPerPoint} UP per allocation\nGain: +${config.valuePerPoint} ${config.name} per allocation\nMax Allocations: ${dynamicMax} (scales with level)\n\n${UI.FREE_BAR}\n🎯 RECOMMENDED FOR\n${UI.FREE_BAR}\n${config.recommended}\n\n${UI.FREE_BAR}\n💡 TO ALLOCATE:\n/upgrade allocate ${statName} <amount>\n${UI.FREE_BAR}\n${UI.upsell()}`;
 
       return sock.sendMessage(chatId, { text: info }, { quoted: msg });
     }
@@ -273,27 +213,13 @@ ${config.recommended}
     if (action === 'recommend' || action === 'recommendations') {
       const recommendations = StatAllocationSystem.getRecommendations(player);
       
-      let recommendMsg = `━━━━━━━━━━━━━━━━━━━━━━━━━━━
-💡 UPGRADE RECOMMENDATIONS
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-👤 ${player.name}
-💎 Upgrade Points: ${player.upgradePoints || 0} UP
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-📋 SUGGESTIONS
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-`;
+      let recommendMsg = pro ? `${UI.PRO_BAR}\n💡 UPGRADE RECOMMENDATIONS 💎\n${UI.PRO_BAR}\n\n👤 ${player.name}\n💎 Upgrade Points: ${player.upgradePoints || 0} UP\n\n${UI.PRO_BAR}\n📋 SUGGESTIONS\n${UI.PRO_BAR}\n\n` : `💡 UPGRADE RECOMMENDATIONS\n${UI.FREE_BAR}\n\n👤 ${player.name}\n💎 Upgrade Points: ${player.upgradePoints || 0} UP\n\n${UI.FREE_BAR}\n📋 SUGGESTIONS\n${UI.FREE_BAR}\n\n`;
       
       recommendations.forEach((rec, i) => {
         recommendMsg += `${i + 1}. ${rec}\n\n`;
       });
       
-      recommendMsg += `━━━━━━━━━━━━━━━━━━━━━━━━━━━
-💡 Use /upgrade guide for class tips!
-💡 Use /upgrade allocate to spend UP!
-━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+      recommendMsg += `${FRAME}\n💡 Use /upgrade guide for class tips!\n💡 Use /upgrade allocate to spend UP!\n${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO STATS* — ${recommendations.length} tips` : `\n${UI.upsell()}`);
 
       return sock.sendMessage(chatId, { text: recommendMsg }, { quoted: msg });
     }
@@ -302,20 +228,7 @@ ${config.recommended}
     // INVALID ACTION
     // ═══════════════════════════════════════════════════════════════
     return sock.sendMessage(chatId, { 
-      text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━
-❌ INVALID COMMAND
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-📜 AVAILABLE COMMANDS:
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-/upgrade - View your stats
-/upgrade allocate <stat> <amount>
-/upgrade reset - Reset allocations
-/upgrade guide - Class recommendations
-/upgrade stats - Detailed breakdown
-/upgrade info <stat> - Stat details
-/upgrade recommend - Get smart tips
-━━━━━━━━━━━━━━━━━━━━━━━━━━━` 
+      text: (pro ? `${UI.PRO_BAR}\n❌ INVALID COMMAND 💎\n${UI.PRO_BAR}\n\n📜 AVAILABLE COMMANDS:\n${UI.PRO_BAR}\n/upgrade - View your stats\n/upgrade allocate <stat> <amount>\n/upgrade reset - Reset allocations\n/upgrade guide - Class recommendations\n/upgrade stats - Detailed breakdown\n/upgrade info <stat> - Stat details\n/upgrade recommend - Get smart tips\n${UI.PRO_BAR}\n${UI.PRO_MINI}\n💎 *PRO STATS* — pick a command` : `❌ INVALID COMMAND\n${UI.FREE_BAR}\n\n📜 AVAILABLE COMMANDS:\n${UI.FREE_BAR}\n/upgrade - View your stats\n/upgrade allocate <stat> <amount>\n/upgrade reset - Reset allocations\n/upgrade guide - Class recommendations\n/upgrade stats - Detailed breakdown\n/upgrade info <stat> - Stat details\n/upgrade recommend - Get smart tips\n${UI.FREE_BAR}\n${UI.upsell()}`) 
     }, { quoted: msg });
   }
 };

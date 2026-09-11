@@ -28,6 +28,9 @@ module.exports = {
     const db = getDatabase();
     const player = db.users[sender];
     if (!player) return sock.sendMessage(chatId, { text: '❌ Not registered!' }, { quoted: msg });
+    const UI = require('../../rpg/utils/UI');
+    const pro = UI.isPro(player);
+    const FRAME = pro ? UI.PRO_BAR : UI.FREE_BAR;
 
     const sub = (args[0] || '').toLowerCase();
     const curLevel = getEnhanceLevel(player);
@@ -39,21 +42,21 @@ module.exports = {
     // ── /enchant (menu) ────────────────────────────────────────
     if (!sub || sub === 'info') {
       const next = ENHANCE_DATA[curLevel];
-      let txt = `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n✨ *WEAPON ENCHANTING*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+      let txt = pro ? `${UI.PRO_BAR}\n✨ *WEAPON ENCHANTING* 💎\n${UI.PRO_BAR}\n` : `✨ *WEAPON ENCHANTING*\n${UI.FREE_BAR}\n`;
       txt += `⚔️ *${player.weapon.name}*\n`;
       txt += `Enhancement: *+${curLevel}* ${curLevel > 0 ? `(+${curLevel * ATK_PER_ENHANCE} bonus ATK from enhancement)` : ''}\n`;
       txt += `Base ATK bonus: *+${player.weapon.bonus||0}*\n\n`;
       if (curLevel >= 10) {
-        txt += `🌟 *MAX ENHANCEMENT (+10) REACHED!*\nYour weapon gleams with unrivaled power.\n━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+        txt += `🌟 *MAX ENHANCEMENT (+10) REACHED!*\nYour weapon gleams with unrivaled power.\n${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO FORGE* — +10 MAX · +${curLevel * ATK_PER_ENHANCE} ATK banked` : `\n${UI.upsell()}`);
         return sock.sendMessage(chatId, { text: txt }, { quoted: msg });
       }
-      txt += `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n⬆️ *NEXT ENHANCEMENT: +${curLevel+1}*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+      txt += `${FRAME}\n⬆️ *NEXT ENHANCEMENT: +${curLevel+1}*\n${FRAME}\n`;
       txt += `✅ Success rate: *${next.rate}%*\n`;
       txt += `❌ On fail: *${next.fail === 'downgrade' ? 'Drops back to +'+(curLevel-1) : 'Nothing happens'}*\n`;
       if (next.breakChance > 0) txt += `💀 Break chance: *${next.breakChance}%* (weapon destroyed!)\n`;
       txt += `\n💠 Cost: *${next.cost.toLocaleString()}g*${next.crystals > 0 ? ` + *${next.crystals}💎*` : ''}\n`;
       txt += `📈 Reward: *+${ATK_PER_ENHANCE} ATK* (permanent)\n\n`;
-      txt += `/enchant confirm — proceed with enhancement\n━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+      txt += `/enchant confirm — proceed with enhancement\n${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO FORGE* — +${curLevel}→+${curLevel+1} at ${next.rate}%` : `\n${UI.upsell()}`);
       return sock.sendMessage(chatId, { text: txt }, { quoted: msg });
     }
 
@@ -78,7 +81,7 @@ module.exports = {
         player.weapon.enhancement = 0;
         saveDatabase();
         return sock.sendMessage(chatId, {
-          text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n💀 *WEAPON DAMAGED!*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n⚔️ *${player.weapon.name}*\nThe enhancement failed catastrophically!\n\nEnhancement reset to *+0*\nWeapon ATK reduced by ${lostAtk}\n\n💡 Use /enchant to try again from +1\n━━━━━━━━━━━━━━━━━━━━━━━━━━━`
+          text: (pro ? `${UI.PRO_BAR}\n💀 *WEAPON DAMAGED!* 💎\n${UI.PRO_BAR}\n\n⚔️` : `💀 *WEAPON DAMAGED!*\n${UI.FREE_BAR}\n\n⚔️`)+` *${player.weapon.name}*\nThe enhancement failed catastrophically!\n\nEnhancement reset to *+0*\nWeapon ATK reduced by ${lostAtk}\n\n💡 Use /enchant to try again from +1\n${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO FORGE* — minus ${lostAtk} ATK · reforge from +1` : `\n${UI.upsell()}`)
         }, { quoted: msg });
       }
 
@@ -88,7 +91,7 @@ module.exports = {
         player.weapon.bonus = (player.weapon.bonus||0) + ATK_PER_ENHANCE;
         saveDatabase();
         return sock.sendMessage(chatId, {
-          text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n✨ *ENHANCEMENT SUCCESS!*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n⚔️ *${player.weapon.name}* → *+${player.weapon.enhancement}*\n\n💥 ATK Bonus: *+${player.weapon.bonus}* (+${ATK_PER_ENHANCE} from enhance)\n\n${player.weapon.enhancement===10?'🌟 *MAX ENHANCEMENT REACHED!*':'💡 /enchant to go higher!'}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━`
+          text: (pro ? `${UI.PRO_BAR}\n✨ *ENHANCEMENT SUCCESS!* 💎\n${UI.PRO_BAR}\n\n⚔️` : `✨ *ENHANCEMENT SUCCESS!*\n${UI.FREE_BAR}\n\n⚔️`)+` *${player.weapon.name}* → *+${player.weapon.enhancement}*\n\n💥 ATK Bonus: *+${player.weapon.bonus}* (+${ATK_PER_ENHANCE} from enhance)\n\n${player.weapon.enhancement===10?'🌟 *MAX ENHANCEMENT REACHED!*':'💡 /enchant to go higher!'}\n${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO FORGE* — +${player.weapon.enhancement} · +${player.weapon.bonus} ATK total` : `\n${UI.upsell()}`)
         }, { quoted: msg });
       }
 
@@ -99,14 +102,14 @@ module.exports = {
         player.weapon.bonus = Math.max(0, (player.weapon.bonus||0) - lostEnhAtk);
         saveDatabase();
         return sock.sendMessage(chatId, {
-          text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n❌ *ENHANCEMENT FAILED!*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n⚔️ *${player.weapon.name}* dropped to *+${player.weapon.enhancement}*\n(-${lostEnhAtk} ATK)\n\n💡 Try again with /enchant confirm\n━━━━━━━━━━━━━━━━━━━━━━━━━━━`
+          text: (pro ? `${UI.PRO_BAR}\n❌ *ENHANCEMENT FAILED!* 💎\n${UI.PRO_BAR}\n\n⚔️` : `❌ *ENHANCEMENT FAILED!*\n${UI.FREE_BAR}\n\n⚔️`)+` *${player.weapon.name}* dropped to *+${player.weapon.enhancement}*\n(-${lostEnhAtk} ATK)\n\n💡 Try again with /enchant confirm\n${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO FORGE* — +${player.weapon.enhancement} · push again` : `\n${UI.upsell()}`)
         }, { quoted: msg });
       }
 
       // Nothing happens
       saveDatabase();
       return sock.sendMessage(chatId, {
-        text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n😤 *ENHANCEMENT FAILED*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n⚔️ *${player.weapon.name}* stays at *+${curLevel}*\nNo change. Try again!\n\n💡 /enchant confirm to retry\n━━━━━━━━━━━━━━━━━━━━━━━━━━━`
+        text: (pro ? `${UI.PRO_BAR}\n😤 *ENHANCEMENT FAILED* 💎\n${UI.PRO_BAR}\n\n⚔️` : `😤 *ENHANCEMENT FAILED*\n${UI.FREE_BAR}\n\n⚔️`)+` *${player.weapon.name}* stays at *+${curLevel}*\nNo change. Try again!\n\n💡 /enchant confirm to retry\n${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO FORGE* — +${curLevel} held · retry` : `\n${UI.upsell()}`)
       }, { quoted: msg });
     }
 

@@ -16,6 +16,9 @@ module.exports = {
     const db = getDatabase();
     const player = db.users[sender];
     if (!player) return sock.sendMessage(chatId, { text: '❌ Register first! /register' }, { quoted: msg });
+    const UI = require('../../rpg/utils/UI');
+    const pro = UI.isPro(player);
+    const FRAME = pro ? UI.PRO_BAR : UI.FREE_BAR;
 
     const sub = (args[0] || '').toLowerCase();
 
@@ -60,7 +63,7 @@ module.exports = {
       player.titles.push(titleId);
       saveDatabase();
       return sock.sendMessage(chatId, {
-        text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🛍️ *TITLE PURCHASED!*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n${def.display}\n\n⚡ *Stat Boost:* ${def.boostDesc}\n\n💠 Spent: ${price.gold.toLocaleString()} 💠 + ${price.crystals} 💎\n\nUse \`/title equip ${titleId}\` to equip.\n━━━━━━━━━━━━━━━━━━━━━━━━━━━`
+        text: (pro ? `${UI.PRO_BAR}\n🛍️ *TITLE PURCHASED!* 💎\n${UI.PRO_BAR}\n\n${def.display}` : `🛍️ *TITLE PURCHASED!*\n${UI.FREE_BAR}\n\n${def.display}`)+`\n\n⚡ *Stat Boost:* ${def.boostDesc}\n\n💠 Spent: ${price.gold.toLocaleString()} 💠 + ${price.crystals} 💎\n\nUse \`/title equip ${titleId}\` to equip.\n${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO COLLECTOR* — ${player.titles.length} titles owned` : `\n${UI.upsell()}`)
       }, { quoted: msg });
     }
 
@@ -76,7 +79,7 @@ module.exports = {
       const eq    = player.equippedTitle === titleId;
       const price = def.shop ? def.shop.price : null;
       const rarity = getRarityBadge(titleId);
-      let txt = `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n${rarity.code} *${def.display}* ${eq ? '← EQUIPPED' : ''}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
+      let txt = (pro ? `${UI.PRO_BAR}\n${rarity.code} *${def.display}* ${eq ? '← EQUIPPED' : ''} 💎\n${UI.PRO_BAR}\n\n` : `${rarity.code} *${def.display}* ${eq ? '← EQUIPPED' : ''}\n${UI.FREE_BAR}\n\n`);
       txt += `📜 ${def.desc}\n\n`;
       txt += `${rarity.code} Rarity: *${rarity.label}*\n`;
       txt += `⚡ Stat Boost: ${def.boostDesc}\n`;
@@ -84,12 +87,12 @@ module.exports = {
       else if (price) txt += `💠 Price: ${price.gold.toLocaleString()} 💠 + ${price.crystals} 💎\n`;
       else if (def.grant === 'owner-only') txt += `👑 Status: Owner-grant only\n`;
       else txt += `🎮 Status: Auto-earned by gameplay\n`;
-      txt += `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+      txt += `\n${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO COLLECTOR* — ${eq ? 'EQUIPPED' : owned ? 'OWNED' : price ? 'in shop now' : 'earn it'}` : `\n${UI.upsell()}`);
       return sock.sendMessage(chatId, { text: txt }, { quoted: msg });
     }
 
     // ── Default: show shop ───────────────────────────────
-    let txt = `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🛍️ *TITLE SHOP*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\nYour gold: ${(player.gold||0).toLocaleString()}g\nYour 💎: ${player.manaCrystals || 0}\n\n`;
+    let txt = (pro ? `${UI.PRO_BAR}\n🛍️ *TITLE SHOP* 💎\n${UI.PRO_BAR}\nYour gold:` : `🛍️ *TITLE SHOP*\n${UI.FREE_BAR}\nYour gold:`)+` ${(player.gold||0).toLocaleString()}g\nYour 💎: ${player.manaCrystals || 0}\n\n`;
     // Group by rarity
     const byRarity = {};
     for (const [id, def] of Object.entries(TITLES)) {
@@ -102,7 +105,7 @@ module.exports = {
       if (!list.length) continue;
       const badge = RARITIES[rarity];
       txt += `${badge.code} *${badge.label.toUpperCase()} TITLES* ${badge.code}\n`;
-      txt += `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+      txt += `${FRAME}\n`;
       for (const t of list) {
         const owned = (player.titles || []).includes(t.id);
         const eq    = player.equippedTitle === t.id;
@@ -119,11 +122,11 @@ module.exports = {
         txt += `\n`;
       }
     }
-    txt += `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+    txt += `${FRAME}\n`;
     txt += `💡 /titleshop buy <id>      — purchase\n`;
     txt += `💡 /titleshop preview <id>  — full details\n`;
     txt += `💡 /title equip <id>        — equip a title\n`;
-    txt += `━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+    txt += `${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO COLLECTOR* — ${(player.titles||[]).length}/${Object.keys(TITLES).length} titles` : `\n${UI.upsell()}`);
 
     return sock.sendMessage(chatId, { text: txt }, { quoted: msg });
   }

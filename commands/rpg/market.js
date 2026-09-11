@@ -49,6 +49,9 @@ module.exports = {
     const db     = getDatabase();
     const player = db.users[sender];
     if (!player) return sock.sendMessage(chatId, { text: '❌ Register first! /register' }, { quoted: msg });
+    const UI = require('../../rpg/utils/UI');
+    const pro = UI.isPro(player);
+    const FRAME = pro ? UI.PRO_BAR : UI.FREE_BAR;
 
     const market = getMarket(db);
     cleanExpired(market, db);
@@ -63,7 +66,7 @@ module.exports = {
 
       if (active.length === 0) {
         return sock.sendMessage(chatId, {
-          text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🏪 *PLAYER MARKET*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n😴 No listings right now.\n\nBe the first to sell something!\n/market sell [item name] [price]\n━━━━━━━━━━━━━━━━━━━━━━━━━━━`
+          text: `${FRAME}\n🏪 *PLAYER MARKET*\n${FRAME}\n😴 No listings right now.\n\nBe the first to sell something!\n/market sell [item name] [price]\n${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO PULSE* — empty shelves, list first and set the price!` : `\n${UI.upsell()}`)
         }, { quoted: msg });
       }
 
@@ -72,7 +75,9 @@ module.exports = {
         ? active.filter(l => l.item.type?.toLowerCase().includes(category) || l.item.rarity?.toLowerCase() === category)
         : active;
 
-      let txt = `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🏪 *PLAYER MARKET* (${filtered.length} listings)\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
+      let txt = pro
+        ? `${UI.PRO_BAR}\n🏪 *PLAYER MARKET* (${filtered.length} listings) 💎\n${UI.PRO_BAR}\n\n`
+        : `🏪 *PLAYER MARKET* (${filtered.length} listings)\n${UI.FREE_BAR}\n\n`;
 
       const rarityEmoji = { common:'⚪', uncommon:'🟢', rare:'🔵', epic:'🟣', legendary:'🟠', mythic:'🔴' };
       filtered.slice(0,15).forEach(l => {
@@ -84,13 +89,19 @@ module.exports = {
 
       if (filtered.length > 15) txt += `_...and ${filtered.length - 15} more_\n\n`;
 
-      txt += `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+      if (pro && filtered.length) {
+        const prices = filtered.map(l => l.price || 0);
+        const cheapest = filtered.reduce((a, b) => (a.price || 0) <= (b.price || 0) ? a : b);
+        const avg = Math.floor(prices.reduce((s, p) => s + p, 0) / prices.length);
+        txt += `${UI.PRO_MINI}\n💎 *PRO MARKET PULSE*\n  🐣 Cheapest: *${cheapest.item.name}* @ ${UI.num(cheapest.price)} 💠\n  📊 Average ask: ${UI.num(avg)} 💠\n\n`;
+      }
+      txt += `${FRAME}\n`;
       txt += `/market buy [#]     — Buy a listing\n`;
       txt += `/market info [#]    — Item details\n`;
       txt += `/market sell [item] [price] — List an item\n`;
       txt += `/market mine        — Your listings\n`;
       txt += `/market search [name] — Search items\n`;
-      txt += `━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+      txt += pro ? FRAME : `${FRAME}\n${UI.upsell()}`;
 
       return sock.sendMessage(chatId, { text: txt }, { quoted: msg });
     }
@@ -106,7 +117,7 @@ module.exports = {
       const tax = Math.floor(listing.price * MARKET_TAX);
       const sellerGets = listing.price - tax;
 
-      let txt = `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🏪 *LISTING #${id}*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+      let txt = pro ? `${UI.PRO_BAR}\n🏪 *LISTING #${id}* 💎\n${UI.PRO_BAR}\n` : `🏪 *LISTING #${id}*\n${UI.FREE_BAR}\n`;
       txt += `📦 *${listing.item.name}*\n`;
       txt += `🏷️ Type: ${listing.item.type || 'Item'} | Rarity: ${listing.item.rarity || 'common'}\n`;
       if (listing.item.bonus) {
@@ -118,7 +129,18 @@ module.exports = {
       txt += `📊 Tax (5%): ${tax.toLocaleString()} 💠 | Seller gets: ${sellerGets.toLocaleString()}g\n`;
       txt += `👤 Seller: ${listing.sellerName}\n`;
       txt += `⏰ Expires: ${timeLeft}h\n`;
-      txt += `\n/market buy ${id} — Purchase this item\n━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+      if (pro) {
+        const same = Object.values(market.listings).filter(l => l.status === 'active' && l.item.name === listing.item.name && l.id !== listing.id);
+        if (same.length) {
+          const avg = Math.floor(same.reduce((s, l) => s + (l.price || 0), 0) / same.length);
+          const verdict = listing.price <= avg ? '🟢 Good deal' : listing.price <= avg * 1.2 ? '🟡 Fair' : '🔴 Overpriced';
+          txt += `\n${UI.PRO_MINI}\n💎 *PRO DEAL CHECK* — ${verdict}\n  📊 ${same.length} similar @ avg ${UI.num(avg)} 💠\n`;
+        } else {
+          txt += `\n${UI.PRO_MINI}\n💎 *PRO DEAL CHECK* — only listing for this item\n`;
+        }
+      }
+      txt += `\n/market buy ${id} — Purchase this item\n${FRAME}`;
+      if (!pro) txt += `\n${UI.upsell()}`;
       return sock.sendMessage(chatId, { text: txt }, { quoted: msg });
     }
 
@@ -138,7 +160,15 @@ module.exports = {
       const sellerGet = listing.price - tax;
       player.gold    -= listing.price;
       const seller    = db.users[listing.sellerId];
-      if (seller) seller.gold = (seller.gold || 0) + sellerGet;
+      if (seller) {
+        seller.gold = (seller.gold || 0) + sellerGet;
+        // Seller's quest credit (silent — seller usually isn't in this chat)
+        try {
+          const _DQ = require('../../rpg/utils/DailyQuestSystem');
+          _DQ.trackQuestProgress(seller, 'sell', 1);
+          if (sellerGet > 0) _DQ.trackQuestProgress(seller, 'goldEarn', sellerGet);
+        } catch(e){}
+      }
 
       // Give item to buyer
       if (!player.inventory) player.inventory = { items: [] };
@@ -157,10 +187,13 @@ module.exports = {
       listing.soldAt     = Date.now();
       market.totalSales  = (market.totalSales || 0) + 1;
 
+      // Buyer quest: market purchase counts as a shop purchase
+      try { require('../../rpg/utils/QuestDispatcher').trackAndNotify(player, 'shop', 1, sock, sender, chatId); } catch(e){}
+
       saveDatabase();
 
       return sock.sendMessage(chatId, {
-        text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n✅ *PURCHASE COMPLETE!*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n📦 *${listing.item.name}*\n💠 Paid: ${listing.price.toLocaleString()}g\n\n👤 Seller: ${listing.sellerName} received ${sellerGet.toLocaleString()}g\n📊 Market tax: ${tax.toLocaleString()}g\n\n✅ Item added to your inventory!\n━━━━━━━━━━━━━━━━━━━━━━━━━━━`
+        text: `${FRAME}\n✅ *PURCHASE COMPLETE!*\n${FRAME}\n📦 *${listing.item.name}*\n💠 Paid: ${listing.price.toLocaleString()}g\n\n👤 Seller: ${listing.sellerName} received ${sellerGet.toLocaleString()}g\n📊 Market tax: ${tax.toLocaleString()}g\n\n✅ Item added to your inventory!\n${FRAME}`
       }, { quoted: msg });
     }
 
@@ -227,7 +260,9 @@ module.exports = {
 
       saveDatabase();
       return sock.sendMessage(chatId, {
-        text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n✅ *LISTING CREATED!*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n📦 *${item.name}*\n💠 Price: ${price.toLocaleString()}g\n📋 Listing #${id}\n⏰ Expires in 24 hours\n💸 Listing fee paid: ${LISTING_FEE}g\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n💡 Buyers: /market buy ${id}`
+        text: pro
+          ? `${UI.PRO_BAR}\n✅ *LISTING CREATED!* 💎\n${UI.PRO_BAR}\n📦 *${item.name}*\n💠 Price: ${price.toLocaleString()}g\n📋 Listing #${id}\n⏰ Expires in 24 hours\n💸 Fee paid: ${LISTING_FEE}g\n${UI.PRO_BAR}`
+          : `✅ *LISTING CREATED!*\n${UI.FREE_BAR}\n📦 *${item.name}*\n💠 Price: ${price.toLocaleString()}g\n📋 Listing #${id}\n⏰ Expires in 24 hours\n💸 Fee paid: ${LISTING_FEE}g\n${UI.FREE_BAR}\n💡 Buyers: /market buy ${id}`
       }, { quoted: msg });
     }
 
@@ -240,13 +275,19 @@ module.exports = {
 
       if (mine.length === 0) return sock.sendMessage(chatId, { text: '😴 You have no listings.\n/market sell [item] [price] to post one!' }, { quoted: msg });
 
-      let txt = `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🏪 *YOUR LISTINGS*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
+      let txt = pro ? `${UI.PRO_BAR}\n🏪 *YOUR LISTINGS* 💎\n${UI.PRO_BAR}\n\n` : `🏪 *YOUR LISTINGS*\n${UI.FREE_BAR}\n\n`;
       mine.forEach(l => {
         const statusEmoji = l.status === 'active' ? '🟢' : l.status === 'sold' ? '✅' : '⌛';
         const timeLeft = l.status === 'active' ? `⏰ ${Math.ceil((l.expiresAt-Date.now())/3600000)}h` : '';
         txt += `${statusEmoji} *#${l.id}* ${l.item.name}\n   💠 ${l.price.toLocaleString()} 💠 | ${l.status.toUpperCase()} ${timeLeft}\n\n`;
       });
-      txt += `/market cancel [#] — Remove a listing\n━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+      if (pro) {
+        const activeMine = mine.filter(l => l.status === 'active');
+        const locked = activeMine.reduce((s, l) => s + (l.price || 0), 0);
+        txt += `${UI.PRO_MINI}\n💎 *PRO STALL* — ${activeMine.length} live · ${UI.num(locked)} 💠 on the table\n\n`;
+      }
+      txt += `/market cancel [#] — Remove a listing\n${FRAME}`;
+      if (!pro) txt += `\n${UI.upsell()}`;
       return sock.sendMessage(chatId, { text: txt }, { quoted: msg });
     }
 
@@ -279,11 +320,12 @@ module.exports = {
 
       if (results.length === 0) return sock.sendMessage(chatId, { text: `❌ No listings found for "*${query}*"` }, { quoted: msg });
 
-      let txt = `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🔍 *SEARCH: "${query}"*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
+      let txt = pro ? `${UI.PRO_BAR}\n🔍 *SEARCH: "${query}"* 💎\n${UI.PRO_BAR}\n\n` : `🔍 *SEARCH: "${query}"*\n${UI.FREE_BAR}\n\n`;
       results.forEach(l => {
         txt += `*#${l.id}* *${l.item.name}*\n   💠 ${l.price.toLocaleString()} 💠 | ${l.sellerName}\n\n`;
       });
-      txt += `/market info [#] for details\n/market buy [#] to purchase`;
+      txt += `/market info [#] for details\n/market buy [#] to purchase\n${FRAME}`;
+      if (!pro) txt += `\n${UI.upsell()}`;
       return sock.sendMessage(chatId, { text: txt }, { quoted: msg });
     }
 
@@ -292,7 +334,7 @@ module.exports = {
       const active = Object.values(market.listings).filter(l => l.status === 'active').length;
       const sold   = Object.values(market.listings).filter(l => l.status === 'sold').length;
       return sock.sendMessage(chatId, {
-        text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🏪 *MARKET STATS*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🟢 Active listings: ${active}\n✅ Total sales: ${market.totalSales || sold}\n💸 Listing fee: ${LISTING_FEE}g\n📊 Market tax: ${MARKET_TAX*100}%\n⏰ Listings expire: 24 hours\n━━━━━━━━━━━━━━━━━━━━━━━━━━━`
+        text: `${FRAME}\n🏪 *MARKET STATS*\n${FRAME}\n🟢 Active listings: ${active}\n✅ Total sales: ${market.totalSales || sold}\n💸 Listing fee: ${LISTING_FEE}g\n📊 Market tax: ${MARKET_TAX*100}%\n⏰ Listings expire: 24 hours\n${FRAME}`
       }, { quoted: msg });
     }
 

@@ -11,7 +11,8 @@ const DungeonPartyManager = require('../../rpg/dungeons/DungeonPartyManager');
 const ImprovedCombat    = require('../../rpg/utils/ImprovedCombat');
 let BuffManager; try { BuffManager = require('../../rpg/utils/BuffManager'); } catch(e) {}
 const StatusEffectManager = require('../../rpg/utils/StatusEffectManager');
-function statusSummary(entity){ if(!entity||!entity.statusEffects||!entity.statusEffects.length) return null; const m={burn:'🔥 Burn -5% maxHP', poison:'☠️ Poison -3% maxHP', bleed:'🩸 Bleed -4% maxHP', stun:'💫 Stun skip', freeze:'❄️ Freeze -20% DEF', paralyze:'⚡ Paralyze -50% SPD', weaken:'💔 Weaken -30% ATK', curse:'👁️ Curse -15% DEF'}; return entity.statusEffects.map(s=>{ const k=(s.type||'').toLowerCase(); const desc=m[k]||k; const dur=s.duration||s.turns||'?'; return `${desc} (${dur}t)`; }).join(' | '); }
+const UI = require('../../rpg/utils/UI');
+function statusSummary(entity){ if(!entity||!entity.statusEffects||!entity.statusEffects.length) return null; const m={burn:'🔥 Burn -15 HP', poison:'☠️ Poison -10 HP', bleed:'🩸 Bleed -12 HP', stun:'💫 Stun skip', freeze:'❄️ Freeze skip + -3% HP', paralyze:'⚡ Paralyze 70% skip', weaken:'💔 Weaken -30% ATK', curse:'👁️ Curse -15% DEF', fear:'😱 Fear -20% ATK', enfeeble:'🐢 Enfeeble -30% DEF', trueslow:'🐌 Slow -35% SPD', silence:'🤐 Silence', blind:'🌫️ Blind -50% ACC'}; return entity.statusEffects.map(s=>{ const k=(s.type||'').toLowerCase(); const desc=m[k]||k; const dur=s.duration||s.turns||'?'; return `${desc} (${dur}t)`; }).join(' | '); }
 const BarSystem         = require('../../rpg/utils/BarSystem');
 const LevelUpManager    = require('../../rpg/utils/LevelUpManager');
 const ArtifactSystem    = require('../../rpg/utils/ArtifactSystem');
@@ -42,12 +43,13 @@ async function notifyAchievements(sock, playerId, player, achievements) {
 }
 async function notifyQuestUpdates(sock, playerId, updates) {
   if (!updates?.length) return;
+  const FRAME = UI.FREE_BAR; // neutral DM (no player ref here)
   const completed = updates.filter(u => u.type === 'completed');
   for (const u of completed) {
     const targetJid = playerId.includes('@') ? playerId : `${playerId}@s.whatsapp.net`;
     try {
       await sock.sendMessage(targetJid, {
-        text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🎯 QUEST COMPLETED!\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n✅ *${u.questName}*\n\n💡 Use */quest complete ${u.questId}* to claim rewards!\n━━━━━━━━━━━━━━━━━━━━━━━━━━━`
+        text: `${FRAME}\n🎯 QUEST COMPLETED!\n${FRAME}\n✅ *${u.questName}*\n\n💡 Use */quest complete ${u.questId}* to claim rewards!\n${FRAME}`
       });
     } catch(e) {}
   }
@@ -71,6 +73,8 @@ function getDialogue(name) {
 
 // ─── MONSTER AI ────────────────────────────────────────────────
 function executeMonsterAI(monster, player) {
+  const mPro = UI.isPro(player);
+  const FRAME = mPro ? UI.PRO_BAR : UI.FREE_BAR;
   const useSkill = Math.random() < 0.75 && monster.abilities?.length > 0;
   const ability  = useSkill ? monster.abilities[Math.floor(Math.random() * monster.abilities.length)] : null;
   const line     = getDialogue(monster.name);
@@ -83,23 +87,24 @@ function executeMonsterAI(monster, player) {
   const speedDiff = (player.stats.speed || 100) - (monster.stats.speed || 80);
   const dodge     = Math.max(0, Math.min(0.30, speedDiff / 200));
   if (dodge > 0 && Math.random() < dodge) {
-    return `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🔄 ${monster.name.toUpperCase()}'S TURN\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n${monster.emoji} ${monster.name} ${ability ? 'uses *' + ability + '*!' : 'attacks!'}\n💬 "${line}"\n💨 *DODGED!* You were too fast!\n❤️ Your HP: ${player.stats.hp}/${player.stats.maxHp}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+    return `\n${FRAME}\n🔄 ${monster.name.toUpperCase()}'S TURN${mPro ? ' 💎' : ''}\n${FRAME}\n${monster.emoji} ${monster.name} ${ability ? 'uses *' + ability + '*!' : 'attacks!'}\n💬 "${line}"\n💨 *DODGED!* You were too fast!\n❤️ Your HP: ${player.stats.hp}/${player.stats.maxHp}\n${FRAME}`;
   }
 
   const finalDmg = Math.max(8, baseDmg - defReduc);
   player.stats.hp = Math.max(0, player.stats.hp - finalDmg);
 
-  let msg = `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🔄 ${monster.name.toUpperCase()}'S TURN\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
-  msg += `${monster.emoji} ${monster.name} ${ability ? 'uses *' + ability + '*!' : 'attacks!'}\n💬 "${line}"\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
-  msg += `💥 You take *${finalDmg}* damage!\n❤️ Your HP: ${Math.max(0, player.stats.hp)}/${player.stats.maxHp}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+  let msg = `\n${FRAME}\n🔄 ${monster.name.toUpperCase()}'S TURN${mPro ? ' 💎' : ''}\n${FRAME}\n`;
+  msg += `${monster.emoji} ${monster.name} ${ability ? 'uses *' + ability + '*!' : 'attacks!'}\n💬 "${line}"\n${FRAME}\n`;
+  msg += `💥 You take *${finalDmg}* damage!\n❤️ Your HP: ${Math.max(0, player.stats.hp)}/${player.stats.maxHp}\n${FRAME}`;
   return msg;
 }
 
 // ─── FLOOR ADVANCE PROMPT ──────────────────────────────────────
 function buildAdvancePrompt(dungeon, nextFloor, party) {
+  const FRAME = UI.FREE_BAR; // legacy builder (no callers)
   const isBossNext = DungeonManager.isBossFloor(nextFloor);
   const aliveCount = party.members.length;
-  let txt = `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🏆 *FLOOR ${dungeon.currentFloor} CLEARED!*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+  let txt = `${FRAME}\n🏆 *FLOOR ${dungeon.currentFloor} CLEARED!*\n${FRAME}\n`;
   txt += `📊 Progress: Floor ${dungeon.currentFloor}/${dungeon.maxFloors}\n`;
   txt += `👥 Party alive: ${aliveCount}/${party.members.length}\n\n`;
   if (nextFloor > dungeon.maxFloors) {
@@ -110,10 +115,10 @@ function buildAdvancePrompt(dungeon, nextFloor, party) {
     } else {
       txt += `🔽 *Floor ${nextFloor} awaits...*\n`;
     }
-    txt += `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+    txt += `${FRAME}\n`;
     txt += `/dungeon advance — Press deeper\n`;
     txt += `/dungeon leave   — Exit & keep rewards\n`;
-    txt += `━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+    txt += `${FRAME}`;
   }
   return txt;
 }
@@ -129,6 +134,8 @@ module.exports = {
     const db     = getDatabase();
     const player = db.users[sender];
     if (!player) return sock.sendMessage(chatId, { text: '❌ Register first! Use /register' }, { quoted: msg });
+    const pro = UI.isPro(player);
+    const FRAME = pro ? UI.PRO_BAR : UI.FREE_BAR;
 
     const sub = args[0]?.toLowerCase();
     const OWNER_ID = '221951679328499@lid';
@@ -175,9 +182,7 @@ module.exports = {
     // ── HELP & DEFAULT DISPLAY ────────────────────────────────
     if (!sub || sub === 'help' || sub === 'solo') {
       return sock.sendMessage(chatId, { text: [
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-        `🏰 *GATE RAID SYSTEM ACTIVE*`,
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        ...(pro ? [UI.PRO_BAR, `🏰 *GATE RAID SYSTEM ACTIVE* 💎`, UI.PRO_BAR] : [`🏰 *GATE RAID SYSTEM ACTIVE*`, UI.FREE_BAR]),
         `🚫 */dungeon solo* has been removed in favor of the new Gate Raid flow!`,
         ``,
         `All dungeons and gate battles now use our code-driven gate raid flow:`,
@@ -193,7 +198,7 @@ module.exports = {
         `2. Check your Gate Code with */gate key list*.`,
         `3. Run */party create --<CODE>* in your dungeon GC to recruit party members.`,
         `4. Run */gateraid <CODE>* to enter the raid!`,
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        ...(pro ? [FRAME] : [FRAME, UI.upsell()]),
       ].join('\n') }, { quoted: msg });
     }
 
@@ -201,12 +206,12 @@ module.exports = {
     if (sub === 'types' || sub === 'list') {
       const available = DungeonManager.getAvailableTypes(player.level);
       const all       = DungeonManager.getAllTypes();
-      let txt = `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🏰 *DUNGEON TYPES*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\nYour Level: ${player.level}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
+      let txt = pro ? `${UI.PRO_BAR}\n🏰 *DUNGEON TYPES* 💎\n${UI.PRO_BAR}\nYour Level: ${player.level}\n${UI.PRO_BAR}\n\n` : `🏰 *DUNGEON TYPES*\n${UI.FREE_BAR}\nYour Level: ${player.level}\n${UI.FREE_BAR}\n\n`;
       all.forEach((d, i) => {
         const locked = d.minLevel > player.level ? `🔒 Lv${d.minLevel}+ required` : '✅ Available';
         txt += `${i+1}. ${d.emoji} *${d.name}*\n   ${locked}\n   💭 ${d.description}\n   🏆 20 Floors | Bosses F5/F10/F15/F20\n\n`;
       });
-      txt += `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n💡 Form a party first: /dungeon party create\n━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+      txt += `${FRAME}\n💡 Form a party first: /dungeon party create\n${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO DELVER* — ${available.length}/${all.length} unlocked` : `\n${UI.upsell()}`);
       return sock.sendMessage(chatId, { text: txt }, { quoted: msg });
     }
 
@@ -270,7 +275,7 @@ module.exports = {
 
       const shopAction = args[1]?.toLowerCase();
       if (!shopAction) {
-        return sock.sendMessage(chatId, { text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🛒 *DUNGEON SHOP*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\nYour Nexus: ${(player.gold || 0).toLocaleString()} 💠\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🩹 /dungeon shop hp [qty]     — 5,000 💠 Nexus — Restore 50% HP (party)\n💙 /dungeon shop energy [qty] — 4,000 💠 Nexus — Restore 50% Energy (party)\n🎫 /dungeon shop revive [qty] — 10,000 💠 Nexus — Revive a fallen member\n🍀 /dungeon shop luck [qty]   — 5,000 💠 Nexus — +25% claim luck (personal)\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🎒 Party inventory:\n🩹 HP Potions: ${party.sharedItems?.healthPotions || 0}\n💙 Energy Potions: ${party.sharedItems?.energyPotions || 0}\n🎫 Revive Tokens: ${party.sharedItems?.reviveTokens || 0}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━` }, { quoted: msg });
+        return sock.sendMessage(chatId, { text: (pro ? `${UI.PRO_BAR}\n🛒 *DUNGEON SHOP* 💎\n${UI.PRO_BAR}\nYour ` : `🛒 *DUNGEON SHOP*\n${UI.FREE_BAR}\nYour `) + `Nexus: ${(player.gold || 0).toLocaleString()} 💠\n${FRAME}\n🩹 /dungeon shop hp [qty]     — 5,000 💠 Nexus — Restore 50% HP (party)\n💙 /dungeon shop energy [qty] — 4,000 💠 Nexus — Restore 50% Energy (party)\n🎫 /dungeon shop revive [qty] — 10,000 💠 Nexus — Revive a fallen member\n🍀 /dungeon shop luck [qty]   — 5,000 💠 Nexus — +25% claim luck (personal)\n${FRAME}\n🎒 Party inventory:\n🩹 HP Potions: ${party.sharedItems?.healthPotions || 0}\n💙 Energy Potions: ${party.sharedItems?.energyPotions || 0}\n🎫 Revive Tokens: ${party.sharedItems?.reviveTokens || 0}\n${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO QUARTERMASTER* — stock ${(party.sharedItems?.healthPotions || 0) + (party.sharedItems?.energyPotions || 0) + (party.sharedItems?.reviveTokens || 0)} shared items` : `\n${UI.upsell()}`) }, { quoted: msg });
       }
 
       const items = {
@@ -316,12 +321,12 @@ module.exports = {
       // Show menu if no choice given
       const choice = parseInt(args[1]);
       if (!args[1] || isNaN(choice)) {
-        let txt = `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🏰 *CHOOSE DUNGEON*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\nParty Avg Level: ${avgLevel}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
+        let txt = pro ? `${UI.PRO_BAR}\n🏰 *CHOOSE DUNGEON* 💎\n${UI.PRO_BAR}\nParty Avg Level: ${avgLevel}\n${UI.PRO_BAR}\n\n` : `🏰 *CHOOSE DUNGEON*\n${UI.FREE_BAR}\nParty Avg Level: ${avgLevel}\n${UI.FREE_BAR}\n\n`;
         if (available.length === 0) return sock.sendMessage(chatId, { text: '❌ No dungeons available!\nAll dungeons require higher level.' }, { quoted: msg });
         available.forEach((d,i) => {
           txt += `*${i+1}.* ${d.emoji} ${d.name}\n   📊 Rank: ${d.rank} | Req. Lv${d.minLevel}+\n   💭 ${d.description}\n\n`;
         });
-        txt += `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n/dungeon start [#] to enter\n━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+        txt += `${FRAME}\n/dungeon start [#] to enter\n${FRAME}` + (pro ? '' : `\n${UI.upsell()}`);
         return sock.sendMessage(chatId, { text: txt }, { quoted: msg });
       }
 
@@ -361,7 +366,7 @@ module.exports = {
       const bonusTxt = formatBonusSummary(bonuses) || '';
 
       return sock.sendMessage(chatId, {
-        text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n${dtype.emoji} *${dtype.name.toUpperCase()}*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n${atmo}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n📊 Rank: ${dtype.rank} | 20 Floors\n👥 Party: ${party.members.length} hunters${bonusTxt ? '\n'+bonusTxt : ''}\n⚠️ Boss floors: F5, F10, F15, F20\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🔽 *FLOOR 1*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n${monster.emoji} *${monster.name}* [Lv.${monster.level}]\n💬 "${line}"\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n${mBar}\n⚔️ ATK: ${monster.stats.atk} | 🛡️ DEF: ${monster.stats.def}\n💥 Abilities: ${monster.abilities.join(', ')}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n⚔️ /dungeon attack\n⚡ /<classcmd> [skill]\n🎒 /dungeon item [hp/energy]\n━━━━━━━━━━━━━━━━━━━━━━━━━━━`
+        text: (pro ? `${UI.PRO_BAR}\n${dtype.emoji} *${dtype.name.toUpperCase()}* 💎\n${UI.PRO_BAR}\n` : `${dtype.emoji} *${dtype.name.toUpperCase()}*\n${UI.FREE_BAR}\n`) + `${atmo}\n${FRAME}\n📊 Rank: ${dtype.rank} | 20 Floors\n👥 Party: ${party.members.length} hunters${bonusTxt ? '\n'+bonusTxt : ''}\n⚠️ Boss floors: F5, F10, F15, F20\n${FRAME}\n🔽 *FLOOR 1*\n${FRAME}\n${monster.emoji} *${monster.name}* [Lv.${monster.level}]\n💬 "${line}"\n${FRAME}\n${mBar}\n⚔️ ATK: ${monster.stats.atk} | 🛡️ DEF: ${monster.stats.def}\n💥 Abilities: ${monster.abilities.join(', ')}\n${FRAME}\n⚔️ /dungeon attack\n⚡ /<classcmd> [skill]\n🎒 /dungeon item [hp/energy]\n${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO DELVE* — ${dtype.rank} · 20 floors · party of ${party.members.length}` : `\n${UI.upsell()}`)
       }, { quoted: msg });
     }
 
@@ -372,7 +377,7 @@ module.exports = {
       const dungeon = party.dungeon;
       const monster = dungeon.currentMonster;
       const mBar    = BarSystem.getMonsterHPBar(monster.stats.hp, monster.stats.maxHp);
-      let txt = `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n📊 *FLOOR ${dungeon.currentFloor}/${dungeon.maxFloors}*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+      let txt = pro ? `${UI.PRO_BAR}\n📊 *FLOOR ${dungeon.currentFloor}/${dungeon.maxFloors}* 💎\n${UI.PRO_BAR}\n` : `📊 *FLOOR ${dungeon.currentFloor}/${dungeon.maxFloors}*\n${UI.FREE_BAR}\n`;
       txt += `${DungeonManager.isBossFloor(dungeon.currentFloor) ? '⚠️ BOSS FLOOR!' : `🔽 Floor ${dungeon.currentFloor}`}\n`;
       txt += `${monster.emoji} *${monster.name}*\n${mBar}\n❤️ ${monster.stats.hp}/${monster.stats.maxHp}\n\n`;
       txt += `👥 *Party:*\n`;
@@ -382,7 +387,7 @@ module.exports = {
         const bar = BarSystem.getHPBar(mp.stats.hp, mp.stats.maxHp, require('../../rpg/utils/UnifiedCombat').isPro(mp));
         txt += `${mp.stats.hp > 0 ? '⚔️' : '💀'} *${m.name}* — ${bar} ${mp.stats.hp}/${mp.stats.maxHp}\n`;
       });
-      txt += `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+      txt += `\n${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO READ* — ${monster.name} at ${Math.max(0, Math.round(100 * monster.stats.hp / monster.stats.maxHp))}%` : `\n${UI.upsell()}`);
       return sock.sendMessage(chatId, { text: txt }, { quoted: msg });
     }
 
@@ -405,7 +410,7 @@ module.exports = {
           saveDatabase();
           LevelUpManager.checkAndApplyLevelUps(player, saveDatabase, sock, chatId);
           return sock.sendMessage(chatId, {
-            text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🏆 *SOLO DUNGEON COMPLETE!*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n✅ All 10 floors cleared!\n\n📊 *TOTAL REWARDS:*\n💠 Nexus: +${sd.totalNexus.toLocaleString()}\n💎 Mana Stones: +${sd.totalCrystals}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n💪 Well done, solo hunter!`
+            text: (pro ? `${UI.PRO_BAR}\n🏆 *SOLO DUNGEON COMPLETE!* 💎\n${UI.PRO_BAR}\n` : `🏆 *SOLO DUNGEON COMPLETE!*\n${UI.FREE_BAR}\n`) + `✅ All 10 floors cleared!\n\n📊 *TOTAL REWARDS:*\n💠 Nexus: +${sd.totalNexus.toLocaleString()}\n💎 Mana Stones: +${sd.totalCrystals}\n${FRAME}\n💪 Well done, solo hunter!` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO DELVER* — run total ${UI.num(sd.totalNexus)} 💠` : `\n${UI.upsell()}`)
           }, { quoted: msg });
         }
 
@@ -429,13 +434,13 @@ module.exports = {
         const atmo2  = dtype2?.atmosphere[Math.floor(Math.random() * (dtype2.atmosphere.length || 1))] || '💭 You press deeper...';
         const line2  = getDialogue(monster.name);
         const mBar = BarSystem.getMonsterHPBar(monster.stats.hp, monster.stats.maxHp);
-        let txt = `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+        let txt = pro ? `${UI.PRO_BAR}\n` : `${UI.FREE_BAR}\n`;
         if (isBoss) {
-          txt += `⚠️ *BOSS — FLOOR ${nextFloor}!*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n💭 ${monster.desc || 'A terrifying guardian blocks your path!'}\n`;
+          txt += `⚠️ *BOSS — FLOOR ${nextFloor}!*${pro ? ' 💎' : ''}\n${FRAME}\n💭 ${monster.desc || 'A terrifying guardian blocks your path!'}\n`;
         } else {
-          txt += `🔽 *FLOOR ${nextFloor}*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n${atmo2}\n`;
+          txt += `🔽 *FLOOR ${nextFloor}*${pro ? ' 💎' : ''}\n${FRAME}\n${atmo2}\n`;
         }
-        txt += `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n${monster.emoji} *${monster.name}* [Lv.${monster.level}]${isBoss ? ' 🔴 BOSS' : ''}\n💬 "${line2}"\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n${mBar}\n❤️ ${monster.stats.hp}/${monster.stats.maxHp} HP\n⚔️ ATK: ${monster.stats.atk} | 🛡️ DEF: ${monster.stats.def}\n💥 Abilities: ${monster.abilities.join(', ')}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n⚔️ /dungeon attack\n⚡ /<classcmd> [skill]\n🎒 /dungeon item [hp/energy]\n━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+        txt += `${FRAME}\n${monster.emoji} *${monster.name}* [Lv.${monster.level}]${isBoss ? ' 🔴 BOSS' : ''}\n💬 "${line2}"\n${FRAME}\n${mBar}\n❤️ ${monster.stats.hp}/${monster.stats.maxHp} HP\n⚔️ ATK: ${monster.stats.atk} | 🛡️ DEF: ${monster.stats.def}\n💥 Abilities: ${monster.abilities.join(', ')}\n${FRAME}\n⚔️ /dungeon attack\n⚡ /<classcmd> [skill]\n🎒 /dungeon item [hp/energy]\n${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO SCOUT* — ATK ${monster.stats.atk} · DEF ${monster.stats.def}` : `\n${UI.upsell()}`);
         return sock.sendMessage(chatId, { text: txt }, { quoted: msg });
       }
 
@@ -469,13 +474,13 @@ module.exports = {
       const line  = getDialogue(monster.name);
       const mBar  = BarSystem.getMonsterHPBar(monster.stats.hp, monster.stats.maxHp);
 
-      let txt = `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+      let txt = pro ? `${UI.PRO_BAR}\n` : `${UI.FREE_BAR}\n`;
       if (isBoss) {
-        txt += `⚠️ *BOSS FLOOR ${nextFloor}!*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n💭 ${monster.desc || 'A terrifying guardian blocks your path!'}\n`;
+        txt += `⚠️ *BOSS FLOOR ${nextFloor}!*${pro ? ' 💎' : ''}\n${FRAME}\n💭 ${monster.desc || 'A terrifying guardian blocks your path!'}\n`;
       } else {
-        txt += `🔽 *FLOOR ${nextFloor}*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n${atmo}\n`;
+        txt += `🔽 *FLOOR ${nextFloor}*${pro ? ' 💎' : ''}\n${FRAME}\n${atmo}\n`;
       }
-      txt += `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n${monster.emoji} *${monster.name}* [Lv.${monster.level}]${isBoss ? ' 🔴 BOSS' : ''}\n💬 "${line}"\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n${mBar}\n⚔️ ATK: ${monster.stats.atk} | 🛡️ DEF: ${monster.stats.def}\n💥 Abilities: ${monster.abilities.join(', ')}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+      txt += `${FRAME}\n${monster.emoji} *${monster.name}* [Lv.${monster.level}]${isBoss ? ' 🔴 BOSS' : ''}\n💬 "${line}"\n${FRAME}\n${mBar}\n⚔️ ATK: ${monster.stats.atk} | 🛡️ DEF: ${monster.stats.def}\n💥 Abilities: ${monster.abilities.join(', ')}\n${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO SCOUT* — ATK ${monster.stats.atk} · DEF ${monster.stats.def}` : `\n${UI.upsell()}`);
       return sock.sendMessage(chatId, { text: txt }, { quoted: msg });
     }
 
@@ -491,7 +496,7 @@ module.exports = {
         saveDatabase();
         LevelUpManager.checkAndApplyLevelUps(player, saveDatabase, sock, chatId);
         return sock.sendMessage(chatId, {
-          text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🚪 *EXITED SOLO DUNGEON*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\nCleared ${sd.currentFloor - 1} floor(s)\n\n📦 *REWARDS KEPT:*\n💠 Nexus: +${sd.totalNexus.toLocaleString()}\n💎 Mana Stones: +${sd.totalCrystals}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━`
+          text: (pro ? `${UI.PRO_BAR}\n🚪 *EXITED SOLO DUNGEON* 💎\n${UI.PRO_BAR}\n` : `🚪 *EXITED SOLO DUNGEON*\n${UI.FREE_BAR}\n`) + `Cleared ${sd.currentFloor - 1} floor(s)\n\n📦 *REWARDS KEPT:*\n💠 Nexus: +${sd.totalNexus.toLocaleString()}\n💎 Mana Stones: +${sd.totalCrystals}\n${FRAME}` + (pro ? '' : `\n${UI.upsell()}`)
         }, { quoted: msg });
       }
       const party = DungeonPartyManager.getPartyByPlayer(sender);
@@ -523,6 +528,10 @@ module.exports = {
       if (!isNaN(patternNum) && patternNum > 0) {
         const { generateAttack, RANK_EMOJI } = require('../../rpg/utils/AttackPatternDB');
         const owned = player.attackPatterns?.owned || [];
+        const _dngEquipped = player.attackPatterns?.equipped || [];
+        if (!_dngEquipped.includes(patternNum)) {
+          return sock.sendMessage(chatId, { text: '❌ Attack Pattern *#' + patternNum + '* is not equipped!\nEquip it first: /attacks equip ' + patternNum }, { quoted: msg });
+        }
         if (!owned.includes(patternNum)) {
           return sock.sendMessage(chatId, { text: "❌ You don't own Attack Pattern *#" + patternNum + "*!\n/attacks owned — see your patterns\n/attacks shop — buy patterns" }, { quoted: msg });
         }
@@ -540,6 +549,17 @@ module.exports = {
         if (!monster) return sock.sendMessage(chatId, { text: '❌ No monster here.' }, { quoted: msg });
         if (dunSd  && dunSd.awaitingAdvance)  return sock.sendMessage(chatId, { text: '✅ Floor cleared! /dungeon advance' }, { quoted: msg });
         if (dunPty && dunPty.awaitingAdvance) return sock.sendMessage(chatId, { text: '✅ Floor cleared! /dungeon advance' }, { quoted: msg });
+
+        // Frozen / stunned hunters lose their turn (tick once, then skip)
+        try {
+          const _dngUC = require('../../rpg/utils/UnifiedCombat');
+          const _dngFx = _dngUC.canAct(player);
+          if (!_dngFx.canAct) {
+            try { _dngUC.tickStatuses(player); } catch(e){}
+            saveDatabase();
+            return sock.sendMessage(chatId, { text: ((r => ({ frozen: '❄️ *YOU ARE FROZEN*', stunned: '💫 *YOU ARE STUNNED*', paralyzed: '🔱 *YOU ARE PARALYZED*', feared: '😱 *YOU ARE FEARED*' }[r] || '💫 *YOU ARE STUNNED*'))(_dngFx.reason)) + ' — ' + player.name + ' cannot move this turn.\nTurn skipped (0 dmg, status -1).' }, { quoted: msg });
+          }
+        } catch(e){}
 
         const UCd2 = require('../../rpg/utils/UnifiedCombat');
         let finalDmg, isCrit, _dungeonUnified;
@@ -571,26 +591,26 @@ module.exports = {
         if (player._dungeonSkipMsg) {
           const _smsg = player._dungeonSkipMsg; delete player._dungeonSkipMsg;
           introLines = [
-            '━━━━━━━━━━━━━━━━━━━━━━━━━━━',
-            `🥋 *ATTACK PATTERN — FAILED*`,
-            '━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+            FRAME,
+            `🥋 *ATTACK PATTERN — FAILED*${pro ? ' 💎' : ''}`,
+            FRAME,
             `${re} *#${atk.id} — ${atk.name}* [${atk.rank}]`,
             _smsg,
             `_${(atk.description||atk.flavour).slice(0,220)}_`,
             `📊 Atk×${atk.atkMult} Def×${atk.defMult} Spd×${atk.speedMult} Crit×${atk.critMult} Acc ${atk.accuracy}%`,
-            '━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+            FRAME,
           ];
           // clear effectLine skip duplication
           if (effectLine === _smsg) effectLine = null;
         } else {
           introLines = [
-            '━━━━━━━━━━━━━━━━━━━━━━━━━━━',
-            `🥋 *ATTACK PATTERN*`,
-            '━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+            FRAME,
+            `🥋 *ATTACK PATTERN*${pro ? ' 💎' : ''}`,
+            FRAME,
             `${re} *#${atk.id} — ${atk.name}* [${atk.rank}]`,
             `_${atk.description || atk.flavour}_`,
             `📊 Atk×${atk.atkMult} Def×${atk.defMult} Spd×${atk.speedMult} Crit×${atk.critMult} Acc ${atk.accuracy}%`,
-            '━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+            FRAME,
           ];
         }
 
@@ -658,13 +678,13 @@ module.exports = {
           }
           sections.push({
             text: [
-              `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+              `${FRAME}`,
               `💀 *${monster.name}* defeated!`,
               rewardLine,
               ``,
               `/dungeon advance — next floor`,
               `/dungeon leave   — exit with rewards`,
-              `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+              `${FRAME}`,
             ].filter(Boolean).join('\n'),
           });
           saveDatabase();
@@ -683,11 +703,11 @@ module.exports = {
           saveDatabase();
           sections.push({
             text: [
-              '━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+              FRAME,
               `💀 *You were defeated!*`,
               `50% of dungeon Nexus kept.`,
               `/use — recover`,
-              '━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+              FRAME,
             ].join('\n'),
           });
           return sock.sendMessage(chatId, { sections }, { quoted: msg });
@@ -698,7 +718,7 @@ module.exports = {
         const pBar = BarSystem.getHPBar(player.stats.hp, player.stats.maxHp, require('../../rpg/utils/UnifiedCombat').isPro(player));
         sections.push({
           text: [
-            '━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+            FRAME,
             `${monster.emoji} *${monster.name}*`,
             `${mBar}`,
             `❤️ ${monster.stats.hp}/${monster.stats.maxHp}`,
@@ -706,10 +726,10 @@ module.exports = {
             `👤 *${player.name}*`,
             `${pBar}`,
             `❤️ ${player.stats.hp}/${player.stats.maxHp}`,
-            '━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+            FRAME,
             `⚔️ /dungeon attack — next hit`,
             `⚡ /<classcmd> [skill]   — use a skill`,
-            '━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+            FRAME,
           ].join('\n'),
         });
         saveDatabase();
@@ -760,7 +780,7 @@ module.exports = {
 
         monster.stats.hp = Math.max(0, monster.stats.hp - playerDmg);
 
-        log += `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n⚔️ *${player.name}* attacks *${monster.name}*!\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+        log += `${FRAME}\n⚔️ *${player.name}* attacks *${monster.name}*!\n${FRAME}\n`;
         if (isCritSolo) log += `💥 *CRITICAL HIT!*\n`;
         if (artAtkSolo > 0) log += `✨ Artifact: +${artAtkSolo} ATK!\n`;
         if (petAtkSolo > 0) log += `🐾 Pet: +${petAtkSolo} ATK!\n`;
@@ -800,8 +820,8 @@ module.exports = {
           // Award Guild Points for Guild War (defeating dungeon monster)
           try { require('../../rpg/utils/WeeklyGuildWar').addGP(db, sender, 5, saveDatabase); } catch(e) {}
 
-          log += `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
-          log += `💀 *${monster.name}* has been defeated!\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+          log += `\n${FRAME}\n`;
+          log += `💀 *${monster.name}* has been defeated!\n${FRAME}\n`;
           log += `💠 +${goldGain} Nexus | 💎 +${crystalGain} Mana Stones\n`;
           if (isBossSolo) {
             log += `\n👹 *BOSS DEFEATED!* You earned bonus rewards!`;
@@ -829,7 +849,7 @@ module.exports = {
             delete db.soloDungeons[sender];
             saveDatabase();
             return sock.sendMessage(chatId, {
-              text: `${log}\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🏆 *SOLO DUNGEON COMPLETE!*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n✅ All 10 floors cleared!\n\n📊 *TOTAL REWARDS:*\n💠 Nexus: +${sd.totalNexus.toLocaleString()}\n💎 Mana Stones: +${sd.totalCrystals}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n💪 Well done, solo hunter!`
+              text: `${log}\n\n${FRAME}\n🏆 *SOLO DUNGEON COMPLETE!*${pro ? ' 💎' : ''}\n${FRAME}\n✅ All 10 floors cleared!\n\n📊 *TOTAL REWARDS:*\n💠 Nexus: +${sd.totalNexus.toLocaleString()}\n💎 Mana Stones: +${sd.totalCrystals}\n${FRAME}\n💪 Well done, solo hunter!` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO DELVER* — run total ${UI.num(sd.totalNexus)} 💠` : `\n${UI.upsell()}`)
             }, { quoted: msg });
           }
 
@@ -857,7 +877,7 @@ module.exports = {
           delete db.soloDungeons[sender];
           saveDatabase();
           return sock.sendMessage(chatId, {
-            text: `${log}\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n💀 *DEFEATED on Floor ${sd.currentFloor}!*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n📦 Kept 50% of earned rewards.\n💠 Nexus: +${Math.floor(sd.totalNexus * 0.5)}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🏥 Use /use to recover.`
+            text: `${log}\n\n${FRAME}\n💀 *DEFEATED on Floor ${sd.currentFloor}!*\n${FRAME}\n📦 Kept 50% of earned rewards.\n💠 Nexus: +${Math.floor(sd.totalNexus * 0.5)}\n${FRAME}\n🏥 Use /use to recover.`
           }, { quoted: msg });
         }
 
@@ -865,10 +885,10 @@ module.exports = {
         sd.turn++;
         saveDatabase();
 
-        log += `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+        log += `\n${FRAME}\n`;
         log += `${monster.emoji} *${monster.name}*\n${mHpBar}\n❤️ ${monster.stats.hp}/${monster.stats.maxHp}\n\n`;
         log += `👤 *${player.name}*\n${pHpBar}\n❤️ ${player.stats.hp}/${player.stats.maxHp}\n`;
-        log += `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🎯 Floor ${sd.currentFloor}/10 | Turn ${sd.turn}`;
+        log += `${FRAME}\n🎯 Floor ${sd.currentFloor}/10 | Turn ${sd.turn}`;
         return sock.sendMessage(chatId, { text: log }, { quoted: msg });
       }
 
@@ -911,7 +931,7 @@ module.exports = {
       monster.stats.hp -= dmg;
       dungeon.turn++;
 
-      log += `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n⚔️ *${player.name}* attacks!\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+      log += `${FRAME}\n⚔️ *${player.name}* attacks!\n${FRAME}\n`;
       if (isCrit) log += `💥 *CRITICAL HIT!*\n`;
       if (artAtk > 0) log += `✨ Artifact: +${artAtk} ATK!\n`;
       if (petAtk > 0) log += `🐾 Pet: +${petAtk} ATK!\n`;
@@ -949,10 +969,10 @@ module.exports = {
       }
 
       saveDatabase();
-      log += `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+      log += `\n${FRAME}\n`;
       log += `👤 *${player.name}* ❤️ ${player.stats.hp}/${player.stats.maxHp}\n${BarSystem.getHPBar(player.stats.hp, player.stats.maxHp, require('../../rpg/utils/UnifiedCombat').isPro(player))}\n`;
       log += `\n${monster.emoji} *${monster.name}*\n${BarSystem.getMonsterHPBar(monster.stats.hp, monster.stats.maxHp)}\n`;
-      log += `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🎯 Floor ${dungeon.currentFloor}/20 | Turn ${dungeon.turn}`;
+      log += `${FRAME}\n🎯 Floor ${dungeon.currentFloor}/20 | Turn ${dungeon.turn}`;
       return sock.sendMessage(chatId, { text: log }, { quoted: msg });
     }
 
@@ -971,6 +991,7 @@ module.exports = {
         let log = '';
         if (fx.messages.length) log += fx.messages.join('\n') + '\n\n';
         if (!fx.canAct) { log += `❌ ${player.name} cannot act!`; return sock.sendMessage(chatId, { text: log }, { quoted: msg }); }
+        if (!fx.canUseSkills) { log += `🤐 ${player.name} is SILENCED — skills locked!`; return sock.sendMessage(chatId, { text: log }, { quoted: msg }); }
 
         const className = typeof player.class === 'string' ? player.class : player.class?.name  || 'Awaiting';
         // Build player entity with artifact bonuses applied
@@ -1024,7 +1045,7 @@ module.exports = {
             if (dn) log += '\n' + dn;
           } catch(e) {}
 
-          log += `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n💀 *${monster.name}* has been defeated!\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+          log += `${FRAME}\n💀 *${monster.name}* has been defeated!\n${FRAME}\n`;
           log += `💠 +${goldGain} Nexus | 💎 +${crysGain} Mana Stones\n`;
           log += `💠 *Total earned this run: ${sd.totalNexus.toLocaleString()}g*\n`;
           if (isBossSk) log += `\n👹 *BOSS DEFEATED!* Bonus rewards earned!`;
@@ -1041,7 +1062,7 @@ module.exports = {
             delete db.soloDungeons[sender];
             saveDatabase();
             return sock.sendMessage(chatId, {
-              text: `${log}\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🏆 *SOLO DUNGEON COMPLETE!*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n✅ All 10 floors cleared!\n\n📊 *TOTAL REWARDS:*\n💠 Nexus: +${sd.totalNexus.toLocaleString()}\n💎 Mana Stones: +${sd.totalCrystals}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n💪 Well done, solo hunter!`
+              text: `${log}\n\n${FRAME}\n🏆 *SOLO DUNGEON COMPLETE!*${pro ? ' 💎' : ''}\n${FRAME}\n✅ All 10 floors cleared!\n\n📊 *TOTAL REWARDS:*\n💠 Nexus: +${sd.totalNexus.toLocaleString()}\n💎 Mana Stones: +${sd.totalCrystals}\n${FRAME}\n💪 Well done, solo hunter!` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO DELVER* — run total ${UI.num(sd.totalNexus)} 💠` : `\n${UI.upsell()}`)
             }, { quoted: msg });
           }
 
@@ -1062,12 +1083,12 @@ module.exports = {
           delete db.soloDungeons[sender];
           saveDatabase();
           return sock.sendMessage(chatId, {
-            text: `${log}\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n💀 *DEFEATED on Floor ${sd.currentFloor}!*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n📦 Kept 50% of earned rewards.\n💠 Nexus: +${Math.floor(sd.totalNexus * 0.5)}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🏥 Use /use to recover.`
+            text: `${log}\n\n${FRAME}\n💀 *DEFEATED on Floor ${sd.currentFloor}!*\n${FRAME}\n📦 Kept 50% of earned rewards.\n💠 Nexus: +${Math.floor(sd.totalNexus * 0.5)}\n${FRAME}\n🏥 Use /use to recover.`
           }, { quoted: msg });
         }
 
         saveDatabase();
-        log += `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n${monster.emoji} *${monster.name}*\n${BarSystem.getMonsterHPBar(monster.stats.hp, monster.stats.maxHp)}\n❤️ ${monster.stats.hp}/${monster.stats.maxHp}\n\n👤 *${player.name}*\n${BarSystem.getHPBar(player.stats.hp, player.stats.maxHp, require('../../rpg/utils/UnifiedCombat').isPro(player))}\n❤️ ${player.stats.hp}/${player.stats.maxHp}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🎯 Floor ${sd.currentFloor}/10 | Turn ${sd.turn}`;
+        log += `\n${FRAME}\n${monster.emoji} *${monster.name}*\n${BarSystem.getMonsterHPBar(monster.stats.hp, monster.stats.maxHp)}\n❤️ ${monster.stats.hp}/${monster.stats.maxHp}\n\n👤 *${player.name}*\n${BarSystem.getHPBar(player.stats.hp, player.stats.maxHp, require('../../rpg/utils/UnifiedCombat').isPro(player))}\n❤️ ${player.stats.hp}/${player.stats.maxHp}\n${FRAME}\n🎯 Floor ${sd.currentFloor}/10 | Turn ${sd.turn}`;
         return sock.sendMessage(chatId, { text: log }, { quoted: msg });
       }
 
@@ -1085,6 +1106,7 @@ module.exports = {
       let log = '';
       if (fx.messages.length) log += fx.messages.join('\n') + '\n\n';
       if (!fx.canAct) { log += `❌ ${player.name} cannot act!`; return sock.sendMessage(chatId, { text: log }, { quoted: msg }); }
+      if (!fx.canUseSkills) { log += `🤐 ${player.name} is SILENCED — skills locked!`; return sock.sendMessage(chatId, { text: log }, { quoted: msg }); }
 
       const className = typeof player.class === 'string' ? player.class : player.class?.name  || 'Awaiting';
       const pEnt = { name: player.name, stats: player.stats, skills: player.skills, class: { name: className }, energyType: player.energyType || 'Energy', statusEffects: player.statusEffects || [] };
@@ -1110,7 +1132,7 @@ module.exports = {
       if (player.stats.hp <= 0) return handlePlayerDeath(sock, chatId, party, dungeon, db, saveDatabase, msg, sender, log);
 
       saveDatabase();
-      log += `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n👤 *${player.name}* ❤️ ${player.stats.hp}/${player.stats.maxHp}\n${BarSystem.getHPBar(player.stats.hp, player.stats.maxHp, require('../../rpg/utils/UnifiedCombat').isPro(player))}\n\n${monster.emoji} *${monster.name}*\n${BarSystem.getMonsterHPBar(monster.stats.hp, monster.stats.maxHp)}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🎯 Floor ${dungeon.currentFloor}/20`;
+      log += `\n${FRAME}\n👤 *${player.name}* ❤️ ${player.stats.hp}/${player.stats.maxHp}\n${BarSystem.getHPBar(player.stats.hp, player.stats.maxHp, require('../../rpg/utils/UnifiedCombat').isPro(player))}\n\n${monster.emoji} *${monster.name}*\n${BarSystem.getMonsterHPBar(monster.stats.hp, monster.stats.maxHp)}\n${FRAME}\n🎯 Floor ${dungeon.currentFloor}/20`;
       return sock.sendMessage(chatId, { text: log }, { quoted: msg });
     }
 
@@ -1203,6 +1225,8 @@ async function handleMonsterDefeat(sock, chatId, party, monster, dungeon, db, sa
     const BarSystem = require('../../rpg/utils/BarSystem');
     const player = db.users[sender];
     if (!player) return;
+    const dPro = UI.isPro(player);
+    const FRAME = dPro ? UI.PRO_BAR : UI.FREE_BAR;
     dungeon.monstersDefeated = (dungeon.monstersDefeated || 0) + 1;
     dungeon.awaitingAdvance = true;
     dungeon.totalMonsters   = (dungeon.totalMonsters || 0) + 1;
@@ -1240,9 +1264,9 @@ async function handleMonsterDefeat(sock, chatId, party, monster, dungeon, db, sa
     } catch(e) {}
 
     let txt = log;
-    txt += `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
-    txt += `💀 *${monster.name}* has been defeated!\n`;
-    txt += `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+    txt += `\n${FRAME}\n`;
+    txt += dPro ? `💀 *${monster.name}* has been defeated! 💎\n` : `💀 *${monster.name}* has been defeated!\n`;
+    txt += `${FRAME}\n`;
     txt += `📊 Floor ${dungeon.currentFloor}/${dungeon.maxFloors} | Defeated: ${dungeon.monstersDefeated}\n\n`;
     if (DungeonManager.isBossFloor(dungeon.currentFloor)) {
       txt += `👹 *BOSS FLOOR CLEARED!* Bonus rewards earned.\n\n`;
@@ -1253,7 +1277,8 @@ async function handleMonsterDefeat(sock, chatId, party, monster, dungeon, db, sa
       if (!mp) return;
       txt += `${mp.stats.hp > 0 ? '⚔️' : '💀'} *${m.name}* — ${BarSystem.getHPBar(mp.stats.hp, mp.stats.maxHp, require('../../rpg/utils/UnifiedCombat').isPro(mp))} ${mp.stats.hp}/${mp.stats.maxHp}\n`;
     });
-    txt += `\n/dungeon advance — next floor\n/dungeon leave   — exit & keep rewards`;
+    txt += `\n${FRAME}\n/dungeon advance — next floor\n/dungeon leave   — exit & keep rewards`;
+    txt += dPro ? `\n${UI.PRO_MINI}\n💎 *PRO DELVER* — floor ${dungeon.currentFloor}/${dungeon.maxFloors} · ${dungeon.monstersDefeated} slain` : `\n${UI.upsell()}`;
     await sock.sendMessage(chatId, { text: txt }, { quoted: msg });
   } catch (e) {
     console.error('handleMonsterDefeat error:', e.message);
@@ -1265,10 +1290,11 @@ async function handlePlayerDeath(sock, chatId, party, dungeon, db, saveDatabase,
   try {
     const player = db.users[sender];
     if (!player) return;
+    const FRAME = UI.isPro(player) ? UI.PRO_BAR : UI.FREE_BAR;
     player.stats.hp = 1;
     saveDatabase();
     await sock.sendMessage(chatId, {
-      text: (log || '') + `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n💀 *${player.name} was defeated!*\nAuto-revived with 1 HP. /use to heal.\n━━━━━━━━━━━━━━━━━━━━━━━━━━━`
+      text: (log || '') + `\n${FRAME}\n💀 *${player.name} was defeated!*\nAuto-revived with 1 HP. /use to heal.\n${FRAME}`
     }, { quoted: msg });
   } catch (e) { console.error('handlePlayerDeath:', e.message); }
 }
@@ -1276,6 +1302,8 @@ async function handlePlayerDeath(sock, chatId, party, dungeon, db, saveDatabase,
 async function handleDungeonComplete(sock, chatId, party, db, saveDatabase, msg) {
   try {
     const DungeonManager = require('../../rpg/dungeons/DungeonManager');
+    const cPro = (party.members || []).some(m => { try { return UI.isPro(db.users[m.id]); } catch (e) { return false; } });
+    const FRAME = cPro ? UI.PRO_BAR : UI.FREE_BAR;
     party.status = 'complete';
     let totalNexus = 0, totalCrystals = 0;
     for (const m of party.members) {
@@ -1288,7 +1316,7 @@ async function handleDungeonComplete(sock, chatId, party, db, saveDatabase, msg)
     }
     saveDatabase();
     await sock.sendMessage(chatId, {
-      text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🏆 *DUNGEON COMPLETE!*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\nAll ${party.members.length} hunters survived.\n\n💠 +${totalNexus.toLocaleString()} 💠 (split)\n💎 +${totalCrystals} Mana Stones (split)\n━━━━━━━━━━━━━━━━━━━━━━━━━━━`
+      text: `${FRAME}\n🏆 *DUNGEON COMPLETE!*${cPro ? ' 💎' : ''}\n${FRAME}\nAll ${party.members.length} hunters survived.\n\n💠 +${totalNexus.toLocaleString()} 💠 (split)\n💎 +${totalCrystals} Mana Stones (split)\n${FRAME}`
     }, { quoted: msg });
   } catch (e) { console.error('handleDungeonComplete:', e.message); }
 }

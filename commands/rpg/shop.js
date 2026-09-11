@@ -71,6 +71,9 @@ module.exports = {
     const db = getDatabase();
     const player = db.users[sender];
     if (!player) return sock.sendMessage(chatId, { text: '❌ Register first! /register' }, { quoted: msg });
+    const UI = require('../../rpg/utils/UI');
+    const pro = UI.isPro(player);
+    const FRAME = pro ? UI.PRO_BAR : UI.FREE_BAR;
 
     if (checkInBattle(player, db)) {
       return sock.sendMessage(chatId, { text: '❌ You cannot access the shop while in battle!' }, { quoted: msg });
@@ -84,31 +87,30 @@ module.exports = {
     const crystals = (player.manaCrystals||0).toLocaleString();
 
     if (!action) {
-      return sock.sendMessage(chatId, {text:
-`━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🏪 *HUNTER SHOP*
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-💠 Nexus: *${gold}* 💠
-💎 Mana Stones: *${crystals}*
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-📂 *CATEGORIES*
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🧪 /shop potions    — Consumables (Nexus)
-⚔️  /shop weapons   — Class weapons (Nexus)
-🥋 /shop attacks    — Attack Patterns (Nexus/MS)
-🎁 /shop bundles    — Value packs (Nexus)
-📜 /shop scrolls    — Recipe scrolls (Mana Stones)
-📦 /shop inventory  — Your items
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-💡 *HOW TO BUY*
-/shop buy potions [#] [amount]
-/shop buy bundles [#]
-/shop weapon [#]
-/shop buy scroll [sc1-sc6]
-/shop attacks — browse patterns
-/shop attacks buy [#] — buy pattern
-━━━━━━━━━━━━━━━━━━━━━━━━━━━`
-      },{quoted:msg});
+      const affordP = CONSUMABLES.filter(i => (player.gold||0) >= i.cost).length;
+      const affordB = BUNDLES.filter(b => (player.gold||0) >= b.cost).length;
+      const text = UI.card(player, {
+        icon: '🏪', title: 'HUNTER SHOP',
+        lines: [
+          `💠 Nexus: *${gold}* 💠`,
+          `💎 Mana Stones: *${crystals}*`,
+          ``,
+          `📂 *CATEGORIES*`,
+          `🧪 /shop potions — Consumables (Nexus)`,
+          `⚔️ /shop weapons — Class weapons (Nexus)`,
+          `🥋 /shop attacks — Attack Patterns (Nexus/MS)`,
+          `🎁 /shop bundles — Value packs (Nexus)`,
+          `📜 /shop scrolls — Recipe scrolls (Mana Stones)`,
+          `📦 /shop inventory — Your items`,
+          ``,
+          `💡 *HOW TO BUY*`,
+          `/shop buy potions [#] [amount] · /shop buy bundles [#]`,
+          `/shop weapon [#] · /shop buy scroll [sc1-sc6]`,
+        ],
+        proLines: [`💎 *PRO LEDGER*`, `  🧪 ${affordP}/${CONSUMABLES.length} potions · 🎁 ${affordB}/${BUNDLES.length} bundles in reach`],
+        tip: '/shop potions to stock up',
+      });
+      return sock.sendMessage(chatId, { text }, { quoted: msg });
     }
     // ── Attack Patterns via /shop attacks (alias to /attacks) ───────────────
     if (action === 'attacks' || action === 'attack' || action === 'ap') {
@@ -128,25 +130,32 @@ module.exports = {
     }
 
     if (action==='potions'||action==='potion') {
-      let txt=`━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🧪 *CONSUMABLES SHOP*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n💠 Nexus: *${gold}*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+      let txt = pro
+        ? `${UI.PRO_BAR}\n🧪 *CONSUMABLES SHOP* 💎\n${UI.PRO_BAR}\n💠 Nexus: *${gold}*\n${UI.PRO_BAR}\n`
+        : `🧪 *CONSUMABLES SHOP*\n${UI.FREE_BAR}\n💠 Nexus: *${gold}*\n${UI.FREE_BAR}\n`;
       CONSUMABLES.forEach(item=>{
         const n=item.key==='energyPotions'?`${player.energyType||'Energy'} Potion`:item.name;
-        txt+=`*${item.id}.* ${item.emoji} *${n}* — ${item.cost.toLocaleString()}g\n   ${item.desc}\n\n`;
+        const mark = pro ? ((player.gold||0) >= item.cost ? '✅ ' : '❌ ') : '';
+        txt+=`${mark}*${item.id}.* ${item.emoji} *${n}* — ${item.cost.toLocaleString()}g\n   ${item.desc}\n\n`;
       });
-      txt+=`━━━━━━━━━━━━━━━━━━━━━━━━━━━\n/shop buy potions [#] [amount]`;
+      txt+=`${FRAME}\n/shop buy potions [#] [amount]`;
+      if (!pro) txt+=`\n${UI.upsell()}`;
       return sock.sendMessage(chatId,{text:txt},{quoted:msg});
     }
 
     if (action==='bundles'||action==='bundle') {
-      let txt=`━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🎁 *BUNDLE DEALS*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n💠 Nexus: *${gold}*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
-      BUNDLES.forEach(b=>{txt+=`*${b.id}.* ${b.emoji} *${b.name}* — ${b.cost.toLocaleString()}g\n   ${b.desc}\n\n`;});
-      txt+=`━━━━━━━━━━━━━━━━━━━━━━━━━━━\n/shop buy bundles [#]`;
+      let txt = pro
+        ? `${UI.PRO_BAR}\n🎁 *BUNDLE DEALS* 💎\n${UI.PRO_BAR}\n💠 Nexus: *${gold}*\n${UI.PRO_BAR}\n`
+        : `🎁 *BUNDLE DEALS*\n${UI.FREE_BAR}\n💠 Nexus: *${gold}*\n${UI.FREE_BAR}\n`;
+      BUNDLES.forEach(b=>{const mark=pro?((player.gold||0)>=b.cost?'✅ ':'❌ '):'';txt+=`${mark}*${b.id}.* ${b.emoji} *${b.name}* — ${b.cost.toLocaleString()}g\n   ${b.desc}\n\n`;});
+      txt+=`${FRAME}\n/shop buy bundles [#]`;
+      if (!pro) txt+=`\n${UI.upsell()}`;
       return sock.sendMessage(chatId,{text:txt},{quoted:msg});
     }
 
     if (action==='scrolls'||action==='scroll') {
       const stones = player.manaStones || player.manaCrystals || 0;
-      const lines = [`━━━━━━━━━━━━━━━━━━━━━━━━━━━`,`📜 *RECIPE SCROLLS*`,`━━━━━━━━━━━━━━━━━━━━━━━━━━━`,`💎 Your Mana Stones: *${stones.toLocaleString()}*`,``,`⚠️ Contents unknown until purchased.`,`📖 Read scrolls in DMs to reveal recipe + key.`,``];
+      const lines = [...(pro ? [UI.PRO_BAR,`📜 *RECIPE SCROLLS* 💎`,UI.PRO_BAR] : [`📜 *RECIPE SCROLLS*`,UI.FREE_BAR]),`💎 Your Mana Stones: *${stones.toLocaleString()}*`,``,`⚠️ Contents unknown until purchased.`,`📖 Read scrolls in DMs to reveal recipe + key.`,``];
       for (const s of SCROLL_SHOP_ITEMS) {
         const can = stones >= s.cost ? '✅' : '❌';
         lines.push(`${can} ${s.emoji} *${s.name}* [${s.id}]`);
@@ -154,10 +163,11 @@ module.exports = {
         lines.push(`   💎 ${s.cost.toLocaleString()} Mana Stones`);
         lines.push('');
       }
-      lines.push(`━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+      lines.push(FRAME);
       lines.push(`/shop buy scroll sc1 — buy Common`);
       lines.push(`/shop buy scroll sc6 — buy Mythic`);
-      lines.push(`━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+      lines.push(FRAME);
+      if (!pro) lines.push(UI.upsell());
       return sock.sendMessage(chatId, { text: lines.join('\n') }, { quoted: msg });
     }
 
@@ -171,9 +181,9 @@ module.exports = {
       const ss=(player.inventory.items||[]).filter(i=>i.isShieldScroll).length;
       const me=(player.inventory.items||[]).filter(i=>i.isMightElixir).length;
       return sock.sendMessage(chatId,{text:
-`━━━━━━━━━━━━━━━━━━━━━━━━━━━
+`${FRAME}
 🎒 *YOUR INVENTORY*
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${FRAME}
 🩹 HP Potions: *${hp}*
 ⚡ Energy Potions: *${ep}*
 🎫 Revive Tokens: *${rv}*
@@ -183,9 +193,9 @@ module.exports = {
 🛡️ Shield Scrolls: *${ss}*
 💪 Might Elixirs: *${me}*
 🎟️ Summon Tickets: *${player.summonTickets||0}*
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${FRAME}
 💠 Nexus: *${gold}*  💎 Mana Stones: *${crystals}*
-━━━━━━━━━━━━━━━━━━━━━━━━━━━`
+${FRAME}`
       },{quoted:msg});
     }
 
@@ -218,9 +228,9 @@ module.exports = {
       } catch(e) { shopTxt = '\n⚔️ Attack shop: N/A\n'; }
 
       const txt = [
-        '━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+        FRAME,
         '📊 *SHOP ADMIN STATS*',
-        '━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+        FRAME,
         '👥 Total Players: *' + total + '*',
         '💠 Players with Nexus: *' + withNexus + '*',
         '🏦 Total Nexus in economy: *' + totalNexus.toLocaleString() + '*',
@@ -228,7 +238,7 @@ module.exports = {
         '👑 Pro subscribers: *' + withPro + '*',
         richest ? '🥇 Richest: *' + (richest.name||'?') + '* — ' + (richest.gold||0).toLocaleString() + ' Nexus' : '',
         shopTxt,
-        '━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+        FRAME,
       ].filter(Boolean).join('\n');
 
       return sock.sendMessage(chatId, { text: txt }, { quoted: msg });
@@ -238,14 +248,21 @@ module.exports = {
       const cn=typeof player.class==='string'?player.class:(player.class?.name || 'Awaiting');
       const cw=weaponUpgrades[cn]||[];
       if(!cw.length) return sock.sendMessage(chatId,{text:`❌ No weapons for *${cn}*!`},{quoted:msg});
-      let txt=`━━━━━━━━━━━━━━━━━━━━━━━━━━━\n⚔️ *WEAPONS — ${cn.toUpperCase()}*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\nEquipped: *${player.weapon?.name||'None'}*\n💠 Nexus: *${gold}*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+      let txt = pro
+        ? `${UI.PRO_BAR}\n⚔️ *WEAPONS — ${cn.toUpperCase()}* 💎\n${UI.PRO_BAR}\nEquipped: *${player.weapon?.name||'None'}*\n💠 Nexus: *${gold}*\n${UI.PRO_BAR}\n`
+        : `⚔️ *WEAPONS — ${cn.toUpperCase()}*\n${UI.FREE_BAR}\nEquipped: *${player.weapon?.name||'None'}*\n💠 Nexus: *${gold}*\n${UI.FREE_BAR}\n`;
       cw.forEach((w,i)=>{
         const locked=player.level<w.level;
         const owned=player.weapon?.name===w.name;
         const icon=owned?'📍':locked?'🔒':'✅';
         txt+=`${icon} *${i+1}.* ${w.name}\n   ⚔️ +${w.bonus} ATK${w.defBonus?` | 🛡️ +${w.defBonus} DEF`:''} | 💠 ${w.cost.toLocaleString()} 💠 | Lv.${w.level}\n\n`;
       });
-      txt+=`━━━━━━━━━━━━━━━━━━━━━━━━━━━\n/shop weapon [#] to buy`;
+      if (pro) {
+        const nextW = cw.find(w => player.weapon?.name !== w.name && player.level >= w.level);
+        if (nextW) txt += `${UI.PRO_MINI}\n💎 *PRO ARMORY* — next: *${nextW.name}* (+${nextW.bonus} ATK) @ ${nextW.cost.toLocaleString()} 💠\n\n`;
+      }
+      txt+=`${FRAME}\n/shop weapon [#] to buy`;
+      if (!pro) txt+=`\n${UI.upsell()}`;
       return sock.sendMessage(chatId,{text:txt},{quoted:msg});
     }
 
@@ -265,7 +282,7 @@ module.exports = {
       player.weapon={name:w.name,bonus:w.bonus,attack:w.bonus,defense:w.defBonus||0};
       if(w.defBonus){player.stats.def=(player.stats.def||5)+w.defBonus;}
       saveDatabase();
-      return sock.sendMessage(chatId,{text:`━━━━━━━━━━━━━━━━━━━━━━━━━━━\n⚔️ *WEAPON EQUIPPED!*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n✨ *${w.name}*\n⚔️ +${w.bonus} ATK${w.defBonus?`\n🛡️ +${w.defBonus} DEF`:''}\n💠 Spent: ${w.cost.toLocaleString()} 💠 (+${tax} 💠 tax)\n💠 Nexus left: ${(player.gold||0).toLocaleString()}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━`},{quoted:msg});
+      return sock.sendMessage(chatId,{text:`${FRAME}\n⚔️ *WEAPON EQUIPPED!*\n${FRAME}\n✨ *${w.name}*\n⚔️ +${w.bonus} ATK${w.defBonus?`\n🛡️ +${w.defBonus} DEF`:''}\n💠 Spent: ${w.cost.toLocaleString()} 💠 (+${tax} 💠 tax)\n💠 Nexus left: ${(player.gold||0).toLocaleString()}\n${FRAME}`},{quoted:msg});
     }
 
     if (action==='buy') {
@@ -279,7 +296,7 @@ module.exports = {
         const scrollItem = SCROLL_SHOP_ITEMS.find(s => s.id === scrollId);
         if (!scrollItem) {
           const list = SCROLL_SHOP_ITEMS.map(s => `${s.emoji} *${s.id}* — ${s.name} (${s.cost.toLocaleString()} MS)`).join('\n');
-          return sock.sendMessage(chatId, { text: `📜 *RECIPE SCROLLS*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n${list}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\nUsage: /shop buy scroll sc1` }, { quoted: msg });
+          return sock.sendMessage(chatId, { text: `📜 *RECIPE SCROLLS*\n${FRAME}\n${list}\n${FRAME}\nUsage: /shop buy scroll sc1` }, { quoted: msg });
         }
         const manaStones = player.manaStones || player.manaCrystals || 0;
         if (manaStones < scrollItem.cost) {
@@ -291,6 +308,7 @@ module.exports = {
         if (!player.inventory.scrolls) player.inventory.scrolls = [];
         const newScroll = buyScroll(scrollItem.rarity);
         player.inventory.scrolls.push(newScroll);
+        try { require('../../rpg/utils/QuestDispatcher').trackAndNotify(player, 'shop', 1, sock, sender, chatId); } catch(e){}
         saveDatabase();
         return sock.sendMessage(chatId, {
           text: `✅ Purchased *${scrollItem.name}*!\n\n📖 Read it in DMs: */scroll read*\n🔑 Contains a hidden recipe + craft key.`
@@ -321,6 +339,7 @@ module.exports = {
         else if(item.key==='goldMult'){for(let i=0;i<amount;i++)player.inventory.items.push({name:'Nexus Multiplier',type:'Consumable',isNexusMult:true,charges:3});}
         else if(item.key==='shieldScroll'){for(let i=0;i<amount;i++)player.inventory.items.push({name:'Shield Scroll',type:'Consumable',isShieldScroll:true});}
         else if(item.key==='mightElixir'){for(let i=0;i<amount;i++)player.inventory.items.push({name:'Elixir of Might',type:'Consumable',isMightElixir:true,charges:5,atkBonus:20});}
+        try { require('../../rpg/utils/QuestDispatcher').trackAndNotify(player, 'shop', 1, sock, sender, chatId); } catch(e){}
         saveDatabase();
         const n=item.key==='energyPotions'?`${player.energyType||'Energy'} Potion`:item.name;
         return sock.sendMessage(chatId,{text:`✅ *${amount}× ${item.emoji} ${n} purchased!*\n💠 Spent: ${cost.toLocaleString()} 💠 (+${tax} 💠 tax)\n💠 Nexus left: ${(player.gold||0).toLocaleString()}`},{quoted:msg});
@@ -334,6 +353,7 @@ module.exports = {
           if(!val.valid) return sock.sendMessage(chatId,{text:val.message},{quoted:msg});
           updatePlayerNexus(player,-item.goldCost,null);
           player.manaCrystals=(player.manaCrystals||0)+item.amount;
+          try { require('../../rpg/utils/QuestDispatcher').trackAndNotify(player, 'shop', 1, sock, sender, chatId); } catch(e){}
           saveDatabase();
           return sock.sendMessage(chatId,{text:`✅ *+${item.amount} Mana Stones!*\n💎 Total: ${player.manaCrystals}`},{quoted:msg});
         }
@@ -342,6 +362,7 @@ module.exports = {
           if(!val.valid) return sock.sendMessage(chatId,{text:val.message},{quoted:msg});
           player.manaCrystals-=item.cost;
           player.summonTickets=(player.summonTickets||0)+1;
+          try { require('../../rpg/utils/QuestDispatcher').trackAndNotify(player, 'shop', 1, sock, sender, chatId); } catch(e){}
           saveDatabase();
           return sock.sendMessage(chatId,{text:`✅ *1 Summon Ticket!*\n🎟️ Tickets: ${player.summonTickets}\n💎 Mana Stones left: ${player.manaCrystals}`},{quoted:msg});
         }
@@ -356,8 +377,9 @@ module.exports = {
         else if(item.stat==='crit') player.stats.crit=(player.stats.crit||0)+item.amount;
         if(!player.artifacts?.inventory){player.artifacts={inventory:[],equipped:{weapon:null,armor:null,ring:null,tome:null},enhanced:{}};}
         player.artifacts.inventory.push(item.name);
+        try { require('../../rpg/utils/QuestDispatcher').trackAndNotify(player, 'shop', 1, sock, sender, chatId); } catch(e){}
         saveDatabase();
-        return sock.sendMessage(chatId,{text:`━━━━━━━━━━━━━━━━━━━━━━━━━━━\n${item.emoji} *${item.name} APPLIED!*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n${item.desc}\n💎 Mana Stones left: ${player.manaCrystals}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━`},{quoted:msg});
+        return sock.sendMessage(chatId,{text:`${FRAME}\n${item.emoji} *${item.name} APPLIED!*\n${FRAME}\n${item.desc}\n💎 Mana Stones left: ${player.manaCrystals}\n${FRAME}`},{quoted:msg});
       }
 
       if(cat==='bundles'||cat==='bundle') {
@@ -373,8 +395,9 @@ module.exports = {
         else if(bundle.id===3){player.inventory.items.push({name:'Elixir of Might',type:'Consumable',isMightElixir:true,charges:5,atkBonus:20});player.inventory.items.push({name:'Shield Scroll',type:'Consumable',isShieldScroll:true});player.inventory.items.push({name:'Luck Potion',type:'Consumable',isLuckPotion:true});player.inventory.items.push({name:'Luck Potion',type:'Consumable',isLuckPotion:true});received='💪 Elixir of Might\n🛡️ Shield Scroll\n🍀 2 Luck Potions';}
         else if(bundle.id===4){player.manaCrystals=(player.manaCrystals||0)+200;player.summonTickets=(player.summonTickets||0)+3;received='💎 200 Mana Stones\n🎟️ 3 Summon Tickets';}
         else if(bundle.id===5){player.inventory.healthPotions=(player.inventory.healthPotions||0)+20;player.inventory.reviveTokens=(player.inventory.reviveTokens||0)+10;for(let i=0;i<5;i++)player.inventory.items.push({name:'XP Booster',type:'Consumable',isXpBooster:true,charges:3});player.manaCrystals=(player.manaCrystals||0)+500;received='🩹 20 HP Potions\n🎫 10 Revive Tokens\n✨ 5 XP Boosters\n💎 500 Mana Stones';}
+        try { require('../../rpg/utils/QuestDispatcher').trackAndNotify(player, 'shop', 1, sock, sender, chatId); } catch(e){}
         saveDatabase();
-        return sock.sendMessage(chatId,{text:`━━━━━━━━━━━━━━━━━━━━━━━━━━━\n${bundle.emoji} *${bundle.name} PURCHASED!*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n📦 *You received:*\n${received}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n💠 Spent: ${bundle.cost.toLocaleString()} 💠 (+${tax} 💠 tax)\n💠 Nexus left: ${(player.gold||0).toLocaleString()}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━`},{quoted:msg});
+        return sock.sendMessage(chatId,{text:`${FRAME}\n${bundle.emoji} *${bundle.name} PURCHASED!*\n${FRAME}\n📦 *You received:*\n${received}\n${FRAME}\n💠 Spent: ${bundle.cost.toLocaleString()} 💠 (+${tax} 💠 tax)\n💠 Nexus left: ${(player.gold||0).toLocaleString()}\n${FRAME}`},{quoted:msg});
       }
 
       return sock.sendMessage(chatId,{text:'❌ Unknown category! Use: potions, crystals, bundles'},{quoted:msg});

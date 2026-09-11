@@ -130,23 +130,16 @@ class DailyItemSpawner {
     if (!Array.isArray(player.inventory.items)) player.inventory.items = [];
     if (!Array.isArray(player.inventory.materials)) player.inventory.materials = [];
 
-    player.inventory.items.push({
+    // Single commit to items (legacy double-push duplicated the /inv display).
+    require('../rpg/utils/RewardInventory').grantItem(player, {
       name: item.name,
       rarity: item.rarity,
       description: item.description,
-      obtainedAt: Date.now(),
       type: item.name === 'Mending Stone' ? 'consumable' : 'material'
-    });
+    }, 'spawn');
 
     if (item.name === 'Mending Stone') {
       player.inventory.mendingStones = (player.inventory.mendingStones || 0) + 1;
-    } else {
-      player.inventory.materials.push({
-        name: item.name,
-        rarity: item.rarity,
-        description: item.description,
-        obtainedAt: Date.now()
-      });
     }
 
     saveDatabase();

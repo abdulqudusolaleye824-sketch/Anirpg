@@ -12,6 +12,9 @@ module.exports = {
     if (!player) {
       return sock.sendMessage(chatId, { text: '❌ You are not registered!' }, { quoted: msg });
     }
+    const UI = require('../../rpg/utils/UI');
+    const pro = UI.isPro(player);
+    const FRAME = pro ? UI.PRO_BAR : UI.FREE_BAR;
 
     const subCmd = args[0]?.toLowerCase();
 
@@ -96,7 +99,7 @@ module.exports = {
       const re = rarityEmoji[(selected.rarity||'').toLowerCase()] || '🍖';
 
       return sock.sendMessage(chatId, {
-        text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🍖 *FOOD TRANSFERRED!*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n${re} *${selected.name}* ×${moved}\n\n📤 From: *${player.name}*\n📥 To: *${recipient.name}*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        text: (pro ? `${UI.PRO_BAR}\n🍖 *FOOD TRANSFERRED!* 💎\n${UI.PRO_BAR}\n\n${re} *${selected.name}*` : `🍖 *FOOD TRANSFERRED!*\n${UI.FREE_BAR}\n\n${re} *${selected.name}*`)+` ×${moved}\n\n📤 From: *${player.name}*\n📥 To: *${recipient.name}*\n${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO PANTRY* — sent ${selected.name} ×${moved}` : `\n${UI.upsell()}`),
         mentions: [recipientId]
       }, { quoted: msg });
     }
@@ -104,22 +107,22 @@ module.exports = {
     // ── Default: numbered food list ────────────────────────────
     if (sorted.length === 0) {
       return sock.sendMessage(chatId, {
-        text: `🍖 *PET FOOD*\n\n❌ No pet food!\n\n💡 Clear dungeons to find food drops.\n📌 /pet foods — see all food types`
+        text: (pro ? `${UI.PRO_BAR}\n🍖 *PET FOOD* 💎\n${UI.PRO_BAR}\n\n❌ No pet food!\n\n💡 Clear dungeons to find food drops.\n📌 /pet foods — see all food types\n${UI.PRO_BAR}\n${UI.PRO_MINI}\n💎 *PRO PANTRY* — pantry empty` : `🍖 *PET FOOD*\n${UI.FREE_BAR}\n\n❌ No pet food!\n\n💡 Clear dungeons to find food drops.\n📌 /pet foods — see all food types\n${UI.FREE_BAR}\n${UI.upsell()}`)
       }, { quoted: msg });
     }
 
     const rarityEmoji = { mythic:'🌌', legendary:'🟠', epic:'🟣', rare:'🔵', uncommon:'🟢', common:'⚪' };
 
-    let message = `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🍖 *PET FOOD INVENTORY*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
+    let message = pro ? `${UI.PRO_BAR}\n🍖 *PET FOOD INVENTORY* 💎\n${UI.PRO_BAR}\n\n` : `🍖 *PET FOOD INVENTORY*\n${UI.FREE_BAR}\n\n`;
     sorted.forEach((item, i) => {
       const re = rarityEmoji[(item.rarity||'').toLowerCase()] || '🍖';
       message += `*${i+1}.* ${re} ${item.name} ×${item.count}\n`;
     });
-    message += `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+    message += `\n${FRAME}\n`;
     message += `/pet feed [pet#] [food name] — feed pet\n`;
     message += `/food give [#] [qty] @player — transfer\n`;
     message += `/pet foods — all food types\n`;
-    message += `━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+    message += `${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO PANTRY* — ${sorted.length} kinds` : `\n${UI.upsell()}`);
 
     return sock.sendMessage(chatId, { text: message }, { quoted: msg });
   }

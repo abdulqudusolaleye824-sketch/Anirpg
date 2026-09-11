@@ -1,6 +1,7 @@
 const { downloadMediaMessage } = require('@whiskeysockets/baileys');
 const { injectStickerMetadata } = require('../../utils/stickerMetadata');
 let sharp; try { sharp = require('sharp'); } catch(e) { sharp = null; }
+const UI = require('../../rpg/utils/UI');
 
 module.exports = {
   name: 'sticker',
@@ -11,6 +12,7 @@ module.exports = {
   async execute(sock, msg, args, getDatabase, saveDatabase, sender) {
     const chatId = msg.key.remoteJid;
     const db = getDatabase();
+    const proS = UI.isPro(db?.users?.[sender]);
     const ownerName = db?.users?.[sender]?.name || msg.pushName || 'Senku';
 
     const rawText = (msg.message?.conversation || msg.message?.extendedTextMessage?.text || '').replace(/^\/(sticker|st|s)\s*/i, '').trim();
@@ -54,15 +56,14 @@ module.exports = {
 
       if (!mediaMessage) {
         return sock.sendMessage(chatId, {
-          text: `❌ No media found!
-
-📌 *HOW TO USE:*
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-1️⃣ Send an image with caption: /sticker
+          text: `${(proS ? UI.PRO_BAR : UI.FREE_BAR)}
+${'📌 *STICKER MAKER*'}
+❌ No media found!
+${proS ? `${(UI.PRO_MINI + '\n' + '🎨 PRO STUDIO')}\n📦 Pack: *${packName}* · ✍️ By: *${author}*\n` : ''}1️⃣ Send an image with caption: /sticker
 2️⃣ Reply to an image/sticker with: /sticker or /s
 
 💡 Custom pack name: /s My Pack | My Name
-━━━━━━━━━━━━━━━━━━━━━━━━━━━`
+${(proS ? UI.PRO_BAR : UI.FREE_BAR)}`
         }, { quoted: msg });
       }
 

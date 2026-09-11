@@ -136,6 +136,43 @@ function formatGuildPoints(guild) {
   ].join('\n');
 }
 
+// ── CENTRAL GP LEDGER ─────────────────────────────────────────────────────────
+// Single entry point for ALL guild-point changes. Keeps every ledger in sync:
+//   • player.weeklyGP / player.totalGP (weekly war leaderboard + lifetime)
+//   • guild.weeklyGP / guild.totalGP   (weekly war leaderboard + lifetime)
+//   • guild.guildPoints + gpLog        (GP ranks + audit trail)
+// Negative amounts are floored at 0 (ledgers never go negative).
+// opts: { quest(bool: dispatch 'gp' daily-quest), sock, jid, chatId, saveDatabase }
+function addGuildGP(db, playerId, points, reason, opts = {}) {
+  try {
+    if (!db || !playerId || !points) return 0;
+    try { require('./WeeklyGuildWar').checkWeeklyReset(db, opts.saveDatabase || null); } catch(e){}
+    const player = db.users?.[playerId];
+    const _hadGP = (player?.weeklyGP || 0) > 0;
+    if (player) {
+      player.weeklyGP = Math.max(0, (player.weeklyGP || 0) + points);
+      player.totalGP  = Math.max(0, (player.totalGP  || 0) + points);
+    }
+    // Guild War participation: first GP of the week = entered the war
+    if (points > 0 && !_hadGP && player) {
+      try { require('./QuestDispatcher').trackAndNotify(player, 'gw', 1, opts.sock || null, opts.jid || playerId, opts.chatId || null); } catch(e){}
+    }
+    const guild = findPlayerGuild(playerId, db);
+    if (guild) {
+      guild.weeklyGP = Math.max(0, (guild.weeklyGP || 0) + points);
+      guild.totalGP  = Math.max(0, (guild.totalGP  || 0) + points);
+      awardGP(guild, points, reason || 'GP adjustment');
+      if (guild.guildPoints < 0) guild.guildPoints = 0;
+    }
+    // Daily-quest wiring: GP earned counts toward Guild Pillar etc.
+    if (opts.quest && points > 0 && player) {
+      try { require('./QuestDispatcher').trackAndNotify(player, 'gp', points, opts.sock || null, opts.jid || playerId, opts.chatId || null); } catch(e){}
+    }
+    if (opts.saveDatabase) { try { opts.saveDatabase(); } catch(e){} }
+    return points;
+  } catch(e){ return 0; }
+}
+
 // ── Find player's guild ───────────────────────────────────────────────────────
 function findPlayerGuild(sender, db) {
   if (!db.guilds) return null;
@@ -158,4 +195,5 @@ module.exports = {
   onGuildWarResult,
   formatGuildPoints,
   findPlayerGuild,
+  addGuildGP,
 };

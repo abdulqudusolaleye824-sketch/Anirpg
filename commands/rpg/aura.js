@@ -17,6 +17,9 @@ module.exports = {
     const db = getDatabase();
     const player = db.users[sender];
     if (!player) return sock.sendMessage(chatId, { text: '❌ Register first! Use /register' }, { quoted: msg });
+    const UI = require('../../rpg/utils/UI');
+    const pro = UI.isPro(player);
+    const FRAME = pro ? UI.PRO_BAR : UI.FREE_BAR;
 
     const sub = args[0]?.toLowerCase();
 
@@ -27,15 +30,14 @@ module.exports = {
 
       return sock.sendMessage(chatId, {
         text: [
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-          `✨ *GLOBAL AURA LEADERBOARD*`,
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          ...(pro ? [UI.PRO_BAR, `✨ *GLOBAL AURA LEADERBOARD* 💎`, UI.PRO_BAR] : [`✨ *GLOBAL AURA LEADERBOARD*`, UI.FREE_BAR]),
           ``,
           board.join('\n'),
           ``,
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          FRAME,
           `✨ Your Aura: *${(player.aura || 0).toLocaleString()}*`,
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          FRAME,
+          ...(pro ? [UI.PRO_MINI, `💎 *PRO AURA* — 5h farm cooldown active`] : [UI.upsell()]),
         ].join('\n')
       }, { quoted: msg });
     }
@@ -52,7 +54,7 @@ module.exports = {
         const { formatDuration } = require('../../rpg/utils/NigerianTime');
         const remaining = COOLDOWN_MS - (now - lastFarm);
         return sock.sendMessage(chatId, {
-          text: `⏳ *AURA FARM COOLDOWN*\n\nYou must wait *${formatDuration(remaining)}* before farming aura again! ${isPro ? '\n⚡ *(PRO 50% Reduced Cooldown Active!)*' : ''}`
+          text: (pro ? `${UI.PRO_BAR}\n⏳ *AURA FARM COOLDOWN* 💎\n${UI.PRO_BAR}\n\nYou must wait *${formatDuration(remaining)}* before farming aura again!\n⚡ *(PRO 50% reduced cooldown active!)*\n${UI.PRO_BAR}\n${UI.PRO_MINI}\n💎 *PRO AURA* — 5h farm cooldown` : `⏳ *AURA FARM COOLDOWN*\n${UI.FREE_BAR}\n\nYou must wait *${formatDuration(remaining)}* before farming aura again!\n${UI.FREE_BAR}\n${UI.upsell()}`)
         }, { quoted: msg });
       }
 
@@ -67,12 +69,12 @@ module.exports = {
         if (has100Pct) player.auraFarmBoostUntil = 0; // consume boost
         saveDatabase();
         return sock.sendMessage(chatId, {
-          text: `✨ *AURA HARVEST SUCCESSFUL!* ${has100Pct ? '(🌟 100% PRO STAR BOOST ACTIVE!)' : ''}\n\nGained +*${gained}* Aura! Total: *${player.aura.toLocaleString()}*`
+          text: (pro ? `${UI.PRO_BAR}\n✨ *AURA HARVEST SUCCESSFUL!* 💎 ${has100Pct ? '(🌟 100% PRO STAR BOOST ACTIVE!)' : ''}\n${UI.PRO_BAR}\n\nGained +*${gained}* Aura! Total: *${player.aura.toLocaleString()}*\n${UI.PRO_BAR}\n${UI.PRO_MINI}\n💎 *PRO AURA* — ${player.aura.toLocaleString()} banked` : `✨ *AURA HARVEST SUCCESSFUL!*\n${UI.FREE_BAR}\n\nGained +*${gained}* Aura! Total: *${player.aura.toLocaleString()}*\n${UI.FREE_BAR}\n${UI.upsell()}`)
         }, { quoted: msg });
       } else {
         saveDatabase();
         return sock.sendMessage(chatId, {
-          text: `💨 *Aura farm failed!* The wild energy dispersed.\n💡 Pro players get random 🌟 reactions granting 5-second 100% success rate windows! (/prostore)`
+          text: (pro ? `${UI.PRO_BAR}\n💨 *AURA FARM FAILED* 💎\n${UI.PRO_BAR}\n\nThe wild energy dispersed.\n💡 🌟 reactions grant 5-second 100% windows! (/prostore)\n${UI.PRO_BAR}\n${UI.PRO_MINI}\n💎 *PRO AURA* — retry after cooldown` : `💨 *Aura farm failed!* The wild energy dispersed.\n💡 Pro players get random 🌟 reactions granting 5-second 100% success rate windows! (/prostore)\n${UI.FREE_BAR}`)
         }, { quoted: msg });
       }
     }
@@ -84,12 +86,11 @@ module.exports = {
       const board = AuraSystem.getGuildLeaderboard(db, guildName, 15);
       return sock.sendMessage(chatId, {
         text: [
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-          `✨ *${guildName} — AURA BOARD*`,
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          ...(pro ? [UI.PRO_BAR, `✨ *${guildName} — AURA BOARD* 💎`, UI.PRO_BAR] : [`✨ *${guildName} — AURA BOARD*`, UI.FREE_BAR]),
           ``,
           board.join('\n') || 'No guild members found.',
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          FRAME,
+          ...(pro ? [UI.PRO_MINI, `💎 *PRO AURA* — ${board.length} guildmates ranked`] : [UI.upsell()]),
         ].join('\n')
       }, { quoted: msg });
     }
@@ -97,9 +98,7 @@ module.exports = {
     // ── TITLE LIST & PERKS ───────────────────────────────────
     if (sub === 'titles' || sub === 'perks') {
       const lines = [
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-        `✨ *AURA TITLE TIERS & PERKS*`,
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        ...(pro ? [UI.PRO_BAR, `✨ *AURA TITLE TIERS & PERKS* 💎`, UI.PRO_BAR] : [`✨ *AURA TITLE TIERS & PERKS*`, UI.FREE_BAR]),
         ``,
       ];
       for (const tier of AURA_TITLES) {
@@ -110,7 +109,7 @@ module.exports = {
         lines.push(`   🎁 *Active Perks:* ${tier.perks}`);
         lines.push(``);
       }
-      lines.push(`━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+      lines.push(FRAME, ...(pro ? [UI.PRO_MINI, `💎 *PRO AURA* — ${(player.aura||0).toLocaleString()} banked`] : [UI.upsell()]));
       return sock.sendMessage(chatId, { text: lines.join('\n') }, { quoted: msg });
     }
 
@@ -123,15 +122,12 @@ module.exports = {
     const streak = player.pvpStreak || 0;
 
     const progressBar = (() => {
-      if (!next) return `[${'█'.repeat(10)}] MAX`;
-      const pct = Math.min(10, Math.floor(((aura - title.min) / (next.min - title.min)) * 10));
-      return `[${'█'.repeat(pct)}${'░'.repeat(10 - pct)}] ${aura - title.min}/${next.min - title.min}`;
+      if (!next) return `${UI.bar(1, 1, 10, pro)} MAX`;
+      return `${UI.bar(aura - title.min, next.min - title.min, 10, pro)} ${aura - title.min}/${next.min - title.min}`;
     })();
 
     const lines = [
-      `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-      `✨ *HUNTER AURA & PRESTIGE*`,
-      `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+      ...(pro ? [UI.PRO_BAR, `✨ *HUNTER AURA & PRESTIGE* 💎`, UI.PRO_BAR] : [`✨ *HUNTER AURA & PRESTIGE*`, UI.FREE_BAR]),
       ``,
       `👤 Hunter: *${player.name}* ${rankData.emoji} [${rank}-Rank]`,
       `${title.emoji} Title Tier: *${title.title}*`,
@@ -144,12 +140,13 @@ module.exports = {
       ``,
       `⚔️ PvP Win Streak: *${streak}*`,
       ``,
-      `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+      FRAME,
       `📌 /aura farm    — Harvest wild aura (10h cooldown)`,
       `📌 /aura top     — Global aura leaderboard`,
       `📌 /aura guild   — Guild aura leaderboard`,
       `📌 /aura titles  — View all tier perks`,
-      `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+      FRAME,
+      ...(pro ? [UI.PRO_MINI, next ? `💎 *PRO AURA* — ${(next.min - aura).toLocaleString()} to ${next.title}` : `💎 *PRO AURA* — MAX TIER 👑`] : [UI.upsell()]),
     ];
 
     return sock.sendMessage(chatId, { text: lines.join('\n') }, { quoted: msg });

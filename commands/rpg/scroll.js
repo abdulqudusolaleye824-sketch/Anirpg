@@ -22,6 +22,9 @@ module.exports = {
     const player = db.users[sender];
 
     if (!player) return sock.sendMessage(chatId, { text: '❌ Register first! Use /register' }, { quoted: msg });
+    const UI = require('../../rpg/utils/UI');
+    const pro = UI.isPro(player);
+    const FRAME = pro ? UI.PRO_BAR : UI.FREE_BAR;
 
     const scrolls = player.inventory?.scrolls || [];
     const sub = args[0]?.toLowerCase();
@@ -36,18 +39,18 @@ module.exports = {
       if (scrolls.length === 0) {
         return sock.sendMessage(chatId, {
           text: [
-            `📜 *YOUR SCROLLS*`,
+            ...(pro ? [UI.PRO_BAR, `📜 *YOUR SCROLLS* 💎`, UI.PRO_BAR] : [`📜 *YOUR SCROLLS*`, UI.FREE_BAR]),
             ``,
             `You have no recipe scrolls.`,
             `Buy scrolls from the shop: */shop scrolls*`,
+            FRAME,
+            ...(pro ? [UI.PRO_MINI, `💎 *PRO SCROLL* — no scrolls yet`] : [UI.upsell()]),
           ].join('\n')
         }, { quoted: msg });
       }
 
       const lines = [
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-        `📜 *YOUR RECIPE SCROLLS*`,
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        ...(pro ? [UI.PRO_BAR, `📜 *YOUR RECIPE SCROLLS* 💎`, UI.PRO_BAR] : [`📜 *YOUR RECIPE SCROLLS*`, UI.FREE_BAR]),
         ``,
       ];
 
@@ -62,9 +65,9 @@ module.exports = {
         lines.push('');
       });
 
-      lines.push(`━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+      lines.push(FRAME);
       lines.push(`📖 */scroll read <#>* — Read scroll (dispatches recipe to DM via Serf)`);
-      lines.push(`━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+      lines.push(FRAME, ...(pro ? [UI.PRO_MINI, `💎 *PRO SCROLL* — ${scrolls.length} scrolls`] : [UI.upsell()]));
 
       return sock.sendMessage(chatId, { text: lines.join('\n') }, { quoted: msg });
     }
@@ -76,7 +79,7 @@ module.exports = {
     }
 
     return sock.sendMessage(chatId, {
-      text: '/scroll — list scrolls\n/scroll read <#> — read a scroll (sends recipe to DM via Serf)'
+      text: (pro ? `${UI.PRO_BAR}\n📜 *SCROLL COMMANDS* 💎\n${UI.PRO_BAR}\n\n/scroll — list scrolls\n/scroll read <#> — read a scroll (sends recipe to DM via Serf)\n${UI.PRO_BAR}\n${UI.PRO_MINI}\n💎 *PRO SCROLL* — manage your recipes` : `📜 *SCROLL COMMANDS*\n${UI.FREE_BAR}\n\n/scroll — list scrolls\n/scroll read <#> — read a scroll (sends recipe to DM via Serf)\n${UI.FREE_BAR}\n${UI.upsell()}`)
     }, { quoted: msg });
   },
 
@@ -85,6 +88,9 @@ module.exports = {
     const isGroup = chatId.endsWith('@g.us');
     const db = getDatabase();
     const player = db.users[sender];
+    const UI = require('../../rpg/utils/UI');
+    const pro = UI.isPro(player || {});
+    const FRAME = pro ? UI.PRO_BAR : UI.FREE_BAR;
 
     const scrolls = player.inventory?.scrolls || [];
 
@@ -127,15 +133,16 @@ module.exports = {
       `${m.ok ? '✅' : '❌'} ${m.mat} (${m.have}/${m.need})`
     ).join('\n');
 
-    const scrollText = formatScrollRead(scroll);
+    const scrollText = formatScrollRead(scroll, player);
     const fullText = [
       scrollText,
       ``,
-      `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+      FRAME,
       `🎒 *YOUR MATERIALS*`,
-      `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+      FRAME,
       matStatus,
-      `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+      FRAME,
+      ...(pro ? [UI.PRO_MINI, `💎 *PRO SCROLL* — key guarded`] : [UI.upsell()]),
     ].join('\n');
 
     // Deliver via Serf ONLY — IRON WALL GATING
@@ -155,16 +162,14 @@ module.exports = {
     if (isGroup) {
       if (dmSent) {
         return sock.sendMessage(chatId, {
-          text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n📬 *RECIPE DISPATCHED TO DM*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n@${sender.split('@')[0]}, your Recipe Scroll #${idx + 1} (*${scroll.recipe?.output || 'Item'}*) details and craft key have been sent directly to your DM via your Serf!`,
+          text: (pro ? `${UI.PRO_BAR}\n📬 *RECIPE DISPATCHED TO DM* 💎\n${UI.PRO_BAR}\n\n@${sender.split('@')[0]}, your Recipe Scroll #${idx + 1} (*${scroll.recipe?.output || 'Item'}*) details and craft key have been sent directly to your DM via your Serf!\n${UI.PRO_BAR}\n${UI.PRO_MINI}\n💎 *PRO SCROLL* — Scroll #${idx + 1} dispatched` : `📬 *RECIPE DISPATCHED TO DM*\n${UI.FREE_BAR}\n\n@${sender.split('@')[0]}, your Recipe Scroll #${idx + 1} (*${scroll.recipe?.output || 'Item'}*) details and craft key have been sent directly to your DM via your Serf!\n${UI.FREE_BAR}\n${UI.upsell()}`),
           mentions: [sender]
         }, { quoted: msg });
       } else {
         // Serf offline, banned, or not set — ABSOLUTELY NO LEAKS
         return sock.sendMessage(chatId, {
           text: [
-            `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-            `⚠️ *SERF DM NOTIFICATION*`,
-            `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+            ...(pro ? [UI.PRO_BAR, `⚠️ *SERF DM NOTIFICATION* 💎`, UI.PRO_BAR] : [`⚠️ *SERF DM NOTIFICATION*`, UI.FREE_BAR]),
             ``,
             `@${sender.split('@')[0]}, private DM delivery was blocked because your assigned Serf is currently offline or not set!`,
             ``,
@@ -175,7 +180,8 @@ module.exports = {
             ``,
             `📜 *Scroll Details:*`,
             fullText,
-            `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+            FRAME,
+            ...(pro ? [UI.PRO_MINI, `💎 *PRO SCROLL* — Scroll #${idx + 1} revealed`] : [UI.upsell()]),
           ].join('\n'),
           mentions: [sender]
         }, { quoted: msg });

@@ -5,6 +5,7 @@
 // ═══════════════════════════════════════════════════════════════
 
 const SkillDescriptions = require('../../rpg/utils/SkillDescriptions');
+const UI = require('../../rpg/utils/UI');
 
 // Levels where players get a choice between two skill variants
 const CHOICE_LEVELS = [20, 40, 60, 80];
@@ -88,7 +89,7 @@ const SKILL_CHOICES = {
 };
 
 function getChoicesForPlayer(player, level) {
-  const cls = typeof player.class==='object'?player.class.name:player.class;
+  const cls = (player.class && typeof player.class==='object')?player.class.name:(player.class || 'Classless');
   const classChoices = SKILL_CHOICES[cls] || SKILL_CHOICES['_default'];
   return classChoices[level] || null;
 }
@@ -109,28 +110,11 @@ function triggerSkillChoice(player, level) {
 function formatChoiceMessage(player, level) {
   const choices = getChoicesForPlayer(player, level);
   if (!choices) return null;
-  const cls = typeof player.class==='object'?player.class.name:player.class;
-  return `━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🌟 SKILL SPECIALIZATION — Level ${level}!
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-*${player.name}* [${cls}], choose your path!
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-⚔️ OPTION A: *${choices.a.name}*
-${choices.a.flavor}
-${choices.a.damage>0?`💥 Damage: ${choices.a.damage}`:'💡 No direct damage'}
-${player.energyColor||'💙'} Cost: ${choices.a.energyCost} | ⏰ CD: ${choices.a.cooldown}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🛡️ OPTION B: *${choices.b.name}*
-${choices.b.flavor}
-${choices.b.damage>0?`💥 Damage: ${choices.b.damage}`:'💡 No direct damage'}
-${player.energyColor||'💙'} Cost: ${choices.b.energyCost} | ⏰ CD: ${choices.b.cooldown}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-Type /choose a or /choose b
-(Or /choose later to decide later)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+  const cls = (player.class && typeof player.class==='object')?player.class.name:(player.class || 'Classless');
+  const pro = UI.isPro(player);
+  const FRAME = pro ? UI.PRO_BAR : UI.FREE_BAR;
+  const head = pro ? `${UI.PRO_BAR}\n🌟 SKILL SPECIALIZATION — Level ${level}! 💎\n${UI.PRO_BAR}` : `🌟 SKILL SPECIALIZATION — Level ${level}!\n${UI.FREE_BAR}`;
+  return `${head}\n\n*${player.name}* [${cls}], choose your path!\n\n${FRAME}\n⚔️ OPTION A: *${choices.a.name}*\n${choices.a.flavor}\n${choices.a.damage>0?`💥 Damage: ${choices.a.damage}`:'💡 No direct damage'}\n${player.energyColor||'💙'} Cost: ${choices.a.energyCost} | ⏰ CD: ${choices.a.cooldown}\n${FRAME}\n🛡️ OPTION B: *${choices.b.name}*\n${choices.b.flavor}\n${choices.b.damage>0?`💥 Damage: ${choices.b.damage}`:'💡 No direct damage'}\n${player.energyColor||'💙'} Cost: ${choices.b.energyCost} | ⏰ CD: ${choices.b.cooldown}\n${FRAME}\n\nType /choose a or /choose b\n(Or /choose later to decide later)\n${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO BUILD* — Lv.${level} choice` : `\n${UI.upsell()}`);
 }
 
 module.exports = {
@@ -147,15 +131,17 @@ module.exports = {
     const db = getDatabase();
     const player = db.users[sender];
     if (!player) return sock.sendMessage(chatId,{text:'❌ Not registered!'},{quoted:msg});
+    const pro = UI.isPro(player);
+    const FRAME = pro ? UI.PRO_BAR : UI.FREE_BAR;
 
     const pick = args[0]?.toLowerCase();
 
     if (!pick || pick==='status') {
       if (!hasPendingChoice(player)) {
-        const cls=typeof player.class==='object'?player.class.name:player.class;
+        const cls=(player.class && typeof player.class==='object')?player.class.name:(player.class || 'Classless');
         const nextChoiceLevel = CHOICE_LEVELS.find(l=>l>player.level);
         return sock.sendMessage(chatId,{
-          text:`━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🌟 SKILL SPECIALIZATION\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n👤 ${player.name} [${cls} Lv.${player.level}]\n\n${hasPendingChoice(player)?'⚠️ You have a pending choice! Use /choose a or /choose b':nextChoiceLevel?`📈 Next choice at Level *${nextChoiceLevel}*`:'🏆 All specializations unlocked!'}\n\n💡 At levels 20, 40, 60, 80 you choose\nbetween an AGGRESSIVE or TACTICAL skill.\nThis makes your build unique!\n━━━━━━━━━━━━━━━━━━━━━━━━━━━`
+          text:(pro ? `${UI.PRO_BAR}\n🌟 SKILL SPECIALIZATION 💎\n${UI.PRO_BAR}\n\n👤 ${player.name}` : `🌟 SKILL SPECIALIZATION\n${UI.FREE_BAR}\n\n👤 ${player.name}`)+` [${cls} Lv.${player.level}]\n\n${hasPendingChoice(player)?'⚠️ You have a pending choice! Use /choose a or /choose b':nextChoiceLevel?`📈 Next choice at Level *${nextChoiceLevel}*`:'🏆 All specializations unlocked!'}\n\n💡 At levels 20, 40, 60, 80 you choose\nbetween an AGGRESSIVE or TACTICAL skill.\nThis makes your build unique!\n${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO BUILD* — ${hasPendingChoice(player) ? 'choice pending!' : 'on track'}` : `\n${UI.upsell()}`)
         },{quoted:msg});
       }
       const {level, choices} = player.pendingSkillChoice;
@@ -215,7 +201,7 @@ module.exports = {
 
       const skillSlots=player.skills?.active?.length||0;
       return sock.sendMessage(chatId,{
-        text:`━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🌟 SPECIALIZATION CHOSEN!\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n${pick==='a'?'⚔️ AGGRESSIVE PATH':'🛡️ TACTICAL PATH'}\n✅ Learned: *${chosen.name}*\n\n${chosen.flavor}\n\n${skillSlots>=5?'⚠️ Skill bar full! Use /skills learn to swap in.\nUse /skills forget [#] first.':'✅ Auto-equipped to your skill bar!'}\n\n💡 Your specialization history:\n${(player.specializations||[]).map(s=>`• Lv.${s.level}: ${s.skill} (${s.path})`).join('\n')}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━`
+        text:(pro ? `${UI.PRO_BAR}\n🌟 SPECIALIZATION CHOSEN! 💎\n${UI.PRO_BAR}\n\n` : `🌟 SPECIALIZATION CHOSEN!\n${UI.FREE_BAR}\n\n`)+`${pick==='a'?'⚔️ AGGRESSIVE PATH':'🛡️ TACTICAL PATH'}\n✅ Learned: *${chosen.name}*\n\n${chosen.flavor}\n\n${skillSlots>=5?'⚠️ Skill bar full! Use /skills learn to swap in.\nUse /skills forget [#] first.':'✅ Auto-equipped to your skill bar!'}\n\n💡 Your specialization history:\n${(player.specializations||[]).map(s=>`• Lv.${s.level}: ${s.skill} (${s.path})`).join('\n')}\n${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO BUILD* — ${(player.specializations||[]).length} specializations` : `\n${UI.upsell()}`)
       },{quoted:msg});
     }
 

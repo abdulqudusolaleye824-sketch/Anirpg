@@ -64,24 +64,19 @@ module.exports = {
     const db = getDatabase();
     const player = db.users[sender];
     if (!player) return sock.sendMessage(chatId, { text: '❌ Not registered!' }, { quoted: msg });
+    const UI = require('../../rpg/utils/UI');
+    const pro = UI.isPro(player);
+    const FRAME = pro ? UI.PRO_BAR : UI.FREE_BAR;
 
     const action = args[0]?.toLowerCase();
-    const className = typeof player.class==='object' ? player.class.name : player.class;
+    const className = (player.class && typeof player.class==='object') ? player.class.name : (player.class || 'Classless');
     const maxSlots = getMaxSlots(player);
     const equipped = player.skills?.active || [];
     const library  = player.availableSkills || [];
 
     // ── MAIN MENU ─────────────────────────────────────────────
     if (!action) {
-      let txt = `━━━━━━━━━━━━━━━━━━━━━━━━━━━
-⚔️ SKILL LOADOUT
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-👤 ${player.name} [${className} Lv.${player.level}]
-${player.energyColor||'💙'} ${player.stats.energy}/${player.stats.maxEnergy} ${player.energyType||'Energy'}
-🎯 Slots: ${equipped.length}/${maxSlots}${player.origin==='scholar'?' (Scholar +2)':''}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🔮 EQUIPPED SKILLS
-━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+      let txt = pro ? `${UI.PRO_BAR}\n⚔️ SKILL LOADOUT 💎\n${UI.PRO_BAR}\n👤 ${player.name} [${className} Lv.${player.level}]\n${player.energyColor||'💙'} ${player.stats.energy}/${player.stats.maxEnergy} ${player.energyType||'Energy'}\n🎯 Slots: ${equipped.length}/${maxSlots}${player.origin==='scholar'?' (Scholar +2)':''}\n${UI.PRO_BAR}\n🔮 EQUIPPED SKILLS\n${UI.PRO_BAR}\n` : `⚔️ SKILL LOADOUT\n${UI.FREE_BAR}\n👤 ${player.name} [${className} Lv.${player.level}]\n${player.energyColor||'💙'} ${player.stats.energy}/${player.stats.maxEnergy} ${player.energyType||'Energy'}\n🎯 Slots: ${equipped.length}/${maxSlots}${player.origin==='scholar'?' (Scholar +2)':''}\n${UI.FREE_BAR}\n🔮 EQUIPPED SKILLS\n${UI.FREE_BAR}\n`;
       if (!equipped.length) {
         txt += '(None equipped)\n';
       } else {
@@ -89,22 +84,12 @@ ${player.energyColor||'💙'} ${player.stats.energy}/${player.stats.maxEnergy} $
       }
 
       if (library.length) {
-        txt += `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n📚 SKILL LIBRARY (${library.length})\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+        txt += `${FRAME}\n📚 SKILL LIBRARY (${library.length})\n${FRAME}\n`;
         library.forEach((s, i) => { txt += fmtSkillLine(s, i, player, true); });
       }
 
       const nextUnlock = Math.ceil((player.level + 1) / 5) * 5;
-      txt += `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━
-📌 COMMANDS
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-/skills swap [slot#] [library#] — Hotswap skill
-/skills equip [library#] — Add to empty slot
-/skills remove [slot#] — Unequip to library
-/skills upgrade [slot#] — Level up a skill (gold)
-/skills info [slot# or name] — Full skill details
-/skills passives — View passive abilities
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-${nextUnlock<=90?`💡 Next skill unlocks at Lv *${nextUnlock}*`:''}\n${player.pendingSkillChoice?'🌟 SKILL CHOICE PENDING! Use /choose':''}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+      txt += `\n${FRAME}\n📌 COMMANDS\n${FRAME}\n/skills swap [slot#] [library#] — Hotswap skill\n/skills equip [library#] — Add to empty slot\n/skills remove [slot#] — Unequip to library\n/skills upgrade [slot#] — Level up a skill (gold)\n/skills info [slot# or name] — Full skill details\n/skills passives — View passive abilities\n${FRAME}\n${nextUnlock<=90?`💡 Next skill unlocks at Lv *${nextUnlock}*`:''}\n${player.pendingSkillChoice?'🌟 SKILL CHOICE PENDING! Use /choose':''}\n${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO LOADOUT* — ${equipped.length}/${maxSlots} slots` : `\n${UI.upsell()}`);
       return sock.sendMessage(chatId, { text: txt }, { quoted: msg });
     }
 
@@ -114,22 +99,22 @@ ${nextUnlock<=90?`💡 Next skill unlocks at Lv *${nextUnlock}*`:''}\n${player.p
       if (locked.length === 0) {
         return sock.sendMessage(chatId, { text: '✅ You have unlocked all available skills!' }, { quoted: msg });
       }
-      let txt = `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🔒 *LOCKED SKILLS*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
+      let txt = pro ? `${UI.PRO_BAR}\n🔒 *LOCKED SKILLS* 💎\n${UI.PRO_BAR}\n\n` : `🔒 *LOCKED SKILLS*\n${UI.FREE_BAR}\n\n`;
       locked.forEach(s => {
         txt += `🔒 *${s.name}* — Unlocks at Lv.${s.unlocksAtLevel || '?'}\n`;
         txt += `   💥 DMG: ${s.damage} | ⚡ Cost: ${s.energyCost} | ⏰ CD: ${s.cooldown}t\n\n`;
       });
-      txt += `━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+      txt += `${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO LOADOUT* — ${locked.length} locked` : `\n${UI.upsell()}`);
       return sock.sendMessage(chatId, { text: txt }, { quoted: msg });
     }
 
     // ── PASSIVES ──────────────────────────────────────────────
     if (action === 'passives') {
       const passives = player.skills?.passive || [];
-      let txt = `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n⚡ PASSIVE ABILITIES\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
+      let txt = pro ? `${UI.PRO_BAR}\n⚡ PASSIVE ABILITIES 💎\n${UI.PRO_BAR}\n\n` : `⚡ PASSIVE ABILITIES\n${UI.FREE_BAR}\n\n`;
       if (!passives.length) txt += '(None yet)\n';
       else passives.forEach(p => { txt += `${p.isOrigin?'🌟':'⚡'} *${p.name}*\n   ${p.effect}\n\n`; });
-      txt += `━━━━━━━━━━━━━━━━━━━━━━━━━━━\nPassives are ALWAYS active.`;
+      txt += `${FRAME}\nPassives are ALWAYS active.` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO LOADOUT* — ${passives.length} active` : `\n${UI.upsell()}`);
       return sock.sendMessage(chatId, { text: txt }, { quoted: msg });
     }
 
@@ -150,7 +135,7 @@ ${nextUnlock<=90?`💡 Next skill unlocks at Lv *${nextUnlock}*`:''}\n${player.p
       const max = skill.maxLevel || 5;
       const bar = skillLevelBar(lv, max);
       const upgradeCost = lv < max ? skillUpgradeCost(lv) : null;
-      let txt = `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🔮 *${skill.name}*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+      let txt = pro ? `${UI.PRO_BAR}\n🔮 *${skill.name}* 💎\n${UI.PRO_BAR}\n` : `🔮 *${skill.name}*\n${UI.FREE_BAR}\n`;
       txt += `${info?.description || 'A powerful skill.'}\n\n`;
       txt += `📊 STATS (Level ${lv}/${max})\n${bar}\n`;
       txt += `💥 Damage: ${bonuses.damage}\n`;
@@ -159,8 +144,8 @@ ${nextUnlock<=90?`💡 Next skill unlocks at Lv *${nextUnlock}*`:''}\n${player.p
       if (lv > 1) txt += `⬆️ Level bonus: +${Math.round((bonuses.dmgMult-1)*100)}% DMG, -${bonuses.costReduction} cost\n`;
       if (info?.effect) txt += `\n💡 EFFECTS:\n${info.effect}\n`;
       if (info?.animation) txt += `\n🎬 ANIMATION:\n${info.animation.split('\n')[0]}\n`;
-      if (upgradeCost) txt += `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n⬆️ Upgrade to Lv ${lv+1}: 💠 ${upgradeCost.toLocaleString()} Nexus\n/skills upgrade [slot#]\n`;
-      txt += `━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+      if (upgradeCost) txt += `\n${FRAME}\n⬆️ Upgrade to Lv ${lv+1}: 💠 ${upgradeCost.toLocaleString()} Nexus\n/skills upgrade [slot#]\n`;
+      txt += `${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO LOADOUT* — Lv.${lv} ${skill.name}` : `\n${UI.upsell()}`);
       return sock.sendMessage(chatId, { text: txt }, { quoted: msg });
     }
 
@@ -181,7 +166,7 @@ ${nextUnlock<=90?`💡 Next skill unlocks at Lv *${nextUnlock}*`:''}\n${player.p
       const bar = skillLevelBar(skill.level, max);
       saveDatabase();
       return sock.sendMessage(chatId, {
-        text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n⬆️ SKILL UPGRADED!\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n🔮 *${skill.name}*\nLevel ${lv} → *${skill.level}/${max}*\n${bar}\n\n💥 DMG: +${Math.round((newBonuses.dmgMult-1)*100)}% boost\n${player.energyColor||'💙'} Cost: -${newBonuses.costReduction}\n💠 Spent: ${cost.toLocaleString()} Nexus\n💠 Remaining: ${player.gold.toLocaleString()}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━`
+        text: (pro ? `${UI.PRO_BAR}\n⬆️ SKILL UPGRADED! 💎\n${UI.PRO_BAR}\n\n🔮 *${skill.name}*` : `⬆️ SKILL UPGRADED!\n${UI.FREE_BAR}\n\n🔮 *${skill.name}*`)+`\nLevel ${lv} → *${skill.level}/${max}*\n${bar}\n\n💥 DMG: +${Math.round((newBonuses.dmgMult-1)*100)}% boost\n${player.energyColor||'💙'} Cost: -${newBonuses.costReduction}\n💠 Spent: ${cost.toLocaleString()} Nexus\n💠 Remaining: ${player.gold.toLocaleString()}\n${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO LOADOUT* — Lv.${skill.level}/${max} ${skill.name}` : `\n${UI.upsell()}`)
       }, { quoted: msg });
     }
 
@@ -202,7 +187,7 @@ ${nextUnlock<=90?`💡 Next skill unlocks at Lv *${nextUnlock}*`:''}\n${player.p
       player.availableSkills = library;
       saveDatabase();
       return sock.sendMessage(chatId, {
-        text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🔄 SKILL SWAPPED!\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n❌ Unequipped: *${oldSkill.name}* → library\n✅ Equipped: *${newSkill.name}* (slot ${slotIdx+1})\n\nUse /skills to view your loadout.`
+        text: (pro ? `${UI.PRO_BAR}\n🔄 SKILL SWAPPED! 💎\n${UI.PRO_BAR}\n\n❌ Unequipped: *${oldSkill.name}*` : `🔄 SKILL SWAPPED!\n${UI.FREE_BAR}\n\n❌ Unequipped: *${oldSkill.name}*`)+` → library\n✅ Equipped: *${newSkill.name}* (slot ${slotIdx+1})\n\nUse /skills to view your loadout.\n${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO LOADOUT* — ${newSkill.name} in slot ${slotIdx+1}` : `\n${UI.upsell()}`)
       }, { quoted: msg });
     }
 
@@ -221,7 +206,7 @@ ${nextUnlock<=90?`💡 Next skill unlocks at Lv *${nextUnlock}*`:''}\n${player.p
       saveDatabase();
       const bonuses = applySkillLevelBonus(skill);
       return sock.sendMessage(chatId, {
-        text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n✅ SKILL EQUIPPED!\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n🔮 *${skill.name}* → Slot ${equipped.length}/${maxSlots}\n💥 DMG: ${bonuses.damage} | ${player.energyColor||'💙'} ${bonuses.energyCost} | ⏰ ${bonuses.cooldown}t\n\nUse /skills to view your loadout.`
+        text: (pro ? `${UI.PRO_BAR}\n✅ SKILL EQUIPPED! 💎\n${UI.PRO_BAR}\n\n🔮 *${skill.name}*` : `✅ SKILL EQUIPPED!\n${UI.FREE_BAR}\n\n🔮 *${skill.name}*`)+` → Slot ${equipped.length}/${maxSlots}\n💥 DMG: ${bonuses.damage} | ${player.energyColor||'💙'} ${bonuses.energyCost} | ⏰ ${bonuses.cooldown}t\n\nUse /skills to view your loadout.\n${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO LOADOUT* — ${equipped.length}/${maxSlots} slots` : `\n${UI.upsell()}`)
       }, { quoted: msg });
     }
 
@@ -236,25 +221,25 @@ ${nextUnlock<=90?`💡 Next skill unlocks at Lv *${nextUnlock}*`:''}\n${player.p
       player.availableSkills = library;
       saveDatabase();
       return sock.sendMessage(chatId, {
-        text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n📚 MOVED TO LIBRARY\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n*${skill.name}* → Library slot ${library.length}\n\nSlots: ${equipped.length}/${maxSlots} used\nUse /skills to view your loadout.`
+        text: (pro ? `${UI.PRO_BAR}\n📚 MOVED TO LIBRARY 💎\n${UI.PRO_BAR}\n\n*${skill.name}*` : `📚 MOVED TO LIBRARY\n${UI.FREE_BAR}\n\n*${skill.name}*`)+` → Library slot ${library.length}\n\nSlots: ${equipped.length}/${maxSlots} used\nUse /skills to view your loadout.\n${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO LOADOUT* — ${equipped.length}/${maxSlots} slots` : `\n${UI.upsell()}`)
       }, { quoted: msg });
     }
 
     // ── LIBRARY SHORTHAND ─────────────────────────────────────
     if (action === 'library') {
       if (!library.length) return sock.sendMessage(chatId, { text: `📚 Your skill library is empty!\nUnlock skills by leveling up.` }, { quoted: msg });
-      let txt = `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n📚 SKILL LIBRARY (${library.length})\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
+      let txt = pro ? `${UI.PRO_BAR}\n📚 SKILL LIBRARY (${library.length}) 💎\n${UI.PRO_BAR}\n\n` : `📚 SKILL LIBRARY (${library.length})\n${UI.FREE_BAR}\n\n`;
       library.forEach((s, i) => { txt += fmtSkillLine(s, i, player, false) + '\n'; });
-      txt += `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n/skills equip [#] — Add to loadout\n/skills swap [slot#] [lib#] — Swap`;
+      txt += `${FRAME}\n/skills equip [#] — Add to loadout\n/skills swap [slot#] [lib#] — Swap` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO LOADOUT* — ${library.length} banked` : `\n${UI.upsell()}`);
       return sock.sendMessage(chatId, { text: txt }, { quoted: msg });
     }
 
     // ── LOADOUT SHORTHAND ─────────────────────────────────────
     if (action === 'loadout') {
       if (!equipped.length) return sock.sendMessage(chatId, { text: `No skills equipped!\nUse /skills equip [#] to add them.` }, { quoted: msg });
-      let txt = `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🔮 ACTIVE LOADOUT (${equipped.length}/${maxSlots})\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
+      let txt = pro ? `${UI.PRO_BAR}\n🔮 ACTIVE LOADOUT (${equipped.length}/${maxSlots}) 💎\n${UI.PRO_BAR}\n\n` : `🔮 ACTIVE LOADOUT (${equipped.length}/${maxSlots})\n${UI.FREE_BAR}\n\n`;
       equipped.forEach((s, i) => { txt += fmtSkillLine(s, i, player, false) + '\n'; });
-      txt += `━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+      txt += `${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO LOADOUT* — ${equipped.length}/${maxSlots} equipped` : `\n${UI.upsell()}`);
       return sock.sendMessage(chatId, { text: txt }, { quoted: msg });
     }
 

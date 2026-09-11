@@ -16,6 +16,9 @@ module.exports = {
       if (!player) {
         return sock.sendMessage(chatId, { text: '❌ Use /register first!' }, { quoted: msg });
       }
+      const UI = require('../../rpg/utils/UI');
+      const pro = UI.isPro(player);
+      const FRAME = pro ? UI.PRO_BAR : UI.FREE_BAR;
 
       PetManager.updateHunger(sender);
       const sub = (args[0] || 'list').toLowerCase();
@@ -28,12 +31,12 @@ module.exports = {
 
         if (pets.length === 0 && eggs.length === 0) {
           return sock.sendMessage(chatId, {
-            text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🐾 *NO PETS YET*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\nFind eggs in dungeons and hatch them!\n\n🥚 Eggs drop from dungeon floors\n🐣 /pet hatch [#] to hatch an egg\n⚔️ Attack pets fight with you\n💚 Support pets heal you\n💠 Scavenger pets find extra loot\n━━━━━━━━━━━━━━━━━━━━━━━━━━━`
+            text: (pro ? `${UI.PRO_BAR}\n🐾 *NO PETS YET* 💎\n${UI.PRO_BAR}\n` : `🐾 *NO PETS YET*\n${UI.FREE_BAR}\n`) + `Find eggs in dungeons and hatch them!\n\n🥚 Eggs drop from dungeon floors\n🐣 /pet hatch [#] to hatch an egg\n⚔️ Attack pets fight with you\n💚 Support pets heal you\n💠 Scavenger pets find extra loot\n${FRAME}` + (pro ? '' : `\n${UI.upsell()}`)
           }, { quoted: msg });
         }
 
         const roleEmoji = { attack: '⚔️', support: '💚', scavenger: '💰' };
-        let txt = `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🐾 *YOUR PETS*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+        let txt = pro ? `${UI.PRO_BAR}\n🐾 *YOUR PETS* 💎\n${UI.PRO_BAR}\n` : `🐾 *YOUR PETS*\n${UI.FREE_BAR}\n`;
 
         pets.forEach((pet, i) => {
           const isActive = active?.instanceId === pet.instanceId;
@@ -44,14 +47,14 @@ module.exports = {
         });
 
         if (eggs.length > 0) {
-          txt += `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🥚 *EGGS (${eggs.length}/5)*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+          txt += `${FRAME}\n🥚 *EGGS (${eggs.length}/5)*\n${FRAME}\n`;
           eggs.forEach((egg, i) => {
             txt += `${i+1}. ${egg.emoji} *${egg.name}* [${egg.rarity.toUpperCase()}]\n   ${egg.desc}\n\n`;
           });
           txt += `/pet hatch [#] to hatch an egg\n`;
         }
 
-        txt += `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n/pet info [#] | /pet active [#]\n/pet feed [#] [food] | /pet evolve [#]`;
+        txt += `${FRAME}\n/pet info [#] | /pet active [#]\n/pet feed [#] [food] | /pet evolve [#]` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO PACK* — ${pets.length} pets · active: ${active ? (active.nickname || active.name) : 'none'}` : `\n${UI.upsell()}`);
         return sock.sendMessage(chatId, { text: txt }, { quoted: msg });
       }
 
@@ -63,11 +66,11 @@ module.exports = {
             text: `🥚 *No eggs yet!*\nFind eggs by exploring dungeons.\n\nEgg rarities:\n⚪ Common Egg — 65% chance\n🔥 Fire Egg — 25% chance\n🌑 Shadow Egg — 8% chance\n✨ Ancient Egg — 2% chance`
           }, { quoted: msg });
         }
-        let txt = `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🥚 *YOUR EGGS*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+        let txt = pro ? `${UI.PRO_BAR}\n🥚 *YOUR EGGS* 💎\n${UI.PRO_BAR}\n` : `🥚 *YOUR EGGS*\n${UI.FREE_BAR}\n`;
         eggs.forEach((egg, i) => {
           txt += `*${i+1}.* ${egg.emoji} *${egg.name}* [${egg.rarity.toUpperCase()}]\n   ${egg.desc}\n\n`;
         });
-        txt += `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n/pet hatch [#] to hatch`;
+        txt += `${FRAME}\n/pet hatch [#] to hatch` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO CLUTCH* — ${eggs.length}/5 eggs` : `\n${UI.upsell()}`);
         return sock.sendMessage(chatId, { text: txt }, { quoted: msg });
       }
 
@@ -96,13 +99,14 @@ module.exports = {
           scavenger: '💠 *Scavenger* — Finds extra Nexus and items after fights (but is weak!)',
         }[pet.role] || '⚔️ Attack';
 
-        let txt = `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n${statsStr}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n${roleDesc}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n⚡ *Abilities:*\n`;
+        let txt = `${FRAME}\n${statsStr}${pro ? ' 💎' : ''}\n${FRAME}\n${roleDesc}\n${FRAME}\n⚡ *Abilities:*\n`;
         pet.abilities.forEach(a => { txt += `• *${a.name}* — ${a.desc}\n`; });
         if (pet.evolution) {
-          txt += `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🌟 *Evolution* (Lv.${pet.evolution.level}):\n`;
+          txt += `\n${FRAME}\n🌟 *Evolution* (Lv.${pet.evolution.level}):\n`;
           pet.evolution.options.forEach(o => { txt += `• ${o.name}\n`; });
           txt += `/pet evolve ${idx+1} [id] to evolve`;
         }
+        txt += `\n${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO BOND* — 💕 ${pet.bonding}/100 · 😊 ${pet.happiness}/100 · 🍖 ${pet.hunger}/100` : `\n${UI.upsell()}`);
         return sock.sendMessage(chatId, { text: txt }, { quoted: msg });
       }
 
@@ -137,6 +141,10 @@ module.exports = {
         const targetPet = isNaN(idx) ? PetManager.getActivePet(sender) : pets[idx];
         if (!targetPet) return sock.sendMessage(chatId, { text: '❌ No pet selected! Choose a pet: /pet train [#]' }, { quoted: msg });
         const result = PetManager.trainPet(sender, targetPet.instanceId);
+        if (result && result.success) {
+          try { require('../../rpg/utils/QuestDispatcher').trackAndNotify(player, 'pet', 1, sock, sender, chatId); } catch(e){}
+          saveDatabase();
+        }
         return sock.sendMessage(chatId, { text: result.message }, { quoted: msg });
       }
 
@@ -149,6 +157,10 @@ module.exports = {
           return sock.sendMessage(chatId, { text: '❌ Usage: /pet feed [#] [food]\nSee /pet foods' }, { quoted: msg });
         }
         const result = PetManager.feedPet(sender, pets[idx].instanceId, foodName);
+        if (result && result.success) {
+          try { require('../../rpg/utils/QuestDispatcher').trackAndNotify(player, 'feed', 1, sock, sender, chatId); } catch(e){}
+          saveDatabase();
+        }
         return sock.sendMessage(chatId, { text: result.message }, { quoted: msg });
       }
 

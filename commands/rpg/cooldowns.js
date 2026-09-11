@@ -15,6 +15,9 @@ module.exports = {
     if (!player) {
       return sock.sendMessage(chatId, { text: '❌ Not registered! Use /register to start.' }, { quoted: msg });
     }
+    const UI = require('../../rpg/utils/UI');
+    const pro = UI.isPro(player);
+    const FRAME = pro ? UI.PRO_BAR : UI.FREE_BAR;
 
     const now = Date.now();
     const isPro = !!((player.isPro || player.proStatus) && player.proExpiresAt && player.proExpiresAt > now);
@@ -89,7 +92,7 @@ module.exports = {
     lines.push(`🎰 *Casino Cooldowns:* ${isPro ? 'Slots 15s • BJ 7s • Roulette 10s • Dice 5s' : 'Slots 30s • BJ 15s • Roulette 20s • Dice 10s'}`);
 
     return sock.sendMessage(chatId, {
-      text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n⏱️ *YOUR COOLDOWNS*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n${lines.join('\n')}\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n❤️ HP: ${player.stats.hp}/${player.stats.maxHp} | 💠 Nexus: ${player.gold || 0}`
+      text: (pro ? `${UI.PRO_BAR}\n⏱️ *YOUR COOLDOWNS* 💎\n${UI.PRO_BAR}\n\n${lines.join('\n')}\n\n${UI.PRO_BAR}\n❤️ HP: ${player.stats.hp}/${player.stats.maxHp} | 💠 Nexus: ${player.gold || 0}\n${UI.PRO_BAR}\n${UI.PRO_MINI}\n💎 *PRO TIMERS* — 50% reduced cooldowns active` : `⏱️ *YOUR COOLDOWNS*\n${UI.FREE_BAR}\n\n${lines.join('\n')}\n\n${UI.FREE_BAR}\n❤️ HP: ${player.stats.hp}/${player.stats.maxHp} | 💠 Nexus: ${player.gold || 0}\n${UI.FREE_BAR}\n${UI.upsell()}`)
     }, { quoted: msg });
   }
 };

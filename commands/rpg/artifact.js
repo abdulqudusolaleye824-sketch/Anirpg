@@ -10,10 +10,13 @@ module.exports = {
     const player = db.users[sender];
 
     if (!player) {
-      return sock.sendMessage(chatId, { 
-        text: '❌ You are not registered! Use /register to start.' 
+      return sock.sendMessage(chatId, {
+        text: '❌ You are not registered! Use /register to start.'
       }, { quoted: msg });
     }
+    const UI = require('../../rpg/utils/UI');
+    const pro = UI.isPro(player);
+    const FRAME = pro ? UI.PRO_BAR : UI.FREE_BAR;
 
     // Initialize artifact inventory
     if (!player.artifacts || Array.isArray(player.artifacts) || typeof player.artifacts !== 'object') {
@@ -57,15 +60,11 @@ module.exports = {
     // VIEW INVENTORY
     // ═══════════════════════════════════════════════════════════════
     if (!action || action === 'list' || action === 'inventory') {
-      let message = `━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🏺 ARTIFACT COLLECTION
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-👤 ${player.name} | Level ${player.level}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
+      let message = pro ? `${UI.PRO_BAR}\n🏺 ARTIFACT COLLECTION 💎\n${UI.PRO_BAR}\n👤 ${player.name} | Level ${player.level}\n${UI.PRO_BAR}\n\n` : `🏺 ARTIFACT COLLECTION\n${UI.FREE_BAR}\n👤 ${player.name} | Level ${player.level}\n${UI.FREE_BAR}\n\n`;
 
       // Show equipped artifacts
       message += `⚔️ EQUIPPED ARTIFACTS:\n`;
-      message += `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+      message += `${FRAME}\n`;
       
       let hasEquipped = false;
       for (const [slot, artifactName] of Object.entries(player.artifacts.equipped)) {
@@ -85,9 +84,9 @@ module.exports = {
         message += `   (No artifacts equipped)\n`;
       }
 
-      message += `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+      message += `\n${FRAME}\n`;
       message += `📦 INVENTORY (${player.artifacts.inventory.length}):\n`;
-      message += `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+      message += `${FRAME}\n`;
 
       if (player.artifacts.inventory.length === 0) {
         message += `   (No artifacts in inventory)\n\n`;
@@ -108,7 +107,7 @@ module.exports = {
         });
       }
 
-      message += `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+      message += `${FRAME}\n`;
       message += `📜 COMMANDS:\n`;
       message += `/artifact view [#] - View details\n`;
       message += `/artifact equip [#] - Equip artifact\n`;
@@ -117,7 +116,7 @@ module.exports = {
       message += `/artifact fuse [#1] [#2] - Combine duplicates\n`;
       message += `/artifact sets - View set bonuses\n`;
       message += `/artifact stats - View your bonuses\n`;
-      message += `━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+      message += `${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO RELIC* — ${Object.values(player.artifacts.equipped).filter(Boolean).length} equipped · ${player.artifacts.inventory.length} banked` : `\n${UI.upsell()}`);
 
       return sock.sendMessage(chatId, { text: message }, { quoted: msg });
     }
@@ -146,7 +145,7 @@ module.exports = {
       const enhancement = player.artifacts.enhanced[artifactName] || 0;
       const canEquip = ArtifactSystem.canEquipArtifact(player, artifact);
       
-      let message = ArtifactSystem.getArtifactDisplay(artifact, enhancement);
+      let message = ArtifactSystem.getArtifactDisplay(artifact, enhancement, true, player);
       message += `\n\n`;
       
       if (canEquip.can) {
@@ -155,6 +154,7 @@ module.exports = {
       } else {
         message += `❌ ${canEquip.reason}`;
       }
+      message += `\n${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO RELIC* — ${artifact.name}${enhancement > 0 ? ` +${enhancement}` : ''}` : `\n${UI.upsell()}`);
 
       return sock.sendMessage(chatId, { text: message }, { quoted: msg });
     }
@@ -239,16 +239,7 @@ module.exports = {
       const enhancement = player.artifacts.enhanced[artifactName] || 0;
       const enhanceSuffix = enhancement > 0 ? ` +${enhancement}` : '';
       
-      let message = `━━━━━━━━━━━━━━━━━━━━━━━━━━━
-✨ ARTIFACT EQUIPPED!
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-${artifact.emoji} ${rarity.color} ${artifact.name}${enhanceSuffix}
-Equipped to: ${slot.toUpperCase()}
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-📊 BONUS STATS APPLIED:
-━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+      let message = pro ? `${UI.PRO_BAR}\n✨ ARTIFACT EQUIPPED! 💎\n${UI.PRO_BAR}\n\n${artifact.emoji} ${rarity.color} ${artifact.name}${enhanceSuffix}\nEquipped to: ${slot.toUpperCase()}\n\n${UI.PRO_BAR}\n📊 BONUS STATS APPLIED:\n${UI.PRO_BAR}\n` : `✨ ARTIFACT EQUIPPED!\n${UI.FREE_BAR}\n\n${artifact.emoji} ${rarity.color} ${artifact.name}${enhanceSuffix}\nEquipped to: ${slot.toUpperCase()}\n\n${UI.FREE_BAR}\n📊 BONUS STATS APPLIED:\n${UI.FREE_BAR}\n`;
 
       for (const [stat, baseValue] of Object.entries(artifact.stats)) {
         const value = enhancement > 0 ? Math.floor(baseValue * (1 + enhancement * 0.1)) : baseValue;
@@ -263,7 +254,7 @@ Equipped to: ${slot.toUpperCase()}
         });
       }
 
-      message += `━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+      message += `${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO RELIC* — ${slot.toUpperCase()} · ${Object.keys(artifact.stats || {}).length} stats` : `\n${UI.upsell()}`);
 
       return sock.sendMessage(chatId, { text: message }, { quoted: msg });
     }
@@ -296,15 +287,8 @@ Equipped to: ${slot.toUpperCase()}
       saveDatabase();
 
       const rarity = ArtifactSystem.RARITY_INFO[artifact.rarity];
-      return sock.sendMessage(chatId, { 
-        text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━
-✅ ARTIFACT UNEQUIPPED
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-${artifact.emoji} ${rarity.color} ${artifact.name}
-Moved to inventory
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━` 
+      return sock.sendMessage(chatId, {
+        text: (pro ? `${UI.PRO_BAR}\n✅ ARTIFACT UNEQUIPPED 💎\n${UI.PRO_BAR}\n\n${artifact.emoji} ${rarity.color} ${artifact.name}\nMoved to inventory\n\n${UI.PRO_BAR}\n${UI.PRO_MINI}\n💎 *PRO RELIC* — ${slot.toUpperCase()} freed` : `✅ ARTIFACT UNEQUIPPED\n${UI.FREE_BAR}\n\n${artifact.emoji} ${rarity.color} ${artifact.name}\nMoved to inventory\n\n${UI.FREE_BAR}\n${UI.upsell()}`)
       }, { quoted: msg });
     }
 
@@ -332,30 +316,11 @@ Moved to inventory
       if (result.enhanced) {
         const rarity = ArtifactSystem.RARITY_INFO[result.artifact.rarity];
         return sock.sendMessage(chatId, {
-          text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━
-✨ ENHANCEMENT SUCCESS!
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-${result.artifact.emoji} ${rarity.color} ${result.artifact.name}
-Now: +${result.newLevel}
-
-📊 Stat Boost: +${result.newLevel * 10}%
-💠 Cost: ${result.cost.gold} 💠, ${result.cost.crystals} crystals
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━`
+          text: (pro ? `${UI.PRO_BAR}\n✨ ENHANCEMENT SUCCESS! 💎\n${UI.PRO_BAR}\n\n${result.artifact.emoji} ${rarity.color} ${result.artifact.name}\nNow: +${result.newLevel}\n\n📊 Stat Boost: +${result.newLevel * 10}%\n💠 Cost: ${result.cost.gold} 💠, ${result.cost.crystals} crystals\n\n${UI.PRO_BAR}\n${UI.PRO_MINI}\n💎 *PRO RELIC* — +${result.newLevel} ${result.artifact.name}` : `✨ ENHANCEMENT SUCCESS!\n${UI.FREE_BAR}\n\n${result.artifact.emoji} ${rarity.color} ${result.artifact.name}\nNow: +${result.newLevel}\n\n📊 Stat Boost: +${result.newLevel * 10}%\n💠 Cost: ${result.cost.gold} 💠, ${result.cost.crystals} crystals\n\n${UI.FREE_BAR}\n${UI.upsell()}`)
         }, { quoted: msg });
       } else {
         return sock.sendMessage(chatId, {
-          text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━
-💔 ENHANCEMENT FAILED
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-${result.artifact.name} remains at +${result.level}
-
-💠 Lost: ${result.cost.gold} 💠, ${result.cost.crystals} crystals
-
-Try again! Success rate improves with better luck.
-━━━━━━━━━━━━━━━━━━━━━━━━━━━`
+          text: (pro ? `${UI.PRO_BAR}\n💔 ENHANCEMENT FAILED 💎\n${UI.PRO_BAR}\n\n${result.artifact.name} remains at +${result.level}\n\n💠 Lost: ${result.cost.gold} 💠, ${result.cost.crystals} crystals\n\nTry again! Success rate improves with better luck.\n${UI.PRO_BAR}\n${UI.PRO_MINI}\n💎 *PRO RELIC* — +${result.level} held` : `💔 ENHANCEMENT FAILED\n${UI.FREE_BAR}\n\n${result.artifact.name} remains at +${result.level}\n\n💠 Lost: ${result.cost.gold} 💠, ${result.cost.crystals} crystals\n\nTry again! Success rate improves with better luck.\n${UI.FREE_BAR}\n${UI.upsell()}`)
         }, { quoted: msg });
       }
     }
@@ -392,15 +357,7 @@ Try again! Success rate improves with better luck.
       
       const rarity = ArtifactSystem.RARITY_INFO[result.artifact.rarity];
       return sock.sendMessage(chatId, {
-        text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🔥 FUSION SUCCESS!
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-${result.artifact.emoji} ${rarity.color} ${result.artifact.name}
-Now: +${result.newLevel}
-
-2 artifacts combined into 1 enhanced artifact!
-━━━━━━━━━━━━━━━━━━━━━━━━━━━`
+        text: (pro ? `${UI.PRO_BAR}\n🔥 FUSION SUCCESS! 💎\n${UI.PRO_BAR}\n\n${result.artifact.emoji} ${rarity.color} ${result.artifact.name}\nNow: +${result.newLevel}\n\n2 artifacts combined into 1 enhanced artifact!\n${UI.PRO_BAR}\n${UI.PRO_MINI}\n💎 *PRO RELIC* — +${result.newLevel} ${result.artifact.name}` : `🔥 FUSION SUCCESS!\n${UI.FREE_BAR}\n\n${result.artifact.emoji} ${rarity.color} ${result.artifact.name}\nNow: +${result.newLevel}\n\n2 artifacts combined into 1 enhanced artifact!\n${UI.FREE_BAR}\n${UI.upsell()}`)
       }, { quoted: msg });
     }
 
@@ -408,13 +365,11 @@ Now: +${result.newLevel}
     // ✅ NEW: VIEW SET BONUSES
     // ═══════════════════════════════════════════════════════════════
     if (action === 'sets') {
-      let message = `━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🎯 ARTIFACT SETS
-━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
+      let message = pro ? `${UI.PRO_BAR}\n🎯 ARTIFACT SETS 💎\n${UI.PRO_BAR}\n\n` : `🎯 ARTIFACT SETS\n${UI.FREE_BAR}\n\n`;
       
       for (const [setName, setData] of Object.entries(ArtifactSystem.ARTIFACT_SETS)) {
         message += `${setName}\n`;
-        message += `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+        message += `${FRAME}\n`;
         
         for (const [pieces, bonus] of Object.entries(setData.bonuses)) {
           message += `${pieces} pieces: ${bonus.effect}\n`;
@@ -422,8 +377,8 @@ Now: +${result.newLevel}
         message += `\n`;
       }
       
-      message += `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
-      message += `💡 Equip matching artifacts to activate bonuses!`;
+      message += `${FRAME}\n`;
+      message += `💡 Equip matching artifacts to activate bonuses!` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO RELIC* — ${Object.keys(ArtifactSystem.ARTIFACT_SETS).length} sets` : `\n${UI.upsell()}`);
       
       return sock.sendMessage(chatId, { text: message }, { quoted: msg });
     }
@@ -435,9 +390,7 @@ Now: +${result.newLevel}
       const setBonuses = ArtifactSystem.getActiveSetBonuses(player);
       const abilities = ArtifactSystem.getActiveArtifactAbilities(player);
       
-      let message = `━━━━━━━━━━━━━━━━━━━━━━━━━━━
-✨ YOUR ARTIFACT BONUSES
-━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
+      let message = pro ? `${UI.PRO_BAR}\n✨ YOUR ARTIFACT BONUSES 💎\n${UI.PRO_BAR}\n\n` : `✨ YOUR ARTIFACT BONUSES\n${UI.FREE_BAR}\n\n`;
       
       if (setBonuses.length > 0) {
         message += `🎯 ACTIVE SET BONUSES:\n`;
@@ -460,8 +413,8 @@ Now: +${result.newLevel}
         message += `No artifacts equipped!\n\nEquip artifacts to gain powerful bonuses!`;
       }
       
-      message += `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
-      
+      message += `\n${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO RELIC* — ${setBonuses.length} sets · ${abilities.length} abilities` : `\n${UI.upsell()}`);
+
       return sock.sendMessage(chatId, { text: message }, { quoted: msg });
     }
 
@@ -471,11 +424,7 @@ Now: +${result.newLevel}
     if (action === 'codex' || action === 'list-all' || action === 'browse') {
       const rarity = args[1]?.toLowerCase();
 
-      let message = `━━━━━━━━━━━━━━━━━━━━━━━━━━━
-📚 ARTIFACT CODEX
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-All artifacts in the world
-━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
+      let message = pro ? `${UI.PRO_BAR}\n📚 ARTIFACT CODEX 💎\n${UI.PRO_BAR}\nAll artifacts in the world\n${UI.PRO_BAR}\n\n` : `📚 ARTIFACT CODEX\n${UI.FREE_BAR}\nAll artifacts in the world\n${UI.FREE_BAR}\n\n`;
 
       let artifacts;
       if (rarity && ArtifactSystem.RARITY_INFO[rarity]) {
@@ -496,7 +445,7 @@ All artifacts in the world
       for (const [rarityKey, artifactList] of Object.entries(byRarity)) {
         const rarityInfo = ArtifactSystem.RARITY_INFO[rarityKey];
         message += `${rarityInfo.color} ${rarityInfo.name.toUpperCase()}\n`;
-        message += `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+        message += `${FRAME}\n`;
         
         artifactList.forEach(artifact => {
           message += `${artifact.emoji} ${artifact.name}\n`;
@@ -512,11 +461,11 @@ All artifacts in the world
         });
       }
 
-      message += `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+      message += `${FRAME}\n`;
       message += `💡 Filter by rarity:\n`;
       message += `/artifact codex legendary\n`;
       message += `/artifact codex mythic\n`;
-      message += `━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+      message += `${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO RELIC* — ${artifacts.length} catalogued` : `\n${UI.upsell()}`);
 
       return sock.sendMessage(chatId, { text: message }, { quoted: msg });
     }
@@ -538,39 +487,16 @@ All artifacts in the world
       saveDatabase();
 
       const rarity = ArtifactSystem.RARITY_INFO[artifact.rarity];
-      return sock.sendMessage(chatId, { 
-        text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🎁 ARTIFACT RECEIVED!
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-${artifact.emoji} ${rarity.color} ${artifact.name}
-
-Added to your inventory!
-Use /artifact equip to equip it.
-━━━━━━━━━━━━━━━━━━━━━━━━━━━` 
+      return sock.sendMessage(chatId, {
+        text: (pro ? `${UI.PRO_BAR}\n🎁 ARTIFACT RECEIVED! 💎\n${UI.PRO_BAR}\n\n${artifact.emoji} ${rarity.color} ${artifact.name}\n\nAdded to your inventory!\nUse /artifact equip to equip it.\n${UI.PRO_BAR}\n${UI.PRO_MINI}\n💎 *PRO RELIC* — ${artifact.name} granted` : `🎁 ARTIFACT RECEIVED!\n${UI.FREE_BAR}\n\n${artifact.emoji} ${rarity.color} ${artifact.name}\n\nAdded to your inventory!\nUse /artifact equip to equip it.\n${UI.FREE_BAR}\n${UI.upsell()}`)
       }, { quoted: msg });
     }
 
     // ═══════════════════════════════════════════════════════════════
     // INVALID COMMAND
     // ═══════════════════════════════════════════════════════════════
-    return sock.sendMessage(chatId, { 
-      text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━
-❌ INVALID COMMAND
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-📜 AVAILABLE COMMANDS:
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-/artifact list - View inventory
-/artifact view [#] - View details
-/artifact equip [#] - Equip artifact
-/artifact unequip [slot] - Unequip
-/artifact enhance [#] - Upgrade artifact
-/artifact fuse [#1] [#2] - Combine duplicates
-/artifact sets - View set bonuses
-/artifact stats - View your bonuses
-/artifact codex - Browse all artifacts
-━━━━━━━━━━━━━━━━━━━━━━━━━━━` 
+    return sock.sendMessage(chatId, {
+      text: (pro ? `${UI.PRO_BAR}\n❌ INVALID COMMAND 💎\n${UI.PRO_BAR}\n\n📜 AVAILABLE COMMANDS:\n${UI.PRO_BAR}\n/artifact list - View inventory\n/artifact view [#] - View details\n/artifact equip [#] - Equip artifact\n/artifact unequip [slot] - Unequip\n/artifact enhance [#] - Upgrade artifact\n/artifact fuse [#1] [#2] - Combine duplicates\n/artifact sets - View set bonuses\n/artifact stats - View your bonuses\n/artifact codex - Browse all artifacts\n${UI.PRO_BAR}\n${UI.PRO_MINI}\n💎 *PRO RELIC* — pick a command` : `❌ INVALID COMMAND\n${UI.FREE_BAR}\n\n📜 AVAILABLE COMMANDS:\n${UI.FREE_BAR}\n/artifact list - View inventory\n/artifact view [#] - View details\n/artifact equip [#] - Equip artifact\n/artifact unequip [slot] - Unequip\n/artifact enhance [#] - Upgrade artifact\n/artifact fuse [#1] [#2] - Combine duplicates\n/artifact sets - View set bonuses\n/artifact stats - View your bonuses\n/artifact codex - Browse all artifacts\n${UI.FREE_BAR}\n${UI.upsell()}`)
     }, { quoted: msg });
   }
 };

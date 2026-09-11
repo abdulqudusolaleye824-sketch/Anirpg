@@ -14,6 +14,7 @@
 
 'use strict';
 
+const RI = require('../utils/RewardInventory');
 const GKM = require('./GateKeyManager');
 const { GateManager, GATE_RANKS } = require('./GateManager');
 
@@ -194,6 +195,11 @@ function enter(sender, name, key, keyData, gate, db) {
     raid.leader = sender;
     raid.status = 'active';
     raid.startedAt = Date.now();
+    // Single-use: solo raids launch instantly, so the key is consumed here
+    try {
+      keyData.used = true; keyData.raidStarted = true;
+      if (db?.gateKeys?.[key]) { db.gateKeys[key].used = true; db.gateKeys[key].raidStarted = true; }
+    } catch(e){}
     raid.members = [];
     ensureMember(gate, sender, db);
     gate.raiders = gate.raiders || [];
@@ -245,6 +251,11 @@ function start(sender, keyData, gate, db) {
   raid.status = 'active';
   raid.startedAt = Date.now();
   gate.raidStarted = true;
+  // Single-use: launching the raid consumes the key (no second runs)
+  try {
+    keyData.used = true; keyData.raidStarted = true;
+    if (db?.gateKeys?.[keyData.key]) { db.gateKeys[keyData.key].used = true; db.gateKeys[keyData.key].raidStarted = true; }
+  } catch(e){}
   gate.raidStartTime = Date.now();
   gate.currentFloor = 1;
   gate.raiders = gate.raiders || [];
@@ -310,18 +321,17 @@ function monsterKilledBy(gate, monster, sender, db) {
   if (!player.inventory.materials) player.inventory.materials = [];
   if (!player.inventory.items) player.inventory.items = [];
 
-  // Material drop from monster
+  // Material drop from monster — single commit to items (no more double-push
+  // into the legacy bucket, which also duplicated the /inv display).
   const drop = GateManager.rollMonsterKillDrop(gate.rank, monster.name);
   if (drop) {
-    player.inventory.materials.push({ ...drop, obtainedAt: Date.now(), fromGate: gate.id });
-    player.inventory.items.push({ name: drop.name, type: 'Material', rarity: gate.rank === 'S' || gate.rank === 'A' ? 'rare' : 'common', obtainedAt: Date.now() });
+    RI.grantItem(player, { name: drop.name, type: 'material', rarity: drop.rarity || (gate.rank === 'S' || gate.rank === 'A' ? 'rare' : 'common'), fromGate: gate.id }, 'gate');
     lines.push(`🎁 *DROP → ${player.name}* (final blow): *${drop.name}*`);
   } else {
     const { rollBaseMaterial } = require('../data/MonsterDrops');
     const baseMat = rollBaseMaterial(gate.rank || 'E');
     if (baseMat) {
-      player.inventory.materials.push({ name: baseMat, type: 'material', obtainedAt: Date.now(), fromGate: gate.id });
-      player.inventory.items.push({ name: baseMat, type: 'Material', rarity: 'common', obtainedAt: Date.now() });
+      RI.grantItem(player, { name: baseMat, type: 'material', rarity: 'common', fromGate: gate.id }, 'gate');
       lines.push(`🎁 *DROP → ${player.name}*: *${baseMat}*`);
     }
   }
@@ -406,6 +416,9 @@ function clearGate(gate, key, keyData, db, saveDatabase) {
     if (hunter) {
       hunter.gold = (hunter.gold || 0) + goldCut;
       hunter.manaCrystals = (hunter.manaCrystals || 0) + crystalCut;
+      if (goldCut > 0) {
+        try { require('../utils/DailyQuestSystem').trackQuestProgress(hunter, 'goldEarn', goldCut); } catch(e){}
+      }
     }
     affiliatePayouts[jid] = { gold: goldCut, crystals: crystalCut, kind: p.kind, percent: Number((p.percent * scale).toFixed(1)) };
     guildNexus -= goldCut;
@@ -427,6 +440,9 @@ function clearGate(gate, key, keyData, db, saveDatabase) {
     if (leader) {
       leader.gold = (leader.gold || 0) + guildNexus;
       leader.manaCrystals = (leader.manaCrystals || 0) + guildCrystals;
+      if (guildNexus > 0) {
+        try { require('../utils/DailyQuestSystem').trackQuestProgress(leader, 'goldEarn', guildNexus); } catch(e){}
+      }
       dest = leader.name;
       destinationText = `👤 *${leader.name}* Personal Balance`;
     } else {
@@ -496,7 +512,8 @@ function clearGate(gate, key, keyData, db, saveDatabase) {
   GateManager.clearGate(gate.id, db);
   if (keyData) {
     keyData.raidComplete = true;
-    if (db.gateKeys?.[key]) db.gateKeys[key].raidComplete = true;
+    keyData.used = true;
+    if (db.gateKeys?.[key]) { db.gateKeys[key].raidComplete = true; db.gateKeys[key].used = true; }
     const gc = GKM.getDungeonGC(keyData.dungeonChatId);
     if (gc) gc.activeKeyId = null;
   }

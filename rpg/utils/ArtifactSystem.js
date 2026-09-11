@@ -1267,7 +1267,7 @@ function canEquipArtifact(player, artifact) {
   
   // Check class
   if (requirements.class) {
-    const playerClass = typeof player.class === 'object' ? player.class.name : player.class;
+    const playerClass = (player.class && typeof player.class === 'object') ? player.class.name : (player.class || null);
     if (!requirements.class.includes(playerClass)) {
       return {
         can: false,
@@ -1282,17 +1282,19 @@ function canEquipArtifact(player, artifact) {
 // ═══════════════════════════════════════════════════════════════
 // GET ARTIFACT DISPLAY
 // ═══════════════════════════════════════════════════════════════
-function getArtifactDisplay(artifact, enhancement = 0, showRequirements = true) {
+function getArtifactDisplay(artifact, enhancement = 0, showRequirements = true, player = null) {
+  const UI = require('./UI');
+  const dPro = UI.isPro(player || {});
+  const FRAME = dPro ? UI.PRO_BAR : UI.FREE_BAR;
   const rarity = RARITY_INFO[artifact.rarity] || RARITY_INFO.common;
   const enhancementSuffix = enhancement > 0 ? ` +${enhancement}` : '';
   
-  let display = `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
-  display += `${artifact.emoji} ${artifact.name}${enhancementSuffix}\n`;
+  let display = dPro ? `${UI.PRO_BAR}\n${artifact.emoji} ${artifact.name}${enhancementSuffix} 💎\n` : `${artifact.emoji} ${artifact.name}${enhancementSuffix}\n${UI.FREE_BAR}\n`;
   display += `${rarity.color} ${rarity.name} ${artifact.type.toUpperCase()}\n`;
   if (artifact.set) display += `🎯 Set: ${artifact.set}\n`;
-  display += `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+  display += `${FRAME}\n`;
   display += `📜 ${artifact.description}\n`;
-  display += `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+  display += `${FRAME}\n`;
   
   // Stats with enhancement bonus
   display += `📊 STATS:\n`;
@@ -1332,7 +1334,7 @@ function getArtifactDisplay(artifact, enhancement = 0, showRequirements = true) 
     display += `   Stat Bonus: +${enhancement * 10}%\n`;
   }
   
-  display += `━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+  display += `${FRAME}`;
   
   return display;
 }

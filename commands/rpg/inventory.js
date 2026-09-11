@@ -3,6 +3,8 @@
 // /inv <number> — shows full item detail with lore (mythic support)
 // ═══════════════════════════════════════════════════════════════
 
+const UI = require('../../rpg/utils/UI');
+
 module.exports = {
   name: 'inventory',
   aliases: ['inv'],
@@ -16,6 +18,8 @@ module.exports = {
     if (!player) {
       return sock.sendMessage(chatId, { text: '❌ You are not registered!\nUse /register [name] to start.' }, { quoted: msg });
     }
+    const pro = UI.isPro(player);
+    const FRAME = pro ? UI.PRO_BAR : UI.FREE_BAR;
 
     const inv   = player.inventory || {};
     const items = inv.items || [];
@@ -23,8 +27,12 @@ module.exports = {
     const rarityEmoji = { mythic:'🌌', legendary:'🟠', epic:'🟣', rare:'🔵', uncommon:'🟢', common:'⚪' };
     const rarityOrder = { mythic:0, legendary:1, epic:2, rare:3, uncommon:4, common:5 };
 
-    const gearItems    = items.filter(i => i.isGear || i.type === 'gear');
-    const consumables  = items.filter(i => !i.isGear && i.type !== 'gear' && !i.isPetFood && i.type !== 'PetFood');
+    // Legacy pass rewards lived in separate arrays — surface them too (nothing invisible)
+    const legacyGear = [...(inv.weapons || []), ...(inv.armor || []), ...(inv.accessories || [])]
+      .map(g => ({ ...g, isGear: true, type: 'gear', slot: g.slot || (g.type === 'armor' ? 'armor' : (g.type === 'accessory' || g.type === 'ring' ? 'accessory' : 'weapon')), rarity: g.rarity || 'rare' }));
+    const gearItems    = [...items.filter(i => i.isGear || i.type === 'gear'), ...legacyGear];
+    const legacyMats = (inv.materials || []).map(m => (typeof m === 'string' ? { name: m, type: 'material', rarity: 'common' } : { ...m, type: 'material', rarity: m.rarity || 'common' }));
+    const consumables  = [...items.filter(i => !i.isGear && i.type !== 'gear' && !i.isPetFood && i.type !== 'PetFood'), ...legacyMats];
     const petFoodItems = items.filter(i => i.isPetFood || i.type === 'PetFood');
 
     // ── /inv <number> — detail view for a gear item ─────────────
@@ -38,9 +46,7 @@ module.exports = {
       const re      = rarityEmoji[item.rarity] || '📦';
       const rarName = (item.rarity||'common').charAt(0).toUpperCase() + (item.rarity||'common').slice(1);
 
-      let detail = `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
-      detail += `${re} *${item.name}*\n`;
-      detail += `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+      let detail = pro ? `${UI.PRO_BAR}\n${re} *${item.name}* 💎\n${UI.PRO_BAR}\n` : `${re} *${item.name}*\n${UI.FREE_BAR}\n`;
       detail += `🏷️ Rarity: *${rarName}*\n`;
       if (item.slot) detail += `🔹 Slot: *${item.slot}*\n`;
       detail += `🔧 Durability: *${item.durability || '?'}/${item.maxDurability || item.durability || '?'}*\n`;
@@ -78,13 +84,15 @@ module.exports = {
       const isEquipped   = equippedSlot && equippedSlot.name === item.name;
       detail += `\n${isEquipped ? '✅ *EQUIPPED*' : '⭕ Not equipped'}\n`;
       if (!isEquipped && item.slot) detail += `💡 /gear equip ${item.slot} to equip\n`;
-      detail += `━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+      detail += pro ? UI.PRO_BAR : `${UI.FREE_BAR}\n${UI.upsell()}`;
 
       return sock.sendMessage(chatId, { text: detail }, { quoted: msg });
     }
 
     // ── Full inventory view ──────────────────────────────────────
-    let message = `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🎒 *INVENTORY* — ${player.name}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+    let message = pro
+      ? `${UI.PRO_BAR}\n🎒 *INVENTORY* — ${player.name} 💎\n${UI.PRO_BAR}\n`
+      : `🎒 *INVENTORY* — ${player.name}\n${UI.FREE_BAR}\n`;
     message += `💠 Nexus: ${(player.gold||0).toLocaleString()}\n`;
     message += `💎 Mana Stones: ${(player.manaCrystals||0).toLocaleString()}\n`;
     message += `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
@@ -118,6 +126,10 @@ module.exports = {
     for (const p of oldPotions) {
       message += `  ${rarityEmoji[p.rarity]||'📦'} ${p.name} ×${p.count}\n`;
     }
+    const _buffNames = { xpBooster:['✨','XP Booster'], goldMult:['💠','Nexus Multiplier'], shieldScroll:['🛡️','Shield Scroll'], mightElixir:['💪','Elixir of Might'], luckPotion:['🍀','Luck Potion'], gvcGold:['🥇','Gold EXP Buff (2×)'], gvcSilver:['🥈','Silver EXP Buff (1.5×)'], gvcBronze:['🥉','Bronze EXP Buff (1.25×)'] };
+    for (const [bk, [be, bn]] of Object.entries(_buffNames)) {
+      if ((inv[bk] || 0) > 0) message += `  ${be} ${bn} ×${inv[bk]} — /buff ${bk}\n`;
+    }
     const consStacked = {};
     for (const item of consumables) {
       if (!consStacked[item.name]) consStacked[item.name] = { ...item, count: 0 };
@@ -145,6 +157,17 @@ module.exports = {
         .forEach(item => { message += `  ${rarityEmoji[item.rarity]||'🐾'} ${item.name} ×${item.count}\n`; });
     }
     message += `\n`;
+
+    // ── Guild Victory Cards ──────────────────────────────────────
+    const cards = inv.cards || {};
+    const gvcTotal = (cards.gvc_gold || 0) + (cards.gvc_silver || 0) + (cards.gvc_bronze || 0);
+    if (gvcTotal > 0) {
+      message += `🃏 *GUILD VICTORY CARDS* (${gvcTotal})\n`;
+      if (cards.gvc_gold)   message += `  🥇 Gold ×${cards.gvc_gold} — /use GVC --gold (15k 💠 + 3k 💎 + 2× EXP buff)\n`;
+      if (cards.gvc_silver) message += `  🥈 Silver ×${cards.gvc_silver} — /use GVC --silver (10k 💠 + 2k 💎 + 1.5× EXP buff)\n`;
+      if (cards.gvc_bronze) message += `  🥉 Bronze ×${cards.gvc_bronze} — /use GVC --bronze (5k 💠 + 2k 💎 + 1.25× EXP buff)\n`;
+      message += `\n`;
+    }
 
     // ── Attack Patterns ──────────────────────────────────────────
     const ownedAtks    = player.attackPatterns?.owned || [];
@@ -182,10 +205,10 @@ module.exports = {
 
     // ── Pass & BP Rewards ────────────────────────────────────────
     message += `\n🎖️ *PASS & BATTLE REWARDS*\n`;
-    const apXp = player.astraPassXp || player.passXp || 0;
-    const apLvl = player.astraPassLevel || player.passLevel || 1;
-    const bpXp = player.battlePassXp || 0;
-    const bpLvl = player.battlePassLevel || 1;
+    const apXp = player.astraPass?.xp ?? player.astraPassXp ?? player.passXp ?? 0;
+    const apLvl = player.astraPass?.level ?? player.astraPassLevel ?? player.passLevel ?? 1;
+    const bpXp = player.battlePass?.xp ?? player.battlePassXp ?? 0;
+    const bpLvl = player.battlePass?.level ?? player.battlePassLevel ?? 1;
     const apTier = player.astraPassTier || (player.isPro ? 'Pro' : 'Free');
     const auraVal = player.aura || 0;
     message += `  🌀 Aura: ${auraVal.toLocaleString()} | 🌟 Astra Pass: Lv.${apLvl} — ${apXp.toLocaleString()} XP [${apTier}]\n`;
@@ -216,12 +239,16 @@ module.exports = {
     const lastSpawn = (getArgDb => { try { const db2=require('../../database'); return db2?.globalSpawn?.lastSpawnAt; } catch(e){return null;} })();
     message += `  🎁 Item Spawns: common→epic 1/day globally (requires /set spawn --true) — claim with /claim\n`;
 
-    message += `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+    if (pro) {
+      const byRar = {};
+      for (const g of sortedGear) byRar[g.rarity || 'common'] = (byRar[g.rarity || 'common'] || 0) + 1;
+      const rarStr = Object.entries(byRar).map(([r, n]) => `${rarityEmoji[r] || '📦'}×${n}`).join(' ');
+      message += `\n${UI.PRO_MINI}\n💎 *PRO HOARD* — ${sortedGear.length} gear · ${consSorted.length} stacks\n  ${rarStr || '_No gear yet_'}\n`;
+    }
+    message += `\n${FRAME}\n`;
     message += `📌 /inv <#>  — item detail + lore\n`;
-    message += `📌 /gear     — manage gear\n`;
-    message += `📌 /summon   — pull for artifacts\n`;
-    message += `📌 /attacks  — attack patterns\n`;
-    message += `━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+    message += `📌 /gear · /summon · /attacks\n`;
+    message += pro ? FRAME : `${FRAME}\n${UI.upsell()}`;
 
     return sock.sendMessage(chatId, { text: message }, { quoted: msg });
   }

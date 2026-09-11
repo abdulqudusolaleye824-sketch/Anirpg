@@ -121,6 +121,9 @@ function awardUpgradePoints(player, source, difficulty = null) {
 
 function allocateStat(player, statName, amount = 1) {
   initializeStatAllocations(player);
+  const UI = require('./UI');
+  const aPro = UI.isPro(player || {});
+  const FRAME = aPro ? UI.PRO_BAR : UI.FREE_BAR;
   
   const statConfig = STAT_CONFIG[statName];
   if (!statConfig) return { success: false, message: `❌ Invalid stat: ${statName}` };
@@ -149,20 +152,7 @@ function allocateStat(player, statName, amount = 1) {
   
   return {
     success: true,
-    message: `━━━━━━━━━━━━━━━━━━━━━━━━━━━
-✅ STAT ALLOCATED!
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-${statConfig.emoji} ${statConfig.name} +${statIncrease}
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-📊 ALLOCATIONS
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-${statConfig.name}: ${player.statAllocations[statName]}/${maxAlloc} (Lv.${player.level} cap)
-
-💎 Upgrade Points Spent: ${totalCost}
-💎 Remaining: ${player.upgradePoints} UP
-━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+    message: (aPro ? `${UI.PRO_BAR}\n✅ STAT ALLOCATED! 💎\n${UI.PRO_BAR}\n\n${statConfig.emoji} ${statConfig.name} +${statIncrease}\n\n${UI.PRO_BAR}\n📊 ALLOCATIONS\n${UI.PRO_BAR}\n${statConfig.name}: ${player.statAllocations[statName]}/${maxAlloc} (Lv.${player.level} cap)\n\n💎 Upgrade Points Spent: ${totalCost}\n💎 Remaining: ${player.upgradePoints} UP\n${UI.PRO_BAR}\n${UI.PRO_MINI}\n💎 *PRO STATS* — +${statIncrease} ${statConfig.name}` : `✅ STAT ALLOCATED!\n${UI.FREE_BAR}\n\n${statConfig.emoji} ${statConfig.name} +${statIncrease}\n\n${UI.FREE_BAR}\n📊 ALLOCATIONS\n${UI.FREE_BAR}\n${statConfig.name}: ${player.statAllocations[statName]}/${maxAlloc} (Lv.${player.level} cap)\n\n💎 Upgrade Points Spent: ${totalCost}\n💎 Remaining: ${player.upgradePoints} UP\n${UI.FREE_BAR}\n${UI.upsell()}`),
     statIncrease,
     totalCost,
     remaining: player.upgradePoints
@@ -220,6 +210,9 @@ function applyAllocationsToStats(player) {
 
 function resetAllocations(player) {
   initializeStatAllocations(player);
+  const UI = require('./UI');
+  const rPro = UI.isPro(player || {});
+  const FRAME = rPro ? UI.PRO_BAR : UI.FREE_BAR;
   
   let totalPointsSpent = 0;
   for (const [statName, allocations] of Object.entries(player.statAllocations)) {
@@ -244,20 +237,7 @@ function resetAllocations(player) {
   
   return {
     success: true,
-    message: `━━━━━━━━━━━━━━━━━━━━━━━━━━━
-♻️ STATS RESET!
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-💠 Cost: ${resetCost} 💠
-💎 Refunded: ${totalPointsSpent} UP
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-All stat allocations have been reset!
-You can now re-allocate your points.
-
-💎 Upgrade Points: ${player.upgradePoints} UP
-💠 Remaining Nexus: ${player.gold} 💠
-━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+    message: (rPro ? `${UI.PRO_BAR}\n♻️ STATS RESET! 💎\n${UI.PRO_BAR}\n\n💠 Cost: ${resetCost} 💠\n💎 Refunded: ${totalPointsSpent} UP\n\n${UI.PRO_BAR}\nAll stat allocations have been reset!\nYou can now re-allocate your points.\n\n💎 Upgrade Points: ${player.upgradePoints} UP\n💠 Remaining Nexus: ${player.gold} 💠\n${UI.PRO_BAR}\n${UI.PRO_MINI}\n💎 *PRO STATS* — ${totalPointsSpent} UP refunded` : `♻️ STATS RESET!\n${UI.FREE_BAR}\n\n💠 Cost: ${resetCost} 💠\n💎 Refunded: ${totalPointsSpent} UP\n\n${UI.FREE_BAR}\nAll stat allocations have been reset!\nYou can now re-allocate your points.\n\n💎 Upgrade Points: ${player.upgradePoints} UP\n💠 Remaining Nexus: ${player.gold} 💠\n${UI.FREE_BAR}\n${UI.upsell()}`),
     pointsRefunded: totalPointsSpent,
     goldSpent: resetCost
   };
@@ -265,18 +245,12 @@ You can now re-allocate your points.
 
 function getStatAllocationDisplay(player) {
   initializeStatAllocations(player);
+  const UI = require('./UI');
+  const dPro = UI.isPro(player || {});
+  const FRAME = dPro ? UI.PRO_BAR : UI.FREE_BAR;
   const className = (player.class && typeof player.class === 'object') ? player.class.name : (player.class || 'Unawakened');
   
-  let display = `━━━━━━━━━━━━━━━━━━━━━━━━━━━
-💎 STAT ALLOCATION SYSTEM
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-👤 ${player.name} | ${className} Lv.${player.level}
-💎 Upgrade Points: ${player.upgradePoints} UP
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-📊 CURRENT ALLOCATIONS
-━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
+  let display = dPro ? `${UI.PRO_BAR}\n💎 STAT ALLOCATION SYSTEM 💎\n${UI.PRO_BAR}\n\n👤 ${player.name} | ${className} Lv.${player.level}\n💎 Upgrade Points: ${player.upgradePoints} UP\n\n${UI.PRO_BAR}\n📊 CURRENT ALLOCATIONS\n${UI.PRO_BAR}\n\n` : `💎 STAT ALLOCATION SYSTEM\n${UI.FREE_BAR}\n\n👤 ${player.name} | ${className} Lv.${player.level}\n💎 Upgrade Points: ${player.upgradePoints} UP\n\n${UI.FREE_BAR}\n📊 CURRENT ALLOCATIONS\n${UI.FREE_BAR}\n\n`;
 
   for (const [statName, config] of Object.entries(STAT_CONFIG)) {
     const maxAlloc = getMaxAllocations(statName, player.level || 1);
@@ -290,23 +264,15 @@ function getStatAllocationDisplay(player) {
     display += `   Cost: ${config.costPerPoint} UP per point\n\n`;
   }
   
-  display += `━━━━━━━━━━━━━━━━━━━━━━━━━━━
-📜 COMMANDS
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-/upgrade allocate <stat> <amount>
-  Example: /upgrade allocate atk 5
-
-/upgrade reset
-  Reset all allocations (costs ${player.level * 1000} 💠)
-
-/upgrade guide
-  See stat recommendations
-━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+  display += `${FRAME}\n📜 COMMANDS\n${FRAME}\n/upgrade allocate <stat> <amount>\n  Example: /upgrade allocate atk 5\n\n/upgrade reset\n  Reset all allocations (costs ${player.level * 1000} 💠)\n\n/upgrade guide\n  See stat recommendations\n${FRAME}` + (dPro ? `\n${UI.PRO_MINI}\n💎 *PRO STATS* — ${player.upgradePoints} UP banked` : `\n${UI.upsell()}`);
 
   return display;
 }
 
-function getStatGuide(playerClass) {
+function getStatGuide(playerClass, player = null) {
+  const UI = require('./UI');
+  const gPro = UI.isPro(player || {});
+  const FRAME = gPro ? UI.PRO_BAR : UI.FREE_BAR;
   const className = (playerClass && typeof playerClass === 'object') ? playerClass.name : (playerClass || 'Unawakened');
   
   const guides = {
@@ -322,15 +288,7 @@ function getStatGuide(playerClass) {
   
   const guide = guides[className] || guides.Warrior;
   
-  let display = `━━━━━━━━━━━━━━━━━━━━━━━━━━━
-📚 STAT GUIDE - ${className}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-💡 ${guide.description}
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🎯 RECOMMENDED PRIORITY
-━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
+  let display = gPro ? `${UI.PRO_BAR}\n📚 STAT GUIDE - ${className} 💎\n${UI.PRO_BAR}\n\n💡 ${guide.description}\n\n${UI.PRO_BAR}\n🎯 RECOMMENDED PRIORITY\n${UI.PRO_BAR}\n\n` : `📚 STAT GUIDE - ${className}\n${UI.FREE_BAR}\n\n💡 ${guide.description}\n\n${UI.FREE_BAR}\n🎯 RECOMMENDED PRIORITY\n${UI.FREE_BAR}\n\n`;
 
   guide.priority.forEach((stat, index) => {
     const config = STAT_CONFIG[stat];
@@ -341,16 +299,7 @@ function getStatGuide(playerClass) {
     }
   });
   
-  display += `━━━━━━━━━━━━━━━━━━━━━━━━━━━
-💡 GENERAL TIPS
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-1️⃣ Start with your main damage stat
-2️⃣ Add survivability (HP/DEF)
-3️⃣ Invest in multipliers (CRIT)
-4️⃣ SPEED is expensive but valuable
-5️⃣ Don't be Black!
-━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+  display += `${FRAME}\n💡 GENERAL TIPS\n${FRAME}\n\n1️⃣ Start with your main damage stat\n2️⃣ Add survivability (HP/DEF)\n3️⃣ Invest in multipliers (CRIT)\n4️⃣ SPEED is expensive but valuable\n5️⃣ Don't be Black!\n${FRAME}` + (gPro ? `\n${UI.PRO_MINI}\n💎 *PRO STATS* — ${className} path` : `\n${UI.upsell()}`);
 
   return display;
 }

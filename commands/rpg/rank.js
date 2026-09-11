@@ -60,7 +60,7 @@ function calcPower(p) {
     skills:    skills    * 60,
     artifacts: artifacts * 100,
     weapon:    Math.floor(weapon * 3),
-    gold:      Math.floor(Math.log10(Math.max(gold, 10)) * 25),
+    gold:      Math.floor(Math.log10(Math.max(Nexus, 10)) * 25),
   };
 
   const total = Object.values(parts).reduce((s, v) => s + v, 0);
@@ -128,6 +128,10 @@ module.exports = {
     const isOther  = targetId !== sender;
 
     const player = db.users[targetId];
+    const UI = require('../../rpg/utils/UI');
+    const viewer = db.users[sender] || player;
+    const pro = UI.isPro(viewer);
+    const FRAME = pro ? UI.PRO_BAR : UI.FREE_BAR;
     if (!player) {
       return sock.sendMessage(chatId, {
         text: isOther
@@ -148,10 +152,10 @@ module.exports = {
 
     // ── Identity strings ──────────────────────────────────────
     const lvl      = player.level || 1;
-    const clsName  = typeof player.class === 'object'
+    const clsName  = (player.class && typeof player.class === 'object')
       ? (player.class.name   || 'Unknown')
       : (player.class        || 'Unknown');
-    const clsRar   = typeof player.class === 'object'
+    const clsRar   = (player.class && typeof player.class === 'object')
       ? (player.class.rarity || 'Common')
       : 'Common';
 
@@ -188,7 +192,7 @@ module.exports = {
     const eLabel = player.energyType  || 'Energy';
 
     // ── Progress to next rank ─────────────────────────────────
-    const bar    = progBar(power, cur.min, next?.min);
+    const bar    = next ? UI.bar(power - cur.min, next.min - cur.min, 14, pro) : UI.bar(1, 1, 14, pro);
     const pct    = next
       ? Math.min(100, Math.floor(((power - cur.min) / (next.min - cur.min)) * 100))
       : 100;
@@ -197,13 +201,13 @@ module.exports = {
     // ════════════════════════════════════════════════════════
     // BUILD OUTPUT
     // ════════════════════════════════════════════════════════
-    const SEP = '━━━━━━━━━━━━━━━━━━━━━━━━━━━';
+    const SEP = FRAME;
     const who = isOther ? `${player.name}'s` : 'YOUR';
     let out   = '';
 
     // ── Header ───────────────────────────────────────────────
     out += `${SEP}\n`;
-    out += `${cur.emoji} ${who} HUNTER RANK ${cur.emoji}\n`;
+    out += `${cur.emoji} ${who} HUNTER RANK${pro ? ' 💎' : ''} ${cur.emoji}\n`;
     out += `${SEP}\n\n`;
 
     // ── Identity ─────────────────────────────────────────────
@@ -217,11 +221,11 @@ module.exports = {
     out += `⚡ Power: *${fmt(power)}*\n\n`;
 
     if (next) {
-      out += `${bar} ${pct}%\n`;
+      out += pro ? `${bar}\n` : `${bar} ${pct}%\n`;
       out += `→ ${next.emoji} *${next.rank}-Rank* (${next.title})\n`;
       out += `  ${fmt(needed)} more power needed\n\n`;
     } else {
-      out += `${'█'.repeat(14)} MAX\n`;
+      out += `${UI.bar(1, 1, 14, pro)} MAX\n`;
       out += `🌌 *TRANSCENDENT* — Beyond all limits!\n\n`;
     }
 
@@ -281,7 +285,7 @@ module.exports = {
       const mark    = isCur ? '  ◀ YOU' : '';
       out += `${tier.emoji} ${rpad(nameStr, 13)} ${short(tier.min)}+${mark}\n`;
     }
-    out += `\n${SEP}`;
+    out += `\n${SEP}` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO STANDING* — #${pos} of ${srvTotal} · ${next ? `${fmt(needed)} to ${next.rank}-Rank` : 'MAX 👑'}` : `\n${UI.upsell()}`);
 
     return sock.sendMessage(chatId, {
       text: out,

@@ -52,6 +52,9 @@ module.exports = {
   async execute(sock, msg, args, getDatabase, saveDatabase, sender) {
     const chatId = msg.key.remoteJid;
     const db = getDatabase();
+    const UI = require('../../rpg/utils/UI');
+    const pro = UI.isPro(db.users?.[sender] || {});
+    const FRAME = pro ? UI.PRO_BAR : UI.FREE_BAR;
 
     const mentionedId = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid?.[0];
     const targetId = mentionedId || sender;
@@ -68,7 +71,7 @@ module.exports = {
     if (!guildRef) {
       const who = isOwn ? 'You are' : `*${targetPlayer.name}* is`;
       return sock.sendMessage(chatId, {
-        text: `📜 *GUILD CONTRACT*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n${who} not in a guild.\nJoin a guild to get a hire contract via /guild hire.`
+        text: (pro ? `${UI.PRO_BAR}\n📜 *GUILD CONTRACT* 💎\n${UI.PRO_BAR}\n\n${who} not in a guild.\nJoin a guild to get a hire contract via /guild hire.\n${UI.PRO_BAR}\n${UI.PRO_MINI}\n💎 *PRO CONTRACT* — guildless` : `📜 *GUILD CONTRACT*\n${UI.FREE_BAR}\n\n${who} not in a guild.\nJoin a guild to get a hire contract via /guild hire.\n${UI.FREE_BAR}\n${UI.upsell()}`)
       }, { quoted: msg });
     }
 
@@ -85,7 +88,7 @@ module.exports = {
     if (!contract) {
       const who = isOwn ? 'You have' : `*${targetPlayer.name}* has`;
       return sock.sendMessage(chatId, {
-        text: `📜 *GUILD CONTRACT — ${guild.name}*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n${who} no active hire contract.\n\n💡 Guild Masters can hire with:\n\`/guild hire @player <weeklyNexus> <weeklyMana> <weeks>\`\nExample: \`/guild hire @hunter 5000 100 4\``
+        text: (pro ? `${UI.PRO_BAR}\n📜 *GUILD CONTRACT — ${guild.name}* 💎\n${UI.PRO_BAR}\n\n${who} no active hire contract.\n\n💡 Guild Masters can hire with:\n\`/guild hire @player <weeklyNexus> <weeklyMana> <weeks>\`\nExample: \`/guild hire @hunter 5000 100 4\`\n${UI.PRO_BAR}\n${UI.PRO_MINI}\n💎 *PRO CONTRACT* — unsigned` : `📜 *GUILD CONTRACT — ${guild.name}*\n${UI.FREE_BAR}\n\n${who} no active hire contract.\n\n💡 Guild Masters can hire with:\n\`/guild hire @player <weeklyNexus> <weeklyMana> <weeks>\`\nExample: \`/guild hire @hunter 5000 100 4\`\n${UI.FREE_BAR}\n${UI.upsell()}`)
       }, { quoted: msg });
     }
 
@@ -122,7 +125,7 @@ module.exports = {
       const total = totalWeeks || 1;
       const paid = Math.min(weeksPaid, total);
       const filled = Math.round((paid / total) * 10);
-      return '█'.repeat(filled) + '░'.repeat(10 - filled) + ` ${paid}/${total}`;
+      return `${UI.bar(paid, total, 10, pro)}` + (pro ? ` ${paid}/${total}` : ` ${paid}/${total}`);
     })();
 
     const nextPayText = c.active && remainingWeeks > 0 ? `${formatDate(c.nextPayAt)} (${formatDaysLeft(c.nextPayAt)})` : '—';
@@ -133,23 +136,21 @@ module.exports = {
     const whoLine = isOwn ? 'Your contract' : `*${targetPlayer.name}'s* contract`;
 
     const lines = [
-      `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-      `📜 *GUILD HIRE CONTRACT*`,
-      `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+      ...(pro ? [UI.PRO_BAR, `📜 *GUILD HIRE CONTRACT* 💎`, UI.PRO_BAR] : [`📜 *GUILD HIRE CONTRACT*`, UI.FREE_BAR]),
       ``,
       `🏰 Guild: *${guild.name}* (\`${guildId}\`)`,
       `👤 Hunter: *${targetPlayer.name}* ${isOwn ? '(You)' : ''}`,
       `📋 ${whoLine}`,
       ``,
-      `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+      FRAME,
       `📊 *STATUS: ${status}*`,
-      `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+      FRAME,
       statusDetail ? `ℹ️ ${statusDetail}` : null,
       `📈 Progress: \`${progressBar}\``,
       ``,
-      `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+      FRAME,
       `💰 *WAGE & DURATION*`,
-      `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+      FRAME,
       `💠 Weekly Nexus: *${weeklyNexus.toLocaleString()}*`,
       `💎 Weekly Mana Stones: *${weeklyMana.toLocaleString()}*`,
       `⏳ Total Duration: *${totalWeeks} week${totalWeeks !== 1 ? 's' : ''}*`,
@@ -158,17 +159,19 @@ module.exports = {
       ``,
       `📦 Remaining Balance: *${remaining.nexus.toLocaleString()} Nexus* + *${remaining.mana.toLocaleString()} Mana*`,
       ``,
-      `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+      FRAME,
       `📅 *TIMELINE*`,
-      `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+      FRAME,
       `▶️ Started: *${formatDate(c.startAt)}*`,
       `⏭️ Next Pay: *${nextPayText}*`,
       endAt ? `🏁 Ends: *${formatDate(endAt)}*` : null,
       `👔 Hired By: *${hiredByName}*`,
       ``,
-      `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+      FRAME,
       remainingWeeks > 0 && c.active ? `💡 Weekly wage is auto-deducted from guild treasury each week.` : null,
       c.active && remainingWeeks > 0 ? `⚠️ Kicking this hunter pays *×2* remaining balance!` : null,
+      FRAME,
+      ...(pro ? [UI.PRO_MINI, `💎 *PRO CONTRACT* — ${remainingWeeks}w left · ${remaining.nexus.toLocaleString()} Nexus due`] : [UI.upsell()]),
     ].filter(Boolean).join('\n');
 
     return sock.sendMessage(chatId, { text: lines }, { quoted: msg });

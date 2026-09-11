@@ -8,6 +8,7 @@ const fs                           = require('fs');
 const { GateManager, GATE_RANKS }  = require('../../rpg/dungeons/GateManager');
 const { AWAKENING_RANKS }          = require('../../rpg/utils/SoloLevelingCore');
 const GKM                          = require('../../rpg/dungeons/GateKeyManager');
+const UI = require('../../rpg/utils/UI');
 const SerfManager                  = require('../../rpg/utils/SerfManager');
 
 function normaliseJid(jid) {
@@ -34,6 +35,8 @@ const gate = {
     if (!player) {
       return sock.sendMessage(chatId, { text: '❌ Register first! Use /register' }, { quoted: msg });
     }
+    const pro = UI.isPro(player);
+    const FRAME = pro ? UI.PRO_BAR : UI.FREE_BAR;
 
     GateManager.checkGateBreaks(chatId, sock);
 
@@ -52,21 +55,17 @@ const gate = {
       if (allKeys.length === 0) {
         return sock.sendMessage(chatId, {
           text: [
-            `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-            `🔑 *YOUR UNUSED GATE KEYS*`,
-            `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+            ...(pro ? [UI.PRO_BAR, `🔑 *YOUR UNUSED GATE KEYS* 💎`, UI.PRO_BAR] : [`🔑 *YOUR UNUSED GATE KEYS*`, UI.FREE_BAR]),
             ``,
             `❌ You have no active unused gate keys.`,
             `Buy a gate using */gate buy* when a gate spawns!`,
-            `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+            ...(pro ? [FRAME] : [FRAME, UI.upsell()]),
           ].join('\n'),
         }, { quoted: msg });
       }
 
       const lines = [
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-        `🔑 *YOUR UNUSED GATE KEYS (${allKeys.length})*`,
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        ...(pro ? [UI.PRO_BAR, `🔑 *YOUR UNUSED GATE KEYS (${allKeys.length})* 💎`, UI.PRO_BAR] : [`🔑 *YOUR UNUSED GATE KEYS (${allKeys.length})*`, UI.FREE_BAR]),
         ``,
       ];
 
@@ -84,11 +83,14 @@ const gate = {
         lines.push(``);
       });
 
-      lines.push(`━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+      lines.push(FRAME);
       lines.push(`📌 *How to use:*`);
       lines.push(`Go to a registered dungeon GC and run:`);
       lines.push(`/party create --<CODE>`);
-      lines.push(`━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+      if (pro) {
+        const soonest = Math.min(...allKeys.map(([, k]) => k.expiresAt || Infinity));
+        lines.push(FRAME, UI.PRO_MINI, `💎 *PRO KEYRING* — ${allKeys.length} keys · soonest lapses in ${soonest === Infinity ? '?' : GKM.formatStability(Math.max(0, soonest - Date.now()))}`);
+      } else lines.push(FRAME, UI.upsell());
 
       const fullText = lines.join('\n');
       // FIX: also DM the list to user's serf (user requested DM copy)
@@ -113,27 +115,26 @@ const gate = {
       if (active.length === 0) {
         return sock.sendMessage(chatId, {
           text: [
-            `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-            `「System」 *NO ACTIVE GATES*`,
-            `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+            ...(pro ? [UI.PRO_BAR, `「System」 *NO ACTIVE GATES* 💎`, UI.PRO_BAR] : [`「System」 *NO ACTIVE GATES*`, UI.FREE_BAR]),
             ``,
             `No dimensional rifts detected in this area.`,
             `Gates spawn periodically. Stay alert, hunter.`,
-            `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+            ...(pro ? [FRAME] : [FRAME, UI.upsell()]),
           ].join('\n'),
         }, { quoted: msg });
       }
 
       const rankData = AWAKENING_RANKS[player.awakenRank || 'E'];
-      let txt = `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n「System」 *ACTIVE GATES*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
+      let txt = pro ? `${UI.PRO_BAR}\n「System」 *ACTIVE GATES* 💎\n${UI.PRO_BAR}\n\n` : `「System」 *ACTIVE GATES*\n${UI.FREE_BAR}\n\n`;
       txt += `${rankData.emoji} Your rank: *${rankData.label}*\n`;
       txt += `🚪 Gates can be purchased by Guild Officers or Granted Affiliates.\n\n`;
 
       for (const g of active) {
-        txt += GateManager.formatGate(g) + '\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n';
+        txt += GateManager.formatGate(g) + `\n${FRAME}\n`;
       }
 
       txt += `\n📌 Reply to a gate announcement with */gate buy* to purchase.`;
+      txt += pro ? `\n${FRAME}\n${UI.PRO_MINI}\n💎 *PRO SENSE* — best rift: ${['S','A','B','C','D','E'].find(r => active.some(g => g.rank === r)) || '?'}-Rank` : `\n${FRAME}\n${UI.upsell()}`;
 
       const topGate = active.sort((a,b) => {
         const order = ['S','A','B','C','D','E'];
@@ -234,38 +235,34 @@ const gate = {
       // GC Output: Do NOT reveal the gate key in public!
       await sock.sendMessage(chatId, {
         text: [
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-          `🔑 *GATE PURCHASED!*`,
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          ...(pro ? [UI.PRO_BAR, `🔑 *GATE PURCHASED!* 💎`, UI.PRO_BAR] : [`🔑 *GATE PURCHASED!*`, UI.FREE_BAR]),
           `${rd.emoji} Gate: *${rd.label}* [${gateId}]`,
           `💠 Paid from: ${paidFrom}`,
           `⏳ Gate stable for: *${stability}*`,
           ``,
           `📬 *Your gate key has been sent privately to your DM via your serf bot!*`,
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          ...(pro ? [FRAME, UI.PRO_MINI, `💎 *PRO CLAIM* — ${rd.label} · stable ${stability}`] : [FRAME, UI.upsell()]),
         ].join('\n'),
       }, { quoted: msg });
 
       const expiresDate = new Date(result.keyData.expiresAt).toUTCString().replace(' GMT', ' WAT');
       
       const keyDmText = [
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-        `🔑 *YOUR GATE KEY*`,
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        ...(pro ? [UI.PRO_BAR, `🔑 *YOUR GATE KEY* 💎`, UI.PRO_BAR] : [`🔑 *YOUR GATE KEY*`, UI.FREE_BAR]),
         `${rd.emoji} Gate: *${rd.label}*`,
         `🆔 Gate ID: \`${gateId}\``,
         ``,
         `🔑 *Key: \`${result.key}\`*`,
         ``,
         `⏳ Stable until: *${expiresDate}* (${stability})`,
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        `${FRAME}`,
         `📌 *HOW TO RAID:*`,
         `1. Go to your registered dungeon GC`,
         `2. Create party: /party create --${result.key}`,
         `3. Members join: /party join ${result.key}`,
         `4. Members ready: /party ready`,
         `5. Launch raid: /party raid`,
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        ...(pro ? [FRAME] : [FRAME, UI.upsell()]),
       ].join('\n');
 
       try {
@@ -298,9 +295,7 @@ const gate = {
 
       return sock.sendMessage(chatId, {
         text: [
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-          `🔑 *KEY STATUS*`,
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          ...(pro ? [UI.PRO_BAR, `🔑 *KEY STATUS* 💎`, UI.PRO_BAR] : [`🔑 *KEY STATUS*`, UI.FREE_BAR]),
           `${rd.emoji || '🚪'} Gate: *${rd.label || keyData.gateRank}*`,
           `Key: \`${keyArg}\``,
           `Owner: *${owner?.name || 'Unknown'}*`,
@@ -308,7 +303,7 @@ const gate = {
           `⏳ Time remaining: *${timeLeft}*`,
           `📊 Status: ${status}`,
           `👥 Party: ${keyData.raidParty?.length || 0} hunters`,
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          ...(pro ? [FRAME] : [FRAME, UI.upsell()]),
         ].join('\n'),
       }, { quoted: msg });
     }
@@ -316,16 +311,14 @@ const gate = {
     // ── Fallback ──────────────────────────────────────────────────────────────
     return sock.sendMessage(chatId, {
       text: [
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-        `🚪 *GATE COMMANDS*`,
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        ...(pro ? [UI.PRO_BAR, `🚪 *GATE COMMANDS* 💎`, UI.PRO_BAR] : [`🚪 *GATE COMMANDS*`, UI.FREE_BAR]),
         `/gate                — list active gates`,
         `/gate buy            — reply to gate spawn to buy`,
         `/party create --<KEY> — open party with gate key`,
         `/party join <KEY>    — join gate party`,
         `/party ready         — toggle ready status`,
         `/party raid          — launch raid once ready`,
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        ...(pro ? [FRAME] : [FRAME, UI.upsell()]),
       ].join('\n'),
     }, { quoted: msg });
   },
@@ -347,6 +340,7 @@ const setdungeon = {
     }
 
     const db = getDatabase();
+    const sdPro = UI.isPro(db.users?.[sender]);
     GKM.setDungeonGC(chatId, sender);
     if (!db.dungeonGCs) db.dungeonGCs = {};
     db.dungeonGCs[chatId] = { chatId, setBy: sender, setAt: Date.now(), activeKeyId: null };
@@ -354,13 +348,11 @@ const setdungeon = {
 
     return sock.sendMessage(chatId, {
       text: [
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-        `✅ *DUNGEON GC REGISTERED*`,
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        ...(sdPro ? [UI.PRO_BAR, `✅ *DUNGEON GC REGISTERED* 💎`, UI.PRO_BAR] : [`✅ *DUNGEON GC REGISTERED*`, UI.FREE_BAR]),
         `This group is now a registered dungeon GC.`,
         `Gate parties can be opened here with:`,
         `/party create --<KEY>`,
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        sdPro ? UI.PRO_BAR : UI.FREE_BAR,
       ].join('\n'),
     }, { quoted: msg });
   },
@@ -397,6 +389,7 @@ const dungeons = {
 
     const all = GKM.getAllDungeonGCs();
     const list = Object.values(all);
+    const dgPro = UI.isPro(getDatabase().users?.[sender]);
 
     if (!list.length) {
       return sock.sendMessage(chatId, { text: `No dungeon GCs registered yet.\nUse /setdungeon in the group you want to register.` }, { quoted: msg });
@@ -408,7 +401,7 @@ const dungeons = {
     });
 
     return sock.sendMessage(chatId, {
-      text: [`━━━━━━━━━━━━━━━━━━━━━━━━━━━`, `🏰 *DUNGEON GCS (${list.length})*`, `━━━━━━━━━━━━━━━━━━━━━━━━━━━`, ``, ...lines, ``, `━━━━━━━━━━━━━━━━━━━━━━━━━━━`].join('\n'),
+      text: [...(dgPro ? [UI.PRO_BAR, `🏰 *DUNGEON GCS (${list.length})* 💎`, UI.PRO_BAR] : [`🏰 *DUNGEON GCS (${list.length})*`, UI.FREE_BAR]), ``, ...lines, ``, dgPro ? UI.PRO_BAR : UI.FREE_BAR].join('\n'),
     }, { quoted: msg });
   },
 };

@@ -1,3 +1,6 @@
+const UI = require('./UI');
+const RI = require('./RewardInventory');
+
 // ═══════════════════════════════════════════════════════════════
 // CRAFTING SYSTEM — Astra
 // 1,500 craftable items across 6 rarities
@@ -85,21 +88,15 @@ function attemptCraft(player, itemName, key, db) {
   const recipe = targetScroll.recipe;
   if (recipe.output.toLowerCase() !== itemName.toLowerCase())
     return { success: false, reason: `❌ Key *${key}* is for *${recipe.output}*, not *${itemName}*.` };
-  const playerMaterials = {};
-  for (const mat of (player.inventory?.materials || []))
-    playerMaterials[mat.name] = (playerMaterials[mat.name] || 0) + 1;
+  RI.migrateLegacy(player); // pull pre-fix legacy buckets into items first
   const missing = [];
   for (const [mat, qty] of Object.entries(recipe.materials)) {
-    const have = playerMaterials[mat] || 0;
+    const have = RI.countMaterial(player, mat);
     if (have < qty) missing.push(`${mat} (need ${qty}, have ${have})`);
   }
   if (missing.length > 0) return { success: false, reason: `❌ Missing materials:\n${missing.map(m => `• ${m}`).join('\n')}` };
   for (const [mat, qty] of Object.entries(recipe.materials)) {
-    let remaining = qty;
-    player.inventory.materials = player.inventory.materials.filter(m => {
-      if (m.name === mat && remaining > 0) { remaining--; return false; }
-      return true;
-    });
+    RI.consumeMaterial(player, mat, qty);
   }
   targetScroll.crafted = true; targetScroll.craftedBy = player.jid || 'unknown'; targetScroll.craftedAt = Date.now();
   if (scrollOwnerJid && db.users[scrollOwnerJid]) {
@@ -112,9 +109,17 @@ function attemptCraft(player, itemName, key, db) {
     infusions: [], craftedAt: Date.now(), craftedBy: player.name || 'Unknown Hunter', fromKey: key,
     ...(recipe.lore ? { lore: recipe.lore } : {}),
   };
-  if (!player.inventory) player.inventory = { weapons:[], armor:[], potions:[], artifacts:[], accessories:[], materials:[], scrolls:[], keyStones:[] };
-  const bucket = recipe.type === 'weapon' ? 'weapons' : recipe.type === 'armor' ? 'armor' : recipe.type === 'artifact' ? 'artifacts' : recipe.type === 'accessory' ? 'accessories' : 'materials';
-  player.inventory[bucket].push(craftedItem);
+  // Commit to the live inventory: wearables → items (normalized gear shape,
+  // visible to /gear + /equip). Artifacts keep their own bucket (the artifact
+  // system reads it); anything else → items as material.
+  if (recipe.type === 'artifact') {
+    if (!player.inventory) player.inventory = {};
+    if (!Array.isArray(player.inventory.artifacts)) player.inventory.artifacts = [];
+    player.inventory.artifacts.push(craftedItem);
+  } else {
+    RI.grantItem(player, { ...craftedItem, source: 'craft' }, 'craft',
+      { infusions: craftedItem.infusions || [], craftedBy: craftedItem.craftedBy, fromKey: craftedItem.fromKey, craftedAt: craftedItem.craftedAt });
+  }
   return { success: true, item: craftedItem, scrollOwnerJid };
 }
 
@@ -128,7 +133,9 @@ function checkMaterials(player, recipe) {
   }));
 }
 
-function formatScrollRead(scroll) {
+function formatScrollRead(scroll, player = null) {
+  const scrollPro = UI.isPro(player || {});
+  const FRAME = scrollPro ? UI.PRO_BAR : UI.FREE_BAR;
   const recipe = scroll.recipe || {};
   const mainType = recipe.type ? (recipe.type.charAt(0).toUpperCase() + recipe.type.slice(1)) : 'Equipment';
   const subTypeStr = recipe.subtype ? ` (${recipe.subtype.charAt(0).toUpperCase() + recipe.subtype.slice(1)})` : '';
@@ -137,9 +144,7 @@ function formatScrollRead(scroll) {
   const matLines = Object.entries(recipe.materials || {}).map(([mat, qty]) => `  • ${mat} ×${qty}`).join('\n');
   const statLines = Object.entries(recipe.stats || {}).filter(([, v]) => v).map(([k, v]) => `${k}: ${v > 0 ? '+' : ''}${v}`).join(' | ');
   return [
-    `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-    `${scroll.emoji || '📜'} *${(scroll.rarity || 'Common').toUpperCase()} RECIPE SCROLL*`,
-    `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+    ...(scrollPro ? [UI.PRO_BAR, `${scroll.emoji || '📜'} *${(scroll.rarity || 'Common').toUpperCase()} RECIPE SCROLL* 💎`, UI.PRO_BAR] : [`${scroll.emoji || '📜'} *${(scroll.rarity || 'Common').toUpperCase()} RECIPE SCROLL*`, UI.FREE_BAR]),
     ``,
     `📜 *Recipe: ${recipe.output || 'Unknown Item'}*`,
     `🗂️ Type: ${typeDisplay}`,
@@ -147,21 +152,21 @@ function formatScrollRead(scroll) {
     `🛡️ Durability: ${recipe.durability || 'N/A'}`,
     recipe.lore ? `📖 *Lore:* _${recipe.lore}_` : ``,
     ``,
-    `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+    FRAME,
     `🧪 *MATERIALS REQUIRED*`,
-    `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+    FRAME,
     matLines,
     ``,
-    `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+    FRAME,
     `🔑 *CRAFT KEY: ${scroll.key || 'N/A'}*`,
-    `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+    FRAME,
     ``,
     `⚠️ Guard this key carefully.`,
     `Anyone with the key + materials can craft this item.`,
     `Once crafted, this scroll is consumed forever.`,
     ``,
     `📌 To craft: */craft ${recipe.output} --${scroll.key}*`,
-    `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+    FRAME,
   ].join('\n');
 }
 

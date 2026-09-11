@@ -20,6 +20,7 @@
 'use strict';
 
 const { getRandomQuestions, formatQuestion, QUIZ_STATS } = require('../../rpg/data/anime_quiz_200');
+const UI = require('../../rpg/utils/UI');
 
 // ── Active sessions: one per group chat ────────────────────────────────────────
 // { chatId: SessionObject }
@@ -96,18 +97,20 @@ function ensurePlayer(session, jid, name) {
   }
 }
 
-function formatLeaderboard(session, title = 'CURRENT SCORES') {
+function formatLeaderboard(session, title = 'CURRENT SCORES', pro = false) {
   const entries = Object.entries(session.scores)
     .sort((a, b) => b[1].correct - a[1].correct || b[1].nexus - a[1].nexus);
 
   if (entries.length === 0) return `No answers yet!`;
 
   const lines = [
-    `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+    (pro ? UI.PRO_BAR : UI.FREE_BAR),
     `🏆 *${title}*`,
-    `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+    pro ? (UI.PRO_MINI + '\n' + '🎌 PRO SCHOLAR') : null,
+    pro ? `📊 *${Object.keys(session.scores).length}* scholars ranked` : null,
+    pro ? `` : null,
     ``,
-  ];
+  ].filter(x => x !== null);
 
   const medals = ['🥇','🥈','🥉'];
   entries.forEach(([, data], i) => {
@@ -115,7 +118,7 @@ function formatLeaderboard(session, title = 'CURRENT SCORES') {
     lines.push(`${medal} *${data.name}* — ${data.correct} correct | +${data.nexus.toLocaleString()} Nexus`);
   });
 
-  lines.push(`━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+  lines.push((pro ? UI.PRO_BAR : UI.FREE_BAR));
   return lines.join('\n');
 }
 
@@ -133,7 +136,7 @@ async function sendQuestion(sock, session, db, saveDatabase) {
   session.answered         = new Set();
   session.questionStartedAt = Date.now();
 
-  const text = formatQuestion(q, current, total);
+  const text = formatQuestion(q, current, total, UI.isPro(db.users?.[session.hostJid]));
   await sock.sendMessage(session.chatId, { text });
 
   // Auto-advance after 30 seconds if no one answered / time up
@@ -212,12 +215,17 @@ async function endQuiz(sock, session, db, saveDatabase) {
   saveDatabase(db);
 
   // Build result message
+  const proQ = UI.isPro(db.users?.[session.hostJid]);
+  const totC = entries.reduce((a, [, d]) => a + d.correct, 0);
+  const totN = entries.reduce((a, [, d]) => a + d.nexus, 0);
   const lines = [
-    `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-    `🎌 *QUIZ COMPLETE!*`,
-    `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+    (proQ ? UI.PRO_BAR : UI.FREE_BAR),
+    '🎌 *QUIZ COMPLETE!*',
+    proQ ? (UI.PRO_MINI + '\n' + '🎌 PRO SCHOLAR') : null,
+    proQ ? `📊 *${totC}* correct answers · 💠 *${totN.toLocaleString()}* Nexus paid out` : null,
+    proQ ? `` : null,
     ``,
-  ];
+  ].filter(x => x !== null);
 
   if (entries.length === 0) {
     lines.push(`No one participated. Better luck next time!`);
@@ -236,7 +244,7 @@ async function endQuiz(sock, session, db, saveDatabase) {
     }
   }
 
-  lines.push(`━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+  lines.push((proQ ? UI.PRO_BAR : UI.FREE_BAR));
   await sock.sendMessage(chatId, { text: lines.join('\n') });
 }
 
@@ -269,7 +277,7 @@ module.exports = {
     if (sub === 'scores' || sub === 'score') {
       const session = activeSessions[chatId];
       if (!session) return sock.sendMessage(chatId, { text: `❌ No quiz is currently running.` }, { quoted: msg });
-      return sock.sendMessage(chatId, { text: formatLeaderboard(session) }, { quoted: msg });
+      return sock.sendMessage(chatId, { text: formatLeaderboard(session, 'CURRENT SCORES', UI.isPro(player)) }, { quoted: msg });
     }
 
     // ── !quiz stats ────────────────────────────────────────────────────────────
@@ -281,9 +289,11 @@ module.exports = {
         : 0;
       return sock.sendMessage(chatId, {
         text: [
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-          `🎌 *YOUR QUIZ STATS*`,
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          (UI.isPro(player) ? UI.PRO_BAR : UI.FREE_BAR),
+          '🎌 *YOUR QUIZ STATS*',
+          UI.isPro(player) ? (UI.PRO_MINI + '\n' + '🎌 PRO SCHOLAR') : null,
+          UI.isPro(player) ? `⚡ Avg per game: *${s.gamesPlayed ? Math.round((s.nexusEarned || 0) / s.gamesPlayed).toLocaleString() : 0}* Nexus` : null,
+          UI.isPro(player) ? `` : null,
           ``,
           `🎮 Games played: *${s.gamesPlayed}*`,
           `✅ Correct answers: *${s.correct}*`,
@@ -291,8 +301,8 @@ module.exports = {
           `🎯 Accuracy: *${acc}%*`,
           `💠 Total Nexus earned: *${(s.nexusEarned || 0).toLocaleString()}*`,
           ``,
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-        ].join('\n'),
+          (UI.isPro(player) ? UI.PRO_BAR : UI.FREE_BAR),
+        ].filter(x => x !== null).join('\n'),
       }, { quoted: msg });
     }
 
@@ -319,9 +329,11 @@ module.exports = {
     if (isNaN(numQ) && sub !== undefined) {
       return sock.sendMessage(chatId, {
         text: [
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-          `🎌 *ANIME QUIZ*`,
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          (UI.isPro(player) ? UI.PRO_BAR : UI.FREE_BAR),
+          '🎌 *ANIME QUIZ*',
+          UI.isPro(player) ? (UI.PRO_MINI + '\n' + '🎌 PRO SCHOLAR') : null,
+          UI.isPro(player) ? `🎓 Hard questions pay *2×* Nexus + XP — hunt them!` : null,
+          UI.isPro(player) ? `` : null,
           ``,
           `*Commands:*`,
           `!quiz <1-20>     — Start a quiz`,
@@ -337,8 +349,8 @@ module.exports = {
           ``,
           `*Question bank:* ${QUIZ_STATS.total} questions`,
           `Easy: ${QUIZ_STATS.byDifficulty.easy}  Medium: ${QUIZ_STATS.byDifficulty.medium}  Hard: ${QUIZ_STATS.byDifficulty.hard}`,
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-        ].join('\n'),
+          (UI.isPro(player) ? UI.PRO_BAR : UI.FREE_BAR),
+        ].filter(x => x !== null).join('\n'),
       }, { quoted: msg });
     }
 
@@ -366,9 +378,11 @@ module.exports = {
 
     await sock.sendMessage(chatId, {
       text: [
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-        `🎌 *ANIME QUIZ STARTING!*`,
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        (UI.isPro(player) ? UI.PRO_BAR : UI.FREE_BAR),
+        '🎌 *ANIME QUIZ STARTING!*',
+        UI.isPro(player) ? (UI.PRO_MINI + '\n' + '🎌 PRO SCHOLAR') : null,
+        UI.isPro(player) ? `🎮 Your quiz game *#${(player?.quizStats?.gamesPlayed || 0) + 1}* — good luck, host!` : null,
+        UI.isPro(player) ? `` : null,
         ``,
         `Host: *${hostName}*`,
         `Questions: *${count}*`,
@@ -377,8 +391,8 @@ module.exports = {
         `Anyone can join by answering with *!a A/B/C/D*`,
         ``,
         `First question in 3 seconds...`,
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-      ].join('\n'),
+        (UI.isPro(player) ? UI.PRO_BAR : UI.FREE_BAR),
+      ].filter(x => x !== null).join('\n'),
     });
 
     setTimeout(() => sendQuestion(sock, session, db, saveDatabase), 3000);

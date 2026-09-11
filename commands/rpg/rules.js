@@ -4,10 +4,13 @@ module.exports = {
 
   async execute(sock, msg, args, getDatabase, saveDatabase, sender) {
     const chatId = msg.key.remoteJid;
+    const UI = require('../../rpg/utils/UI');
+    const pro = UI.isPro(getDatabase()?.users?.[sender] || {});
+    const FRAME = pro ? UI.PRO_BAR : UI.FREE_BAR;
 
-    const text = `━━━━━━━━━━━━━━━━━━━━━━━━━━━
-📜 *SERVER RULES*
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    const head = pro ? `${UI.PRO_BAR}\n📜 *SERVER RULES* 💎\n${UI.PRO_BAR}` : `📜 *SERVER RULES*\n${UI.FREE_BAR}`;
+    const text = `${head}
+
 
 *1.* Respect Creator at all times. The Creator's decision is final.
 
@@ -39,9 +42,9 @@ module.exports = {
 
 *15.* 🚫 SPAMMING IS FORBIDDEN.
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${FRAME}
 🙏 Thank you for your anticipated cooperation!
-━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO MEMBER* — play by the code` : `\n${UI.upsell()}`);
 
     return sock.sendMessage(chatId, { text }, { quoted: msg });
   }

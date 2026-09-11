@@ -808,9 +808,7 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
       );
 
       if (text) {
-        await sock.sendMessage(chatId, {
-          text: `*${botDisplayName}:* ${text}`,
-        }, { quoted: msg });
+        await sock.sendMessage(chatId, { text }, { quoted: msg });
       }
 
       if (attachment) {
@@ -952,9 +950,7 @@ async function sendHiChorus(chatId, responses, quotedMsg) {
 
     const replyOpts = quotedMsg ? { quoted: quotedMsg } : {};
     if (text) {
-      await sock.sendMessage(chatId, {
-        text: `*${displayName}:* ${text}`,
-      }, replyOpts);
+      await sock.sendMessage(chatId, { text }, replyOpts);
     }
 
     if (attachment) {

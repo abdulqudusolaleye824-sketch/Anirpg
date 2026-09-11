@@ -64,6 +64,9 @@ module.exports = {
     const db     = getDatabase();
     const player = db.users[sender];
     if (!player) return sock.sendMessage(chatId, { text: '❌ Register first! /register' }, { quoted: msg });
+    const UI = require('../../rpg/utils/UI');
+    const pro = UI.isPro(player);
+    const FRAME = pro ? UI.PRO_BAR : UI.FREE_BAR;
 
     const sub = args[0]?.toLowerCase();
     const awakenTier = player.awakenTier || 0;
@@ -71,7 +74,7 @@ module.exports = {
 
     // ── STATUS / INFO ──────────────────────────────────────
     if (!sub || sub === 'info' || sub === 'status') {
-      let txt = `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n✨ *AWAKENING SYSTEM*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+      let txt = pro ? `${UI.PRO_BAR}\n✨ *AWAKENING SYSTEM* 💎\n${UI.PRO_BAR}\n` : `✨ *AWAKENING SYSTEM*\n${UI.FREE_BAR}\n`;
       txt += `👤 *${player.name}* [${className}] Lv.${player.level}\n`;
       txt += `⚡ Current Tier: ${awakenTier > 0 ? `✨ Tier ${awakenTier}` : 'None (mortal)'}\n\n`;
 
@@ -92,14 +95,14 @@ module.exports = {
 
       if (awakenTier < 3) {
         const next = AWAKENING_TIERS[awakenTier + 1];
-        txt += `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+        txt += `${FRAME}\n`;
         txt += `📋 *NEXT: ${next.name}* (Lv.${next.levelReq})\n`;
         txt += `💠 ${next.cost.crystals.toLocaleString()} 💎 + ${next.cost.gold.toLocaleString()} 💠\n`;
         txt += `/awaken confirm — Awaken now!\n`;
       } else {
-        txt += `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n👑 *TRUE AWAKENING ACHIEVED*\nYou have reached the apex.\n`;
+        txt += `${FRAME}\n👑 *TRUE AWAKENING ACHIEVED*\nYou have reached the apex.\n`;
       }
-      txt += `━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+      txt += `${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO ASCEND* — Tier ${awakenTier}/3` : `\n${UI.upsell()}`);
       return sock.sendMessage(chatId, { text: txt }, { quoted: msg });
     }
 
@@ -168,9 +171,7 @@ module.exports = {
       saveDatabase();
 
       const lines = [
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-        `${tierData.emoji} *${tierData.name.toUpperCase()} ACHIEVED!*`,
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        ...(pro ? [UI.PRO_BAR, `${tierData.emoji} *${tierData.name.toUpperCase()} ACHIEVED!* 💎`, UI.PRO_BAR] : [`${tierData.emoji} *${tierData.name.toUpperCase()} ACHIEVED!*`, UI.FREE_BAR]),
         ``,
         `💭 "${tierData.description}"`,
         ``,
@@ -187,11 +188,12 @@ module.exports = {
         `🎖️ Title Unlocked: *"${tierData.titleUnlock}"*`,
         evolutionMsg,
         ``,
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        FRAME,
         nextTier < 3
           ? `📋 Next: *${AWAKENING_TIERS[nextTier+1].name}* at Lv.${AWAKENING_TIERS[nextTier+1].levelReq}`
           : `👑 *YOU HAVE REACHED THE APEX.*`,
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        FRAME,
+        ...(pro ? [UI.PRO_MINI, `💎 *PRO ASCEND* — Tier ${nextTier} · +${b.atk} ATK`] : [UI.upsell()]),
       ].filter(l => l !== null).join('\n');
 
       return sock.sendMessage(chatId, { text: lines }, { quoted: msg });

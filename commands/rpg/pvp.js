@@ -75,6 +75,8 @@ module.exports = {
     if (!player) {
       return sock.sendMessage(chatId, { text: '❌ You need to register first!' }, { quoted: msg });
     }
+    const pro = UI.isPro(player);
+    const FRAME = pro ? UI.PRO_BAR : UI.FREE_BAR;
 
     const sub = (args[0] || 'help').toLowerCase();
 
@@ -111,9 +113,7 @@ module.exports = {
       const targetRank = getPvpRank(opp.pvpElo);
 
       const guideText = [
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-        `⚔️ *PVP CHALLENGE ISSUED!*`,
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        ...(pro ? [UI.PRO_BAR, `⚔️ *PVP CHALLENGE ISSUED!* 💎`, UI.PRO_BAR] : [`⚔️ *PVP CHALLENGE ISSUED!*`, UI.FREE_BAR]),
         `👤 *Challenger:* ${challengerRank.emoji} ${getPlayerName(player)} [${getClassName(player)} Lv.${player.level || 1}]`,
         `🎯 *Target:* ${targetRank.emoji} @${targetJid.split('@')[0]}`,
         ``,
@@ -129,7 +129,7 @@ module.exports = {
         `⏰ *60 seconds to respond!*`,
         `✅ */pvp accept* — Accept challenge`,
         `❌ */pvp reject* — Decline challenge`,
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        ...(pro ? [FRAME, UI.PRO_MINI, `💎 *PRO SCOUT* — ELO ${player.pvpElo || 1000} (you) vs ${opp.pvpElo || 1000} (${targetRank.name})`] : [FRAME, UI.upsell()]),
       ].join('\n');
 
       return sock.sendMessage(chatId, { text: guideText, mentions: [targetJid] }, { quoted: msg });
@@ -165,30 +165,27 @@ module.exports = {
       const p1Spd = (challenger.stats?.speed || 10) + (challenger.equipped?.weapon?.speed || 0);
       const p2Spd = (player.stats?.speed || 10) + (player.equipped?.weapon?.speed || 0);
 
+      const cPro = UI.isPro(challenger);
       const stats1 = [
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-        `⚔️ *FIGHTER 1 BATTLE STATS*`,
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        ...(cPro ? [UI.PRO_BAR, `⚔️ *FIGHTER 1 BATTLE STATS* 💎`, UI.PRO_BAR] : [`⚔️ *FIGHTER 1 BATTLE STATS*`, UI.FREE_BAR]),
         `👤 Name: *${getPlayerName(challenger)}*`,
         `🎭 Class: *${getClassName(challenger)}* (Lv.${challenger.level || 1})`,
         `⭐ ELO: ${challenger.pvpElo || 1000}`,
         `❤️ HP: ${challenger.stats?.hp || 100}/${challenger.stats?.maxHp || 100}`,
         `⚔️ ATK: ${challenger.stats?.atk || 10} | 🛡️ DEF: ${challenger.stats?.def || 5}`,
         `⚡ Speed: ${p1Spd}`,
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        cPro ? UI.PRO_BAR : UI.FREE_BAR,
       ].join('\n');
 
       const stats2 = [
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-        `⚔️ *FIGHTER 2 BATTLE STATS*`,
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        ...(pro ? [UI.PRO_BAR, `⚔️ *FIGHTER 2 BATTLE STATS* 💎`, UI.PRO_BAR] : [`⚔️ *FIGHTER 2 BATTLE STATS*`, UI.FREE_BAR]),
         `👤 Name: *${getPlayerName(player)}*`,
         `🎭 Class: *${getClassName(player)}* (Lv.${player.level || 1})`,
         `⭐ ELO: ${player.pvpElo || 1000}`,
         `❤️ HP: ${player.stats?.hp || 100}/${player.stats?.maxHp || 100}`,
         `⚔️ ATK: ${player.stats?.atk || 10} | 🛡️ DEF: ${player.stats?.def || 5}`,
         `⚡ Speed: ${p2Spd}`,
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        `${FRAME}`,
       ].join('\n');
 
       const __challengerPlayer = db.users?.[challenge.challengerId];
@@ -196,15 +193,13 @@ module.exports = {
       const __challengerName = __challengerPlayer ? getPlayerName(__challengerPlayer) : challenge.challengerId.split('@')[0];
       const __senderName = __senderPlayer ? getPlayerName(__senderPlayer) : sender.split('@')[0];
             const startPrompt = [
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-        `🎮 *PVP BATTLE STARTED — TURN 1*`,
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        ...(pro ? [UI.PRO_BAR, `🎮 *PVP BATTLE STARTED — TURN 1* 💎`, UI.PRO_BAR] : [`🎮 *PVP BATTLE STARTED — TURN 1*`, UI.FREE_BAR]),
         `⚔️ ${__challengerName} vs ${__senderName} — select your move!`,
         ``,
         `📌 *YOUR MOVES:*`,
         `• /attack or /attack <pattern_id>`,
         `• /skill or /<classcmd> (e.g. /heal, /call, /rage)`,
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        `${FRAME}`,
       ].join('\n');
 
       return sock.sendMessage(chatId, {
@@ -244,14 +239,12 @@ module.exports = {
 
       return sock.sendMessage(chatId, {
         text: [
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-          `⚔️ *PVP BATTLE STATUS — TURN ${turn}*`,
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          ...(pro ? [UI.PRO_BAR, `⚔️ *PVP BATTLE STATUS — TURN ${turn}* 💎`, UI.PRO_BAR] : [`⚔️ *PVP BATTLE STATUS — TURN ${turn}*`, UI.FREE_BAR]),
           `📌 Your Move: *${locked}*`,
           ``,
           `👤 *${getPlayerName(player)}*: ${player.stats?.hp || 0}/${player.stats?.maxHp || 100} ❤️`,
           `👤 *${getPlayerName(opp, 'Opponent')}*: ${opp?.stats?.hp || 0}/${opp?.stats?.maxHp || 100} ❤️`,
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          ...(pro ? [FRAME, UI.PRO_MINI, `💎 *PRO READ* — you ${Math.round(100 * (player.stats?.hp || 0) / (player.stats?.maxHp || 100))}% · foe ${Math.round(100 * (opp?.stats?.hp || 0) / (opp?.stats?.maxHp || 100))}%`] : [FRAME, UI.upsell()]),
         ].join('\n'),
       }, { quoted: msg });
     }
@@ -279,18 +272,20 @@ module.exports = {
     if (sub === 'rank') {
       const elo = player.pvpElo || 1000;
       const rank = getPvpRank(elo);
-      return sock.sendMessage(chatId, {
-        text: [
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-          `${rank.emoji} *PVP RANK & STATS*`,
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+      const w = player.pvpWins || 0, l = player.pvpLosses || 0;
+      const wr = (w + l) ? Math.round(100 * w / (w + l)) : 0;
+      const text = UI.card(player, {
+        icon: rank.emoji, title: 'PVP RANK & STATS',
+        lines: [
           `👤 Hunter: *${getPlayerName(player)}*`,
           `⭐ ELO Rating: *${elo}* (${rank.name})`,
-          `📊 Record: ✅ ${player.pvpWins || 0} Wins | ❌ ${player.pvpLosses || 0} Losses`,
+          `📊 Record: ✅ ${w} Wins | ❌ ${l} Losses`,
           `🔥 Win Streak: ${player.pvpStreak || 0}`,
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-        ].join('\n'),
-      }, { quoted: msg });
+        ],
+        proLines: [`💎 *PRO ARENA* — win rate *${wr}%* across ${w + l} bouts`],
+        tip: '/pvp challenge @user to climb',
+      });
+      return sock.sendMessage(chatId, { text }, { quoted: msg });
     }
 
     // ── IN-BATTLE ACTION SUBMISSION ──────────────────────────────
@@ -311,6 +306,22 @@ module.exports = {
         player.pvpBattle = null;
         saveDatabase();
         return sock.sendMessage(chatId, { text: '❌ Opponent is no longer in battle. Battle ended.' }, { quoted: msg });
+      }
+
+      // Validate pattern choice: must be owned AND equipped (no free legendaries)
+      if (sub === 'attack' && args[1] != null && String(args[1]).trim() !== '') {
+        const _pid = parseInt(args[1]);
+        if (isNaN(_pid) || _pid < 1 || _pid > 750) {
+          return sock.sendMessage(chatId, { text: '❌ Invalid pattern! Usage: /attack <pattern_id 1-750>\nOr plain /attack for a basic strike.' }, { quoted: msg });
+        }
+        const _owned = player.attackPatterns?.owned || [];
+        const _equipped = player.attackPatterns?.equipped || [];
+        if (!_owned.includes(_pid)) {
+          return sock.sendMessage(chatId, { text: `❌ You don't own Attack #${_pid}!\nAcquire it first: /attacks shop` }, { quoted: msg });
+        }
+        if (!_equipped.includes(_pid)) {
+          return sock.sendMessage(chatId, { text: `❌ Attack #${_pid} is not equipped!\nEquip it first: /attacks equip ${_pid}` }, { quoted: msg });
+        }
       }
 
       // Lock in player's action
@@ -353,25 +364,22 @@ module.exports = {
     }
 
     // ── Default Help ─────────────────────────────────────────────
-    return sock.sendMessage(chatId, {
-      text: [
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-        `⚔️ *PVP BATTLE SYSTEM*`,
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+    const helpText = UI.card(player, {
+      icon: '⚔️', title: 'PVP BATTLE SYSTEM',
+      lines: [
         `Turn-by-Turn Unautomated Duels`,
         ``,
         `📌 *COMMANDS:*`,
-        `/pvp challenge @user   — Issue challenge (or reply)`,
-        `/pvp accept            — Accept challenge`,
-        `/pvp reject            — Reject challenge`,
-        `/attack [pattern_id]   — Attack in battle`,
-        `/skill [name]          — Use skill in battle`,
-        `/pvp status            — Battle HP & turn status`,
-        `/pvp surrender         — Forfeit match`,
-        `/pvp rank              — View ELO rating`,
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-      ].join('\n'),
-    }, { quoted: msg });
+        `/pvp challenge @user — Issue challenge (or reply)`,
+        `/pvp accept · /pvp reject`,
+        `/attack [pattern_id] — Attack in battle`,
+        `/skill [name] — Use skill in battle`,
+        `/pvp status · /pvp surrender · /pvp rank`,
+      ],
+      proLines: [`💎 *PRO ARENA* — *${player.pvpWins || 0}W–${player.pvpLosses || 0}L* · ELO *${player.pvpElo || 1000}*`],
+      tip: 'Speed strikes first — stack it',
+    });
+    return sock.sendMessage(chatId, { text: helpText }, { quoted: msg });
   }
 };
 
@@ -379,8 +387,15 @@ module.exports = {
 const UC = require('../../rpg/utils/UnifiedCombat');
 const BarSystemPVP = require('../../rpg/utils/BarSystem');
 const AttackDBPVP = require('../../rpg/utils/AttackPatternDB');
+const UI = require('../../rpg/utils/UI');
+// Shared duel display: deluxe frame if EITHER duelist is Pro.
+function pvpFrame(p1, p2) {
+  try { return (UI.isPro(p1) || UI.isPro(p2)) ? UI.PRO_BAR : UI.FREE_BAR; }
+  catch (e) { return UI.FREE_BAR; }
+}
 
 async function resolveTurn(sock, chatId, p1, p2, db, saveDatabase) {
+  const FRAME = pvpFrame(p1, p2);
   if (!db) db = {};
   if (!db.users) db.users = {};
   // Resolve jids for mentions — try to find keys in db.users
@@ -410,10 +425,15 @@ async function resolveTurn(sock, chatId, p1, p2, db, saveDatabase) {
     if (act.type === 'attack') {
       const pid = parseInt(act.patternId || act.arg);
       if (!isNaN(pid) && pid >= 1 && pid <= 750) {
-        const atk = AttackDBPVP.generateAttack(pid);
-        if (atk) return atk;
+        // Safety net (lock-in already validated): unowned/unequipped → basic strike
+        const _o = player.attackPatterns?.owned || [];
+        const _e = player.attackPatterns?.equipped || [];
+        if (_o.includes(pid) && _e.includes(pid)) {
+          const atk = AttackDBPVP.generateAttack(pid);
+          if (atk) return atk;
+        }
       }
-      return AttackDBPVP.generateAttack(1);
+      return UC.basicStrike();
     }
     if (act.type === 'skill') {
       const skillName = act.skillName || act.arg || 'Skill';
@@ -434,9 +454,15 @@ async function resolveTurn(sock, chatId, p1, p2, db, saveDatabase) {
         cooldownSec: 30,
       };
     }
-    return AttackDBPVP.generateAttack(1);
+    return UC.basicStrike();
   }
 
+  // Silenced fighters cannot channel skills — downgrade to a basic strike (noted on their segment)
+  try {
+    const _SEMs = require('../../rpg/utils/StatusEffectManager');
+    if (battle1?.pendingAction?.type === 'skill' && _SEMs.isSilenced(p1)) battle1.pendingAction = { type: 'attack', arg: null, _silenced: true };
+    if (battle2?.pendingAction?.type === 'skill' && _SEMs.isSilenced(p2)) battle2.pendingAction = { type: 'attack', arg: null, _silenced: true };
+  } catch(e){}
   const m1 = buildMove(p1, battle1?.pendingAction);
   const m2 = buildMove(p2, battle2?.pendingAction);
   const name1 = getPlayerName(p1, 'Hunter');
@@ -444,6 +470,8 @@ async function resolveTurn(sock, chatId, p1, p2, db, saveDatabase) {
 
   const act1 = battle1?.pendingAction;
   const act2 = battle2?.pendingAction;
+  const _fx1 = UC.canAct(p1);
+  const _fx2 = UC.canAct(p2);
   const cd1 = m1 && m1.id ? UC.isOnCooldown(p1, m1.id) : { onCd: false };
   const cd2 = m2 && m2.id ? UC.isOnCooldown(p2, m2.id) : { onCd: false };
 
@@ -455,6 +483,12 @@ async function resolveTurn(sock, chatId, p1, p2, db, saveDatabase) {
     p1Skipped = true;
     skipMsg1 = `⏳ *${name1}'s attack failed — no move locked in 20s. Turn skipped (0 dmg, status -1).`;
     res1 = { damage: 0, missed: false, crit: false, effective: 'skipped', _skipped: true };
+  } else if (!_fx1.canAct) {
+    p1Skipped = true;
+    { const _m1 = { frozen: ['❄️', 'FROZEN solid'], stunned: ['💫', 'STUNNED'], paralyzed: ['🔱', 'PARALYZED'], feared: ['😱', 'FEARED'] };
+      const [_e1, _w1] = _m1[_fx1.reason] || ['💫', 'STUNNED'];
+      skipMsg1 = `${_e1} *${name1} is ${_w1} and cannot move!* Turn skipped (0 dmg, status -1).`; }
+    res1 = { damage: 0, missed: false, crit: false, effective: 'skipped', _skipped: true };
   } else if (cd1.onCd) {
     p1Skipped = true;
     skipMsg1 = `⏳ *${name1}'s attack failed — still on cooldown* ${UC.formatCd(cd1.remaining)} remaining. Turn skipped (0 dmg, status -1).`;
@@ -463,6 +497,12 @@ async function resolveTurn(sock, chatId, p1, p2, db, saveDatabase) {
   if (act2 && (act2._skip || act2._timedOut)) {
     p2Skipped = true;
     skipMsg2 = `⏳ *${name2}'s attack failed — no move locked in 20s. Turn skipped (0 dmg, status -1).`;
+    res2 = { damage: 0, missed: false, crit: false, effective: 'skipped', _skipped: true };
+  } else if (!_fx2.canAct) {
+    p2Skipped = true;
+    { const _m2 = { frozen: ['❄️', 'FROZEN solid'], stunned: ['💫', 'STUNNED'], paralyzed: ['🔱', 'PARALYZED'], feared: ['😱', 'FEARED'] };
+      const [_e2, _w2] = _m2[_fx2.reason] || ['💫', 'STUNNED'];
+      skipMsg2 = `${_e2} *${name2} is ${_w2} and cannot move!* Turn skipped (0 dmg, status -1).`; }
     res2 = { damage: 0, missed: false, crit: false, effective: 'skipped', _skipped: true };
   } else if (cd2.onCd) {
     p2Skipped = true;
@@ -473,10 +513,12 @@ async function resolveTurn(sock, chatId, p1, p2, db, saveDatabase) {
   if (!p1Skipped && m1) {
     res1 = UC.calcMoveDamage(p1, p2, m1);
     if (m1.id) UC.setCooldown(p1, m1.id, m1);
+    if (m1.id) { try { require('../../rpg/utils/QuestDispatcher').trackAndNotify(p1, 'pattern', 1, sock, id1, chatId); } catch(e){} }
   }
   if (!p2Skipped && m2) {
     res2 = UC.calcMoveDamage(p2, p1, m2);
     if (m2.id) UC.setCooldown(p2, m2.id, m2);
+    if (m2.id) { try { require('../../rpg/utils/QuestDispatcher').trackAndNotify(p2, 'pattern', 1, sock, id2, chatId); } catch(e){} }
   }
 
   const p1Spd = (p1.stats?.speed || 50) * (m1?.speedMult || 1);
@@ -496,15 +538,14 @@ async function resolveTurn(sock, chatId, p1, p2, db, saveDatabase) {
     if (battleEnded) break;
     let segment = '';
     if (o.skipped) {
+      const segHead = (UI.isPro(o.p) || UI.isPro(o.opp)) ? [UI.PRO_BAR, `⚔️ *TURN ${turnNum} — ${o.name}'s Move* 💎`, UI.PRO_BAR] : [`⚔️ *TURN ${turnNum} — ${o.name}'s Move*`, UI.FREE_BAR];
       segment = [
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-        `⚔️ *TURN ${turnNum} — ${o.name}'s Move*`,
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        ...segHead,
         o.skipMsg,
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        `${FRAME}`,
         `❤️ ${name1}: ${BarSystemPVP.getHPBar(p1.stats?.hp || 0, p1.stats?.maxHp || 100, UC.isPro(p1))}`,
         `❤️ ${name2}: ${BarSystemPVP.getHPBar(p2.stats?.hp || 0, p2.stats?.maxHp || 100, UC.isPro(p2))}`,
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        `${FRAME}`,
       ].join('\n');
       UC.tickStatuses(o.p);
       UC.tickStatuses(o.opp);
@@ -513,16 +554,17 @@ async function resolveTurn(sock, chatId, p1, p2, db, saveDatabase) {
         o.opp.stats.hp = Math.max(0, (o.opp.stats?.hp || 0) - o.res.damage);
         const eff = UC.tryApplyEffect(o.move, o.p, o.opp);
         segment = UC.buildTurnMessage(o.p, o.opp, o.move, o.res);
-        segment = segment.replace('━━━━━━━━━━━━━━━━━━━━━━━━━━━\n', `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n⚔️ *TURN ${turnNum} — ${o.name}'s Move*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`);
+        segment = segment.replace(UI.FREE_BAR + '\n', `${FRAME}\n⚔️ *TURN ${turnNum} — ${o.name}'s Move*${FRAME === UI.PRO_BAR ? ' 💎' : ''}\n${FRAME}\n`);
         if (eff) segment += `\n${eff.emoji || '✨'} *${eff.type} applied!* (${eff.duration}t)`;
       } else {
         segment = UC.buildTurnMessage(o.p, o.opp, o.move, o.res);
-        segment = segment.replace('━━━━━━━━━━━━━━━━━━━━━━━━━━━\n', `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n⚔️ *TURN ${turnNum} — ${o.name}'s Move*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`);
+        segment = segment.replace(UI.FREE_BAR + '\n', `${FRAME}\n⚔️ *TURN ${turnNum} — ${o.name}'s Move*${FRAME === UI.PRO_BAR ? ' 💎' : ''}\n${FRAME}\n`);
       }
       const tickLogs = UC.tickStatuses(o.opp);
       if (tickLogs.length) segment += `\n` + tickLogs.join('\n');
       const selfTick = UC.tickStatuses(o.p);
       if (selfTick.length) segment += `\n` + selfTick.join('\n');
+      if ((o.p === p1 && act1 && act1._silenced) || (o.p === p2 && act2 && act2._silenced)) segment = `🤐 *${o.name} is SILENCED — skill fizzles, basic strike instead!*\n` + segment;
     }
 
     const target = o.opp;
@@ -570,16 +612,21 @@ async function resolveTurn(sock, chatId, p1, p2, db, saveDatabase) {
     if (!pl.statusEffects || pl.statusEffects.length===0) return null;
     const lines = [];
     for (const e of pl.statusEffects) {
-      const em = e.emoji || ({ bleed:'🩸', burn:'🔥', poison:'☠️', stun:'⚡', freeze:'❄️', paralyze:'🔱', weaken:'💔', curse:'💀' }[e.type] || '✨');
+      const em = e.emoji || ({ bleed:'🩸', burn:'🔥', poison:'☠️', stun:'⚡', freeze:'❄️', paralyze:'🔱', weaken:'💔', curse:'💀', fear:'😱', enfeeble:'🐢', silence:'🤐', blind:'🌫️', trueslow:'🐌' }[e.type] || '✨');
       let desc = '';
       if (e.type==='bleed') desc = `🩸 -4% max HP/turn`;
       else if (e.type==='burn') desc = `🔥 -5% max HP/turn`;
       else if (e.type==='poison') desc = `☠️ -3% max HP/turn`;
       else if (e.type==='stun') desc = `⚡ skip next turn`;
-      else if (e.type==='freeze') desc = `❄️ cannot act, -20% DEF`;
-      else if (e.type==='paralyze') desc = `🔱 -50% speed`;
+      else if (e.type==='freeze') desc = `❄️ skip turn + frost DoT, -20% DEF`;
+      else if (e.type==='paralyze') desc = `🔱 70% skip, -50% ATK`;
       else if (e.type==='weaken') desc = `💔 -30% ATK`;
       else if (e.type==='curse') desc = `💀 -15% DEF`;
+      else if (e.type==='fear') desc = `😱 40% skip, -20% ATK`;
+      else if (e.type==='enfeeble') desc = `🐢 -30% DEF`;
+      else if (e.type==='silence') desc = `🤐 skills locked`;
+      else if (e.type==='blind') desc = `🌫️ -50% accuracy`;
+      else if (e.type==='trueslow') desc = `🐌 -35% speed`;
       else desc = e.desc || '';
       lines.push(`${em} *${e.type}* (${e.duration}t) — ${desc}`);
     }
@@ -587,11 +634,10 @@ async function resolveTurn(sock, chatId, p1, p2, db, saveDatabase) {
   }
   const s1 = statusSummary(p1);
   const s2 = statusSummary(p2);
-  const statusBlock = (s1||s2) ? `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n⚠️ *STATUS EFFECTS*\n${s1 ? `👤 ${name1}:\n${s1}` : ''}${s1&&s2?'\n':''}${s2 ? `👤 ${name2}:\n${s2}` : ''}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━` : '';
+  const statusBlock = (s1||s2) ? `\n${FRAME}\n⚠️ *STATUS EFFECTS*\n${s1 ? `👤 ${name1}:\n${s1}` : ''}${s1&&s2?'\n':''}${s2 ? `👤 ${name2}:\n${s2}` : ''}\n${FRAME}` : '';
+  const nextHead = FRAME === UI.PRO_BAR ? [UI.PRO_BAR, `🎮 *TURN ${turnNum + 1} — CHOOSE YOUR MOVE* 💎`, UI.PRO_BAR] : [`🎮 *TURN ${turnNum + 1} — CHOOSE YOUR MOVE*`, UI.FREE_BAR];
   const nextMsg = [
-    `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-    `🎮 *TURN ${turnNum + 1} — CHOOSE YOUR MOVE*`,
-    `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+    ...nextHead,
     `❤️ ${name1}: ${BarSystemPVP.getHPBar(p1.stats?.hp || 0, p1.stats?.maxHp || 100, isPro1)}${s1 ? `\n  ${s1.split('\n')[0]}` : ''}`,
     `❤️ ${name2}: ${BarSystemPVP.getHPBar(p2.stats?.hp || 0, p2.stats?.maxHp || 100, isPro2)}${s2 ? `\n  ${s2.split('\n')[0]}` : ''}`,
     statusBlock,
@@ -599,7 +645,7 @@ async function resolveTurn(sock, chatId, p1, p2, db, saveDatabase) {
     `📌 20s to lock move:`,
     `• /attack or /attack <pattern_id>`,
     `• /skill or /<classcmd>`,
-    `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+    `${FRAME}`,
   ].filter(Boolean).join('\n');
 
   await UC.slowSend(sock, chatId, { text: nextMsg, mentions: [id1, id2] });
@@ -651,6 +697,7 @@ function calcMoveDamage(attacker, defender, act) {
 
 
 function handlePvpVictory(sock, chatId, winner, loser, wId, lId, db, saveDatabase, turns, lastTurnText) {
+  const FRAME = pvpFrame(winner, loser);
   const winnerName = getPlayerName(winner, 'Winner');
   const loserName  = getPlayerName(loser, 'Loser');
 
@@ -667,26 +714,50 @@ function handlePvpVictory(sock, chatId, winner, loser, wId, lId, db, saveDatabas
   winner.pvpStreak = (winner.pvpStreak || 0) + 1;
   loser.pvpStreak = 0;
 
-  const isProWinner = !!(winner.isPro && winner.proExpiresAt && Date.now() < winner.proExpiresAt);
+  // Loser stakes: aura slips 10–15 (flat — never Pro-doubled),
+  // loser's guild drops 10 GP (flat).
+  const _auraLoss = 10 + Math.floor(Math.random() * 6);
+  loser.aura = Math.max(0, (loser.aura || 0) - _auraLoss);
+
+  const isProWinner = !!((winner.isPro || winner.proStatus) && winner.proExpiresAt && Date.now() < winner.proExpiresAt);
   const proMultPvP = isProWinner ? 2 : 1;
+  // Winner's guild cut doubles for Pro winners; loser's guild always −10.
+  const winnerGP = 15 * proMultPvP;
+  try {
+    const GPS = require('../../rpg/utils/GuildPointsSystem');
+    GPS.addGuildGP(db, wId, winnerGP, 'PvP win vs ' + loserName, { quest: true, sock, jid: wId, chatId });
+    GPS.addGuildGP(db, lId, -10, 'PvP loss vs ' + winnerName);
+  } catch(e){}
+
   let rewardNexus = 1000 + Math.floor((loser.level || 1) * 50);
   let rewardXP = 500 + Math.floor((loser.level || 1) * 30);
-  let rewardAura = 50 + Math.floor((loser.level || 1) * 2);
   let rewardBp = 100;
   let rewardPass = 50;
+  // Winner aura: +[20-35], doubled for Pro (→ [40-70]).
+  let rewardAura = 20 + Math.floor(Math.random() * 16);
   rewardNexus = Math.floor(rewardNexus * proMultPvP);
   rewardXP = Math.floor(rewardXP * proMultPvP);
-  rewardAura = Math.floor(rewardAura * proMultPvP);
   rewardBp = Math.floor(rewardBp * proMultPvP);
   rewardPass = Math.floor(rewardPass * proMultPvP);
+  rewardAura = Math.floor(rewardAura * proMultPvP);
 
   winner.gold = (winner.gold || 0) + rewardNexus;
   winner.xp = (winner.xp || 0) + rewardXP;
   winner.aura = (winner.aura || 0) + rewardAura;
-  // Battle Pass XP
-  try { const BP = require('../../rpg/utils/BattlePass'); if (BP.addPassXP) { BP.addPassXP(winner, 'pvp_win', rewardBp); } else { winner.battlePassXp = (winner.battlePassXp||0)+rewardBp; } } catch(e){ winner.battlePassXp=(winner.battlePassXp||0)+rewardBp; }
-  // Astra Pass
-  try { const AP = require('../../rpg/utils/AstraPass'); if (AP.addPassXP) AP.addPassXP(winner, rewardPass); else winner.astraPassXp=(winner.astraPassXp||0)+rewardPass; } catch(e){ winner.astraPassXp=(winner.astraPassXp||0)+rewardPass; }
+  // Battle Pass XP (direct amount — NOT multiplied by the source table)
+  try { const BP = require('../../rpg/utils/BattlePass'); if (BP.addPassXPAmount) { BP.addPassXPAmount(winner, rewardBp); } else if (BP.addPassXP) { BP.addPassXP(winner, 'pvp_win'); } else { winner.battlePassXp = (winner.battlePassXp||0)+rewardBp; } } catch(e){ winner.battlePassXp=(winner.battlePassXp||0)+rewardBp; }
+  // Astra Pass (direct amount into the pass object)
+  try { const AP = require('../../rpg/utils/AstraPass'); if (AP.addPassXPAmount) AP.addPassXPAmount(winner, rewardPass); else winner.astraPassXp=(winner.astraPassXp||0)+rewardPass; } catch(e){ winner.astraPassXp=(winner.astraPassXp||0)+rewardPass; }
+
+  // Daily quests: exactly ONE pvp win credit (+dungeon-duel bonus if fought in a dungeon GC)
+  try {
+    const QD = require('../../rpg/utils/QuestDispatcher');
+    QD.trackAndNotify(winner, 'pvp', 1, sock, wId, chatId);
+    QD.trackAndNotify(winner, 'goldEarn', rewardNexus, sock, wId, chatId);
+    let _inDg = false;
+    try { const _GKM = require('../../rpg/dungeons/GateKeyManager'); _inDg = !!(_GKM.getDungeonGC && _GKM.getDungeonGC(chatId)); } catch(e){}
+    if (_inDg) QD.trackAndNotify(winner, 'pvpFloor', 1, sock, wId, chatId);
+  } catch(e){}
 
   // Also give general exp via LevelUpManager check
   try { const LUM = require('../../rpg/utils/LevelUpManager'); LUM.checkAndApplyLevelUps(winner, saveDatabase, sock, chatId); } catch(e){}
@@ -697,10 +768,9 @@ function handlePvpVictory(sock, chatId, winner, loser, wId, lId, db, saveDatabas
 
   saveDatabase();
 
+  const vicHead = FRAME === UI.PRO_BAR ? [UI.PRO_BAR, `🏆 *PVP BATTLE OVER — VICTORY!* 💎`, UI.PRO_BAR] : [`🏆 *PVP BATTLE OVER — VICTORY!*`, UI.FREE_BAR];
   const victoryMsg = [
-    `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-    `🏆 *PVP BATTLE OVER — VICTORY!*`,
-    `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+    ...vicHead,
     `👑 *${winnerName}* HAS DEFEATED *${loserName}*!`,
     `⏱️ Total Turns: ${turns}`,
     ``,
@@ -712,9 +782,11 @@ function handlePvpVictory(sock, chatId, winner, loser, wId, lId, db, saveDatabas
     `💠 Nexus: +${rewardNexus.toLocaleString()}${isProWinner?' (2×)':''}`,
     `✨ XP: +${rewardXP.toLocaleString()}${isProWinner?' (2×)':''} (general)`,
     `🌀 Aura: +${rewardAura.toLocaleString()}${isProWinner?' (2×)':''}`,
+    `🏰 Guild: +${winnerGP} GP (winner)${isProWinner?' (2×)':''} | −10 GP (loser)`,
+    `📉 ${loserName} aura: −${_auraLoss}`,
     `🎖️ Battle Pass XP: +${rewardBp}${isProWinner?' (2×)':''}`,
     `🌟 Astra Pass: +${rewardPass}${isProWinner?' (2×)':''}`,
-    `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+    `${FRAME}`,
   ].join('\n');
 
   return sock.sendMessage(chatId, {
@@ -724,3 +796,6 @@ function handlePvpVictory(sock, chatId, winner, loser, wId, lId, db, saveDatabas
     ]
   });
 }
+
+// Test hook (no prod effect): exposes the victory resolver to harnesses.
+module.exports._handlePvpVictory = handlePvpVictory;

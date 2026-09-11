@@ -7,6 +7,9 @@ const BUFF_DEFINITIONS = {
   shieldScroll:{ name: 'Shield Scroll',     emoji: '🛡️', maxUses: 1,  effect: 'shield',    value: 1    },
   mightElixir: { name: 'Elixir of Might',  emoji: '💪', maxUses: 5,  effect: 'atkBoost',  value: 20   },
   luckPotion:  { name: 'Luck Potion',       emoji: '🍀', maxUses: 999,effect: 'luck',      value: 0.25 },
+  gvcGold:    { name: 'Gold EXP Buff',      emoji: '🥇', maxUses: 3,  effect: 'xpMult',    value: 2.0  },
+  gvcSilver:  { name: 'Silver EXP Buff',    emoji: '🥈', maxUses: 3,  effect: 'xpMult',    value: 1.5  },
+  gvcBronze:  { name: 'Bronze EXP Buff',    emoji: '🥉', maxUses: 3,  effect: 'xpMult',    value: 1.25 },
 };
 
 function initBuffs(player) {
@@ -42,6 +45,14 @@ function hasBuff(player, buffKey) {
 }
 
 function getXpMultiplier(player) {
+  initBuffs(player);
+  // GVC EXP buffs take priority (highest tier wins), then regular XP Booster
+  let best = null;
+  for (const k of ['gvcGold', 'gvcSilver', 'gvcBronze']) {
+    const b = player.activeBuffs?.[k];
+    if (b && b.usesLeft > 0 && (!best || BUFF_DEFINITIONS[k].value > BUFF_DEFINITIONS[best].value)) best = k;
+  }
+  if (best) { consumeBuff(player, best); return BUFF_DEFINITIONS[best].value; }
   if (hasBuff(player, 'xpBooster')) {
     consumeBuff(player, 'xpBooster');
     return 1.5;

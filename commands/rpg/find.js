@@ -2,6 +2,8 @@
 // /find [query] — shows item type + position number in its group
 // ═══════════════════════════════════════════════════════════════
 
+const UI = require('../../rpg/utils/UI');
+
 module.exports = {
   name: 'find',
   description: 'Search your inventory for an item',
@@ -103,9 +105,12 @@ module.exports = {
       }, { quoted: msg });
     }
 
-    let message = '━━━━━━━━━━━━━━━━━━━━━━━━━━━\n';
-    message += '🔍 *Results for "' + query + '"*\n';
-    message += '━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n';
+    const proF = UI.isPro(player);
+    const secs = [...new Set(results.map(r => r.section))];
+    let message = (proF ? UI.PRO_BAR : UI.FREE_BAR) + '\n';
+    message += '🔍 *Results for "' + query + '"*' + '\n';
+    if (proF) message += (UI.PRO_MINI + '\n' + '🔎 PRO SEEKER') + '\n📂 *' + results.length + '* match' + (results.length === 1 ? '' : 'es') + ' across ' + secs.join(' · ') + '\n';
+    message += '\n';
 
     for (const r of results) {
       const re = rarityEmoji[r.rarity] || '📦';
@@ -113,7 +118,7 @@ module.exports = {
       message += '   📂 ' + r.section + ' #' + r.pos + ' — ' + r.cmd + '\n\n';
     }
 
-    message += '━━━━━━━━━━━━━━━━━━━━━━━━━━━';
+    message += (proF ? UI.PRO_BAR : UI.FREE_BAR);
     return sock.sendMessage(chatId, { text: message }, { quoted: msg });
   }
 };

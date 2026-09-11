@@ -115,6 +115,20 @@ function addPassXP(player, source, multiplier = 1) {
   return gained;
 }
 
+// Direct-amount XP: credit an exact number of BP XP (no source-table multiply).
+// Use this when the caller already computed the reward (pvp, battle rewards, ...).
+function addPassXPAmount(player, amount) {
+  if (!player || !amount || amount <= 0) return 0;
+  const bp = getPassState(player);
+  bp.xp += Math.floor(amount);
+  while (bp.xp >= XP_PER_LEVEL && bp.level < PASS_LEVELS) {
+    bp.xp -= XP_PER_LEVEL;
+    bp.level++;
+  }
+  if (bp.level >= PASS_LEVELS) bp.xp = 0;
+  return Math.floor(amount);
+}
+
 function claimReward(player, level) {
   const bp = getPassState(player);
   if (bp.level < level) return { success:false, reason:`Reach Pass Level ${level} first! (You: ${bp.level})` };
@@ -136,7 +150,7 @@ function claimReward(player, level) {
     if (reward.type === 'title')          { if (!player.titles) player.titles=[]; if (!player.titles.includes(reward.value)) player.titles.push(reward.value); gained.push(`🎖️ Title: "${reward.value}"`); }
     if (reward.type === 'summon_ticket')  { player.summonTickets = (player.summonTickets||0) + reward.value; gained.push(`🎟️ ×${reward.value} Summon Ticket`); }
     if (reward.type === 'pet_egg')        { if (!player.inventory) player.inventory={}; if (!Array.isArray(player.inventory.items)) player.inventory.items=[]; player.inventory.items.push({ name:reward.name, type:'pet_egg', rarity:'legendary', petType:reward.value, seasonal:true }); gained.push(`🥚 ${reward.name}`); }
-    if (reward.type === 'weapon')         { const b=reward.bonus?.atk||0; if (!player.weapon || (player.weapon.bonus||0)<b) player.weapon={name:reward.name,bonus:b,seasonal:true}; gained.push(`⚔️ ${reward.name} (${b} ATK)`); }
+    if (reward.type === 'weapon')         { const b=reward.bonus?.atk||0; if (!player.inventory) player.inventory={}; if (!Array.isArray(player.inventory.items)) player.inventory.items=[]; player.inventory.items.push({ name:reward.name, type:'gear', isGear:true, slot:'weapon', rarity:'legendary', durability:100, maxDurability:100, stats:{atk:b}, lore:reward.desc||'', source:'battlepass', seasonal:true, acquiredAt:Date.now() }); gained.push(`⚔️ ${reward.name} (${b} ATK)`); }
   }
 
   bp.claimed.push(level);
@@ -145,5 +159,5 @@ function claimReward(player, level) {
 
 module.exports = {
   CURRENT_SEASON, PASS_LEVELS, XP_PER_LEVEL, XP_SOURCES, SEASON_DURATION_DAYS,
-  getRewardTrack, getPassState, addPassXP, claimReward,
+  getRewardTrack, getPassState, addPassXP, addPassXPAmount, claimReward,
 };

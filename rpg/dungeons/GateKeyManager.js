@@ -265,6 +265,8 @@ function loadFromDB(db) {
 }
 
 function checkExpiredKeys(sock, db, saveDatabase) {
+  // Same sweep also recycles 100-day-old keys (persists via autosave when idle)
+  try { recycleOldKeys(db, null); } catch(e){}
   const expired = Object.entries(activeKeys).filter(([, k]) =>
     !k.expired && !k.raidComplete && Date.now() > k.expiresAt
   );
@@ -314,15 +316,46 @@ function checkExpiredKeys(sock, db, saveDatabase) {
 function getKey(key, db = null) {
   if (!key) return null;
   const upper = String(key).toUpperCase().trim();
-  if (activeKeys[upper]) return activeKeys[upper];
+  // Single-use: dead keys (expired/cleared/past stability) are NEVER served —
+  // not even from the in-memory map (that fallback allowed same-session re-entry).
+  const _live = k => k && !k.expired && !k.raidComplete && Date.now() < k.expiresAt;
+  if (_live(activeKeys[upper])) return activeKeys[upper];
   if (db?.gateKeys?.[upper]) {
     const k = db.gateKeys[upper];
-    if (!k.expired && !k.raidComplete && Date.now() < k.expiresAt) {
+    if (_live(k)) {
       activeKeys[upper] = k;
       return k;
     }
   }
-  return activeKeys[upper] || null;
+  return null;
+}
+
+// ── 100-day recycle: prune ancient keys so db.gateKeys can't grow forever ──
+// Only keys OLDER than 100 days AND not tied to a live raid are deleted.
+const RECYCLE_MS = 100 * 24 * 3600 * 1000;
+function recycleOldKeys(db, saveDatabase) {
+  if (!db?.gateKeys) return 0;
+  const now = Date.now();
+  let n = 0;
+  for (const [key, k] of Object.entries(db.gateKeys)) {
+    if (!k || !k.purchasedAt) continue;
+    if (now - k.purchasedAt < RECYCLE_MS) continue;
+    let live = false;
+    try {
+      const { GateManager } = require('./GateManager');
+      const g = k.gateId ? GateManager.getGate(k.gateId) : null;
+      if (g?.raid && ['recruiting', 'active'].includes(g.raid.status)) live = true;
+    } catch(e){}
+    if (live) continue;
+    delete db.gateKeys[key];
+    delete activeKeys[key];
+    n++;
+  }
+  if (n > 0) {
+    try { console.log(`🧹 Recycled ${n} gate key(s) older than 100 days`); } catch(e){}
+    if (saveDatabase) { try { saveDatabase(); } catch(e){} }
+  }
+  return n;
 }
 
 function formatStability(ms) {
@@ -344,6 +377,7 @@ module.exports = {
   getAllDungeonGCs,
   loadFromDB,
   checkExpiredKeys,
+  recycleOldKeys,
   getKey,
   formatStability,
   normaliseJid,

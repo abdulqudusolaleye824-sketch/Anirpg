@@ -65,6 +65,25 @@ function buildPartyButtons(key, options = {}) {
 }
 
 /**
+ * Generic button builders — the reusable button-config API for all features
+ * (party, passes, cashout, ...). Pass [displayText, id-or-url] pairs.
+ * Returns legacy template-format buttons; sendWithButtons converts them
+ * to interactive (nativeFlow) at send time.
+ */
+function buildQuickReplies(pairs) {
+  return (pairs || []).slice(0, 5).map(([text, id], i) => ({
+    index: i + 1,
+    quickReplyButton: { displayText: String(text).slice(0, 30), id: String(id) },
+  }));
+}
+function buildUrlButtons(pairs) {
+  return (pairs || []).slice(0, 5).map(([text, url], i) => ({
+    index: i + 1,
+    urlButton: { displayText: String(text).slice(0, 30), url: String(url) },
+  }));
+}
+
+/**
  * Convert legacy templateButtons (quickReplyButton/urlButton) to
  * interactiveButtons (nativeFlow) format.
  */
@@ -136,38 +155,12 @@ async function trySendInteractive(sock, chatId, content, interactiveButtons, quo
       nativeFlowMessage
     });
 
-    let msgContent;
     if (hasImage) {
-      // media + interactive needs special handling: use sock.sendMessage with image + interactiveButtons if available
-      // Try direct sendMessage with interactiveButtons + image first (newer Baileys helper)
-      try {
-        // Direct interactive with image via sendMessage (if Baileys patched)
-        const direct = {
-          image: content.image,
-          caption: bodyText,
-          footer: footerText,
-          interactiveButtons: interactiveButtons
-        };
-        if (content.mimetype) direct.mimetype = content.mimetype;
-        await sock.sendMessage(chatId, direct, quoted ? { quoted } : {});
-        return true;
-      } catch (e) {
-        // Fallback to generateWAMessage + relay
-      }
-      // Fallback: generateWAMessageFromContent with image
+      // Media + interactive in a single message needs an uploaded-media header,
+      // so deliver in two guaranteed steps: the image first, then the buttons.
+      // (Direct sock.sendMessage with `interactiveButtons` is NOT attempted —
+      // Baileys 7 drops the unknown key and reports success with no buttons.)
       const mtype = content.mimetype || 'image/jpeg';
-      // For image interactive, we need to use relay with viewOnce wrapper
-      const waMsg = generateWAMessageFromContent(chatId, {
-        viewOnceMessage: {
-          message: {
-            messageContextInfo: { deviceListMetadataVersion: 2, deviceListMetadata: {} },
-            interactiveMessage
-          }
-        }
-      }, { quoted: quoted || undefined });
-      // Attach image via uploaded media? Instead relay will need image node.
-      // Simpler: send image first, then interactive text buttons as follow-up (guaranteed to show)
-      // We'll do two-step: image alone, then interactive text
       await sock.sendMessage(chatId, { image: content.image, caption: bodyText, mimetype: mtype }, quoted ? { quoted } : {});
       const waMsg2 = generateWAMessageFromContent(chatId, {
         viewOnceMessage: {
@@ -215,149 +208,28 @@ async function sendWithButtons(sock, chatId, content, buttons, quoted) {
 
   const hasImage = !!content.image;
   const interactiveButtons = templateToInteractive(buttons);
-  const hasUrlButton = buttons.some(b => !!b.urlButton);
-  const hasOnlyQuickReply = buttons.every(b => !!b.quickReplyButton);
 
-  // ── 1) For URL buttons (support): try legacy templateButtons FIRST — Sapphire on Business used this and it renders on Business, while interactive often does not for non-Business numbers
-  if (hasUrlButton) {
-    try {
-      // Truncate caption to 1000 for templateButtons as well
-      let cap = content.caption || content.text || '';
-      if (cap.length > 1000) cap = cap.slice(0, 1000) + '…';
-      // Limit buttons to 3 for template (WhatsApp limit) — extra will be shown as plain links in final fallback
-      const limitedButtons = buttons.slice(0, 3);
-      if (hasImage) {
-        const msg = {
-          image: content.image,
-          caption: cap,
-          footer: content.footer || 'Astra RPG',
-          templateButtons: limitedButtons,
-        };
-        if (content.mimetype) msg.mimetype = content.mimetype;
-        await sock.sendMessage(chatId, msg, quoted ? { quoted } : {});
-        return;
-      } else {
-        const msg = {
-          text: cap,
-          footer: content.footer || 'Astra RPG',
-          templateButtons: limitedButtons,
-        };
-        await sock.sendMessage(chatId, msg, quoted ? { quoted } : {});
-        return;
-      }
-    } catch (e) {
-      console.error('⚠️ templateButtons (url) send failed, trying interactive:', e.message);
-    }
-    // Fallthrough to interactive for url as second attempt
-  }
-
-  // ── 2) Try modern interactive (nativeFlow) — best for quickReply ---
+  // ── 1) Interactive (nativeFlow) via generate+relay — the ONLY path Baileys 7
+  // delivers. NOTE: sock.sendMessage does NOT understand `interactiveButtons`,
+  // `templateButtons` or `buttons` keys in v7 (verified against 7.0.0-rc14) —
+  // it drops unknown keys and resolves successfully, which would silently
+  // swallow the buttons AND skip every fallback below. Those keys are
+  // therefore never attempted here.
   if (interactiveButtons.length > 0) {
-    // First try direct sendMessage with interactiveButtons (some Baileys forks support this directly)
-    try {
-      const footerText = content.footer || 'Astra™ 2026';
-      // Truncate caption for interactive limits (1024)
-      let capInteractive = content.caption || content.text || '';
-      if (capInteractive.length > 1000) capInteractive = capInteractive.slice(0, 1000) + '…';
-      if (hasImage) {
-        const directInteractive = {
-          image: content.image,
-          caption: capInteractive,
-          footer: footerText,
-          interactiveButtons: interactiveButtons
-        };
-        if (content.mimetype) directInteractive.mimetype = content.mimetype;
-        if (content.title) directInteractive.title = content.title;
-        await sock.sendMessage(chatId, directInteractive, quoted ? { quoted } : {});
-        return;
-      } else {
-        const directInteractive = {
-          text: content.text || content.caption || '',
-          footer: footerText,
-          interactiveButtons: interactiveButtons
-        };
-        if (content.title) directInteractive.title = content.title;
-        await sock.sendMessage(chatId, directInteractive, quoted ? { quoted } : {});
-        return;
-      }
-    } catch (e) {
-      console.error('⚠️ direct interactiveButtons send failed, trying generateWAMessage:', e.message);
-    }
-
-    // Second try: generateWAMessageFromContent + relay (more reliable)
     const ok = await trySendInteractive(sock, chatId, content, interactiveButtons, quoted);
     if (ok) return;
+    console.error('⚠️ interactive relay failed, falling back to plain text with hints');
   }
 
-  // ── 3) Fallback: simple buttons (quickReply only, most compatible for text+buttons) ─────
-  // Only for quickReply buttons (pass/bp/party), not for urlButtons (support)
-  if (hasOnlyQuickReply) {
-    try {
-      const simpleButtons = buttons.map(b => ({
-        buttonId: b.quickReplyButton.id,
-        buttonText: { displayText: b.quickReplyButton.displayText },
-        type: 1
-      }));
-      const captionText = content.caption || content.text || '';
-      // Truncate caption to 900 chars for buttonsMessage limit
-      const truncated = captionText.length > 900 ? captionText.slice(0, 900) + '… (truncated)' : captionText;
-      if (hasImage) {
-        // For image+buttons with simple buttons, some clients require headerType
-        await sock.sendMessage(chatId, {
-          image: content.image,
-          caption: truncated,
-          footer: content.footer || 'Astra™ 2026',
-          buttons: simpleButtons,
-          headerType: 4
-        }, quoted ? { quoted } : {});
-        return;
-      } else {
-        await sock.sendMessage(chatId, {
-          text: truncated,
-          footer: content.footer || 'Astra™ 2026',
-          buttons: simpleButtons,
-          headerType: 1
-        }, quoted ? { quoted } : {});
-        return;
-      }
-    } catch (e) {
-      console.error('⚠️ simple buttons send failed:', e.message);
-    }
-  }
-
-  // ── 4) Fallback: legacy templateButtons (viewOnce wrapper) — quickReply or second chance for url ─────
-  try {
-    // Truncate caption to 1000 for templateButtons as well
-    let cap = content.caption || content.text || '';
-    if (cap.length > 1000) cap = cap.slice(0, 1000) + '…';
-    if (hasImage) {
-      const msg = {
-        image: content.image,
-        caption: cap,
-        footer: content.footer || 'Astra RPG',
-        templateButtons: buttons,
-      };
-      if (content.mimetype) msg.mimetype = content.mimetype;
-      return await sock.sendMessage(chatId, msg, quoted ? { quoted } : {});
-    } else {
-      const msg = {
-        text: cap,
-        footer: content.footer || 'Astra RPG',
-        templateButtons: buttons,
-      };
-      return await sock.sendMessage(chatId, msg, quoted ? { quoted } : {});
-    }
-  } catch (e) {
-    console.error('⚠️ templateButtons send failed, falling back to plain:', e.message);
-  }
-
-  // ── 5) Final fallback: plain text with manual hints (ensures Business clients without button support still get clickable links) ────────────
+  // ── 2) Plain text with manual hints (renders on every client) ────────────
   try {
     const buttonHints = buttons.map(b => {
       const qr = b.quickReplyButton;
       if (qr) return `▶️ ${qr.displayText}: ${qr.id}`;
       const url = b.urlButton;
       if (url) return `🔗 ${url.displayText}: ${url.url}`;
+      const call = b.callButton;
+      if (call) return `📞 ${call.displayText}: ${call.phoneNumber}`;
       return '';
     }).filter(Boolean).join('\n');
     const baseText = content.caption || content.text || '';
@@ -372,7 +244,6 @@ async function sendWithButtons(sock, chatId, content, buttons, quoted) {
     return sock.sendMessage(chatId, { text: content.text || content.caption || '' }, quoted ? { quoted } : {});
   }
 }
-
 function patchMessageBeforeSending(message) {
   const requiresPatch = !!(message.buttonsMessage || message.templateMessage || message.listMessage || message.templateButtons || message.buttons || message.interactiveMessage || message.interactiveButtons);
   if (requiresPatch) {
@@ -393,6 +264,8 @@ module.exports = {
   buildSupportButtons,
   buildPartyJoinButton,
   buildPartyButtons,
+  buildQuickReplies,
+  buildUrlButtons,
   sendWithButtons,
   patchMessageBeforeSending,
   templateToInteractive

@@ -128,6 +128,9 @@ module.exports = {
     if (!player) {
       return sock.sendMessage(chatId, { text: '❌ You are not registered!' });
     }
+    const UI = require('../../rpg/utils/UI');
+    const pro = UI.isPro(player);
+    const FRAME = pro ? UI.PRO_BAR : UI.FREE_BAR;
 
     // Initialize
     if (!db.guilds) db.guilds = {};
@@ -167,9 +170,9 @@ module.exports = {
       }
 
       const lines = [
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        `${FRAME}`,
         `🏰 *REGISTERED GUILDS (${allGuilds.length})*`,
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        `${FRAME}`,
       ];
 
       allGuilds.forEach((g, i) => {
@@ -189,7 +192,7 @@ module.exports = {
         lines.push(``);
       });
 
-      lines.push(`━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+      lines.push(`${FRAME}`);
       return sock.sendMessage(chatId, { text: lines.join('\n') }, { quoted: msg });
     }
 
@@ -241,7 +244,7 @@ module.exports = {
       saveDatabase();
 
       return sock.sendMessage(chatId, {
-        text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🎉 *CONTRACT ACCEPTED!*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n👤 *@${sender.split('@')[0]}* accepted the contract and joined *${guild.name}*!\n\n💠 Weekly Wage: ${offer.weeklyNexus.toLocaleString()} Nexus\n💎 Weekly Mana: ${offer.weeklyMana.toLocaleString()} Mana Stones\n⏳ Duration: ${offer.weeks} week(s)\n━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        text: `${FRAME}\n🎉 *CONTRACT ACCEPTED!*\n${FRAME}\n👤 *@${sender.split('@')[0]}* accepted the contract and joined *${guild.name}*!\n\n💠 Weekly Wage: ${offer.weeklyNexus.toLocaleString()} Nexus\n💎 Weekly Mana: ${offer.weeklyMana.toLocaleString()} Mana Stones\n⏳ Duration: ${offer.weeks} week(s)\n${FRAME}`,
         mentions: [sender]
       }, { quoted: msg });
     }
@@ -260,23 +263,26 @@ module.exports = {
     // ═══════════════════════════════════════════════════════════════════
     if (!action || action === 'info') {
       if (!playerGuild) {
-        return sock.sendMessage(chatId, {
-          text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🏰 GUILD SYSTEM 🏰
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-⚠️ You are not in a guild yet!
-
-📌 GET STARTED:
-• /guild list          - View all registered guilds
-• /guild create [name] - Create a guild (1,000,000💠 + 100,000💎 | Lv.20)
-• /guild request [name]- Submit application + stats to Guildmaster DM
-
-🏆 GUILD BENEFITS:
-- Guild size upgrades (up to 50 members)
-- Exclusive Guild Shop (up to 25% discount)
-- Shared treasury & Guild Wars!
-━━━━━━━━━━━━━━━━━━━━━━━━━━━`
-        }, { quoted: msg });
+        const canFound = (player.level || 1) >= 20 && (player.gold || 0) >= 1000000;
+        const text = UI.card(player, {
+          icon: '🏰', title: 'GUILD SYSTEM',
+          lines: [
+            `⚠️ You are not in a guild yet!`,
+            ``,
+            `📌 *GET STARTED:*`,
+            `• /guild list — View all registered guilds`,
+            `• /guild create [name] — Found one (1,000,000💠 + 100,000💎 | Lv.20)`,
+            `• /guild request [name] — Apply to a guild`,
+            ``,
+            `🏆 *GUILD BENEFITS:*`,
+            `• Size upgrades up to 50 members`,
+            `• Exclusive Guild Shop (up to 25% OFF)`,
+            `• Shared treasury & Guild Wars!`,
+          ],
+          proLines: canFound ? [`💎 *PRO CHARTER* — you meet the founding cost`] : [`💎 *PRO CHARTER* — need Lv.20 + 1M 💠 to found`],
+          tip: 'Guild Wars pay GP and glory',
+        });
+        return sock.sendMessage(chatId, { text }, { quoted: msg });
       }
 
       const leader = db.users[playerGuild.leader];
@@ -285,28 +291,23 @@ module.exports = {
       const shopL  = playerGuild.shopLevel || 0;
       const disc   = getShopDiscount(playerGuild);
 
-      const info = `━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🏰 GUILD INFO 🏰
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🏰 Name: ${playerGuild.name}
-👑 Leader: ${leader?.name || 'Unknown'}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-👥 Members: ${playerGuild.members.length}/${maxM} (Size Lv.${sizeL})
-🛍️ Guild Shop: ${shopL > 0 ? `Lv.${shopL} (${disc}% OFF)` : 'Locked'}
-💠 Treasury: ${(playerGuild.treasury || 0).toLocaleString()} Nexus
-💎 Treasury: ${(playerGuild.manaTreasury || 0).toLocaleString()} Mana Stones
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-📊 STATS & UPGRADES
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🏰 Raids Completed: ${playerGuild.totalRaids || 0}
-⚔️ Wars Fought: ${playerGuild.totalWars || 0}
-🏆 Wars Won: ${playerGuild.wins || 0}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-📌 /guild upgrade      - Upgrade size or shop
-📌 /guild shop         - Guild exclusive shop
-📌 /guild members      - List all members
-📌 /guild list         - List all guilds
-━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+      const warsF = playerGuild.totalWars || 0, warsW = playerGuild.wins || 0;
+      const winRate = warsF ? Math.round(100 * warsW / warsF) : 0;
+      const info = UI.card(player, {
+        icon: '🏰', title: `GUILD INFO — ${playerGuild.name}`,
+        lines: [
+          `👑 Leader: *${leader?.name || 'Unknown'}*`,
+          `👥 Members: *${playerGuild.members.length}/${maxM}* (Size Lv.${sizeL})`,
+          `🛍️ Guild Shop: *${shopL > 0 ? `Lv.${shopL} (${disc}% OFF)` : 'Locked'}*`,
+          `💠 Treasury: *${UI.num(playerGuild.treasury)}* Nexus · 💎 *${UI.num(playerGuild.manaTreasury)}* Mana Stones`,
+          ``,
+          `📊 *STATS* — 🏰 Raids *${UI.num(playerGuild.totalRaids)}* · ⚔️ Wars *${warsF}* · 🏆 Won *${warsW}*`,
+          ``,
+          `📌 /guild upgrade · /guild shop · /guild members · /guild list`,
+        ],
+        proLines: [`💎 *PRO WAR ROOM*`, `  🏆 Win rate *${winRate}%* · 💠 ${UI.num(Math.floor((playerGuild.treasury || 0) / Math.max(1, playerGuild.members.length)))}/member in vault`],
+        tip: '/guild war to fight for glory',
+      });
 
       return sock.sendMessage(chatId, { text: info }, { quoted: msg });
     }
@@ -351,9 +352,9 @@ module.exports = {
         if (missing.length) {
           return sock.sendMessage(chatId, {
             text: [
-              `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+              `${FRAME}`,
               `🏰 *GUILD CREATION*`,
-              `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+              `${FRAME}`,
               `Requirements:`,
               `🎯 *Level ${LEVEL_REQ}*`,
               `💠 *${NEXUS_REQ.toLocaleString()} Nexus*`,
@@ -363,7 +364,7 @@ module.exports = {
               `   📈 Level ${playerLevel}${playerLevel >= LEVEL_REQ ? ' ✅' : ''}`,
               `   💠 ${playerNexus.toLocaleString()} Nexus${playerNexus >= NEXUS_REQ ? ' ✅' : ''}`,
               `   💎 ${playerMana.toLocaleString()} Mana Stones${playerMana >= MANA_REQ ? ' ✅' : ''}`,
-              `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+              `${FRAME}`,
             ].join('\n')
           });
         }
@@ -420,16 +421,16 @@ module.exports = {
       saveDatabase();
 
       return sock.sendMessage(chatId, {
-        text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        text: `${FRAME}
 ✅ GUILD CREATED! ✅
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${FRAME}
 🏰 Name: ${guildName}
 👑 Leader: ${player.name}
 👥 Members: 1/10 (Size Lv.1)
 🛍️ Guild Shop: Locked (Unlock with /guild upgrade shop)
 💠 Treasury: ${START_NEXUS.toLocaleString()} Nexus
 💎 Treasury: ${START_MANA.toLocaleString()} Mana Stones
-━━━━━━━━━━━━━━━━━━━━━━━━━━━`
+${FRAME}`
       });
     }
 
@@ -440,9 +441,9 @@ module.exports = {
       const guildName = args.slice(1).join(' ');
       return sock.sendMessage(chatId, {
         text: [
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          `${FRAME}`,
           `🚫 *DIRECT JOIN DISABLED*`,
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          `${FRAME}`,
           ``,
           `Direct joining is disabled. Submit your application and profile to the Guildmaster in DM using:`,
           ``,
@@ -450,7 +451,7 @@ module.exports = {
           ``,
           `Your stats and profile will be dispatched to the Guildmaster and Officers in DM.`,
           `If accepted, they will issue you a contract offer using */guild hire*.`,
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          `${FRAME}`,
         ].join('\n')
       }, { quoted: msg });
     }
@@ -508,9 +509,9 @@ module.exports = {
       } catch (e) {}
 
       const appText = [
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        `${FRAME}`,
         `📩 *NEW GUILD APPLICATION REQUEST*`,
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        `${FRAME}`,
         `👤 Candidate: *@${sender.split('@')[0]}* (${player.name || 'Unknown'})`,
         `🏰 Applying for Guild: *${guild.name}*`,
         ``,
@@ -522,10 +523,10 @@ module.exports = {
         `💎 Mana Stones: *${(player.manaCrystals || 0).toLocaleString()}*`,
         `⚔️ ATK: *${player.stats?.atk || 0}* | 🛡️ DEF: *${player.stats?.def || 0}* | ❤️ HP: *${player.stats?.hp || 0}/${player.stats?.maxHp || 100}*`,
         ``,
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        `${FRAME}`,
         `💡 *To recruit this applicant, send a contract offer:*`,
         `*/guild hire @${sender.split('@')[0]} <weekly_nexus> <weekly_mana> <weeks>*`,
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        `${FRAME}`,
       ].join('\n');
 
       let MultiSocketManager = null;
@@ -556,9 +557,9 @@ module.exports = {
       }
       return sock.sendMessage(chatId, {
         text: [
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          `${FRAME}`,
           sentCount > 0 ? `📩 *APPLICATION DISPATCHED TO GUILD LEADERS*` : `⚠️ *APPLICATION PENDING — LEADER HAS NO SERF*`,
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          `${FRAME}`,
           `🏰 Target Guild: *${guild.name}*`,
           ``,
           sentCount > 0
@@ -568,7 +569,7 @@ module.exports = {
           `💡 If they accept your application, they will issue you a contract offer via DM/chat:`,
           `   */guild hire @${sender.split('@')[0]} <weekly_nexus> <weekly_mana> <weeks>*`,
           sentCount === 0 ? `\n⚠️ DM delivery failed — leader serf is offline or not set.\nGuild still exists, but leaders must check /guild info manually.` : ``,
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          `${FRAME}`,
         ].filter(Boolean).join('\n'),
         mentions: [sender]
       }, { quoted: msg });
@@ -601,9 +602,9 @@ module.exports = {
 
         return sock.sendMessage(chatId, {
           text: [
-            `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+            `${FRAME}`,
             `🏰 *GUILD UPGRADE CENTER*`,
-            `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+            `${FRAME}`,
             `🏰 Guild: *${playerGuild.name}*`,
             `💠 Treasury: *${(playerGuild.treasury || 0).toLocaleString()} Nexus*`,
             `💎 Treasury: *${(playerGuild.manaTreasury || 0).toLocaleString()} Mana Stones*`,
@@ -613,9 +614,9 @@ module.exports = {
             ``,
             `🛍️ *2. GUILD SHOP & EXCLUSIVE DISCOUNT:*`,
             `   ${shopTxt}`,
-            `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+            `${FRAME}`,
             `📌 *Guildmaster / Vice GM:* Run /guild upgrade size or /guild upgrade shop to upgrade from Treasury!`,
-            `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+            `${FRAME}`,
           ].join('\n'),
         }, { quoted: msg });
       }
@@ -651,13 +652,13 @@ module.exports = {
 
         return sock.sendMessage(chatId, {
           text: [
-            `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+            `${FRAME}`,
             `🎉 *GUILD SIZE UPGRADED!*`,
-            `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+            `${FRAME}`,
             `🏰 Guild: *${playerGuild.name}*`,
             `📈 Level: *Level ${playerGuild.sizeLevel}*`,
             `👥 Max Members: *${playerGuild.sizeLevel * 10} members*`,
-            `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+            `${FRAME}`,
           ].join('\n'),
         }, { quoted: msg });
       }
@@ -690,15 +691,15 @@ module.exports = {
         const disc = playerGuild.shopLevel * 5;
         return sock.sendMessage(chatId, {
           text: [
-            `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+            `${FRAME}`,
             `🎉 *GUILD SHOP UPGRADED!*`,
-            `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+            `${FRAME}`,
             `🏰 Guild: *${playerGuild.name}*`,
             `🛍️ Level: *Level ${playerGuild.shopLevel}*`,
             `🏷️ Member Discount: *${disc}% OFF* on all Guild Shop exclusive items!`,
-            `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+            `${FRAME}`,
             `📌 Access shop with /guild shop!`,
-            `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+            `${FRAME}`,
           ].join('\n'),
         }, { quoted: msg });
       }
@@ -716,16 +717,16 @@ module.exports = {
       if (shopLvl === 0) {
         return sock.sendMessage(chatId, {
           text: [
-            `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+            `${FRAME}`,
             `🔒 *GUILD SHOP LOCKED*`,
-            `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+            `${FRAME}`,
             `🏰 Guild: *${playerGuild.name}*`,
             `⚠️ The Guild Shop has not been unlocked yet!`,
             ``,
             `💡 Guild Officers can unlock it with:`,
             `   */guild upgrade shop*`,
             `   (Cost: 💠 50,000 Nexus & 💎 2,500 Mana Stones)`,
-            `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+            `${FRAME}`,
           ].join('\n'),
         }, { quoted: msg });
       }
@@ -834,29 +835,29 @@ module.exports = {
 
         return sock.sendMessage(chatId, {
           text: [
-            `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+            `${FRAME}`,
             `🛍️ *GUILD SHOP PURCHASE*`,
-            `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+            `${FRAME}`,
             `🎁 Purchased: *${item.name}*`,
             `🏷️ Guild Discount: *${discountPct}% OFF*`,
             `💰 Paid: *${costDisplay}*`,
             `📦 Units Left Today: *${item.unitsLeft}/5 units*`,
-            `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+            `${FRAME}`,
             `✅ Item added to your inventory!`,
-            `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+            `${FRAME}`,
           ].join('\n'),
         }, { quoted: msg });
       }
 
       // Display Daily 10 Items from Regular Shop Pool
       const lines = [
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        `${FRAME}`,
         `🛍️ *GUILD SHOP — TODAY'S STOCK (10 ITEMS)*`,
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        `${FRAME}`,
         `🏰 Guild: *${playerGuild.name}* (Shop Lv.${shopLvl})`,
         `🏷️ Member Discount: *${discountPct}% OFF*`,
         `💠 Balance: *${(player.gold || 0).toLocaleString()} Nexus* | 💎 *${(player.manaCrystals || 0).toLocaleString()} MS*`,
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        `${FRAME}`,
       ];
 
       todayItems.forEach((item, i) => {
@@ -874,9 +875,9 @@ module.exports = {
         lines.push(``);
       });
 
-      lines.push(`━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+      lines.push(`${FRAME}`);
       lines.push(`📌 Buy item: */guild shop buy <1-10 or item_id>*`);
-      lines.push(`━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+      lines.push(`${FRAME}`);
 
       return sock.sendMessage(chatId, { text: lines.join('\n') }, { quoted: msg });
     }
@@ -892,11 +893,11 @@ module.exports = {
       }
 
       const maxM = getMaxMembers(playerGuild);
-      let memberList = `━━━━━━━━━━━━━━━━━━━━━━━━━━━
+      let memberList = `${FRAME}
 👥 GUILD MEMBERS 👥
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${FRAME}
 🏰 ${playerGuild.name}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+${FRAME}\n`;
 
       if (playerGuild.members && playerGuild.members.length > 0) {
         playerGuild.members.forEach((member, i) => {
@@ -906,7 +907,7 @@ module.exports = {
         });
       }
 
-      memberList += `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+      memberList += `${FRAME}\n`;
       memberList += `Total: ${playerGuild.members.length}/${maxM}`;
 
       return sock.sendMessage(chatId, { text: memberList });
@@ -965,7 +966,7 @@ module.exports = {
       saveDatabase();
 
       return sock.sendMessage(chatId, {
-        text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🎉 *GUILD PROMOTION!*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🏰 Guild: *${playerGuild.name}*\n👤 Hunter: *@${targetId.split('@')[0]}*\n⭐ New Rank: *${targetRank}*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        text: `${FRAME}\n🎉 *GUILD PROMOTION!*\n${FRAME}\n🏰 Guild: *${playerGuild.name}*\n👤 Hunter: *@${targetId.split('@')[0]}*\n⭐ New Rank: *${targetRank}*\n${FRAME}`,
         mentions: [targetId]
       }, { quoted: msg });
     }
@@ -973,6 +974,53 @@ module.exports = {
     // ═══════════════════════════════════════════════════════════════════
     // LEAVE GUILD
     // ═══════════════════════════════════════════════════════════════════
+    if (action === 'kick' || action === 'remove') {
+      if (!playerGuild) {
+        return sock.sendMessage(chatId, { text: '❌ You are not in a guild!' }, { quoted: msg });
+      }
+
+      const senderRank = playerGuild.members?.find(m => (typeof m === 'object' ? m.id : m) === sender)?.rank || (playerGuild.leader === sender ? 'Leader' : 'Member');
+      const isLeader = playerGuild.leader === sender || senderRank === 'Leader' || senderRank === 'Guild Master';
+      const isVice   = senderRank === 'Vice' || senderRank === 'Vice GM';
+
+      if (!isLeader && !isVice) {
+        return sock.sendMessage(chatId, { text: '❌ Only the Guild Master or Vice GM can kick guild members!' }, { quoted: msg });
+      }
+
+      const targetId = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid?.[0] ||
+                       msg.message?.extendedTextMessage?.contextInfo?.participant;
+
+      if (!targetId) {
+        return sock.sendMessage(chatId, {
+          text: '❌ Tag or reply to the member you want to kick!\nUsage: /guild kick @user'
+        }, { quoted: msg });
+      }
+
+      if (targetId === sender) {
+        return sock.sendMessage(chatId, { text: '❌ You cannot kick yourself! Use /guild leave instead.' }, { quoted: msg });
+      }
+
+      if (targetId === playerGuild.leader) {
+        return sock.sendMessage(chatId, { text: '❌ You cannot kick the Guild Master!' }, { quoted: msg });
+      }
+
+      const idx = (playerGuild.members || []).findIndex(m => (typeof m === 'object' ? m.id : m) === targetId);
+      if (idx === -1) {
+        return sock.sendMessage(chatId, { text: '❌ That hunter is not a member of your guild!' }, { quoted: msg });
+      }
+
+      playerGuild.members.splice(idx, 1);
+      const kicked = db.users?.[targetId];
+      if (kicked) kicked.guild = null;
+      saveDatabase();
+
+      const kName = kicked?.name || ('@' + targetId.split('@')[0]);
+      return sock.sendMessage(chatId, {
+        text: `${FRAME}\n🪓 *GUILD KICK!*\n${FRAME}\n🏰 Guild: *${playerGuild.name}*\n👤 Removed: *${kName}*\n${FRAME}`,
+        mentions: [targetId]
+      }, { quoted: msg });
+    }
+
     if (action === 'leave') {
       if (!playerGuild) {
         return sock.sendMessage(chatId, {
@@ -1085,9 +1133,9 @@ module.exports = {
 
       return sock.sendMessage(chatId, {
         text: [
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          `${FRAME}`,
           `📜 *GUILD CONTRACT OFFER*`,
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          `${FRAME}`,
           `🏰 Guild: *${playerGuild.name}*`,
           `👤 Candidate: *@${targetId.split('@')[0]}*`,
           `💠 Weekly Nexus: *${weeklyNexus.toLocaleString()}*`,
@@ -1099,7 +1147,7 @@ module.exports = {
           `  • \`/guild decline\` to reject offer`,
           ``,
           `⏳ Offer expires in 5 minutes.`,
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          `${FRAME}`,
         ].join('\n'),
         mentions: [targetId],
       }, { quoted: msg });
@@ -1138,6 +1186,7 @@ module.exports = {
         player.gold = bal - amount;
         if (player.inventory) player.inventory.gold = player.gold;
         playerGuild.treasury = (playerGuild.treasury || 0) + amount;
+        try { require('../../rpg/utils/QuestDispatcher').trackAndNotify(player, 'donate', 1, sock, sender, chatId); } catch(e){}
         saveDatabase();
         return sock.sendMessage(chatId, { text: `✅ *Deposited* 💠 ${amount.toLocaleString()} Nexus to the guild.\n🏰 Treasury now: ${(playerGuild.treasury || 0).toLocaleString()} Nexus` });
       }
@@ -1154,6 +1203,7 @@ module.exports = {
       if (bal < amount) return sock.sendMessage(chatId, { text: `❌ You have ${bal.toLocaleString()} Mana Stones.` });
       player.manaCrystals = bal - amount;
       playerGuild.manaTreasury = (playerGuild.manaTreasury || 0) + amount;
+      try { require('../../rpg/utils/QuestDispatcher').trackAndNotify(player, 'donate', 1, sock, sender, chatId); } catch(e){}
       saveDatabase();
       return sock.sendMessage(chatId, { text: `✅ *Deposited* 💎 ${amount.toLocaleString()} Mana Stones.\n🏰 Treasury now: ${(playerGuild.manaTreasury || 0).toLocaleString()} 💎` });
     }

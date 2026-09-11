@@ -26,6 +26,10 @@ function bare(sender) {
   return GR.GKM.normaliseJid(sender);
 }
 
+// ── Status summary helper (mirrors dungeon.js — gateraid previously crashed
+//    with "statusSummary is not defined" on every attack) ─────────────────
+function statusSummary(entity){ if(!entity||!entity.statusEffects||!entity.statusEffects.length) return null; const m={burn:'🔥 Burn -15 HP', poison:'☠️ Poison -10 HP', bleed:'🩸 Bleed -12 HP', stun:'💫 Stun skip', freeze:'❄️ Freeze skip + -3% HP', paralyze:'⚡ Paralyze 70% skip', weaken:'💔 Weaken -30% ATK', curse:'👁️ Curse -15% DEF', fear:'😱 Fear -20% ATK', enfeeble:'🐢 Enfeeble -30% DEF', trueslow:'🐌 Slow -35% SPD', silence:'🤐 Silence', blind:'🌫️ Blind -50% ACC'}; return entity.statusEffects.map(s=>{ const k=(s.type||'').toLowerCase(); const desc=m[k]||k; const dur=s.duration||s.turns||'?'; return `${desc} (${dur}t)`; }).join(' | '); }
+
 module.exports = {
   name: 'gateraid',
   aliases: ['raid', 'gr'],
@@ -36,6 +40,9 @@ module.exports = {
     const db = getDatabase();
     const player = db.users[sender];
     if (!player) return sock.sendMessage(chatId, { text: '❌ Register first.' }, { quoted: msg });
+    const UI = require('../../rpg/utils/UI');
+    const pro = UI.isPro(player);
+    const FRAME = pro ? UI.PRO_BAR : UI.FREE_BAR;
 
     // ── Must be in a registered dungeon GC ───────────────────────
     if (chatId.endsWith('@g.us') && !GR.GKM.isDungeonGC(chatId)) {
@@ -105,9 +112,7 @@ module.exports = {
     if (!code) {
       return sock.sendMessage(chatId, {
         text: [
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-          `⚔️ *GATE RAID*`,
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          ...(pro ? [UI.PRO_BAR, `⚔️ *GATE RAID* 💎`, UI.PRO_BAR] : [`⚔️ *GATE RAID*`, UI.FREE_BAR]),
           `Use your gate code to start a raid.`,
           ``,
           `📌 *COMMANDS:*`,
@@ -118,9 +123,9 @@ module.exports = {
           `/gateraid <CODE> start    — start (party leader)`,
           `/gateraid <CODE> status   — status`,
           `• Or in-raid: /gateraid attack / /gateraid skill <name> (code inferred)`,
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          `${FRAME}`,
           `💡 Guild member → party raid.\n   No-guild hunter → solo raid.\n   Affiliate key → open to everyone.`,
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          ...(pro ? [FRAME] : [FRAME, UI.upsell()]),
         ].join('\n'),
       }, { quoted: msg });
     }
@@ -150,9 +155,8 @@ module.exports = {
       const solo = res.raid.members.length <= 1;
       return sock.sendMessage(chatId, {
         text: [
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-          `${rd.emoji} *${solo ? 'SOLO' : 'PARTY'} RAID — RECRUITING*`,
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          `${FRAME}`,
+          ...(pro ? [`${rd.emoji} *${solo ? 'SOLO' : 'PARTY'} RAID — RECRUITING* 💎`, UI.PRO_BAR] : [`${rd.emoji} *${solo ? 'SOLO' : 'PARTY'} RAID — RECRUITING*`, UI.FREE_BAR]),
           `${rd.label} [${gate.id}]`,
           ``,
           isOpenKey
@@ -168,10 +172,10 @@ module.exports = {
           `3️⃣ Leader: /gateraid ${key} start`,
           ``,
           `📊 /gateraid ${key} status — see who's ready`,
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          FRAME,
           `💡 A gate instantly opens when you use a code.`,
           `   Add friends above, or start solo with just you.`,
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          ...(pro ? [FRAME] : [FRAME, UI.upsell()]),
         ].join('\n'),
       }, { quoted: msg });
     }
@@ -208,9 +212,7 @@ module.exports = {
       const raid = res.raid;
       return sock.sendMessage(chatId, {
         text: [
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-          `${rd.emoji} *RAID STARTED!*`,
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          ...(pro ? [UI.PRO_BAR, `${rd.emoji} *RAID STARTED!* 💎`, UI.PRO_BAR] : [`${rd.emoji} *RAID STARTED!*`, UI.FREE_BAR]),
           `${rd.label} [${gate.id}]`,
           `🗺️ Floor 1/${gate.totalFloors}`,
           ``,
@@ -220,7 +222,7 @@ module.exports = {
           `⚔️ /gateraid ${key} attack`,
           `🔮 /gateraid ${key} skill <name>`,
           `📊 /gateraid ${key} status`,
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          ...(pro ? [FRAME, UI.PRO_MINI, `💎 *PRO BREACH* — ${rd.label} · ${raid.members.length} hunters · ${gate.totalFloors} floors`] : [FRAME, UI.upsell()]),
         ].join('\n'),
       }, { quoted: msg });
     }
@@ -275,6 +277,7 @@ module.exports = {
       }
 
       gate.potionsUsed = (gate.potionsUsed || 0) + 1;
+      try { require('../../rpg/utils/QuestDispatcher').trackAndNotify(player, 'heal', 1, sock, sender, chatId); } catch(e){}
       const pm = gate.raid?.members?.find(m => m.id === sender);
       if (pm) pm.hp = player.stats.hp;
 
@@ -329,12 +332,15 @@ module.exports = {
       if (floor >= gate.totalFloors) return sock.sendMessage(chatId, { text: `⚠️ Final floor. Engage the boss with /gateraid ${key} boss` }, { quoted: msg });
       gate.currentFloor++;
       const next = (gate.monsters || []).filter(mm => mm.floor === gate.currentFloor && !mm.defeated);
+      try {
+        const QD = require('../../rpg/utils/QuestDispatcher');
+        QD.trackAndNotify(player, 'floor', gate.currentFloor, sock, sender, chatId);
+        QD.trackAndNotify(player, 'dungeon', 1, sock, sender, chatId);
+      } catch(e){}
       saveDatabase();
       return sock.sendMessage(chatId, {
         text: [
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-          `➡️ *FLOOR ${gate.currentFloor}*`,
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          ...(pro ? [UI.PRO_BAR, `➡️ *FLOOR ${gate.currentFloor}* 💎`, UI.PRO_BAR] : [`➡️ *FLOOR ${gate.currentFloor}*`, UI.FREE_BAR]),
           `「System」 Entering Floor ${gate.currentFloor} of ${gate.totalFloors}...`,
           ``,
           `👾 *${next.length} monsters*:`,
@@ -342,7 +348,7 @@ module.exports = {
           next.length > 6 ? `  ...and ${next.length - 6} more` : ``,
           ``,
           `⚔️ /gateraid ${key} attack`,
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          ...(pro ? [FRAME, UI.PRO_MINI, `💎 *PRO SCOUT* — strongest: ${next.length ? UI.num(Math.max(...next.map(mm => mm.hp || 0))) : 0} HP`] : [FRAME, UI.upsell()]),
         ].filter(l => l !== '').join('\n'),
       }, { quoted: msg });
     }
@@ -372,7 +378,9 @@ module.exports = {
         const UCgTick = require('../../rpg/utils/UnifiedCombat');
         _tickLogs = UCgTick.tickStatuses(player) || [];
         if (target && target.statusEffects) {
-          const tl2 = UCgTick.tickStatuses({ statusEffects: target.statusEffects, stats: { hp: target.hp, maxHp: target.maxHp } });
+          const _tgt = { name: target.name || 'Monster', statusEffects: target.statusEffects, stats: { hp: target.hp, maxHp: target.maxHp } };
+          const tl2 = UCgTick.tickStatuses(_tgt);
+          target.hp = Math.max(0, _tgt.stats.hp); // write tick damage back — the temp object is discarded
           if (tl2 && tl2.length) _tickLogs = _tickLogs.concat(tl2);
         }
       } catch(e){}
@@ -385,6 +393,15 @@ module.exports = {
           if (statusMsg) await sock.sendMessage(chatId, { text: statusMsg.trim() }, { quoted: msg });
         } catch(e){}
       }
+      // ── Frozen / stunned players lose their turn (statuses already ticked above) ──
+      let _grCanAct = { canAct: true, reason: null };
+      try { _grCanAct = require('../../rpg/utils/UnifiedCombat').canAct(player); } catch(e){}
+      if (!_grCanAct.canAct) {
+        saveDatabase();
+        const _grFxMap = { frozen: ['❄️', 'FROZEN 🧊'], stunned: ['💫', 'STUNNED 💫'], paralyzed: ['🔱', 'PARALYZED 🔱'], feared: ['😱', 'FEARED 😱'] };
+        const [_fxEmo, _fxWord] = _grFxMap[_grCanAct.reason] || ['💫', 'STUNNED 💫'];
+        return sock.sendMessage(chatId, { text: `${FRAME}\n${_fxEmo} *YOU ARE ${_fxWord}!*${pro ? ' 💎' : ''}\n${FRAME}\n_${player.name} cannot move this turn._\nTurn skipped (0 dmg, status -1).\n${FRAME}` }, { quoted: msg });
+      }
       let result;
       let atkPattern = null;
       if (patternId) {
@@ -395,8 +412,11 @@ module.exports = {
         if (!atk) result = { damage:0, blocked:true, reason:'Invalid pattern' };
         else {
           const owned = player.attackPatterns?.owned || [];
+          const equipped = player.attackPatterns?.equipped || [];
           if (!owned.includes(patternId)) {
             result = { damage:0, blocked:true, reason:`You don't own Attack #${patternId}` };
+          } else if (!equipped.includes(patternId)) {
+            result = { damage:0, blocked:true, reason:`Attack #${patternId} is not equipped — equip it first: /attacks equip ${patternId}` };
           } else {
             const cd = UCg.isOnCooldown(player, patternId);
             if (cd.onCd) {
@@ -405,7 +425,7 @@ module.exports = {
               // status -1 already
             } else {
               // Unified calc: treat monster as defender
-              const fakeMonster = { stats:{ hp: target.hp, maxHp: target.maxHp, atk: target.atk, def: target.def||5, speed: 30 }, statusEffects: [] };
+              const fakeMonster = { stats:{ hp: target.hp, maxHp: target.maxHp, atk: target.atk, def: target.def||5, speed: 30 }, statusEffects: (target.statusEffects = target.statusEffects || []) };
               const uni = UCg.calcMoveDamage(player, fakeMonster, atk);
               if (uni.missed) result = { damage:0, isCrit:false, atkPattern: atk, missed:true };
               else { result = { damage: uni.damage, isCrit: uni.crit, atkPattern: atk, unified: uni }; target.hp = Math.max(0, target.hp - uni.damage); UCg.setCooldown(player, patternId, atk); const eff=UCg.tryApplyEffect(atk, player, fakeMonster); if(eff) result.effectApplied = eff; }
@@ -427,6 +447,9 @@ module.exports = {
       }
       if (result.blocked) return sock.sendMessage(chatId, { text: `❌ ${result.reason}` }, { quoted: msg });
 
+      // Daily quest: attack pattern actually used in combat
+      if (atkPattern) { try { require('../../rpg/utils/QuestDispatcher').trackAndNotify(player, 'pattern', 1, sock, sender, chatId); } catch(e){} }
+
       if (!gate.damageDealt) gate.damageDealt = {};
       gate.damageDealt[sender] = (gate.damageDealt[sender] || 0) + result.damage;
 
@@ -435,10 +458,9 @@ module.exports = {
       const UCgBar = require('../../rpg/utils/UnifiedCombat');
       const BarG = require('../../rpg/utils/BarSystem');
       const pBarG = BarG.getHPBar(player.stats.hp, player.stats.maxHp, UCgBar.isPro(player));
+      const atkTitle = atkPattern ? `🥋 *ATTACK PATTERN #${atkPattern.id} — ${atkPattern.name}* [${atkPattern.rank}]` : `⚔️ *PLAYER ATTACK*`;
       const msg1Lines = [
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-        atkPattern ? `🥋 *ATTACK PATTERN #${atkPattern.id} — ${atkPattern.name}* [${atkPattern.rank}]` : `⚔️ *PLAYER ATTACK*`,
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        ...(pro ? [UI.PRO_BAR, `${atkTitle} 💎`, UI.PRO_BAR] : [atkTitle, UI.FREE_BAR]),
         atkPattern ? `_${(atkPattern.description||atkPattern.flavour).slice(0,200)}_` : ``,
         atkPattern ? `📊 Atk×${atkPattern.atkMult} Def×${atkPattern.defMult} Spd×${atkPattern.speedMult} Crit×${atkPattern.critMult} Acc ${atkPattern.accuracy}%` : ``,
         `⚔️ *${player.name}* → *${target.name}*`,
@@ -447,12 +469,14 @@ module.exports = {
         `👾 ${target.name} HP: ${target.hp}/${target.maxHp} ${BarG.getMonsterHPBar(target.hp, target.maxHp)}`,
         `❤️ You: ${pBarG} ${player.stats.hp}/${player.stats.maxHp}`,
       ];
+      if (pro) msg1Lines.push(`💎 *PRO FOCUS* — your raid damage: ${UI.num(gate.damageDealt[sender])}`);
 
       if (target.hp <= 0) {
         target.defeated = true;
         gate.monstersKilled = (gate.monstersKilled || 0) + 1;
         if (!player.stats_history) player.stats_history = {};
         player.stats_history.monstersKilled = (player.stats_history.monstersKilled || 0) + 1;
+        try { require('../../rpg/utils/QuestDispatcher').trackAndNotify(player, 'kill', 1, sock, sender, chatId); } catch(e){}
 
         try { const BR=require('../../rpg/utils/BattleRewards'); const w=BR.giveBattleWinRewards(player, db, 'gate', player.level); msg1Lines.push(``, `💀 *${target.name}* defeated!`, BR.formatRewards(w)); } catch(e){ awardXP(player, 'gate_complete', saveDatabase, sock, chatId); msg1Lines.push(``, `💀 *${target.name}* defeated!`); }
 
@@ -482,10 +506,12 @@ module.exports = {
         return sock.sendMessage(chatId, { text: msg1Lines.filter(Boolean).join('\n') }, { quoted: msg });
       }
 
-      // Monster counter-attack
+      // Monster counter-attack (frozen/stunned monsters lose their turn)
+      let _monCanAct = { canAct: true, reason: null };
+      try { _monCanAct = require('../../rpg/utils/UnifiedCombat').canAct({ statusEffects: target.statusEffects || [] }); } catch(e){}
       const def = (player.stats?.def || 5) + (player.equipped?.armor?.def || 0);
-      const dmg = GR.monsterDamage(target, def);
-      player.stats.hp = Math.max(0, (player.stats.hp || 0) - dmg);
+      const dmg = _monCanAct.canAct ? GR.monsterDamage(target, def) : 0;
+      if (_monCanAct.canAct) player.stats.hp = Math.max(0, (player.stats.hp || 0) - dmg);
 
       const skillPool = [
         { name: '🔥 Flame Spurt', effect: 'burn' },
@@ -494,15 +520,27 @@ module.exports = {
         { name: '😱 Terror Howl', effect: 'fear' },
         { name: '🌀 Void Crush', effect: 'weaken' }
       ];
-      const monsterSkill = skillPool[Math.floor(Math.random() * skillPool.length)];
+      const monsterSkill = _monCanAct.canAct ? skillPool[Math.floor(Math.random() * skillPool.length)] : null;
+      // Monster skills now REALLY inflict their status (burn/stun/bleed/fear/weaken)
+      if (monsterSkill) {
+        try {
+          if (!player.statusEffects) player.statusEffects = [];
+          const _ex = player.statusEffects.find(e => (e.type||'').toLowerCase() === monsterSkill.effect);
+          if (_ex) _ex.duration = Math.max(_ex.duration || 0, 2);
+          else player.statusEffects.push({ type: monsterSkill.effect, duration: 2 });
+        } catch(e){}
+      }
 
-      const msg2Lines = [
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-        `💢 *MONSTER COUNTER-ATTACK*`,
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+      const msg2Lines = _monCanAct.canAct ? [
+        ...(pro ? [UI.PRO_BAR, `💢 *MONSTER COUNTER-ATTACK* 💎`, UI.PRO_BAR] : [`💢 *MONSTER COUNTER-ATTACK*`, UI.FREE_BAR]),
         `💢 *${target.name}* uses *${monsterSkill.name}*!`,
         `⚡ Inflicted: *${monsterSkill.effect.toUpperCase()}*`,
         `💥 Took *${dmg}* damage`,
+        `❤️ Your HP: *${player.stats.hp}/${player.stats.maxHp}*`,
+      ] : [
+        ...(pro ? [UI.PRO_BAR, `🧊 *MONSTER FROZEN* 💎`, UI.PRO_BAR] : [`🧊 *MONSTER FROZEN*`, UI.FREE_BAR]),
+        `❄️ *${target.name}* is ${_monCanAct.reason === 'frozen' ? 'frozen solid' : 'stunned'} and cannot move!`,
+        `💥 Took *0* damage`,
         `❤️ Your HP: *${player.stats.hp}/${player.stats.maxHp}*`,
       ];
 
@@ -522,6 +560,9 @@ module.exports = {
           const retCrystals = Math.floor((gate.accumulatedTreasure?.crystals || 0) * 0.50);
           if (retNexus > 0 || retCrystals > 0) {
             player.gold = (player.gold || 0) + retNexus;
+            if (retNexus > 0) {
+              try { require('../../rpg/utils/QuestDispatcher').trackAndNotify(player, 'goldEarn', retNexus, sock, sender, chatId); } catch(e){}
+            }
             player.manaCrystals = (player.manaCrystals || 0) + retCrystals;
             msg2Lines.push(``, `💰 *50% PARTY TREASURE SALVAGED:* +${retNexus.toLocaleString()} 💠 Nexus | +${retCrystals.toLocaleString()} 💎 Mana Stones`);
           }
@@ -537,14 +578,12 @@ module.exports = {
       let _nextStatus2 = null;
       try { _nextStatus2 = statusSummary(player); } catch(e){}
       const msg3Lines = [
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-        `🎮 *NEXT TURN*`,
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        ...(pro ? [UI.PRO_BAR, `🎮 *NEXT TURN* 💎`, UI.PRO_BAR] : [`🎮 *NEXT TURN*`, UI.FREE_BAR]),
         ...(_nextStatus2 ? [`⚠️ *YOUR STATUS:* ${_nextStatus2}`] : []),
         `⚔️ /gateraid ${key} attack`,
         `🔮 /gateraid ${key} skill <name>`,
         `🩹 /use heal`,
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        ...(pro ? [FRAME] : [FRAME, UI.upsell()]),
       ];
 
       saveDatabase();
@@ -571,9 +610,7 @@ module.exports = {
       boss.hp = Math.max(0, boss.hp - result.damage);
 
       const lines = [
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-        `🏆 *BOSS BATTLE*`,
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        ...(pro ? [UI.PRO_BAR, `🏆 *BOSS BATTLE* 💎`, UI.PRO_BAR] : [`🏆 *BOSS BATTLE*`, UI.FREE_BAR]),
         `💀 *${boss.name}*`,
         ``,
         `⚔️ *${player.name}* ${result.skillUsed ? `→ *${result.skillUsed.name}*` : '→ attacks!'}`,
@@ -585,6 +622,13 @@ module.exports = {
       if (boss.hp <= 0) {
         boss.defeated = true;
         AuraSystem.addAura(player, 'bossKill');
+        try {
+          const QD = require('../../rpg/utils/QuestDispatcher');
+          QD.trackAndNotify(player, 'boss', 1, sock, sender, chatId);
+          QD.trackAndNotify(player, 'clear', 1, sock, sender, chatId);
+        } catch(e){}
+        // Gate clear: +15 GP to the killer's guild (weekly + lifetime + quest)
+        try { require('../../rpg/utils/GuildPointsSystem').addGuildGP(db, sender, 15, 'Gate clear (' + (gate.rank || '?') + '-Rank)', { quest: true, sock, jid: sender, chatId }); } catch(e){}
 
         const damageDealt = gate.damageDealt || {};
         const topRaider = Object.entries(damageDealt).sort((a, b) => b[1] - a[1])[0];
@@ -597,9 +641,7 @@ module.exports = {
         const bossDropLines = [];
         const bossDrop = GateManager.rollMonsterKillDrop(gate.rank, boss.name);
         if (bossDrop) {
-          if (!player.inventory) player.inventory = { materials: [] };
-          if (!player.inventory.materials) player.inventory.materials = [];
-          player.inventory.materials.push({ ...bossDrop, obtainedAt: Date.now(), fromGate: gate.id });
+          require('../../rpg/utils/RewardInventory').grantItem(player, { ...bossDrop, type: bossDrop.type || 'material', fromGate: gate.id }, 'gate');
           bossDropLines.push(`🎁 *BOSS DROP → ${player.name}* (final blow): *${bossDrop.name}*`);
         }
 
@@ -628,7 +670,11 @@ module.exports = {
 
         lines.push(``, `💚 *All members: 50% recovery + no cooldown.*`);
         lines.push(`🚪 *GATE ${gate.id} CLEARED!*`);
-        lines.push(`━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+        lines.push(FRAME);
+        if (pro) {
+          const topName = topRaider ? (db.users?.[topRaider[0]]?.name || 'a raider') : 'none';
+          lines.push(UI.PRO_MINI, topRaider && topRaider[0] === sender ? `💎 *PRO SLAYER* — TOP raid damage: ${UI.num(topRaider[1])}! 🔥` : `💎 *PRO SLAYER* — top: ${topName} (${topRaider ? UI.num(topRaider[1]) : 0})`);
+        } else lines.push(UI.upsell());
       } else {
         const def = (player.stats?.def || 5) + (player.equipped?.armor?.def || 0);
         const bossAtk = Math.floor(GATE_RANKS[gate.rank].monsterRange[1] * 0.20);

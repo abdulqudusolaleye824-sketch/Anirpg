@@ -3,7 +3,16 @@
 // Boss has phases, telegraphed attacks, HP shared across party
 
 const StatusEffectManager = require('../../rpg/utils/StatusEffectManager');
-function statusSummary(ent){ if(!ent||!ent.statusEffects||!ent.statusEffects.length) return null; const m={burn:'🔥 Burn -5% HP', poison:'☠️ Poison -3% HP', bleed:'🩸 Bleed -4% HP', stun:'💫 Stun skip', freeze:'❄️ Freeze -20% DEF', paralyze:'⚡ Paralyze -50% SPD', weaken:'💔 Weaken -30% ATK', curse:'👁️ Curse -15% DEF'}; return ent.statusEffects.map(s=> (m[(s.type||'').toLowerCase()]||s.type)+' ('+(s.duration||s.turns||'?')+'t)').join(' | '); }
+const UI = require('../../rpg/utils/UI');
+// Shared raid display: deluxe frame if ANY raider is Pro.
+function raidFrame(party, db) {
+  try {
+    const ms = party.members || [];
+    const anyPro = ms.some(m => { const u = db.users?.[m.id || m]; return u && UI.isPro(u); });
+    return anyPro ? UI.PRO_BAR : UI.FREE_BAR;
+  } catch (e) { return UI.FREE_BAR; }
+}
+function statusSummary(ent){ if(!ent||!ent.statusEffects||!ent.statusEffects.length) return null; const m={burn:'🔥 Burn -15 HP', poison:'☠️ Poison -10 HP', bleed:'🩸 Bleed -12 HP', stun:'💫 Stun skip', freeze:'❄️ Freeze skip + -3% HP', paralyze:'⚡ Paralyze 70% skip', weaken:'💔 Weaken -30% ATK', curse:'👁️ Curse -15% DEF', fear:'😱 Fear -20% ATK', enfeeble:'🐢 Enfeeble -30% DEF', trueslow:'🐌 Slow -35% SPD', silence:'🤐 Silence', blind:'🌫️ Blind -50% ACC'}; return ent.statusEffects.map(s=> (m[(s.type||'').toLowerCase()]||s.type)+' ('+(s.duration||s.turns||'?')+'t)').join(' | '); }
 const BP = require('../../rpg/utils/BattlePass');
 const BarSystem           = require('../../rpg/utils/BarSystem');
 const LevelUpManager      = require('../../rpg/utils/LevelUpManager');
@@ -213,24 +222,26 @@ module.exports = {
     const player = db.users[sender];
 
     if (!player) return sock.sendMessage(chatId, { text: '❌ Register first! Use /register' }, { quoted: msg });
+    const pro = UI.isPro(player);
+    const FRAME = pro ? UI.PRO_BAR : UI.FREE_BAR;
 
     const action = args[0]?.toLowerCase();
 
     // ── HELP ────────────────────────────────────────────────────
     if (!action || action === 'help') {
       return sock.sendMessage(chatId, {
-        text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🌍 *WORLD BOSS RAIDS*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\nMassive bosses requiring a party of 2-5 hunters!\nBosses have 3 phases — harder as HP drops.\n\n📋 *COMMANDS:*\n/worldboss list          — View current world bosses\n/worldboss create [#]    — Form a party for boss #\n/worldboss join [ID]     — Join a forming party\n/worldboss ready         — Mark yourself ready\n/worldboss start         — Leader starts the raid (all ready)\n/worldboss attack        — Attack the boss\n/worldboss skill [name]  — Use a skill\n/worldboss defend        — Reduce incoming damage 60%\n/worldboss status        — View raid status\n/worldboss disband       — Disband party (pre-start only)\n\n⚠️ *RULES:*\n• Minimum 2 players, maximum 5\n• All members must be /worldboss ready\n• Watch for ⚠️ WARNING telegraphs — use /worldboss defend!\n• Each player takes damage individually each turn\n• If ALL members die, the raid fails\n━━━━━━━━━━━━━━━━━━━━━━━━━━━`
+        text: (pro ? `${UI.PRO_BAR}\n🌍 *WORLD BOSS RAIDS* 💎\n${UI.PRO_BAR}\n` : `🌍 *WORLD BOSS RAIDS*\n${UI.FREE_BAR}\n`) + `Massive bosses requiring a party of 2-5 hunters!\nBosses have 3 phases — harder as HP drops.\n\n📋 *COMMANDS:*\n/worldboss list          — View current world bosses\n/worldboss create [#]    — Form a party for boss #\n/worldboss join [ID]     — Join a forming party\n/worldboss ready         — Mark yourself ready\n/worldboss start         — Leader starts the raid (all ready)\n/worldboss attack        — Attack the boss\n/worldboss skill [name]  — Use a skill\n/worldboss defend        — Reduce incoming damage 60%\n/worldboss status        — View raid status\n/worldboss disband       — Disband party (pre-start only)\n\n⚠️ *RULES:*\n• Minimum 2 players, maximum 5\n• All members must be /worldboss ready\n• Watch for ⚠️ WARNING telegraphs — use /worldboss defend!\n• Each player takes damage individually each turn\n• If ALL members die, the raid fails\n${FRAME}` + (pro ? '' : `\n${UI.upsell()}`)
       }, { quoted: msg });
     }
 
     // ── LIST ────────────────────────────────────────────────────
     if (action === 'list') {
-      let txt = `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🌍 *WORLD BOSSES*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
+      let txt = pro ? `${UI.PRO_BAR}\n🌍 *WORLD BOSSES* 💎\n${UI.PRO_BAR}\n\n` : `🌍 *WORLD BOSSES*\n${UI.FREE_BAR}\n\n`;
       WORLD_BOSSES.forEach((b, i) => {
         const locked = player.level < b.minLevel ? `🔒 Req. Lv${b.minLevel}` : '✅ Available';
         txt += `${i+1}. ${b.emoji} *${b.name}*\n   ${locked} | Party: ${b.minParty}-${b.maxParty} hunters\n   💭 ${b.description}\n\n`;
       });
-      txt += `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n💡 Form a party: /worldboss create [#]\n━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+      txt += `${FRAME}\n💡 Form a party: /worldboss create [#]\n${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO HUNT* — ${WORLD_BOSSES.length} bosses in rotation` : `\n${UI.upsell()}`);
       return sock.sendMessage(chatId, { text: txt }, { quoted: msg });
     }
 
@@ -250,7 +261,7 @@ module.exports = {
 
       const party = WorldBossParties.create(sender, player.name, bossDef.id, chatId);
       return sock.sendMessage(chatId, {
-        text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🌍 *RAID PARTY FORMED!*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n${bossDef.emoji} Target: *${bossDef.name}*\n💭 ${bossDef.description}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n📋 Party ID: *${party.id}*\n👑 Leader: ${player.name}\n👥 Members: 1/${bossDef.maxParty}\n⚠️ Need: ${bossDef.minParty}-${bossDef.maxParty} hunters\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n📌 Share party ID with hunters:\n/worldboss join ${party.id}\n\nWhen ready: /worldboss ready\nLeader starts: /worldboss start\n━━━━━━━━━━━━━━━━━━━━━━━━━━━`
+        text: (pro ? `${UI.PRO_BAR}\n🌍 *RAID PARTY FORMED!* 💎\n${UI.PRO_BAR}\n` : `🌍 *RAID PARTY FORMED!*\n${UI.FREE_BAR}\n`) + `${bossDef.emoji} Target: *${bossDef.name}*\n💭 ${bossDef.description}\n${FRAME}\n📋 Party ID: *${party.id}*\n👑 Leader: ${player.name}\n👥 Members: 1/${bossDef.maxParty}\n⚠️ Need: ${bossDef.minParty}-${bossDef.maxParty} hunters\n${FRAME}\n📌 Share party ID with hunters:\n/worldboss join ${party.id}\n\nWhen ready: /worldboss ready\nLeader starts: /worldboss start\n${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO MUSTER* — cap ${bossDef.maxParty} hunters` : `\n${UI.upsell()}`)
       }, { quoted: msg });
     }
 
@@ -274,7 +285,7 @@ module.exports = {
 
       party.members.push({ id: sender, name: player.name, ready: false, defending: false });
       return sock.sendMessage(chatId, {
-        text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n✅ *JOINED RAID PARTY!*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n👤 ${player.name} joined ${partyId}!\n👥 Members: ${party.members.length}/${party.maxMembers}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\nMark yourself ready: /worldboss ready\n━━━━━━━━━━━━━━━━━━━━━━━━━━━`
+        text: (pro ? `${UI.PRO_BAR}\n✅ *JOINED RAID PARTY!* 💎\n${UI.PRO_BAR}\n` : `✅ *JOINED RAID PARTY!*\n${UI.FREE_BAR}\n`) + `👤 ${player.name} joined ${partyId}!\n👥 Members: ${party.members.length}/${party.maxMembers}\n${FRAME}\nMark yourself ready: /worldboss ready\n${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO MUSTER* — ${party.maxMembers - party.members.length} slots left` : `\n${UI.upsell()}`)
       }, { quoted: msg });
     }
 
@@ -317,11 +328,11 @@ module.exports = {
 
       if (party.status === 'recruiting') {
         const bossDef = WORLD_BOSSES.find(b => b.id === party.bossId);
-        let txt = `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n📊 *RAID PARTY ${party.id}*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+        let txt = pro ? `${UI.PRO_BAR}\n📊 *RAID PARTY ${party.id}* 💎\n${UI.PRO_BAR}\n` : `📊 *RAID PARTY ${party.id}*\n${UI.FREE_BAR}\n`;
         txt += `${bossDef?.emoji||'👹'} Target: *${bossDef?.name||'?'}*\n`;
         txt += `👥 Members: ${party.members.length}/${party.maxMembers}\n\n`;
         party.members.forEach(m => { txt += `  ${m.ready?'✅':'⏳'} ${m.name}\n`; });
-        txt += `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+        txt += `\n${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO MUSTER* — ${party.members.filter(m => m.ready).length}/${party.members.length} ready` : `\n${UI.upsell()}`);
         return sock.sendMessage(chatId, { text: txt }, { quoted: msg });
       }
 
@@ -331,7 +342,7 @@ module.exports = {
 
       const bossBar  = BarSystem.getMonsterHPBar(boss.stats.hp, boss.stats.maxHp);
       const phase    = boss.phases[boss.currentPhase];
-      let txt = `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🌍 *WORLD BOSS — TURN ${party.turn}*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+      let txt = pro ? `${UI.PRO_BAR}\n🌍 *WORLD BOSS — TURN ${party.turn}* 💎\n${UI.PRO_BAR}\n` : `🌍 *WORLD BOSS — TURN ${party.turn}*\n${UI.FREE_BAR}\n`;
       txt += `${boss.emoji} *${boss.name}* [${phase.name}]\n${bossBar}\n❤️ ${boss.stats.hp.toLocaleString()}/${boss.stats.maxHp.toLocaleString()}\n\n`;
       txt += `👥 *PARTY STATUS:*\n`;
       party.members.forEach(m => {
@@ -341,7 +352,7 @@ module.exports = {
         const hasAction = !!party.pendingActions[m.id];
         txt += `${hasAction?'✅':'⏳'} *${m.name}*\n  ${hpBar}\n  ❤️ ${mp.stats.hp}/${mp.stats.maxHp}\n\n`;
       });
-      txt += `━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+      txt += `${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO HUNT* — ${phase.name} · ${Math.max(0, Math.round(100 * boss.stats.hp / boss.stats.maxHp))}% HP` : `\n${UI.upsell()}`);
       return sock.sendMessage(chatId, { text: txt }, { quoted: msg });
     }
 
@@ -374,7 +385,7 @@ module.exports = {
       const mList = party.members.map(m => `  ⚔️ ${m.name} (Lv.${db.users[m.id]?.level||'?'})`).join('\n');
 
       return sock.sendMessage(chatId, {
-        text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🌍 *WORLD BOSS RAID BEGINS!*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n${boss.emoji} *${boss.name}*\n💭 "${boss.desc}"\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n${bBar}\n❤️ ${boss.stats.hp.toLocaleString()} HP | ⚔️ ATK: ${boss.stats.atk}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n👥 *YOUR PARTY:*\n${mList}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n⚠️ Boss has 3 PHASES — gets stronger as HP drops!\nWatch for WARNING telegraphs!\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🎯 *TURN 1 — ALL ATTACK!*\n/worldboss attack — basic strike\n/worldboss skill [name] — use a skill\n/worldboss defend — brace for damage\n/worldboss status — check party\n━━━━━━━━━━━━━━━━━━━━━━━━━━━`
+        text: (pro ? `${UI.PRO_BAR}\n🌍 *WORLD BOSS RAID BEGINS!* 💎\n${UI.PRO_BAR}\n` : `🌍 *WORLD BOSS RAID BEGINS!*\n${UI.FREE_BAR}\n`) + `${boss.emoji} *${boss.name}*\n💭 "${boss.desc}"\n${FRAME}\n${bBar}\n❤️ ${boss.stats.hp.toLocaleString()} HP | ⚔️ ATK: ${boss.stats.atk}\n${FRAME}\n👥 *YOUR PARTY:*\n${mList}\n${FRAME}\n⚠️ Boss has 3 PHASES — gets stronger as HP drops!\nWatch for WARNING telegraphs!\n${FRAME}\n🎯 *TURN 1 — ALL ATTACK!*\n/worldboss attack — basic strike\n/worldboss skill [name] — use a skill\n/worldboss defend — brace for damage\n/worldboss status — check party\n${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO HUNT* — ${boss.stats.hp.toLocaleString()} HP · ⚔️ ${boss.stats.atk} ATK` : `\n${UI.upsell()}`)
       }, { quoted: msg });
     }
 
@@ -402,7 +413,17 @@ module.exports = {
         // Check for pattern id from /attack <id> routed via attacks.js
         let wbPatternId = null;
         const possiblePid = parseInt((args[1]||'').toString().trim());
-        if (!isNaN(possiblePid) && possiblePid>=1 && possiblePid<=750) wbPatternId = possiblePid;
+        if (!isNaN(possiblePid) && possiblePid>=1 && possiblePid<=750) {
+          const _wbOwned = player.attackPatterns?.owned || [];
+          const _wbEquipped = player.attackPatterns?.equipped || [];
+          if (!_wbOwned.includes(possiblePid)) {
+            return sock.sendMessage(chatId, { text: `❌ You don't own Attack #${possiblePid}!\nAcquire it first: /attacks shop` }, { quoted: msg });
+          }
+          if (!_wbEquipped.includes(possiblePid)) {
+            return sock.sendMessage(chatId, { text: `❌ Attack #${possiblePid} is not equipped!\nEquip it first: /attacks equip ${possiblePid}` }, { quoted: msg });
+          }
+          wbPatternId = possiblePid;
+        }
         party.pendingActions[sender] = wbPatternId ? { type: 'attack', patternId: wbPatternId } : { type: 'attack' };
       }
 
@@ -433,24 +454,22 @@ module.exports = {
 // TURN RESOLUTION
 // ═══════════════════════════════════════════════════════════════
 async function resolveRaidTurn(sock, chatId, party, db, saveDatabase) {
+  const FRAME = raidFrame(party, db);
   const boss    = party.boss;
   const members = party.members.map(m => ({ ...m, player: db.users[m.id] })).filter(m => m.player);
 
-  let log = `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🌍 *RAID TURN ${party.turn}*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+  let log = `${FRAME}\n🌍 *RAID TURN ${party.turn}*\n${FRAME}\n`;
   // ── STATUS EFFECTS — tick at start of round for boss & each member if alive
   try {
     const UCwbS = require('../../rpg/utils/UnifiedCombat');
     const StatusWB = require('../../rpg/utils/StatusEffectManager');
     let _wbStatusLines = [];
     let _wbTickLogs = [];
-    // Tick boss
-    try { const bt = UCwbS.tickStatuses(boss); if(bt && bt.length) _wbTickLogs = _wbTickLogs.concat(bt); } catch(e){}
-    try { const bt2 = StatusWB.processTurnEffects ? StatusWB.processTurnEffects(boss) : null; if(bt2 && bt2.messages && bt2.messages.length) _wbTickLogs = _wbTickLogs.concat(bt2.messages); } catch(e){}
+    // (Boss DoTs tick once in the boss phase below — ticking here too drained durations 2-3x per round)
     // Tick each alive member
     for (const m of members) {
       if (m.player.stats.hp <= 0) continue;
-      try { const pt = UCwbS.tickStatuses(m.player); if(pt && pt.length) _wbTickLogs = _wbTickLogs.concat(pt.map(x => `${m.name}: ${x}`)); } catch(e){}
-      try { const pm = StatusWB.processTurnEffects ? null : null; } catch(e){}
+      // (Member DoTs tick once in the attack loop below — no pre-tick here)
       // Build summary line for this member
       if (m.player.statusEffects && m.player.statusEffects.length) {
         const s = m.player.statusEffects.map(sEff => `${sEff.emoji||'✨'} ${sEff.type||sEff.name}(${sEff.duration||sEff.turns||'?' }t)`).join(', ');
@@ -466,7 +485,7 @@ async function resolveRaidTurn(sock, chatId, party, db, saveDatabase) {
   } catch(e){}
 
   // ── PHASE 1: PARTY ATTACKS BOSS ──────────────────────────────
-  log += `\n⚔️ *PARTY ATTACKS*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+  log += `\n⚔️ *PARTY ATTACKS*\n${FRAME}\n`;
   let totalDmg = 0;
 
   for (const m of members) {
@@ -474,6 +493,20 @@ async function resolveRaidTurn(sock, chatId, party, db, saveDatabase) {
     if (pl.stats.hp <= 0) continue;
     const act    = party.pendingActions[m.id];
     if (!act) continue;
+
+    // Frozen / stunned members lose their turn; status DoTs tick every turn
+    try {
+      const UCwbFx = require('../../rpg/utils/UnifiedCombat');
+      const _mtick = UCwbFx.tickStatuses(pl) || [];
+      if (_mtick.length) log += _mtick.join(' | ') + '\n';
+      const _wf = UCwbFx.canAct(pl);
+      if (!_wf.canAct) {
+        { const _wm = { frozen: ['❄️', 'FROZEN'], stunned: ['💫', 'STUNNED'], paralyzed: ['🔱', 'PARALYZED'], feared: ['😱', 'FEARED'] };
+          const [_we, _ww] = _wm[_wf.reason] || ['💫', 'STUNNED'];
+          log += `${_we} *${m.name}* is ${_ww} and cannot move! (0 dmg, status -1)\n`; }
+        continue;
+      }
+    } catch(e){}
 
     let dmg = 0;
 
@@ -491,6 +524,11 @@ async function resolveRaidTurn(sock, chatId, party, db, saveDatabase) {
         const ownedWb = pl.attackPatterns?.owned || [];
         if (!atkWb || !ownedWb.includes(pidWB)) {
           log += `❌ *${m.name}* pattern #${pidWB} not owned — skipped\n`;
+          continue;
+        }
+        const equippedWb = pl.attackPatterns?.equipped || [];
+        if (!equippedWb.includes(pidWB)) {
+          log += `❌ *${m.name}* pattern #${pidWB} not equipped — skipped (/attacks equip ${pidWB})\n`;
           continue;
         }
         const cdWb = UCwb.isOnCooldown(pl, pidWB);
@@ -513,6 +551,7 @@ async function resolveRaidTurn(sock, chatId, party, db, saveDatabase) {
         boss.stats.hp -= dmg;
         totalDmg += dmg;
         log += `🥋 *${m.name}* ${atkWb.name} [${atkWb.rank}] Dmg×${atkWb.dmgMult} ${isCritWb?'💥 CRIT! ':''}*${dmg.toLocaleString()}* dmg${effWb?` ${effWb.emoji} ${effWb.type}`:''}!\n`;
+        try { require('../../rpg/utils/QuestDispatcher').trackAndNotify(pl, 'pattern', 1, sock, m.id, chatId); } catch(e){}
         if (atkWb.description) log += `_${atkWb.description.slice(0,120)}_\n`;
       } else {
         const isCrit = Math.random() < 0.12;
@@ -540,7 +579,7 @@ async function resolveRaidTurn(sock, chatId, party, db, saveDatabase) {
   const newPhase = checkPhase(boss);
   if (newPhase) {
     boss.stats.atk = Math.floor(boss.stats.atk * newPhase.atkMult);
-    log += `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n⚡ *PHASE CHANGE!*\n${newPhase.msg}\n⚔️ Boss ATK increased!\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+    log += `\n${FRAME}\n⚡ *PHASE CHANGE!*\n${newPhase.msg}\n⚔️ Boss ATK increased!\n${FRAME}\n`;
   }
 
   // ── CHECK WIN ────────────────────────────────────────────────
@@ -549,13 +588,23 @@ async function resolveRaidTurn(sock, chatId, party, db, saveDatabase) {
   }
 
   // ── BOSS ATTACKS PARTY ───────────────────────────────────────
-  log += `\n${boss.emoji} *${boss.name.toUpperCase()} ATTACKS*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+  // Boss statuses tick here (burn/poison/bleed/freeze DoTs damage the boss)
+  let _bossCanAct = { canAct: true, reason: null };
+  try {
+    const UCwbBoss = require('../../rpg/utils/UnifiedCombat');
+    const _bt = UCwbBoss.tickStatuses(boss) || [];
+    if (_bt.length) log += _bt.join(' | ') + '\n';
+    _bossCanAct = UCwbBoss.canAct(boss);
+  } catch(e){}
+  log += `\n${boss.emoji} *${boss.name.toUpperCase()} ATTACKS*\n${FRAME}\n`;
 
   const telegraph = party.pendingTelegraph;
   party.pendingTelegraph = null;
 
-  // Execute telegraph effect if any
-  if (telegraph) {
+  // Execute telegraph effect if any (skipped entirely if the boss is frozen/stunned)
+  if (!_bossCanAct.canAct) {
+    log += `🧊 *${boss.name}* is ${((r => ({ frozen: 'FROZEN solid', stunned: 'STUNNED', paralyzed: 'PARALYZED', feared: 'FEARED' }[r] || 'STUNNED'))(_bossCanAct.reason))} and cannot attack! (0 dmg)\n`;
+  } else if (telegraph) {
     if (telegraph.aoe) {
       // AOE hits everyone
       for (const m of members) {
@@ -639,7 +688,7 @@ async function resolveRaidTurn(sock, chatId, party, db, saveDatabase) {
   // ── STATUS BAR ───────────────────────────────────────────────
   const bBar = BarSystem.getMonsterHPBar(boss.stats.hp, boss.stats.maxHp);
   const phase = boss.phases[boss.currentPhase];
-  log += `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n${boss.emoji} *${boss.name}* [${phase.name}]\n${bBar}\n❤️ ${boss.stats.hp.toLocaleString()}/${boss.stats.maxHp.toLocaleString()}\n\n👥 *Party:*\n`;
+  log += `\n${FRAME}\n${boss.emoji} *${boss.name}* [${phase.name}]\n${bBar}\n❤️ ${boss.stats.hp.toLocaleString()}/${boss.stats.maxHp.toLocaleString()}\n\n👥 *Party:*\n`;
 
   members.forEach(m => {
     const pl  = m.player;
@@ -658,7 +707,7 @@ async function resolveRaidTurn(sock, chatId, party, db, saveDatabase) {
   party.turn++;
   saveDatabase();
 
-  log += `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🎯 *TURN ${party.turn}* — All act!\n/worldboss attack | defend | skill [name]`;
+  log += `\n${FRAME}\n🎯 *TURN ${party.turn}* — All act!\n/worldboss attack | defend | skill [name]`;
   return sock.sendMessage(chatId, { text: log });
 }
 
@@ -666,6 +715,7 @@ async function resolveRaidTurn(sock, chatId, party, db, saveDatabase) {
 // VICTORY
 // ═══════════════════════════════════════════════════════════════
 async function handleRaidVictory(sock, chatId, party, db, saveDatabase, log) {
+  const FRAME = raidFrame(party, db);
   const boss    = party.boss;
   const members = party.members.map(m => ({ player: db.users[m.id], id: m.id })).filter(u => u.player);
   const avgLevel = Math.floor(members.reduce((s, m) => s + m.player.level, 0) / members.length);
@@ -694,6 +744,12 @@ async function handleRaidVictory(sock, chatId, party, db, saveDatabase, log) {
   members.forEach(({ player: member, id: memberId }) => {
     member.xp           = (member.xp           || 0) + xpReward;
     member.gold         = (member.gold          || 0) + goldReward;
+    try {
+      const QD = require('../../rpg/utils/QuestDispatcher');
+      QD.trackAndNotify(member, 'boss', 1, sock, memberId, chatId);
+      QD.trackAndNotify(member, 'goldEarn', goldReward, sock, memberId, chatId);
+    } catch(e){}
+    try { require('../../rpg/utils/GuildPointsSystem').addGuildGP(db, memberId, 20, 'World boss contribution', { quest: true, sock, jid: memberId, chatId }); } catch(e){}
     member.manaCrystals = (member.manaCrystals  || 0) + crystalRew;
     member.upgradePoints = (member.upgradePoints || 0) + upReward;
     if (!member.inventory) member.inventory = {};
@@ -717,7 +773,7 @@ async function handleRaidVictory(sock, chatId, party, db, saveDatabase, log) {
 
   let brLine = '';
   try { const BR=require('../../rpg/utils/BattleRewards'); if(sampleRewards) brLine = '\n' + BR.formatRewards(sampleRewards).replace(/\n/g,'\n'); } catch(e){}
-  log += `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🏆 *WORLD BOSS DEFEATED!*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n${boss.emoji} *${boss.name}* has fallen!\n💭 A legendary victory!\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🎁 *REWARDS (Each member):*\n✨ +${xpReward.toLocaleString()} XP\n💠 +${goldReward.toLocaleString()} Nexus\n💎 +${crystalRew} Mana Stones\n⬆️ +${upReward} Upgrade Points${brLine ? '\n' + brLine : ''}${eventBonusMsg}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+  log += `\n${FRAME}\n🏆 *WORLD BOSS DEFEATED!*\n${FRAME}\n${boss.emoji} *${boss.name}* has fallen!\n💭 A legendary victory!\n${FRAME}\n🎁 *REWARDS (Each member):*\n✨ +${xpReward.toLocaleString()} XP\n💠 +${goldReward.toLocaleString()} Nexus\n💎 +${crystalRew} Mana Stones\n⬆️ +${upReward} Upgrade Points${brLine ? '\n' + brLine : ''}${eventBonusMsg}\n${FRAME}`;
   return sock.sendMessage(chatId, { text: log });
 }
 
@@ -725,9 +781,10 @@ async function handleRaidVictory(sock, chatId, party, db, saveDatabase, log) {
 // WIPE
 // ═══════════════════════════════════════════════════════════════
 async function handleRaidWipe(sock, chatId, party, db, saveDatabase, log) {
+  const FRAME = raidFrame(party, db);
   party.status = 'failed';
   saveDatabase();
   setTimeout(() => WorldBossParties.remove(party.id), 5000);
-  log += `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n💀 *PARTY WIPED!*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n${party.boss.emoji} *${party.boss.name}* stands victorious...\n💭 All hunters have fallen!\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\nRecover and try again with a stronger party!\n━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+  log += `\n${FRAME}\n💀 *PARTY WIPED!*\n${FRAME}\n${party.boss.emoji} *${party.boss.name}* stands victorious...\n💭 All hunters have fallen!\n${FRAME}\nRecover and try again with a stronger party!\n${FRAME}`;
   return sock.sendMessage(chatId, { text: log });
 }

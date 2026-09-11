@@ -18,27 +18,29 @@ module.exports = {
     const db = getDatabase();
     const player = db.users[sender];
     if (!player) return sock.sendMessage(chatId, { text: '❌ Not registered! Use /register [name]' }, { quoted: msg });
+    const UI = require('../../rpg/utils/UI');
+    const pro = UI.isPro(player);
+    const FRAME = pro ? UI.PRO_BAR : UI.FREE_BAR;
 
     const sub = (args[0] || 'list').toLowerCase();
 
     // ── /friend list ───────────────────────────────────────────
     if (sub === 'list') {
       const fd = getFriendData(player);
-      let msg2 = '━━━━━━━━━━━━━━━━━━━━━━━━━━━\n';
-      msg2 += '💞 *FRIEND LIST* — ' + player.name + '\n';
-      msg2 += '━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n';
+      let msg2 = pro ? `${UI.PRO_BAR}\n💞 *FRIEND LIST* 💎 — ${player.name}\n${UI.PRO_BAR}\n\n` : `💞 *FRIEND LIST* — ${player.name}\n${UI.FREE_BAR}\n\n`;
       msg2 += `Friends: ${fd.list.length}/${MAX_FRIENDS}\n\n`;
       msg2 += formatFriendList(player);
 
       if (fd.requests.length > 0) {
-        msg2 += '━━━━━━━━━━━━━━━━━━━━━━━━━━━\n';
+        msg2 += `${FRAME}\n`;
         msg2 += `📬 *PENDING REQUESTS* (${fd.requests.length})\n`;
         for (const r of fd.requests) msg2 += `• ${r.fromName}\n`;
         msg2 += 'Use /friend accept @user to accept\n';
       }
 
-      msg2 += '━━━━━━━━━━━━━━━━━━━━━━━━━━━\n';
+      msg2 += `${FRAME}\n`;
       msg2 += '/friend add @user\n/friend remove @user\n/friend gift @user\n/friend check @user\n/friend duel @user';
+      msg2 += `\n${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO BOND* — ${fd.list.length}/${MAX_FRIENDS} · ${fd.requests.length} pending` : `\n${UI.upsell()}`);
       return sock.sendMessage(chatId, { text: msg2 }, { quoted: msg });
     }
 
@@ -67,7 +69,7 @@ module.exports = {
 
       if (!result.ok) return sock.sendMessage(chatId, { text: '❌ ' + result.reason }, { quoted: msg });
 
-      await sock.sendMessage(chatId, { text: `📨 Friend request sent to *${target.name}*!\nThey can accept with /friend accept @${player.name}` }, { quoted: msg });
+      await sock.sendMessage(chatId, { text: (pro ? `${UI.PRO_BAR}\n📨 *FRIEND REQUEST SENT* 💎\n${UI.PRO_BAR}\n\nTo *${target.name}*!\nThey can accept with /friend accept @${player.name}\n${UI.PRO_BAR}\n${UI.PRO_MINI}\n💎 *PRO BOND* — ${fd.list.length}/${MAX_FRIENDS} friends` : `📨 Friend request sent to *${target.name}*!\nThey can accept with /friend accept @${player.name}\n${UI.FREE_BAR}\n${UI.upsell()}`) }, { quoted: msg });
 
       try {
         await sock.sendMessage(targetId, {
@@ -91,7 +93,7 @@ module.exports = {
       if (!result.ok) return sock.sendMessage(chatId, { text: '❌ ' + result.reason }, { quoted: msg });
 
       await sock.sendMessage(chatId, {
-        text: `💞 You and *${requester.name}* are now friends!\n\n🤝 Bond Level 1 — play together to grow stronger!\n✨ Party perks now active when you dungeon together.`
+        text: (pro ? `${UI.PRO_BAR}\n💞 *NEW FRIEND!* 💎\n${UI.PRO_BAR}\n\nYou and *${requester.name}* are now friends!\n\n🤝 Bond Level 1 — play together to grow stronger!\n✨ Party perks now active when you dungeon together.\n${UI.PRO_BAR}\n${UI.PRO_MINI}\n💎 *PRO BOND* — Lv.1 with ${requester.name}` : `💞 You and *${requester.name}* are now friends!\n\n🤝 Bond Level 1 — play together to grow stronger!\n✨ Party perks now active when you dungeon together.\n${UI.FREE_BAR}\n${UI.upsell()}`)
       }, { quoted: msg });
 
       try {
@@ -142,15 +144,14 @@ module.exports = {
 
       return sock.sendMessage(chatId, {
         text: [
-          '━━━━━━━━━━━━━━━━━━━━━━━━━━━',
-          `👁️ *${target.name}* — Status Check`,
-          '━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+          ...(pro ? [UI.PRO_BAR, `👁️ *${target.name}* — Status Check 💎`, UI.PRO_BAR] : [`👁️ *${target.name}* — Status Check`, UI.FREE_BAR]),
           `📊 Level: ${target.level || 1}`,
           `❤️ HP: ${target.stats.hp}/${target.stats.maxHp} (${hpPct}%)`,
           `⚡ Energy: ${target.stats.energy}/${target.stats.maxEnergy || 100} (${enPct}%)`,
           `🎮 Status: ${inBattle}`,
           `💫 Effects: ${effects}`,
-          '━━━━━━━━━━━━━━━━━━━━━━━━━━━'
+          FRAME,
+          ...(pro ? [UI.PRO_MINI, `💎 *PRO BOND* — ${inBattle}`] : [UI.upsell()]),
         ].join('\n')
       }, { quoted: msg });
     }
@@ -215,7 +216,7 @@ module.exports = {
       saveDatabase();
 
       await sock.sendMessage(chatId, {
-        text: `🎁 Gift sent to *${target.name}*!\n\n${giftDesc}\n\n💠 Cost: ${GIFT_COST.gold.toLocaleString()} Nexus + ${GIFT_COST.crystals} crystals`
+        text: (pro ? `${UI.PRO_BAR}\n🎁 *GIFT SENT!* 💎\n${UI.PRO_BAR}\n\nTo *${target.name}*!\n\n${giftDesc}\n\n💠 Cost: ${GIFT_COST.gold.toLocaleString()} Nexus + ${GIFT_COST.crystals} crystals\n${UI.PRO_BAR}\n${UI.PRO_MINI}\n💎 *PRO BOND* — Lv.${bondLevel} bond` : `🎁 Gift sent to *${target.name}*!\n\n${giftDesc}\n\n💠 Cost: ${GIFT_COST.gold.toLocaleString()} Nexus + ${GIFT_COST.crystals} crystals\n${UI.FREE_BAR}\n${UI.upsell()}`)
       }, { quoted: msg });
 
       try {
@@ -247,7 +248,7 @@ module.exports = {
 
       return sock.sendMessage(chatId, {
         text: [
-          '⚔️ *FRIEND DUEL REQUEST*',
+          ...(pro ? [UI.PRO_BAR, '⚔️ *FRIEND DUEL REQUEST* 💎', UI.PRO_BAR] : ['⚔️ *FRIEND DUEL REQUEST*', UI.FREE_BAR]),
           '',
           `*${player.name}* challenges *${target.name}* to a friendly duel!`,
           '',
@@ -258,7 +259,9 @@ module.exports = {
           '• Bond XP gained win or lose',
           '',
           `@${targetId.split('@')[0]} — Accept with /pvp challenge @${player.name}`,
-          '(Rank changes are disabled for friend duels)'
+          '(Rank changes are disabled for friend duels)',
+          FRAME,
+          ...(pro ? [UI.PRO_MINI, `💎 *PRO BOND* — honor duel with ${target.name}`] : [UI.upsell()]),
         ].join('\n')
       }, { quoted: msg });
     }
@@ -290,7 +293,7 @@ module.exports = {
       saveDatabase();
 
       await sock.sendMessage(chatId, {
-        text: `🆘 Emergency help sent to *${target.name}*!\n\n❤️ They received a 30% max HP heal remotely.\n\n⏳ Help cooldown: 24 hours`
+        text: (pro ? `${UI.PRO_BAR}\n🆘 *EMERGENCY HELP SENT!* 💎\n${UI.PRO_BAR}\n\nTo *${target.name}*!\n\n❤️ They received a 30% max HP heal remotely.\n\n⏳ Help cooldown: 24 hours\n${UI.PRO_BAR}\n${UI.PRO_MINI}\n💎 *PRO BOND* — aid delivered` : `🆘 Emergency help sent to *${target.name}*!\n\n❤️ They received a 30% max HP heal remotely.\n\n⏳ Help cooldown: 24 hours\n${UI.FREE_BAR}\n${UI.upsell()}`)
       }, { quoted: msg });
 
       try {
@@ -302,7 +305,7 @@ module.exports = {
     }
 
     return sock.sendMessage(chatId, {
-      text: '💞 *FRIEND COMMANDS*\n\n/friend list\n/friend add @user\n/friend accept @user\n/friend remove @user\n/friend check @user\n/friend gift @user\n/friend duel @user\n/friend help @user'
+      text: (pro ? `${UI.PRO_BAR}\n💞 *FRIEND COMMANDS* 💎\n${UI.PRO_BAR}\n\n/friend list\n/friend add @user\n/friend accept @user\n/friend remove @user\n/friend check @user\n/friend gift @user\n/friend duel @user\n/friend help @user\n${UI.PRO_BAR}\n${UI.PRO_MINI}\n💎 *PRO BOND* — manage your circle` : `💞 *FRIEND COMMANDS*\n${UI.FREE_BAR}\n\n/friend list\n/friend add @user\n/friend accept @user\n/friend remove @user\n/friend check @user\n/friend gift @user\n/friend duel @user\n/friend help @user\n${UI.FREE_BAR}\n${UI.upsell()}`)
     }, { quoted: msg });
   }
 };

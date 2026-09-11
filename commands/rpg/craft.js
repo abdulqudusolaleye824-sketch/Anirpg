@@ -25,6 +25,7 @@ module.exports = {
     const player = db.users[sender];
 
     if (!player) return sock.sendMessage(chatId, { text: '❌ Register first! Use /register' }, { quoted: msg });
+    const UI = require('../../rpg/utils/UI');
 
     const fullInput = args.join(' ');
 
@@ -61,9 +62,11 @@ module.exports = {
 
     const item = result.item;
 
-    // Award Weekly GP and Battle Pass XP for crafting
+    // Award Weekly GP (central ledger) + Battle Pass XP for crafting
     try { require('../../rpg/utils/WeeklyGuildWar').addGP(db, sender, 75, saveDatabase); } catch(e) {}
-    try { require('../../rpg/utils/BattlePass').addPassXP(player, 'craft_item'); } catch(e) {}
+    try { const _BP = require('../../rpg/utils/BattlePass'); if (_BP.addPassXPAmount) _BP.addPassXPAmount(player, 100); } catch(e) {}
+    // Daily quest: item crafted (exactly once)
+    try { require('../../rpg/utils/QuestDispatcher').trackAndNotify(player, 'craft', 1, sock, sender, chatId); } catch(e){}
 
     saveDatabase();
 
@@ -71,17 +74,16 @@ module.exports = {
     const stolenKey = result.scrollOwnerJid && result.scrollOwnerJid !== sender;
     if (stolenKey) {
       try {
+        const oPro = UI.isPro(db.users?.[result.scrollOwnerJid]);
         await sock.sendMessage(result.scrollOwnerJid, {
           text: [
-            `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-            `🔑 *YOUR SCROLL KEY WAS USED*`,
-            `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+            ...(oPro ? [UI.PRO_BAR, `🔑 *YOUR SCROLL KEY WAS USED* 💎`, UI.PRO_BAR] : [`🔑 *YOUR SCROLL KEY WAS USED*`, UI.FREE_BAR]),
             ``,
             `Someone used your craft key *${key}*`,
             `and crafted *${item.name}*.`,
             ``,
             `Your scroll has been consumed.`,
-            `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+            oPro ? UI.PRO_BAR : UI.FREE_BAR,
           ].join('\n')
         });
       } catch (e) {}

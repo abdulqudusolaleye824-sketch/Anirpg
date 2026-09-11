@@ -13,6 +13,9 @@ module.exports = {
     if (!player) {
       return sock.sendMessage(chatId, { text: '❌ You are not registered!' }, { quoted: msg });
     }
+    const UI = require('../../rpg/utils/UI');
+    const pro = UI.isPro(player);
+    const FRAME = pro ? UI.PRO_BAR : UI.FREE_BAR;
 
     const subCmd = args[0]?.toLowerCase();
 
@@ -118,7 +121,7 @@ module.exports = {
       const re = rarityEmoji[(item.rarity||'').toLowerCase()] || '📦';
 
       return sock.sendMessage(chatId, {
-        text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🎁 *ITEM TRANSFERRED!*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n${re} *${item.name}*\n⭐ ${item.rarity}\n\n📤 From: *${player.name}*\n📥 To: *${recipient.name}*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        text: (pro ? `${UI.PRO_BAR}\n🎁 *ITEM TRANSFERRED!* 💎\n${UI.PRO_BAR}\n\n${re} *${item.name}*` : `🎁 *ITEM TRANSFERRED!*\n${UI.FREE_BAR}\n\n${re} *${item.name}*`)+`\n⭐ ${item.rarity}\n\n📤 From: *${player.name}*\n📥 To: *${recipient.name}*\n${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO STASH* — sent ${item.name}` : `\n${UI.upsell()}`),
         mentions: [recipientId]
       }, { quoted: msg });
     }
@@ -126,7 +129,7 @@ module.exports = {
     // ── /items -tier — unnumbered rarity groups ────────────────
     if (subCmd === '-tier' || subCmd === 'tier') {
       if (sorted.length === 0)
-        return sock.sendMessage(chatId, { text: `🎒 *ITEMS*\n\n❌ No equippable items!` }, { quoted: msg });
+        return sock.sendMessage(chatId, { text: (pro ? `${UI.PRO_BAR}\n🎒 *ITEMS BY TIER* 💎\n${UI.PRO_BAR}\n\n❌ No equippable items!\n${UI.PRO_BAR}\n${UI.PRO_MINI}\n💎 *PRO STASH* — nothing banked yet` : `🎒 *ITEMS BY TIER*\n${UI.FREE_BAR}\n\n❌ No equippable items!\n${UI.FREE_BAR}\n${UI.upsell()}`) }, { quoted: msg });
 
       const rarityEmoji = { mythic:'🌌', legendary:'🟠', epic:'🟣', rare:'🔵', uncommon:'🟢', common:'⚪' };
       const typeEmoji = { weapon:'⚔️', armor:'🛡️', accessory:'💍', potion:'🧪', consumable:'🧪', crystal:'💎' };
@@ -139,7 +142,7 @@ module.exports = {
         groups[r].push(item);
       }
 
-      let message = `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🎒 *ITEMS BY TIER*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
+      let message = pro ? `${UI.PRO_BAR}\n🎒 *ITEMS BY TIER* 💎\n${UI.PRO_BAR}\n\n` : `🎒 *ITEMS BY TIER*\n${UI.FREE_BAR}\n\n`;
       for (const r of ['mythic','legendary','epic','rare','uncommon','common']) {
         if (!groups[r] || !groups[r].length) continue;
         message += `*${rarityLabel[r]}*\n`;
@@ -151,21 +154,21 @@ module.exports = {
         }
         message += '\n';
       }
-      message += `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n/items — numbered list`;
+      message += `${FRAME}\n/items — numbered list` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO STASH* — ${sorted.length} items` : `\n${UI.upsell()}`);
       return sock.sendMessage(chatId, { text: message }, { quoted: msg });
     }
 
     // ── Default: numbered list ─────────────────────────────────
     if (sorted.length === 0) {
       return sock.sendMessage(chatId, {
-        text: `🎒 *ITEMS*\n\n❌ No equippable items!\n\n💡 Clear dungeons and defeat bosses to earn gear.`
+        text: (pro ? `${UI.PRO_BAR}\n🎒 *YOUR ITEMS* 💎\n${UI.PRO_BAR}\n\n❌ No equippable items!\n\n💡 Clear dungeons and defeat bosses to earn gear.\n${UI.PRO_BAR}\n${UI.PRO_MINI}\n💎 *PRO STASH* — nothing banked yet` : `🎒 *YOUR ITEMS*\n${UI.FREE_BAR}\n\n❌ No equippable items!\n\n💡 Clear dungeons and defeat bosses to earn gear.\n${UI.FREE_BAR}\n${UI.upsell()}`)
       }, { quoted: msg });
     }
 
     const rarityEmoji = { mythic:'🌌', legendary:'🟠', epic:'🟣', rare:'🔵', uncommon:'🟢', common:'⚪' };
     const typeEmoji = { weapon:'⚔️', armor:'🛡️', accessory:'💍', potion:'🧪', consumable:'🧪', crystal:'💎' };
 
-    let message = `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🎒 *YOUR ITEMS*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
+    let message = pro ? `${UI.PRO_BAR}\n🎒 *YOUR ITEMS* 💎\n${UI.PRO_BAR}\n\n` : `🎒 *YOUR ITEMS*\n${UI.FREE_BAR}\n\n`;
     sorted.forEach((item, i) => {
       const re = rarityEmoji[(item.rarity||'').toLowerCase()] || '📦';
       const te = typeEmoji[(item.type||'').toLowerCase()] || '📦';
@@ -173,11 +176,11 @@ module.exports = {
       const countStr = item.count > 1 ? ` ×${item.count}` : '';
       message += `*${i+1}.* ${re}${te} ${item.name}${bonusStr}${countStr}\n`;
     });
-    message += `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+    message += `\n${FRAME}\n`;
     message += `/equip use [#] — use/equip item\n`;
     message += `/items give [#] @player — transfer\n`;
     message += `/items -tier — sort by rarity\n`;
-    message += `━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+    message += `${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO STASH* — ${sorted.length} items` : `\n${UI.upsell()}`);
 
     return sock.sendMessage(chatId, { text: message }, { quoted: msg });
   }

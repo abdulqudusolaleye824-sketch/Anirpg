@@ -12,6 +12,8 @@ const GAME_COOLDOWNS = {
   roulette:  20_000,  // 20 seconds
   roul:      20_000,
   dice:      10_000,  // 10 seconds
+  aviator:   30_000,  // 30 seconds
+  avi:       30_000,
 };
 
 // ✅ NEW: Store active casino sessions per group chat
@@ -27,10 +29,13 @@ module.exports = {
     const player = db.users[sender];
 
     if (!player) {
-      return sock.sendMessage(chatId, { 
-        text: '❌ You are not registered!' 
+      return sock.sendMessage(chatId, {
+        text: '❌ You are not registered!'
       }, { quoted: msg });
     }
+    const UI = require('../../rpg/utils/UI');
+    const pro = UI.isPro(player);
+    const FRAME = pro ? UI.PRO_BAR : UI.FREE_BAR;
 
     const game = args[0]?.toLowerCase();
     const betAmount = parseInt(args[1]);
@@ -64,52 +69,73 @@ module.exports = {
       }
 
       const endTime = Date.now() + (minutes * 60 * 1000);
-      
+
+      // Unmute the group for betting (re-locked on close/expiry if it was locked)
+      let wasLocked = false, muteNote = '';
+      if (chatId.endsWith('@g.us')) {
+        try {
+          const meta = await sock.groupMetadata(chatId);
+          wasLocked = !!meta.announce;
+          if (wasLocked) {
+            await sock.groupSettingUpdate(chatId, 'not_announcement');
+            muteNote = '\n🔓 Group unmuted for betting — re-locks when the casino closes.';
+          }
+        } catch (e) { muteNote = '\n⚠️ Could not unmute group (bot needs admin).'; }
+      }
+
       activeCasinoSessions.set(chatId, {
         startTime: Date.now(),
         endTime: endTime,
         duration: minutes,
-        openedBy: player.name
+        openedBy: player.name,
+        wasLocked
       });
 
-      // Auto-close after time expires
-      setTimeout(() => {
+      // Auto-close after time expires (re-locks the group if it was locked)
+      setTimeout(async () => {
         if (activeCasinoSessions.has(chatId)) {
+          const sess = activeCasinoSessions.get(chatId);
           activeCasinoSessions.delete(chatId);
-          sock.sendMessage(chatId, { 
-            text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━
+          let lockNote = '';
+          if (sess?.wasLocked) {
+            try { await sock.groupSettingUpdate(chatId, 'announcement'); lockNote = '\n🔒 Group re-locked.'; }
+            catch (e) { lockNote = '\n⚠️ Could not re-lock group (bot needs admin).'; }
+          }
+          sock.sendMessage(chatId, {
+            text: `${FRAME}
 🎰 CASINO CLOSED 🎰
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${FRAME}
 ⏰ Time's up! The casino has closed.
 
-Thanks for playing! 🎲
-━━━━━━━━━━━━━━━━━━━━━━━━━━━` 
+Thanks for playing! 🎲${lockNote}
+${FRAME}`
           });
         }
       }, minutes * 60 * 1000);
 
       return sock.sendMessage(chatId, { 
-        text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        text: `${FRAME}
 🎰 CASINO NOW OPEN! 🎰
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${FRAME}
 Opened by: ${player.name}
 ⏱️ Duration: ${minutes} minutes
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${FRAME}
 🎮 AVAILABLE GAMES:
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${FRAME}
 🎰 /casino slots [bet]
 🃏 /casino blackjack [bet]
 🎡 /casino roulette [bet] [choice]
 🎲 /casino dice [bet] [over/under] [#]
+✈️ /casino aviator [bet]
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${FRAME}
 💠 Min bet: 50 Nexus
 💠 Max bet: 30,000 Nexus
 ⏱️ Cooldown: 3 seconds
 
-🎉 Good luck everyone! 🎉
-━━━━━━━━━━━━━━━━━━━━━━━━━━━` 
+🎉 Good luck everyone! 🎉${muteNote}
+${FRAME}`
       }, { quoted: msg });
     }
 
@@ -130,16 +156,22 @@ Opened by: ${player.name}
         }, { quoted: msg });
       }
 
+      const closingSess = activeCasinoSessions.get(chatId);
       activeCasinoSessions.delete(chatId);
+      let closeLockNote = '';
+      if (closingSess?.wasLocked) {
+        try { await sock.groupSettingUpdate(chatId, 'announcement'); closeLockNote = '\n🔒 Group re-locked.'; }
+        catch (e) { closeLockNote = '\n⚠️ Could not re-lock group (bot needs admin).'; }
+      }
 
-      return sock.sendMessage(chatId, { 
-        text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━
+      return sock.sendMessage(chatId, {
+        text: `${FRAME}
 🚪 CASINO CLOSED 🚪
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${FRAME}
 Closed by: ${player.name}
 
-Thanks for playing! 🎲
-━━━━━━━━━━━━━━━━━━━━━━━━━━━` 
+Thanks for playing! 🎲${closeLockNote}
+${FRAME}` 
       }, { quoted: msg });
     }
 
@@ -149,14 +181,14 @@ Thanks for playing! 🎲
     if (game === 'status') {
       if (!activeCasinoSessions.has(chatId)) {
         return sock.sendMessage(chatId, { 
-          text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━
+          text: `${FRAME}
 🎰 CASINO STATUS 🎰
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${FRAME}
 Status: 🔴 CLOSED
 
 Admins can open with:
 /casino open [minutes]
-━━━━━━━━━━━━━━━━━━━━━━━━━━━` 
+${FRAME}` 
         }, { quoted: msg });
       }
 
@@ -165,9 +197,9 @@ Admins can open with:
       const remaining = Math.ceil((session.endTime - Date.now()) / 1000 / 60);
 
       return sock.sendMessage(chatId, { 
-        text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        text: `${FRAME}
 🎰 CASINO STATUS 🎰
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${FRAME}
 Status: 🟢 OPEN
 
 Opened by: ${session.openedBy}
@@ -175,31 +207,31 @@ Duration: ${session.duration} minutes
 Elapsed: ${elapsed} minutes
 ⏱️ Remaining: ${remaining} minutes
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${FRAME}
 Place your bets! 🎲
-━━━━━━━━━━━━━━━━━━━━━━━━━━━` 
+${FRAME}` 
       }, { quoted: msg });
     }
 
     // ============================================
     // CHECK IF CASINO IS OPEN (For all games)
     // ============================================
-    if (game && ['slots', 'slot', 'blackjack', 'bj', 'roulette', 'roul', 'dice'].includes(game)) {
+    if (game && ['slots', 'slot', 'blackjack', 'bj', 'roulette', 'roul', 'dice', 'aviator', 'avi'].includes(game)) {
       // Check if in group chat
       const isGroup = chatId.endsWith('@g.us');
       
       if (isGroup && !activeCasinoSessions.has(chatId)) {
         return sock.sendMessage(chatId, { 
-          text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━
+          text: `${FRAME}
 🔒 CASINO CLOSED 🔒
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${FRAME}
 The casino is not open in this group.
 
 Admins can open with:
 /casino open [minutes]
 
 Example: /casino open 30
-━━━━━━━━━━━━━━━━━━━━━━━━━━━` 
+${FRAME}` 
         }, { quoted: msg });
       }
     }
@@ -219,47 +251,28 @@ Example: /casino open 30
     // MAIN CASINO MENU (No cooldown for viewing menu)
     // ============================================
     if (!game) {
-      return sock.sendMessage(chatId, { 
-        text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🎰 ROYAL CASINO 🎰
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-💠 Your Nexus: ${player.gold || 0}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🎮 GAMES AVAILABLE
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-1️⃣ 🎰 SLOTS - Spin the reels!
-   /casino slots [bet]
-   💠 Payouts: 2x-500x
-   🎯 Jackpot: 0.5% chance
-
-2️⃣ 🃏 BLACKJACK - Beat the dealer!
-   /casino blackjack [bet]
-   💠 Win: 2x | Blackjack: 2.5x
-   🎯 House edge: Low
-
-3️⃣ 🎡 ROULETTE - Bet on numbers!
-   /casino roulette [bet] [choice]
-   💠 Payouts: 2x-36x
-   🎯 Choices: red/black/odd/even/1-36
-
-4️⃣ 🎲 DICE - Roll the dice!
-   /casino dice [bet] [over/under] [number]
-   💠 Payout: Based on odds
-   🎯 Example: /casino dice 100 over 50
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-📊 YOUR CASINO STATS
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🎮 Games Played: ${player.casino.gamesPlayed}
-💠 Total Won: ${player.casino.totalWon}
-💸 Total Lost: ${player.casino.totalLost}
-🏆 Biggest Win: ${player.casino.biggestWin}
-💎 Jackpots Hit: ${player.casino.jackpotsHit}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-⚠️ Min bet: 50 Nexus
-⚠️ Max bet: 30,000 Nexus
-⏱️ Cooldowns: Slots 30s • Blackjack 15s • Roulette 20s • Dice 10s
-━━━━━━━━━━━━━━━━━━━━━━━━━━━`
-      }, { quoted: msg });
+      if (!player.casino) player.casino = { gamesPlayed: 0, totalWon: 0, totalLost: 0, biggestWin: 0, jackpotsHit: 0 };
+      const net = (player.casino.totalWon || 0) - (player.casino.totalLost || 0);
+      const text = UI.card(player, {
+        icon: '🎰', title: 'ROYAL CASINO',
+        lines: [
+          `💠 Your Nexus: *${UI.num(player.gold)}*`,
+          ``,
+          `🎮 *GAMES AVAILABLE*`,
+          `1️⃣ 🎰 SLOTS — /casino slots [bet] · 2x-500x`,
+          `2️⃣ 🃏 BLACKJACK — /casino blackjack [bet] · 2x/2.5x`,
+          `3️⃣ 🎡 ROULETTE — /casino roulette [bet] [choice] · 2x-36x`,
+          `4️⃣ 🎲 DICE — /casino dice [bet] [over/under] [#]`,
+          `5️⃣ ✈️ AVIATOR — /casino aviator [bet] · up to 100x!`,
+          ``,
+          `📊 *YOUR CASINO STATS*`,
+          `🎮 Games: *${UI.num(player.casino.gamesPlayed)}* · 🏆 Biggest: *${UI.num(player.casino.biggestWin)}* · 💎 Jackpots: *${UI.num(player.casino.jackpotsHit)}*`,
+          `⚠️ Min 50 · Max 30,000 · Cooldowns: S30s/BJ15s/R20s/D10s`,
+        ],
+        proLines: [`💎 *PRO HIGH ROLLER*`, `  📈 Net: *${net >= 0 ? '+' : ''}${UI.num(net)}* · Won ${UI.num(player.casino.totalWon)} / Lost ${UI.num(player.casino.totalLost)}`],
+        tip: 'Aviator pays up to 100x — cash out before the crash',
+      });
+      return sock.sendMessage(chatId, { text }, { quoted: msg });
     }
 
     // ============================================
@@ -304,6 +317,36 @@ Example: /casino open 30
     // UPDATE LAST PLAY TIME (After validation)
     // ============================================
     lastPlayTime.set(cooldownKey, now);
+
+    // ============================================
+    // GAME 5: AVIATOR ✈️ (crash multiplier)
+    // ============================================
+    if (game === 'aviator' || game === 'avi') {
+      const Aviator = require('../../rpg/utils/Aviator');
+      if (Aviator.getFlight(sender)) {
+        return sock.sendMessage(chatId, {
+          text: `✈️ You're already flying! Cash out with */cashout* or wait for the crash.`
+        }, { quoted: msg });
+      }
+      const launched = await Aviator.startFlight({ sock, chatId, sender, bet: betAmount, player, saveDatabase, quoted: msg });
+      if (!launched.ok) {
+        return sock.sendMessage(chatId, {
+          text: launched.error === 'already'
+            ? `✈️ You're already flying! Cash out with */cashout* or wait for the crash.`
+            : `❌ Could not launch your flight — your bet was refunded. Try again!`
+        }, { quoted: msg });
+      }
+      // Cash-out button (separate message — the flight message itself is edited live)
+      try {
+        const BH = require('../../utils/buttonHelper');
+        if (BH?.sendWithButtons && BH?.buildQuickReplies) {
+          await BH.sendWithButtons(sock, chatId,
+            { text: `💰 *${player.name}* is flying — tap to cash out!\n(or type */cashout*)`, footer: `Aviator • bet ${betAmount}` },
+            BH.buildQuickReplies([['💰 CASH OUT', '/cashout']]), msg);
+        }
+      } catch (e) { /* button is a convenience — /cashout always works */ }
+      return;
+    }
 
     // ============================================
     // GAME 1: SLOT MACHINE 🎰
@@ -393,9 +436,9 @@ Example: /casino open 30
 
       saveDatabase();
 
-      const result = `━━━━━━━━━━━━━━━━━━━━━━━━━━━
+      const result = `${FRAME}
 🎰 SLOT MACHINE 🎰
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${FRAME}
 
 ┏━━━━━━━━━━━━━┓
 ┃  ${reel1}  ${reel2}  ${reel3}  ┃
@@ -403,23 +446,23 @@ Example: /casino open 30
 
 ${message}
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${FRAME}
 💠 Bet: ${betAmount} Nexus
 ${winAmount >= 0 ? `💵 Won: ${winAmount} gold` : `💸 Lost: ${Math.abs(winAmount)} gold`}
 💼 Balance: ${player.gold || 0} Nexus
-━━━━━━━━━━━━━━━━━━━━━━━━━━━${isJackpot ? '\n🏆 JACKPOT WINNER! 🏆' : ''}`;
+${FRAME}${isJackpot ? '\n🏆 JACKPOT WINNER! 🏆' : ''}`;
 
       // ── Multi-message fan-out: header → spinning → reels → verdict ──
       return sock.sendMessage(chatId, {
         sections: [
           {
             text: [
-              `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+              `${FRAME}`,
               `🎰 *SLOT MACHINE* 🎰`,
-              `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+              `${FRAME}`,
               ``,
               `💠 Wager: ${betAmount.toLocaleString()} gold`,
-              `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+              `${FRAME}`,
             ].join('\n'),
           },
           { text: '🎰 *Spinning the reels…*' },
@@ -432,7 +475,7 @@ ${winAmount >= 0 ? `💵 Won: ${winAmount} gold` : `💸 Lost: ${Math.abs(winAmo
           },
           {
             text: [
-              `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+              `${FRAME}`,
               message,
               ``,
               `💠 Bet: ${betAmount.toLocaleString()} gold`,
@@ -440,8 +483,9 @@ ${winAmount >= 0 ? `💵 Won: ${winAmount} gold` : `💸 Lost: ${Math.abs(winAmo
                 ? `💵 Won: +${winAmount.toLocaleString()} gold`
                 : `💸 Lost: ${Math.abs(winAmount).toLocaleString()} gold`,
               `💼 Balance: *${(player.gold || 0).toLocaleString()}* gold`,
+              ...(pro ? [`📊 Lifetime: +${UI.num(player.casino.totalWon)} / -${UI.num(player.casino.totalLost)}`] : []),
               isJackpot ? `\n🏆 *JACKPOT WINNER!* 🏆` : '',
-              `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+              `${FRAME}`,
             ].filter(Boolean).join('\n'),
           },
         ],
@@ -550,9 +594,9 @@ ${winAmount >= 0 ? `💵 Won: ${winAmount} gold` : `💸 Lost: ${Math.abs(winAmo
 
       saveDatabase();
 
-      const output = `━━━━━━━━━━━━━━━━━━━━━━━━━━━
+      const output = `${FRAME}
 🃏 BLACKJACK 🃏
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${FRAME}
 
 👤 YOUR HAND (${playerScore})
    ${playerHand.map(c => c.display).join(' ')}
@@ -560,25 +604,25 @@ ${winAmount >= 0 ? `💵 Won: ${winAmount} gold` : `💸 Lost: ${Math.abs(winAmo
 🎩 DEALER HAND (${dealerScore})
    ${dealerHand.map(c => c.display).join(' ')}
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${FRAME}
 ${result}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${FRAME}
 💠 Bet: ${betAmount} Nexus
 ${winAmount > 0 ? `💵 Won: ${winAmount} gold` : winAmount < 0 ? `💸 Lost: ${Math.abs(winAmount)} gold` : `➖ No change`}
 💼 Balance: ${player.gold || 0} Nexus
-━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+${FRAME}`;
 
       // ── Multi-message fan-out: header → deal → reveal → verdict ──
       return sock.sendMessage(chatId, {
         sections: [
           {
             text: [
-              `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+              `${FRAME}`,
               `🃏 *BLACKJACK* 🃏`,
-              `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+              `${FRAME}`,
               ``,
               `💠 Wager: ${betAmount.toLocaleString()} gold`,
-              `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+              `${FRAME}`,
             ].join('\n'),
           },
           { text: '🃏 *Dealing the cards…*' },
@@ -593,7 +637,7 @@ ${winAmount > 0 ? `💵 Won: ${winAmount} gold` : winAmount < 0 ? `💸 Lost: ${
           },
           {
             text: [
-              `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+              `${FRAME}`,
               result,
               ``,
               `💠 Bet: ${betAmount.toLocaleString()} gold`,
@@ -603,7 +647,8 @@ ${winAmount > 0 ? `💵 Won: ${winAmount} gold` : winAmount < 0 ? `💸 Lost: ${
                   ? `💸 Lost: ${Math.abs(winAmount).toLocaleString()} gold`
                   : `➖ No change`,
               `💼 Balance: *${(player.gold || 0).toLocaleString()}* gold`,
-              `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+              ...(pro ? [`📊 Lifetime: +${UI.num(player.casino.totalWon)} / -${UI.num(player.casino.totalLost)}`] : []),
+              `${FRAME}`,
             ].join('\n'),
           },
         ],
@@ -618,25 +663,25 @@ ${winAmount > 0 ? `💵 Won: ${winAmount} gold` : winAmount < 0 ? `💸 Lost: ${
       
       if (!choice) {
         return sock.sendMessage(chatId, { 
-          text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━
+          text: `${FRAME}
 🎡 ROULETTE 🎡
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${FRAME}
 📌 HOW TO PLAY
 /casino roulette [bet] [choice]
 
 🎯 CHOICES:
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${FRAME}
 red - Red numbers (2x)
 black - Black numbers (2x)
 odd - Odd numbers (2x)
 even - Even numbers (2x)
 1-36 - Specific number (36x!)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${FRAME}
 📝 EXAMPLES:
 /casino roulette 100 red
 /casino roulette 200 17
 /casino roulette 50 odd
-━━━━━━━━━━━━━━━━━━━━━━━━━━━`
+${FRAME}`
         }, { quoted: msg });
       }
 
@@ -703,37 +748,37 @@ even - Even numbers (2x)
 
       const color = spin === 0 ? '🟢' : isRed ? '🔴' : '⚫';
 
-      const output = `━━━━━━━━━━━━━━━━━━━━━━━━━━━
+      const output = `${FRAME}
 🎡 ROULETTE 🎡
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${FRAME}
 
 🎲 SPINNING...
 
      ${color} ${spin} ${color}
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${FRAME}
 Your bet: ${choice}
 Result: ${spin} (${spin === 0 ? 'Green' : isRed ? 'Red' : 'Black'})
 
 ${won ? `🎉 YOU WIN! ${multiplier}x payout! 🎉` : `❌ Better luck next time!`}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${FRAME}
 💠 Bet: ${betAmount} Nexus
 ${winAmount > 0 ? `💵 Won: ${winAmount} gold` : `💸 Lost: ${Math.abs(winAmount)} gold`}
 💼 Balance: ${player.gold || 0} Nexus
-━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+${FRAME}`;
 
       // ── Multi-message fan-out: header → spin → ball drops → verdict ──
       return sock.sendMessage(chatId, {
         sections: [
           {
             text: [
-              `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+              `${FRAME}`,
               `🎡 *ROULETTE* 🎡`,
-              `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+              `${FRAME}`,
               ``,
               `🎯 Your Bet: *${choice}*`,
               `💠 Wager: ${betAmount.toLocaleString()} gold`,
-              `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+              `${FRAME}`,
             ].join('\n'),
           },
           { text: '🎲 *Spinning the wheel…*' },
@@ -747,7 +792,7 @@ ${winAmount > 0 ? `💵 Won: ${winAmount} gold` : `💸 Lost: ${Math.abs(winAmou
           },
           {
             text: [
-              `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+              `${FRAME}`,
               won ? `🎉 *YOU WIN!* ${multiplier}x payout!` : `❌ *Better luck next time!*`,
               ``,
               `💠 Bet: ${betAmount.toLocaleString()} gold`,
@@ -755,7 +800,8 @@ ${winAmount > 0 ? `💵 Won: ${winAmount} gold` : `💸 Lost: ${Math.abs(winAmou
                 ? `💵 Won: +${winAmount.toLocaleString()} gold`
                 : `💸 Lost: ${Math.abs(winAmount).toLocaleString()} gold`,
               `💼 Balance: *${(player.gold || 0).toLocaleString()}* gold`,
-              `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+              ...(pro ? [`📊 Lifetime: +${UI.num(player.casino.totalWon)} / -${UI.num(player.casino.totalLost)}`] : []),
+              `${FRAME}`,
             ].join('\n'),
           },
         ],
@@ -771,25 +817,25 @@ ${winAmount > 0 ? `💵 Won: ${winAmount} gold` : `💸 Lost: ${Math.abs(winAmou
 
       if (!prediction || !target || target < 1 || target > 99) {
         return sock.sendMessage(chatId, { 
-          text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━
+          text: `${FRAME}
 🎲 DICE GAME 🎲
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${FRAME}
 📌 HOW TO PLAY
 /casino dice [bet] [over/under] [number]
 
 🎯 Predict if roll is OVER or UNDER target
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${FRAME}
 📝 EXAMPLES:
 /casino dice 100 over 50
    (Win if roll > 50)
 
 /casino dice 200 under 75
    (Win if roll < 75)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${FRAME}
 ⚠️ Target must be 1-99
 💠 Higher risk = Higher payout!
-━━━━━━━━━━━━━━━━━━━━━━━━━━━`
+${FRAME}`
         }, { quoted: msg });
       }
 
@@ -846,9 +892,9 @@ ${winAmount > 0 ? `💵 Won: ${winAmount} gold` : `💸 Lost: ${Math.abs(winAmou
 
       saveDatabase();
 
-      const output = `━━━━━━━━━━━━━━━━━━━━━━━━━━━
+      const output = `${FRAME}
 🎲 DICE GAME 🎲
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${FRAME}
 
 🎯 Your Bet: ${prediction.toUpperCase()} ${target}
 
@@ -856,14 +902,14 @@ ${winAmount > 0 ? `💵 Won: ${winAmount} gold` : `💸 Lost: ${Math.abs(winAmou
 
      🎲 ${roll} 🎲
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${FRAME}
 ${won ? `✅ YOU WIN! Roll is ${prediction} ${target}!` : `❌ YOU LOSE! Roll is not ${prediction} ${target}!`}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${FRAME}
 💠 Bet: ${betAmount} Nexus
 🎰 Multiplier: ${multiplier.toFixed(2)}x
 ${winAmount > 0 ? `💵 Won: ${winAmount} gold` : `💸 Lost: ${Math.abs(winAmount)} gold`}
 💼 Balance: ${player.gold || 0} Nexus
-━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+${FRAME}`;
 
       // ── Multi-message fan-out: header → roll suspense → result → payout ──
       // Each section arrives as its own WhatsApp message with a brief
@@ -873,13 +919,13 @@ ${winAmount > 0 ? `💵 Won: ${winAmount} gold` : `💸 Lost: ${Math.abs(winAmou
         sections: [
           {
             text: [
-              `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+              `${FRAME}`,
               `🎲 *DICE GAME* 🎲`,
-              `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+              `${FRAME}`,
               ``,
               `🎯 Your Bet: *${prediction.toUpperCase()} ${target}*`,
               `💠 Wager: ${betAmount.toLocaleString()} gold`,
-              `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+              `${FRAME}`,
             ].join('\n'),
           },
           { text: '🎲 *Rolling…*' },
@@ -894,7 +940,7 @@ ${winAmount > 0 ? `💵 Won: ${winAmount} gold` : `💸 Lost: ${Math.abs(winAmou
           },
           {
             text: [
-              `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+              `${FRAME}`,
               won
                 ? `✅ *YOU WIN!*`
                 : `❌ *YOU LOSE!*`,
@@ -907,7 +953,8 @@ ${winAmount > 0 ? `💵 Won: ${winAmount} gold` : `💸 Lost: ${Math.abs(winAmou
                 ? `💵 Won: +${winAmount.toLocaleString()} gold`
                 : `💸 Lost: ${Math.abs(winAmount).toLocaleString()} gold`,
               `💼 Balance: *${(player.gold || 0).toLocaleString()}* gold`,
-              `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+              ...(pro ? [`📊 Lifetime: +${UI.num(player.casino.totalWon)} / -${UI.num(player.casino.totalLost)}`] : []),
+              `${FRAME}`,
             ].join('\n'),
           },
         ],

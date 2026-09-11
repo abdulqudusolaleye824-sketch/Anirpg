@@ -8,6 +8,7 @@
 'use strict';
 
 const PersonalityManager = require('../../bots/PersonalityManager');
+const UI = require('../../rpg/utils/UI');
 
 function isPrivileged(sender, db) {
   const owner   = process.env.OWNER_JID   || '221951679328499@lid';
@@ -67,11 +68,13 @@ module.exports = {
     // MongoDB status
     const mongoStatus = db._mongoConnected !== false ? '🟢 Connected' : '🔴 Disconnected';
 
+    const proSt = UI.isPro(db.users[sender]);
     const lines = [
-      '━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+      (proSt ? UI.PRO_BAR : UI.FREE_BAR),
       '📊 *ANIRPG STATUS REPORT*',
       `🕒 ${new Date().toLocaleString('en-GB', { hour12: false })}`,
-      '━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+      proSt ? (UI.PRO_MINI + '\n' + '👑 PRO OVERWATCH') : null,
+      proSt ? `🧠 Heap headroom: *${mb(mem.heapTotal - mem.heapUsed)}* free · 🟢 Active share: *${users ? Math.round(active24 / users * 100) : 0}%*` : null,
       '',
       '⚙️ *SYSTEM*',
       `⏱️ Uptime:    ${uptime()}`,
@@ -92,9 +95,9 @@ module.exports = {
       '📹 *CCTV GROUPS*',
       `📹 Active logging: ${cctvGroups} group(s)`,
       '',
-      '━━━━━━━━━━━━━━━━━━━━━━━━━━━',
-    ];
+      (proSt ? UI.PRO_BAR : UI.FREE_BAR),
+    ].filter(x => x !== null);
 
-    return sock.sendMessage(chatId, { text: lines.join('\n') }, { quoted: msg });
+    return sock.sendMessage(chatId, { text: lines.filter(x => x !== null).join('\n') }, { quoted: msg });
   },
 };
