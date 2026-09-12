@@ -212,7 +212,7 @@ module.exports = {
       `  /steal (/s), /sticker, /quote (/q), /rob, /imagine, /lyrics, /play, /ytmp3, /afk, /friend, /support, /gclink, /suggest, /bug`,
       ``,
       `👑 *ADMIN & MODERATION:*`,
-      `  /kick, /promote, /demote, /mute, /unmute, /ban, /unban, /tagall, /killspawn, /reset, /spawnstatus, /restart`,
+      `  /kick, /promote, /demote, /mute, /unmute, /ban, /unban, /tagall, /chatbot, /killspawn, /reset, /spawnstatus, /restart`,
       ``,
       `🤖 *SYSTEM & CONFIG:*`,
       `  /setgroup, /allowgc, /setserf, /approveserf, /renew, /ssub, /bots, /start, /switch, /aimode, /restart`,

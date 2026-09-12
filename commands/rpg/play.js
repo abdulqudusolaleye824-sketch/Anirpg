@@ -18,6 +18,12 @@
 // sanity vs the YouTube pick (no wrong-speed/wrong-cut audio), and FULL
 // SILENCE — no lookup/fetching/fallback chatter, no source names
 // anywhere. Just the cover + the voice note.
+// Batch-46 (owner order): YouTube ONLY — find the video, extract the
+// audio, send it back. SoundCloud stage removed. Non-IP blocks are
+// bypassed with an escalating ladder per video: optimal args → same +
+// player_skip=webpage (dodges webpage JS blocks) → loose
+// -f bestaudio/best → -f best full download + mp3 extract (ffmpeg).
+// IP-flagged hosts still need YT_COOKIES (already honoured).
 'use strict';
 
 const fs = require('fs');
@@ -107,27 +113,6 @@ function _looksMashup(videoTitle, title, artist) {
   return false;
 }
 
-// Parse SoundCloud `--print %(id)s | %(webpage_url)s | %(title)s | %(duration)s`
-// rows. The download target is the page URL (2nd field) — rows without a
-// valid soundcloud URL are dropped.
-function _parseSCRows(stdout) {
-  const out = [];
-  for (const line of String(stdout || '').split('\n')) {
-    const parts = line.split(' | ').map((s) => s.trim());
-    if (parts.length < 4) continue;
-    const id = parts[0];
-    const url = parts[1];
-    if (!id || !/^https?:\/\/([^.]+\.)?soundcloud\.com\//i.test(url || '')) continue;
-    const title = parts.slice(2, -1).join(' | ');
-    if (!title) continue;
-    const durRaw = parts[parts.length - 1];
-    const duration = /^\d+$/.test(durRaw || '') ? parseInt(durRaw, 10) : null;
-    if (duration !== null && (duration > MAX_DURATION_S || duration < MIN_DURATION_S)) continue;
-    out.push({ id, url, title, duration, channel: '' });
-  }
-  return out;
-}
-
 function _scoreCandidate(c, title, artist) {
   const tToks = _tokens(title);
   if (!tToks.length) return { score: 0, artistOk: false };
@@ -157,16 +142,8 @@ function _scoreCandidate(c, title, artist) {
   return { score, artistOk };
 }
 
-// refDuration (the YouTube pick's length, when known) rejects wrong cuts —
-// a 70s snippet is not the 196s song even if the words match.
-function _pickBest(rows, title, artist, refDuration = null) {
-  let pool = rows;
-  if (refDuration) {
-    const sane = pool.filter((c) => !c.duration || Math.abs(c.duration - refDuration) / refDuration <= 0.3);
-    if (sane.length) pool = sane;
-    else return [];
-  }
-  const scored = pool.map((c) => ({ c, ..._scoreCandidate(c, title, artist) }))
+function _pickBest(rows, title, artist) {
+  const scored = rows.map((c) => ({ c, ..._scoreCandidate(c, title, artist) }))
     .filter((s) => s.artistOk && s.score >= MIN_SCORE)
     .sort((a, b) => b.score - a.score);
   return scored.map((s) => s.c);
@@ -176,6 +153,16 @@ function _fmtDur(sec) {
   if (!sec) return '';
   const m = Math.floor(sec / 60), s = sec % 60;
   return `${m}:${String(s).padStart(2, '0')}`;
+}
+
+// Batch-46 fix (found by live verification): label the REAL container —
+// no-ffmpeg downloads are m4a/webm, not mp3.
+function _mimeFor(p) {
+  const e = String(p || '').toLowerCase().split('.').pop();
+  if (e === 'm4a' || e === 'mp4') return 'audio/mp4';
+  if (e === 'webm') return 'audio/webm';
+  if (e === 'ogg' || e === 'opus') return 'audio/ogg; codecs=opus';
+  return 'audio/mpeg';
 }
 
 // ── Network helpers ────────────────────────────────────────────────────
@@ -278,10 +265,9 @@ module.exports = {
         // Keep a backup in case the best download fails.
         pick._backup = best[1] || null;
       }
-      // No pick: the cascade below still tries SoundCloud before failing.
     }
 
-    // ── Batch-44 cascade: YT best → YT backup → SoundCloud → Piped ──
+    // ── Batch-46: YouTube ONLY — best + backup through the bypass ladder ──
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'anirpg-play-'));
     const finishTmp = () => { try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch (e) {} };
     try {
@@ -290,11 +276,39 @@ module.exports = {
         audio = await ToolRunner.optimalAudioArgs();
       } catch (e) { audio = { ffmpeg: false, args: ['-f', 'bestaudio[ext=m4a]/bestaudio'] }; }
 
-      const dlYT = async (videoId, fbTitle) => {
+      // Batch-46 bypass ladder (non-IP blocks): same video, escalating
+      // methods. Blocks fail fast (403s), so the ladder is cheap.
+      const _withSkip = (args) => {
+        const out = [];
+        for (let i = 0; i < args.length; i++) {
+          if (args[i] === '--extractor-args' && i + 1 < args.length) {
+            out.push(args[i], args[i + 1] + ',player_skip=webpage');
+            i++;
+          } else out.push(args[i]);
+        }
+        return out;
+      };
+      const _withFormat = (args, fmt) => {
+        const out = [];
+        for (let i = 0; i < args.length; i++) {
+          if (args[i] === '-f' && i + 1 < args.length) { out.push('-f', fmt); i++; }
+          else out.push(args[i]);
+        }
+        if (!args.includes('-f')) out.push('-f', fmt);
+        return out;
+      };
+      const _attemptsFor = () => {
+        const sets = [audio.args, _withSkip(audio.args), _withFormat(audio.args, 'bestaudio/best')];
+        // Last resort (ffmpeg only): full video + mp3 extract. Without
+        // ffmpeg this would yield an unplayable video file, so skip it.
+        if (audio.ffmpeg) sets.push(_withFormat(audio.args, 'best'));
+        return sets;
+      };
+      const dlAttempt = async (videoId, fbTitle, argSet) => {
         let res;
         try {
           res = await ToolRunner.ytDlpRun([
-            ...audio.args,
+            ...argSet,
             '--no-playlist',
             '--output', path.join(tmpDir, 'track.%(ext)s'),
             '--print', 'after_move:filepath',
@@ -309,67 +323,33 @@ module.exports = {
         try { if (!fs.existsSync(parsed.p)) return null; } catch (e) { return null; }
         return parsed;
       };
+      const dlVideo = async (videoId, fbTitle) => {
+        for (const set of _attemptsFor()) {
+          const parsed = await dlAttempt(videoId, fbTitle, set);
+          if (parsed) return parsed;
+        }
+        return null;
+      };
 
-      // result = { file, title, id, channel, duration, thumb }
+      // result = { file, title, id, channel, duration }
       let result = null;
 
-      // Stage 1: YouTube best + backup.
+      // YouTube best + backup, each through the full bypass ladder.
       if (pick) {
-        let parsed = await dlYT(pick.id, pick.title);
+        let parsed = await dlVideo(pick.id, pick.title);
         let used = pick;
         if (!parsed && pick._backup) {
           console.log(`/play: best failed, trying backup ${pick._backup.id}`);
-          parsed = await dlYT(pick._backup.id, pick._backup.title);
+          parsed = await dlVideo(pick._backup.id, pick._backup.title);
           if (parsed) used = pick._backup;
         }
         if (parsed) {
           result = {
             file: parsed.p, title: parsed.title || used.title,
             id: parsed.id || used.id, channel: used.channel || 'YouTube',
-            duration: used.duration, thumb: null,
+            duration: used.duration,
           };
         }
-      }
-
-      // Stage 2: SoundCloud — own search + download, not YouTube methods.
-      if (!result && !directId) {
-        const q = _parseQuery(raw);
-        try {
-          const sc = await ToolRunner.ytDlpRun([
-            '--flat-playlist',
-            '--print', '%(id)s | %(webpage_url)s | %(title)s | %(duration)s',
-            `scsearch8:${q.title}${q.artist ? ' ' + q.artist : ''}`,
-          ]);
-          if (sc && sc.ok) {
-            const cands = _pickBest(_parseSCRows(sc.stdout), q.title, q.artist, pick ? pick.duration : null).slice(0, 3);
-            for (const cand of cands) {
-              let res;
-              try {
-                res = await ToolRunner.ytDlpRun([
-                  ...audio.args,
-                  '--no-playlist',
-                  '--output', path.join(tmpDir, 'track.%(ext)s'),
-                  '--print', 'after_move:filepath',
-                  '--print', 'id',
-                  '--print', 'title',
-                  '--print', 'thumbnail',
-                  cand.url,
-                ]);
-              } catch (e) { continue; }
-              if (!res || !res.ok) continue;
-              const parsed = ToolRunner.parseDownloadPrints(res.stdout, cand.id, cand.title);
-              if (parsed && parsed.p) {
-                try { if (!fs.existsSync(parsed.p)) continue; } catch (e) { continue; }
-                result = {
-                  file: parsed.p, title: parsed.title || cand.title, id: null,
-                  channel: 'SoundCloud', duration: cand.duration,
-                  thumb: parsed.thumb || null,
-                };
-                break;
-              }
-            }
-          }
-        } catch (e) { console.error('/play soundcloud stage failed:', e.message); }
       }
 
       if (!result) {
@@ -386,7 +366,7 @@ module.exports = {
       }
 
       // Convert to opus voice note when ffmpeg exists.
-      let voicePath = result.file, mime = 'audio/mpeg';
+      let voicePath = result.file, mime = _mimeFor(result.file);
       if (audio.ffmpeg) {
         const ogg = path.join(tmpDir, 'voice.ogg');
         try {
@@ -403,26 +383,19 @@ module.exports = {
       const durTxt = result.duration ? ` (${_fmtDur(result.duration)})` : '';
 
       // Cover image first, then the voice note.
-      let cover = null;
-      if (result.thumb) {
-        try {
-          const t = await _fetchBuf(result.thumb);
-          if (t && t.length > 2000) cover = t;
-        } catch (e) {}
-      } else if (result.id) {
-        cover = await _fetchCover(result.id);
-      }
+      const cover = result.id ? await _fetchCover(result.id) : null;
       if (cover) {
         await sock.sendMessage(chatId, {
           image: cover,
           caption: `🎵 *${label}*${durTxt}`,
         }, { quoted: msg });
       }
+      const outExt = (String(voicePath).split('.').pop() || 'mp3').toLowerCase();
       await sock.sendMessage(chatId, {
         audio: buf,
         mimetype: mime,
         ptt: true,
-        fileName: `${label}.ogg`,
+        fileName: `${label}.${outExt}`,
       }, { quoted: msg });
     } finally {
       finishTmp();
@@ -430,5 +403,5 @@ module.exports = {
   },
 
   // Test hooks (pure).
-  _parseQuery, _extractVideoId, _safeName, _parseSearchRows, _parseSCRows, _scoreCandidate, _pickBest, _looksMashup,
+  _parseQuery, _extractVideoId, _safeName, _parseSearchRows, _scoreCandidate, _pickBest, _looksMashup, _mimeFor,
 };

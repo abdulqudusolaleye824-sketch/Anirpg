@@ -7,6 +7,9 @@
  * ║  (Pro/owner/mod) so bots chat generally again. Chat  ║
  * ║  NEVER shows errors or key nags — every AI miss      ║
  * ║  falls through to the scripted fallback silently.    ║
+ * ║  Batch-46: provider auto-fallback (a missing default ║
+ * ║  key no longer kills AI when the other key exists),  ║
+ * ║  deeper history (14 turns) so bots hold context.     ║
  * ╚══════════════════════════════════════════════════════╝
  */
 
@@ -135,13 +138,25 @@ async function runImageGen(prompt) {
 const AI_TIMEOUT_MS = 20000;
 const AI_MAX_TOKENS = 300;
 
+// Batch-46: pick a provider by AVAILABLE key. AI_PROVIDER is honoured
+// when its key exists; otherwise fall back to whichever key IS set, so
+// a missing/expired default key no longer silently kills AI chat.
+function _pickProvider() {
+  const want = String(process.env.AI_PROVIDER || 'groq').toLowerCase();
+  const hasGroq = !!process.env.GROQ_API_KEY;
+  const hasOpenAI = !!process.env.OPENAI_API_KEY;
+  if (want === 'openai' && hasOpenAI) return 'openai';
+  if (want !== 'openai' && hasGroq) return 'groq';
+  if (hasOpenAI) return 'openai';
+  if (hasGroq) return 'groq';
+  return null;
+}
+
 function chatAIReady(db, personalityKey) {
   try {
     if (PersonalityManager.isAIOff(db, personalityKey)) return false;
   } catch (_) {}
-  const provider = String(process.env.AI_PROVIDER || 'groq').toLowerCase();
-  if (provider === 'openai') return !!process.env.OPENAI_API_KEY;
-  return !!process.env.GROQ_API_KEY;
+  return !!_pickProvider();
 }
 
 // Pro players + owner/mods get AI chat; everyone else keeps the instant
@@ -167,7 +182,7 @@ function _buildChatPrompt(personalityKey, scriptCtx) {
 }
 
 function _chatPost(payload) {
-  const provider = String(process.env.AI_PROVIDER || 'groq').toLowerCase();
+  const provider = _pickProvider() || 'groq';
   const host = provider === 'openai' ? 'api.openai.com' : 'api.groq.com';
   const apiKey = provider === 'openai' ? process.env.OPENAI_API_KEY : process.env.GROQ_API_KEY;
   const body = JSON.stringify(payload);
@@ -200,10 +215,11 @@ function _chatPost(payload) {
 }
 
 async function callChatAI(personalityKey, userMessage, scriptCtx = {}, history = []) {
-  const provider = String(process.env.AI_PROVIDER || 'groq').toLowerCase();
+  const provider = _pickProvider();
+  if (!provider) throw new Error('no AI key configured');
   const model = provider === 'openai' ? 'gpt-4o-mini' : (process.env.GROQ_MODEL || 'openai/gpt-oss-20b');
   const messages = [{ role: 'system', content: _buildChatPrompt(personalityKey, scriptCtx) }];
-  for (const h of (history || []).slice(-8)) {
+  for (const h of (history || []).slice(-14)) {
     if (!h || !h.content) continue;
     messages.push({
       role: h.role === 'user' ? 'user' : 'assistant',
@@ -341,4 +357,4 @@ async function generateAllResponses(chatId, userMessage, senderName = 'Hunter', 
   return results.filter(r => r.status === 'fulfilled').map(r => r.value);
 }
 
-module.exports = { generateResponse, generateAllResponses, clearHistory, callChatAI, _buildChatPrompt };
+module.exports = { generateResponse, generateAllResponses, clearHistory, callChatAI, _buildChatPrompt, _pickProvider };

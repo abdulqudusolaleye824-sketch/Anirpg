@@ -133,6 +133,33 @@ function isChatAddressed({ isGroup, isMentioned, isQuoted, nameInText }) {
   if (!isGroup) return true;
   return !!(isMentioned || isQuoted || nameInText);
 }
+
+// ── Batch-46: conversation window + /chatbot mute ────────────────────
+// Bots used to reply ONLY when tagged every message, so follow-ups
+// ("why?", "yes") met silence — conversations couldn't flow. Now, after
+// the bot replies to someone, their follow-ups within 3 minutes are
+// answered without tagging. Each bot reply extends the window.
+const CHAT_WINDOW_MS = 3 * 60 * 1000;
+const _chatWindows = new Map(); // chatId -> Map(sender -> lastBotReplyTs)
+function _inChatWindow(chatId, sender) {
+  try {
+    const ts = _chatWindows.get(chatId)?.get(sender) || 0;
+    return Date.now() - ts < CHAT_WINDOW_MS;
+  } catch (_) { return false; }
+}
+function _touchChatWindow(chatId, sender) {
+  try {
+    if (!_chatWindows.get(chatId)) _chatWindows.set(chatId, new Map());
+    _chatWindows.get(chatId).set(sender, Date.now());
+  } catch (_) {}
+}
+// /chatbot off mutes chatter in a group (slash commands still work).
+function isChatbotMuted(db, chatId) {
+  try {
+    return !!(db && db.groupSettings && db.groupSettings[chatId]
+      && db.groupSettings[chatId].chatbot === false);
+  } catch (_) { return false; }
+}
 // ── Batch-37: LID-aware address checks ──────────────────────────────
 // In LID-mode groups, mentions/quotes arrive as the bot's @lid while
 // sock.user.id is the PN — full-JID compare never matched, so bots
@@ -1023,7 +1050,11 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
     const isQuoted    = isBotQuoted(quotedParticipant, botJid, botLid);
     const nameInText  = messageText.toLowerCase().includes(botDisplayName.toLowerCase());
 
-    if (!isChatAddressed({ isGroup, isMentioned, isQuoted, nameInText })) return;
+    // Batch-46: /chatbot off mutes chatter here (commands already returned above).
+    try { if (typeof getDatabase === 'function' && isChatbotMuted(getDatabase(), chatId)) return; } catch (e) {}
+
+    const inWindow = _inChatWindow(chatId, sender);
+    if (!isChatAddressed({ isGroup, isMentioned, isQuoted, nameInText }) && !inWindow) return;
 
     try { await sock.sendPresenceUpdate('composing', chatId); } catch(e) {}
 
@@ -1041,6 +1072,8 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
       if (attachment) {
         await sendAttachment(sock, chatId, attachment);
       }
+
+      if (text || attachment) _touchChatWindow(chatId, sender);
 
     } catch (err) {
       console.error(`❌ [${displayName}] AI error:`, err.message);
@@ -1223,6 +1256,9 @@ module.exports = {
   getHostKey,
   shouldHandleDMCommand,
   isChatAddressed,
+  isChatbotMuted,
+  _inChatWindow,
+  _touchChatWindow,
   isBotMentioned,
   isBotQuoted,
   sameBareUser,
