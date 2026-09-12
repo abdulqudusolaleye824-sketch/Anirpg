@@ -9,7 +9,7 @@ const GC = require('../../rpg/games/GameCenter');
 module.exports = {
   name: 'forfeit',
   aliases: ['ff', 'resign', 'surrender'],
-  description: '🏳️ Resign your active game (TTT / chess / PvP)',
+  description: '🏳️ Resign your active game (TTT / chess / hangman / typerace / emoji / PvP)',
   usage: '/forfeit',
   category: 'games',
 
@@ -39,6 +39,42 @@ module.exports = {
         }
         return sock.sendMessage(chatId, {
           text: `❌ No active game to forfeit — this chess match is still a challenge. The challenged player can /reject-ch.`,
+        }, { quoted: msg });
+      }
+    } catch (e) {}
+
+    // ── Batch-47: Hangman (starter only)? ──
+    try {
+      const HM = require('../../rpg/games/Hangman');
+      const s = HM.getSession(chatId);
+      if (s && sender === s.starter) {
+        HM.stop(chatId);
+        return sock.sendMessage(chatId, {
+          text: `🏳️ *${db.users?.[sender]?.name || 'Hunter'}* forfeited the hangman game.\n\nThe word was *${s.word}*.`,
+        }, { quoted: msg });
+      }
+    } catch (e) {}
+
+    // ── Batch-47: Typing Race (starter only)? ──
+    try {
+      const TR = require('../../rpg/games/TypingRace');
+      const s = TR.getSession(chatId);
+      if (s && sender === s.starter) {
+        TR.stop(chatId);
+        return sock.sendMessage(chatId, {
+          text: `🏳️ *${db.users?.[sender]?.name || 'Hunter'}* forfeited the typing race.\n\nThe sentence was:\n_"${s.target}"_`,
+        }, { quoted: msg });
+      }
+    } catch (e) {}
+
+    // ── Batch-47: Emoji Riddle (starter only)? ──
+    try {
+      const ER = require('../../rpg/games/EmojiRiddle');
+      const s = ER.getSession(chatId);
+      if (s && sender === s.starter) {
+        ER.stop(chatId);
+        return sock.sendMessage(chatId, {
+          text: `🏳️ *${db.users?.[sender]?.name || 'Hunter'}* forfeited the emoji round.\n\nThe answer was *${s.answer}*.`,
         }, { quoted: msg });
       }
     } catch (e) {}

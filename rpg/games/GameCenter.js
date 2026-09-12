@@ -234,6 +234,73 @@ function clearSlot(db, kind, chatId) {
   if (db[key]) delete db[key][chatId];
 }
 
+// ── Batch-47: ONE game at a time per games GC ────────────────────
+// Returns the running game's label or null. Lazy requires (the engines
+// require GameCenter back — top-level would cycle).
+function activeGameIn(db, chatId) {
+  if (!chatId) return null;
+  try {
+    const t = slot(db, 'ttt', chatId);
+    if (t) return 'Tic-Tac-Toe';
+  } catch (e) {}
+  try {
+    const c = slot(db, 'chess', chatId);
+    if (c) return 'Chess';
+  } catch (e) {}
+  try {
+    const TR = require('./TypingRace');
+    if (TR.getSession(chatId)) return 'Typing Race';
+  } catch (e) {}
+  try {
+    const HM = require('./Hangman');
+    if (HM.getSession(chatId)) return 'Hangman';
+  } catch (e) {}
+  try {
+    const ER = require('./EmojiRiddle');
+    if (ER.getSession(chatId)) return 'Emoji Riddle';
+  } catch (e) {}
+  try {
+    const Quiz = require('../../commands/rpg/quiz');
+    const sessions = typeof Quiz.getSessions === 'function' ? Quiz.getSessions() : null;
+    if (sessions && sessions[chatId]) return 'Anime Quiz';
+  } catch (e) {}
+  return null;
+}
+
+// Send-ready block when another game is already running here.
+function gameBusyBlock(gameName) {
+  return `❌ A game of *${gameName}* is already running here!\n\nOnly one game at a time — finish it first (or stop it) before starting another.`;
+}
+
+// ── Batch-47: no games while in battle ────────────────────────────
+// Returns 'PvP' | 'dungeon' | 'gate raid' or null.
+function inBattle(db, senderJid) {
+  if (!db || !senderJid) return null;
+  try {
+    const p = db.users?.[senderJid];
+    if (p?.pvpBattle) return 'PvP';
+    if (p?.dungeon && (p.dungeon.currentBattle || p.dungeon.inDungeon)) return 'dungeon';
+  } catch (e) {}
+  // Active gate raid membership (live gates + persisted snapshots).
+  try {
+    const GM = require('../dungeons/GateManager').GateManager || require('../dungeons/GateManager');
+    const gates = Object.values((GM && GM.activeGates) || {});
+    for (const g of gates) {
+      if (g?.raid?.status === 'active' && (g.raid.members || []).some((m) => m.id === senderJid)) return 'gate raid';
+    }
+  } catch (e) {}
+  try {
+    for (const g of Object.values(db.activeGates || {})) {
+      if (g?.raid?.status === 'active' && (g.raid.members || []).some((m) => m.id === senderJid)) return 'gate raid';
+    }
+  } catch (e) {}
+  return null;
+}
+
+function battleBlock(where) {
+  return `❌ You're in ${where === 'PvP' ? 'a *PvP battle*' : where === 'dungeon' ? 'a *dungeon*' : 'an active *gate raid*'} — no mini-games until the battle ends!`;
+}
+
 // ── Board delivery: image when possible, text fallback ──────────
 // opts: { mentions?, buttons? } — buttons ride sendButtons (interactive →
 // menu → plain), so boards keep working on every client.
@@ -285,5 +352,9 @@ module.exports = {
   slot,
   setSlot,
   clearSlot,
+  activeGameIn,
+  gameBusyBlock,
+  inBattle,
+  battleBlock,
   sendBoard,
 };

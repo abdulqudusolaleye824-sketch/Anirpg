@@ -294,9 +294,11 @@ module.exports = {
 
       const warsF = playerGuild.totalWars || 0, warsW = playerGuild.wins || 0;
       const winRate = warsF ? Math.round(100 * warsW / warsF) : 0;
+      const _gIcon47 = playerGuild.icon ? `${playerGuild.icon} ` : '';
       const info = UI.card(player, {
-        icon: '🏰', title: `GUILD INFO — ${playerGuild.name}`,
+        icon: '🏰', title: `GUILD INFO — ${_gIcon47}${playerGuild.name}`,
         lines: [
+          ...(playerGuild.bio ? [`📝 _${playerGuild.bio}_`] : []),
           `👑 Leader: *${leader?.name || 'Unknown'}*`,
           `👥 Members: *${playerGuild.members.length}/${maxM}* (Size Lv.${sizeL})`,
           `🛍️ Guild Shop: *${shopL > 0 ? `Lv.${shopL} (${disc}% OFF)` : 'Locked'}*`,
@@ -305,12 +307,141 @@ module.exports = {
           `📊 *STATS* — 🏰 Raids *${UI.num(playerGuild.totalRaids)}* · ⚔️ Wars *${warsF}* · 🏆 Won *${warsW}*`,
           ``,
           `📌 /guild upgrade · /guild shop · /guild members · /guild list`,
+          `✏️ /guild bio · /guild rename · /guild icon (leader)`,
         ],
         proLines: [`💎 *PRO WAR ROOM*`, `  🏆 Win rate *${winRate}%* · 💠 ${UI.num(Math.floor((playerGuild.treasury || 0) / Math.max(1, playerGuild.members.length)))}/member in vault`],
         tip: '/guild war to fight for glory',
       });
 
       return sock.sendMessage(chatId, { text: info }, { quoted: msg });
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Batch-47: GUILD BIO — /guild bio <bio> (leader, 1,000 Nexus, any time)
+    // ═══════════════════════════════════════════════════════════════════
+    if (action === 'bio') {
+      if (!playerGuild) {
+        return sock.sendMessage(chatId, { text: '❌ You are not in a guild!' }, { quoted: msg });
+      }
+      const _isLead = playerGuild.leader === sender;
+      if (!_isLead) {
+        return sock.sendMessage(chatId, { text: '❌ Only the guild leader can set the guild bio!' }, { quoted: msg });
+      }
+      const bio = args.slice(1).join(' ').trim();
+      if (!bio) {
+        const cur = playerGuild.bio ? `\n\n📝 Current bio:\n_${playerGuild.bio}_` : `\n\n_No guild bio set yet._`;
+        return sock.sendMessage(chatId, {
+          text: `📝 *Usage:* /guild bio <bio>\n\nSet your guild's bio for *1,000* 💠 Nexus (any time).${cur}`,
+        }, { quoted: msg });
+      }
+      if (bio.length > 150) {
+        return sock.sendMessage(chatId, { text: '❌ Bio too long (max 150 characters).' }, { quoted: msg });
+      }
+      if ((player.gold || 0) < 1000) {
+        return sock.sendMessage(chatId, {
+          text: `❌ You need *1,000* 💠 Nexus to set the guild bio (you have ${(player.gold || 0).toLocaleString()}).`,
+        }, { quoted: msg });
+      }
+      player.gold -= 1000;
+      if (player.inventory) player.inventory.gold = player.gold;
+      playerGuild.bio = bio;
+      saveDatabase();
+      return sock.sendMessage(chatId, {
+        text: `✅ *Guild bio updated!* (-1,000 💠)\n\n📝 _${bio}_`,
+      }, { quoted: msg });
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Batch-47: GUILD RENAME — /guild rename <new name> (leader, Rename Card)
+    // ═══════════════════════════════════════════════════════════════════
+    if (action === 'rename') {
+      if (!playerGuild) {
+        return sock.sendMessage(chatId, { text: '❌ You are not in a guild!' }, { quoted: msg });
+      }
+      if (playerGuild.leader !== sender) {
+        return sock.sendMessage(chatId, { text: '❌ Only the guild leader can rename the guild!' }, { quoted: msg });
+      }
+      const newName = args.slice(1).join(' ').trim();
+      if (!newName) {
+        return sock.sendMessage(chatId, {
+          text: `✏️ *Usage:* /guild rename <new name>\n\nCosts 1 🃏 Rename Card (you have ${player.cards?.namechange || 0}).\n🛍️ Get one: /prostore buy namechange (500 PC)`,
+        }, { quoted: msg });
+      }
+      if (newName.length > 30) {
+        return sock.sendMessage(chatId, { text: '❌ Guild name too long (max 30 characters).' }, { quoted: msg });
+      }
+      if (Object.values(db.guilds || {}).some((g) => g !== playerGuild && String(g.name || '').toLowerCase() === newName.toLowerCase())) {
+        return sock.sendMessage(chatId, { text: `❌ A guild named *${newName}* already exists!` }, { quoted: msg });
+      }
+      if (!player.cards) player.cards = {};
+      if ((player.cards.namechange || 0) < 1) {
+        return sock.sendMessage(chatId, {
+          text: `❌ *No Rename Card!*\n\nRenaming your guild costs 1 🃏 Rename Card.\n\n🛍️ Get one: /prostore buy namechange (500 PC)`,
+        }, { quoted: msg });
+      }
+      const oldName = playerGuild.name;
+      player.cards.namechange -= 1;
+      playerGuild.name = newName;
+      // Rewire every name reference: members, gate keys, live + saved raids.
+      try {
+        for (const m of (playerGuild.members || [])) {
+          const u = db.users?.[typeof m === 'object' ? m.id : m];
+          if (u && u.guild === oldName) u.guild = newName;
+        }
+      } catch (e) {}
+      try {
+        for (const k of Object.values(db.gateKeys || {})) {
+          if (k && k.guildName === oldName) k.guildName = newName;
+        }
+      } catch (e) {}
+      try {
+        const GM = require('../../rpg/dungeons/GateManager').GateManager || require('../../rpg/dungeons/GateManager');
+        for (const gate of Object.values((GM && GM.activeGates) || {})) {
+          if (gate?.raid?.guildName === oldName) gate.raid.guildName = newName;
+          if (gate?.ownedBy === oldName) gate.ownedBy = newName;
+        }
+        for (const gate of Object.values(db.activeGates || {})) {
+          if (gate?.raid?.guildName === oldName) gate.raid.guildName = newName;
+          if (gate?.ownedBy === oldName) gate.ownedBy = newName;
+        }
+      } catch (e) {}
+      saveDatabase();
+      return sock.sendMessage(chatId, {
+        text: `✅ *Guild renamed!*\n\n${oldName} → *${newName}*\n\n🃏 1 Rename Card used (${player.cards.namechange} left)`,
+      }, { quoted: msg });
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Batch-47: GUILD ICON — /guild icon <emoji> (leader, Seticon Card)
+    // ═══════════════════════════════════════════════════════════════════
+    if (action === 'icon') {
+      if (!playerGuild) {
+        return sock.sendMessage(chatId, { text: '❌ You are not in a guild!' }, { quoted: msg });
+      }
+      if (playerGuild.leader !== sender) {
+        return sock.sendMessage(chatId, { text: '❌ Only the guild leader can set the guild icon!' }, { quoted: msg });
+      }
+      const icon = args.slice(1).join(' ').trim();
+      if (!icon) {
+        return sock.sendMessage(chatId, {
+          text: `🖼️ *Usage:* /guild icon <emoji>\n\nCosts 1 🖼️ Seticon Card (you have ${player.cards?.seticon || 0}).\n🛍️ Get one: /prostore buy seticon (500 PC)`,
+        }, { quoted: msg });
+      }
+      if ([...icon].length > 4) {
+        return sock.sendMessage(chatId, { text: '❌ Keep the icon short — one emoji (max 4 characters).' }, { quoted: msg });
+      }
+      if (!player.cards) player.cards = {};
+      if ((player.cards.seticon || 0) < 1) {
+        return sock.sendMessage(chatId, {
+          text: `❌ *No Seticon Card!*\n\nSetting your guild icon costs 1 🖼️ Seticon Card.\n\n🛍️ Get one: /prostore buy seticon (500 PC)`,
+        }, { quoted: msg });
+      }
+      player.cards.seticon -= 1;
+      playerGuild.icon = icon;
+      saveDatabase();
+      return sock.sendMessage(chatId, {
+        text: `✅ *Guild icon set!*\n\n${icon} *${playerGuild.name}*\n\n🖼️ 1 Seticon Card used (${player.cards.seticon} left)`,
+      }, { quoted: msg });
     }
 
     // ═══════════════════════════════════════════════════════════════════

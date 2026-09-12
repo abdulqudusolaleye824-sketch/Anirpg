@@ -15,6 +15,7 @@
 'use strict';
 
 const GR = require('../../rpg/dungeons/GateRaid');
+const AstralGroups = require('../../rpg/utils/AstralGroups');
 const GKM = require('../../rpg/dungeons/GateKeyManager');
 const { GATE_RANKS } = require('../../rpg/dungeons/GateManager');
 const TextMenu = (()=>{ try { return require('../../utils/textMenu'); } catch(e){ return null; } })();
@@ -36,6 +37,16 @@ module.exports = {
 
     if (!player) {
       return sock.sendMessage(chatId, { text: '❌ You are not registered! Use /register' }, { quoted: msg });
+    }
+    // Batch-47: parties RAID ONLY in dungeon GCs (registered via /setgroup
+    // dungeon or /setdungeon). This closes the hole where ANY chat
+    // (support included) auto-became a raid ground on /party create.
+    if (chatId && chatId.endsWith('@g.us')
+        && !GKM.isDungeonGC(chatId)
+        && !AstralGroups.hosts(db, chatId, 'dungeon')) {
+      return sock.sendMessage(chatId, {
+        text: '❌ *Parties raid in dungeon GCs only!*\n\nRun this in your dungeon group.\nOwner setup: */setgroup dungeon --main* (or /setdungeon).',
+      }, { quoted: msg });
     }
     const UI = require('../../rpg/utils/UI');
     const pro = UI.isPro(player);
@@ -94,9 +105,13 @@ module.exports = {
       const affData     = GKM.getAffiliateData(sender, db);
       const isAffiliate = !!affData;
 
-      // Ensure dungeon GC registration
+      // Batch-47: the chat is a verified dungeon GC (gated above). Mirror
+      // Astral-registered chats into the raid registry so activeKey has
+      // one home; unregistered chats never reach here (no more raids on
+      // support GCs).
       if (!GKM.isDungeonGC(chatId)) {
         GKM.setDungeonGC(chatId, sender);
+        try { GKM.saveGCsToDb(db); } catch (e) {}
       }
       const activeGc = GKM.getDungeonGC(chatId);
 
@@ -104,10 +119,12 @@ module.exports = {
       if (!playerGuild && !isAffiliate) {
         const enterRes = GR.enter(sender, player.name, key, keyData, gate, db);
         activeGc.activeKeyId = key;
+        try { GKM.saveGCsToDb(db); } catch (e) {}
         keyData.dungeonChatId = chatId;
         keyData.raidStarted = true;
 
-        saveDatabase();
+        try { GR.saveGateState(db, gate); } catch (e) {}
+      saveDatabase();
 
         const rd = GATE_RANKS[keyData.gateRank] || GATE_RANKS['E'];
         return sock.sendMessage(chatId, {
@@ -133,6 +150,7 @@ module.exports = {
         keyData.guildName   = affData.guildName;
         keyData.dungeonChatId = chatId;
         activeGc.activeKeyId  = key;
+        try { GKM.saveGCsToDb(db); } catch (e) {}
 
         const raid = GR.raidOf(gate, key, keyData);
         raid.mode      = 'party';
@@ -143,7 +161,8 @@ module.exports = {
         raid.members   = [];
         GR.ensureMember(gate, sender, db);
 
-        saveDatabase();
+        try { GR.saveGateState(db, gate); } catch (e) {}
+      saveDatabase();
 
         const rd = GATE_RANKS[keyData.gateRank] || GATE_RANKS['E'];
         const affText = [
@@ -164,7 +183,7 @@ module.exports = {
             await Buttons.sendButtons(sock, chatId, {
               text: affText,
               footer: `Affiliate Party • ${key}`,
-              buttons: Buttons.quickReplies([[`✅ Join Party`, `/party join ${key}`], [`📊 Party Status`, `/party status`]]),
+              buttons: Buttons.quickReplies([[`✅ Join Party`, `/party join`], [`✅ Ready`, `/party ready`], [`📊 Party Status`, `/party`]]),
             }, msg);
             return;
           }
@@ -172,7 +191,8 @@ module.exports = {
             await TextMenu.sendMenu(sock, chatId, {
               body: affText,
               options: [
-                { label: `✅ Join Party`, command: `/party join ${key}` },
+                { label: `✅ Join Party`, command: `/party join` },
+                { label: `✅ Ready`, command: `/party ready` },
                 { label: `📊 Party Status`, command: `/party status` },
               ],
               footer: `Affiliate Party • ${key}`,
@@ -188,6 +208,7 @@ module.exports = {
       keyData.guildName   = playerGuild;
       keyData.dungeonChatId = chatId;
       activeGc.activeKeyId  = key;
+        try { GKM.saveGCsToDb(db); } catch (e) {}
 
       const raid = GR.raidOf(gate, key, keyData);
       raid.mode      = 'party';
@@ -198,6 +219,7 @@ module.exports = {
       raid.members   = [];
       GR.ensureMember(gate, sender, db);
 
+      try { GR.saveGateState(db, gate); } catch (e) {}
       saveDatabase();
 
       const rd = GATE_RANKS[keyData.gateRank] || GATE_RANKS['E'];
@@ -218,7 +240,7 @@ module.exports = {
           await Buttons.sendButtons(sock, chatId, {
             text: guildText,
             footer: `Guild Party • ${key} • ${playerGuild}`,
-            buttons: Buttons.quickReplies([[`✅ Join Party`, `/party join ${key}`], [`📊 Party Status`, `/party status`]]),
+            buttons: Buttons.quickReplies([[`✅ Join Party`, `/party join`], [`✅ Ready`, `/party ready`], [`📊 Party Status`, `/party`]]),
           }, msg);
           return;
         }
@@ -226,7 +248,8 @@ module.exports = {
           await TextMenu.sendMenu(sock, chatId, {
             body: guildText,
             options: [
-              { label: `✅ Join Party`, command: `/party join ${key}` },
+              { label: `✅ Join Party`, command: `/party join` },
+                { label: `✅ Ready`, command: `/party ready` },
               { label: `📊 Party Status`, command: `/party status` },
             ],
             footer: `Guild Party • ${key} • ${playerGuild}`,
@@ -247,9 +270,13 @@ module.exports = {
             ...(pro ? [UI.PRO_BAR, `👥 *GATE PARTY MANAGER* 💎`, UI.PRO_BAR] : [`👥 *GATE PARTY MANAGER*`, UI.FREE_BAR]),
             `📌 *COMMANDS:*`,
             `/party create --<KEY>   — create a party with a gate key`,
+            `/party join             — join this chat's raid (no key!)`,
             `/party ready            — toggle ready state`,
             `/party raid             — launch raid (leader only)`,
-            `/party join <KEY>       — join an active party`,
+            `/party advance          — next floor (in raid)`,
+            `/party boss             — fight the boss (final floor)`,
+            `/party status           — floor + party status`,
+            `/party heal|revive      — use heal / revive (in raid)`,
             `/party leave            — leave current party`,
             `/party kick @user       — kick member (leader only)`,
             `/affiliate hire 60|40   — hire affiliate for party`,
@@ -262,7 +289,7 @@ module.exports = {
       const keyData = GKM.getKey(activeKey) || db.gateKeys?.[activeKey];
       if (!keyData) return sock.sendMessage(chatId, { text: '❌ Gate party not found.' }, { quoted: msg });
 
-      const resolved = GR.resolveCode(activeKey);
+      const resolved = GR.resolveCode(activeKey, db);
       if (!resolved.ok) return sock.sendMessage(chatId, { text: resolved.error }, { quoted: msg });
       const { gate } = resolved;
 
@@ -305,12 +332,14 @@ module.exports = {
     // /party join <KEY>
     // ═══════════════════════════════════════════════════════════════
     if (action === 'join') {
-      const code = rawKey || (args[1] || '').toUpperCase().replace(/^--/, '').trim();
+      // Batch-47: no key needed — one raid per dungeon GC, so plain
+      // /party join targets this chat's active raid.
+      const code = rawKey || activeKey || (args[1] || '').toUpperCase().replace(/^--/, '').trim();
       if (!code) {
-        return sock.sendMessage(chatId, { text: '❌ Usage: /party join <KEY>\nExample: /party join 2K7SN2N8' }, { quoted: msg });
+        return sock.sendMessage(chatId, { text: '❌ Usage: /party join\nNo active raid in this chat — start one: /party create --<KEY>' }, { quoted: msg });
       }
 
-      const resolved = GR.resolveCode(code);
+      const resolved = GR.resolveCode(code, db);
       if (!resolved.ok) return sock.sendMessage(chatId, { text: resolved.error }, { quoted: msg });
       const { gate, keyData } = resolved;
 
@@ -341,10 +370,24 @@ module.exports = {
       const res = GR.join(sender, player.name, gate, db);
       if (!res.ok) return sock.sendMessage(chatId, { text: `❌ ${res.error}` }, { quoted: msg });
 
+      try { GR.saveGateState(db, gate); } catch (e) {}
       saveDatabase();
 
+      // Batch-47: ready button rides the join message.
+      const _joinTxt = `✅ *${player.name}* joined the party!\n👥 Members: ${res.raid.members.length}/${GR.MAX_PARTY}\n\n📌 Tap Ready when set — leader launches with */party raid*.`;
+      try {
+        if (Buttons?.sendButtons) {
+          await Buttons.sendButtons(sock, chatId, {
+            text: _joinTxt,
+            footer: `Party • ${res.raid.members.length}/${GR.MAX_PARTY}`,
+            mentions: [sender],
+            buttons: Buttons.quickReplies([[`✅ Ready`, `/party ready`], [`📊 Party Status`, `/party`]]),
+          }, msg);
+          return;
+        }
+      } catch (e) {}
       return sock.sendMessage(chatId, {
-        text: `✅ *${player.name}* joined the party!\n🔑 Key: \`${code}\`\n👥 Members: ${res.raid.members.length}\n\n📌 Run */party ready* when ready.`,
+        text: _joinTxt,
         mentions: [sender],
       }, { quoted: msg });
     }
@@ -355,13 +398,14 @@ module.exports = {
     if (action === 'ready') {
       if (!activeKey) return sock.sendMessage(chatId, { text: '❌ No active party in this chat.' }, { quoted: msg });
 
-      const resolved = GR.resolveCode(activeKey);
+      const resolved = GR.resolveCode(activeKey, db);
       if (!resolved.ok) return sock.sendMessage(chatId, { text: resolved.error }, { quoted: msg });
       const { gate } = resolved;
 
       const res = GR.ready(sender, gate);
       if (!res.ok) return sock.sendMessage(chatId, { text: `❌ ${res.error}` }, { quoted: msg });
 
+      try { GR.saveGateState(db, gate); } catch (e) {}
       saveDatabase();
 
       const raid = gate.raid;
@@ -388,7 +432,7 @@ module.exports = {
       const keyData = GKM.getKey(activeKey) || db.gateKeys?.[activeKey];
       if (!keyData) return sock.sendMessage(chatId, { text: '❌ Gate party not found.' }, { quoted: msg });
 
-      const resolved = GR.resolveCode(activeKey);
+      const resolved = GR.resolveCode(activeKey, db);
       if (!resolved.ok) return sock.sendMessage(chatId, { text: resolved.error }, { quoted: msg });
       const { gate } = resolved;
 
@@ -409,6 +453,7 @@ module.exports = {
       const res = GR.start(sender, keyData, gate, db);
       if (!res.ok) return sock.sendMessage(chatId, { text: `❌ ${res.error}` }, { quoted: msg });
 
+      try { GR.saveGateState(db, gate); } catch (e) {}
       saveDatabase();
 
       const rd = GATE_RANKS[keyData.gateRank] || GATE_RANKS['E'];
@@ -424,7 +469,8 @@ module.exports = {
           `⚔️ *COMBAT (auto-routed):*`,
           `/attack — attack the monster`,
           `/skill <name> — use a class skill`,
-          `/gateraid ${activeKey} status — floor status`,
+          `/party status — floor status`,
+          `/party advance — next floor · /party boss — final floor`,
           ...(pro ? [FRAME, UI.PRO_MINI, `💎 *PRO BREACH* — floor 1/${gate.totalFloors} · ${raid.members.length} hunters`] : [FRAME, UI.upsell()]),
         ].join('\n'),
       }, { quoted: msg });
@@ -436,7 +482,7 @@ module.exports = {
     if (action === 'leave') {
       if (!activeKey) return sock.sendMessage(chatId, { text: '❌ No active party in this chat.' }, { quoted: msg });
 
-      const resolved = GR.resolveCode(activeKey);
+      const resolved = GR.resolveCode(activeKey, db);
       if (!resolved.ok) return sock.sendMessage(chatId, { text: resolved.error }, { quoted: msg });
       const { gate } = resolved;
 
@@ -446,6 +492,7 @@ module.exports = {
       raid.members = (raid.members || []).filter(m => m.id !== sender);
       gate.raiders = (gate.raiders || []).filter(r => r !== sender);
 
+      try { GR.saveGateState(db, gate); } catch (e) {}
       saveDatabase();
 
       return sock.sendMessage(chatId, {
@@ -462,7 +509,7 @@ module.exports = {
       const targetJid = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid?.[0];
       if (!targetJid) return sock.sendMessage(chatId, { text: '❌ Usage: /party kick @user' }, { quoted: msg });
 
-      const resolved = GR.resolveCode(activeKey);
+      const resolved = GR.resolveCode(activeKey, db);
       if (!resolved.ok) return sock.sendMessage(chatId, { text: resolved.error }, { quoted: msg });
       const { gate, keyData } = resolved;
 
@@ -476,6 +523,7 @@ module.exports = {
       raid.members = (raid.members || []).filter(m => m.id !== targetJid);
       gate.raiders = (gate.raiders || []).filter(r => r !== targetJid);
 
+      try { GR.saveGateState(db, gate); } catch (e) {}
       saveDatabase();
 
       const targetPlayer = db.users?.[targetJid];
@@ -484,8 +532,20 @@ module.exports = {
       }, { quoted: msg });
     }
 
+    // ═══════════════════════════════════════════════════════════════
+    // Batch-47: /party absorbs every /gateraid function — advance, boss,
+    // heal, revive, attack, skill all run keyless against this chat's raid.
+    // ═══════════════════════════════════════════════════════════════
+    if (['advance', 'boss', 'heal', 'revive', 'attack', 'skill'].includes(action)) {
+      if (!activeKey) {
+        return sock.sendMessage(chatId, { text: '❌ No active raid in this chat. Start one: /party create --<KEY>' }, { quoted: msg });
+      }
+      const GateRaidCmd = require('./gateraid');
+      return GateRaidCmd.execute(sock, msg, [activeKey, action, ...args.slice(1)], getDatabase, saveDatabase, sender);
+    }
+
     return sock.sendMessage(chatId, {
-      text: '❌ Usage: /party [create|ready|raid|join|leave|kick]'
+      text: '❌ Usage: /party [create|join|ready|raid|advance|boss|status|heal|revive|leave|kick]'
     }, { quoted: msg });
   }
 };

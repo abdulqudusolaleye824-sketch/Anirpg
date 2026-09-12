@@ -97,7 +97,7 @@ module.exports = {
 
       if (!player.cards) player.cards = {};
       if ((player.cards.namechange || 0) < 1) {
-        return sock.sendMessage(chatId, { text: `❌ *No Name-Change Card!*\n\nChanging your name costs 1 ✏️ Name-Change Card.\n\n🛍️ Get one: /prostore buy namechange (500 PC)` }, { quoted: msg });
+        return sock.sendMessage(chatId, { text: `❌ *No Rename Card!*\n\nChanging your name costs 1 🃏 Rename Card.\n\n🛍️ Get one: /prostore buy namechange (500 PC)` }, { quoted: msg });
       }
 
       const name = args.join(' ').trim();
@@ -115,7 +115,7 @@ module.exports = {
       player.cards.namechange -= 1;
       saveDatabase();
       return sock.sendMessage(chatId, {
-        text: `✅ *Name changed!*\n\n${oldName} → *${name}*\n\n✏️ 1 Name-Change Card used (${player.cards.namechange} left)`,
+        text: `✅ *Name changed!*\n\n${oldName} → *${name}*\n\n🃏 1 Rename Card used (${player.cards.namechange} left)`,
       }, { quoted: msg });
     },
   },

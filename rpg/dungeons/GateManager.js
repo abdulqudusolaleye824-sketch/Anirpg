@@ -215,6 +215,7 @@ class GateManager {
   }
 
   static clearGate(gateId, db) {
+    try { if (db && db.activeGates) delete db.activeGates[gateId]; } catch (e) {} // batch-47: drop persisted raid
     const gate = this.activeGates[gateId]; if (!gate) return null;
     gate.cleared = true; gate.active = false; gate.clearedAt = Date.now();
     for (const jid of gate.raiders) { const p = db.users[jid]; if (p) { if (!p.stats_history) p.stats_history = {}; p.stats_history.gatesCleared = (p.stats_history.gatesCleared || 0) + 1; } }

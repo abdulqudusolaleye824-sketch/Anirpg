@@ -57,6 +57,18 @@ function lifeSteal(player, dmg) {
 }
 
 // ── Resolve a gate code → gate + keyData ─────────────────────────
+// Batch-47: gates used to live ONLY in GateManager.activeGates (memory), so
+// ANY restart wiped every running raid — parties at the boss floor came
+// back to a reset/fresh gate ("gate was cleared"). Persist a live snapshot
+// in db.activeGates on every mutation; resolveCode revives from it.
+function saveGateState(db, gate) {
+  if (!db || !gate || !gate.id) return;
+  try {
+    if (!db.activeGates) db.activeGates = {};
+    db.activeGates[gate.id] = gate; // live ref — serialised at save time
+  } catch (e) {}
+}
+
 function resolveCode(code, db = null) {
   const key = String(code || '').toUpperCase().replace(/^--/, '').trim();
   if (!key || key.length !== 8) return { ok: false, error: 'Invalid gate code. Format: 8 characters (e.g. 2K7SN2N8).' };
@@ -65,6 +77,22 @@ function resolveCode(code, db = null) {
   if (keyData.claimed || keyData.raidComplete) return { ok: false, error: '❌ This gate key has already been cleared or claimed!' };
   if (keyData.expired || Date.now() > keyData.expiresAt) return { ok: false, error: '⚠️ This gate code has expired. The gate has collapsed.' };
   let gate = GateManager.getGate(keyData.gateId);
+  // Batch-47: revive the PERSISTED raid first (keeps floor, monsters, boss
+  // HP, members, treasure) — fresh rebuild only when no snapshot exists.
+  if (!gate && db && db.activeGates && db.activeGates[keyData.gateId]) {
+    const snap = db.activeGates[keyData.gateId];
+    if (snap && !snap.cleared && !(snap.raid && snap.raid.status === 'done')) {
+      gate = snap;
+      GateManager.activeGates[gate.id] = gate;
+      const _chats = [gate.chatId, keyData.dungeonChatId].filter(Boolean);
+      for (const _c of _chats) {
+        if (!GateManager.gatesByChat[_c]) GateManager.gatesByChat[_c] = [];
+        if (!GateManager.gatesByChat[_c].includes(gate.id)) GateManager.gatesByChat[_c].push(gate.id);
+      }
+    } else {
+      try { delete db.activeGates[keyData.gateId]; } catch (e) {}
+    }
+  }
   // FIX: reconstruct gate if missing (e.g., after restart) or broken prematurely but key still valid — fixes "no longer active" for valid keys
   if (!gate) {
     const rank = keyData.gateRank || 'C';
@@ -511,6 +539,7 @@ function clearGate(gate, key, keyData, db, saveDatabase) {
   }
   }
 
+  try { if (db && db.activeGates) delete db.activeGates[gate.id]; } catch (e) {}
   GateManager.clearGate(gate.id, db);
   if (keyData) {
     keyData.raidComplete = true;
@@ -560,6 +589,7 @@ module.exports = {
   statusOf,
   monsterKilledBy,
   clearGate,
+  saveGateState,
   spawnWildPet,
   GKM,
   GateManager,

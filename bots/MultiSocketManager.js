@@ -1034,6 +1034,21 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
       }
     } catch (e) { console.error('menu reply error:', e.message); }
 
+    // ── Batch-47: Typing Race answers are plain chat from ANY player —
+    // they must be checked BEFORE the addressed/mute gates below (a race
+    // answer never tags the bot, so the old hook behind the chat gate
+    // could never fire — races were unwinnable).
+    try {
+      const TR = require('../rpg/games/TypingRace');
+      if (TR?.checkAnswer && TR.getSession(chatId)) {
+        const win = TR.checkAnswer(getDatabase(), chatId, sender, messageText, saveDatabase);
+        if (win && win.text) {
+          await sock.sendMessage(chatId, { text: win.text, mentions: win.mention ? [win.mention] : [] }, { quoted: msg });
+          return;
+        }
+      }
+    } catch (e) { console.error('typerace hook error:', e.message); }
+
     const botDisplayName = PersonalityManager.getDisplayName(personalityKey);
     const botJid = sock.user?.id;
 

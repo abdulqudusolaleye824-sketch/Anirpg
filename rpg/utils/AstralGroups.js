@@ -108,9 +108,18 @@ class AstralGroups {
     return !!(e && !e.isMain && e.status === 'pending');
   }
 
+  // Batch-47: dungeon GCs NEVER expire (owner order) — raids must not
+  // die to subscription timers. Self-heals stale 'expired' flags on read.
+  static isNeverExpiring(entry) {
+    if (!entry) return false;
+    if (entry.type === 'dungeon') return true;
+    return Array.isArray(entry.features) && entry.features.includes('dungeon');
+  }
+
   static isExpired(db, groupId, now = Date.now()) {
     const e = this.getEntry(db, groupId);
     if (!e || e.isMain) return false;
+    if (this.isNeverExpiring(e)) { if (e.status === 'expired') e.status = 'active'; return false; }
     if (e.status === 'expired') return true;
     if (e.status === 'active' && e.expiresAt && now >= e.expiresAt) {
       e.status = 'expired';
@@ -131,6 +140,7 @@ class AstralGroups {
     const e = this.getEntry(db, groupId);
     if (!e) return { allow: true, silent: false, expired: false };
     if (e.isMain) return { allow: true, silent: false, expired: false };
+    if (this.isNeverExpiring(e)) return { allow: true, silent: false, expired: false }; // batch-47
     if (this.isExpired(db, groupId, now)) {
       return { allow: false, silent: false, expired: true, msg: EXPIRED_MSG };
     }
@@ -194,6 +204,7 @@ class AstralGroups {
     const e = this.getEntry(db, groupId);
     if (!e) return null;
     if (e.isMain) return 'main';
+    if (this.isNeverExpiring(e)) { if (e.status === 'expired') e.status = 'active'; return 'active'; }
     if (this.isExpired(db, groupId, now)) return 'expired';
     if (e.expiresAt && now >= e.expiresAt) { e.status = 'expired'; return 'expired'; }
     return e.status;

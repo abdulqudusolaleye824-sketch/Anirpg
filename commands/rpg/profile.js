@@ -102,6 +102,7 @@ function buildCard(player, db, targetId, mentionedId, isOwnProfile) {
   const pro = UI.isPro(player);
   const rows = [
     equippedTitle !== 'None' ? `🎖️ "${equippedTitle}"` : null,
+    player.bio ? `📝 _${player.bio}_` : null, // batch-47: /setbio
     `${rankData.emoji} *Rank:* ${rankDisplay}`,
     `⭐ *Level:* ${player.level || 1}`,
     `⚡ *Power:* ${power.toLocaleString()} ${powerLabel.emoji} ${powerLabel.label}`,

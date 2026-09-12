@@ -145,7 +145,7 @@ function buildSuccessMsg(name, dob, rank, power, bonus, extra = {}) {
     `💠 *START BONUS:*`,
     `💎 ${bonus.manaStones.toLocaleString()} Mana Stones`,
     `📈 ${bonus.upgradePoints} Upgrade Points`,
-    `✏️ 1 Name-Change Card (for /setname)`,
+    `✏️ 1 Rename Card (for /setname or /guild rename)`,
     `🖼️ 1 Seticon Token (for /seticon)`,
     extra.referrerName ? `🔗 Referred by: *${extra.referrerName}*` : null,
     ``,

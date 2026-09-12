@@ -16,11 +16,15 @@ const WIN_LEVEL_XP = 300; // batch-41: real level XP (Pro 2×)
 const sessions = {}; // chatId -> session
 const lastIdx = {};  // chatId -> last sentence index (avoid immediate repeats)
 
+// Batch-47: punctuation-lenient match — mobile players never retype
+// periods/quotes exactly (proven by live playtest), so only letters,
+// numbers and word breaks count. Still a typing-speed game.
 function normRace(s) {
   return String(s || '')
     .toLowerCase()
     .replace(/[‘’‚‛]/g, "'")
     .replace(/[–—]/g, '-')
+    .replace(/[^a-z0-9\s]/g, '')
     .trim()
     .replace(/\s+/g, ' ');
 }

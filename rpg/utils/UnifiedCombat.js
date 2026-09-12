@@ -239,9 +239,8 @@ function buildTurnMessage(attacker, defender, move, result, isPlayerTurn = true)
   msg += `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
   // Long description if available
   if (move.description) {
-    // Truncate a bit for chat
-    const desc = move.description.length > 220 ? move.description.slice(0, 220) + '…' : move.description;
-    msg += `_${desc}_\n`;
+    // Batch-47: NO truncation — attack descriptions show in full.
+    msg += `_${move.description}_\n`;
     msg += `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
   }
   // Stats line
@@ -338,7 +337,7 @@ async function playTurn(sock, chatId, o) {
 
   const tag = o.tag ? `${o.tag}\n` : '';
   const t1 = `${tag}${o.prepend ? o.prepend + '\n' : ''}⚔️ *${atkName} Uses ${moveName}!*`;
-  const t2 = [desc ? `_${desc.length > 200 ? desc.slice(0, 200) + '…' : desc}_` : null, effLabel, `⏳ Cooldown: ${formatCd(cdMs)}`].filter(Boolean).join('\n');
+  const t2 = [desc ? `_${desc}_` : null, effLabel, `⏳ Cooldown: ${formatCd(cdMs)}`].filter(Boolean).join('\n'); // batch-47: full description
   let t3;
   if (tier === 'missed') t3 = `💨 *It missed!* ${atkName}'s attack sliced air.`;
   else if (tier === 'very') t3 = `🔥 *It is very effective!* ${defName} is ${_fxWord(statusApplied.type)}!`;

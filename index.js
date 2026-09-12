@@ -108,9 +108,15 @@ async function loadFromMongo() {
 
 let saveTimeout = null;
 let pendingMongoWrite = null;
+let _lastMongoFlush = 0; // Batch-47: max-wait bookkeeping (see below)
 async function saveToMongo() {
   if (!mongoCollection) return;
   if (saveTimeout) clearTimeout(saveTimeout);
+  // Batch-47 CRITICAL: under constant activity the old 2s debounce reset
+  // forever, so Mongo went stale for the WHOLE session and a restart lost
+  // everything. 750ms coalescing + forced flush at 5s max staleness.
+  const _sinceFlush = Date.now() - _lastMongoFlush;
+  const _waitMs = _sinceFlush > 5000 ? 0 : 750;
   saveTimeout = setTimeout(() => {
     pendingMongoWrite = (async () => {
       try {
@@ -119,6 +125,7 @@ async function saveToMongo() {
           { _id: 'main', ...database },
           { upsert: true }
         );
+        _lastMongoFlush = Date.now();
       } catch (err) {
         console.error('❌ MongoDB save failed:', err.message);
         try {
@@ -367,10 +374,15 @@ async function _writeJsonBackup() {
     } catch (e) {
       console.error('❌ JSON backup save failed:', e.message);
     } finally {
+      // Batch-47 CRITICAL: capture-then-clear. The old order cleared
+      // _jsonWriteDirty BEFORE testing it, so every save that landed
+      // while a write was in-flight was silently DROPPED (stale DB,
+      // minutes of progress lost on any restart).
+      const _needAgain = _jsonWriteDirty;
       _jsonWriteRunning = false;
       _jsonWriteDirty  = false;
       _jsonWriteInFlight = null;
-      if (_jsonWriteDirty) {
+      if (_needAgain) {
         setImmediate(() => _writeJsonBackup());
       }
     }
@@ -804,10 +816,58 @@ http.createServer(async (req, res) => {
 let _unhandledCount = 0;
 let _lastUnhandledLog = 0;
 
+// Batch-47 CRITICAL: synchronous JSON snapshot. Sync (not queued) so it
+// CANNOT be lost no matter how the process dies next.
+function saveDatabaseSyncNow(reason) {
+  try {
+    fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
+    fs.writeFileSync(DB_PATH, JSON.stringify(database));
+    console.log(`💾 Sync DB snapshot written (${reason || 'manual'})`);
+    return true;
+  } catch (e) {
+    console.error('❌ Sync DB snapshot failed:', e.message);
+    return false;
+  }
+}
+
 process.on('uncaughtException', (err) => {
   console.error('🔥 UNCAUGHT EXCEPTION — saving DB before crash:', err);
   try { saveDatabase(); } catch(e) { console.error('DB save on crash failed:', e); }
+  saveDatabaseSyncNow('uncaughtException');
 });
+
+// Batch-47 CRITICAL: hosts (Railway/PM2) stop bots with SIGTERM. There was
+// NO handler, so every restart/death silently dropped the last minutes of
+// progress. Now: cancel the mongo debounce, force one final Mongo write
+// (10s cap), take a sync JSON snapshot, THEN exit.
+let _shuttingDown = false;
+async function gracefulShutdown(signal) {
+  if (_shuttingDown) return;
+  _shuttingDown = true;
+  console.log(`🛑 ${signal} received — flushing database before exit...`);
+  try { if (saveTimeout) { clearTimeout(saveTimeout); saveTimeout = null; } } catch (e) {}
+  try {
+    if (pendingMongoWrite) {
+      await Promise.race([pendingMongoWrite, new Promise((r) => setTimeout(r, 8000))]);
+    }
+  } catch (e) {}
+  try {
+    if (mongoCollection) {
+      await Promise.race([
+        mongoCollection.replaceOne({ _id: 'main' }, { _id: 'main', ...database }, { upsert: true }),
+        new Promise((_, rej) => setTimeout(() => rej(new Error('final mongo flush timeout')), 10000)),
+      ]);
+      console.log('💾 Final MongoDB flush complete.');
+    }
+  } catch (e) {
+    console.error('❌ Final MongoDB flush failed:', e.message);
+  }
+  saveDatabaseSyncNow(signal);
+  try { if (mongoClient) await mongoClient.close(); } catch (e) {}
+  process.exit(0);
+}
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
 process.on('unhandledRejection', (reason, promise) => {
   _unhandledCount++;

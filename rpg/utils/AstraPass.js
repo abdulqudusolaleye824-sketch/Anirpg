@@ -30,11 +30,11 @@ function getPassState(player) {
   return ap;
 }
 
-// XP needed to advance FROM `level` TO `level+1`. Linear ramp: 750 first,
-// +30 per tier (tier 50 costs 2,220). Season total 0→50 = 74,250 XP:
-// consistent free grinding (~46k) lands ~72%, Pro (2x) clears it.
+// XP needed to advance FROM `level` TO `level+1`. Linear ramp, batch-47:
+// +50% across the board — 1125 first, +45 per tier (tier 50 costs 3,375).
+// Season total 0→50 = 111,375 XP.
 function xpForLevel(level) {
-  return 750 + 30 * Math.max(0, level || 0);
+  return 1125 + 45 * Math.max(0, level || 0);
 }
 
 function _levelUp(ap) {

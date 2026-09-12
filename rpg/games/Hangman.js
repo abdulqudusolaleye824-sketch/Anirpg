@@ -68,6 +68,10 @@ function start(chatId, starterJid, send, opts = {}) {
 function guessLetter(db, save, chatId, sender, senderName, raw) {
   const s = sessions[chatId];
   if (!s) return null;
+  // Batch-47: hangman belongs to its starter — no pile-on guessing.
+  if (sender !== s.starter) {
+    return { text: `❌ This hangman game belongs to @${String(s.starter).split('@')[0]} — only they can guess!\nStart your own with /hangman!`, mention: s.starter };
+  }
   const player = db?.users?.[sender];
   if (!player) return { text: `You're not registered yet! Use */register* to play.` };
   const letter = String(raw || '').trim().toUpperCase().replace(/[^A-Z]/g, '');

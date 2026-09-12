@@ -63,8 +63,11 @@ module.exports = {
     });
 
     const myIdx = members.findIndex(m => m.id === sender);
+    // Batch-47: guild icon + bio show here (/guild icon, /guild bio).
+    const _gIcon47 = guild.icon ? `${guild.icon} ` : '';
     const text = [
-      ...(pro ? [UI.PRO_BAR, `🏰 *${guild.name.toUpperCase()} — WEEKLY GP RANKINGS* 💎`, UI.PRO_BAR] : [`🏰 *${guild.name.toUpperCase()} — WEEKLY GP RANKINGS*`, UI.FREE_BAR]),
+      ...(pro ? [UI.PRO_BAR, `🏰 *${_gIcon47}${guild.name.toUpperCase()} — WEEKLY GP RANKINGS* 💎`, UI.PRO_BAR] : [`🏰 *${_gIcon47}${guild.name.toUpperCase()} — WEEKLY GP RANKINGS*`, UI.FREE_BAR]),
+      ...(guild.bio ? [`📝 _${guild.bio}_`] : []),
       `👑 Leader: *${db.users?.[guild.leader]?.name || guild.leader.split('@')[0]}*`,
       `🏆 Server Rank: *${serverRankText}* of ${allGuilds.length}`,
       `📊 Guild Weekly GP: *${(guild.weeklyGP || 0).toLocaleString()} GP*`,

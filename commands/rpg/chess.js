@@ -87,6 +87,14 @@ module.exports = {
       if (GC.slot(db, KIND, chatId)) {
         return sock.sendMessage(chatId, { text: `❌ A chess game is already in progress here. Finish it first!` }, { quoted: msg });
       }
+      // Batch-47: one game at a time here + none while in battle.
+      try {
+        const _ag = GC.activeGameIn(db, chatId);
+        if (_ag) return sock.sendMessage(chatId, { text: GC.gameBusyBlock(_ag) }, { quoted: msg });
+        const _bt = GC.inBattle(db, sender);
+        if (_bt) return sock.sendMessage(chatId, { text: GC.battleBlock(_bt) }, { quoted: msg });
+      } catch (e) {}
+
       GC.setSlot(db, KIND, chatId, {
         phase: 'challenge',
         whiteJid: sender, // challenger plays White and moves first

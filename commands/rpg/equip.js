@@ -133,6 +133,32 @@ module.exports = {
         }, { quoted: msg });
       }
 
+      // ── Tiered Health Potions (batch-48: shop tiers finally usable) ──
+      if (itemName === 'Medium Health Potion' || itemName === 'Higher Health Potion') {
+        const tKey = itemName === 'Medium Health Potion' ? 'mediumHealthPotions' : 'higherHealthPotions';
+        if ((inv[tKey] || 0) < 1) return sock.sendMessage(chatId, { text: `❌ No ${itemName}s!` }, { quoted: msg });
+        const pct = itemName === 'Medium Health Potion' ? 0.25 : 0.5;
+        const heal = Math.floor(player.stats.maxHp * pct);
+        player.stats.hp = Math.min(player.stats.maxHp, player.stats.hp + heal);
+        player.inventory[tKey] = (inv[tKey] || 0) - 1;
+        saveDatabase();
+        return sock.sendMessage(chatId, {
+          text: `🧪 *${itemName}* used!\n\n💚 Restored ${heal} HP!\n❤️ HP: ${player.stats.hp}/${player.stats.maxHp}`
+        }, { quoted: msg });
+      }
+
+      // ── Crafting-material counters can't be "used" — they're for /craft ──
+      if (selectedStack._synthetic && String(selectedStack._synthetic).startsWith('mat:')) {
+        return sock.sendMessage(chatId, { text: `🧱 *${itemName}* is a crafting material — it can't be used or absorbed.\n\n💡 Spend it in /craft. You CAN gift it: /equip gift ${itemNum} @player` }, { quoted: msg });
+      }
+
+      // ── Cards point at their own commands ──
+      if (selectedStack._synthetic && String(selectedStack._synthetic).startsWith('card:')) {
+        const _hints48 = { 'card:namechange': '/setname (or /guild rename)', 'card:seticon': '/seticon (reply to an image)', 'card:pro_weekly': '/prostore use weekly' };
+        const _hint48 = _hints48[selectedStack._synthetic] || '/inv';
+        return sock.sendMessage(chatId, { text: `🃏 *${itemName}* ×${selectedStack.count || 1}\n\n💡 Spend it with ${_hint48}. You CAN gift it: /equip gift ${itemNum} @player` }, { quoted: msg });
+      }
+
       // ── Revive Token ──
       if (itemName === 'Revive Token') {
         return sock.sendMessage(chatId, {
@@ -181,6 +207,11 @@ module.exports = {
       }
 
       const item = allItems[idx];
+
+      // Batch-48: crafting materials are NEVER equipped/absorbed — /craft only.
+      if (['material', 'crafting', 'craft', 'ingredient', 'reagent'].includes((item.type || '').toLowerCase())) {
+        return sock.sendMessage(chatId, { text: `🧱 *${item.name}* is a crafting material — it can't be equipped or absorbed.\n\n💡 Spend it in /craft. You CAN gift it: /equip gift ${itemNum} @player` }, { quoted: msg });
+      }
 
       // ── Apply stat bonus ──
       const statResult = applyItemBonus(player, item);
@@ -280,8 +311,15 @@ module.exports = {
       const recipient = db.users[recipientId];
       if (!recipient) return sock.sendMessage(chatId, { text: `❌ That player is not registered!` }, { quoted: msg });
 
+      // Batch-48: counter/card items gift 1 unit — everything is transferable.
       if (sorted[itemNum - 1]._synthetic) {
-        return sock.sendMessage(chatId, { text: `❌ *${sorted[itemNum - 1].name}* can't be gifted (bound supply).\n\nUse it yourself with /equip use ${itemNum}.` }, { quoted: msg });
+        const _t = require('./items')._transferSynthetic(player, recipient, sorted[itemNum - 1]);
+        if (!_t.ok) return sock.sendMessage(chatId, { text: `❌ ${(_t.error || 'Gift failed.')}` }, { quoted: msg });
+        saveDatabase();
+        return sock.sendMessage(chatId, {
+          text: (pro ? `${UI.PRO_BAR}\n🎁 *ITEM GIFTED!* 💎\n${UI.PRO_BAR}\n\n${getTypeEmoji(sorted[itemNum - 1].type)} *${sorted[itemNum - 1].name}*` : `🎁 *ITEM GIFTED!*\n${UI.FREE_BAR}\n\n${getTypeEmoji(sorted[itemNum - 1].type)} *${sorted[itemNum - 1].name}*`)+` ×1 → *${recipient.name}*!\n\n💌 They can use /items to see it.\n${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO KIT* — gifted ${sorted[itemNum - 1].name}` : `\n${UI.upsell()}`),
+          mentions: [recipientId]
+        }, { quoted: msg });
       }
       const selectedName = sorted[itemNum - 1].name;
       const idx = allItems.findIndex(i => i.name === selectedName);

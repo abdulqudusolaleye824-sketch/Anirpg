@@ -45,6 +45,17 @@ module.exports = {
     const FRAME = pro ? UI.PRO_BAR : UI.FREE_BAR;
 
     // ── Must be in a registered dungeon GC ───────────────────────
+    // Batch-47: Astral-registered dungeon chats (/setgroup dungeon) count
+    // too — mirrored into the raid registry on first raid here.
+    if (chatId.endsWith('@g.us') && !GR.GKM.isDungeonGC(chatId)) {
+      try {
+        const _AG = require('../../rpg/utils/AstralGroups');
+        if (_AG.hosts(db, chatId, 'dungeon')) {
+          GR.GKM.setDungeonGC(chatId, sender);
+          try { GR.GKM.saveGCsToDb(db); } catch (e) {}
+        }
+      } catch (e) {}
+    }
     if (chatId.endsWith('@g.us') && !GR.GKM.isDungeonGC(chatId)) {
       const allGCs = GR.GKM.getAllDungeonGCs();
       const gcList = Object.values(allGCs);
@@ -115,14 +126,15 @@ module.exports = {
           ...(pro ? [UI.PRO_BAR, `⚔️ *GATE RAID* 💎`, UI.PRO_BAR] : [`⚔️ *GATE RAID*`, UI.FREE_BAR]),
           `Use your gate code to start a raid.`,
           ``,
-          `📌 *COMMANDS:*`,
-          `• /attack or /attack <id> — attack (works inside gate raid, no code needed)`,
-          `• /gateraid <CODE>          — enter (auto party/solo)`,
-          `/gateraid <CODE> join     — join party`,
-          `/gateraid <CODE> ready    — mark ready`,
-          `/gateraid <CODE> start    — start (party leader)`,
-          `/gateraid <CODE> status   — status`,
-          `• Or in-raid: /gateraid attack / /gateraid skill <name> (code inferred)`,
+          `📌 *COMMANDS (use /party — no key needed):*`,
+          `• /attack or /attack <id> — attack (works inside gate raid)`,
+          `• /party create --<KEY>   — open a raid with a gate key`,
+          `/party join             — join this chat's raid`,
+          `/party ready            — mark ready`,
+          `/party raid             — launch (party leader)`,
+          `/party status           — party + floor status`,
+          `/party advance          — next floor · /party boss — final floor`,
+          `/party heal|revive      — heal / revive (in raid)`,
           `${FRAME}`,
           `💡 Guild member → party raid.\n   No-guild hunter → solo raid.\n   Affiliate key → open to everyone.`,
           ...(pro ? [FRAME] : [FRAME, UI.upsell()]),
@@ -131,7 +143,7 @@ module.exports = {
     }
 
     // ── Resolve the gate by code ────────────────────────────────
-    const resolved = GR.resolveCode(code);
+    const resolved = GR.resolveCode(code, db);
     if (!resolved.ok) return sock.sendMessage(chatId, { text: resolved.error }, { quoted: msg });
     const { key, keyData, gate } = resolved;
 
@@ -141,7 +153,7 @@ module.exports = {
     if (gc && gc.activeKeyId && gc.activeKeyId !== key) {
       return sock.sendMessage(chatId, { text: '❌ This dungeon GC already has an active gate raid. Clear it first.' }, { quoted: msg });
     }
-    if (gc) gc.activeKeyId = key;
+    if (gc) { gc.activeKeyId = key; try { GR.GKM.saveGCsToDb(db); } catch (e) {} }
 
     const rd = GATE_RANKS[gate.rank] || GATE_RANKS['E'];
 
@@ -149,6 +161,7 @@ module.exports = {
     if (action === 'enter' || action === 'open' || action === 'start-raid') {
       const res = GR.enter(sender, player.name, key, keyData, gate, db);
       if (!res.ok) return sock.sendMessage(chatId, { text: `❌ ${res.error}` }, { quoted: msg });
+      try { GR.saveGateState(db, gate); } catch (e) {}
       saveDatabase();
 
       const isOpenKey = !!keyData.isAffiliate;
@@ -166,12 +179,12 @@ module.exports = {
           ``,
           `📌 *STEPS:*`,
           isOpenKey
-            ? `1️⃣ Anyone: /gateraid ${key} join`
-            : `1️⃣ Guild members: /gateraid ${key} join`,
-          `2️⃣ Everyone: /gateraid ${key} ready`,
-          `3️⃣ Leader: /gateraid ${key} start`,
+            ? `1️⃣ Anyone: /party join`
+            : `1️⃣ Guild members: /party join`,
+          `2️⃣ Everyone: /party ready`,
+          `3️⃣ Leader: /party start`,
           ``,
-          `📊 /gateraid ${key} status — see who's ready`,
+          `📊 /party status — see who's ready`,
           FRAME,
           `💡 A gate instantly opens when you use a code.`,
           `   Add friends above, or start solo with just you.`,
@@ -185,9 +198,10 @@ module.exports = {
       if (!gate.raid) return sock.sendMessage(chatId, { text: '❌ Start the raid first: /gateraid ' + key }, { quoted: msg });
       const res = GR.join(sender, player.name, gate, db);
       if (!res.ok) return sock.sendMessage(chatId, { text: `❌ ${res.error}` }, { quoted: msg });
+      try { GR.saveGateState(db, gate); } catch (e) {}
       saveDatabase();
       return sock.sendMessage(chatId, {
-        text: `✅ *${player.name}* joined the party!\n👥 Members: ${res.raid.members.length}\n\nMark ready: /gateraid ${key} ready`,
+        text: `✅ *${player.name}* joined the party!\n👥 Members: ${res.raid.members.length}\n\nMark ready: /party ready`,
         mentions: [sender],
       }, { quoted: msg });
     }
@@ -196,11 +210,12 @@ module.exports = {
     if (action === 'ready') {
       const res = GR.ready(sender, gate);
       if (!res.ok) return sock.sendMessage(chatId, { text: `❌ ${res.error}` }, { quoted: msg });
+      try { GR.saveGateState(db, gate); } catch (e) {}
       saveDatabase();
       const raid = gate.raid;
       let txt = `✅ *${player.name}* is ready!\n\n`;
       raid.members.forEach(m => { txt += `  ${m.id === raid.leader ? '👑' : '⚔️'} ${m.name} ${m.ready ? '✅' : '⏳'}\n`; });
-      if (res.allReadied) txt += `\n🎉 *ALL READY!* Leader: /gateraid ${key} start`;
+      if (res.allReadied) txt += `\n🎉 *ALL READY!* Leader: /party start`;
       return sock.sendMessage(chatId, { text: txt }, { quoted: msg });
     }
 
@@ -208,6 +223,7 @@ module.exports = {
     if (action === 'start') {
       const res = GR.start(sender, keyData, gate, db);
       if (!res.ok) return sock.sendMessage(chatId, { text: `❌ ${res.error}` }, { quoted: msg });
+      try { GR.saveGateState(db, gate); } catch (e) {}
       saveDatabase();
       const raid = res.raid;
       return sock.sendMessage(chatId, {
@@ -219,9 +235,9 @@ module.exports = {
           `👥 *Party (${raid.members.length}):*`,
           ...raid.members.map(m => `  ${m.id === raid.leader ? '👑' : '⚔️'} ${m.name}`),
           ``,
-          `⚔️ /gateraid ${key} attack`,
-          `🔮 /gateraid ${key} skill <name>`,
-          `📊 /gateraid ${key} status`,
+          `⚔️ /party attack`,
+          `🔮 /party skill <name>`,
+          `📊 /party status`,
           ...(pro ? [FRAME, UI.PRO_MINI, `💎 *PRO BREACH* — ${rd.label} · ${raid.members.length} hunters · ${gate.totalFloors} floors`] : [FRAME, UI.upsell()]),
         ].join('\n'),
       }, { quoted: msg });
@@ -281,6 +297,7 @@ module.exports = {
       const pm = gate.raid?.members?.find(m => m.id === sender);
       if (pm) pm.hp = player.stats.hp;
 
+      try { GR.saveGateState(db, gate); } catch (e) {}
       saveDatabase();
       return sock.sendMessage(chatId, {
         text: `🩹 *${player.name}* used ${tierName}!\n💚 Restored +${actualHeal} HP (${player.stats.hp}/${player.stats.maxHp})\n🎒 Party Potions Used: ${gate.potionsUsed}/5`
@@ -317,6 +334,7 @@ module.exports = {
         gate.raiders.push(sender);
       }
 
+      try { GR.saveGateState(db, gate); } catch (e) {}
       saveDatabase();
       return sock.sendMessage(chatId, {
         text: `💫 *REVIVE USED!* *${player.name}* was revived with ${player.stats.hp}/${player.stats.maxHp} HP!\n⚠️ Party Revive Cap Reached (1/1 used).`
@@ -329,7 +347,7 @@ module.exports = {
       const floor = gate.currentFloor;
       const floorMonsters = (gate.monsters || []).filter(mm => mm.floor === floor && !mm.defeated);
       if (floorMonsters.length > 0) return sock.sendMessage(chatId, { text: `❌ Clear all monsters on Floor ${floor} first!` }, { quoted: msg });
-      if (floor >= gate.totalFloors) return sock.sendMessage(chatId, { text: `⚠️ Final floor. Engage the boss with /gateraid ${key} boss` }, { quoted: msg });
+      if (floor >= gate.totalFloors) return sock.sendMessage(chatId, { text: `⚠️ Final floor. Engage the boss with /party boss` }, { quoted: msg });
       gate.currentFloor++;
       const next = (gate.monsters || []).filter(mm => mm.floor === gate.currentFloor && !mm.defeated);
       try {
@@ -337,6 +355,7 @@ module.exports = {
         QD.trackAndNotify(player, 'floor', gate.currentFloor, sock, sender, chatId);
         QD.trackAndNotify(player, 'dungeon', 1, sock, sender, chatId);
       } catch(e){}
+      try { GR.saveGateState(db, gate); } catch (e) {}
       saveDatabase();
       return sock.sendMessage(chatId, {
         text: [
@@ -347,7 +366,7 @@ module.exports = {
           ...next.slice(0, 6).map(mm => `  💀 ${mm.name} — HP ${mm.hp}`),
           next.length > 6 ? `  ...and ${next.length - 6} more` : ``,
           ``,
-          `⚔️ /gateraid ${key} attack`,
+          `⚔️ /party attack`,
           ...(pro ? [FRAME, UI.PRO_MINI, `💎 *PRO SCOUT* — strongest: ${next.length ? UI.num(Math.max(...next.map(mm => mm.hp || 0))) : 0} HP`] : [FRAME, UI.upsell()]),
         ].filter(l => l !== '').join('\n'),
       }, { quoted: msg });
@@ -360,8 +379,8 @@ module.exports = {
       const floorMonsters = (gate.monsters || []).filter(mm => mm.floor === floor && !mm.defeated);
 
       if (floorMonsters.length === 0) {
-        if (floor >= gate.totalFloors) return sock.sendMessage(chatId, { text: `⚠️ All monsters cleared! Engage the boss:\n/gateraid ${key} boss` }, { quoted: msg });
-        return sock.sendMessage(chatId, { text: `✅ Floor ${floor} cleared!\nAdvance: /gateraid ${key} advance` }, { quoted: msg });
+        if (floor >= gate.totalFloors) return sock.sendMessage(chatId, { text: `⚠️ All monsters cleared! Engage the boss:\n/party boss` }, { quoted: msg });
+        return sock.sendMessage(chatId, { text: `✅ Floor ${floor} cleared!\nAdvance: /party advance` }, { quoted: msg });
       }
 
       const target = floorMonsters[0];
@@ -396,12 +415,17 @@ module.exports = {
       // ── Frozen / stunned players lose their turn (statuses already ticked above) ──
       let _grCanAct = { canAct: true, reason: null };
       try { _grCanAct = require('../../rpg/utils/UnifiedCombat').canAct(player); } catch(e){}
+      // Batch-47: a stunned hunter loses their STRIKE, but the battle
+      // still plays out — the monster below still counter-attacks.
       if (!_grCanAct.canAct) {
-        saveDatabase();
+        try { GR.saveGateState(db, gate); } catch (e) {}
+      saveDatabase();
         const _grFxMap = { frozen: ['❄️', 'FROZEN 🧊'], stunned: ['💫', 'STUNNED 💫'], paralyzed: ['🔱', 'PARALYZED 🔱'], feared: ['😱', 'FEARED 😱'] };
         const [_fxEmo, _fxWord] = _grFxMap[_grCanAct.reason] || ['💫', 'STUNNED 💫'];
-        return sock.sendMessage(chatId, { text: `${FRAME}\n${_fxEmo} *YOU ARE ${_fxWord}!*${pro ? ' 💎' : ''}\n${FRAME}\n_${player.name} cannot move this turn._\nTurn skipped (0 dmg, status -1).\n${FRAME}` }, { quoted: msg });
+        await sock.sendMessage(chatId, { text: `${FRAME}\n${_fxEmo} *YOU ARE ${_fxWord}!*${pro ? ' 💎' : ''}\n${FRAME}\n_${player.name} cannot move this turn — strike lost!_\n💢 *But the battle plays on...*\n${FRAME}` }, { quoted: msg });
       }
+      const UCgFlow = require('../../rpg/utils/UnifiedCombat');
+      if (_grCanAct.canAct) {
       let result;
       let atkPattern = null;
       if (patternId) {
@@ -449,7 +473,6 @@ module.exports = {
 
       // ── Player strike: shared 5-message battle flow (damage math unchanged,
       // presentation unified with PvP). playTurn applies damage + move effect.
-      const UCgFlow = require('../../rpg/utils/UnifiedCombat');
       target.statusEffects = target.statusEffects || [];
       let _gmMove, _gmResult;
       if (atkPattern) {
@@ -504,13 +527,16 @@ module.exports = {
 
           killLines.push(``, `💰 *Floor ${floor} Treasure Accumulated:* +${fNexus.toLocaleString()} 💠 Nexus & +${fCrystals.toLocaleString()} 💎 Mana Stones`);
 
-          if (floor >= gate.totalFloors) { killLines.push(``, `🏆 *BOSS FLOOR REACHED!*`, `/gateraid ${key} boss — Engage the boss!`); }
-          else { killLines.push(``, `✅ *Floor ${floor} CLEARED!*`, `/gateraid ${key} advance — Floor ${floor + 1}`); }
+          if (floor >= gate.totalFloors) { killLines.push(``, `🏆 *BOSS FLOOR REACHED!*`, `/party boss — Engage the boss!`); }
+          else { killLines.push(``, `✅ *Floor ${floor} CLEARED!*`, `/party advance — Floor ${floor + 1}`); }
         }
 
-        saveDatabase();
+        try { GR.saveGateState(db, gate); } catch (e) {}
+      saveDatabase();
         return sock.sendMessage(chatId, { text: killLines.filter(Boolean).join('\n') }, { quoted: msg });
       }
+
+      } // ── end player strike (skipped when stunned) ──
 
       // Monster counter-attack (frozen/stunned/paralyzed monsters lose their turn)
       let _monCanAct = { canAct: true, reason: null };
@@ -578,7 +604,8 @@ module.exports = {
           deathLines.push(``, `💀 *YOU FELL IN THE GATE!*`, `Lost ${loss.toLocaleString()} 💎`, `You fled with 1 HP.`);
           if (gate.raid) gate.raid.members = gate.raid.members.filter(m => m.id !== sender);
           gate.raiders = (gate.raiders || []).filter(r => r !== sender);
-          saveDatabase();
+          try { GR.saveGateState(db, gate); } catch (e) {}
+      saveDatabase();
           return sock.sendMessage(chatId, { text: deathLines.filter(Boolean).join('\n') }, { quoted: msg });
         }
       }
@@ -588,12 +615,13 @@ module.exports = {
       const msg3Lines = [
         ...(pro ? [UI.PRO_BAR, `🎮 *NEXT TURN* 💎`, UI.PRO_BAR] : [`🎮 *NEXT TURN*`, UI.FREE_BAR]),
         ...(_nextStatus2 ? [`⚠️ *YOUR STATUS:* ${_nextStatus2}`] : []),
-        `⚔️ /gateraid ${key} attack`,
-        `🔮 /gateraid ${key} skill <name>`,
+        `⚔️ /party attack`,
+        `🔮 /party skill <name>`,
         `🩹 /use heal`,
         ...(pro ? [FRAME] : [FRAME, UI.upsell()]),
       ];
 
+      try { GR.saveGateState(db, gate); } catch (e) {}
       saveDatabase();
       return sock.sendMessage(chatId, {
         text: msg3Lines.filter(Boolean).join('\n')
@@ -723,23 +751,25 @@ module.exports = {
             // Remove from raid
             if (gate.raid) gate.raid.members = gate.raid.members.filter(m => m.id !== sender);
             gate.raiders = (gate.raiders || []).filter(r => r !== sender);
-            saveDatabase();
+            try { GR.saveGateState(db, gate); } catch (e) {}
+      saveDatabase();
             return sock.sendMessage(chatId, { text: lines.join('\n') }, { quoted: msg });
           }
         }
 
-        lines.push(``, `⚔️ /gateraid ${key} boss — Attack again`);
+        lines.push(``, `⚔️ /party boss — Attack again`);
       }
 
       const pm = gate.raid?.members?.find(m => m.id === sender);
       if (pm) { pm.hp = player.stats.hp; pm.energy = player.stats.energy; }
 
+      try { GR.saveGateState(db, gate); } catch (e) {}
       saveDatabase();
       return sock.sendMessage(chatId, { text: lines.join('\n') }, { quoted: msg });
     }
 
     return sock.sendMessage(chatId, {
-      text: `Usage: /gateraid ${key} [join|ready|start|attack|skill <name>|status|advance|boss]`,
+      text: `Usage: /party [join|ready|start|attack|skill <name>|status|advance|boss]`,
     }, { quoted: msg });
   },
 };

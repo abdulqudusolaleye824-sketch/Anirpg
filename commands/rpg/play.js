@@ -204,7 +204,7 @@ async function _fetchCover(id) {
 
 module.exports = {
   name: 'play',
-  aliases: ['music'],
+  aliases: ['music', 'song'], // batch-47: /song is /play
   description: '🎵 Play a song as a voice note + cover image',
   usage: '/play <title> | <artist>',
   category: 'music',
@@ -225,6 +225,10 @@ module.exports = {
       return say(`⏳ Wait ${wait}s before playing another track.`);
     }
     cooldowns.set(sender, now);
+
+    // Batch-47: two-phase flow — "Fetching your song", then the song
+    // (cover + audio). Matches the /pinterest pattern players know.
+    try { await say(`🎵 Fetching your song...`); } catch (e) {}
 
     // Direct URL → exact download, no search/matching.
     const directId = _extractVideoId(raw);
@@ -304,6 +308,7 @@ module.exports = {
         if (audio.ffmpeg) sets.push(_withFormat(audio.args, 'best'));
         return sets;
       };
+      let lastErr = '';
       const dlAttempt = async (videoId, fbTitle, argSet) => {
         let res;
         try {
@@ -316,8 +321,11 @@ module.exports = {
             '--print', 'title',
             `https://www.youtube.com/watch?v=${videoId}`,
           ]);
-        } catch (e) { return null; }
-        if (!res || !res.ok || res.notFound) return null;
+        } catch (e) { lastErr = String((e && e.message) || e || ''); return null; }
+        if (!res || !res.ok || res.notFound) {
+          try { lastErr = String(res.error || res.stderr || res.stdout || ''); } catch (e) {}
+          return null;
+        }
         const parsed = ToolRunner.parseDownloadPrints(res.stdout, videoId, fbTitle);
         if (!parsed || !parsed.p) return null;
         try { if (!fs.existsSync(parsed.p)) return null; } catch (e) { return null; }
@@ -362,7 +370,15 @@ module.exports = {
           ].join('\n'));
         }
         console.error('/play: all sources failed for', pick.id);
-        return say(`❌ Couldn't get that track right now — try again in a bit.`);
+        // Batch-47: when YouTube is IP-blocking the host, say so plainly —
+        // no ladder beats an IP ban; the owner must set YT_COOKIES.
+        let _fail = `❌ Couldn't get that track right now — try again in a bit.`;
+        try {
+          if (/sign in to confirm|too many requests|\b429\b|\b403\b|forbidden|login required|confirm you.?re not a bot|ip.?block/i.test(lastErr)) {
+            _fail += `\n\n⚠️ YouTube is blocking this server's network (IP flag).\n👑 Owner: add working *YT_COOKIES* to the host .env and restart the bot.`;
+          }
+        } catch (e) {}
+        return say(_fail);
       }
 
       // Convert to opus voice note when ffmpeg exists.

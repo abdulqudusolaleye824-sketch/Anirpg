@@ -566,24 +566,26 @@ module.exports = {
         if (dunPty && dunPty.awaitingAdvance) return sock.sendMessage(chatId, { text: '✅ Floor cleared! /dungeon advance' }, { quoted: msg });
 
         // Frozen / stunned hunters lose their turn (tick once, then skip)
+        // Batch-47: stunned loses the STRIKE via the skip-branch below —
+        // the monster counter-attack still plays out.
+        let _dngStunSkip = null;
         try {
           const _dngUC = require('../../rpg/utils/UnifiedCombat');
           const _dngFx = _dngUC.canAct(player);
           if (!_dngFx.canAct) {
             try { _dngUC.tickStatuses(player); } catch(e){}
-            saveDatabase();
-            return sock.sendMessage(chatId, { text: ((r => ({ frozen: '❄️ *YOU ARE FROZEN*', stunned: '💫 *YOU ARE STUNNED*', paralyzed: '🔱 *YOU ARE PARALYZED*', feared: '😱 *YOU ARE FEARED*' }[r] || '💫 *YOU ARE STUNNED*'))(_dngFx.reason)) + ' — ' + player.name + ' cannot move this turn.\nTurn skipped (0 dmg, status -1).' }, { quoted: msg });
+            _dngStunSkip = ((r => ({ frozen: '❄️ *YOU ARE FROZEN*', stunned: '💫 *YOU ARE STUNNED*', paralyzed: '🔱 *YOU ARE PARALYZED*', feared: '😱 *YOU ARE FEARED*' }[r] || '💫 *YOU ARE STUNNED*'))(_dngFx.reason)) + ' — ' + player.name + ' cannot move this turn.\nStrike lost (0 dmg) — but the battle plays on!';
           }
         } catch(e){}
 
         const UCd2 = require('../../rpg/utils/UnifiedCombat');
         let finalDmg, isCrit, _dungeonUnified;
         const _cdChk = UCd2.isOnCooldown(player, atk.id);
-        if (_cdChk.onCd) {
+        if (_dngStunSkip || _cdChk.onCd) {
           finalDmg = 0; isCrit = false; _dungeonUnified = { missed:false, crit:false, effective:'skipped' };
           try { UCd2.tickStatuses(player); } catch(e){}
           try { UCd2.tickStatuses(monster); } catch(e){}
-          const _skipMsg = `⏳ *attack failed — still on cooldown ${UCd2.formatCd(_cdChk.remaining)} remaining* — turn skipped (0 dmg, status -1)`;
+          const _skipMsg = _dngStunSkip || `⏳ *attack failed — still on cooldown ${UCd2.formatCd(_cdChk.remaining)} remaining* — turn skipped (0 dmg, status -1)`;
           // store for intro patching
           player._dungeonSkipMsg = _skipMsg;
           // do not damage monster
@@ -611,7 +613,7 @@ module.exports = {
             FRAME,
             `${re} *#${atk.id} — ${atk.name}* [${atk.rank}]`,
             _smsg,
-            `_${(atk.description||atk.flavour).slice(0,220)}_`,
+            `_${(atk.description||atk.flavour)}_`, // batch-47: full description
             `📊 Atk×${atk.atkMult} Def×${atk.defMult} Spd×${atk.speedMult} Crit×${atk.critMult} Acc ${atk.accuracy}%`,
             FRAME,
           ];
@@ -766,10 +768,13 @@ module.exports = {
         let log = '';
         if (fx.messages.length) log += fx.messages.join('\n') + '\n\n';
         else if (_preStatus) log += `⚠️ *STATUS:* ${_preStatus}\n\n`;
+        // Batch-47: stunned loses the strike, monster still attacks.
+        let _soloStunned = false;
         if (!fx.canAct) {
-          log += `❌ *${player.name}* cannot act this turn!`;
-          return sock.sendMessage(chatId, { text: log }, { quoted: msg });
+          log += `❌ *${player.name}* cannot move this turn — strike lost!\n💢 *But the battle plays on...*\n\n`;
+          _soloStunned = true;
         }
+        if (!_soloStunned) {
 
         // Player attacks monster — full bonus calculation like party
         const artBSolo = ArtifactSystem.calculateCombatBonusFromPlayer?.(player);
@@ -874,6 +879,8 @@ module.exports = {
           log += `\n\n🏆 Floor ${sd.currentFloor} cleared!\n/dungeon advance — Floor ${sd.currentFloor + 1}\n/dungeon leave — Exit with rewards`;
           return sock.sendMessage(chatId, { text: log }, { quoted: msg });
         }
+
+        } // ── end player strike (skipped when stunned) ──
 
         // Monster counterattacks using full AI (abilities + dialogue)
         log += executeMonsterAI(monster, player);

@@ -22,6 +22,42 @@ function getTypeEmoji(type) {
   return emojiMap[type] || '📦';
 }
 
+// Batch-48: move 1 unit of a counter/card-backed entry sender→target.
+// Handles the energyPotions/manaPotions legacy split on BOTH sides.
+function transferSynthetic(sender, target, entry) {
+  const key = entry && entry._synthetic;
+  if (!key) return { ok: false, error: 'Not a transferable entry.' };
+  if (String(key).startsWith('mat:')) {
+    const mk = String(key).slice(4);
+    if (!sender.materials) sender.materials = {};
+    if ((sender.materials[mk] || 0) < 1) return { ok: false, error: `No ${entry.name} to send!` };
+    if (!target.materials) target.materials = {};
+    sender.materials[mk] -= 1;
+    target.materials[mk] = (target.materials[mk] || 0) + 1;
+    return { ok: true };
+  }
+  if (String(key).startsWith('card:')) {
+    const ck = String(key).slice(5);
+    if (!sender.cards) sender.cards = {};
+    if ((sender.cards[ck] || 0) < 1) return { ok: false, error: `No ${entry.name} to send!` };
+    if (!target.cards) target.cards = {};
+    sender.cards[ck] -= 1;
+    target.cards[ck] = (target.cards[ck] || 0) + 1;
+    return { ok: true };
+  }
+  if (!sender.inventory) sender.inventory = {};
+  if (!target.inventory) target.inventory = {};
+  const sKey = key === 'energyPotions' && sender.inventory.energyPotions === undefined ? 'manaPotions' : key;
+  const tKey = key === 'energyPotions' && target.inventory.energyPotions === undefined && target.inventory.manaPotions !== undefined ? 'manaPotions' : key;
+  if ((sender.inventory[sKey] || 0) < 1) return { ok: false, error: `No ${entry.name} to send!` };
+  sender.inventory[sKey] -= 1;
+  // Lower-tier mirror: generic health potions also back the lower counter.
+  if (key === 'healthPotions' && (sender.inventory.lowerHealthPotions || 0) > 0) sender.inventory.lowerHealthPotions -= 1;
+  target.inventory[tKey] = (target.inventory[tKey] || 0) + 1;
+  if (key === 'healthPotions') target.inventory.lowerHealthPotions = (target.inventory.lowerHealthPotions || 0) + 1;
+  return { ok: true };
+}
+
 // Shared builder — /items display, /equip use, /equip gift, /items give
 // and /inv cross-refs all resolve numbers through this.
 function buildList(player) {
@@ -33,6 +69,21 @@ function buildList(player) {
   for (let i = 0; i < (inv.healthPotions || 0); i++)  synthetic.push({ name: 'Health Potion', type: 'Potion', rarity: 'common', _synthetic: 'healthPotions' });
   for (let i = 0; i < (inv.energyPotions || inv.manaPotions || 0); i++) synthetic.push({ name: 'Energy Potion', type: 'Potion', rarity: 'common', _synthetic: 'energyPotions' });
   for (let i = 0; i < (inv.reviveTokens || 0); i++) synthetic.push({ name: 'Revive Token', type: 'Consumable', rarity: 'uncommon', _synthetic: 'reviveTokens' });
+  // Batch-48: medium/higher tiers were INVISIBLE everywhere (own counters,
+  // never listed) — listed now, with counts. Cards join too so every item
+  // is visible AND transferable.
+  for (let i = 0; i < (inv.mediumHealthPotions || 0); i++) synthetic.push({ name: 'Medium Health Potion', type: 'Potion', rarity: 'uncommon', _synthetic: 'mediumHealthPotions' });
+  for (let i = 0; i < (inv.higherHealthPotions || 0); i++) synthetic.push({ name: 'Higher Health Potion', type: 'Potion', rarity: 'rare', _synthetic: 'higherHealthPotions' });
+  const _cards48 = player.cards || {};
+  for (let i = 0; i < (_cards48.namechange || 0); i++) synthetic.push({ name: 'Rename Card', type: 'Card', rarity: 'legendary', _synthetic: 'card:namechange' });
+  for (let i = 0; i < (_cards48.seticon || 0); i++) synthetic.push({ name: 'Seticon Token', type: 'Card', rarity: 'legendary', _synthetic: 'card:seticon' });
+  for (let i = 0; i < (_cards48.pro_weekly || 0); i++) synthetic.push({ name: 'Weekly Pro Card', type: 'Card', rarity: 'rare', _synthetic: 'card:pro_weekly' });
+  // Crafting materials held as counters (player.materials) — listed so they
+  // can be counted AND gifted; use-path refuses them (see /equip use).
+  const _mats48 = player.materials || {};
+  for (const _mk of Object.keys(_mats48)) {
+    for (let i = 0; i < (_mats48[_mk] || 0); i++) synthetic.push({ name: _mk, type: 'Material', rarity: 'common', _synthetic: 'mat:' + _mk });
+  }
 
   // Usables only: no gear, no pet food
   const equippable = allItems.filter(item =>
@@ -146,10 +197,17 @@ module.exports = {
 
       const selected = sorted[itemNum - 1];
 
-      // Synthetic (counter-based) potions can't be transferred
+      // Batch-48: counter/card items transfer 1 unit (sender→recipient).
+      // Everything is transferable now — no more "bound supply".
       if (selected._synthetic) {
+        const _t = transferSynthetic(player, target, selected);
+        if (!_t.ok) {
+          return sock.sendMessage(chatId, { text: `❌ ${(_t.error || 'Transfer failed.')}` }, { quoted: msg });
+        }
+        saveDatabase();
         return sock.sendMessage(chatId, {
-          text: `❌ *${selected.name}* can't be transferred (bound supply).\n\nUse it yourself with /equip use ${itemNum}.`
+          text: (pro ? `${UI.PRO_BAR}\n🎁 *ITEM SENT!* 💎\n${UI.PRO_BAR}\n\n` : `🎁 *ITEM SENT!*\n${UI.FREE_BAR}\n\n`) + `${getTypeEmoji(selected.type)} *${selected.name}* ×1 → *${target.name}*!\n\nThey'll find it in their /inv.\n${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO GIFT* — sent ${selected.name}` : `\n${UI.upsell()}`),
+          mentions: [mentioned],
         }, { quoted: msg });
       }
 
@@ -211,3 +269,4 @@ module.exports = {
 };
 
 module.exports._buildList = buildList;
+module.exports._transferSynthetic = transferSynthetic;

@@ -67,6 +67,9 @@ function serialList(player) {
   if ((inv.healthPotions || 0) > 0) entries.push({ kind: 'potion', name: 'Health Potion', rarity: 'common', count: inv.healthPotions, acquiredAt: 0, ref: null });
   if ((inv.energyPotions || inv.manaPotions || 0) > 0) entries.push({ kind: 'potion', name: 'Energy Potion', rarity: 'common', count: inv.energyPotions || inv.manaPotions, acquiredAt: 0, ref: null });
   if ((inv.reviveTokens || 0) > 0) entries.push({ kind: 'potion', name: 'Revive Token', rarity: 'uncommon', count: inv.reviveTokens, acquiredAt: 0, ref: null });
+  // Batch-48: shop tier counters were never listed — visible now, with counts.
+  if ((inv.mediumHealthPotions || 0) > 0) entries.push({ kind: 'potion', name: 'Medium Health Potion', rarity: 'uncommon', count: inv.mediumHealthPotions, acquiredAt: 0, ref: null });
+  if ((inv.higherHealthPotions || 0) > 0) entries.push({ kind: 'potion', name: 'Higher Health Potion', rarity: 'rare', count: inv.higherHealthPotions, acquiredAt: 0, ref: null });
   // Materials stored as counters
   const mats = player.materials || {};
   for (const k of Object.keys(mats)) {
@@ -77,8 +80,8 @@ function serialList(player) {
   // existing serial keeps its number (batch-22: cards visible in /inv).
   const cards = player.cards || {};
   const cardDefs = [
-    ['namechange', 'Name-Change Card', 'uncommon', '💡 Rename yourself with /setname <new name>'],
-    ['seticon', 'Seticon Token', 'uncommon', '💡 Personalize with /seticon (reply to an image)'],
+    ['namechange', 'Rename Card', 'legendary', '💡 Rename yourself (/setname) or your guild (/guild rename)'],
+    ['seticon', 'Seticon Token', 'legendary', '💡 Personalize with /seticon (reply to an image)'],
     ['pro_weekly', 'Weekly Pro Card', 'rare', '💡 Redeem with /prostore use weekly'],
   ];
   for (const [ckey, clabel, crarity, chint] of cardDefs) {
@@ -176,6 +179,8 @@ module.exports = {
         if (desc) detail += `\n_${desc}_\n`;
         if (entry.kind === 'potion') {
           if (entry.name === 'Health Potion') detail += `\n💚 Restores 50% HP. Use: /equip use (see /items)\n`;
+          else if (entry.name === 'Medium Health Potion') detail += `\n💚 Restores 25% HP. Use: /equip use (see /items)\n`;
+          else if (entry.name === 'Higher Health Potion') detail += `\n💚 Restores 50% HP. Use: /equip use (see /items)\n`;
           else if (entry.name === 'Energy Potion') detail += `\n⚡ Restores 50% Energy. Use: /equip use (see /items)\n`;
           else if (entry.name === 'Revive Token') detail += `\n💿 Auto-used on death in dungeons.\n`;
         } else {
@@ -261,6 +266,8 @@ module.exports = {
     if ((inv.healthPotions||0)  > 0) oldPotions.push({ name:'Health Potion',  count:inv.healthPotions,  rarity:'common' });
     if ((inv.energyPotions||inv.manaPotions||0) > 0) oldPotions.push({ name:'Energy Potion', count:inv.energyPotions||inv.manaPotions, rarity:'common' });
     if ((inv.reviveTokens||0)   > 0) oldPotions.push({ name:'Revive Token',   count:inv.reviveTokens,   rarity:'uncommon' });
+    if ((inv.mediumHealthPotions||0) > 0) oldPotions.push({ name:'Medium Health Potion', count:inv.mediumHealthPotions, rarity:'uncommon' });
+    if ((inv.higherHealthPotions||0) > 0) oldPotions.push({ name:'Higher Health Potion', count:inv.higherHealthPotions, rarity:'rare' });
 
     message += `💊 *POTIONS & CONSUMABLES*\n`;
     for (const p of oldPotions) {
@@ -303,7 +310,7 @@ module.exports = {
     const cardTotal = (cards.namechange || 0) + (cards.seticon || 0) + (cards.pro_weekly || 0);
     if (cardTotal > 0) {
       message += `🃏 *CARDS* (${cardTotal})\n`;
-      if (cards.namechange) message += `  ✏️ Name-Change Card ×${cards.namechange} — /setname <new name>\n`;
+      if (cards.namechange) message += `  ✏️ Rename Card ×${cards.namechange} — /setname <new name> or /guild rename <name>\n`;
       if (cards.seticon)    message += `  🖼️ Seticon Token ×${cards.seticon} — /seticon (reply to image)\n`;
       if (cards.pro_weekly) message += `  🎫 Weekly Pro Card ×${cards.pro_weekly} — /prostore use weekly\n`;
       message += `\n`;

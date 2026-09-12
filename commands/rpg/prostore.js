@@ -37,10 +37,10 @@ const PRO_TIERS = {
 const CARD_PRODUCTS = {
   namechange: {
     aliases: ['name', 'rename'],
-    name: 'Name-Change Card',
+    name: 'Rename Card', // batch-47: relabeled per owner order
     cost: 500,
     emoji: '✏️',
-    blurb: 'Rename yourself once via /setname',
+    blurb: 'Rename yourself (/setname) or your guild (/guild rename)',
     cardKey: 'namechange',
   },
   seticon: {
@@ -178,7 +178,7 @@ module.exports = {
             `${card.emoji} *${card.name}* added to your cards.`,
             `🃏 You now own *${player.cards[card.cardKey]}*.`,
             ``,
-            card.cardKey === 'namechange' ? `📌 Use it: /setname <new name>` : `📌 Use it: /seticon (reply to an image)`,
+            card.cardKey === 'namechange' ? `📌 Use it: /setname <new name> or /guild rename <name>` : `📌 Use it: /seticon (reply to an image) or /guild icon <emoji>`,
             `📌 View cards: /inv info`,
           ],
           tip: '/prostore for more',

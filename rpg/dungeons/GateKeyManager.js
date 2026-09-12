@@ -248,6 +248,14 @@ function getAllDungeonGCs() {
   return { ...dungeonGCs };
 }
 
+// Batch-47: dungeonGCs were loaded FROM db on boot but NEVER written back,
+// so every restart forgot all dungeon GCs + active parties ("GC config
+// jambled"). Call alongside saveDatabase after any GC/key mutation.
+function saveGCsToDb(db) {
+  if (!db) return;
+  try { db.dungeonGCs = { ...dungeonGCs }; } catch (e) {}
+}
+
 function loadFromDB(db) {
   if (db.dungeonGCs) {
     Object.assign(dungeonGCs, db.dungeonGCs);
@@ -371,6 +379,7 @@ function formatStability(ms) {
 module.exports = {
   purchaseGateKey,
   setDungeonGC,
+  saveGCsToDb,
   removeDungeonGC,
   isDungeonGC,
   getDungeonGC,
