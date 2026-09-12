@@ -230,7 +230,7 @@ function optimalAudioArgs() {
 // Batch-36: parse `--print after_move:filepath --print id --print title`
 // output. yt-dlp prints plain id/title BEFORE the download and
 // after_move:filepath AFTER it — so the file path is the LAST line,
-// not the first (reading lines[0] broke every /song download).
+// not the first (reading lines[0] broke every audio download).
 // Order-independent: the path is whichever line exists on disk.
 // Batch-37: also lifts a `thumbnail` print line (cover art for sources
 // like SoundCloud that have no video id) and keeps it out of the title.

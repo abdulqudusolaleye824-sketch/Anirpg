@@ -1,9 +1,9 @@
 // ═══════════════════════════════════════════════════════════════
 // /lyrics — full lyrics for any song (standalone, batch-23).
-// Decoupled from /song: this fetches TEXT lyrics only, while /song
-// downloads audio. Sources: LRCLIB (no key) → lyrics.ovh → Genius
-// scrape when GENIUS_TOKEN is set. 12s per-user cooldown, long
-// lyrics chunked under WhatsApp limits.
+// TEXT lyrics only (the old /song audio downloader was scrapped in
+// batch-42 after repeated wrong-track mashups). Sources: LRCLIB
+// (no key) → lyrics.ovh → Genius scrape when GENIUS_TOKEN is set.
+// 12s per-user cooldown, long lyrics chunked under WhatsApp limits.
 // ═══════════════════════════════════════════════════════════════
 'use strict';
 

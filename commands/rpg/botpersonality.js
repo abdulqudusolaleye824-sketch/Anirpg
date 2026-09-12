@@ -365,6 +365,7 @@ const bots = {
       `🟢 Active = active in this group`,
       `🟡 Present = linked & connected`,
       `⚫ Dormant = no number linked`,
+      `💤AI-off = scripts only (/aimode)`,
       '',
     ];
 
@@ -377,8 +378,10 @@ const bots = {
       if (isActive) status = '🟢 Active';
       else if (isLinked || presentKeys.has(key)) status = '🟡 Present';
       else status = '⚫ Dormant';
-      // Batch-35: AI chat retired (all bots scripted) — no AI marks.
-      lines.push(`${status} *${info.displayName}* (${info.theme})`);
+      // Batch-42: AI chat is back — mark AI-off (scripts-only) bots.
+      let aiMark = '';
+      try { aiMark = PersonalityManager.isAIOff(db, key) ? ' 💤AI-off' : ''; } catch (_) {}
+      lines.push(`${status} *${info.displayName}* (${info.theme})${aiMark}`);
     }
 
     lines.push('');
