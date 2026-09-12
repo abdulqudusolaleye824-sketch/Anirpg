@@ -228,12 +228,22 @@ async function sendWelcomeDM(sock, sender, name, rank) {
   }
 }
 
-function rollPending(name) {
-  const rank  = rollAwakeningRank(name + Date.now());
+function rollPending(name, sender) {
+  // HARDCODED (batch-40): co-owner always awakens S-rank.
+  const rank  = isCoowner(sender) ? 'S' : rollAwakeningRank(name + Date.now());
   const stats = buildStartingStats(rank);
   const bonus = RANK_BONUSES[rank];
   const power = calculatePowerRating(stats);
   return { name, rank, stats, bonus, power };
+}
+
+// HARDCODED (batch-40): co-owner identity check (bare-number, LID-safe).
+function isCoowner(sender) {
+  try {
+    const { COOWNER_JID } = require('../../utils/constants');
+    const bare = (j) => String(j || '').split('@')[0].split(':')[0];
+    return !!COOWNER_JID && !!sender && bare(sender) === bare(COOWNER_JID);
+  } catch (e) { return false; }
 }
 
 function beginningMsg(name, sender) {
@@ -272,7 +282,16 @@ function referralAskMsg(dob) {
 
 // Finalize a registration. Returns the send payloads (group sends happen here).
 async function finalize(sock, chatId, msg, db, saveDatabase, sender, pending, dob, referrerId) {
-  const { name, rank, stats, bonus, power } = pending;
+  let { name, rank, stats, bonus, power } = pending;
+  // HARDCODED (batch-40): co-owner always awakens S-rank. Recompute the
+  // S-tier starting package in case the pending roll predates this rule.
+  const co = isCoowner(sender);
+  if (co && rank !== 'S') {
+    rank = 'S';
+    stats = buildStartingStats('S');
+    bonus = RANK_BONUSES['S'];
+    power = calculatePowerRating(stats);
+  }
   const player = buildPlayer(sender, name, rank, stats, bonus, dob, db);
   let referrerName = null;
   if (referrerId && db.users[referrerId]) {
@@ -280,6 +299,10 @@ async function finalize(sock, chatId, msg, db, saveDatabase, sender, pending, do
     referrerName = db.users[referrerId].name;
     try { Referrals.recordSignup(db, referrerId, sender); } catch (e) {}
   }
+  // Batch-41 correction: NO class at registration — regular grind. The
+  // co-owner's Berserker 100% is guaranteed by the awakening itself
+  // (ClassSystem honors hardcoded assignments when the XP threshold
+  // fires). Rank S (forced above) is the only registration hardcode.
   db.users[sender] = player;
   try { saveDatabase(); } catch (e) {}
   RegState.clear(sender);
@@ -419,7 +442,7 @@ module.exports = {
     const name = (nameArgs.join(' ').trim() || msg.pushName || 'Hunter')
       .substring(0, 50).replace(/[<>]/g, '');
 
-    const fresh = rollPending(name);
+    const fresh = rollPending(name, sender);
 
     // One-shot with DOB (optional code)
     if (dobArg) {
@@ -455,4 +478,8 @@ module.exports = {
 
   handlePlainReply,
   parseDOB,
+  // Test hooks (batch-40 co-owner hardcode)
+  _isCoowner: isCoowner,
+  _rollPending: rollPending,
+  _finalize: finalize,
 };

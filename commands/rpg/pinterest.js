@@ -103,9 +103,18 @@ async function collectImages(query) {
     if (seen.has(clean)) continue;
     seen.add(clean);
     out.push(clean);
-    if (out.length >= 8) break;
+    if (out.length >= 10) break;
   }
   return out;
+}
+
+// "/pinterest satoru gojo |5" → { query: 'satoru gojo', count: 5 }.
+// Count clamps to 1..10, default 4.
+function parseQueryCount(raw) {
+  const m = String(raw || '').match(/^(.*?)\s*\|\s*(\d+)\s*$/);
+  if (!m) return { query: String(raw || '').trim(), count: 4 };
+  const n = parseInt(m[2], 10);
+  return { query: m[1].trim(), count: Number.isFinite(n) ? Math.min(10, Math.max(1, n)) : 4 };
 }
 
 // ---------------------------------------------------------------------------
@@ -124,11 +133,11 @@ module.exports = {
         text: [
           '📌 *Pinterest Image Search*',
           '',
-          '📌 Usage: /pinterest <query>',
+          '📌 Usage: /pinterest <query> [|1-10]',
           '💡 Examples:',
           '  /pinterest anime aesthetic wallpaper',
           '  /pinterest Solo Leveling fanart',
-          '  /pinterest cute cats',
+          '  /pinterest satoru gojo |5',
         ].join('\n'),
       }, { quoted: msg });
     }
@@ -140,7 +149,10 @@ module.exports = {
     }
     COOLDOWNS.set(sender, Date.now());
 
-    const query = args.join(' ');
+    const { query, count } = parseQueryCount(args.join(' '));
+    if (!query) {
+      return sock.sendMessage(chatId, { text: '❌ Usage: /pinterest <query> [|1-10]\nExample: /pinterest satoru gojo |5' }, { quoted: msg });
+    }
 
     await sock.sendMessage(chatId, {
       text: `📌 Searching images for: _${query}_...`,
@@ -161,8 +173,8 @@ module.exports = {
       }, { quoted: msg });
     }
 
-    // Send up to 4 images as a quoted reply to the user
-    const toSend = imageUrls.slice(0, 4);
+    // Send up to `count` images as a quoted reply to the user
+    const toSend = imageUrls.slice(0, count);
     let sent = 0;
 
     for (const url of toSend) {
@@ -202,3 +214,4 @@ function resetCooldownsFor(jid) {
   try { return COOLDOWNS.delete(jid) === true; } catch (e) { return false; }
 }
 module.exports.resetCooldownsFor = resetCooldownsFor;
+module.exports._parseQueryCount = parseQueryCount;

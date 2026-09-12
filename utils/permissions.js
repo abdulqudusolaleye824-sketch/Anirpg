@@ -69,19 +69,22 @@ function isBotMod(db, jid) {
   return t === 'owner' || t === 'mod';   // owners are implicitly mods
 }
 
-// Owners are automatically Pro: stamp lifetime Pro onto the owner's player
-// object (called on every command by the handler; idempotent). Returns true
-// when it stamped something new (caller should saveDatabase).
-const OWNER_PRO_EXPIRES = 4102444800000; // 2100-01-01
-function ensureOwnerPro(db, jid) {
+// Batch-39: owner auto-Pro SCRAPPED. This removes the lifetime stamp
+// (2100-01-01 expiry) left behind by the old ensureOwnerPro, from any row
+// that still carries it. Genuine subscriptions (real expiry dates) are
+// kept. Called on every command by the handler; idempotent. Returns true
+// when it cleaned something (caller should saveDatabase).
+const AUTO_PRO_EXPIRES = 4102444800000; // 2100-01-01 — the old stamp's signature
+function stripAutoPro(db, jid) {
   try {
-    if (!isBotOwner(db, jid)) return false;
-    const p = db?.users?.[jid];
+    const users = db?.users;
+    if (!users) return false;
+    const p = users[jid] || users[bare(jid)];
     if (!p) return false;
-    if (p.isPro && p.proExpiresAt && p.proExpiresAt >= OWNER_PRO_EXPIRES) return false;
-    p.isPro = true;
-    if (!p.proStatus) p.proStatus = 'owner';
-    p.proExpiresAt = OWNER_PRO_EXPIRES;
+    if (!p.proExpiresAt || p.proExpiresAt < AUTO_PRO_EXPIRES) return false;
+    p.isPro = false;
+    delete p.proExpiresAt;
+    if (p.proStatus === 'owner') delete p.proStatus;
     return true;
   } catch (e) { return false; }
 }
@@ -118,8 +121,8 @@ module.exports = {
   getTier,
   isBotOwner,
   isBotMod,
-  ensureOwnerPro,
-  OWNER_PRO_EXPIRES,
+  stripAutoPro,
+  AUTO_PRO_EXPIRES,
   isRegistered,
   canManageMods,
   canBan,

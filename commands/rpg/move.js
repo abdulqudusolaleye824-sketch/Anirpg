@@ -25,17 +25,25 @@ async function finishChess(sock, chatId, msg, db, saveDatabase, game, result, fo
   const mentions = [game.whiteJid, game.blackJid];
 
   if (result === 'draw') {
-    if (wPlayer) { GC.awardGame(db, wPlayer, game.whiteJid, KIND, 'draw'); GC.bumpStats(wPlayer, KIND, 'draw', 0); }
-    if (bPlayer) { GC.awardGame(db, bPlayer, game.blackJid, KIND, 'draw'); GC.bumpStats(bPlayer, KIND, 'draw', 0); }
-    caption = `🤝 *DRAW!* (${game.drawReason || 'stalemate'})\nBoth players got *${GC.DRAW_XP.toLocaleString()} xp*.`;
+    const ex = { save: saveDatabase, sock, chatId };
+    const dW = wPlayer ? GC.awardGame(db, wPlayer, game.whiteJid, KIND, 'draw', ex) : null;
+    const dB = bPlayer ? GC.awardGame(db, bPlayer, game.blackJid, KIND, 'draw', ex) : null;
+    if (wPlayer) GC.bumpStats(wPlayer, KIND, 'draw', 0);
+    if (bPlayer) GC.bumpStats(bPlayer, KIND, 'draw', 0);
+    const wName = wPlayer?.name || GC.mentionOf(game.whiteJid);
+    const bName = bPlayer?.name || GC.mentionOf(game.blackJid);
+    const dl = [`🤝 *DRAW!* (${game.drawReason || 'stalemate'})`];
+    if (dW) dl.push(`${wName}: *${dW.xp} XP* + ✨ *${dW.pass} Pass XP*${UI.isPro(wPlayer) ? ' (2× Pro 💎)' : ''}`);
+    if (dB) dl.push(`${bName}: *${dB.xp} XP* + ✨ *${dB.pass} Pass XP*${UI.isPro(bPlayer) ? ' (2× Pro 💎)' : ''}`);
+    caption = dl.join('\n');
   } else {
     const winJid = result === 'w' ? game.whiteJid : game.blackJid;
     const loseJid = result === 'w' ? game.blackJid : game.whiteJid;
     const winPlayer = db.users?.[winJid];
     const losePlayer = db.users?.[loseJid];
-    let res = { xp: 0, nx: 0, capped: false };
+    let res = { xp: 0, nx: 0, capped: false, pass: 0 };
     if (winPlayer) {
-      res = GC.awardGame(db, winPlayer, winJid, KIND, 'win');
+      res = GC.awardGame(db, winPlayer, winJid, KIND, 'win', { save: saveDatabase, sock, chatId });
       GC.bumpStats(winPlayer, KIND, 'win', res.nx);
     }
     if (losePlayer) GC.bumpStats(losePlayer, KIND, 'loss', 0);

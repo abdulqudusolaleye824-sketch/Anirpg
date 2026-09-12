@@ -13,8 +13,6 @@ const SNAPSHOT_TYPES = new Set([
   'pets_owned','days_played','single_hit_damage'
 ]);
 
-const achievementThrottle = new Map(); // key: playerId:chatId -> lastSendTime
-
 class AchievementManager {
   // Store achievements inside player object — no separate file needed
   getPlayer(player) {

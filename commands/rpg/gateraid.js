@@ -484,7 +484,7 @@ module.exports = {
         player.stats_history.monstersKilled = (player.stats_history.monstersKilled || 0) + 1;
         try { require('../../rpg/utils/QuestDispatcher').trackAndNotify(player, 'kill', 1, sock, sender, chatId); } catch(e){}
 
-        try { const BR=require('../../rpg/utils/BattleRewards'); const w=BR.giveBattleWinRewards(player, db, 'gate', player.level); killLines.push(``, `💀 *${target.name}* defeated!`, BR.formatRewards(w)); } catch(e){ awardXP(player, 'gate_complete', saveDatabase, sock, chatId); killLines.push(``, `💀 *${target.name}* defeated!`); }
+        try { const BR=require('../../rpg/utils/BattleRewards'); const w=BR.giveBattleWinRewards(player, db, 'gate', player.level, sock, chatId); killLines.push(``, `💀 *${target.name}* defeated!`, BR.formatRewards(w)); } catch(e){ awardXP(player, 'gate_complete', saveDatabase, sock, chatId); killLines.push(``, `💀 *${target.name}* defeated!`); }
 
         const heal = GR.lifeSteal(player, result.damage);
         if (heal > 0) { player.stats.hp = Math.min(player.stats.maxHp, (player.stats.hp || 0) + heal); killLines.push(`💚 Lifesteal: +${heal} HP`); }
@@ -650,7 +650,7 @@ module.exports = {
         if (topRaider && topRaider[0] === sender) AuraSystem.addAura(player, 'topRaider');
 
         awardXP(player, 'gate_boss', saveDatabase, sock, chatId);
-        try { const BRb=require('../../rpg/utils/BattleRewards'); const wb=BRb.giveBattleWinRewards(player, db, 'gate', player.level); lines.push(BRb.formatRewards(wb)); } catch(e){}
+        try { const BRb=require('../../rpg/utils/BattleRewards'); const wb=BRb.giveBattleWinRewards(player, db, 'gate', player.level, sock, chatId); lines.push(BRb.formatRewards(wb)); } catch(e){}
 
         // Final-blow boss loot → the killer
         const bossDropLines = [];

@@ -28,10 +28,11 @@ const { ytDlpRun, youtubeCookiesArgs, YOUTUBE_EXTRACTOR_ARGS_FULL } = ToolRunner
 const parsePrints = ToolRunner.parseDownloadPrints || ((stdout, fbId, fbTitle) => {
   const clean = String(stdout || '').split('\n').map((l) => l.trim()).filter(Boolean);
   const fp = clean.find((l) => { try { return fs.existsSync(l); } catch (e) { return false; } }) || null;
-  const rest = clean.filter((l) => l !== fp);
+  const thumb = clean.find((l) => l !== fp && /^https?:\/\/\S+$/i.test(l)) || null;
+  const rest = clean.filter((l) => l !== fp && l !== thumb);
   const id = rest.find((l) => /^[\w-]{6,20}$/.test(l)) || null;
   const title = rest.filter((l) => l !== id).join(' ').trim() || null;
-  return { p: fp, id: id || fbId || null, title: title || fbTitle || null };
+  return { p: fp, id: id || fbId || null, title: title || fbTitle || null, thumb };
 });
 
 const ROOT_DIR = path.join(__dirname, '..', '..');
@@ -73,6 +74,27 @@ function parseCandidates(stdout) {
     const duration = Number.isFinite(dur) ? dur : null;
     if (duration !== null && duration > MAX_DURATION) continue; // mixes / comps
     out.push({ id, title: title || id, duration });
+    if (out.length >= MAX_TRIES) break;
+  }
+  return out;
+}
+
+// Parse `--print "%(id)s | %(webpage_url)s | %(title)s | %(duration)s"`
+// SoundCloud flat output into [{ id, target, title, duration|null }].
+function parseSCCandidates(stdout) {
+  const out = [];
+  for (const raw of String(stdout || '').split('\n')) {
+    const parts = raw.split(' | ');
+    if (parts.length < 3) continue;
+    const id = (parts[0] || '').trim();
+    const url = (parts[1] || '').trim();
+    if (!id || !/^https?:\/\//.test(url)) continue;
+    const durRaw = parts[parts.length - 1].trim();
+    const dur = durRaw !== '' && !/^NA$/i.test(durRaw) ? parseFloat(durRaw) : NaN;
+    const duration = Number.isFinite(dur) ? dur : null;
+    if (duration !== null && duration > MAX_DURATION) continue;
+    const title = parts.slice(2, -1).join(' | ').trim() || id;
+    out.push({ id, target: url, title, duration });
     if (out.length >= MAX_TRIES) break;
   }
   return out;
@@ -160,8 +182,9 @@ module.exports = {
     fs.mkdirSync(TMP_DIR, { recursive: true });
     const aud = await ToolRunner.optimalAudioArgs();
     let sawNotFound = false;
+    let firstErr = ''; // first failure (usually YouTube) — lastErr is often just the fallback
     let lastErr = ''; // yt-dlp's real stderr tail → shown on failure (debug)
-    const noteErr = (res) => { if (res && !res.ok && res.error) lastErr = String(res.error); };
+    const noteErr = (res) => { if (res && !res.ok && res.error) { if (!firstErr) firstErr = String(res.error); lastErr = String(res.error); } };
 
     // ── Candidate list: URL = single shot; query = searched videos ──
     let candidates;
@@ -203,6 +226,7 @@ module.exports = {
         '--print', 'after_move:filepath',
         '--print', 'id',
         '--print', 'title',
+        '--print', 'thumbnail',
         c.target,
       ], { timeout: 60000 });
       noteErr(r);
@@ -213,7 +237,7 @@ module.exports = {
       if (!res || !res.ok) return { p: null, id: (c && c.id) || null, title: (c && c.title) || input };
       return parsePrints(res.stdout, c && c.id, c && c.title);
     };
-    let audioPath = null, videoId = null, videoTitle = input;
+    let audioPath = null, videoId = null, videoTitle = input, thumbUrl = null;
     for (const c of candidates.slice(0, MAX_TRIES)) {
       let res = await tryDl(c, aud.args);
       let parts = partsOf(res, c);
@@ -225,45 +249,59 @@ module.exports = {
         audioPath = parts.p;
         videoId = parts.id;
         videoTitle = parts.title || input;
+        thumbUrl = parts.thumb || null;
         break;
       }
     }
 
-    // Fallback: SoundCloud when YouTube is blocked (no cover art there).
+    // Fallback: SoundCloud when YouTube fails — searched as a candidate
+    // LIST (a lone scsearch1 hit is often DRM-gated), tried in turn.
     // Skipped for URL input — searching a URL string is nonsense.
     if (!audioPath && !isUrl) {
-      const outTemplate = path.join(TMP_DIR, `song_${Date.now()}.%(ext)s`);
-      const res = await ytDlpRun([
+      const sc = await ytDlpRun([
         '--no-playlist',
-        ...aud.args,
-        '--max-filesize', '25m',
-        '--output', outTemplate,
-        '--print', 'after_move:filepath',
-        '--print', 'id',
-        '--print', 'title',
-        `scsearch1:${input}`,
-      ], { timeout: 90000 });
-      noteErr(res);
-      sawNotFound = sawNotFound || !!(res && res.notFound);
-      const parsed = res && res.ok ? parsePrints(res.stdout, null, input) : { p: null, title: input };
-      if (parsed.p) {
-        audioPath = parsed.p;
-        videoTitle = parsed.title || input;
-        videoId = null;
+        '--flat-playlist',
+        '--print', '%(id)s | %(webpage_url)s | %(title)s | %(duration)s',
+        '--no-download',
+        `scsearch${SEARCH_COUNT}:${input}`,
+      ], { timeout: 30000 });
+      noteErr(sc);
+      sawNotFound = sawNotFound || !!(sc && sc.notFound);
+      const scCands = sc && sc.ok ? parseSCCandidates(sc.stdout) : [];
+      for (const c of scCands) {
+        let res = await tryDl(c, aud.args);
+        let parts = parsePrints(res && res.ok ? res.stdout : '', c.id, c.title);
+        if (!parts.p && needsConvert && !FUTILE_DL.test((res && !res.ok && res.error) || '')) {
+          res = await tryDl(c, rawAudioArgs);
+          parts = parsePrints(res && res.ok ? res.stdout : '', c.id, c.title);
+        }
+        if (parts.p) {
+          audioPath = parts.p;
+          videoTitle = parts.title || input;
+          videoId = null;
+          thumbUrl = parts.thumb || null;
+          break;
+        }
       }
     }
 
     if (!audioPath || !fs.existsSync(audioPath)) {
-      const dbg = lastErr.replace(/\s+/g, ' ').trim().slice(0, 180);
+      const dbgFirst = firstErr.replace(/\s+/g, ' ').trim().slice(0, 140);
+      const dbgLast = lastErr.replace(/\s+/g, ' ').trim().slice(0, 140);
+      const both = firstErr + ' ' + lastErr;
       let hint;
       if (sawNotFound) {
         hint = `❌ Could not find *yt-dlp*.\n\n💡 Run: pip install -U yt-dlp`;
-      } else if (/sign in|confirm you|not a bot|bot check|403|forbidden/i.test(lastErr)) {
+      } else if (/sign in|confirm you|not a bot|bot check|403|forbidden/i.test(both)) {
         hint = `❌ YouTube is blocking downloads right now.\n\n💡 The song name is fine — update yt-dlp (pip install -U yt-dlp) or set YT_COOKIES in .env, then try again.`;
       } else {
         hint = `❌ Could not download that song.\n\n💡 Make sure the name or URL is valid and public.`;
       }
-      if (dbg && !sawNotFound) hint += `\n\n_(debug: ${dbg})_`;
+      if (!sawNotFound && (dbgFirst || dbgLast)) {
+        hint += (dbgFirst && dbgLast && dbgFirst !== dbgLast)
+          ? `\n\n_(debug: ${dbgFirst} ⟷ ${dbgLast})_`
+          : `\n\n_(debug: ${dbgFirst || dbgLast})_`;
+      }
       return sock.sendMessage(chatId, { text: hint }, { quoted: msg });
     }
 
@@ -285,8 +323,10 @@ module.exports = {
       const audioBuffer = fs.readFileSync(audioPath);
       const mimetype = ext === '.m4a' ? 'audio/mp4' : 'audio/mpeg';
 
-      // Cover art (YouTube only) — any failure just drops the cover
-      const jpegThumbnail = videoId ? await bestCover(videoId) : null;
+      // Cover art: YouTube id first, else the winner's thumbnail URL
+      // (covers SoundCloud wins too) — any failure just drops the cover.
+      let jpegThumbnail = videoId ? await bestCover(videoId) : null;
+      if (!jpegThumbnail && thumbUrl) jpegThumbnail = await bestThumb(thumbUrl);
 
       if (jpegThumbnail) {
         await sock.sendMessage(chatId, { document: audioBuffer, mimetype, fileName, jpegThumbnail }, { quoted: msg });
@@ -299,7 +339,20 @@ module.exports = {
   },
 };
 
+// Fetch + validate a thumbnail URL (SoundCloud winners). Null on any issue.
+async function bestThumb(url) {
+  if (!/^https?:\/\/\S+$/i.test(String(url || ''))) return null;
+  try {
+    const { buffer, contentType } = await fetchBuffer(url);
+    if (buffer && buffer.length >= 1000 && buffer.length < 300 * 1024 && String(contentType).includes('image')) {
+      return buffer;
+    }
+  } catch (e) {}
+  return null;
+}
+
 module.exports._safeName = safeName;
 module.exports._thumbUrl = thumbUrl;
 module.exports._parseCandidates = parseCandidates;
+module.exports._parseSCCandidates = parseSCCandidates;
 module.exports._extractVideoId = extractVideoId;

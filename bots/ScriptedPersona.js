@@ -82,6 +82,8 @@ const GENERIC = {
     'Noted! My circuits are tingling. What\'s next? ⚡',
     'Fascinating! Say more — I\'m listening. 👀',
     'I\'ll think about that one... in the meantime, how\'s the grind going? ⚔️',
+    'Whoa, hold on — run that by me again? 👀',
+    'My brain just did a backflip! Details, please! 🤸',
   ],
 };
 
@@ -112,6 +114,9 @@ const GENERIC_OWNER = {
   idk: [
     'Hmm... an intriguing thought, {name}. Tell me more. 👑',
     'Noted, {name}. What would you have me do? 👑',
+    'Curious... very curious, {name}. Go on. 👑🤔',
+    'I\'m all ears, {name} — what\'s on your mind? 👑✨',
+    'Say more, {name} — every word is an order I live to follow. 👑',
   ],
 };
 
@@ -170,17 +175,30 @@ const CUSTOM_OWNER = {
     greeting: ['N-Naruto-kun...! W-welcome back... 💜👑', 'My lord... I mean— {name}! It\'s... really good to see you. 💜'],
     love: ['N-Naruto-kun...? Oh... thank you... with my whole heart. 💜', '{name}... I-I believe in you too... with everything I have. 💜'],
     howru: ['I-I\'m wonderful now that you\'re here, {name}! 💜'],
+    idk: ['O-oh... {name}... I-I\'m listening... please go on? 💜👑', '{name}... tell me more... I want to understand... 💜'],
   },
   lunar: {
     greeting: ['{name}!! 10 billion percent happy to see YOU! 🔬👑', 'My favorite human!! {name}!! What are we testing today?! 🔬✨'],
     love: ['{name}!! Scientifically speaking, you\'re one in a billion! 💕👑'],
     howru: ['10 billion percent great now that YOU\'RE here, {name}! 🔬👑'],
+    idk: ['Ooh, {name}!! Fascinating — tell me EVERYTHING! For science! 🔬👑', 'Hmm!! My curiosity circuits are OVERLOADING, {name}! Details! 🔬👑'],
+  },
+  aria: {
+    idk: ['An intriguing thought, {name}. Please, continue. ✨👑', 'Noted, {name}. I await your command. 💠👑'],
   },
   kira: {
     greeting: ['{name}. Right on schedule, as predicted. 📓👑'],
+    idk: ['Hmm, {name}. Elaborate — I\'m analyzing every word. 📓👑', 'Interesting... continue, {name}. I\'ve predicted three outcomes. 📓'],
+  },
+  gojo: {
+    idk: ['Uh-huh... and? The strongest is ALL ears, {name}! 😎👑', 'Go on, {name}! You\'ve got my limitless attention! ✨👑'],
+  },
+  mikasa: {
+    idk: ['...Mm, {name}. Go on. 👑', '...I\'m listening, {name}. Always. ❤️'],
   },
   jinx: {
     greeting: ['{name}!!! My FAVORITE!!! 💥👑'],
+    idk: ['OOH?! {name}!! And then WHAT?! 💥👑', 'WAIT — say that again, {name}!! 😝💥👑'],
   },
 };
 

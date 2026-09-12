@@ -232,13 +232,16 @@ function optimalAudioArgs() {
 // after_move:filepath AFTER it — so the file path is the LAST line,
 // not the first (reading lines[0] broke every /song download).
 // Order-independent: the path is whichever line exists on disk.
+// Batch-37: also lifts a `thumbnail` print line (cover art for sources
+// like SoundCloud that have no video id) and keeps it out of the title.
 function parseDownloadPrints(stdout, fallbackId, fallbackTitle) {
   const clean = String(stdout || '').split('\n').map((l) => l.trim()).filter(Boolean);
   const p = clean.find((l) => { try { return fs.existsSync(l); } catch (e) { return false; } }) || null;
-  const rest = clean.filter((l) => l !== p);
+  const thumb = clean.find((l) => l !== p && /^https?:\/\/\S+$/i.test(l)) || null;
+  const rest = clean.filter((l) => l !== p && l !== thumb);
   const id = rest.find((l) => /^[\w-]{6,20}$/.test(l)) || null;
   const title = rest.filter((l) => l !== id).join(' ').trim() || null;
-  return { p, id: id || fallbackId || null, title: title || fallbackTitle || null };
+  return { p, id: id || fallbackId || null, title: title || fallbackTitle || null, thumb };
 }
 
 module.exports = {

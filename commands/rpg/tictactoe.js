@@ -53,7 +53,7 @@ function helpText(pro) {
     `/forfeit         — Resign any active game (or tap 🏳️)`,
     ``,
     `*Rewards (winner):*`,
-    `✨ ${GC.WIN_XP.toLocaleString()} xp  💠 ${GC.TTT_WIN_NX.toLocaleString()} Nexus`,
+    `⚡ ${GC.WIN_LEVEL_XP.toLocaleString()} XP  ✨ ${GC.PASS_XP_MIN}–${GC.PASS_XP_MAX} Pass XP  💠 ${GC.TTT_WIN_NX.toLocaleString()} Nexus`,
     `⚠️ Daily limit: ${GC.DAILY_NX_CAP.toLocaleString()} Nexus/day`,
     pro ? `💎 Pro earns *2×* rewards` : null,
     (pro ? UI.PRO_BAR : UI.FREE_BAR),
@@ -75,24 +75,24 @@ async function finishGame(sock, chatId, msg, db, saveDatabase, game, result) {
 
   let caption;
   if (result === 'draw') {
-    if (xPlayer) {
-      const res = GC.awardGame(db, xPlayer, game.xJid, KIND, 'draw');
-      GC.bumpStats(xPlayer, KIND, 'draw', 0);
-    }
-    if (oPlayer) {
-      const res = GC.awardGame(db, oPlayer, game.oJid, KIND, 'draw');
-      GC.bumpStats(oPlayer, KIND, 'draw', 0);
-    }
-    caption = `🤝 *DRAW!* No winner this time.\nBoth players got *${GC.DRAW_XP.toLocaleString()} xp*.`;
+    const ex = { save: saveDatabase, sock, chatId };
+    const dx = xPlayer ? GC.awardGame(db, xPlayer, game.xJid, KIND, 'draw', ex) : null;
+    const dO = oPlayer ? GC.awardGame(db, oPlayer, game.oJid, KIND, 'draw', ex) : null;
+    if (xPlayer) GC.bumpStats(xPlayer, KIND, 'draw', 0);
+    if (oPlayer) GC.bumpStats(oPlayer, KIND, 'draw', 0);
+    const dl = [`🤝 *DRAW!* No winner this time.`];
+    if (dx) dl.push(`${xName}: *${dx.xp} XP* + ✨ *${dx.pass} Pass XP*${UI.isPro(xPlayer) ? ' (2× Pro 💎)' : ''}`);
+    if (dO) dl.push(`${oName}: *${dO.xp} XP* + ✨ *${dO.pass} Pass XP*${UI.isPro(oPlayer) ? ' (2× Pro 💎)' : ''}`);
+    caption = dl.join('\n');
   } else {
     const winJid = result === 'X' ? game.xJid : game.oJid;
     const loseJid = result === 'X' ? game.oJid : game.xJid;
     const winPlayer = db.users?.[winJid];
     const losePlayer = db.users?.[loseJid];
     const winName = result === 'X' ? xName : oName;
-    let res = { xp: 0, nx: 0, capped: false };
+    let res = { xp: 0, nx: 0, capped: false, pass: 0 };
     if (winPlayer) {
-      res = GC.awardGame(db, winPlayer, winJid, KIND, 'win');
+      res = GC.awardGame(db, winPlayer, winJid, KIND, 'win', { save: saveDatabase, sock, chatId });
       GC.bumpStats(winPlayer, KIND, 'win', res.nx);
     }
     if (losePlayer) GC.bumpStats(losePlayer, KIND, 'loss', 0);

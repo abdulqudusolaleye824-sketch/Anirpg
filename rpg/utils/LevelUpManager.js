@@ -95,8 +95,10 @@ class LevelUpManager {
         //    ClassSystem.tryClassAwaken — nothing to do here. ──────────────
         if (!player.class) {
           try {
+            // Batch-41: thread the real channel — the old null/null made
+            // awakenings on this path SILENT (class appeared, no message).
             const { tryClassAwaken } = require('./ClassSystem');
-            tryClassAwaken(player, null, null);
+            tryClassAwaken(player, sock, chatId);
           } catch (e) { /* non-fatal */ }
         }
         // ── (classAssigned/classUnlock aura handled in tryClassAwaken) ─────

@@ -75,5 +75,23 @@ async function injectStickerMetadata(webpBuf, packName, packAuthor) {
 module.exports = {
   injectStickerMetadata,
   writeStickerMetadata: injectStickerMetadata,
+  readStickerPackName,
   getMetadata: () => null
 };
+
+/**
+ * Read the sticker-pack name from a WebP buffer's EXIF chunk (batch-38).
+ * Dependency-free: scans for the embedded "sticker-pack-name" JSON field.
+ * @param {Buffer} webpBuf - Sticker bytes (any webp with WA EXIF)
+ * @returns {string|null} - pack name, or null when absent/unparseable
+ */
+function readStickerPackName(webpBuf) {
+  try {
+    if (!webpBuf || !Buffer.isBuffer(webpBuf)) return null;
+    const s = webpBuf.toString('utf8');
+    const m = s.match(/"sticker-pack-name"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+    if (!m) return null;
+    const name = JSON.parse('"' + m[1] + '"');
+    return (typeof name === 'string' && name.trim()) ? name : null;
+  } catch (e) { return null; }
+}

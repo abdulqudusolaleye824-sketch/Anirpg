@@ -9,7 +9,10 @@ function isPro(player) {
   return !!(player && player.isPro && player.proExpiresAt && Date.now() < player.proExpiresAt);
 }
 
-function giveBattleWinRewards(player, db, type='generic', baseLevel=1) {
+// Batch-41: optional (sock, chatId) so class awakening + level-ups ANNOUNCE
+// on this path instead of firing silently (callers that have no channel
+// omit them — rewards are unaffected).
+function giveBattleWinRewards(player, db, type='generic', baseLevel=1, sock=null, chatId=null) {
   const pro = isPro(player);
   const mult = pro ? 2 : 1;
   // Base rewards scaled by level
@@ -62,11 +65,11 @@ function giveBattleWinRewards(player, db, type='generic', baseLevel=1) {
   // General EXP via SilentXP
   try {
     const { awardXP } = require('./SilentXP');
-    const res = awardXP(player, 'battle_win', null, null, null);
+    const res = awardXP(player, 'battle_win', null, sock, chatId);
     // awardXP already gives XP, but we also add our scaled xp
     player.xp = (player.xp||0) + xp;
     // Also trigger level up check
-    try { const LUM = require('./LevelUpManager'); LUM.checkAndApplyLevelUps(player, ()=>{}, null, null); } catch(e){}
+    try { const LUM = require('./LevelUpManager'); LUM.checkAndApplyLevelUps(player, ()=>{}, sock, chatId); } catch(e){}
   } catch(e){
     player.xp = (player.xp||0)+xp;
   }

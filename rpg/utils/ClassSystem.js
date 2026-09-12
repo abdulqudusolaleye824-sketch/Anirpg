@@ -75,6 +75,23 @@ function isPrivilegedAssignment(player, className) {
   return false;
 }
 
+/**
+ * Batch-41: hardcoded class for a player, if any (owner Senku, co-owner
+ * Berserker, plus ASSIGNED_CLASSES map entries). Mirrors the hardcoded
+ * branch of SoloLevelingCore.rollClassAssignment. Null for everyone else
+ * (they roll normally — behavior preserved).
+ */
+function hardcodedClassFor(player) {
+  try {
+    if (!player || !player.id) return null;
+    const { OWNER_JID, COOWNER_JID } = require('../../utils/constants');
+    const bareId = String(player.id).split('@')[0].split(':')[0];
+    if (OWNER_JID && bareId === String(OWNER_JID).split('@')[0].split(':')[0]) return 'Senku';
+    if (COOWNER_JID && bareId === String(COOWNER_JID).split('@')[0].split(':')[0]) return 'Berserker';
+    return _ASSIGNED_CLASSES[player.id] || _ASSIGNED_CLASSES[bareId] || null;
+  } catch (_) { return null; }
+}
+
 // ── Auto-loader ──────────────────────────────────────────────────────────────
 const CLASSES_DIR = path.join(__dirname, '..', 'classes');
 
@@ -296,7 +313,11 @@ function tryClassAwaken(player, sock, chatId) {
   const { shouldAwaken } = checkClassAwakening(player);
   if (!shouldAwaken) return null;
 
-  const className = rollClassAwakening();
+  // Batch-41: hardcoded assignments (co-owner Berserker, owner Senku, …)
+  // are GUARANTEED here — the old code rolled pure random, so a mapped
+  // player could awaken the wrong class. Unmapped players roll as before.
+  const forced = hardcodedClassFor(player);
+  const className = (forced && _CLASS_DATA[forced]) ? forced : rollClassAwakening();
   applyClassToPlayer(player, className);
   player.class           = className;
   player.classBase       = player.classBase || className;
@@ -416,6 +437,7 @@ module.exports = {
   TIERS,
 
   // Core functions
+  hardcodedClassFor,
   rollClassAwakening,
   rollMonsterVariant,
   applyClassToPlayer,

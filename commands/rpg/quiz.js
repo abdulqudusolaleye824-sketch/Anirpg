@@ -13,8 +13,7 @@
  *   • 3-minute cooldown per player between games
  *   • 30 seconds per question
  *   • Anyone can join by answering
- *   • XP goes to Astra Pass
- *   • Nexus reward split among correct answers
+ *   • Rewards: level XP + real Nexus + winner-only Pass XP (Pro 2×)
  */
 
 'use strict';
@@ -22,6 +21,7 @@
 const { getRandomQuestions, formatQuestion, QUIZ_STATS } = require('../../rpg/data/anime_quiz_200');
 const UI = require('../../rpg/utils/UI');
 const AstralGroups = require('../../rpg/utils/AstralGroups');
+const GC = require('../../rpg/games/GameCenter');
 
 // ── Active sessions: one per group chat ────────────────────────────────────────
 // { chatId: SessionObject }
@@ -36,11 +36,13 @@ const COOLDOWN_MS         = 3 * 60 * 1000; // 3 minutes
 const MAX_QUESTIONS       = 20;
 const MIN_QUESTIONS       = 1;
 
-// ── Rewards ───────────────────────────────────────────────────────────────────
-const NEXUS_PER_CORRECT   = 15;    // per correct answer
-const ASTRA_XP_PER_Q     = 4;     // Astra Pass XP per correct answer
-const ASTRA_XP_PARTICIPATE = 1;   // XP just for answering (right or wrong)
-const NEXUS_WIN_BONUS     = 50;    // bonus for top scorer at the end
+// ── Rewards (batch-41: the three REAL currencies, Pro 2× on all) ───────────────
+const NEXUS_PER_CORRECT   = 15;    // real Nexus (gold) per correct answer
+const LEVEL_XP_PER_Q      = 25;    // player level XP per correct answer
+const LEVEL_XP_PARTICIPATE = 5;    // level XP just for answering (right or wrong)
+const NEXUS_WIN_BONUS     = 50;    // Nexus bonus for top scorer at the end
+const LEVEL_XP_WIN_BONUS  = 100;   // level-XP bonus for top scorer
+// Pass XP: WINNER ONLY — 100–150 rolled at payout (GameCenter.rollPassXP)
 const SPEED_BONUS_MS      = 5_000; // answer within 5s = speed bonus
 const SPEED_BONUS_NEXUS   = 8;
 
@@ -60,7 +62,7 @@ function createSession(chatId, hostJid, questions) {
     questionTimer: null,
     startedAt:     Date.now(),
     active:        true,
-    scores: {},      // { jid: { correct, wrong, nexus, xp, name } }
+    scores: {},      // { jid: { correct, wrong, nexus, xp, pass, name } } — xp is LEVEL xp (post-mult)
     answered: new Set(), // jids who answered this question
     questionStartedAt: null,
   };
@@ -94,7 +96,7 @@ function cooldownRemaining(chatId, sender) {
 
 function ensurePlayer(session, jid, name) {
   if (!session.scores[jid]) {
-    session.scores[jid] = { correct: 0, wrong: 0, nexus: 0, xp: 0, name: name || jid.split('@')[0] };
+    session.scores[jid] = { correct: 0, wrong: 0, nexus: 0, xp: 0, pass: 0, name: name || jid.split('@')[0] };
   }
 }
 
@@ -211,22 +213,26 @@ async function endQuiz(sock, session, db, saveDatabase) {
   const entries = Object.entries(session.scores)
     .sort((a, b) => b[1].correct - a[1].correct || b[1].nexus - a[1].nexus);
 
-  // Award win bonus to top scorer
+  // Award win bonus to top scorer (winner's own Pro 2×; pass is winner-only)
+  let winnerPass = 0;
   if (entries.length > 0) {
     const [winnerJid, winnerData] = entries[0];
-    winnerData.nexus += NEXUS_WIN_BONUS;
-    winnerData.xp    += 100;
+    const wMult = UI.isPro(db.users?.[winnerJid]) ? 2 : 1;
+    winnerData.nexus += NEXUS_WIN_BONUS * wMult;
+    winnerData.xp    += LEVEL_XP_WIN_BONUS * wMult;
+    winnerPass = GC.rollPassXP() * wMult;
+    winnerData.pass = winnerPass;
+    winnerData.winBonusNx = NEXUS_WIN_BONUS * wMult;
+    winnerData.winBonusXp = LEVEL_XP_WIN_BONUS * wMult;
   }
 
-  // Apply rewards to DB
+  // Apply rewards to DB — real level XP + real Nexus + real pass XP
   for (const [jid, data] of entries) {
     const player = db.users?.[jid];
     if (!player) continue;
-    if (!player.nexus) player.nexus = 0;
-    player.nexus += data.nexus;
-    // Astra Pass XP
-    if (!player.astraPassXP) player.astraPassXP = 0;
-    player.astraPassXP += data.xp;
+    GC.grantLevelXP(player, data.xp, () => saveDatabase(db), sock, chatId);
+    GC.grantNexus(player, data.nexus, 'quiz');
+    if (data.pass > 0) GC.grantPassXP(player, data.pass);
     // Update quiz stats
     if (!player.quizStats) player.quizStats = { correct: 0, wrong: 0, gamesPlayed: 0, nexusEarned: 0 };
     player.quizStats.correct      += data.correct;
@@ -260,12 +266,12 @@ async function endQuiz(sock, session, db, saveDatabase) {
       const medal = medals[i] || `${i + 1}.`;
       lines.push(`${medal} *${data.name}*`);
       lines.push(`   ✅ ${data.correct} correct  ❌ ${data.wrong} wrong`);
-      lines.push(`   💠 +${data.nexus.toLocaleString()} Nexus  ✨ +${data.xp} Astra XP`);
+      lines.push(`   💠 +${data.nexus.toLocaleString()} Nexus  ⚡ +${data.xp} XP` + (data.pass > 0 ? `  ✨ +${data.pass} Pass XP` : ``));
       lines.push(``);
     });
 
     if (entries.length > 0) {
-      lines.push(`🏆 *Winner:* ${entries[0][1].name} gets +${NEXUS_WIN_BONUS} bonus Nexus!`);
+      lines.push(`🏆 *Winner:* ${entries[0][1].name} gets +${entries[0][1].winBonusNx} bonus Nexus, +${entries[0][1].winBonusXp} XP + ✨ ${entries[0][1].pass} Pass XP!`);
     }
   }
 
@@ -371,9 +377,10 @@ module.exports = {
           `/quiz stop       — End quiz early (host/admin)`,
           ``,
           `*Rewards per correct answer:*`,
-          `💠 ${NEXUS_PER_CORRECT} Nexus  ✨ ${ASTRA_XP_PER_Q} Astra XP`,
+          `💠 ${NEXUS_PER_CORRECT} Nexus  ⚡ ${LEVEL_XP_PER_Q} XP`,
           `⚡ Speed bonus (under 5s): +${SPEED_BONUS_NEXUS} Nexus`,
-          `🏆 Top scorer: +${NEXUS_WIN_BONUS} Nexus bonus`,
+          `🏆 Top scorer: +${NEXUS_WIN_BONUS} Nexus, +${LEVEL_XP_WIN_BONUS} XP + ✨ 100–150 Pass XP`,
+          `💎 Pro earns 2× on everything`,
           ``,
           `*Question bank:* ${QUIZ_STATS.total} questions`,
           `Easy: ${QUIZ_STATS.byDifficulty.easy}  Medium: ${QUIZ_STATS.byDifficulty.medium}  Hard: ${QUIZ_STATS.byDifficulty.hard}`,
@@ -467,11 +474,13 @@ module.exports = {
 
     ensurePlayer(session, sender, name);
 
+    const pMult = UI.isPro(player) ? 2 : 1; // Pro 2× on everything, applied now
+    const proTag = pMult === 2 ? ' (2× Pro 💎)' : '';
     if (isCorrect) {
-      const baseNexus  = Math.floor(NEXUS_PER_CORRECT * diffMult);
-      const speedBonus = isSpeed ? SPEED_BONUS_NEXUS : 0;
+      const baseNexus  = Math.floor(NEXUS_PER_CORRECT * diffMult) * pMult;
+      const speedBonus = (isSpeed ? SPEED_BONUS_NEXUS : 0) * pMult;
       const totalNexus = baseNexus + speedBonus;
-      const xp         = Math.floor(ASTRA_XP_PER_Q * diffMult);
+      const xp         = Math.floor(LEVEL_XP_PER_Q * diffMult) * pMult;
 
       session.scores[sender].correct += 1;
       session.scores[sender].nexus   += totalNexus;
@@ -479,20 +488,21 @@ module.exports = {
       session.lockedBy   = sender; // first correct answer wins the question
       session.lockedName = name;
 
-      const speedMsg = isSpeed ? ` ⚡ Speed bonus +${SPEED_BONUS_NEXUS} Nexus!` : '';
+      const speedMsg = isSpeed ? ` ⚡ Speed bonus +${speedBonus} Nexus!` : '';
 
       await sock.sendMessage(chatId, {
         text: [
-          `✅ *${name}* got it right!${speedMsg}`,
-          `+${totalNexus} Nexus  ✨ +${xp} Astra XP`,
+          `✅ *${name}* got it right!${speedMsg}${proTag}`,
+          `+${totalNexus} 💠 Nexus  ⚡ +${xp} XP`,
         ].join('\n'),
       });
     } else {
+      const tryXp = LEVEL_XP_PARTICIPATE * pMult;
       session.scores[sender].wrong += 1;
-      session.scores[sender].xp   += ASTRA_XP_PARTICIPATE;
+      session.scores[sender].xp   += tryXp;
 
       await sock.sendMessage(chatId, {
-        text: `❌ *${name}* — Wrong answer! ✨ +${ASTRA_XP_PARTICIPATE} Astra XP for trying`,
+        text: `❌ *${name}* — Wrong answer! ⚡ +${tryXp} XP for trying${proTag}`,
       });
     }
 
@@ -519,3 +529,4 @@ function resetCooldownsFor(jid) {
   } catch (e) { return false; }
 }
 module.exports.resetCooldownsFor = resetCooldownsFor;
+module.exports._endQuiz = endQuiz; // test hook (batch-41 payout)

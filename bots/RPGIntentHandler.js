@@ -64,6 +64,11 @@ const RPG_INTENTS = {
     // "how much money" / "what is money" without a possessive = general question → chat.
     /\bwhat(?:'s|s| is| are) my (gold|coins?|money|balance|currency|nexus|wallet)\b/i,
   ],
+  vitals: [
+    /\bwhat(?:'s|s| is| are) my (hp|health|hitpoints|hit points|energy|mana|stamina|level|lvl)\b/i,
+    /\b(check my|show my|show me my) (hp|health|hitpoints|hit points|energy|mana|stamina|level|lvl)\b/i,
+    /\bhow much (hp|health|energy|mana)\b.{0,12}\b(do i have|have i|left)\b/i,
+  ],
   inventory: [
     /\b(show|view|check|see)(?: me)?(?: my)? (inventory|items?|gear|bag)\b/i,
   ],
@@ -101,6 +106,7 @@ const RPG_BARE = {
   guild:     [/^my guild$/],
   profile:   [/^my (stats|profile|hunter info|info)$/, /^who am i$/],
   rank:      [/^what rank am i$/,/^my rank$/],
+  vitals:    [/^my (hp|health|energy|mana|level|lvl)$/,/^my hp and level$/,/^my level and hp$/],
   cooldowns: [/^my (cooldowns?|cds?|timers?)$/],
   skills:    [/^my (skills?|abilities)$/],
   leaderboard: [/^leaderboard$/, /^top( players?)?$/],
@@ -128,7 +134,7 @@ function detectRPGIntent(message) {
 // must NEVER hijack chat — handleRPGIntent returns {handled:false} for those.
 const HANDLED_INTENTS = new Set([
   'database', 'profile', 'viewOtherProfile', 'rank', 'balance',
-  'inventory', 'leaderboard', 'guild', 'skills', 'cooldowns',
+  'inventory', 'leaderboard', 'guild', 'skills', 'cooldowns', 'vitals',
 ]);
 
 function buildProfileText(player) {
@@ -250,6 +256,15 @@ function isProPlayer(player) {
 }
 
 async function handleRPGIntent(message, sender, msg, personalityKey, db, saveDatabase) {
+  // Typing Race answers are plain chat — an active race wins before intents.
+  try {
+    const chatId = msg?.key?.remoteJid;
+    if (chatId && typeof message === 'string' && message.trim()) {
+      const TR = require('../rpg/games/TypingRace');
+      const win = TR.checkAnswer ? TR.checkAnswer(db, chatId, sender, message, saveDatabase) : null;
+      if (win && win.text) return { handled: true, text: win.text };
+    }
+  } catch (e) {}
   const intent = detectRPGIntent(message);
   if (!intent) return { handled: false };
   // No live handler (e.g. ban/unban chatter) → don't hijack, don't pro-gate. Fall to chat.
@@ -337,6 +352,17 @@ async function handleRPGIntent(message, sender, msg, personalityKey, db, saveDat
     const player = db.users?.[sender];
     if (!player) return { handled: true, text: `You're not registered yet!` };
     return { handled: true, text: `💠 You have *${(player.gold || 0).toLocaleString()} Nexus*.` };
+  }
+
+  if (intent === 'vitals') {
+    const player = db.users?.[sender];
+    if (!player) return { handled: true, text: `You're not registered yet!` };
+    const st = player.stats || {};
+    const maxHp = st.maxHp || 100;
+    const hp = Math.min(maxHp, Math.max(0, st.hp ?? maxHp));
+    const maxEn = st.maxEnergy || 100;
+    const en = Math.min(maxEn, Math.max(0, st.energy ?? maxEn));
+    return { handled: true, text: `❤️ HP: *${hp}/${maxHp}*  |  ⚡ Energy: *${en}/${maxEn}*  |  ⭐ Level *${player.level || 1}*` };
   }
 
   if (intent === 'inventory') {

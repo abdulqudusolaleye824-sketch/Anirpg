@@ -24,6 +24,9 @@ function getPassState(player) {
   if (!ap.seasonStart) ap.seasonStart = Date.now();
   // One-time merge: legacy flat XP written by old fallback paths
   if (player.astraPassXp > 0) { ap.xp += Math.floor(player.astraPassXp); player.astraPassXp = 0; }
+  // Batch-41: also absorb the old games counter (uppercase P) — quiz and the
+  // mini-games wrote here for a while and nothing ever read it. Not lost now.
+  if (player.astraPassXP > 0) { ap.xp += Math.floor(player.astraPassXP); player.astraPassXP = 0; }
   return ap;
 }
 

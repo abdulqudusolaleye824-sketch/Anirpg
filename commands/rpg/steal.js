@@ -6,7 +6,7 @@
 // ═══════════════════════════════════════════════════════════════
 
 const { downloadMediaMessage } = require('@whiskeysockets/baileys');
-const { injectStickerMetadata } = require('../../utils/stickerMetadata');
+const { injectStickerMetadata, readStickerPackName } = require('../../utils/stickerMetadata');
 let sharp; try { sharp = require('sharp'); } catch(e) { sharp = null; }
 
 const cooldowns = new Map();
@@ -17,6 +17,37 @@ const MAX_PACKS = 5, MAX_PER_PACK = 15, MAX_STICKER_BYTES = 1_000_000;
 function getPacks(player) {
   if (!player.stickerPacks || typeof player.stickerPacks !== 'object') player.stickerPacks = {};
   return player.stickerPacks;
+}
+
+// ── Batch-38: whole-pack steal (💎 Pro). Bare /steal replying to a sticker
+// whose EXIF pack name matches a STORED pack (2+ stickers) steals + resends
+// the entire pack. Owner lookup: quoted sender first, then the stealer.
+function bareJid(j) { return String(j || '').split('@')[0].split(':')[0].replace(/\D/g, ''); }
+function userByBare(db, jid) {
+  const bare = bareJid(jid);
+  if (!bare) return null;
+  const users = db?.users || {};
+  if (users[jid]) return { key: jid, player: users[jid] };
+  const key = Object.keys(users).find((k) => bareJid(k) === bare);
+  return key ? { key, player: users[key] } : null;
+}
+function findStoredPack(db, quotedSender, stealer, tag) {
+  const want = String(tag || '').toLowerCase();
+  if (!want) return null;
+  const cands = [];
+  const q = quotedSender ? userByBare(db, quotedSender) : null;
+  if (q) cands.push(q);
+  const me = userByBare(db, stealer);
+  if (me && (!q || me.key !== q.key)) cands.push(me);
+  for (const c of cands) {
+    const packs = c.player?.stickerPacks;
+    if (!packs || typeof packs !== 'object') continue;
+    const key = Object.keys(packs).find((n) => String(n).toLowerCase() === want);
+    if (key && Array.isArray(packs[key]?.stickers) && packs[key].stickers.length >= 2) {
+      return { ownerKey: c.key, key, stickers: packs[key].stickers, own: !!me && c.key === me.key };
+    }
+  }
+  return null;
 }
 
 async function handlePackSubcommand(sock, chatId, msg, sender, db, saveDatabase, rawText, subWord) {
@@ -101,7 +132,7 @@ module.exports = {
   name: 'steal',
   aliases: ['s', 'ssteal', 'stickersteal', 'stealsticker'],
   description: 'Reply to a sticker or image with /steal [pack | author] or /s [pack | author] to steal it.',
-  usage: '/steal [pack | author] — /s packs | /s pack <name> | /s delete <pack> [n]',
+  usage: '/steal [pack | author] — /s packs | /s pack <name> | /s delete <pack> [n] — 💎 Pro: bare /steal on a pack sticker steals the whole pack',
 
   async execute(sock, msg, args, getDatabase, saveDatabase, sender) {
     const chatId = msg.key.remoteJid;
@@ -145,6 +176,7 @@ module.exports = {
           `• /s packs — list your packs`,
           `• /s pack <name> — resend a whole pack`,
           `• /s delete <pack> [n] — delete a pack or sticker #n`,
+          `• 💎 *PRO:* bare /steal on a pack sticker steals + resends the WHOLE pack`,
           ``,
           `*(To steal Nexus from a player, use /rob @user)*`,
         ],
@@ -152,6 +184,57 @@ module.exports = {
         tip: 'packs survive — your hoard is safe',
       });
       return sock.sendMessage(chatId, { text }, { quoted: msg });
+    }
+
+    // ── 💎 PRO whole-pack steal: bare /steal + quoted sticker from a stored pack ──
+    let prefetchedSticker = null; // EXIF probe bytes, reused by the single path below
+    let packUpsell = null;        // { name, n } when a pack is found but stealer isn't Pro
+    if (!rawText && stickerMsg) {
+      try {
+        const qSender = contextInfo?.participant || null;
+        const probeMsg = {
+          message: quoted,
+          key: { remoteJid: chatId, id: contextInfo?.stanzaId, participant: qSender },
+        };
+        const qbuf = await downloadMediaMessage(probeMsg, 'buffer', {});
+        if (qbuf && qbuf.length) {
+          prefetchedSticker = qbuf;
+          const tag = (typeof readStickerPackName === 'function') ? readStickerPackName(qbuf) : null;
+          const hit = tag ? findStoredPack(db, qSender, sender, tag) : null;
+          if (hit) {
+            const me = db?.users?.[sender];
+            if (me && UI.isPro(me)) {
+              cooldowns.set(sender, now);
+              for (const b64 of hit.stickers) {
+                await sock.sendMessage(chatId, { sticker: Buffer.from(b64, 'base64') }, { quoted: msg });
+              }
+              let cloneNote;
+              if (hit.own) {
+                cloneNote = `ℹ️ Already your pack — resent, not duplicated.`;
+              } else {
+                try {
+                  const packs = getPacks(me);
+                  if (!packs[hit.key] && Object.keys(packs).length >= MAX_PACKS) {
+                    cloneNote = `⚠️ Your pack shelf is full (${MAX_PACKS}) — sent but not cloned.`;
+                  } else {
+                    if (!packs[hit.key]) packs[hit.key] = { author: me.name || sender, stickers: [], updatedAt: Date.now() };
+                    const room = MAX_PER_PACK - packs[hit.key].stickers.length;
+                    const take = hit.stickers.slice(0, Math.max(room, 0));
+                    packs[hit.key].stickers.push(...take);
+                    packs[hit.key].updatedAt = Date.now();
+                    saveDatabase();
+                    cloneNote = take.length >= hit.stickers.length
+                      ? `✅ Cloned to your packs as *${hit.key}*.`
+                      : `✅ Cloned ${take.length}/${hit.stickers.length} to your packs (pack full).`;
+                  }
+                } catch (e) { cloneNote = `⚠️ Sent, but cloning failed.`; }
+              }
+              return sock.sendMessage(chatId, { text: `💎 *PACK STOLEN!* 💎\n\n📦 *${hit.key}* — all ${hit.stickers.length} stickers sent!\n${cloneNote}` }, { quoted: msg });
+            }
+            packUpsell = { name: hit.key, n: hit.stickers.length };
+          }
+        }
+      } catch (e) { /* probe must never break the steal — fall through */ }
     }
 
     let packName = '✦ 𝐀𝐬𝐭𝐫𝐚™';
@@ -174,15 +257,19 @@ module.exports = {
       let buffer = null;
 
       if (stickerMsg) {
-        const mediaMsg = {
-          message: quoted,
-          key: {
-            remoteJid: chatId,
-            id: contextInfo?.stanzaId,
-            participant: contextInfo?.participant
-          }
-        };
-        buffer = await downloadMediaMessage(mediaMsg, 'buffer', {});
+        if (prefetchedSticker) {
+          buffer = prefetchedSticker; // already downloaded by the pack probe
+        } else {
+          const mediaMsg = {
+            message: quoted,
+            key: {
+              remoteJid: chatId,
+              id: contextInfo?.stanzaId,
+              participant: contextInfo?.participant
+            }
+          };
+          buffer = await downloadMediaMessage(mediaMsg, 'buffer', {});
+        }
       } else if (imageMsg || videoMsg) {
         const targetNode = imageMsg ? imageMsg : videoMsg;
         const mediaMsg = quoted ? {
@@ -229,6 +316,16 @@ module.exports = {
         sticker: rebrandedWebp,
         isAnimated: isAnim
       }, { quoted: msg });
+
+      // ── Pack detected but stealer isn't Pro: single sent above, show the Pro move ──
+      if (packUpsell) {
+        try {
+          const meUp = db?.users?.[sender];
+          if (!(meUp && UI.isPro(meUp))) {
+            await sock.sendMessage(chatId, { text: `💎 *PRO MOVE:* that sticker is from the pack *${packUpsell.name}* (${packUpsell.n} stickers) — Pro users steal the WHOLE pack with one bare /steal.\n${UI.upsell()}` }, { quoted: msg });
+          }
+        } catch (e) {}
+      }
 
       // ── Save into the named pack (durable, capped — never breaks the steal) ──
       try {

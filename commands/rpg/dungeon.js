@@ -687,7 +687,7 @@ module.exports = {
             dunSd.totalCrystals += Math.floor(rewards.crystals || 0);
             dunSd.awaitingAdvance = true;
             // Unified battle win rewards (aura/BP/pass/XP)
-            try { const BR=require('../../rpg/utils/BattleRewards'); const w=BR.giveBattleWinRewards(player, db, 'dungeon', player.level); rewardLine = `💠 +${Math.floor(rewards.gold)} 💠  |  💎 +${Math.floor(rewards.crystals || 0)} | ${BR.formatRewards(w).replace(/\n/g,' | ')}`; } catch(e){ rewardLine = `💠 +${Math.floor(rewards.gold)} 💠  |  💎 +${Math.floor(rewards.crystals || 0)}`; }
+            try { const BR=require('../../rpg/utils/BattleRewards'); const w=BR.giveBattleWinRewards(player, db, 'dungeon', player.level, sock, chatId); rewardLine = `💠 +${Math.floor(rewards.gold)} 💠  |  💎 +${Math.floor(rewards.crystals || 0)} | ${BR.formatRewards(w).replace(/\n/g,' | ')}`; } catch(e){ rewardLine = `💠 +${Math.floor(rewards.gold)} 💠  |  💎 +${Math.floor(rewards.crystals || 0)}`; }
           } else if (dunPty) {
             dunPty.awaitingAdvance = true;
           }

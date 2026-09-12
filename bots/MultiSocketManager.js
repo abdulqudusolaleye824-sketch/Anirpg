@@ -133,6 +133,23 @@ function isChatAddressed({ isGroup, isMentioned, isQuoted, nameInText }) {
   if (!isGroup) return true;
   return !!(isMentioned || isQuoted || nameInText);
 }
+// ── Batch-37: LID-aware address checks ──────────────────────────────
+// In LID-mode groups, mentions/quotes arrive as the bot's @lid while
+// sock.user.id is the PN — full-JID compare never matched, so bots
+// ignored tags AND replies. Compare bare numbers against BOTH ids.
+function sameBareUser(a, b) {
+  if (!a || !b) return false;
+  const ba = String(a).split(':')[0].split('@')[0];
+  const bb = String(b).split(':')[0].split('@')[0];
+  return !!ba && ba === bb;
+}
+function isBotMentioned(mentionedJids, botJid, botLid) {
+  return (mentionedJids || []).some((j) => sameBareUser(j, botJid) || sameBareUser(j, botLid));
+}
+function isBotQuoted(quotedParticipant, botJid, botLid) {
+  if (!quotedParticipant) return false;
+  return sameBareUser(quotedParticipant, botJid) || sameBareUser(quotedParticipant, botLid);
+}
 
 // ── Background WebSocket Heartbeat & Auto-Healing Monitor ──────
 // NOTE: this used to just DELETE dead sockets and log "auto-healing" while
@@ -1001,8 +1018,9 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
       msg.message?.stickerMessage?.contextInfo;
     const mentionedJids = contextInfo?.mentionedJid || [];
     const quotedParticipant = contextInfo?.participant;
-    const isMentioned = botJid && mentionedJids.some(j => j.split(':')[0] === botJid.split(':')[0]);
-    const isQuoted    = botJid && quotedParticipant?.split(':')[0] === botJid?.split(':')[0];
+    const botLid = sock.user?.lid || '';
+    const isMentioned = isBotMentioned(mentionedJids, botJid, botLid);
+    const isQuoted    = isBotQuoted(quotedParticipant, botJid, botLid);
     const nameInText  = messageText.toLowerCase().includes(botDisplayName.toLowerCase());
 
     if (!isChatAddressed({ isGroup, isMentioned, isQuoted, nameInText })) return;
@@ -1205,6 +1223,9 @@ module.exports = {
   getHostKey,
   shouldHandleDMCommand,
   isChatAddressed,
+  isBotMentioned,
+  isBotQuoted,
+  sameBareUser,
   sendAs,
   sendHiChorus,
   sendAttachment,

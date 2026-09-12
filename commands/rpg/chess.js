@@ -33,7 +33,7 @@ function helpText(pro) {
     `*/forfeit* — Resign any active game (or tap 🏳️)`,
     ``,
     `♟ Pawns promote to Queen automatically · en passant works`,
-    `*Winner:* ✨ ${GC.WIN_XP.toLocaleString()} xp  💠 ${GC.CHESS_WIN_NX.toLocaleString()} Nexus`,
+    `*Winner:* ⚡ ${GC.WIN_LEVEL_XP.toLocaleString()} XP  ✨ ${GC.PASS_XP_MIN}–${GC.PASS_XP_MAX} Pass XP  💠 ${GC.CHESS_WIN_NX.toLocaleString()} Nexus`,
     `⚠️ Daily limit: ${GC.DAILY_NX_CAP.toLocaleString()} Nexus/day`,
     pro ? `💎 Pro earns *2×* rewards` : null,
     (pro ? UI.PRO_BAR : UI.FREE_BAR),

@@ -9,8 +9,12 @@ const AstralGroups = require('../utils/AstralGroups');
 const UI = require('../utils/UI');
 
 const CHALLENGE_TTL = 5 * 60 * 1000; // pending challenges live 5 minutes
-const WIN_XP = 1500;                 // Astra XP per win
-const DRAW_XP = 250;                 // Astra XP each on a draw
+// Batch-41 games economy: every game pays the three REAL currencies —
+// player level XP, Nexus (gold), and real Astra Pass XP. Pro 2× on all.
+const WIN_LEVEL_XP = 300;            // player level XP per win
+const DRAW_LEVEL_XP = 50;            // player level XP each on a draw (1/6 of win)
+const PASS_XP_MIN = 100;             // Astra Pass XP roll range per win
+const PASS_XP_MAX = 150;
 const TTT_WIN_NX = 200;              // Nexus for a Tic-Tac-Toe win
 const CHESS_WIN_NX = 500;            // Nexus for a chess win
 const DAILY_NX_CAP = 5000;           // max game Nexus per player per day
@@ -98,48 +102,102 @@ function addNxEarned(db, jid, amount) {
   db.gameDailyMS.earned[jid] = (db.gameDailyMS.earned[jid] || 0) + amount;
 }
 
+// Roll the per-win Astra Pass payout (100–150; caller applies Pro 2×).
+function rollPassXP() {
+  return PASS_XP_MIN + Math.floor(Math.random() * (PASS_XP_MAX - PASS_XP_MIN + 1));
+}
+
+// Real Astra Pass XP (player.astraPass object, with level-ups). Falls back
+// to the absorbable lowercase flat field — NEVER the dead uppercase one.
+function grantPassXP(player, amount) {
+  const n = Math.floor(amount || 0);
+  if (!player || n <= 0) return 0;
+  try {
+    const AP = require('../utils/AstraPass');
+    if (AP && AP.addPassXPAmount) return AP.addPassXPAmount(player, n);
+  } catch (e) { /* fall through to flat field */ }
+  player.astraPassXp = (player.astraPassXp || 0) + n; // absorbed by getPassState
+  return n;
+}
+
+// Real player level XP (xp + lifetime totalXp) with instant level-ups.
+// Flat by design — game XP takes no rank/SilentXP multipliers (callers
+// apply the Pro 2× before calling). sock/chatId optional (level-up + class
+// awakening announcements need them; rewards never do).
+function grantLevelXP(player, amount, saveDatabase, sock, chatId) {
+  const n = Math.floor(amount || 0);
+  if (!player || n <= 0) return 0;
+  player.xp = (player.xp || 0) + n;
+  player.totalXp = (player.totalXp || 0) + n;
+  try {
+    const LUM = require('../utils/LevelUpManager');
+    LUM.checkAndApplyLevelUps(player, saveDatabase || (() => {}), sock || null, chatId || null);
+  } catch (e) { /* rewards stand even if the level check hiccups */ }
+  return n;
+}
+
+// Real Nexus (player.gold + ledger). Also absorbs the legacy void field
+// player.nexus (old quiz/engine payouts) so past earnings aren't lost.
+function grantNexus(player, amount, note) {
+  const n = Math.floor(amount || 0);
+  if (!player) return 0;
+  try {
+    if (player.nexus > 0) {
+      player.gold = (player.gold || 0) + Math.floor(player.nexus);
+      player.nexus = 0;
+    }
+  } catch (e) {}
+  if (n <= 0) return 0;
+  if (!player.gold) player.gold = 0;
+  player.gold += n;
+  if (player.inventory) player.inventory.gold = player.gold;
+  try {
+    require('../utils/TransactionLog').logTransaction(player, {
+      type: 'game_win', amount: n, currency: '💠', note: note || 'game win',
+    });
+  } catch (e) { /* best effort */ }
+  return n;
+}
+
 // Award a finished game. kind: 'ttt' | 'chess'. outcome for `jid`:
-// 'win' | 'draw' | 'loss'. Returns { xp, nx, capped }.
-function awardGame(db, player, jid, kind, outcome) {
-  let xp = 0, nx = 0, capped = false;
+// 'win' | 'draw' | 'loss'. extra: { save, sock, chatId } for level-ups.
+// Returns { xp, nx, capped, pass } — xp is now LEVEL xp, pass is real pass XP.
+function awardGame(db, player, jid, kind, outcome, extra = {}) {
+  let xp = 0, nx = 0, capped = false, pass = 0;
   const pro = UI.isPro(player);
   const mult = pro ? 2 : 1;
 
   if (outcome === 'win') {
-    xp = WIN_XP * mult;
+    xp = WIN_LEVEL_XP * mult;
+    pass = rollPassXP() * mult;
     const base = (kind === 'chess' ? CHESS_WIN_NX : TTT_WIN_NX) * mult;
     const room = Math.max(0, DAILY_NX_CAP - nxEarnedToday(db, jid));
     nx = Math.min(base, room);
     capped = nx < base;
     if (nx > 0) addNxEarned(db, jid, nx);
   } else if (outcome === 'draw') {
-    xp = DRAW_XP * mult;
+    xp = DRAW_LEVEL_XP * mult;
+    pass = rollPassXP() * mult;
   }
 
-  if (xp > 0) {
-    if (!player.astraPassXP) player.astraPassXP = 0;
-    player.astraPassXP += xp;
-  }
-  if (nx > 0) {
-    if (!player.gold) player.gold = 0;
-    player.gold += nx;
-    if (player.inventory) player.inventory.gold = player.gold;
-    try {
-      require('../utils/TransactionLog').logTransaction(player, {
-        type: 'game_win', amount: nx, currency: '💠', note: `${kind} win`,
-      });
-    } catch (e) { /* best effort */ }
-  }
-  return { xp, nx, capped };
+  if (xp > 0) grantLevelXP(player, xp, extra.save, extra.sock, extra.chatId);
+  if (pass > 0) grantPassXP(player, pass);
+  if (nx > 0) grantNexus(player, nx, `${kind} win`);
+  return { xp, nx, capped, pass };
 }
 
 function rewardLine(res, pro) {
+  res = res || {};
   const parts = [];
-  if (res.xp > 0) parts.push(`got *${res.xp.toLocaleString()} xp*${pro ? ' (2× Pro)' : ''}`);
+  if (res.xp > 0) parts.push(`*${res.xp.toLocaleString()} XP*`);
+  if (res.pass > 0) parts.push(`*${res.pass.toLocaleString()}* ✨ Pass XP`);
   const nx = res.nx != null ? res.nx : res.ms; // (legacy shape tolerance)
   if (nx > 0) parts.push(`*+${nx.toLocaleString()}* 💠 Nexus`);
-  if (res.capped) parts.push(`\n⚠️ Daily limit reached! (Limit: ${DAILY_NX_CAP.toLocaleString()} Nexus/day)`);
-  return parts.length ? ' and ' + parts.join(' ') : '';
+  if (!parts.length) return res.capped ? `\n⚠️ Daily limit reached! (Limit: ${DAILY_NX_CAP.toLocaleString()} Nexus/day)` : '';
+  let line = ' and got ' + parts.join(' + ');
+  if (pro) line += ' (2× Pro 💎)';
+  if (res.capped) line += `\n⚠️ Daily limit reached! (Limit: ${DAILY_NX_CAP.toLocaleString()} Nexus/day)`;
+  return line;
 }
 
 // Per-game persistent stats: player.tttStats / player.chessStats
@@ -204,8 +262,10 @@ async function sendBoard(sock, chatId, msg, imageBuffer, caption, fallbackText, 
 
 module.exports = {
   CHALLENGE_TTL,
-  WIN_XP,
-  DRAW_XP,
+  WIN_LEVEL_XP,
+  DRAW_LEVEL_XP,
+  PASS_XP_MIN,
+  PASS_XP_MAX,
   TTT_WIN_NX,
   CHESS_WIN_NX,
   DAILY_NX_CAP,
@@ -215,6 +275,10 @@ module.exports = {
   getTargetJid,
   mentionOf,
   nxEarnedToday,
+  rollPassXP,
+  grantPassXP,
+  grantLevelXP,
+  grantNexus,
   awardGame,
   rewardLine,
   bumpStats,
