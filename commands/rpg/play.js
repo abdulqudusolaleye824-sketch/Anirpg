@@ -7,11 +7,17 @@
 // artist must appear in the video title or channel, mixes/mashups/covers
 // are penalised, and anything over 10 min is skipped. When nothing
 // passes, the bot says so instead of sending the wrong song.
-// Batch-44: YouTube downloads get blocked, so delivery is a cascade —
-// YouTube best → YouTube backup → SoundCloud (own search+download) →
-// Piped direct audio stream (plain HTTPS, no yt-dlp at all). The bot no
-// longer depends on YouTube methods alone: it just gets the audio and
-// sends it. Strict matching still guards every stage.
+// Batch-44: delivery cascade (YouTube → SoundCloud → Piped).
+// Batch-45: EVERY backend probed live from a server. Verdict: Piped is
+// DEAD (12/12 API instances down — stage removed, it only added
+// timeouts); mp3juice converters dead/empty; Invidious API closed on all
+// public instances; archive.org has nothing usable for mainstream
+// tracks. What VERIFIABLY works: YouTube locate+download (host
+// permitting) and SoundCloud search + non-DRM downloads. So: deeper SC
+// (8 results, top 3 tried) + slowed/sped-up hard reject + duration
+// sanity vs the YouTube pick (no wrong-speed/wrong-cut audio), and FULL
+// SILENCE — no lookup/fetching/fallback chatter, no source names
+// anywhere. Just the cover + the voice note.
 'use strict';
 
 const fs = require('fs');
@@ -87,6 +93,7 @@ const DEMOTE = [
 // mashup/medley, not the song. (This exact shape caused the old
 // "oh no(rema) x kante" scandal.)
 const SEGSPLIT = /\s+(?:x|vs\.?|&|\+)\s+/i;
+const SPEEDSU = /slowed|sped\s*up|speed\s*up|nightcore|\b8d\b/i;
 function _looksMashup(videoTitle, title, artist) {
   const segs = String(videoTitle || '').split(SEGSPLIT);
   if (segs.length < 2) return false;
@@ -125,6 +132,8 @@ function _scoreCandidate(c, title, artist) {
   const tToks = _tokens(title);
   if (!tToks.length) return { score: 0, artistOk: false };
   if (_looksMashup(c.title, title, artist)) return { score: -1, artistOk: false };
+  // Wrong-speed audio is wrong audio — unless the query asks for it.
+  if (SPEEDSU.test(c.title || '') && !SPEEDSU.test(title || '')) return { score: -1, artistOk: false };
   const vNorm = _phrase(c.title);
   const vToks = new Set(_tokens(c.title));
   const hits = tToks.filter((w) => vToks.has(w)).length;
@@ -148,8 +157,16 @@ function _scoreCandidate(c, title, artist) {
   return { score, artistOk };
 }
 
-function _pickBest(rows, title, artist) {
-  const scored = rows.map((c) => ({ c, ..._scoreCandidate(c, title, artist) }))
+// refDuration (the YouTube pick's length, when known) rejects wrong cuts —
+// a 70s snippet is not the 196s song even if the words match.
+function _pickBest(rows, title, artist, refDuration = null) {
+  let pool = rows;
+  if (refDuration) {
+    const sane = pool.filter((c) => !c.duration || Math.abs(c.duration - refDuration) / refDuration <= 0.3);
+    if (sane.length) pool = sane;
+    else return [];
+  }
+  const scored = pool.map((c) => ({ c, ..._scoreCandidate(c, title, artist) }))
     .filter((s) => s.artistOk && s.score >= MIN_SCORE)
     .sort((a, b) => b.score - a.score);
   return scored.map((s) => s.c);
@@ -196,84 +213,6 @@ async function _fetchCover(id) {
   return null;
 }
 
-// Piped API mirrors YouTube's streams over plain HTTPS — fetching the
-// audio URL for a video id needs no yt-dlp, no clients, no signatures.
-const PIPED_INSTANCES = ['pipedapi.adminforge.de', 'pipedapi.leptons.xyz', 'api-piped.mha.fi'];
-
-function _fetchJson(url, timeoutMs = 12000) {
-  return new Promise((resolve) => {
-    let done = false;
-    const finish = (v) => { if (!done) { done = true; resolve(v); } };
-    try {
-      const req = https.get(url, { headers: { 'User-Agent': 'Mozilla/5.0' } }, (res) => {
-        if (res.statusCode !== 200) { res.resume(); return finish(null); }
-        const chunks = [];
-        let size = 0;
-        res.on('data', (c) => {
-          size += c.length;
-          if (size > 1048576) { try { req.destroy(); } catch (e) {} finish(null); }
-          else chunks.push(c);
-        });
-        res.on('end', () => {
-          try { finish(JSON.parse(Buffer.concat(chunks).toString('utf8'))); }
-          catch (e) { finish(null); }
-        });
-      });
-      req.on('error', () => finish(null));
-      req.setTimeout(timeoutMs, () => { try { req.destroy(); } catch (e) {} finish(null); });
-    } catch (e) { finish(null); }
-  });
-}
-
-async function _pipedAudioUrl(videoId) {
-  for (const host of PIPED_INSTANCES) {
-    const j = await _fetchJson(`https://${host}/streams/${videoId}`);
-    const streams = j && Array.isArray(j.audioStreams)
-      ? j.audioStreams.filter((x) => x && x.url) : [];
-    if (!streams.length) continue;
-    streams.sort((a, b) => (b.bitrate || 0) - (a.bitrate || 0));
-    return streams[0].url;
-  }
-  return null;
-}
-
-// Plain-HTTPS file download with redirect following (Piped/googlevideo
-// URLs redirect). Returns true on success.
-function _downloadUrl(url, outPath, redirects = 5, timeoutMs = 60000) {
-  return new Promise((resolve) => {
-    let done = false;
-    const finish = (v) => { if (!done) { done = true; resolve(v); } };
-    const get = (u, left) => {
-      try {
-        const req = https.get(u, { headers: { 'User-Agent': 'Mozilla/5.0' } }, (res) => {
-          if ([301, 302, 303, 307, 308].includes(res.statusCode) && res.headers.location && left > 0) {
-            res.resume();
-            let next = res.headers.location;
-            try { next = new URL(next, u).toString(); } catch (e) {}
-            if (next.startsWith('http:')) next = 'https:' + next.slice(5);
-            return get(next, left - 1);
-          }
-          if (res.statusCode !== 200) { res.resume(); return finish(false); }
-          const chunks = [];
-          let size = 0;
-          res.on('data', (c) => {
-            size += c.length;
-            if (size > 26214400) { try { req.destroy(); } catch (e) {} finish(false); }
-            else chunks.push(c);
-          });
-          res.on('end', () => {
-            try { fs.writeFileSync(outPath, Buffer.concat(chunks)); finish(size > 0); }
-            catch (e) { finish(false); }
-          });
-        });
-        req.on('error', () => finish(false));
-        req.setTimeout(timeoutMs, () => { try { req.destroy(); } catch (e) {} finish(false); });
-      } catch (e) { finish(false); }
-    };
-    get(url, redirects);
-  });
-}
-
 // ── Command ─────────────────────────────────────────────────────────────
 
 module.exports = {
@@ -310,7 +249,6 @@ module.exports = {
     } else {
       const { title, artist } = _parseQuery(raw);
       if (!title) return say(`🎵 *Usage:* /play <title> | <artist>`);
-      await say(`🔎 Looking up *${title}*${artist ? ` — ${artist}` : ''}…`);
 
       const query = `ytsearch6:${title}${artist ? ' ' + artist : ''} official audio`;
       let search;
@@ -329,7 +267,7 @@ module.exports = {
           return say(`❌ yt-dlp isn't installed on the host — ask the owner to install it.`);
         }
         console.error('/play search failed:', search && search.error);
-        return say(`❌ Couldn't reach YouTube for *${title}*. Try again in a bit.`);
+        return say(`❌ Search failed — try again in a bit.`);
       }
 
       const rows = _parseSearchRows(search.stdout);
@@ -374,11 +312,9 @@ module.exports = {
 
       // result = { file, title, id, channel, duration, thumb }
       let result = null;
-      let ytFailed = false;
 
       // Stage 1: YouTube best + backup.
       if (pick) {
-        await say(`🎵 Fetching *${pick.title}*…`);
         let parsed = await dlYT(pick.id, pick.title);
         let used = pick;
         if (!parsed && pick._backup) {
@@ -392,23 +328,20 @@ module.exports = {
             id: parsed.id || used.id, channel: used.channel || 'YouTube',
             duration: used.duration, thumb: null,
           };
-        } else {
-          ytFailed = true;
         }
       }
 
       // Stage 2: SoundCloud — own search + download, not YouTube methods.
       if (!result && !directId) {
         const q = _parseQuery(raw);
-        if (ytFailed) await say(`⏳ YouTube blocked it — trying SoundCloud…`);
         try {
           const sc = await ToolRunner.ytDlpRun([
             '--flat-playlist',
             '--print', '%(id)s | %(webpage_url)s | %(title)s | %(duration)s',
-            `scsearch5:${q.title}${q.artist ? ' ' + q.artist : ''}`,
+            `scsearch8:${q.title}${q.artist ? ' ' + q.artist : ''}`,
           ]);
           if (sc && sc.ok) {
-            const cands = _pickBest(_parseSCRows(sc.stdout), q.title, q.artist).slice(0, 2);
+            const cands = _pickBest(_parseSCRows(sc.stdout), q.title, q.artist, pick ? pick.duration : null).slice(0, 3);
             for (const cand of cands) {
               let res;
               try {
@@ -427,7 +360,6 @@ module.exports = {
               const parsed = ToolRunner.parseDownloadPrints(res.stdout, cand.id, cand.title);
               if (parsed && parsed.p) {
                 try { if (!fs.existsSync(parsed.p)) continue; } catch (e) { continue; }
-                if (!pick) await say(`🎵 Fetching *${cand.title}*…`);
                 result = {
                   file: parsed.p, title: parsed.title || cand.title, id: null,
                   channel: 'SoundCloud', duration: cand.duration,
@@ -440,36 +372,17 @@ module.exports = {
         } catch (e) { console.error('/play soundcloud stage failed:', e.message); }
       }
 
-      // Stage 3: Piped — direct audio stream for the SAME YouTube video
-      // over plain HTTPS (no yt-dlp, no YouTube clients at all).
-      if (!result && pick) {
-        try {
-          const streamUrl = await _pipedAudioUrl(pick.id);
-          if (streamUrl) {
-            const ext = /\.webm/i.test(streamUrl) ? 'webm' : 'm4a';
-            const out = path.join(tmpDir, `piped.${ext}`);
-            if (await _downloadUrl(streamUrl, out)) {
-              result = {
-                file: out, title: pick.title, id: pick.id,
-                channel: pick.channel || 'YouTube', duration: pick.duration,
-                thumb: null,
-              };
-            }
-          }
-        } catch (e) { console.error('/play piped stage failed:', e.message); }
-      }
-
       if (!result) {
         if (!pick) {
           return say([
             `❌ No exact match for *${ytTitle}*${ytArtist ? ` — *${ytArtist}*` : ''}.`,
-            ytRowCount ? `Checked ${ytRowCount} result(s) — none matched closely, so I sent nothing rather than the wrong song.` : `YouTube returned no results.`,
+            `I'd rather send nothing than the wrong song.`,
             ``,
             `💡 Check the spelling, or add the artist: /play ${ytTitle} | <artist>`,
           ].join('\n'));
         }
         console.error('/play: all sources failed for', pick.id);
-        return say(`❌ Couldn't fetch audio for *${pick.title}* — YouTube, SoundCloud and backup sources all failed.\n\nTry again later, or check the spelling.`);
+        return say(`❌ Couldn't get that track right now — try again in a bit.`);
       }
 
       // Convert to opus voice note when ffmpeg exists.
@@ -502,7 +415,7 @@ module.exports = {
       if (cover) {
         await sock.sendMessage(chatId, {
           image: cover,
-          caption: `🎵 *${label}*${durTxt}\n🎤 ${result.channel || 'YouTube'}`,
+          caption: `🎵 *${label}*${durTxt}`,
         }, { quoted: msg });
       }
       await sock.sendMessage(chatId, {
