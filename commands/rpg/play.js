@@ -7,6 +7,11 @@
 // artist must appear in the video title or channel, mixes/mashups/covers
 // are penalised, and anything over 10 min is skipped. When nothing
 // passes, the bot says so instead of sending the wrong song.
+// Batch-44: YouTube downloads get blocked, so delivery is a cascade —
+// YouTube best → YouTube backup → SoundCloud (own search+download) →
+// Piped direct audio stream (plain HTTPS, no yt-dlp at all). The bot no
+// longer depends on YouTube methods alone: it just gets the audio and
+// sends it. Strict matching still guards every stage.
 'use strict';
 
 const fs = require('fs');
@@ -95,6 +100,27 @@ function _looksMashup(videoTitle, title, artist) {
   return false;
 }
 
+// Parse SoundCloud `--print %(id)s | %(webpage_url)s | %(title)s | %(duration)s`
+// rows. The download target is the page URL (2nd field) — rows without a
+// valid soundcloud URL are dropped.
+function _parseSCRows(stdout) {
+  const out = [];
+  for (const line of String(stdout || '').split('\n')) {
+    const parts = line.split(' | ').map((s) => s.trim());
+    if (parts.length < 4) continue;
+    const id = parts[0];
+    const url = parts[1];
+    if (!id || !/^https?:\/\/([^.]+\.)?soundcloud\.com\//i.test(url || '')) continue;
+    const title = parts.slice(2, -1).join(' | ');
+    if (!title) continue;
+    const durRaw = parts[parts.length - 1];
+    const duration = /^\d+$/.test(durRaw || '') ? parseInt(durRaw, 10) : null;
+    if (duration !== null && (duration > MAX_DURATION_S || duration < MIN_DURATION_S)) continue;
+    out.push({ id, url, title, duration, channel: '' });
+  }
+  return out;
+}
+
 function _scoreCandidate(c, title, artist) {
   const tToks = _tokens(title);
   if (!tToks.length) return { score: 0, artistOk: false };
@@ -170,6 +196,84 @@ async function _fetchCover(id) {
   return null;
 }
 
+// Piped API mirrors YouTube's streams over plain HTTPS — fetching the
+// audio URL for a video id needs no yt-dlp, no clients, no signatures.
+const PIPED_INSTANCES = ['pipedapi.adminforge.de', 'pipedapi.leptons.xyz', 'api-piped.mha.fi'];
+
+function _fetchJson(url, timeoutMs = 12000) {
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = (v) => { if (!done) { done = true; resolve(v); } };
+    try {
+      const req = https.get(url, { headers: { 'User-Agent': 'Mozilla/5.0' } }, (res) => {
+        if (res.statusCode !== 200) { res.resume(); return finish(null); }
+        const chunks = [];
+        let size = 0;
+        res.on('data', (c) => {
+          size += c.length;
+          if (size > 1048576) { try { req.destroy(); } catch (e) {} finish(null); }
+          else chunks.push(c);
+        });
+        res.on('end', () => {
+          try { finish(JSON.parse(Buffer.concat(chunks).toString('utf8'))); }
+          catch (e) { finish(null); }
+        });
+      });
+      req.on('error', () => finish(null));
+      req.setTimeout(timeoutMs, () => { try { req.destroy(); } catch (e) {} finish(null); });
+    } catch (e) { finish(null); }
+  });
+}
+
+async function _pipedAudioUrl(videoId) {
+  for (const host of PIPED_INSTANCES) {
+    const j = await _fetchJson(`https://${host}/streams/${videoId}`);
+    const streams = j && Array.isArray(j.audioStreams)
+      ? j.audioStreams.filter((x) => x && x.url) : [];
+    if (!streams.length) continue;
+    streams.sort((a, b) => (b.bitrate || 0) - (a.bitrate || 0));
+    return streams[0].url;
+  }
+  return null;
+}
+
+// Plain-HTTPS file download with redirect following (Piped/googlevideo
+// URLs redirect). Returns true on success.
+function _downloadUrl(url, outPath, redirects = 5, timeoutMs = 60000) {
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = (v) => { if (!done) { done = true; resolve(v); } };
+    const get = (u, left) => {
+      try {
+        const req = https.get(u, { headers: { 'User-Agent': 'Mozilla/5.0' } }, (res) => {
+          if ([301, 302, 303, 307, 308].includes(res.statusCode) && res.headers.location && left > 0) {
+            res.resume();
+            let next = res.headers.location;
+            try { next = new URL(next, u).toString(); } catch (e) {}
+            if (next.startsWith('http:')) next = 'https:' + next.slice(5);
+            return get(next, left - 1);
+          }
+          if (res.statusCode !== 200) { res.resume(); return finish(false); }
+          const chunks = [];
+          let size = 0;
+          res.on('data', (c) => {
+            size += c.length;
+            if (size > 26214400) { try { req.destroy(); } catch (e) {} finish(false); }
+            else chunks.push(c);
+          });
+          res.on('end', () => {
+            try { fs.writeFileSync(outPath, Buffer.concat(chunks)); finish(size > 0); }
+            catch (e) { finish(false); }
+          });
+        });
+        req.on('error', () => finish(false));
+        req.setTimeout(timeoutMs, () => { try { req.destroy(); } catch (e) {} finish(false); });
+      } catch (e) { finish(false); }
+    };
+    get(url, redirects);
+  });
+}
+
 // ── Command ─────────────────────────────────────────────────────────────
 
 module.exports = {
@@ -199,6 +303,7 @@ module.exports = {
     // Direct URL → exact download, no search/matching.
     const directId = _extractVideoId(raw);
     let pick = null;
+    let ytTitle = '', ytArtist = '', ytRowCount = 0;
 
     if (directId) {
       pick = { id: directId, title: raw.slice(0, 80), duration: null, channel: '' };
@@ -229,22 +334,16 @@ module.exports = {
 
       const rows = _parseSearchRows(search.stdout);
       const best = _pickBest(rows, title, artist);
-      if (!best.length) {
-        return say([
-          `❌ No exact match for *${title}*${artist ? ` — *${artist}*` : ''}.`,
-          rows.length ? `Checked ${rows.length} result(s) — none matched closely, so I sent nothing rather than the wrong song.` : `YouTube returned no results.`,
-          ``,
-          `💡 Check the spelling, or add the artist: /play ${title} | <artist>`,
-        ].join('\n'));
+      ytTitle = title; ytArtist = artist; ytRowCount = rows.length;
+      if (best.length) {
+        pick = best[0];
+        // Keep a backup in case the best download fails.
+        pick._backup = best[1] || null;
       }
-      pick = best[0];
-      // Keep a backup in case the best download fails.
-      pick._backup = best[1] || null;
+      // No pick: the cascade below still tries SoundCloud before failing.
     }
 
-    await say(`🎵 Fetching *${pick.title}*…`);
-
-    // Download best audio → opus voice note (mp3 fallback without ffmpeg).
+    // ── Batch-44 cascade: YT best → YT backup → SoundCloud → Piped ──
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'anirpg-play-'));
     const finishTmp = () => { try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch (e) {} };
     try {
@@ -253,36 +352,132 @@ module.exports = {
         audio = await ToolRunner.optimalAudioArgs();
       } catch (e) { audio = { ffmpeg: false, args: ['-f', 'bestaudio[ext=m4a]/bestaudio'] }; }
 
-      const dl = async (videoId) => ToolRunner.ytDlpRun([
-        ...audio.args,
-        '--no-playlist',
-        '--output', path.join(tmpDir, 'track.%(ext)s'),
-        '--print', 'after_move:filepath',
-        '--print', 'id',
-        '--print', 'title',
-        `https://www.youtube.com/watch?v=${videoId}`,
-      ]);
+      const dlYT = async (videoId, fbTitle) => {
+        let res;
+        try {
+          res = await ToolRunner.ytDlpRun([
+            ...audio.args,
+            '--no-playlist',
+            '--output', path.join(tmpDir, 'track.%(ext)s'),
+            '--print', 'after_move:filepath',
+            '--print', 'id',
+            '--print', 'title',
+            `https://www.youtube.com/watch?v=${videoId}`,
+          ]);
+        } catch (e) { return null; }
+        if (!res || !res.ok || res.notFound) return null;
+        const parsed = ToolRunner.parseDownloadPrints(res.stdout, videoId, fbTitle);
+        if (!parsed || !parsed.p) return null;
+        try { if (!fs.existsSync(parsed.p)) return null; } catch (e) { return null; }
+        return parsed;
+      };
 
-      let res = await dl(pick.id);
-      let parsed = res && res.ok ? ToolRunner.parseDownloadPrints(res.stdout, pick.id, pick.title) : null;
-      if ((!parsed || !parsed.p || !fs.existsSync(parsed.p)) && pick._backup) {
-        console.log(`/play: best failed, trying backup ${pick._backup.id}`);
-        res = await dl(pick._backup.id);
-        parsed = res && res.ok ? ToolRunner.parseDownloadPrints(res.stdout, pick._backup.id, pick._backup.title) : null;
-        if (parsed && parsed.p) pick = pick._backup;
+      // result = { file, title, id, channel, duration, thumb }
+      let result = null;
+      let ytFailed = false;
+
+      // Stage 1: YouTube best + backup.
+      if (pick) {
+        await say(`🎵 Fetching *${pick.title}*…`);
+        let parsed = await dlYT(pick.id, pick.title);
+        let used = pick;
+        if (!parsed && pick._backup) {
+          console.log(`/play: best failed, trying backup ${pick._backup.id}`);
+          parsed = await dlYT(pick._backup.id, pick._backup.title);
+          if (parsed) used = pick._backup;
+        }
+        if (parsed) {
+          result = {
+            file: parsed.p, title: parsed.title || used.title,
+            id: parsed.id || used.id, channel: used.channel || 'YouTube',
+            duration: used.duration, thumb: null,
+          };
+        } else {
+          ytFailed = true;
+        }
       }
-      if (!parsed || !parsed.p || !fs.existsSync(parsed.p)) {
-        if (res && res.notFound) return say(`❌ yt-dlp isn't installed on the host — ask the owner to install it.`);
-        console.error('/play download failed:', res && res.error);
-        return say(`❌ Download failed for *${pick.title}*. YouTube may be blocking — try again later.`);
+
+      // Stage 2: SoundCloud — own search + download, not YouTube methods.
+      if (!result && !directId) {
+        const q = _parseQuery(raw);
+        if (ytFailed) await say(`⏳ YouTube blocked it — trying SoundCloud…`);
+        try {
+          const sc = await ToolRunner.ytDlpRun([
+            '--flat-playlist',
+            '--print', '%(id)s | %(webpage_url)s | %(title)s | %(duration)s',
+            `scsearch5:${q.title}${q.artist ? ' ' + q.artist : ''}`,
+          ]);
+          if (sc && sc.ok) {
+            const cands = _pickBest(_parseSCRows(sc.stdout), q.title, q.artist).slice(0, 2);
+            for (const cand of cands) {
+              let res;
+              try {
+                res = await ToolRunner.ytDlpRun([
+                  ...audio.args,
+                  '--no-playlist',
+                  '--output', path.join(tmpDir, 'track.%(ext)s'),
+                  '--print', 'after_move:filepath',
+                  '--print', 'id',
+                  '--print', 'title',
+                  '--print', 'thumbnail',
+                  cand.url,
+                ]);
+              } catch (e) { continue; }
+              if (!res || !res.ok) continue;
+              const parsed = ToolRunner.parseDownloadPrints(res.stdout, cand.id, cand.title);
+              if (parsed && parsed.p) {
+                try { if (!fs.existsSync(parsed.p)) continue; } catch (e) { continue; }
+                if (!pick) await say(`🎵 Fetching *${cand.title}*…`);
+                result = {
+                  file: parsed.p, title: parsed.title || cand.title, id: null,
+                  channel: 'SoundCloud', duration: cand.duration,
+                  thumb: parsed.thumb || null,
+                };
+                break;
+              }
+            }
+          }
+        } catch (e) { console.error('/play soundcloud stage failed:', e.message); }
+      }
+
+      // Stage 3: Piped — direct audio stream for the SAME YouTube video
+      // over plain HTTPS (no yt-dlp, no YouTube clients at all).
+      if (!result && pick) {
+        try {
+          const streamUrl = await _pipedAudioUrl(pick.id);
+          if (streamUrl) {
+            const ext = /\.webm/i.test(streamUrl) ? 'webm' : 'm4a';
+            const out = path.join(tmpDir, `piped.${ext}`);
+            if (await _downloadUrl(streamUrl, out)) {
+              result = {
+                file: out, title: pick.title, id: pick.id,
+                channel: pick.channel || 'YouTube', duration: pick.duration,
+                thumb: null,
+              };
+            }
+          }
+        } catch (e) { console.error('/play piped stage failed:', e.message); }
+      }
+
+      if (!result) {
+        if (!pick) {
+          return say([
+            `❌ No exact match for *${ytTitle}*${ytArtist ? ` — *${ytArtist}*` : ''}.`,
+            ytRowCount ? `Checked ${ytRowCount} result(s) — none matched closely, so I sent nothing rather than the wrong song.` : `YouTube returned no results.`,
+            ``,
+            `💡 Check the spelling, or add the artist: /play ${ytTitle} | <artist>`,
+          ].join('\n'));
+        }
+        console.error('/play: all sources failed for', pick.id);
+        return say(`❌ Couldn't fetch audio for *${pick.title}* — YouTube, SoundCloud and backup sources all failed.\n\nTry again later, or check the spelling.`);
       }
 
       // Convert to opus voice note when ffmpeg exists.
-      let voicePath = parsed.p, mime = 'audio/mpeg';
+      let voicePath = result.file, mime = 'audio/mpeg';
       if (audio.ffmpeg) {
         const ogg = path.join(tmpDir, 'voice.ogg');
         try {
-          const cv = await ToolRunner.ffmpegRun(['-y', '-i', parsed.p, '-c:a', 'libopus', '-b:a', '64k', '-vn', ogg]);
+          const cv = await ToolRunner.ffmpegRun(['-y', '-i', result.file, '-c:a', 'libopus', '-b:a', '64k', '-vn', ogg]);
           if (cv && cv.ok && fs.existsSync(ogg) && fs.statSync(ogg).size > 0) {
             voicePath = ogg; mime = 'audio/ogg; codecs=opus';
           } else {
@@ -291,15 +486,23 @@ module.exports = {
         } catch (e) { console.error('/play opus convert threw, sending original:', e.message); }
       }
       const buf = fs.readFileSync(voicePath);
-      const label = `${_safeName(parsed.title || pick.title)}`;
-      const durTxt = pick.duration ? ` (${_fmtDur(pick.duration)})` : '';
+      const label = `${_safeName(result.title)}`;
+      const durTxt = result.duration ? ` (${_fmtDur(result.duration)})` : '';
 
       // Cover image first, then the voice note.
-      const cover = await _fetchCover(parsed.id || pick.id);
+      let cover = null;
+      if (result.thumb) {
+        try {
+          const t = await _fetchBuf(result.thumb);
+          if (t && t.length > 2000) cover = t;
+        } catch (e) {}
+      } else if (result.id) {
+        cover = await _fetchCover(result.id);
+      }
       if (cover) {
         await sock.sendMessage(chatId, {
           image: cover,
-          caption: `🎵 *${label}*${durTxt}\n🎤 ${pick.channel || 'YouTube'}`,
+          caption: `🎵 *${label}*${durTxt}\n🎤 ${result.channel || 'YouTube'}`,
         }, { quoted: msg });
       }
       await sock.sendMessage(chatId, {
@@ -314,5 +517,5 @@ module.exports = {
   },
 
   // Test hooks (pure).
-  _parseQuery, _extractVideoId, _safeName, _parseSearchRows, _scoreCandidate, _pickBest, _looksMashup,
+  _parseQuery, _extractVideoId, _safeName, _parseSearchRows, _parseSCRows, _scoreCandidate, _pickBest, _looksMashup,
 };
