@@ -174,8 +174,14 @@ module.exports = {
 
       saveDatabase();
 
-      const p1Spd = (challenger.stats?.speed || 10) + (challenger.equipped?.weapon?.speed || 0);
-      const p2Spd = (player.stats?.speed || 10) + (player.equipped?.weapon?.speed || 0);
+      // Turn order uses EFFECTIVE speed: base + equipped gear + weapon.
+      const _spdOf = (p) => {
+        let g = 0;
+        try { g = require('../../rpg/utils/GearSystem').getEquippedBonuses(p).speed || 0; } catch (e) {}
+        return (p.stats?.speed || 10) + g + (p.weapon?.speed || 0);
+      };
+      const p1Spd = _spdOf(challenger);
+      const p2Spd = _spdOf(player);
 
       const cPro = UI.isPro(challenger);
       let _eff1 = null, _eff2 = null;

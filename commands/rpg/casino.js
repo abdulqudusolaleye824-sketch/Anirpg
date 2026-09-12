@@ -1028,3 +1028,16 @@ ${FRAME}`;
     }, { quoted: msg });
   }
 };
+
+// /bypass hook: drop this module's in-memory cooldown for one user.
+// Returns true when something was actually cleared.
+function resetCooldownsFor(jid) {
+  try {
+    let n = 0;
+    for (const k of lastPlayTime.keys()) {
+      if (k === jid || k.startsWith(`${jid}:`)) { lastPlayTime.delete(k); n++; }
+    }
+    return n > 0;
+  } catch (e) { return false; }
+}
+module.exports.resetCooldownsFor = resetCooldownsFor;

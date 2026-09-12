@@ -50,27 +50,50 @@ module.exports = {
       }, { quoted: msg });
     }
 
-    // ── Clear all cooldowns ──────────────────────────────────────
+    // ── Clear ALL cooldowns (except this command's own) ──────────
+    // NOTE: live battle state (pvpBattle) and AFK status are NOT
+    // cooldowns — touching them would corrupt battles / presence.
     const cleared = [];
 
-    if (target.dungeonCooldown) {
-      target.dungeonCooldown = 0;
-      cleared.push('⚔️ Dungeon');
+    // Player timestamp fields
+    if (target.dungeonCooldown) { target.dungeonCooldown = 0; cleared.push('⚔️ Dungeon'); }
+    if (target.bossCooldown) { target.bossCooldown = 0; cleared.push('👹 Boss'); }
+    if (target.skillCooldowns && Object.keys(target.skillCooldowns).length > 0) { target.skillCooldowns = {}; cleared.push('✨ Skills'); }
+    if (target.skills?.cooldowns && Object.keys(target.skills.cooldowns).length > 0) { target.skills.cooldowns = {}; cleared.push('✨ Gate skills'); }
+    if (target.attackCooldowns && Object.keys(target.attackCooldowns).length > 0) { target.attackCooldowns = {}; cleared.push('🗡️ Attacks'); }
+    if (target.cooldowns && Object.keys(target.cooldowns).length > 0) { target.cooldowns = {}; cleared.push('🔧 Other (aura farm, …)'); }
+    if (target.stealCooldown) { target.stealCooldown = 0; cleared.push('🦹 Rob/steal'); }
+    if (target.dailyQuest?.lastClaimed) { target.dailyQuest.lastClaimed = 0; cleared.push('📅 Daily reward'); }
+
+    // DB-level stores
+    if (db.userCooldowns) {
+      let n = 0;
+      for (const k of Object.keys(db.userCooldowns)) {
+        if (k.includes(targetId)) { delete db.userCooldowns[k]; n++; }
+      }
+      if (n) cleared.push(`🐌 Slowmode ×${n}`);
+    }
+    if (db.modResetCooldowns?.[targetId]) { delete db.modResetCooldowns[targetId]; cleared.push('🛡️ Mod reset'); }
+    if (db.banks) {
+      let n = 0;
+      for (const bank of Object.values(db.banks)) {
+        const acc = bank.accounts?.find((a) => a.userId === targetId);
+        if (acc?.lastWithdrawal) { acc.lastWithdrawal = 0; n++; }
+      }
+      if (n) cleared.push(`🏦 Bank withdraw ×${n}`);
     }
 
-    if (target.bossCooldown) {
-      target.bossCooldown = 0;
-      cleared.push('👹 Boss');
-    }
-
-    if (target.skillCooldowns && Object.keys(target.skillCooldowns).length > 0) {
-      target.skillCooldowns = {};
-      cleared.push('✨ Skills');
-    }
-
-    if (target.cooldowns && Object.keys(target.cooldowns).length > 0) {
-      target.cooldowns = {};
-      cleared.push('🔧 Other');
+    // In-memory module cooldowns (each command exposes resetCooldownsFor,
+    // which reports whether it cleared anything for this player).
+    const hookFiles = ['quiz', 'support', 'steal', 'lyrics', 'imagine', 'quote', 'download', 'insta', 'pindl', 'pinterest', 'casino'];
+    const hookLabels = { quiz: '📝 Quiz', support: '🛡️ Support', steal: '🥷 Steal', lyrics: '🎤 Lyrics', imagine: '🎨 Imagine', quote: '💬 Quote', download: '⬇️ Downloads', insta: '📸 Insta', pindl: '📌 PinDL', pinterest: '📌 Pinterest', casino: '🎰 Casino' };
+    for (const f of hookFiles) {
+      try {
+        const mod = require(`./${f}`);
+        if (mod && typeof mod.resetCooldownsFor === 'function' && mod.resetCooldownsFor(targetId)) {
+          cleared.push(hookLabels[f]);
+        }
+      } catch (e) { /* hook missing — that command has no resetter */ }
     }
 
     // ── Set bypass cooldown for the user who ran it ──────────────

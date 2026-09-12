@@ -144,7 +144,7 @@ function buildProfileText(player) {
   let powerLabel = { emoji: '⚪', label: 'Unknown' };
   let stats = player.stats || {};
   try {
-    const equipped = Object.values(player.equipped || {}).filter(Boolean);
+    const equipped = Object.values(player.equippedGear || player.equipped || {}).filter(Boolean);
     power      = calculatePowerRating(stats, equipped, player.pet) || 0;
     powerLabel = getPowerLabel(power) || powerLabel;
   } catch(e) {}

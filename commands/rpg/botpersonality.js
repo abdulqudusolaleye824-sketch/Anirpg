@@ -346,6 +346,7 @@ const bots = {
 
   async execute(sock, msg, args, getDatabase, saveDatabase, sender) {
     const chatId = msg.key.remoteJid;
+    const db = getDatabase();
     const activeKey = PersonalityManager.getActiveBot(chatId);
 
     let presentKeys = new Set();
@@ -376,7 +377,9 @@ const bots = {
       if (isActive) status = '🟢 Active';
       else if (isLinked || presentKeys.has(key)) status = '🟡 Present';
       else status = '⚫ Dormant';
-      lines.push(`${status} *${info.displayName}* (${info.theme})`);
+      let aiMark = '';
+      try { aiMark = PersonalityManager.isAIOff(db, key) ? ' 🚫AI-off' : ''; } catch (e) {}
+      lines.push(`${status} *${info.displayName}* (${info.theme})${aiMark}`);
     }
 
     lines.push('');

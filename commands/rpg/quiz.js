@@ -506,3 +506,16 @@ module.exports = {
   // Live session map (also used by the rt35 harness to stage questions).
   getSessions() { return activeSessions; },
 };
+
+// /bypass hook: drop this module's in-memory cooldown for one user.
+// Returns true when something was actually cleared.
+function resetCooldownsFor(jid) {
+  try {
+    let n = 0;
+    for (const k of Object.keys(playerCooldowns)) {
+      if (k === jid || k.endsWith(`__${jid}`)) { delete playerCooldowns[k]; n++; }
+    }
+    return n > 0;
+  } catch (e) { return false; }
+}
+module.exports.resetCooldownsFor = resetCooldownsFor;

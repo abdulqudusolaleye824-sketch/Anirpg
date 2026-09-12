@@ -104,8 +104,9 @@ function buildGearLayerData(player) {
   const gearData = {};
 
   // ── Weapon ────────────────────────────────────────────────────────────────
-  // Weapon can live at equippedGear.weapon OR be inferred from class
-  const weaponItem = equipped.weapon || getClassWeapon(player);
+  // Weapon can live at equippedGear.weapon, player.weapon (shop/banner/
+  // class weapon), or be inferred from class.
+  const weaponItem = equipped.weapon || player.weapon || getClassWeapon(player);
   if (weaponItem) {
     const weaponName = typeof weaponItem === 'string' ? weaponItem : weaponItem.name;
     const rule       = resolveWeaponType(weaponName);

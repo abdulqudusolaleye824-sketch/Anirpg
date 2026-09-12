@@ -74,8 +74,14 @@ function calcMoveDamage(attacker, defender, move) {
     _gearAtk = ga.atk || 0; _gearDef = gd.def || 0;
     _gearSpdA = ga.speed || 0; _gearSpdD = gd.speed || 0;
   } catch (e) {}
-  const atkBase = (attacker.stats?.atk || attacker.stats?.attack || 50) + _gearAtk;
-  const defBase = (defender.stats?.def || defender.stats?.defense || 20) + _gearDef;
+  // Equipped weapons count too (shop/banner/class weapons; monsters have none → +0).
+  let _wpnAtk = 0, _wpnDef = 0;
+  try {
+    _wpnAtk = attacker.weapon?.attack || attacker.weapon?.bonus || 0;
+    _wpnDef = defender.weapon?.defense || 0;
+  } catch (e) {}
+  const atkBase = (attacker.stats?.atk || attacker.stats?.attack || 50) + _gearAtk + _wpnAtk;
+  const defBase = (defender.stats?.def || defender.stats?.defense || 20) + _gearDef + _wpnDef;
 
   // Multipliers from attack pattern
   const atkMult = move.atkMult || 1;

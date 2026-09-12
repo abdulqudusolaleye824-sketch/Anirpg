@@ -149,7 +149,7 @@ async function generateStatsCard(player, db) {
   let power = 0;
   try {
     const { calculatePowerRating } = require('../utils/SoloLevelingCore');
-    power = calculatePowerRating(stats, Object.values(player.equipped || {}).filter(Boolean), player.pet) || 0;
+    power = calculatePowerRating(stats, Object.values(player.equippedGear || player.equipped || {}).filter(Boolean), player.pet) || 0;
   } catch(e) { console.warn('[SILENT] StatsCard: power rating failed:', e.message); }
 
   ctx.save();

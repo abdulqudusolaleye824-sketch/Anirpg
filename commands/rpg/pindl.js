@@ -335,3 +335,10 @@ module.exports = {
     }
   },
 };
+
+// /bypass hook: drop this module's in-memory cooldown for one user.
+// Returns true when something was actually cleared.
+function resetCooldownsFor(jid) {
+  try { return COOLDOWNS.delete(jid) === true; } catch (e) { return false; }
+}
+module.exports.resetCooldownsFor = resetCooldownsFor;

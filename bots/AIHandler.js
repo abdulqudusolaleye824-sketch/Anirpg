@@ -264,6 +264,19 @@ async function generateResponse(
   const systemPrompt = PersonalityManager.getSystemPrompt(personalityKey);
   const history      = getHistory(chatId, personalityKey, sender);
 
+  // ── Batch-32: per-bot AI mode + scripted persona context ──
+  let _aiDb = null;
+  try { _aiDb = getDatabase ? getDatabase() : null; } catch (e) {}
+  let aiOff = false;
+  try { aiOff = PersonalityManager.isAIOff(_aiDb, personalityKey); } catch (e) {}
+  let _isOwner = false, _isMod = false;
+  try {
+    const Perms = require('../utils/permissions');
+    _isOwner = Perms.isBotOwner(_aiDb, sender);
+    _isMod = Perms.isBotMod(_aiDb, sender);
+  } catch (e) {}
+  const scriptCtx = { senderName, botName: displayName, isOwner: _isOwner, isMod: _isMod };
+
   // ── Lewd shutdown (first, before any intent/AI game handling) ──
   if (LEWD_PATTERNS.some(re => re.test(userMessage))) {
     let text = '';
@@ -311,13 +324,18 @@ async function generateResponse(
       if (intent === 'math') {
         const r = await runMath(payload);
         if (!r.success) throw new Error('math-fallback');
-        text = await callAI(DELIVERY.math(displayName, r.result), [], 0.85, 120);
+        text = aiOff
+          ? require('./ScriptedPersona').delivery(personalityKey, 'math', scriptCtx)
+          : await callAI(DELIVERY.math(displayName, r.result), [], 0.85, 120);
         text += `\n\n🧮 *${r.result}*`;
       } else if (intent === 'image') {
         const res = await runImageGen(payload);
-        text = await callAI(DELIVERY.image(displayName, payload), [], 0.85, 100);
+        text = aiOff
+          ? require('./ScriptedPersona').delivery(personalityKey, 'image', scriptCtx)
+          : await callAI(DELIVERY.image(displayName, payload), [], 0.85, 100);
         attachment = { type: 'image', buffer: res.buffer };
       } else if (intent === 'search') {
+        if (aiOff) throw new Error('search-ai-off'); // search backend IS the AI
         const r = await runSearch(payload);
         if (!r.success) throw new Error('search-fallback');
         text = await callAI(DELIVERY.search(displayName, r.result), [], 0.85, 200);
@@ -332,6 +350,26 @@ async function generateResponse(
     } catch (err) {
       console.error(`Intent error, falling through to chat:`, err.message);
     }
+  }
+
+  // ── Scripted persona replies: small talk never touches the AI ──
+  try {
+    const s = require('./ScriptedPersona').respond(personalityKey, userMessage, scriptCtx);
+    if (s) {
+      addToHistory(chatId, personalityKey, sender, 'user', `[${senderName}]: ${userMessage}`);
+      addToHistory(chatId, personalityKey, sender, 'assistant', s);
+      return { text: s };
+    }
+  } catch (err) { console.error('Scripted persona error:', err.message); }
+
+  // ── AI off: the scripted fallback is the whole brain (zero API calls) ──
+  if (aiOff) {
+    let fb = '';
+    try { fb = require('./ScriptedPersona').fallback(personalityKey, scriptCtx); } catch (e) { fb = ''; }
+    if (!fb) fb = FALLBACKS[personalityKey] || 'Please try again in a moment.';
+    addToHistory(chatId, personalityKey, sender, 'user', `[${senderName}]: ${userMessage}`);
+    addToHistory(chatId, personalityKey, sender, 'assistant', fb);
+    return { text: fb };
   }
 
   let reply = '';

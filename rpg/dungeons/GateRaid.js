@@ -22,7 +22,9 @@ const MAX_PARTY = 10;
 
 // ── Combat math (shared with the command for consistent damage) ──
 function playerDamage(player, skillName = null) {
-  const atk = (player.stats?.atk || 10) + (player.equipped?.weapon?.atk || player.equipped?.weapon?.bonus || 0);
+  let _gearAtkGR = 0;
+  try { _gearAtkGR = require('../utils/GearSystem').getEquippedBonuses(player).atk || 0; } catch (e) {}
+  const atk = (player.stats?.atk || 10) + _gearAtkGR + (player.weapon?.attack || player.weapon?.bonus || 0);
   const magicPower = player.stats?.magicPower || 0;
   if (skillName) {
     const skill = (player.skills?.active || []).find(s => s.name === skillName);

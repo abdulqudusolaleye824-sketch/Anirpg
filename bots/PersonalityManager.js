@@ -512,6 +512,27 @@ function getAllPersonalities() {
   return Object.keys(PERSONALITIES);
 }
 
+// ── Per-bot AI mode (batch-32) ──────────────────────────────────────────────
+// db.botAIMode = { [key]: 'off' } — absent/anything-else means AI on.
+// Read live from db every message (no cached state to desync); the /aimode
+// command owns writes (+ saveDatabase).
+function isAIOff(db, personalityKey) {
+  try { return !!(db && db.botAIMode && db.botAIMode[personalityKey] === 'off'); }
+  catch (e) { return false; }
+}
+
+function setAIMode(db, personalityKey, off) {
+  if (!db || !PERSONALITIES[personalityKey]) return false;
+  if (!db.botAIMode) db.botAIMode = {};
+  if (off) db.botAIMode[personalityKey] = 'off';
+  else delete db.botAIMode[personalityKey];
+  return true;
+}
+
+function listAIModes(db) {
+  return Object.keys(PERSONALITIES).map((key) => ({ key, off: isAIOff(db, key) }));
+}
+
 function getPersonalityInfo(key) {
   const p = PERSONALITIES[key];
   if (!p) return null;
@@ -562,4 +583,7 @@ module.exports = {
   getSystemPrompt,
   getAllPersonalities,
   getPersonalityInfo,
+  isAIOff,
+  setAIMode,
+  listAIModes,
 };

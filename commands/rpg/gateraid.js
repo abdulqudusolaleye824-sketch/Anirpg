@@ -517,7 +517,7 @@ module.exports = {
       try { _monCanAct = require('../../rpg/utils/UnifiedCombat').canAct({ statusEffects: target.statusEffects || [] }); } catch(e){}
       let _gDefGR = 0;
       try { _gDefGR = require('../../rpg/utils/GearSystem').getEquippedBonuses(player).def || 0; } catch (e) {}
-      const def = (player.stats?.def || 5) + (player.equipped?.armor?.def || 0) + _gDefGR;
+      const def = (player.stats?.def || 5) + (player.weapon?.defense || 0) + _gDefGR;
       const dmg = _monCanAct.canAct ? GR.monsterDamage(target, def) : 0;
 
       const skillPool = [
@@ -693,7 +693,7 @@ module.exports = {
       } else {
         let _gDefGR2 = 0;
         try { _gDefGR2 = require('../../rpg/utils/GearSystem').getEquippedBonuses(player).def || 0; } catch (e) {}
-        const def = (player.stats?.def || 5) + (player.equipped?.armor?.def || 0) + _gDefGR2;
+        const def = (player.stats?.def || 5) + (player.weapon?.defense || 0) + _gDefGR2;
         const bossAtk = Math.floor(GATE_RANKS[gate.rank].monsterRange[1] * 0.20);
         const dmg = Math.max(10, bossAtk - Math.floor(def * 0.4));
         const bossAtkW = { name: boss.name, stats: { hp: boss.hp, maxHp: boss.maxHp }, statusEffects: [] };

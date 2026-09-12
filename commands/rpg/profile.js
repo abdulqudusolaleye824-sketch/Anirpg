@@ -58,7 +58,7 @@ function buildCard(player, db, targetId, mentionedId, isOwnProfile) {
   try {
     let _effStats = player.stats || {};
     try { _effStats = require('../../rpg/utils/GearSystem').getEffectiveStats(player); } catch (e) {}
-    power = calculatePowerRating(_effStats, Object.values(player.equipped || {}).filter(Boolean), player.pet) || 0;
+    power = calculatePowerRating(_effStats, Object.values(player.equippedGear || player.equipped || {}).filter(Boolean), player.pet) || 0;
     powerLabel = getPowerLabel(power) || powerLabel;
   } catch (e) {}
 

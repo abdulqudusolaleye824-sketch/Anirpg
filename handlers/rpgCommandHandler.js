@@ -868,6 +868,8 @@ module.exports = async (sock, msg, messageText, config, getDatabase, saveDatabas
       }
     });
     try {
+      // Owners are automatically Pro (idempotent stamp, saved when new).
+      try { if (Perms.ensureOwnerPro(db, sender)) saveDatabase(); } catch(e) {}
       if (db.users?.[sender]) {
         try {
           const { ensureTodayQuests } = require('../rpg/utils/QuestDispatcher');

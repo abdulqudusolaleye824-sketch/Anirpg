@@ -3,6 +3,8 @@
 
 'use strict';
 
+const GroupAdmin = require('../../rpg/utils/GroupAdmin');
+
 module.exports = {
   name: 'gclink',
   aliases: ['grouplink', 'invitelink'],
@@ -15,19 +17,18 @@ module.exports = {
       return sock.sendMessage(chatId, { text: '❌ Use /gclink inside a group.' }, { quoted: msg });
     }
 
-    let meta = null;
-    try { meta = await sock.groupMetadata(chatId); } catch (e) { meta = null; }
-    if (!meta) {
-      return sock.sendMessage(chatId, { text: '❌ Could not read group info. Try again.' }, { quoted: msg });
+    // Same bot-admin system as /open (JID + LID aware) — no more false
+    // "not admin" when the participant list uses LID entries.
+    const gate = await GroupAdmin.requireBotAdmin(sock, chatId);
+    if (!gate.ok) {
+      const text = gate.reason === 'meta'
+        ? '❌ Could not read group info. Try again.'
+        : gate.reason === 'bot-not-admin'
+          ? '❌ I need to be a group admin to fetch the invite link.'
+          : '❌ Use /gclink inside a group.';
+      return sock.sendMessage(chatId, { text }, { quoted: msg });
     }
-
-    const botPhone = (sock.user?.id || '').split(':')[0].split('@')[0];
-    const botPart = (meta.participants || []).find(
-      (p) => String(p.id || '').split(':')[0].split('@')[0] === botPhone
-    );
-    if (!botPart || !['admin', 'superadmin'].includes(botPart.admin)) {
-      return sock.sendMessage(chatId, { text: '❌ I need to be a group admin to fetch the invite link.' }, { quoted: msg });
-    }
+    const meta = gate.meta;
 
     let code = null;
     try {

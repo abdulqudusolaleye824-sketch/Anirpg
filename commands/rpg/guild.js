@@ -505,7 +505,7 @@ ${FRAME}`
       let power = 0, powerLabel = { emoji: '⚪', label: 'Unknown' };
       try {
         const { calculatePowerRating, getPowerLabel } = require('../../rpg/utils/SoloLevelingCore');
-        power = calculatePowerRating(player.stats || {}, Object.values(player.equipped || {}).filter(Boolean), player.pet) || 0;
+        power = calculatePowerRating(player.stats || {}, Object.values(player.equippedGear || player.equipped || {}).filter(Boolean), player.pet) || 0;
         powerLabel = getPowerLabel(power) || powerLabel;
       } catch (e) {}
 

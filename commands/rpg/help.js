@@ -39,6 +39,8 @@ const KNOWN_SUBCOMMANDS = {
   gcset: ['antilink', 'slowmode', 'allowed', 'spawn'],
   botpersonality: ['start', 'switch', 'hi', 'setainame', 'bots', 'stopbot'],
   bots: ['start', 'switch', 'hi', 'setainame', 'bots', 'stopbot'],
+  aimode: ['<bot>', 'all', 'on', 'off', 'status'],
+  botai: ['<bot>', 'all', 'on', 'off', 'status'],
   switch: ['personality_name'],
   daily: ['claim', 'info', 'list'],
   quest: ['info', 'claim', 'list'],
@@ -208,7 +210,7 @@ module.exports = {
       `  /kick, /promote, /demote, /mute, /unmute, /ban, /unban, /tagall, /killspawn, /reset, /spawnstatus, /restart`,
       ``,
       `🤖 *SYSTEM & CONFIG:*`,
-      `  /setgroup, /allowgc, /setserf, /approveserf, /renew, /ssub, /bots, /start, /switch, /restart`,
+      `  /setgroup, /allowgc, /setserf, /approveserf, /renew, /ssub, /bots, /start, /switch, /aimode, /restart`,
     ];
     const message = UI.card(viewerH, {
       icon: '📋', title: '✦ 𝐀𝐬𝐭𝐫𝐚™ COMMAND MENU',

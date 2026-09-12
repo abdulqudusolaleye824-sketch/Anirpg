@@ -21,7 +21,7 @@ const CREDIT_TYPES = new Set([
   'bank_withdraw', 'bank_interest',
   'market_sell',
   'send_receive', 'gift_receive',
-  'quest_reward', 'dungeon_reward', 'pvp_reward',
+  'quest_reward', 'dungeon_reward', 'pvp_reward', 'game_win',
   'prostore_bonus', 'admin_grant', 'shop_swap',
 ]);
 
@@ -35,7 +35,7 @@ const TYPE_ICONS = {
   market_buy: '🛒', market_sell: '💰', market_fee: '🧾',
   shop_buy: '🛍️', shop_swap: '🔄',
   gift_receive: '🎁',
-  quest_reward: '📜', dungeon_reward: '⚔️', pvp_reward: '🏆',
+  quest_reward: '📜', dungeon_reward: '⚔️', pvp_reward: '🏆', game_win: '🎮',
   prostore_buy: '💎', prostore_bonus: '🎁',
   admin_grant: '🛡️',
 };
@@ -51,7 +51,7 @@ const TYPE_LABELS = {
   market_buy: 'Market buy', market_sell: 'Market sell', market_fee: 'Market fee',
   shop_buy: 'Shop buy', shop_swap: 'Shop swap',
   gift_receive: 'Gift',
-  quest_reward: 'Quest reward', dungeon_reward: 'Dungeon reward', pvp_reward: 'PvP reward',
+  quest_reward: 'Quest reward', dungeon_reward: 'Dungeon reward', pvp_reward: 'PvP reward', game_win: 'Game win',
   prostore_buy: 'Pro Store', prostore_bonus: 'Pro Store bonus',
   admin_grant: 'Admin grant',
 };

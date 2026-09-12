@@ -1,11 +1,14 @@
 // ═══════════════════════════════════════════════════════════════
-// /song — YouTube → MP3 with cover art (standalone, batch-23).
-// Decoupled: /yt stays the plain audio fetcher, /lyrics is text-only,
-// and /song is the deluxe cut — MP3 + YouTube cover in ONE message
-// (document with jpegThumbnail). Engine mirrors live /yt (ToolRunner
-// yt-dlp + SoundCloud fallback + ffmpeg conversion); the cover comes
-// from i.ytimg.com via the video id. Any cover/download hiccup falls
-// back gracefully (plain audio, then error text) — never a crash.
+// /song — YouTube → MP3 with cover art (standalone, batch-23;
+// multi-candidate search, batch-30).
+// Name queries now pull a candidate LIST (ytsearch5, duration-filtered)
+// and try each video in turn until one downloads — the old blind
+// ytsearch1 grab failed whenever the top hit was blocked, long, or
+// region-locked, which is why famous songs flopped. Direct URLs keep
+// the single-shot path; SoundCloud stays the last resort. Cover art
+// comes from the winning video id (maxres → hq fallback). Any
+// cover/download hiccup falls back gracefully (plain audio, then
+// error text) — never a crash.
 // ═══════════════════════════════════════════════════════════════
 'use strict';
 
@@ -20,6 +23,10 @@ const TMP_DIR  = process.env.DATA_DIR
   ? path.join(process.env.DATA_DIR, 'tmp')
   : path.join(ROOT_DIR, 'tmp');
 
+const SEARCH_COUNT = 5;    // candidates pulled per YouTube search
+const MAX_TRIES    = 4;    // videos attempted before giving up on YouTube
+const MAX_DURATION = 1200; // seconds — skip mixes/compilations over 20 min
+
 function safeName(title) {
   const s = String(title || 'song').replace(/[\\/:*?"<>|]/g, '').replace(/\s+/g, ' ').trim().slice(0, 60);
   return s || 'song';
@@ -28,6 +35,43 @@ function safeName(title) {
 function thumbUrl(id) {
   if (!/^[\w-]{6,20}$/.test(String(id || ''))) return null;
   return `https://i.ytimg.com/vi/${id}/hqdefault.jpg`;
+}
+
+function extractVideoId(url) {
+  const m = String(url || '').match(/(?:v=|youtu\.be\/|shorts\/|embed\/)([\w-]{6,20})/);
+  return m ? m[1] : null;
+}
+
+// Parse `--print "%(id)s | %(title)s | %(duration)s"` flat-playlist output
+// into [{ id, title, duration|null }], dropping over-long videos.
+function parseCandidates(stdout) {
+  const out = [];
+  for (const raw of String(stdout || '').split('\n')) {
+    const parts = raw.split(' | ');
+    if (parts.length < 2) continue;
+    const id = (parts[0] || '').trim();
+    if (!/^[\w-]{6,20}$/.test(id)) continue;
+    const title = parts.slice(1, -1).join(' | ').trim() || parts[1].trim();
+    const durRaw = parts.length > 2 ? parts[parts.length - 1].trim() : '';
+    const dur = durRaw !== '' && !/^NA$/i.test(durRaw) ? parseFloat(durRaw) : NaN;
+    const duration = Number.isFinite(dur) ? dur : null;
+    if (duration !== null && duration > MAX_DURATION) continue; // mixes / comps
+    out.push({ id, title: title || id, duration });
+    if (out.length >= MAX_TRIES) break;
+  }
+  return out;
+}
+
+async function searchYouTube(query) {
+  const res = await ytDlpRun([
+    '--no-playlist',
+    '--flat-playlist',
+    '--print', '%(id)s | %(title)s | %(duration)s',
+    '--no-download',
+    `ytsearch${SEARCH_COUNT}:${query}`,
+  ], { timeout: 30000 });
+  if (!res || !res.ok) return { ok: false, notFound: !!(res && res.notFound), candidates: [] };
+  return { ok: true, notFound: false, candidates: parseCandidates(res.stdout) };
 }
 
 function fetchBuffer(url, redirects = 0) {
@@ -49,6 +93,25 @@ function fetchBuffer(url, redirects = 0) {
     req.on('error', reject);
     req.on('timeout', () => { req.destroy(); reject(new Error('Timeout')); });
   });
+}
+
+// Best cover for a video id: maxres when it's a real (large) thumbnail,
+// otherwise the always-present hqdefault. Null when nothing usable.
+async function bestCover(id) {
+  if (!/^[\w-]{6,20}$/.test(String(id || ''))) return null;
+  const tiers = [
+    { url: `https://i.ytimg.com/vi/${id}/maxresdefault.jpg`, min: 20 * 1024 },
+    { url: `https://i.ytimg.com/vi/${id}/hqdefault.jpg`, min: 1000 },
+  ];
+  for (const t of tiers) {
+    try {
+      const { buffer, contentType } = await fetchBuffer(t.url);
+      if (buffer && buffer.length >= t.min && buffer.length < 300 * 1024 && String(contentType).includes('image')) {
+        return buffer;
+      }
+    } catch (e) { /* try next tier */ }
+  }
+  return null;
 }
 
 module.exports = {
@@ -75,40 +138,76 @@ module.exports = {
     }, { quoted: msg });
 
     fs.mkdirSync(TMP_DIR, { recursive: true });
-    const outTemplate = path.join(TMP_DIR, `song_${Date.now()}.%(ext)s`);
-    const ytInput = isUrl ? input : `ytsearch1:${input}`;
-
     const aud = await ToolRunner.optimalAudioArgs();
-    const baseArgs = [
-      '--no-playlist',
-      ...aud.args,
-      '--max-filesize', '25m',
-      '--output', outTemplate,
-      '--print', 'after_move:filepath',
-      '--print', 'id',
-      '--print', 'title',
-      ytInput,
-    ];
+    let sawNotFound = false;
 
-    let res = await ytDlpRun(baseArgs, { timeout: 90000 });
-    let lines = res.ok ? res.stdout.trim().split('\n') : [];
-    let audioPath = lines.length ? lines[0].trim() : null;
-    let videoId = lines.length > 1 ? lines[1].trim() : null;
-    let videoTitle = lines.length > 2 ? lines.slice(2).join(' ').trim() : input;
+    // ── Candidate list: URL = single shot; query = searched videos ──
+    let candidates;
+    if (isUrl) {
+      candidates = [{ target: input, id: extractVideoId(input), title: input }];
+    } else {
+      let s = await searchYouTube(input);
+      sawNotFound = sawNotFound || s.notFound;
+      // Empty-but-healthy search → one retry biased at official uploads.
+      if (s.ok && s.candidates.length === 0) {
+        s = await searchYouTube(`${input} official audio`);
+        sawNotFound = sawNotFound || s.notFound;
+      }
+      candidates = s.ok
+        ? s.candidates.map((c) => ({ target: `https://www.youtube.com/watch?v=${c.id}`, id: c.id, title: c.title }))
+        : [];
+    }
+
+    // ── Try each candidate until one downloads ──
+    let audioPath = null, videoId = null, videoTitle = input;
+    for (const c of candidates.slice(0, MAX_TRIES)) {
+      const outTemplate = path.join(TMP_DIR, `song_${Date.now()}.%(ext)s`);
+      const res = await ytDlpRun([
+        '--no-playlist',
+        ...aud.args,
+        '--max-filesize', '25m',
+        '--output', outTemplate,
+        '--print', 'after_move:filepath',
+        '--print', 'id',
+        '--print', 'title',
+        c.target,
+      ], { timeout: 60000 });
+      sawNotFound = sawNotFound || !!(res && res.notFound);
+      const lines = res && res.ok ? String(res.stdout || '').trim().split('\n') : [];
+      const p = lines.length ? lines[0].trim() : null;
+      if (p && fs.existsSync(p)) {
+        audioPath = p;
+        videoId = (lines.length > 1 && lines[1].trim()) || c.id || null;
+        videoTitle = lines.length > 2 ? lines.slice(2).join(' ').trim() : (c.title || input);
+        break;
+      }
+    }
 
     // Fallback: SoundCloud when YouTube is blocked (no cover art there)
-    if (!audioPath || !fs.existsSync(audioPath)) {
-      console.log('⚠️ /song YouTube failed/blocked. Attempting SoundCloud fallback...');
-      const scArgs = baseArgs.slice(0, -1).concat(`scsearch1:${input}`);
-      res = await ytDlpRun(scArgs, { timeout: 90000 });
-      lines = res.ok ? res.stdout.trim().split('\n') : [];
-      audioPath = lines.length ? lines[0].trim() : null;
-      videoTitle = lines.length > 2 ? lines.slice(2).join(' ').trim() : input;
-      videoId = null;
+    if (!audioPath) {
+      const outTemplate = path.join(TMP_DIR, `song_${Date.now()}.%(ext)s`);
+      const res = await ytDlpRun([
+        '--no-playlist',
+        ...aud.args,
+        '--max-filesize', '25m',
+        '--output', outTemplate,
+        '--print', 'after_move:filepath',
+        '--print', 'id',
+        '--print', 'title',
+        `scsearch1:${input}`,
+      ], { timeout: 90000 });
+      sawNotFound = sawNotFound || !!(res && res.notFound);
+      const lines = res && res.ok ? String(res.stdout || '').trim().split('\n') : [];
+      const p = lines.length ? lines[0].trim() : null;
+      if (p && fs.existsSync(p)) {
+        audioPath = p;
+        videoTitle = lines.length > 2 ? lines.slice(2).join(' ').trim() : input;
+        videoId = null;
+      }
     }
 
     if (!audioPath || !fs.existsSync(audioPath)) {
-      const hint = res.notFound
+      const hint = sawNotFound
         ? `❌ Could not find *yt-dlp*.\n\n💡 Run: pip install -U yt-dlp`
         : `❌ Could not download that song.\n\n💡 Make sure the name or URL is valid and public.`;
       return sock.sendMessage(chatId, { text: hint }, { quoted: msg });
@@ -133,16 +232,7 @@ module.exports = {
       const mimetype = ext === '.m4a' ? 'audio/mp4' : 'audio/mpeg';
 
       // Cover art (YouTube only) — any failure just drops the cover
-      let jpegThumbnail = null;
-      const tUrl = videoId ? thumbUrl(videoId) : null;
-      if (tUrl) {
-        try {
-          const { buffer, contentType } = await fetchBuffer(tUrl);
-          if (buffer && buffer.length > 1000 && buffer.length < 300 * 1024 && String(contentType).includes('image')) {
-            jpegThumbnail = buffer;
-          }
-        } catch (e) { jpegThumbnail = null; }
-      }
+      const jpegThumbnail = videoId ? await bestCover(videoId) : null;
 
       if (jpegThumbnail) {
         await sock.sendMessage(chatId, { document: audioBuffer, mimetype, fileName, jpegThumbnail }, { quoted: msg });
@@ -157,3 +247,5 @@ module.exports = {
 
 module.exports._safeName = safeName;
 module.exports._thumbUrl = thumbUrl;
+module.exports._parseCandidates = parseCandidates;
+module.exports._extractVideoId = extractVideoId;

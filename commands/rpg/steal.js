@@ -265,3 +265,10 @@ module.exports = {
 
 // Shared with retrieve.js (view-once saver) — same unwrap logic, no duplication.
 module.exports.extractContextAndQuoted = extractContextAndQuoted;
+
+// /bypass hook: drop this module's in-memory cooldown for one user.
+// Returns true when something was actually cleared.
+function resetCooldownsFor(jid) {
+  try { return cooldowns.delete(jid) === true; } catch (e) { return false; }
+}
+module.exports.resetCooldownsFor = resetCooldownsFor;

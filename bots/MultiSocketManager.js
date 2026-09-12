@@ -119,6 +119,21 @@ function getHostKey() {
   return hostBotKey;
 }
 
+// ── DM routing (batch-33) ───────────────────────────────────────────
+// Every bot answers its own DMs: a WhatsApp session only receives the
+// messages sent to its own number, so the receiving socket always
+// handles DM commands (previously only the first-connected "host" bot
+// did — every other bot's DMs fell silent).
+function shouldHandleDMCommand() {
+  return true;
+}
+// Group chat still needs explicit address (mention/quote/name); a DM is
+// inherently addressed to the receiving bot.
+function isChatAddressed({ isGroup, isMentioned, isQuoted, nameInText }) {
+  if (!isGroup) return true;
+  return !!(isMentioned || isQuoted || nameInText);
+}
+
 // ── Background WebSocket Heartbeat & Auto-Healing Monitor ──────
 // NOTE: this used to just DELETE dead sockets and log "auto-healing" while
 // reconnecting nothing — every silently-dropped socket stayed dead until a
@@ -909,9 +924,8 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
         // the dispatcher must not hand them to the active/first bot as well.
         shouldHandle = isActive || (isBootstrap && !hasSwitchTarget && _bootstrapDispatcher(personalityKey, chatId));
       } else {
-        // DM Handling: Route DM command to the host socket so it always responds cleanly
-        const hostKey = getHostKey() || getFirstOnlineSocketKey();
-        shouldHandle = (personalityKey === hostKey);
+        // DM Handling: the receiving socket answers its own DMs.
+        shouldHandle = shouldHandleDMCommand();
       }
       if (shouldHandle) {
         try {
@@ -936,17 +950,19 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
       return;
     }
 
-    // ── AI Personality Chat ──────────────────────────────────────────
+    // ── AI Personality Chat (groups AND DMs — every bot answers its own DMs) ──
     if (isCommand) return;
-    if (!isGroup || !messageText.trim()) return;
+    if (!messageText.trim()) return;
 
-    if (!isActive) return;
+    if (isGroup && !isActive) return;
 
-    try {
-      const AstralGroups = require('../rpg/utils/AstralGroups');
-      const g = AstralGroups.gate(getDatabase(), chatId);
-      if (!g.allow) return;
-    } catch (e) { /* best effort */ }
+    if (isGroup) {
+      try {
+        const AstralGroups = require('../rpg/utils/AstralGroups');
+        const g = AstralGroups.gate(getDatabase(), chatId);
+        if (!g.allow) return;
+      } catch (e) { /* best effort */ }
+    }
 
     // ── Multi-message registration replies (DOB / referral code) ───
     // Active bot only, so exactly one bot consumes the reply.
@@ -987,7 +1003,7 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
     const isQuoted    = botJid && quotedParticipant?.split(':')[0] === botJid?.split(':')[0];
     const nameInText  = messageText.toLowerCase().includes(botDisplayName.toLowerCase());
 
-    if (!isMentioned && !isQuoted && !nameInText) return;
+    if (!isChatAddressed({ isGroup, isMentioned, isQuoted, nameInText })) return;
 
     try { await sock.sendPresenceUpdate('composing', chatId); } catch(e) {}
 
@@ -1185,6 +1201,8 @@ module.exports = {
   getAnySocket,
   getHostSocket,
   getHostKey,
+  shouldHandleDMCommand,
+  isChatAddressed,
   sendAs,
   sendHiChorus,
   sendAttachment,

@@ -68,6 +68,23 @@ function isBotMod(db, jid) {
   const t = getTier(db, jid);
   return t === 'owner' || t === 'mod';   // owners are implicitly mods
 }
+
+// Owners are automatically Pro: stamp lifetime Pro onto the owner's player
+// object (called on every command by the handler; idempotent). Returns true
+// when it stamped something new (caller should saveDatabase).
+const OWNER_PRO_EXPIRES = 4102444800000; // 2100-01-01
+function ensureOwnerPro(db, jid) {
+  try {
+    if (!isBotOwner(db, jid)) return false;
+    const p = db?.users?.[jid];
+    if (!p) return false;
+    if (p.isPro && p.proExpiresAt && p.proExpiresAt >= OWNER_PRO_EXPIRES) return false;
+    p.isPro = true;
+    if (!p.proStatus) p.proStatus = 'owner';
+    p.proExpiresAt = OWNER_PRO_EXPIRES;
+    return true;
+  } catch (e) { return false; }
+}
 function isRegistered(db, jid) {
   if (!db?.users) return false;
   // db.users keys may be stored EITHER as full JIDs (e.g. "2219...@lid", as /register
@@ -101,6 +118,8 @@ module.exports = {
   getTier,
   isBotOwner,
   isBotMod,
+  ensureOwnerPro,
+  OWNER_PRO_EXPIRES,
   isRegistered,
   canManageMods,
   canBan,
