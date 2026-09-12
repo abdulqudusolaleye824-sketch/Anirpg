@@ -1,6 +1,6 @@
 // ═══════════════════════════════════════════════════════════════
 // /song — YouTube → MP3 with cover art (standalone, batch-23;
-// multi-candidate search, batch-30).
+// multi-candidate search, batch-30; search bypass + debug, batch-35).
 // Name queries now pull a candidate LIST (ytsearch5, duration-filtered)
 // and try each video in turn until one downloads — the old blind
 // ytsearch1 grab failed whenever the top hit was blocked, long, or
@@ -9,6 +9,12 @@
 // comes from the winning video id (maxres → hq fallback). Any
 // cover/download hiccup falls back gracefully (plain audio, then
 // error text) — never a crash.
+// Batch-35: the SEARCH now uses the same anti-bot client combo +
+// cookies as downloads (it previously searched with bare defaults,
+// so a blocked search silently yielded zero candidates); each
+// candidate retries as raw bestaudio when mp3 conversion fails; the
+// error message carries yt-dlp's real stderr tail + a smart hint so
+// a fine song name is never blamed for a blocked downloader.
 // ═══════════════════════════════════════════════════════════════
 'use strict';
 
@@ -16,7 +22,17 @@ const https = require('https');
 const fs    = require('fs');
 const path  = require('path');
 const ToolRunner = require('../../rpg/utils/ToolRunner');
-const { ytDlpRun } = ToolRunner;
+const { ytDlpRun, youtubeCookiesArgs, YOUTUBE_EXTRACTOR_ARGS_FULL } = ToolRunner;
+// Batch-36: order-independent print parser (real one from ToolRunner,
+// inline copy as fallback so partial test doubles keep working).
+const parsePrints = ToolRunner.parseDownloadPrints || ((stdout, fbId, fbTitle) => {
+  const clean = String(stdout || '').split('\n').map((l) => l.trim()).filter(Boolean);
+  const fp = clean.find((l) => { try { return fs.existsSync(l); } catch (e) { return false; } }) || null;
+  const rest = clean.filter((l) => l !== fp);
+  const id = rest.find((l) => /^[\w-]{6,20}$/.test(l)) || null;
+  const title = rest.filter((l) => l !== id).join(' ').trim() || null;
+  return { p: fp, id: id || fbId || null, title: title || fbTitle || null };
+});
 
 const ROOT_DIR = path.join(__dirname, '..', '..');
 const TMP_DIR  = process.env.DATA_DIR
@@ -63,15 +79,19 @@ function parseCandidates(stdout) {
 }
 
 async function searchYouTube(query) {
+  const bypass = (YOUTUBE_EXTRACTOR_ARGS_FULL || []).concat(
+    typeof youtubeCookiesArgs === 'function' ? youtubeCookiesArgs() : []
+  );
   const res = await ytDlpRun([
     '--no-playlist',
+    ...bypass,
     '--flat-playlist',
     '--print', '%(id)s | %(title)s | %(duration)s',
     '--no-download',
     `ytsearch${SEARCH_COUNT}:${query}`,
   ], { timeout: 30000 });
-  if (!res || !res.ok) return { ok: false, notFound: !!(res && res.notFound), candidates: [] };
-  return { ok: true, notFound: false, candidates: parseCandidates(res.stdout) };
+  if (!res || !res.ok) return { ok: false, notFound: !!(res && res.notFound), error: (res && res.error) || '', candidates: [] };
+  return { ok: true, notFound: false, error: '', candidates: parseCandidates(res.stdout) };
 }
 
 function fetchBuffer(url, redirects = 0) {
@@ -140,6 +160,8 @@ module.exports = {
     fs.mkdirSync(TMP_DIR, { recursive: true });
     const aud = await ToolRunner.optimalAudioArgs();
     let sawNotFound = false;
+    let lastErr = ''; // yt-dlp's real stderr tail → shown on failure (debug)
+    const noteErr = (res) => { if (res && !res.ok && res.error) lastErr = String(res.error); };
 
     // ── Candidate list: URL = single shot; query = searched videos ──
     let candidates;
@@ -148,10 +170,12 @@ module.exports = {
     } else {
       let s = await searchYouTube(input);
       sawNotFound = sawNotFound || s.notFound;
+      noteErr({ ok: s.ok, error: s.error });
       // Empty-but-healthy search → one retry biased at official uploads.
       if (s.ok && s.candidates.length === 0) {
         s = await searchYouTube(`${input} official audio`);
         sawNotFound = sawNotFound || s.notFound;
+        noteErr({ ok: s.ok, error: s.error });
       }
       candidates = s.ok
         ? s.candidates.map((c) => ({ target: `https://www.youtube.com/watch?v=${c.id}`, id: c.id, title: c.title }))
@@ -159,12 +183,21 @@ module.exports = {
     }
 
     // ── Try each candidate until one downloads ──
-    let audioPath = null, videoId = null, videoTitle = input;
-    for (const c of candidates.slice(0, MAX_TRIES)) {
+    // When the mp3-conversion args fail, retry the same video as raw
+    // bestaudio (no ffmpeg needed) — unless the failure is one a retry
+    // can't fix (blocked/gone videos fail identically), in which case
+    // we move to the next candidate immediately.
+    const rawAudioArgs = (YOUTUBE_EXTRACTOR_ARGS_FULL || []).concat(
+      typeof youtubeCookiesArgs === 'function' ? youtubeCookiesArgs() : [],
+      ['-f', 'bestaudio[ext=m4a]/bestaudio']
+    );
+    const needsConvert = aud.args.includes('--extract-audio');
+    const FUTILE_DL = /sign in|not a bot|bot check|forbidden|403|unavailable|private|not found|404|unsupported url|no video|blocked/i;
+    const tryDl = async (c, a) => {
       const outTemplate = path.join(TMP_DIR, `song_${Date.now()}.%(ext)s`);
-      const res = await ytDlpRun([
+      const r = await ytDlpRun([
         '--no-playlist',
-        ...aud.args,
+        ...a,
         '--max-filesize', '25m',
         '--output', outTemplate,
         '--print', 'after_move:filepath',
@@ -172,19 +205,33 @@ module.exports = {
         '--print', 'title',
         c.target,
       ], { timeout: 60000 });
-      sawNotFound = sawNotFound || !!(res && res.notFound);
-      const lines = res && res.ok ? String(res.stdout || '').trim().split('\n') : [];
-      const p = lines.length ? lines[0].trim() : null;
-      if (p && fs.existsSync(p)) {
-        audioPath = p;
-        videoId = (lines.length > 1 && lines[1].trim()) || c.id || null;
-        videoTitle = lines.length > 2 ? lines.slice(2).join(' ').trim() : (c.title || input);
+      noteErr(r);
+      sawNotFound = sawNotFound || !!(r && r.notFound);
+      return r;
+    };
+    const partsOf = (res, c) => {
+      if (!res || !res.ok) return { p: null, id: (c && c.id) || null, title: (c && c.title) || input };
+      return parsePrints(res.stdout, c && c.id, c && c.title);
+    };
+    let audioPath = null, videoId = null, videoTitle = input;
+    for (const c of candidates.slice(0, MAX_TRIES)) {
+      let res = await tryDl(c, aud.args);
+      let parts = partsOf(res, c);
+      if (!parts.p && needsConvert && !FUTILE_DL.test((res && !res.ok && res.error) || '')) {
+        res = await tryDl(c, rawAudioArgs);
+        parts = partsOf(res, c);
+      }
+      if (parts.p) {
+        audioPath = parts.p;
+        videoId = parts.id;
+        videoTitle = parts.title || input;
         break;
       }
     }
 
-    // Fallback: SoundCloud when YouTube is blocked (no cover art there)
-    if (!audioPath) {
+    // Fallback: SoundCloud when YouTube is blocked (no cover art there).
+    // Skipped for URL input — searching a URL string is nonsense.
+    if (!audioPath && !isUrl) {
       const outTemplate = path.join(TMP_DIR, `song_${Date.now()}.%(ext)s`);
       const res = await ytDlpRun([
         '--no-playlist',
@@ -196,20 +243,27 @@ module.exports = {
         '--print', 'title',
         `scsearch1:${input}`,
       ], { timeout: 90000 });
+      noteErr(res);
       sawNotFound = sawNotFound || !!(res && res.notFound);
-      const lines = res && res.ok ? String(res.stdout || '').trim().split('\n') : [];
-      const p = lines.length ? lines[0].trim() : null;
-      if (p && fs.existsSync(p)) {
-        audioPath = p;
-        videoTitle = lines.length > 2 ? lines.slice(2).join(' ').trim() : input;
+      const parsed = res && res.ok ? parsePrints(res.stdout, null, input) : { p: null, title: input };
+      if (parsed.p) {
+        audioPath = parsed.p;
+        videoTitle = parsed.title || input;
         videoId = null;
       }
     }
 
     if (!audioPath || !fs.existsSync(audioPath)) {
-      const hint = sawNotFound
-        ? `❌ Could not find *yt-dlp*.\n\n💡 Run: pip install -U yt-dlp`
-        : `❌ Could not download that song.\n\n💡 Make sure the name or URL is valid and public.`;
+      const dbg = lastErr.replace(/\s+/g, ' ').trim().slice(0, 180);
+      let hint;
+      if (sawNotFound) {
+        hint = `❌ Could not find *yt-dlp*.\n\n💡 Run: pip install -U yt-dlp`;
+      } else if (/sign in|confirm you|not a bot|bot check|403|forbidden/i.test(lastErr)) {
+        hint = `❌ YouTube is blocking downloads right now.\n\n💡 The song name is fine — update yt-dlp (pip install -U yt-dlp) or set YT_COOKIES in .env, then try again.`;
+      } else {
+        hint = `❌ Could not download that song.\n\n💡 Make sure the name or URL is valid and public.`;
+      }
+      if (dbg && !sawNotFound) hint += `\n\n_(debug: ${dbg})_`;
       return sock.sendMessage(chatId, { text: hint }, { quoted: msg });
     }
 

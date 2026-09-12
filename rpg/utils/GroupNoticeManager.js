@@ -77,6 +77,45 @@ function cleanBare(jid) {
   return String(jid || '').split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
 }
 
+// Batch-36: Baileys v7 changed participant payloads — the event emits
+// GroupParticipant OBJECTS ({pn/lid/...}), and stub parameters arrive as
+// JSON strings ('{"pn":"...","lid":"..."}'), not plain JIDs. v6-style
+// plain JID strings still occur too. Normalize every shape to
+// { bare, jid } (PN preferred for mentions, LID kept as @lid), or null
+// when nothing usable is found.
+function normalizeParticipant(p) {
+  if (p === null || p === undefined) return null;
+  if (typeof p === 'string') {
+    const s = p.trim();
+    if (!s) return null;
+    if (s.startsWith('{')) {
+      try { return normalizeParticipant(JSON.parse(s)); } catch (e) { return null; }
+    }
+    const bare = cleanBare(s);
+    if (!bare) return null;
+    const domain = s.includes('@lid') ? 'lid' : 's.whatsapp.net';
+    return { bare, jid: `${bare}@${domain}` };
+  }
+  if (typeof p === 'object') {
+    const keys = ['pn', 'phoneNumber', 'id', 'jid', 'lid'];
+    for (const k of keys) {
+      const v = p[k];
+      if (typeof v !== 'string' || !v.trim()) continue;
+      if (v.includes('@')) {
+        const bare = cleanBare(v);
+        if (!bare) continue;
+        const domain = (k === 'lid' || v.includes('@lid')) ? 'lid' : 's.whatsapp.net';
+        return { bare, jid: `${bare}@${domain}` };
+      }
+      if (/^\d+$/.test(v.trim())) {
+        return { bare: v.trim(), jid: `${v.trim()}@s.whatsapp.net` };
+      }
+    }
+    return null;
+  }
+  return null;
+}
+
 /**
  * Check if welcome messages are enabled for a group (Default: TRUE)
  */
@@ -153,17 +192,18 @@ async function announceMembership(sock, chatId, participants, action, db) {
   if (action === 'add' && !isWelcomeEnabled(db, chatId)) return 'off';
   if (action === 'remove' && !isGoodbyeEnabled(db, chatId)) return 'off';
 
-  if (_wasRecentlyAnnounced(chatId, participants, action)) return 'dup';
+  // Normalize BEFORE dedup so the event path (objects) and the stub
+  // path (JSON strings) produce the same key for the same join/leave.
+  const normed = participants.map(normalizeParticipant).filter(Boolean);
+  if (normed.length === 0) return 'ignored';
+
+  if (_wasRecentlyAnnounced(chatId, normed.map((n) => n.jid), action)) return 'dup';
 
   const templates = action === 'add' ? WELCOME_MESSAGES : GOODBYE_MESSAGES;
-  for (const jid of participants) {
-    const bareNum = cleanBare(jid);
-    if (!bareNum) continue;
-
+  for (const { bare: bareNum, jid: cleanJid } of normed) {
     const template = templates[Math.floor(Math.random() * templates.length)];
     let text = template.replace(/@user/g, `@${bareNum}`);
     if (action === 'add') text = _specialLine(bareNum) + text;
-    const cleanJid = `${bareNum}@s.whatsapp.net`;
 
     try {
       await sock.sendMessage(chatId, { text, mentions: [cleanJid] });
@@ -190,4 +230,5 @@ module.exports = {
   handleParticipantUpdate,
   announceMembership,
   stubAction,
+  normalizeParticipant,
 };

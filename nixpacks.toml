@@ -1,5 +1,5 @@
 [phases.setup]
-nixPkgs = ["nodejs_20", "ffmpeg", "yt-dlp", "python3", "python3Packages.pip", "python3Packages.pillow", "pkg-config", "cairo", "pango", "libpng", "libjpeg", "giflib", "librsvg"]
+nixPkgs = ["nodejs_20", "ffmpeg", "yt-dlp", "deno", "python3", "python3Packages.pip", "python3Packages.pillow", "pkg-config", "cairo", "pango", "libpng", "libjpeg", "giflib", "librsvg"]
 
 [phases.install]
 cmds = ["npm install --legacy-peer-deps", "pip3 install --no-cache-dir -r requirements.txt --break-system-packages || pip3 install --no-cache-dir -r requirements.txt || true"]

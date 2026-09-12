@@ -4,6 +4,8 @@ RUN apt-get update && apt-get install -y \
     ffmpeg \
     python3 \
     python3-pip \
+    curl \
+    unzip \
     libvips-dev \
     make \
     g++ \
@@ -16,6 +18,11 @@ RUN apt-get update && apt-get install -y \
     fonts-noto-cjk \
     fontconfig \
     && rm -rf /var/lib/apt/lists/*
+
+# Deno: JS runtime yt-dlp needs to solve YouTube's "n" signature
+# challenge. Without it, YouTube extraction is deprecated/degraded and
+# many videos 403 or lose formats. Installed to /usr/local (on PATH).
+RUN curl -fsSL https://deno.land/install.sh | DENO_INSTALL=/usr/local sh
 
 WORKDIR /app
 

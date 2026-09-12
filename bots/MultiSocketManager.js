@@ -681,7 +681,9 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
         const stubAct = GNM.stubAction ? GNM.stubAction(msg.messageStubType) : null;
         if (stubAct) {
           const stubChat = msg.key.remoteJid;
-          const params = (msg.messageStubParameters || []).filter((p) => typeof p === 'string' && p.includes('@'));
+          // Batch-36: v7 stub params are JSON strings (or objects) — pass
+          // everything non-empty through; GroupNoticeManager normalizes.
+          const params = (msg.messageStubParameters || []).filter((p) => p !== null && p !== undefined && String(p).length > 0);
           if (params.length && _bootstrapDispatcher(personalityKey, stubChat)) {
             await GNM.announceMembership(sock, stubChat, params, stubAct, getDatabase());
           }

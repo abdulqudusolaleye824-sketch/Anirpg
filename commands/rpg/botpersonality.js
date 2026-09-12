@@ -377,9 +377,8 @@ const bots = {
       if (isActive) status = '🟢 Active';
       else if (isLinked || presentKeys.has(key)) status = '🟡 Present';
       else status = '⚫ Dormant';
-      let aiMark = '';
-      try { aiMark = PersonalityManager.isAIOff(db, key) ? ' 🚫AI-off' : ''; } catch (e) {}
-      lines.push(`${status} *${info.displayName}* (${info.theme})${aiMark}`);
+      // Batch-35: AI chat retired (all bots scripted) — no AI marks.
+      lines.push(`${status} *${info.displayName}* (${info.theme})`);
     }
 
     lines.push('');

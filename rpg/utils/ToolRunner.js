@@ -227,9 +227,23 @@ function optimalAudioArgs() {
   });
 }
 
+// Batch-36: parse `--print after_move:filepath --print id --print title`
+// output. yt-dlp prints plain id/title BEFORE the download and
+// after_move:filepath AFTER it — so the file path is the LAST line,
+// not the first (reading lines[0] broke every /song download).
+// Order-independent: the path is whichever line exists on disk.
+function parseDownloadPrints(stdout, fallbackId, fallbackTitle) {
+  const clean = String(stdout || '').split('\n').map((l) => l.trim()).filter(Boolean);
+  const p = clean.find((l) => { try { return fs.existsSync(l); } catch (e) { return false; } }) || null;
+  const rest = clean.filter((l) => l !== p);
+  const id = rest.find((l) => /^[\w-]{6,20}$/.test(l)) || null;
+  const title = rest.filter((l) => l !== id).join(' ').trim() || null;
+  return { p, id: id || fallbackId || null, title: title || fallbackTitle || null };
+}
+
 module.exports = {
   YTDLP_CANDS, FFMPEG_CANDS,
   resolveTool, runTool,
   ytDlpRun, ffmpegRun, hasFfmpeg, hasDeno, optimalDownloadArgs, optimalAudioArgs,
-  YOUTUBE_EXTRACTOR_ARGS_FULL,
+  YOUTUBE_EXTRACTOR_ARGS_FULL, youtubeCookiesArgs, parseDownloadPrints,
 };
