@@ -1,10 +1,9 @@
 // Announcer.js — Auto-announcement system
-// Pings @everyone for artifact spawns, world boss availability,
-// event starts, and other major happenings.
+// Pings @everyone for artifact spawns, event starts,
+// gate spawns, and other major happenings.
 
 const ANNOUNCE_TYPES = {
   ARTIFACT_SPAWN:   'artifact_spawn',
-  WORLD_BOSS:       'world_boss',
   EVENT_START:      'event_start',
   EVENT_END:        'event_end',
   GATE_SPAWN:       'gate_spawn',
@@ -12,11 +11,11 @@ const ANNOUNCE_TYPES = {
 };
 
 // Tracks which chats have announcements enabled (default: all)
-const announcementSettings = new Map(); // chatId → { artifact, worldboss, events, gates }
+const announcementSettings = new Map(); // chatId → { artifact, events, gates }
 
 function getSettings(chatId) {
   if (!announcementSettings.has(chatId)) {
-    announcementSettings.set(chatId, { artifact: true, worldboss: true, events: true, gates: true });
+    announcementSettings.set(chatId, { artifact: true, events: true, gates: true });
   }
   return announcementSettings.get(chatId);
 }
@@ -72,35 +71,6 @@ class Announcer {
     return sendAnnouncement(sock, chatId, text, true);
   }
 
-  // ── WORLD BOSS AVAILABLE ────────────────────────────────────
-  static async announceWorldBoss(sock, chatId, bossDef) {
-    const settings = getSettings(chatId);
-    if (!settings.worldboss) return;
-
-    const text = [
-      `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-      `🌍 *WORLD BOSS AVAILABLE!*`,
-      `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-      ``,
-      `${bossDef.emoji} *${bossDef.name}*`,
-      `💭 "${bossDef.description}"`,
-      ``,
-      `👥 Need: ${bossDef.minParty}-${bossDef.maxParty} hunters`,
-      `⚠️ 3 phases — it gets stronger as HP drops!`,
-      ``,
-      `📋 *HOW TO JOIN:*`,
-      `1. /worldboss create [#]`,
-      `2. Friends: /worldboss join [ID]`,
-      `3. All: /worldboss ready`,
-      `4. Leader: /worldboss start`,
-      `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-      `/worldboss list — see all bosses`,
-      `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-    ].join('\n');
-
-    return sendAnnouncement(sock, chatId, text, true);
-  }
-
   // ── EVENT START ─────────────────────────────────────────────
   static async announceEventStart(sock, chatId, event) {
     const settings = getSettings(chatId);
@@ -145,11 +115,10 @@ class Announcer {
       `📢 *ANNOUNCEMENT SETTINGS*`,
       `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
       `${s.artifact  ? '✅' : '❌'} Artifact spawns`,
-      `${s.worldboss ? '✅' : '❌'} World boss alerts`,
       `${s.events    ? '✅' : '❌'} Event start/end`,
       `${s.gates     ? '✅' : '❌'} Gate spawns`,
       `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-      `Toggle: /announce [artifact/worldboss/events/gates]`,
+      `Toggle: /announce [artifact/events/gates]`,
     ].join('\n');
   }
 }

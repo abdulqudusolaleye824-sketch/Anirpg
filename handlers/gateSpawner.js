@@ -124,7 +124,7 @@ const GATE_LOCK_MS         = 24 * 60 * 60 * 1000;
 
 class GateSpawner {
   static activeTimers = {};
-  static SPAWN_MIN_INTERVAL = 20;
+  static SPAWN_MIN_INTERVAL = 30; // batch-23: gates every 30–45 min
   static SPAWN_MAX_INTERVAL = 45;
 
   static initialize(sock, chatId, getDatabase) {

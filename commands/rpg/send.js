@@ -43,6 +43,29 @@ module.exports = {
       return;
     }
 
+    // Amount validated BEFORE recipient lookup (batch-23): invalid sends
+    // must not auto-register strangers as a side effect.
+    let amount = null;
+    for (const tok of args) {
+      const n = parseInt(tok);
+      if (!isNaN(n)) { amount = n; break; }
+    }
+
+    if (amount === null || amount < 1000) {
+      await sock.sendMessage(chatId, {
+        text: '❌ Invalid amount!\n\nMinimum: 1000\nExample: /send nexus @user 1000 or /send moonstones @user 1000'
+      }, { quoted: msg });
+      return;
+    }
+
+    if (amount > 5000000) {
+      await sock.sendMessage(chatId, {
+        text: '❌ Maximum 5000000 per send!'
+      }, { quoted: msg });
+      return;
+    }
+
+
     let recipientId = null;
     const mentionedJid = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid?.[0];
     const quotedParticipant = msg.message?.extendedTextMessage?.contextInfo?.participant;
@@ -142,50 +165,35 @@ module.exports = {
       return;
     }
 
-    let amount = null;
-    for (const tok of args) {
-      const n = parseInt(tok);
-      if (!isNaN(n)) { amount = n; break; }
-    }
-
-    if (amount === null || amount < 1000) {
-      await sock.sendMessage(chatId, {
-        text: '❌ Invalid amount!\n\nMinimum: 1000\nExample: /send nexus @user 1000 or /send moonstones @user 1000'
-      }, { quoted: msg });
-      return;
-    }
-
-    if (amount > 5000000) {
-      await sock.sendMessage(chatId, {
-        text: '❌ Maximum 5000000 per send!'
-      }, { quoted: msg });
-      return;
-    }
+    // Normalized JID for mentions/display (auto-registered keys can be bare numbers).
+    const mentionJid = String(recipientId).includes('@') ? String(recipientId).split(':')[0] : `${recipientId}@s.whatsapp.net`;
+    const mentionTag = mentionJid.split('@')[0];
 
     const fee = Math.floor(amount * 0.05);
-    const amountAfterFee = amount - fee;
+    // Sender pays amount + fee; recipient gets the FULL amount (batch-23,
+    // same fee rule as /trade — matches the "Need: X (+ Y fee)" text).
+    const totalCost = amount + fee;
     const BOT_OWNER_ID = COOWNER_JID;
 
     if (currency === 'nexus') {
       const senderNexus = player.gold || 0;
       
-      if (senderNexus < amount) {
+      if (senderNexus < totalCost) {
         await sock.sendMessage(chatId, {
-          text: `❌ Not enough Nexus!\n\nNeed: ${amount} 💠 (+ ${fee} fee)\nHave: ${senderNexus} 💠`
+          text: `❌ Not enough Nexus!\n\nNeed: ${totalCost} 💠 (${amount} + ${fee} fee)\nHave: ${senderNexus} 💠`
         }, { quoted: msg });
         return;
       }
 
-      player.gold = senderNexus - amount;
-      recipient.gold = (recipient.gold || 0) + amountAfterFee;
+      // Canonical Nexus sync (gold + inventory + goldEarn quest) via updatePlayerNexus.
+      updatePlayerNexus(player, -totalCost, null);
+      updatePlayerNexus(recipient, amount, null);
       
-      if (player.inventory) player.inventory.gold = player.gold;
-      if (recipient.inventory) recipient.inventory.gold = recipient.gold;
 
-      logTransaction(player, { type:'send', amount, currency:'💠', note:`→ ${recipient.name}` });
+      logTransaction(player, { type:'send', amount: totalCost, currency:'💠', note:`→ ${recipient.name} (${amount} + ${fee} fee)` });
       DC.trackProgress(player, 'send_gold', 1);
       try{require('./weekly').trackWeeklyProgress(player,'earn_gold',amount);}catch(e){}
-      logTransaction(recipient, { type:'receive', amount:amountAfterFee, currency:'💠', note:`← ${player.name}` });
+      logTransaction(recipient, { type:'receive', amount, currency:'💠', note:`← ${player.name}` });
 
       if (!db.users[BOT_OWNER_ID]) {
         db.users[BOT_OWNER_ID] = {
@@ -210,40 +218,45 @@ module.exports = {
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━
 💠 Amount: ${amount} Nexus
 💸 Transaction Fee: ${fee} Nexus (5%)
-💠 Recipient Gets: ${amountAfterFee} Nexus
-👤 To: @${recipientId.split('@')[0]}
+💠 Recipient Gets: ${amount} Nexus
+👤 To: @${mentionTag}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━
 💠 Your Nexus Left: ${player.gold}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-        mentions: [recipientId]
+        mentions: [mentionJid]
       }, { quoted: msg });
     } 
     else if (currency === 'moonstones') {
-      if ((player.manaCrystals || 0) < amount) {
+      const senderStones = player.manaCrystals || 0;
+      if (senderStones < totalCost) {
         await sock.sendMessage(chatId, {
-          text: `❌ Not enough Moonstones!\n\nNeed: ${amount} 💎 (+ ${fee} fee)\nHave: ${player.manaCrystals || 0} 💎`
+          text: `❌ Not enough Moonstones!\n\nNeed: ${totalCost} 💎 (${amount} + ${fee} fee)\nHave: ${senderStones} 💎`
         }, { quoted: msg });
         return;
       }
 
-      player.manaCrystals = (player.manaCrystals || 0) - amount;
-      recipient.manaCrystals = (recipient.manaCrystals || 0) + amountAfterFee;
+      // Sender pays amount + fee; recipient gets the FULL amount; the fee
+      // stays in Moonstones (batch-23 — no more gold printed from stone fees).
+      player.manaCrystals = senderStones - totalCost;
+      recipient.manaCrystals = (recipient.manaCrystals || 0) + amount;
+      if (player.inventory) player.inventory.manaCrystals = player.manaCrystals;
+      if (recipient.inventory) recipient.inventory.manaCrystals = recipient.manaCrystals;
 
-      const goldFee = fee * 2;
+      logTransaction(player, { type:'send', amount: totalCost, currency:'💎', note:`→ ${recipient.name} (${amount} + ${fee} fee)` });
+      logTransaction(recipient, { type:'receive', amount, currency:'💎', note:`← ${player.name}` });
+
+      // (moonstone fee accrues in Moonstones on the System account — see below)
       
       if (!db.users[BOT_OWNER_ID]) {
         db.users[BOT_OWNER_ID] = {
           id: BOT_OWNER_ID,
           name: 'System',
-          gold: goldFee,
-          manaCrystals: 0,
-          inventory: { gold: goldFee }
+          gold: 0,
+          manaCrystals: fee,
+          inventory: { gold: 0 }
         };
       } else {
-        db.users[BOT_OWNER_ID].gold = (db.users[BOT_OWNER_ID].gold || 0) + goldFee;
-        if (db.users[BOT_OWNER_ID].inventory) {
-          db.users[BOT_OWNER_ID].inventory.gold = db.users[BOT_OWNER_ID].gold;
-        }
+        db.users[BOT_OWNER_ID].manaCrystals = (db.users[BOT_OWNER_ID].manaCrystals || 0) + fee;
       }
 
       saveDatabase();
@@ -254,12 +267,12 @@ module.exports = {
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━
 💎 Amount: ${amount} Moonstones
 💸 Transaction Fee: ${fee} Moonstones (5%)
-💎 Recipient Gets: ${amountAfterFee} Moonstones
-👤 To: @${recipientId.split('@')[0]}
+💎 Recipient Gets: ${amount} Moonstones
+👤 To: @${mentionTag}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━
 💎 Your Moonstones Left: ${player.manaCrystals}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-        mentions: [recipientId]
+        mentions: [mentionJid]
       }, { quoted: msg });
     }
   }

@@ -59,10 +59,10 @@ const RPG_INTENTS = {
     /\b(what(?:'s|s| is)(?: my)?|check my|show my) rank\b/i,
   ],
   balance: [
-    /\b(check my|show my|show me my) (gold|coins?|money|balance|currency|nexus)\b/i,
-    /\bhow much (gold|coins?|money|balance|currency|nexus) do i have\b/i,
+    /\b(check my|show my|show me my)(?: wallet)? (gold|coins?|money|balance|currency|nexus|wallet)\b/i,
+    /\bhow much (gold|coins?|money|balance|currency|nexus|wallet) do i have\b/i,
     // "how much money" / "what is money" without a possessive = general question → chat.
-    /\bwhat(?:'s|s| is| are) my (gold|coins?|money|balance|currency|nexus)\b/i,
+    /\bwhat(?:'s|s| is| are) my (gold|coins?|money|balance|currency|nexus|wallet)\b/i,
   ],
   inventory: [
     /\b(show|view|check|see)(?: me)?(?: my)? (inventory|items?|gear|bag)\b/i,
@@ -96,7 +96,7 @@ const RPG_INTENTS = {
 // Bare possessive queries ("my gold", "my guild") only count when they ARE the
 // whole message — casual mentions ("my money is gone lol") fall through to chat.
 const RPG_BARE = {
-  balance:   [/^my (gold|coins?|money|balance|currency|nexus)$/],
+  balance:   [/^my (gold|coins?|money|balance|currency|nexus|wallet)$/],
   inventory: [/^my (inventory|items?|gear|bag)$/],
   guild:     [/^my guild$/],
   profile:   [/^my (stats|profile|hunter info|info)$/, /^who am i$/],

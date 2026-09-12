@@ -67,14 +67,6 @@ function detectActiveCombat(player, chatId, db, sender) {
     }
   }
 
-  // 4. World Boss
-  if (player.boss || player.inBossBattle || (db.activeWorldBoss && db.activeWorldBoss.status === 'active')) {
-    const isBossPart = db.activeWorldBoss?.participants?.some(p => normaliseJid(p) === sNum);
-    if (player.boss || player.inBossBattle || isBossPart) {
-      return { type: 'boss', boss: player.boss, worldBoss: db.activeWorldBoss };
-    }
-  }
-
   return null;
 }
 
@@ -113,10 +105,6 @@ module.exports = {
         if (combat.type === 'gateraid') {
           const GateRaidCmd = require('./gateraid');
           return GateRaidCmd.execute(sock, msg, [combat.key, 'attack', ...args], getDatabase, saveDatabase, sender);
-        }
-        if (combat.type === 'boss') {
-          const WorldBossCmd = require('./worldboss');
-          return WorldBossCmd.execute(sock, msg, ['attack', ...args], getDatabase, saveDatabase, sender);
         }
       }
     }

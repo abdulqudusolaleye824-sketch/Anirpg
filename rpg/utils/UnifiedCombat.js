@@ -1,7 +1,7 @@
 // ╔══════════════════════════════════════════════════════╗
 // ║         Astra — UnifiedCombat                      ║
 // ║  Single damage calculator for ALL battle systems  ║
-// ║  PVP / Dungeon / Gate / WorldBoss share same math ║
+// ║  PVP / Dungeon / Gate share same math ║
 // ╚══════════════════════════════════════════════════════╝
 
 'use strict';

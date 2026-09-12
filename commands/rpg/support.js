@@ -67,9 +67,22 @@ module.exports = {
 
     const groupLinesText = [];
     const buttonGroups = [];
+    let namesRefreshed = false;
     for (const g of allMain) {
       const info = AstralGroups.typeInfo(g.type);
-      const displayName = g.groupName || info.name || g.type;
+      // FRESH name: pull the live GC subject for every --main group so
+      // renames always show correctly; fall back to the stored name.
+      let displayName = g.groupName || info.name || g.type;
+      try {
+        const md = await sock.groupMetadata(g.groupId);
+        if (md && md.subject) {
+          displayName = md.subject;
+          if (g.groupName !== md.subject && db.astralGroups && db.astralGroups[g.groupId]) {
+            db.astralGroups[g.groupId].groupName = md.subject;
+            namesRefreshed = true;
+          }
+        }
+      } catch (e) { /* best effort — keep stored name */ }
       groupLinesText.push(`${info.emoji} *${displayName}*`);
       if (g.inviteLink) {
         buttonGroups.push({
@@ -79,6 +92,7 @@ module.exports = {
         });
       }
     }
+    if (namesRefreshed) { try { saveDatabase(db); } catch (e) {} }
 
     if (groupLinesText.length === 0) {
       const supportLink = AstralGroups.getSupportLink(db);

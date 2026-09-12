@@ -2,7 +2,7 @@
 // Run INSIDE the target group. Aliases: /setgc
 //
 //   /setgroup                    → community listing / status
-//   /setgroup <type>             → register THIS group (support|pvp|dungeon|casino|guild)
+//   /setgroup <type>             → register THIS group (support|pvp|dungeon|casino|guild|games)
 //   /setgroup <type> --main      → register as a MAIN group (never expires)
 //   /setgroup <type> <link>      → register + set invite link
 //   /setgroup link <url>         → update just the invite link
@@ -37,7 +37,7 @@ module.exports = {
     if (!sub || sub === 'show' || sub === 'list' || sub === 'status') {
       const groups = AstralGroups.getAll(db) || [];
       let txt = `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🌐 *✦ 𝐀𝐬𝐭𝐫𝐚™ COMMUNITY GROUPS*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🎮 *Server:* ✦ 𝐀𝐬𝐭𝐫𝐚™\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
-      const ordered = ['pvp', 'casino', 'dungeon', 'guild', 'support'];
+      const ordered = ['pvp', 'casino', 'games', 'dungeon', 'guild', 'support'];
       const shown = groups.filter((g, i, a) => g && g.groupId && a.findIndex((x) => x && x.groupId === g.groupId) === i);
       if (shown.length === 0) {
         txt += `⚠️ No groups registered yet.\n`;
@@ -59,7 +59,7 @@ module.exports = {
         txt += `\n`;
       }
       txt += `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n📌 *Setup:* Go to the group, then:\n`;
-      txt += `/setgroup <type>          — register (support|pvp|dungeon)\n`;
+      txt += `/setgroup <type>          — register (support|pvp|dungeon|games)\n`;
       txt += `/setgroup <type> --main   — MAIN group (never expires)\n`;
       txt += `/setgroup <type> <link>   — register + set link\n`;
       txt += `/setgroup link <url>      — update link\n`;
@@ -111,7 +111,15 @@ module.exports = {
       try { inviteLink = `https://chat.whatsapp.com/${await sock.groupInviteCode(chatId)}`; } catch (e) {}
     }
 
-    const result = AstralGroups.register(db, type, chatId, inviteLink, { main: isMain });
+    // Capture the live GC name so /support can show real names (refreshed
+    // on every /support call for --main groups).
+    let gcName = null;
+    try {
+      const md = await sock.groupMetadata(chatId);
+      if (md && md.subject) gcName = md.subject;
+    } catch (e) { /* best effort */ }
+
+    const result = AstralGroups.register(db, type, chatId, inviteLink, { main: isMain, groupName: gcName });
     if (!result.success) {
       return sock.sendMessage(chatId, { text: `❌ ${result.reason}` }, { quoted: msg });
     }

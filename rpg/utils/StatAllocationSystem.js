@@ -4,7 +4,7 @@
 
 const UP_REWARDS = {
   dungeonClear: { easy: 3, medium: 5, hard: 8, nightmare: 12 },
-  bossDefeat: { miniBoss: 5, worldBoss: 15, raidBoss: 25, legendaryBoss: 40 },
+  bossDefeat: { miniBoss: 5, raidBoss: 25, legendaryBoss: 40 },
   pvpWin: 4,
   pvpRanked: 8,
   levelUp: 5,

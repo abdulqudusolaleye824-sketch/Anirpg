@@ -8,10 +8,10 @@
 
 const SUB_DAYS = 30; // length of one subscription window
 
-const TYPES = ['support', 'pvp', 'dungeon', 'casino', 'guild', 'mods'];
+const TYPES = ['support', 'pvp', 'dungeon', 'casino', 'guild', 'mods', 'games'];
 const FEATURE_TYPES = ['pvp', 'dungeon'];
 const TYPES_WITHOUT_MAIN = ['support', 'pvp', 'dungeon', 'mods'];
-const MAIN_ONLY_TYPES = ['casino', 'guild'];
+const MAIN_ONLY_TYPES = ['casino', 'guild', 'games'];
 
 const TYPE_INFO = {
   pvp:     { emoji: '⚔️', name: '✦ 𝐀𝐬𝐭𝐫𝐚™ PvP',     desc: 'PvP battles & ELO ranking' },
@@ -20,6 +20,7 @@ const TYPE_INFO = {
   guild:   { emoji: '👑', name: '✦ 𝐀𝐬𝐭𝐫𝐚™ Guild',    desc: 'Guild wars, raids & alliances' },
   support: { emoji: '🛡️', name: '✦ 𝐀𝐬𝐭𝐫𝐚™ Arise',   desc: 'General support & announcements' },
   mods:    { emoji: '🛡️', name: '✦ 𝐀𝐬𝐭𝐫𝐚™ Mods',    desc: 'Moderation & staff GC' },
+  games:   { emoji: '🎮', name: '✦ 𝐀𝐬𝐭𝐫𝐚™ Games',   desc: 'Quiz, Tic-Tac-Toe & Chess' },
 };
 
 const EXPIRED_MSG =
@@ -62,6 +63,7 @@ class AstralGroups {
     reg[groupId] = {
       groupId,
       type: cat,
+      groupName: opts.groupName || existing?.groupName || null,
       inviteLink: inviteLink || existing?.inviteLink || null,
       setAt: Date.now(),
       isMain,
@@ -84,7 +86,7 @@ class AstralGroups {
       db.communityGroups[cat] = {
         groupId,
         inviteLink: inviteLink || db.communityGroups[cat]?.inviteLink || null,
-        groupName: info?.name || cat,
+        groupName: opts.groupName || db.communityGroups[cat]?.groupName || info?.name || cat,
         setAt: Date.now(),
       };
     } catch (e) { /* best effort */ }

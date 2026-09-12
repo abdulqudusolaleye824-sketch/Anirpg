@@ -14,11 +14,11 @@ function giveBattleWinRewards(player, db, type='generic', baseLevel=1) {
   const mult = pro ? 2 : 1;
   // Base rewards scaled by level
   const lvl = baseLevel || player.level || 1;
-  let aura = (type==='pvp'? 50 : type==='dungeon'? 30 : type==='gate'? 40 : type==='worldboss'? 60 : 20) + Math.floor(lvl*1.5);
+  let aura = (type==='pvp'? 50 : type==='dungeon'? 30 : type==='gate'? 40 : 20) + Math.floor(lvl*1.5);
   // NOTE: bp stays BASE — BattlePass.addPassXPAmount applies Pro x premium
   // (1x/2x/4x) inside. (Pre-doubling here paid Pro+premium 8x — fixed.)
-  let bp = (type==='pvp'? 100 : type==='dungeon'? 60 : type==='gate'? 60 : type==='worldboss'? 120 : 50);
-  let pass = (type==='pvp'? 50 : type==='dungeon'? 30 : type==='gate'? 40 : type==='worldboss'? 60 : 25);
+  let bp = (type==='pvp'? 100 : type==='dungeon'? 60 : type==='gate'? 60 : 50);
+  let pass = (type==='pvp'? 50 : type==='dungeon'? 30 : type==='gate'? 40 : 25);
   let xp = (type==='pvp'? 500 : 300) + lvl*30;
   aura = Math.floor(aura * mult);
   pass = Math.floor(pass * mult);
@@ -37,7 +37,7 @@ function giveBattleWinRewards(player, db, type='generic', baseLevel=1) {
   }
 
   // Battle Pass XP (direct amount — the old call multiplied by the source
-  // table for pvp (150×bp!) and granted ZERO for dungeon/gate/worldboss
+  // table for pvp (150×bp!) and granted ZERO for dungeon/gate
   // because those '<type>_win' sources don't exist in XP_SOURCES)
   try {
     const BP = require('./BattlePass');

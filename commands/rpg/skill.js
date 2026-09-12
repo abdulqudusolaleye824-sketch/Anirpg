@@ -48,10 +48,6 @@ module.exports = {
           if (gk) {
             return require('./gateraid').execute(sock, msg, [gk, 'skill', ...args], getDatabase, saveDatabase, sender);
           }
-          const wbPart = db.activeWorldBoss?.participants?.some(p => num(p) === sNum);
-          if (player.boss || player.inBossBattle || wbPart) {
-            return require('./worldboss').execute(sock, msg, ['skill', ...args], getDatabase, saveDatabase, sender);
-          }
         }
       } catch(e){}
     }

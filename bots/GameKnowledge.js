@@ -219,10 +219,6 @@ Legendary equipment you equip for powerful passive effects.
 • /quest daily — see today's 4 daily quests with progress bars
 • /weekly — weekly bonus, resets every 7 days
 
---- WORLD BOSS ---
-5 rotating world bosses parties can challenge together.
-• /worldboss to check the current boss; parties of 1-5
-
 --- ACHIEVEMENTS / TITLES ---
 • /achievements — view and claim milestone rewards
 • /title to unlock and /title equip [name] to wear titles (some give stat bonuses)
@@ -288,6 +284,14 @@ Legendary equipment you equip for powerful passive effects.
 • Fun: /quiz anime quiz, /quote turns a replied message into a quote sticker (/q), /imagine generates AI images, /lyrics + /ytmp3 fetch music.
 • Guild extras: /myguild weekly GP board, /contract shows your hire contract.
 • Pro help: /profaq (prices/perks/cards); /subscribe follows bot updates.
+
+--- GAMES GC (Quiz / Tic-Tac-Toe / Chess) ---
+• A Games GC is a group registered via /setgroup games --main (owner/co-owner, run inside the group, never expires). Quiz, Tic-Tac-Toe and Chess ONLY work there.
+• Quiz: /quiz <1-20> starts an anime quiz (anyone answers with /a A/B/C/D, 30s per question); /quiz scores / /quiz stats / /quiz stop. Pays Nexus + Astra XP per correct answer.
+• Tic-Tac-Toe: /ttt @user challenges; /ttt accept starts; /ttt mark <cell> plays (cells a1..c3, letter = row, X moves first); /ttt forfeit resigns; /ttt stats shows your record.
+• Chess: /ch @user challenges (challenger is White); /accept-ch / /reject-ch; /move e2 e4 plays (also /move e2e4 and /move castle kingside|queenside); /forfeit-chess resigns. Full rules: castling, en passant, auto-queen promotion, check/checkmate/stalemate.
+• Winners get 15,000 xp (Tic-Tac-Toe +2,000 Moonstones, Chess +5,000 Moonstones); draws pay 2,500 xp each. Moonstone winnings cap at 50,000 MS/day per player. Pro members earn 2×.
+• One game per group at a time per game; unanswered challenges expire after 5 minutes.
 
 === END OF GAME KNOWLEDGE ===
 `;

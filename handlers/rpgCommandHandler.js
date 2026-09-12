@@ -209,7 +209,6 @@ const ALIASES = {
   'addprocoin':  'procoin',
   'wallet':      'balance',
   'bal':         'balance',
-  'wb':          'worldboss',
   'spawn':       'artifactspawn',
   'groupstatus': 'spawnstatus',
   'gstatus':     'spawnstatus',
@@ -348,7 +347,7 @@ module.exports = async (sock, msg, messageText, config, getDatabase, saveDatabas
     return sock.sendMessage(chatId, { text: '\u274C Only bot mods and the owner can use /start.' }, { quoted: msg });
   }
 
-  // ── DM Command Access Control (Only Owner / Co-Owner / Mods allowed in DM, ONLY for Mod commands) ──
+  // ── DM Command Access Control (Owner/Co-Owner/Mods only; mods limited to Mod commands, owner ungated) ──
   const MOD_DM_COMMANDS = new Set([
     'killspawn', 'spawnstatus', 'spawnsstatus', 'gstatus', 'groupstatus',
     'cctv', 'statusreport', 'botid', 'disable', 'enable', 'restart',
@@ -372,7 +371,9 @@ module.exports = async (sock, msg, messageText, config, getDatabase, saveDatabas
       );
     }
 
-    if (!MOD_DM_COMMANDS.has(commandName) && !MOD_DM_COMMANDS.has(resolvedCommand)) {
+    // Batch-23: the owner bypasses the DM command list (owner commands work
+    // everywhere); mods stay restricted to MOD_DM_COMMANDS.
+    if (!Perms.isBotOwner(db, sender) && !MOD_DM_COMMANDS.has(commandName) && !MOD_DM_COMMANDS.has(resolvedCommand)) {
       return sock.sendMessage(
         chatId,
         {
@@ -778,8 +779,6 @@ module.exports = async (sock, msg, messageText, config, getDatabase, saveDatabas
       pvp:       'pvp',
       casino:    'casino',
       dungeon:   'dungeon',
-      worldboss: 'dungeon',
-      wb:        'dungeon',
       coop:      'dungeon',
       gate:      'dungeon',
       market:    'trading',
@@ -792,7 +791,7 @@ module.exports = async (sock, msg, messageText, config, getDatabase, saveDatabas
     const GROUP_DISPLAY = {
       pvp:     { emoji: '⚔️',  name: 'AlinRPG PvP',    desc: 'Challenge players, check ELO, and battle!' },
       casino:  { emoji: '🎰',  name: 'AlinRPG Casino',  desc: 'Slots, blackjack, roulette & more!' },
-      dungeon: { emoji: '🏰',  name: 'AlinRPG Dungeon', desc: 'Gate runs, world boss raids & co-op!' },
+      dungeon: { emoji: '🏰',  name: 'AlinRPG Dungeon', desc: 'Gate runs, raids & co-op!' },
       trading: { emoji: '💰',  name: 'AlinRPG Market',  desc: 'Trade, market listings & bank!' },
     };
 

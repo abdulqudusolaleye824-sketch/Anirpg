@@ -151,19 +151,6 @@ ${FRAME}` + (pro ? '' : `\n${UI.upsell()}`)
         return DungeonCmd.execute(sock, msg, ['classcmd', skill.name], getDatabase, saveDatabase, sender);
       }
     } catch(e){}
-    // World boss raid (same detection as attacks.js)
-    try {
-      const sNumW = normaliseJidShort(sender);
-      const _wbActive = db.activeWorldBoss && db.activeWorldBoss.status === 'active';
-      const _wbPart = _wbActive && (db.activeWorldBoss.participants || []).some(x => normaliseJidShort(x) === sNumW);
-      if (player.boss || player.inBossBattle || _wbPart) {
-        const _rdy = skillReady(player, skill);
-        if (!_rdy.ok) return sock.sendMessage(chatId, { text: `❌ ${_rdy.reason}` }, { quoted: msg });
-        setSkillCooldown(player, skill);
-        const WorldBossCmd = require('./worldboss');
-        return WorldBossCmd.execute(sock, msg, ['skill', skill.name], getDatabase, saveDatabase, sender);
-      }
-    } catch(e){}
 
     // ── 5. Dispatch to per-class handler (or default) ─────────
     // First, check if the player is in an active battle. If so, queue
@@ -557,7 +544,7 @@ function setSkillCooldown(player, skill) {
   player.skillCooldowns[skill.name] = Date.now() + ((skill.cooldown || 0) * 1000);
 }
 
-// Battle types: 'dungeon_solo', 'dungeon_party', 'boss', 'worldboss', 'pvp', 'guild_raid'
+// Battle types: 'dungeon_solo', 'dungeon_party', 'boss', 'pvp', 'guild_raid'
 function checkInBattle(player, db) {
   // Solo dungeon battle
   if (player.dungeon?.currentBattle) {
@@ -580,10 +567,6 @@ function checkInBattle(player, db) {
         }
       }
     }
-  }
-  // Worldboss battle (loose check)
-  if (player.inWorldBoss || player.worldBoss) {
-    return { type: 'worldboss', battle: player.worldBoss, context: player };
   }
   return null;
 }

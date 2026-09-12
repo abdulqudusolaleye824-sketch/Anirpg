@@ -373,7 +373,7 @@ module.exports = {
       message += `  📦 Unclaimed Pass Items: ${cnt} — use /pass claim\n`;
     }
     // Show inventory items that came from passes/dungeons/pvp (already in gear/consumables, but highlight recent)
-    const recentPassGear = gearItems.filter(g=> g.source==='pass' || g.source==='battlepass' || g.source==='pvp' || g.source==='dungeon' || g.source==='gate' || g.source==='worldboss').slice(0,2);
+    const recentPassGear = gearItems.filter(g=> g.source==='pass' || g.source==='battlepass' || g.source==='pvp' || g.source==='dungeon' || g.source==='gate').slice(0,2);
     if (recentPassGear.length>0) {
       message += `  ✨ Recent Battle Gear: ${recentPassGear.map(g=>g.name).join(', ')}\n`;
     }

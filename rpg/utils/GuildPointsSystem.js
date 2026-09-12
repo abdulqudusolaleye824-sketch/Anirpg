@@ -90,11 +90,6 @@ function onDailyQuestComplete(guild) {
   awardGP(guild, 5, 'Daily quest completed');
 }
 
-// ── GP from world boss ────────────────────────────────────────────────────────
-function onWorldBossContribution(guild) {
-  awardGP(guild, 20, 'World boss contribution');
-}
-
 // ── WP from Guild War result ──────────────────────────────────────────────────
 function onGuildWarResult(winnerGuild, loserGuild, mvpBonus = false, perfectVictory = false) {
   let winnerWP = 100;
@@ -206,7 +201,6 @@ module.exports = {
   onGuildRaidKill,
   onDonation,
   onDailyQuestComplete,
-  onWorldBossContribution,
   onGuildWarResult,
   formatGuildPoints,
   findPlayerGuild,

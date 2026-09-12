@@ -9,7 +9,7 @@ const COMMAND_CATEGORIES = {
   pvp:     ['pvp'],
   casino:  ['casino'],
   // dungeon commands work in ALL groups — no restriction
-  // dungeon: ['dungeon', 'worldboss', 'wb', 'coop', 'party', 'boss'],
+  // dungeon: ['dungeon', 'coop', 'party', 'boss'],
   guild:   ['guild', 'guildwar', 'gw', 'war'],
 };
 
@@ -17,7 +17,7 @@ const COMMAND_CATEGORIES = {
 const CATEGORY_INFO = {
   pvp:     { emoji: '⚔️',  groupName: '✦ 𝐀𝐬𝐭𝐫𝐚™ PvP',     desc: 'PvP battles & ELO ranking' },
   casino:  { emoji: '🎰',  groupName: '✦ 𝐀𝐬𝐭𝐫𝐚™ Casino',   desc: 'Slots, Blackjack, Roulette & Dice' },
-  dungeon: { emoji: '🏰',  groupName: '✦ 𝐀𝐬𝐭𝐫𝐚™ Dungeon',  desc: 'Tower dungeons & World Boss raids' },
+  dungeon: { emoji: '🏰',  groupName: '✦ 𝐀𝐬𝐭𝐫𝐚™ Dungeon',  desc: 'Tower dungeons & co-op raids' },
   guild:   { emoji: '👑',  groupName: '✦ 𝐀𝐬𝐭𝐫𝐚™ Guild',    desc: 'Guild wars, raids & alliances' },
   support: { emoji: '🛡️', groupName: '✦ 𝐀𝐬𝐭𝐫𝐚™ Arise',    desc: 'General support & announcements' },
   mods:    { emoji: '🔧',  groupName: '✦ 𝐀𝐬𝐭𝐫𝐚™ Mods',     desc: 'Moderator-only GC for serf approvals & admin actions' },

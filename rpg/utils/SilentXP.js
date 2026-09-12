@@ -18,8 +18,6 @@
  * Daily claim:        random 500–2,000 XP
  * Weekly claim:       random 5,000–15,000 XP
  * Monthly claim:      random 20,000–60,000 XP
- * World boss hit:     random 500–2,000 XP
- * World boss kill:    random 20,000–80,000 XP
  */
 
 'use strict';
@@ -43,13 +41,12 @@ const RANK_XP_MULT = {
 // Battle pass-XP used to scale at 20% of the player-EXP roll — one dungeon
 // clear (10k-40k EXP) paid 4-128 BP levels and completed the whole pass.
 // It is now FLAT per action. Actions that already have a dedicated direct
-// award (PvP wins → pvp.js, world boss kills → worldboss.js) are 0 here so
+// award (PvP wins → pvp.js) is 0 here so
 // no event ever pays twice.
 const BP_BATTLE_FLAT = {
   dungeon_floor: 15, dungeon_boss: 40, dungeon_complete: 100,
   gate_boss: 40, gate_complete: 60,
   pvp_win: 0, pvp_loss: 10, duel_win: 40,
-  worldboss_hit: 5, worldboss_kill: 0,
 };
 // Astra pass had the same bug class (15% of EXP on EVERYTHING) — flat for
 // battle actions. Non-battle keeps the old 15% (bounded ranges only).
@@ -57,7 +54,6 @@ const ASTRA_BATTLE_FLAT = {
   dungeon_floor: 25, dungeon_boss: 60, dungeon_complete: 200,
   gate_boss: 80, gate_complete: 120,
   pvp_win: 0, pvp_loss: 15, duel_win: 60,
-  worldboss_hit: 10, worldboss_kill: 0,
 };
 
 // ── XP ranges per action ──────────────────────────────────────────────────────
@@ -71,8 +67,6 @@ const XP_RANGES = {
   dungeon_complete:  [10000,  40000  ],
   gate_complete:     [8000,   30000  ],
   gate_boss:         [15000,  60000  ],
-  worldboss_hit:     [500,    2000   ],
-  worldboss_kill:    [20000,  80000  ],
   craft_common:      [200,    800    ],
   craft_uncommon:    [800,    2500   ],
   craft_rare:        [2500,   8000   ],
@@ -157,7 +151,6 @@ function awardXP(player, action = 'command', saveDatabase, sock, chatId, extraMu
     'pvp_win', 'pvp_loss', 'duel_win',
     'dungeon_floor', 'dungeon_boss', 'dungeon_complete',
     'gate_complete', 'gate_boss',
-    'worldboss_hit', 'worldboss_kill'
   ]);
   if (BATTLE_ACTIONS.has(action)) {
     if (!player.battlePass) {

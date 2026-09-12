@@ -2,11 +2,11 @@
  * ✦ 𝐀𝐬𝐭𝐫𝐚™ — Anime Quiz Command
  *
  * Commands (games GC only):
- *   !quiz <num>       — Start a quiz (1–20 questions)
- *   !a <A/B/C/D>      — Answer current question (anyone can join mid-quiz)
- *   !quiz stop        — Host/admin stops the quiz early
- *   !quiz scores      — Show current leaderboard mid-quiz
- *   !quiz stats       — Your all-time quiz stats
+ *   /quiz <num>       — Start a quiz (1–20 questions)
+ *   /a <A/B/C/D>      — Answer current question (anyone can join mid-quiz)
+ *   /quiz stop        — Host/admin stops the quiz early
+ *   /quiz scores      — Show current leaderboard mid-quiz
+ *   /quiz stats       — Your all-time quiz stats
  *
  * Rules:
  *   • Only works in a designated --games GC
@@ -21,6 +21,7 @@
 
 const { getRandomQuestions, formatQuestion, QUIZ_STATS } = require('../../rpg/data/anime_quiz_200');
 const UI = require('../../rpg/utils/UI');
+const AstralGroups = require('../../rpg/utils/AstralGroups');
 
 // ── Active sessions: one per group chat ────────────────────────────────────────
 // { chatId: SessionObject }
@@ -255,9 +256,8 @@ async function endQuiz(sock, session, db, saveDatabase) {
 module.exports = {
   name: 'quiz',
   description: '🎌 Anime quiz mini-game',
-  usage: '!quiz <1-20> | !a <A/B/C/D>',
+  usage: '/quiz <1-20> | /a <A/B/C/D>',
   category: 'games',
-  prefix: '!',    // uses ! prefix not /
 
   async execute(sock, msg, args, getDatabase, saveDatabase, sender) {
     const chatId   = msg.key.remoteJid;
@@ -266,21 +266,21 @@ module.exports = {
     const sub      = args[0]?.toLowerCase();
 
     // ── Check games GC ─────────────────────────────────────────────────────────
-    const groupData = db.groups?.[chatId];
-    if (!groupData?.isGamesGC) {
+    // A GC becomes a Games GC via /setgroup games --main (AstralGroups registry).
+    if (!AstralGroups.hostsActive(db, chatId, 'games')) {
       return sock.sendMessage(chatId, {
-        text: `❌ The quiz only works in a designated *Games GC*.\nAsk an admin to set one up with */setgc --games*`,
+        text: `❌ The quiz only works in a designated *Games GC*.\nAsk an admin to set one up with */setgroup games --main*`,
       }, { quoted: msg });
     }
 
-    // ── !quiz scores ───────────────────────────────────────────────────────────
+    // ── /quiz scores ───────────────────────────────────────────────────────────
     if (sub === 'scores' || sub === 'score') {
       const session = activeSessions[chatId];
       if (!session) return sock.sendMessage(chatId, { text: `❌ No quiz is currently running.` }, { quoted: msg });
       return sock.sendMessage(chatId, { text: formatLeaderboard(session, 'CURRENT SCORES', UI.isPro(player)) }, { quoted: msg });
     }
 
-    // ── !quiz stats ────────────────────────────────────────────────────────────
+    // ── /quiz stats ────────────────────────────────────────────────────────────
     if (sub === 'stats') {
       if (!player) return sock.sendMessage(chatId, { text: `❌ You're not registered.` }, { quoted: msg });
       const s = player.quizStats || { correct: 0, wrong: 0, gamesPlayed: 0, nexusEarned: 0 };
@@ -306,7 +306,7 @@ module.exports = {
       }, { quoted: msg });
     }
 
-    // ── !quiz stop ─────────────────────────────────────────────────────────────
+    // ── /quiz stop ─────────────────────────────────────────────────────────────
     if (sub === 'stop' || sub === 'end') {
       const session = activeSessions[chatId];
       if (!session) return sock.sendMessage(chatId, { text: `❌ No quiz is running.` }, { quoted: msg });
@@ -324,7 +324,7 @@ module.exports = {
       return;
     }
 
-    // ── !quiz <number> — start a new quiz ──────────────────────────────────────
+    // ── /quiz <number> — start a new quiz ──────────────────────────────────────
     const numQ = parseInt(sub);
     if (isNaN(numQ) && sub !== undefined) {
       return sock.sendMessage(chatId, {
@@ -336,11 +336,11 @@ module.exports = {
           UI.isPro(player) ? `` : null,
           ``,
           `*Commands:*`,
-          `!quiz <1-20>     — Start a quiz`,
-          `!a A/B/C/D       — Answer a question`,
-          `!quiz scores     — Mid-quiz leaderboard`,
-          `!quiz stats      — Your all-time stats`,
-          `!quiz stop       — End quiz early (host/admin)`,
+          `/quiz <1-20>     — Start a quiz`,
+          `/a A/B/C/D       — Answer a question`,
+          `/quiz scores     — Mid-quiz leaderboard`,
+          `/quiz stats      — Your all-time stats`,
+          `/quiz stop       — End quiz early (host/admin)`,
           ``,
           `*Rewards per correct answer:*`,
           `💠 ${NEXUS_PER_CORRECT} Nexus  ✨ ${ASTRA_XP_PER_Q} Astra XP`,
@@ -356,7 +356,7 @@ module.exports = {
 
     if (activeSessions[chatId]) {
       return sock.sendMessage(chatId, {
-        text: `❌ A quiz is already running in this group!\nUse *!quiz scores* to see current standings or *!a* to answer.`,
+        text: `❌ A quiz is already running in this group!\nUse */quiz scores* to see current standings or */a* to answer.`,
       }, { quoted: msg });
     }
 
@@ -388,7 +388,7 @@ module.exports = {
         `Questions: *${count}*`,
         `Time per question: *30 seconds*`,
         ``,
-        `Anyone can join by answering with *!a A/B/C/D*`,
+        `Anyone can join by answering with */a A/B/C/D*`,
         ``,
         `First question in 3 seconds...`,
         (UI.isPro(player) ? UI.PRO_BAR : UI.FREE_BAR),
@@ -398,7 +398,7 @@ module.exports = {
     setTimeout(() => sendQuestion(sock, session, db, saveDatabase), 3000);
   },
 
-  // ── !a <option> — answer handler ─────────────────────────────────────────────
+  // ── /a <option> — answer handler ─────────────────────────────────────────────
   async handleAnswer(sock, msg, args, getDatabase, saveDatabase, sender) {
     const chatId  = msg.key.remoteJid;
     const db      = getDatabase();
@@ -409,7 +409,7 @@ module.exports = {
     const option = args[0]?.toUpperCase();
     if (!['A','B','C','D'].includes(option)) {
       return sock.sendMessage(chatId, {
-        text: `❌ Invalid answer. Use *!a A*, *!a B*, *!a C* or *!a D*.`,
+        text: `❌ Invalid answer. Use */a A*, */a B*, */a C* or */a D*.`,
       }, { quoted: msg });
     }
 

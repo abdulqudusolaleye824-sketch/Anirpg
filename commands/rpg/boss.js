@@ -38,30 +38,16 @@ module.exports = {
       return DungeonCmd.execute(sock, msg, ['attack', ...args], getDatabase, saveDatabase, sender);
     }
 
-    // 3. World Boss
-    const WorldBoss = require('./worldboss');
-    if (db.activeWorldBoss && db.activeWorldBoss.status === 'active') {
-      return WorldBoss.execute(sock, msg, ['attack', ...args], getDatabase, saveDatabase, sender);
-    }
-
-    // Fallback: pass through to World Boss
-    if (args.length > 0) {
-      return WorldBoss.execute(sock, msg, args, getDatabase, saveDatabase, sender);
-    }
-
+    // No active boss battle — point at the gate bosses (world boss scrapped, batch-23).
     return sock.sendMessage(chatId, {
       text: [
         `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
         `👹 *BOSS BATTLES*`,
         `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-        `🌍 *WORLD BOSS & GATE BOSSES*`,
+        `⚔️ *GATE BOSSES*`,
         `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
         `📋 *COMMANDS:*`,
-        `/worldboss list         — View world bosses`,
-        `/worldboss create [#]   — Form a raid party`,
-        `/worldboss join [ID]    — Join a party`,
-        `/worldboss attack       — Attack the boss`,
-        `/gateraid <code > boss  — Engage gate boss`,
+        `/gateraid <code> boss  — Engage gate boss`,
         `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
         `💡 Short alias: */b* works in combat!`,
         `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
