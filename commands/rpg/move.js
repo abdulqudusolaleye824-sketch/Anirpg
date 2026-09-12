@@ -9,6 +9,7 @@ const GC = require('../../rpg/games/GameCenter');
 const Boards = require('../../rpg/games/GameBoards');
 const Engine = require('../../rpg/games/ChessEngine');
 const UI = require('../../rpg/utils/UI');
+const Buttons = (() => { try { return require('../../utils/buttons'); } catch (e) { return null; } })();
 
 const KIND = 'chess';
 
@@ -32,10 +33,10 @@ async function finishChess(sock, chatId, msg, db, saveDatabase, game, result, fo
     const loseJid = result === 'w' ? game.blackJid : game.whiteJid;
     const winPlayer = db.users?.[winJid];
     const losePlayer = db.users?.[loseJid];
-    let res = { xp: 0, ms: 0, capped: false };
+    let res = { xp: 0, nx: 0, capped: false };
     if (winPlayer) {
       res = GC.awardGame(db, winPlayer, winJid, KIND, 'win');
-      GC.bumpStats(winPlayer, KIND, 'win', res.ms);
+      GC.bumpStats(winPlayer, KIND, 'win', res.nx);
     }
     if (losePlayer) GC.bumpStats(losePlayer, KIND, 'loss', 0);
     const how = forfeitBy ? `${GC.mentionOf(forfeitBy)} forfeited` : 'checkmate';
@@ -90,7 +91,7 @@ module.exports = {
     }
 
     const g = GC.gate(db, chatId);
-    if (!g.ok) return sock.sendMessage(chatId, { text: g.reason }, { quoted: msg });
+    if (!g.ok) return sock.sendMessage(chatId, { text: await GC.gateBlock(db, chatId, sock, g) }, { quoted: msg });
 
     if (!game || game.phase !== 'active') {
       return sock.sendMessage(chatId, { text: `❌ No active chess game here. Start one with */ch @user*.` }, { quoted: msg });
@@ -130,10 +131,8 @@ module.exports = {
     if (outcome.promo) caption += `\n♟ Pawn promoted to Queen!`;
     const mentions = [game.whiteJid, game.blackJid, nextJid];
     const img = await Boards.renderChess(game.pos.b, { lastMove: game.lastMove });
-    if (Buffer.isBuffer(img) && img.length > 0) {
-      return sock.sendMessage(chatId, { image: img, caption, mentions }, { quoted: msg });
-    }
-    return sock.sendMessage(chatId, { text: `${caption}\n${Boards.textChess(game.pos.b)}`, mentions }, { quoted: msg });
+    const ffBtns = Buttons ? Buttons.quickReplies([['🏳️ Forfeit', '/forfeit']]) : null;
+    return GC.sendBoard(sock, chatId, msg, img, caption, Boards.textChess(game.pos.b), { mentions, buttons: ffBtns });
   },
 
   // Shared by forfeit-chess.js so mate/forfeit/draw endings stay identical.

@@ -96,52 +96,90 @@ function isGoodbyeEnabled(db, chatId) {
 }
 
 /**
- * Handle group participant join / leave updates
+ * Map a Baileys messageStubType to a membership action.
+ * 27 = GROUP_PARTICIPANT_ADD, 28 = GROUP_PARTICIPANT_REMOVE,
+ * 32 = GROUP_PARTICIPANT_LEAVE. Anything else → null (not membership).
  */
-async function handleParticipantUpdate(sock, chatId, participants, action, db) {
-  if (!Array.isArray(participants) || participants.length === 0) return;
+function stubAction(stubType) {
+  const t = Number(stubType);
+  if (t === 27) return 'add';
+  if (t === 28 || t === 32) return 'remove';
+  return null;
+}
 
-  if (action === 'add') {
-    if (!isWelcomeEnabled(db, chatId)) return;
+// Recently announced membership events (dedup: the event listener AND the
+// stub fallback can both observe the same join/leave). Key → timestamp.
+const _recentAnnouncements = new Map();
+const DEDUP_WINDOW_MS = 5 * 60 * 1000;
 
-    for (const jid of participants) {
-      const bareNum = cleanBare(jid);
-      if (!bareNum) continue;
+function _dedupKey(chatId, participants, action) {
+  const parts = [...participants].map((p) => String(p)).sort().join(',');
+  return `${chatId}|${action}|${parts}`;
+}
 
-      const template = WELCOME_MESSAGES[Math.floor(Math.random() * WELCOME_MESSAGES.length)];
-      const text = template.replace(/@user/g, `@${bareNum}`);
-      const cleanJid = `${bareNum}@s.whatsapp.net`;
+function _wasRecentlyAnnounced(chatId, participants, action) {
+  const now = Date.now();
+  // Prune stale entries (cheap: only on membership events).
+  for (const [k, ts] of _recentAnnouncements) {
+    if (now - ts > DEDUP_WINDOW_MS) _recentAnnouncements.delete(k);
+  }
+  const key = _dedupKey(chatId, participants, action);
+  if (_recentAnnouncements.has(key)) return true;
+  _recentAnnouncements.set(key, now);
+  return false;
+}
 
-      try {
-        await sock.sendMessage(chatId, {
-          text,
-          mentions: [cleanJid],
-        });
-      } catch (e) {
-        console.error('Welcome message dispatch error:', e.message);
-      }
-    }
-  } else if (action === 'remove') {
-    if (!isGoodbyeEnabled(db, chatId)) return;
+function _specialLine(bareNum) {
+  try {
+    const cfg = require('../../config.json');
+    const owner = String(cfg.ownerNumber || '').replace(/[^0-9]/g, '');
+    const co = String(cfg.coOwnerNumber || '').replace(/[^0-9]/g, '');
+    if (owner && bareNum === owner) return '⚡ *THE CREATOR ARRIVES.* All hail the architect of this realm.\n\n';
+    if (co && bareNum === co) return '👑 *CO-OWNER IN THE BUILDING.* The chain of command is complete.\n\n';
+  } catch (e) {}
+  return '';
+}
 
-    for (const jid of participants) {
-      const bareNum = cleanBare(jid);
-      if (!bareNum) continue;
+/**
+ * Unified membership announcer — THE single sender of welcome/goodbye
+ * notices. Called from BOTH the group-participants.update listener and the
+ * messages.upsert stub fallback; the dedup cache guarantees one notice per
+ * join/leave. Returns 'sent' | 'dup' | 'off' | 'ignored'.
+ */
+async function announceMembership(sock, chatId, participants, action, db) {
+  if (!Array.isArray(participants) || participants.length === 0) return 'ignored';
+  if (action !== 'add' && action !== 'remove') return 'ignored';
 
-      const template = GOODBYE_MESSAGES[Math.floor(Math.random() * GOODBYE_MESSAGES.length)];
-      const text = template.replace(/@user/g, `@${bareNum}`);
-      const cleanJid = `${bareNum}@s.whatsapp.net`;
+  if (action === 'add' && !isWelcomeEnabled(db, chatId)) return 'off';
+  if (action === 'remove' && !isGoodbyeEnabled(db, chatId)) return 'off';
 
-      try {
-        await sock.sendMessage(chatId, {
-          text,
-          mentions: [cleanJid],
-        });
-      } catch (e) {
-        console.error('Goodbye message dispatch error:', e.message);
-      }
+  if (_wasRecentlyAnnounced(chatId, participants, action)) return 'dup';
+
+  const templates = action === 'add' ? WELCOME_MESSAGES : GOODBYE_MESSAGES;
+  for (const jid of participants) {
+    const bareNum = cleanBare(jid);
+    if (!bareNum) continue;
+
+    const template = templates[Math.floor(Math.random() * templates.length)];
+    let text = template.replace(/@user/g, `@${bareNum}`);
+    if (action === 'add') text = _specialLine(bareNum) + text;
+    const cleanJid = `${bareNum}@s.whatsapp.net`;
+
+    try {
+      await sock.sendMessage(chatId, { text, mentions: [cleanJid] });
+    } catch (e) {
+      console.error(action === 'add' ? 'Welcome message dispatch error:' : 'Goodbye message dispatch error:', e.message);
     }
   }
+  return 'sent';
+}
+
+/**
+ * Handle group participant join / leave updates (kept for compatibility —
+ * delegates to the unified announcer).
+ */
+async function handleParticipantUpdate(sock, chatId, participants, action, db) {
+  return announceMembership(sock, chatId, participants, action, db);
 }
 
 module.exports = {
@@ -150,4 +188,6 @@ module.exports = {
   isWelcomeEnabled,
   isGoodbyeEnabled,
   handleParticipantUpdate,
+  announceMembership,
+  stubAction,
 };

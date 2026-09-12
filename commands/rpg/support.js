@@ -84,9 +84,24 @@ module.exports = {
         }
       } catch (e) { /* best effort — keep stored name */ }
       groupLinesText.push(`${info.emoji} *${displayName}*`);
-      if (g.inviteLink) {
+      // LIVE link: always try a fresh invite code so rotated/revoked stored
+      // links never strand users; silently keep the stored link on failure.
+      let liveLink = g.inviteLink || null;
+      if (g.groupId && typeof sock.groupInviteCode === 'function') {
+        try {
+          const code = await sock.groupInviteCode(g.groupId);
+          if (code) {
+            liveLink = `https://chat.whatsapp.com/${code}`;
+            if (db.astralGroups && db.astralGroups[g.groupId] && db.astralGroups[g.groupId].inviteLink !== liveLink) {
+              db.astralGroups[g.groupId].inviteLink = liveLink;
+              namesRefreshed = true;
+            }
+          }
+        } catch (e) { /* best effort — keep stored link */ }
+      }
+      if (liveLink) {
         buttonGroups.push({
-          inviteLink: g.inviteLink,
+          inviteLink: liveLink,
           groupName: displayName,
           typeInfo: info,
         });

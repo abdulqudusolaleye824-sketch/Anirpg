@@ -214,15 +214,11 @@ const hi = {
     } catch (_) {
       try { present = PersonalityManager.getPresentBots(chatId) || []; } catch {}
     }
-    let bots = [...new Set([...connectedKeys, ...present])];
-    // Fallback: if still empty, try any socket that is online (even if not marked present)
-    if (bots.length === 0) {
-      try {
-        const MSM = require('../../bots/MultiSocketManager');
-        const all = MSM.getAllSockets() || {};
-        bots = Object.keys(all).filter(k => all[k]?.user?.id);
-      } catch {}
-    }
+    // STRICT: only bots that are BOTH online (user.id) AND present in this
+    // group respond. No union, no any-online fallback — a bot that isn't
+    // here must stay silent, and no bot may answer on another's behalf.
+    const presentSet = new Set(present);
+    const bots = connectedKeys.filter(k => presentSet.has(k));
 
     if (bots.length === 0) {
       return sock.sendMessage(chatId, {
@@ -237,8 +233,8 @@ const hi = {
     try {
       const MSM = require('../../bots/MultiSocketManager');
       for (const key of bots) {
-        const sock = MSM.getSocket(key);
-        if (!sock) continue;
+        const bsock = MSM.getSocket(key);
+        if (!bsock?.user?.id) continue;
         const info = PersonalityManager.getPersonalityInfo(key);
         const displayName = PersonalityManager.getDisplayName(key);
         const emoji = info?.emoji || '🤖';
@@ -257,10 +253,9 @@ const hi = {
       }, { quoted: msg });
     }
 
-    // The chorus reports exactly which greetings landed; gap-fill ONLY the
-    // missing ones — each via its OWN socket when possible, prefixed via
-    // this socket only as a last resort. Duplicates are impossible: a
-    // delivered greeting is never re-sent.
+    // The chorus reports exactly which greetings landed; retry ONLY the
+    // missing ones — each via its OWN socket. A bot whose socket can't
+    // deliver stays silent: no bot may ever speak for another bot.
     let delivered = [];
     try {
       const MultiSocketManager = require('../../bots/MultiSocketManager');
@@ -270,18 +265,13 @@ const hi = {
     const missing = responses.filter((r) => !delivered.includes(r.personalityKey));
     for (let i = 0; i < missing.length; i++) {
       const r = missing[i];
-      let sent = false;
       try {
         const MultiSocketManager = require('../../bots/MultiSocketManager');
         const own = MultiSocketManager.getSocket(r.personalityKey);
         if (own && own.user?.id && r.text) {
           await own.sendMessage(chatId, { text: r.text }, { quoted: msg });
-          sent = true;
         }
-      } catch (e) { sent = false; }
-      if (!sent && r.text) {
-        try { await sock.sendMessage(chatId, { text: `*${r.displayName}:* ${r.text}` }, { quoted: msg }); } catch (e) {}
-      }
+      } catch (e) { /* stays silent — never impersonate */ }
       if (i < missing.length - 1) await new Promise((rr) => setTimeout(rr, 800));
     }
   },

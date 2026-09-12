@@ -7,11 +7,12 @@
 //
 // (Moves: /move e2 e4 · accept: /accept-ch · reject: /reject-ch ·
 // resign: /forfeit-chess. One game per group; challenges expire in 5 min.
-// Winner: 15,000 xp + 5,000 💎. Pro 2×, 50,000 MS/day cap.)
+// Winner: 1,500 xp + 500 💠 Nexus. Pro 2×, 5,000 Nexus/day cap.)
 
 const GC = require('../../rpg/games/GameCenter');
 const Boards = require('../../rpg/games/GameBoards');
 const Engine = require('../../rpg/games/ChessEngine');
+const Buttons = (() => { try { return require('../../utils/buttons'); } catch (e) { return null; } })();
 const UI = require('../../rpg/utils/UI');
 
 const KIND = 'chess';
@@ -29,10 +30,11 @@ function helpText(pro) {
     `*/move castle <side>* — Castle (kingside / queenside)`,
     `*/forfeit-chess* — Resign the match`,
     `*/chess stats* — Your all-time record`,
+    `*/forfeit* — Resign any active game (or tap 🏳️)`,
     ``,
     `♟ Pawns promote to Queen automatically · en passant works`,
-    `*Winner:* ✨ ${GC.WIN_XP.toLocaleString()} xp  💎 ${GC.CHESS_WIN_MS.toLocaleString()} Moonstones`,
-    `⚠️ Daily limit: ${GC.DAILY_MS_CAP.toLocaleString()} MS/day`,
+    `*Winner:* ✨ ${GC.WIN_XP.toLocaleString()} xp  💠 ${GC.CHESS_WIN_NX.toLocaleString()} Nexus`,
+    `⚠️ Daily limit: ${GC.DAILY_NX_CAP.toLocaleString()} Nexus/day`,
     pro ? `💎 Pro earns *2×* rewards` : null,
     (pro ? UI.PRO_BAR : UI.FREE_BAR),
   ].filter((x) => x !== null).join('\n');
@@ -51,23 +53,24 @@ module.exports = {
     const player = db.users?.[sender];
 
     const g = GC.gate(db, chatId);
-    if (!g.ok) return sock.sendMessage(chatId, { text: g.reason }, { quoted: msg });
+    if (!g.ok) return sock.sendMessage(chatId, { text: await GC.gateBlock(db, chatId, sock, g) }, { quoted: msg });
 
     const sub = (args[0] || '').toLowerCase();
 
     // ── /chess stats ───────────────────────────────────────────
     if (sub === 'stats' || sub === 'score') {
       if (!player) return sock.sendMessage(chatId, { text: `❌ You're not registered.` }, { quoted: msg });
-      const s = player.chessStats || { wins: 0, losses: 0, draws: 0, msEarned: 0 };
+      const s = player.chessStats || { wins: 0, losses: 0, draws: 0, msEarned: 0, nxEarned: 0 };
       return sock.sendMessage(chatId, {
         text: [
           (UI.isPro(player) ? UI.PRO_BAR : UI.FREE_BAR),
           '♞ *YOUR CHESS RECORD* ♞',
           ``,
           `🏆 Wins: *${s.wins}*   ❌ Losses: *${s.losses}*   🤝 Draws: *${s.draws}*`,
-          `💎 Moonstones earned: *${(s.msEarned || 0).toLocaleString()}*`,
+          `💠 Nexus earned: *${(s.nxEarned || 0).toLocaleString()}*`,
+          (s.msEarned > 0) ? `💎 Legacy Moonstones: *${s.msEarned.toLocaleString()}*` : null,
           (UI.isPro(player) ? UI.PRO_BAR : UI.FREE_BAR),
-        ].join('\n'),
+        ].filter((x) => x !== null).join('\n'),
       }, { quoted: msg });
     }
 
@@ -94,10 +97,17 @@ module.exports = {
         expiresAt: Date.now() + GC.CHALLENGE_TTL,
       });
       saveDatabase(db);
-      return sock.sendMessage(chatId, {
-        text: `${GC.mentionOf(sender)} has challenged ${GC.mentionOf(target)} to a chess match. Use */accept-ch* to start the challenge`,
-        mentions: [sender, target],
-      }, { quoted: msg });
+      const cText = `${GC.mentionOf(sender)} has challenged ${GC.mentionOf(target)} to a chess match. Use */accept-ch* to start the challenge`;
+      if (Buttons) {
+        try {
+          return await Buttons.sendButtons(sock, chatId, {
+            text: cText,
+            mentions: [sender, target],
+            buttons: Buttons.quickReplies([['✅ Accept', '/accept-ch'], ['❌ Decline', '/reject-ch']]),
+          }, msg);
+        } catch (e) { /* fall through to plain text */ }
+      }
+      return sock.sendMessage(chatId, { text: cText, mentions: [sender, target] }, { quoted: msg });
     }
 
     // ── /chess (help card with starting board) ─────────────────

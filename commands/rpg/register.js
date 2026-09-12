@@ -434,15 +434,17 @@ module.exports = {
           text: `❌ You must be at least 13 years old to play Astra.`,
         }, { quoted: msg });
       }
-      let referrerId = null;
-      if (codeArg) {
-        const found = Referrals.findByCode(db, codeArg);
-        if (!found) {
-          return sock.sendMessage(chatId, { text: `❌ Unknown referral code: "${codeArg}"\n\nOmit the code or check it and try again.` }, { quoted: msg });
-        }
-        referrerId = found.id;
+      // One-shot WITH a valid code finalizes immediately; a bare birthday
+      // must still ask for the referral code (or NIL) first.
+      if (!codeArg) {
+        RegState.set(sender, { ...fresh, step: 'referral', dob });
+        return sock.sendMessage(chatId, { text: referralAskMsg(dob) }, { quoted: msg });
       }
-      await finalize(sock, chatId, msg, db, saveDatabase, sender, fresh, dob, referrerId);
+      const found = Referrals.findByCode(db, codeArg);
+      if (!found) {
+        return sock.sendMessage(chatId, { text: `❌ Unknown referral code: "${codeArg}"\n\nOmit the code or check it and try again.` }, { quoted: msg });
+      }
+      await finalize(sock, chatId, msg, db, saveDatabase, sender, fresh, dob, found.id);
       return;
     }
 

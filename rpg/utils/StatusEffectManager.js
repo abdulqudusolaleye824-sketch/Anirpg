@@ -4,19 +4,25 @@
 const { checkEffectResistance, getClassName } = require('./ClassMatchups');
 
 class StatusEffectManager {
+  // Single source of truth for status numbers. DoTs are max-HP fractions
+  // (pctPerTurn) so burns/bleeds scale — flat damagePerTurn survives only
+  // on legacy entity effects already stored in player objects.
   static EFFECTS = {
-    poison:    { name: 'Poison',    emoji: '🟢', damagePerTurn: 10, duration: 3 },
-    burn:      { name: 'Burn',      emoji: '🔥', damagePerTurn: 15, duration: 3 },
-    bleed:     { name: 'Bleed',     emoji: '🩸', damagePerTurn: 12, duration: 4 },
-    stun:      { name: 'Stun',      emoji: '⭐', skipTurnChance: 1.0, duration: 1 },
-    freeze:    { name: 'Freeze',    emoji: '❄️', damagePerTurn: 12, skipTurnChance: 1.0, duration: 2 },
-    weaken:    { name: 'Weaken',    emoji: '💔', atkReduction: 0.3, duration: 3 },
+    poison:    { name: 'Poison',    emoji: '☠️', pctPerTurn: 0.03, duration: 3 },
+    burn:      { name: 'Burn',      emoji: '🔥', pctPerTurn: 0.05, duration: 3 },
+    bleed:     { name: 'Bleed',     emoji: '🩸', pctPerTurn: 0.04, duration: 4 },
+    stun:      { name: 'Stun',      emoji: '💫', skipTurnChance: 1.0, speedReduction: 0.5, duration: 1 },
+    freeze:    { name: 'Freeze',    emoji: '❄️', pctPerTurn: 0.04, skipTurnChance: 1.0, duration: 2 },
+    weaken:    { name: 'Weaken',    emoji: '💔', atkReduction: 0.75, duration: 3 },
+    weakness:  { name: 'Weakness',  emoji: '💔', atkReduction: 0.75, duration: 3 },
+    weakened:  { name: 'Weakened',  emoji: '💔', atkReduction: 0.3, duration: 3 },
     enfeeble:  { name: 'Enfeeble',  emoji: '🐢', defReduction: 0.3, duration: 3 },
-    fear:      { name: 'Fear',      emoji: '😱', skipTurnChance: 0.4, atkReduction: 0.2, duration: 2 },
+    fear:      { name: 'Fear',      emoji: '😱', atkReduction: 0.5, defReduction: 0.5, speedReduction: 0.5, accuracyReduction: 0.5, duration: 1 },
     trueSlow:  { name: 'TrueSlow',  emoji: '🐌', speedReduction: 0.35, duration: 3 },
+    trueslow:  { name: 'TrueSlow',  emoji: '🐌', speedReduction: 0.35, duration: 3 },
     silence:   { name: 'Silence',   emoji: '🤐', noSkills: true, duration: 2 },
     blind:     { name: 'Blind',     emoji: '🌫️', accuracyReduction: 0.5, duration: 2 },
-    paralyze:  { name: 'Paralyze',  emoji: '⚡', skipTurnChance: 0.7, duration: 2 },
+    paralyze:  { name: 'Paralyze',  emoji: '🔱', skipTurnChance: 1.0, duration: 3 },
     curse:     { name: 'Curse',     emoji: '💀', defReduction: 0.15, duration: 3 },
     lifesteal: { name: 'Lifesteal', emoji: '💚', isPassive: true, duration: 3 }
   };
@@ -35,6 +41,7 @@ class StatusEffectManager {
       type: key, name: def.name, emoji: def.emoji,
       duration: duration || def.duration,
       damagePerTurn: def.damagePerTurn || 0,
+      pctPerTurn: def.pctPerTurn || 0,
       skipTurnChance: def.skipTurnChance || 0,
       atkReduction: def.atkReduction || 0,
       defReduction: def.defReduction || 0,
@@ -52,18 +59,25 @@ class StatusEffectManager {
     let totalDamage = 0, canAct = true, canUseSkills = true;
     const messages = [];
     for (const effect of entity.statusEffects) {
-      // Bridge: UnifiedCombat-applied freeze has no damagePerTurn — use 3% max HP
-      if ((effect.type || '').toLowerCase() === 'freeze' && !(effect.damagePerTurn > 0) && entity.stats) {
-        const _fdmg = Math.floor((entity.stats.maxHp || 100) * 0.03);
-        entity.stats.hp = Math.max(0, entity.stats.hp - _fdmg);
-        totalDamage += _fdmg;
-        messages.push((effect.emoji || '❄️') + ' ' + entity.name + ' suffers ' + _fdmg + ' Freeze damage!');
-      }
-      if (effect.damagePerTurn > 0) {
-        const dmg = effect.damagePerTurn;
-        entity.stats.hp = Math.max(0, entity.stats.hp - dmg);
+      // Unified DoT routing: %-of-max-HP from the entity effect, else the
+      // EFFECTS table (covers UnifiedCombat-applied type-only effects),
+      // else legacy flat damagePerTurn stored on old player objects.
+      const _def = this.EFFECTS[(effect.type || '').toLowerCase()] || {};
+      // Explicit entity values win; the table only fills gaps (type-only
+      // effects) — legacy flat damagePerTurn keeps working untouched.
+      const _pct = effect.pctPerTurn || (!effect.damagePerTurn && _def.pctPerTurn) || 0;
+      const _ename = effect.name || _def.name || effect.type;
+      const _eemoji = effect.emoji || _def.emoji || '✨';
+      if (_pct > 0 && entity.stats) {
+        const dmg = Math.floor((entity.stats.maxHp || 100) * _pct);
+        entity.stats.hp = Math.max(0, (entity.stats.hp || 0) - dmg);
         totalDamage += dmg;
-        messages.push(effect.emoji + ' ' + entity.name + ' suffers ' + dmg + ' ' + effect.name + ' damage!');
+        messages.push(_eemoji + ' ' + entity.name + ' suffers ' + dmg + ' ' + _ename + ' damage!');
+      } else if (effect.damagePerTurn > 0 && entity.stats) {
+        const dmg = effect.damagePerTurn;
+        entity.stats.hp = Math.max(0, (entity.stats.hp || 0) - dmg);
+        totalDamage += dmg;
+        messages.push(_eemoji + ' ' + entity.name + ' suffers ' + dmg + ' ' + _ename + ' damage!');
       }
       const _fxType = (effect.type || '').toLowerCase();
       // Bridge: UnifiedCombat-applied freeze/stun (no skipTurnChance field) still hard-skip
@@ -91,10 +105,18 @@ class StatusEffectManager {
       return { atkMod: 1.0, defMod: 1.0, speedMod: 1.0, accuracyMod: 1.0 };
     let atkMod = 1.0, defMod = 1.0, speedMod = 1.0, accuracyMod = 1.0;
     for (const e of entity.statusEffects) {
-      if (e.atkReduction > 0)       atkMod      -= e.atkReduction;
-      if (e.defReduction > 0)       defMod      -= e.defReduction;
-      if (e.speedReduction > 0)     speedMod    -= e.speedReduction;
-      if (e.accuracyReduction > 0)  accuracyMod -= e.accuracyReduction;
+      // Explicit per-effect values win; otherwise fall back to the EFFECTS
+      // table (UnifiedCombat-applied effects carry type+duration only).
+      const d = this.EFFECTS[(e.type || '').toLowerCase()] || {};
+      let atkR = (e.atkReduction > 0 ? e.atkReduction : 0) || d.atkReduction || 0;
+      if ((e.type || '').toLowerCase() === 'weakened' && e.reduction > 0) atkR = e.reduction / 100;
+      const defR = (e.defReduction > 0 ? e.defReduction : 0) || d.defReduction || 0;
+      const spdR = (e.speedReduction > 0 ? e.speedReduction : 0) || d.speedReduction || 0;
+      const accR = (e.accuracyReduction > 0 ? e.accuracyReduction : 0) || d.accuracyReduction || 0;
+      if (atkR > 0) atkMod      -= atkR;
+      if (defR > 0) defMod      -= defR;
+      if (spdR > 0) speedMod    -= spdR;
+      if (accR > 0) accuracyMod -= accR;
     }
     return {
       atkMod: Math.max(0.1, atkMod), defMod: Math.max(0.1, defMod),

@@ -37,12 +37,12 @@ const MAX_QUESTIONS       = 20;
 const MIN_QUESTIONS       = 1;
 
 // ── Rewards ───────────────────────────────────────────────────────────────────
-const NEXUS_PER_CORRECT   = 150;   // per correct answer
-const ASTRA_XP_PER_Q     = 40;    // Astra Pass XP per correct answer
-const ASTRA_XP_PARTICIPATE = 10;   // XP just for answering (right or wrong)
-const NEXUS_WIN_BONUS     = 500;   // bonus for top scorer at the end
+const NEXUS_PER_CORRECT   = 15;    // per correct answer
+const ASTRA_XP_PER_Q     = 4;     // Astra Pass XP per correct answer
+const ASTRA_XP_PARTICIPATE = 1;   // XP just for answering (right or wrong)
+const NEXUS_WIN_BONUS     = 50;    // bonus for top scorer at the end
 const SPEED_BONUS_MS      = 5_000; // answer within 5s = speed bonus
-const SPEED_BONUS_NEXUS   = 75;
+const SPEED_BONUS_NEXUS   = 8;
 
 // ── Difficulty XP multipliers ─────────────────────────────────────────────────
 const DIFF_MULT = { easy: 1, medium: 1.5, hard: 2 };
@@ -127,6 +127,13 @@ function formatLeaderboard(session, title = 'CURRENT SCORES', pro = false) {
 // QUIZ FLOW
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Button labels must be short; never split a surrogate pair when truncating.
+function btnLabel(emoji, opt) {
+  const s = `${emoji} ${opt || ''}`;
+  if (s.length <= 24) return s;
+  return s.slice(0, 23).replace(/[\uD800-\uDBFF]$/, '') + '…';
+}
+
 async function sendQuestion(sock, session, db, saveDatabase) {
   if (!session.active) return;
 
@@ -136,9 +143,26 @@ async function sendQuestion(sock, session, db, saveDatabase) {
 
   session.answered         = new Set();
   session.questionStartedAt = Date.now();
+  session.lockedBy         = null; // first correct answer locks the question
+  session.lockedName       = null;
 
   const text = formatQuestion(q, current, total, UI.isPro(db.users?.[session.hostJid]));
-  await sock.sendMessage(session.chatId, { text });
+  let sent = false;
+  if (Buttons) {
+    try {
+      await Buttons.sendButtons(sock, session.chatId, {
+        text,
+        buttons: Buttons.quickReplies([
+          [`🅰️ ${q.options.A}`.slice(0, 24), '/a A'],
+          [`🅱️ ${q.options.B}`.slice(0, 24), '/a B'],
+          [`🇨 ${q.options.C}`.slice(0, 24), '/a C'],
+          [`🇩 ${q.options.D}`.slice(0, 24), '/a D'],
+        ]),
+      });
+      sent = true;
+    } catch (e) { /* fall through to plain text */ }
+  }
+  if (!sent) await sock.sendMessage(session.chatId, { text });
 
   // Auto-advance after 30 seconds if no one answered / time up
   session.questionTimer = setTimeout(async () => {
@@ -268,9 +292,12 @@ module.exports = {
     // ── Check games GC ─────────────────────────────────────────────────────────
     // A GC becomes a Games GC via /setgroup games --main (AstralGroups registry).
     if (!AstralGroups.hostsActive(db, chatId, 'games')) {
-      return sock.sendMessage(chatId, {
-        text: `❌ The quiz only works in a designated *Games GC*.\nAsk an admin to set one up with */setgroup games --main*`,
-      }, { quoted: msg });
+      let _quizLink = null;
+      try { _quizLink = await require('../../rpg/games/GameCenter').liveGamesLink(db, sock); } catch (e) {}
+      const _quizBlock = _quizLink
+        ? `❌ The quiz only works in the *Games GC*.\n\n🎮 Join here to play:\n${_quizLink}`
+        : `❌ The quiz only works in a designated *Games GC*.\nAsk an admin to set one up with */setgroup games --main*`;
+      return sock.sendMessage(chatId, { text: _quizBlock }, { quoted: msg });
     }
 
     // ── /quiz scores ───────────────────────────────────────────────────────────
@@ -311,12 +338,13 @@ module.exports = {
       const session = activeSessions[chatId];
       if (!session) return sock.sendMessage(chatId, { text: `❌ No quiz is running.` }, { quoted: msg });
 
-      // Only host or admin can stop
+      // Host, group admin, or any bot mod/owner can stop
       const isHost  = session.hostJid === sender;
       const isAdmin = db.groups?.[chatId]?.admins?.includes(sender);
-      const isOwner = sender === (require('../../config.json').ownerNumber);
-      if (!isHost && !isAdmin && !isOwner) {
-        return sock.sendMessage(chatId, { text: `❌ Only the quiz host or an admin can stop the quiz.` }, { quoted: msg });
+      let isMod = false;
+      try { isMod = require('../../utils/permissions').isBotMod(db, sender); } catch (e) {}
+      if (!isHost && !isAdmin && !isMod) {
+        return sock.sendMessage(chatId, { text: `❌ Only the quiz host, an admin, or a bot mod can stop the quiz.` }, { quoted: msg });
       }
 
       clearTimeout(session.questionTimer);
@@ -413,7 +441,14 @@ module.exports = {
       }, { quoted: msg });
     }
 
-    // Already answered this question?
+    // Question already locked by a correct answer? Block everyone else.
+    if (session.lockedBy) {
+      return sock.sendMessage(chatId, {
+        text: `⛔ *${session.lockedName || 'Someone'}* already answered correctly — this question is locked!`,
+      }, { quoted: msg });
+    }
+
+    // Already answered this question? (one attempt per player)
     if (session.answered.has(sender)) {
       return sock.sendMessage(chatId, {
         text: `❌ You already answered this question!`,
@@ -441,6 +476,8 @@ module.exports = {
       session.scores[sender].correct += 1;
       session.scores[sender].nexus   += totalNexus;
       session.scores[sender].xp      += xp;
+      session.lockedBy   = sender; // first correct answer wins the question
+      session.lockedName = name;
 
       const speedMsg = isSpeed ? ` ⚡ Speed bonus +${SPEED_BONUS_NEXUS} Nexus!` : '';
 
@@ -465,4 +502,7 @@ module.exports = {
     // But if all active players answered, auto-advance after 3s
     // We can't know "all players" in a WhatsApp group easily, so we rely on timer
   },
+
+  // Live session map (also used by the rt35 harness to stage questions).
+  getSessions() { return activeSessions; },
 };

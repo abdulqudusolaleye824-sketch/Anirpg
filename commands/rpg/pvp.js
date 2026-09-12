@@ -564,21 +564,26 @@ async function resolveTurn(sock, chatId, p1, p2, db, saveDatabase) {
       UC.tickStatuses(o.p);
       UC.tickStatuses(o.opp);
     } else {
-      if (!o.res.missed) {
-        o.opp.stats.hp = Math.max(0, (o.opp.stats?.hp || 0) - o.res.damage);
-        const eff = UC.tryApplyEffect(o.move, o.p, o.opp);
-        segment = UC.buildTurnMessage(o.p, o.opp, o.move, o.res);
-        segment = segment.replace(UI.FREE_BAR + '\n', `${FRAME}\n⚔️ *TURN ${turnNum} — ${o.name}'s Move*${FRAME === UI.PRO_BAR ? ' 💎' : ''}\n${FRAME}\n`);
-        if (eff) segment += `\n${eff.emoji || '✨'} *${eff.type} applied!* (${eff.duration}t)`;
-      } else {
-        segment = UC.buildTurnMessage(o.p, o.opp, o.move, o.res);
-        segment = segment.replace(UI.FREE_BAR + '\n', `${FRAME}\n⚔️ *TURN ${turnNum} — ${o.name}'s Move*${FRAME === UI.PRO_BAR ? ' 💎' : ''}\n${FRAME}\n`);
-      }
+      // Shared 5-message battle flow (damage + move effect applied inside).
+      const _silenced = (o.p === p1 && act1 && act1._silenced) || (o.p === p2 && act2 && act2._silenced);
+      const pt = await UC.playTurn(sock, chatId, {
+        attacker: o.p, defender: o.opp,
+        move: o.move || UC.basicStrike(), result: o.res || undefined,
+        mentions: [id1, id2],
+        tag: `⚔️ *TURN ${turnNum} — ${o.name}'s Move*`,
+        prepend: _silenced ? `🤐 *${o.name} is SILENCED — skill fizzles, basic strike instead!*` : null,
+        gapMs: 600,
+      });
+      o._sent = true; // the 5 messages are already live — don't resend below
+      segment = pt.texts.join('\n');
       const tickLogs = UC.tickStatuses(o.opp);
-      if (tickLogs.length) segment += `\n` + tickLogs.join('\n');
       const selfTick = UC.tickStatuses(o.p);
-      if (selfTick.length) segment += `\n` + selfTick.join('\n');
-      if ((o.p === p1 && act1 && act1._silenced) || (o.p === p2 && act2 && act2._silenced)) segment = `🤐 *${o.name} is SILENCED — skill fizzles, basic strike instead!*\n` + segment;
+      const _ticks = [...tickLogs, ...selfTick];
+      if (_ticks.length) {
+        const _tickMsg = _ticks.join('\n');
+        segment += `\n${_tickMsg}`;
+        await sock.sendMessage(chatId, { text: _tickMsg, mentions: [id1, id2] });
+      }
     }
 
     const target = o.opp;
@@ -589,19 +594,20 @@ async function resolveTurn(sock, chatId, p1, p2, db, saveDatabase) {
       if (sac && sac.sacrificed) {
         segment += `\n\n${sac.message}`;
         accumulated += (accumulated ? '\n\n' : '') + segment;
-        await UC.slowSend(sock, chatId, { text: segment, mentions: [id1, id2] });
+        if (!o._sent) await UC.slowSend(sock, chatId, { text: segment, mentions: [id1, id2] });
+        else await UC.slowSend(sock, chatId, { text: sac.message, mentions: [id1, id2] });
       } else {
         winner = o.p; loser = o.opp;
         winnerId = (o.p === p1 ? id1 : id2);
         loserId = (o.opp === p1 ? id1 : id2);
         battleEnded = true;
         accumulated += (accumulated ? '\n\n' : '') + segment;
-        await UC.slowSend(sock, chatId, { text: segment, mentions: [id1, id2] });
+        if (!o._sent) await UC.slowSend(sock, chatId, { text: segment, mentions: [id1, id2] });
         return handlePvpVictory(sock, chatId, winner, loser, winnerId, loserId, db, saveDatabase, turnNum, accumulated);
       }
     } else {
       accumulated += (accumulated ? '\n\n' : '') + segment;
-      await UC.slowSend(sock, chatId, { text: segment, mentions: [id1, id2] });
+      if (!o._sent) await UC.slowSend(sock, chatId, { text: segment, mentions: [id1, id2] });
     }
   }
 
@@ -631,12 +637,12 @@ async function resolveTurn(sock, chatId, p1, p2, db, saveDatabase) {
       if (e.type==='bleed') desc = `🩸 -4% max HP/turn`;
       else if (e.type==='burn') desc = `🔥 -5% max HP/turn`;
       else if (e.type==='poison') desc = `☠️ -3% max HP/turn`;
-      else if (e.type==='stun') desc = `⚡ skip next turn`;
-      else if (e.type==='freeze') desc = `❄️ skip turn + frost DoT, -20% DEF`;
-      else if (e.type==='paralyze') desc = `🔱 70% skip, -50% ATK`;
-      else if (e.type==='weaken') desc = `💔 -30% ATK`;
+      else if (e.type==='stun') desc = `💫 skip turn, -50% SPD, can't dodge`;
+      else if (e.type==='freeze') desc = `❄️ skip turn + -4% max HP/turn`;
+      else if (e.type==='paralyze') desc = `🔱 can't move (3 turns)`;
+      else if (e.type==='weaken' || e.type==='weakness' || e.type==='weakened') desc = `💔 -75% ATK`;
       else if (e.type==='curse') desc = `💀 -15% DEF`;
-      else if (e.type==='fear') desc = `😱 40% skip, -20% ATK`;
+      else if (e.type==='fear') desc = `😱 -50% all stats`;
       else if (e.type==='enfeeble') desc = `🐢 -30% DEF`;
       else if (e.type==='silence') desc = `🤐 skills locked`;
       else if (e.type==='blind') desc = `🌫️ -50% accuracy`;
@@ -662,7 +668,13 @@ async function resolveTurn(sock, chatId, p1, p2, db, saveDatabase) {
     `${FRAME}`,
   ].filter(Boolean).join('\n');
 
-  await UC.slowSend(sock, chatId, { text: nextMsg, mentions: [id1, id2] });
+  const _ffBtns = Buttons ? Buttons.quickReplies([['🏳️ Forfeit', '/forfeit']]) : null;
+  if (_ffBtns) {
+    try {
+      await new Promise((r) => setTimeout(r, 1200));
+      await Buttons.sendButtons(sock, chatId, { text: nextMsg, mentions: [id1, id2], buttons: _ffBtns });
+    } catch (e) { await UC.slowSend(sock, chatId, { text: nextMsg, mentions: [id1, id2] }); }
+  } else await UC.slowSend(sock, chatId, { text: nextMsg, mentions: [id1, id2] });
   setTimeout(async () => {
     try {
       const cur1 = db.users?.[id1];

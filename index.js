@@ -469,6 +469,11 @@ function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
 // posts the group announcement. The welcome DM is sent separately after
 // the user completes /register (see commands/rpg/register.js).
 async function onGroupJoin(sock, personalityKey, chatId, participants, action) {
+  // Single-sender design: GroupNoticeManager.announceMembership (called from
+  // MultiSocketManager, event path + stub fallback with dedup) is now THE
+  // only welcome/goodbye sender. This hook stays as a no-op so the
+  // onGroupJoin option keeps working — joins must never double-send.
+  return;
   if (action !== 'add' && action !== 'remove') return;
   const db = getDatabase();
   const settings = db.groupSettings?.[chatId];

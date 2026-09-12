@@ -656,6 +656,24 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
   sock.ev.on('messages.upsert', async ({ messages, type }) => {
     if (type !== 'notify') return;
     const msg = messages[0];
+    // ── Group membership stubs (welcome/goodbye fallback) ──
+    // Joins/leaves arrive here as stub messages even when the
+    // group-participants.update event doesn't fire. Single-sender: the
+    // dispatcher bot only; GroupNoticeManager dedups against the event path.
+    if (msg.messageStubType && msg.key?.remoteJid?.endsWith('@g.us')) {
+      try {
+        const GNM = require('../rpg/utils/GroupNoticeManager');
+        const stubAct = GNM.stubAction ? GNM.stubAction(msg.messageStubType) : null;
+        if (stubAct) {
+          const stubChat = msg.key.remoteJid;
+          const params = (msg.messageStubParameters || []).filter((p) => typeof p === 'string' && p.includes('@'));
+          if (params.length && _bootstrapDispatcher(personalityKey, stubChat)) {
+            await GNM.announceMembership(sock, stubChat, params, stubAct, getDatabase());
+          }
+          return; // membership stubs never flow to commands/AI
+        }
+      } catch (e) {}
+    }
     if (!msg.message || msg.key.fromMe) return;
     // Own-send echo (a SIBLING bot's message arriving back): never process.
     if (msg.key?.id && _wasSentByUs(msg.key.id)) return;

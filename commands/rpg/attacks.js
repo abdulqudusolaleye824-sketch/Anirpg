@@ -15,6 +15,7 @@ const DB   = require('../../rpg/utils/AttackPatternDB');
 const Shop = require('../../rpg/utils/AttackShop');
 const GKM  = require('../../rpg/dungeons/GateKeyManager');
 const { GateManager } = require('../../rpg/dungeons/GateManager');
+const Buttons = (() => { try { return require('../../utils/buttons'); } catch (e) { return null; } })();
 
 const MAX_EQUIPPED = 10;
 
@@ -194,16 +195,24 @@ module.exports = {
       const owned    = ap.owned.includes(num);
       const equipped = ap.equipped.includes(num);
 
-      return sock.sendMessage(chatId, {
-        text: [
-          ...(pro ? [UI.PRO_BAR] : [UI.FREE_BAR]),
-          DB.formatAttack(atk),
-          ``,
-          owned    ? `✅ *Owned*${equipped ? ' | ⚔️ Equipped' : ''}` : `❌ Not owned`,
-          FRAME,
-          ...(pro ? [UI.PRO_MINI, equipped ? `💎 *PRO ARSENAL* — equipped` : owned ? `💎 *PRO ARSENAL* — owned` : `💎 *PRO ARSENAL* — not owned`] : [UI.upsell()]),
-        ].join('\n'),
-      }, { quoted: msg });
+      const _infoText = [
+        ...(pro ? [UI.PRO_BAR] : [UI.FREE_BAR]),
+        DB.formatAttack(atk),
+        ``,
+        owned    ? `✅ *Owned*${equipped ? ' | ⚔️ Equipped' : ''}` : `❌ Not owned`,
+        FRAME,
+        ...(pro ? [UI.PRO_MINI, equipped ? `💎 *PRO ARSENAL* — equipped` : owned ? `💎 *PRO ARSENAL* — owned` : `💎 *PRO ARSENAL* — not owned`] : [UI.upsell()]),
+      ].join('\n');
+      // Buy / Equip shortcut button (nothing to do when already equipped).
+      if (Buttons && !equipped) {
+        try {
+          const _infoBtns = owned
+            ? Buttons.quickReplies([[`⚔️ Equip #${num}`, `/attacks equip ${num}`]])
+            : Buttons.quickReplies([[`🛒 Buy #${num}`, `/attacks buy ${num}`]]);
+          return await Buttons.sendButtons(sock, chatId, { text: _infoText, buttons: _infoBtns }, msg);
+        } catch (e) { /* fall through to plain text */ }
+      }
+      return sock.sendMessage(chatId, { text: _infoText }, { quoted: msg });
     }
 
     // ── /attacks equip <number> ───────────────────────────────────────────────
@@ -297,7 +306,9 @@ module.exports = {
     if (sub === 'shop') {
       const items = Shop.getShopDisplay(db);
 
-      const lines = items.map((atk, i) => {
+      // 3-line shop rows (name / stats / effect+price) + blank spacer, so long
+      // mult rows stay readable on narrow screens.
+      const lines = items.flatMap((atk, i) => {
         const re  = DB.RANK_EMOJI[atk.rank] || '⬜';
         const eff = atk.effect ? ` ${atk.effect.emoji} ${atk.effect.label} ${atk.effect.chance}%` : 'No effect';
         const owned = ap.owned.includes(atk.id);
@@ -310,7 +321,12 @@ module.exports = {
           : atk.cost.shopNexus > 0
           ? `${atk.cost.shopNexus.toLocaleString()} Nexus`
           : `${atk.cost.shopStones.toLocaleString()} MS`;
-        return `${i+1}. ${re} *#${atk.id}* ${atk.name} Dmg×${atk.dmgMult} Atk×${atk.atkMult} Def×${atk.defMult} Spd×${atk.speedMult} Crit×${atk.critMult} ${atk.accuracy}% ${atk.cooldownSec}s cd | ${eff} — ${costStr}${stock}${ownedMark}`;
+        return [
+          `${i + 1}. ${re} *#${atk.id}* ${atk.name}${stock}${ownedMark}`,
+          `   📊 Dmg×${atk.dmgMult} Atk×${atk.atkMult} Def×${atk.defMult} Spd×${atk.speedMult} Crit×${atk.critMult} │ 🎯 ${atk.accuracy}% │ ⏳ ${atk.cooldownSec}s cd`,
+          `   ${eff} │ 💰 ${costStr}`,
+          ``,
+        ];
       });
 
       return sock.sendMessage(chatId, {

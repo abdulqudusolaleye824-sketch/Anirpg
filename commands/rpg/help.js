@@ -75,6 +75,10 @@ const KNOWN_SUBCOMMANDS = {
   p: ['view', 'bio'],
   me: ['view', 'bio'],
   stats: ['view', 'allocate'],
+  quiz: ['stop'],
+  ttt: ['accept', 'decline', 'forfeit'],
+  chess: ['accept', 'decline', 'forfeit'],
+  ch: ['accept', 'decline', 'forfeit'],
 };
 
 let commandMapCache = null;
@@ -195,10 +199,10 @@ module.exports = {
       `  /guild, /guildwar (/gw), /market, /trade, /shop, /bank, /casino`,
       ``,
       `🎮 *MINI-GAMES (games GC):*`,
-      `  /quiz, /a, /ttt, /chess (/ch), /move — play in a GC set up with /setgroup games --main`,
+      `  /games, /quiz, /a, /ttt, /chess (/ch), /move, /forfeit — play in a GC set up with /setgroup games --main`,
       ``,
       `🌍 *SOCIAL & UTILITY:*`,
-      `  /steal (/s), /sticker, /quote (/q), /rob, /imagine, /lyrics, /song, /ytmp3, /afk, /friend, /suggest, /bug`,
+      `  /steal (/s), /sticker, /quote (/q), /rob, /imagine, /lyrics, /song, /ytmp3, /afk, /friend, /support, /gclink, /suggest, /bug`,
       ``,
       `👑 *ADMIN & MODERATION:*`,
       `  /kick, /promote, /demote, /mute, /unmute, /ban, /unban, /tagall, /killspawn, /reset, /spawnstatus, /restart`,

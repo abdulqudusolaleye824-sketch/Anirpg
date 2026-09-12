@@ -10,11 +10,12 @@
 //   /ttt                → this help
 //
 // One game per group at a time; challenges expire after 5 minutes.
-// Winner: 15,000 xp + 2,000 💎 (Pro 2×, 50,000 MS/day cap).
+// Winner: 1,500 xp + 200 💠 Nexus (Pro 2×, 5,000 Nexus/day cap).
 
 const GC = require('../../rpg/games/GameCenter');
 const Boards = require('../../rpg/games/GameBoards');
 const UI = require('../../rpg/utils/UI');
+const Buttons = (() => { try { return require('../../utils/buttons'); } catch (e) { return null; } })();
 
 const KIND = 'ttt';
 const LINES = [
@@ -49,10 +50,11 @@ function helpText(pro) {
     `/ttt mark <cell> — Play (a1..c3, letter = row)`,
     `/ttt forfeit     — Resign the game`,
     `/ttt stats       — Your all-time record`,
+    `/forfeit         — Resign any active game (or tap 🏳️)`,
     ``,
     `*Rewards (winner):*`,
-    `✨ ${GC.WIN_XP.toLocaleString()} xp  💎 ${GC.TTT_WIN_MS.toLocaleString()} Moonstones`,
-    `⚠️ Daily limit: ${GC.DAILY_MS_CAP.toLocaleString()} MS/day`,
+    `✨ ${GC.WIN_XP.toLocaleString()} xp  💠 ${GC.TTT_WIN_NX.toLocaleString()} Nexus`,
+    `⚠️ Daily limit: ${GC.DAILY_NX_CAP.toLocaleString()} Nexus/day`,
     pro ? `💎 Pro earns *2×* rewards` : null,
     (pro ? UI.PRO_BAR : UI.FREE_BAR),
   ].filter((x) => x !== null).join('\n');
@@ -88,10 +90,10 @@ async function finishGame(sock, chatId, msg, db, saveDatabase, game, result) {
     const winPlayer = db.users?.[winJid];
     const losePlayer = db.users?.[loseJid];
     const winName = result === 'X' ? xName : oName;
-    let res = { xp: 0, ms: 0, capped: false };
+    let res = { xp: 0, nx: 0, capped: false };
     if (winPlayer) {
       res = GC.awardGame(db, winPlayer, winJid, KIND, 'win');
-      GC.bumpStats(winPlayer, KIND, 'win', res.ms);
+      GC.bumpStats(winPlayer, KIND, 'win', res.nx);
     }
     if (losePlayer) GC.bumpStats(losePlayer, KIND, 'loss', 0);
     caption = `${GC.mentionOf(winJid)} has won the match${GC.rewardLine(res, winPlayer && UI.isPro(winPlayer))}`;
@@ -120,7 +122,7 @@ module.exports = {
     const player = db.users?.[sender];
 
     const g = GC.gate(db, chatId);
-    if (!g.ok) return sock.sendMessage(chatId, { text: g.reason }, { quoted: msg });
+    if (!g.ok) return sock.sendMessage(chatId, { text: await GC.gateBlock(db, chatId, sock, g) }, { quoted: msg });
 
     const sub = (args[0] || '').toLowerCase();
     const game = GC.slot(db, KIND, chatId);
@@ -138,16 +140,17 @@ module.exports = {
     // ── /ttt stats ─────────────────────────────────────────────
     if (sub === 'stats' || sub === 'score') {
       if (!player) return sock.sendMessage(chatId, { text: `❌ You're not registered.` }, { quoted: msg });
-      const s = player.tttStats || { wins: 0, losses: 0, draws: 0, msEarned: 0 };
+      const s = player.tttStats || { wins: 0, losses: 0, draws: 0, msEarned: 0, nxEarned: 0 };
       return sock.sendMessage(chatId, {
         text: [
           (UI.isPro(player) ? UI.PRO_BAR : UI.FREE_BAR),
           '❌ *YOUR TIC-TAC-TOE STATS* ⭕',
           ``,
           `🏆 Wins: *${s.wins}*   ❌ Losses: *${s.losses}*   🤝 Draws: *${s.draws}*`,
-          `💎 Moonstones earned: *${(s.msEarned || 0).toLocaleString()}*`,
+          `💠 Nexus earned: *${(s.nxEarned || 0).toLocaleString()}*`,
+          (s.msEarned > 0) ? `💎 Legacy Moonstones: *${s.msEarned.toLocaleString()}*` : null,
           (UI.isPro(player) ? UI.PRO_BAR : UI.FREE_BAR),
-        ].join('\n'),
+        ].filter((x) => x !== null).join('\n'),
       }, { quoted: msg });
     }
 
@@ -166,10 +169,8 @@ module.exports = {
       const caption = `Game Started!\n❌ - ${GC.mentionOf(game.xJid)}\n⭕ - ${GC.mentionOf(game.oJid)}\n\n❌ ${GC.mentionOf(game.xJid)} to move — */ttt mark <cell>*`;
       const img = await Boards.renderTTT(game.board);
       const mentions = [game.xJid, game.oJid];
-      if (Buffer.isBuffer(img) && img.length > 0) {
-        return sock.sendMessage(chatId, { image: img, caption, mentions }, { quoted: msg });
-      }
-      return sock.sendMessage(chatId, { text: `${caption}\n${Boards.textTTT(game.board)}`, mentions }, { quoted: msg });
+      const ffBtns = Buttons ? Buttons.quickReplies([['🏳️ Forfeit', '/forfeit']]) : null;
+      return GC.sendBoard(sock, chatId, msg, img, caption, Boards.textTTT(game.board), { mentions, buttons: ffBtns });
     }
 
     // ── /ttt decline ───────────────────────────────────────────
@@ -234,10 +235,8 @@ module.exports = {
       const caption = `${myMark === 'X' ? '❌' : '⭕'} ${GC.mentionOf(sender)} marked *${cellArg.toLowerCase()}*\n${game.turn === 'X' ? '❌' : '⭕'} ${GC.mentionOf(nextJid)} to move.`;
       const img = await Boards.renderTTT(game.board);
       const mentions = [game.xJid, game.oJid];
-      if (Buffer.isBuffer(img) && img.length > 0) {
-        return sock.sendMessage(chatId, { image: img, caption, mentions }, { quoted: msg });
-      }
-      return sock.sendMessage(chatId, { text: `${caption}\n${Boards.textTTT(game.board)}`, mentions }, { quoted: msg });
+      const ffBtns = Buttons ? Buttons.quickReplies([['🏳️ Forfeit', '/forfeit']]) : null;
+      return GC.sendBoard(sock, chatId, msg, img, caption, Boards.textTTT(game.board), { mentions, buttons: ffBtns });
     }
 
     // ── /ttt @user (challenge) ─────────────────────────────────
@@ -263,10 +262,17 @@ module.exports = {
         expiresAt: Date.now() + GC.CHALLENGE_TTL,
       });
       saveDatabase(db);
-      return sock.sendMessage(chatId, {
-        text: `${GC.mentionOf(sender)} has challenged ${GC.mentionOf(target)} for a Tic-Tac-Toe match. Use */tictactoe accept* to start the game`,
-        mentions: [sender, target],
-      }, { quoted: msg });
+      const cText = `${GC.mentionOf(sender)} has challenged ${GC.mentionOf(target)} for a Tic-Tac-Toe match. Use */tictactoe accept* to start the game`;
+      if (Buttons) {
+        try {
+          return await Buttons.sendButtons(sock, chatId, {
+            text: cText,
+            mentions: [sender, target],
+            buttons: Buttons.quickReplies([['✅ Accept', '/ttt accept'], ['❌ Decline', '/ttt decline']]),
+          }, msg);
+        } catch (e) { /* fall through to plain text */ }
+      }
+      return sock.sendMessage(chatId, { text: cText, mentions: [sender, target] }, { quoted: msg });
     }
 
     // ── Unknown ────────────────────────────────────────────────

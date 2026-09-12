@@ -16,7 +16,7 @@ module.exports = {
     const db = getDatabase();
 
     const g = GC.gate(db, chatId);
-    if (!g.ok) return sock.sendMessage(chatId, { text: g.reason }, { quoted: msg });
+    if (!g.ok) return sock.sendMessage(chatId, { text: await GC.gateBlock(db, chatId, sock, g) }, { quoted: msg });
 
     const game = GC.slot(db, KIND, chatId);
     if (!game || game.phase !== 'challenge') {

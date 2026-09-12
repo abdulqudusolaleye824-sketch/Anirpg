@@ -1324,7 +1324,7 @@ function formatQuestion(q, currentNum, total, pro = false) {
     `C. ${q.options.C}`,
     `D. ${q.options.D}`,
     ``,
-    `Use *!a A/B/C/D* to answer`,
+    `Tap an option or use */a A/B/C/D* to answer`,
     (pro ? UI.PRO_BAR : UI.FREE_BAR),
   ].join('\n');
 }
