@@ -4,19 +4,19 @@
  * ║  Search & SEND Pinterest images (no API key)        ║
  * ╚══════════════════════════════════════════════════════╝
  *
- * Usage: /pinterest <search query>
- * Sends up to 4 images to the chat (quoted reply).
+ * Usage: /pinterest <search query> [|1-10] (default 4 images).
+ * Sends up to N images to the chat (quoted reply).
  *
- * NOTE on Pinterest's own search page: it is fully client-rendered (no server
- * side results), so a plain HTML scrape returns 0 images. The reliable keyless
- * route is Bing image search, which also surfaces genuine i.pinimg.com
- * Pinterest-hosted pins. We try the Pinterest scrape first (rarely works), then
- * fall back to Bing and PREFER Pinterest-hosted images.
+ * NOTE on sources: Pinterest's own pages are fully client-rendered (scrapes
+ * return 0) and Bing serves wrong-topic garbage to datacenter IPs, so both are
+ * out. Keyless route is Brave image search → Flickr tag feed → Wikimedia
+ * Commons API, merged until the candidate pool is healthy.
  */
 
 'use strict';
 
 const https       = require('https');
+const http        = require('http');
 const COOLDOWNS   = new Map();
 const COOLDOWN_MS = 20_000;
 
@@ -42,13 +42,27 @@ function get(url, hdrs = {}, asJson = false) {
   });
 }
 
-function fetchBuffer(url, referer) {
+function fetchBuffer(url, referer, _hops = 0) {
   return new Promise((resolve, reject) => {
-    const req = https.get(url, {
+    const lib = String(url).startsWith('http://') ? http : https;
+    const req = lib.get(url, {
       timeout: 25_000,
-      headers: { 'User-Agent': 'Mozilla/5.0', ...(referer ? { Referer: referer } : {}) },
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36',
+        'Accept': 'image/*,*/*;q=0.8',
+        ...(referer ? { Referer: referer } : {}),
+      },
     }, (res) => {
-      if (res.statusCode !== 200) return reject(new Error(`HTTP ${res.statusCode}`));
+      // Push #28: follow redirects (many image hosts 301/302 hotlinks).
+      if ([301, 302, 303, 307, 308].includes(res.statusCode) && res.headers.location && _hops < 4) {
+        res.resume();
+        const next = new URL(res.headers.location, url).toString();
+        return resolve(fetchBuffer(next, referer, _hops + 1));
+      }
+      if (res.statusCode !== 200) {
+        res.resume();
+        return reject(new Error(`HTTP ${res.statusCode}`));
+      }
       const chunks = [];
       res.on('data', (c) => chunks.push(c));
       res.on('end', () => resolve(Buffer.concat(chunks)));
@@ -61,50 +75,66 @@ function fetchBuffer(url, referer) {
 // ---------------------------------------------------------------------------
 // Sources
 // ---------------------------------------------------------------------------
-// Attempt #1: Pinterest search page inline scrape (works only if Pinterest ever
-// server-renders; usually yields 0 today).
-async function searchPinterest(query) {
-  const url = `https://www.pinterest.com/search/pins/?q=${encodeURIComponent(query)}&rs=typed`;
-  try {
-    const html = await get(url);
-    const imgs = [...new Set([...html.matchAll(/https:\/\/i\.pinimg\.com\/(originals|[0-9]+x)\/([0-9a-f]+\/[0-9a-f]+\/[0-9a-f]+\/[0-9a-f]+\.(?:jpg|png|webp))/gi)].map((m) => m[0]))];
-    return imgs;
-  } catch (_) {
-    return [];
-  }
+// Push #28: Bing dropped — from datacenter IPs it returns WRONG-TOPIC results
+// (bot-mitigation garbage page), which is worse than no results. Source order:
+// Brave (full-web index, bot-tolerant HTML) → Flickr tag feed (direct URLs) →
+// Wikimedia Commons API (guaranteed relevant when it hits). All keyless.
+
+// Attempt #1: Brave image search (keyless HTML, no token dance).
+async function searchBrave(query) {
+  const url = `https://search.brave.com/images?q=${encodeURIComponent(query)}&source=web`;
+  const html = await get(url);
+  const clean = String(html).replace(/&amp;/g, '&');
+  return [...new Set(
+    [...clean.matchAll(/https:\/\/[^"'\s<>]+\.(?:jpg|jpeg|png|webp)(?:\?[^"'\s<>]*)?/gi)]
+      .map((m) => m[0].split('?')[0])
+      .filter((u) => !/brave\.com|favicon|logo|icon|sprite|schema\.org|static\./i.test(u))
+  )];
 }
 
-// Attempt #2: Bing image search (keyless). Prefer Pinterest-hosted URLs first.
-async function searchBing(query) {
-  const url = `https://www.bing.com/images/search?q=${encodeURIComponent(query)}`;
+// Attempt #2: Flickr public feed (keyless JSON, hotlink-friendly direct URLs).
+async function searchFlickr(query) {
+  const tags = String(query || '').toLowerCase().replace(/[^a-z0-9\s]/g, ' ')
+    .split(/\s+/).filter(Boolean).slice(0, 5).join(',');
+  if (!tags) return [];
+  const url = `https://www.flickr.com/services/feeds/photos_public.gne?tags=${encodeURIComponent(tags)}&format=json&nojsoncallback=1`;
   const html = await get(url);
-  const urls = [...new Set(
-    [...html.matchAll(/murl&quot;:&quot;([^&]+)&quot;/g)].map((m) => decodeURIComponent(m[1]))
-  )];
-  const pin = urls.filter((u) => /pinimg\.com|pinterest/i.test(u));
-  return [...new Set([...pin, ...urls])];
+  let d;
+  try { d = JSON.parse(html); } catch (_) { return []; }
+  return (d.items || [])
+    .map((it) => (it.media?.m || '').replace('_m.', '_b.'))
+    .filter((u) => /^https:\/\//.test(u));
+}
+
+// Attempt #3: Wikimedia Commons API (keyless, always relevant when it hits).
+async function searchCommons(query) {
+  const url = `https://commons.wikimedia.org/w/api.php?action=query&format=json&generator=search&gsrsearch=${encodeURIComponent(query)}&gsrnamespace=6&gsrlimit=20&prop=imageinfo&iiprop=url&iiurlwidth=800`;
+  const html = await get(url);
+  let d;
+  try { d = JSON.parse(html); } catch (_) { return []; }
+  return Object.values(d.query?.pages || {})
+    .map((p) => p.imageinfo?.[0]?.thumburl || p.imageinfo?.[0]?.url || '')
+    .filter((u) => /^https:\/\//.test(u));
 }
 
 async function collectImages(query) {
-  let urls = await searchPinterest(query);        // Pinterest first (rare)
-  if (!urls.length) {
-    try {
-      urls = await searchBing(`${query} pinterest`); // Bing fallback (keyless)
-    } catch (_) {
-      urls = [];
-    }
-  }
-  // normalize, dedupe, drop non-image
+  // Merge sources until the candidate pool is healthy — a thin pool gets
+  // supplemented, so one walled source can't starve the result.
   const seen = new Set();
   const out = [];
-  for (const u of urls) {
-    const clean = u.split('?')[0];
-    if (!/\.(jpe?g|png|webp|gif)$/i.test(clean)) continue;
-    if (seen.has(clean)) continue;
-    seen.add(clean);
-    out.push(clean);
-    if (out.length >= 10) break;
-  }
+  const add = (urls) => {
+    for (const u of urls || []) {
+      const clean = String(u).split('?')[0];
+      if (!/\.(jpe?g|png|webp|gif)$/i.test(clean)) continue;
+      if (seen.has(clean)) continue;
+      seen.add(clean);
+      out.push(clean);
+      if (out.length >= 20) break;
+    }
+  };
+  try { add(await searchBrave(query)); } catch (e) { console.error('⚠️ Pinterest/Brave:', e.message); }
+  if (out.length < 6) { try { add(await searchFlickr(query)); } catch (e) { console.error('⚠️ Pinterest/Flickr:', e.message); } }
+  if (out.length < 6) { try { add(await searchCommons(query)); } catch (e) { console.error('⚠️ Pinterest/Commons:', e.message); } }
   return out;
 }
 
@@ -173,11 +203,12 @@ module.exports = {
       }, { quoted: msg });
     }
 
-    // Send up to `count` images as a quoted reply to the user
-    const toSend = imageUrls.slice(0, count);
+    // Push #28: over-fetch — walk the whole pool until `count` actually send.
+    const toSend = imageUrls.slice(0, Math.max(count * 2, 10));
     let sent = 0;
 
     for (const url of toSend) {
+      if (sent >= count) break;
       try {
         const buffer = await fetchBuffer(url, 'https://www.bing.com/');
         // only send if it looks like an image (jpeg/png/webp magic bytes)
@@ -191,7 +222,7 @@ module.exports = {
                   : /47494638/.test(head) ? 'image/gif'
                   : /52494646/.test(head) ? 'image/webp'
                   : 'image/jpeg',
-          caption:  sent === 0 ? `📌 Pinterest: _${query}_ (${toSend.length} images)` : '',
+          caption:  sent === 0 ? `📌 _${query}_` : '',
         }, { quoted: msg });
         sent++;
         if (sent < toSend.length) await new Promise((r) => setTimeout(r, 500));
@@ -203,6 +234,11 @@ module.exports = {
     if (sent === 0) {
       return sock.sendMessage(chatId, {
         text: `❌ Found results but could not download images for: _${query}_`,
+      }, { quoted: msg });
+    }
+    if (sent < count) {
+      await sock.sendMessage(chatId, {
+        text: `⚠️ Only ${sent} of ${count} images loaded — the rest failed to download. Try again!`,
       }, { quoted: msg });
     }
   },

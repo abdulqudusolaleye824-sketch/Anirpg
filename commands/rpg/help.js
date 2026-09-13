@@ -209,7 +209,7 @@ module.exports = {
       `  /games, /quiz, /a, /ttt, /chess (/ch), /move, /forfeit, /emoji, /guess, /hangman, /hang, /typerace — play in a GC set up with /setgroup games --main`,
       ``,
       `🌍 *SOCIAL & UTILITY:*`,
-      `  /steal (/s), /sticker, /quote (/q), /rob, /imagine, /lyrics, /play (/song), /ytmp3, /ytmp4, /tt, /fb, /ig, /pinterest, /afk, /friend, /setbio, /support, /gclink, /suggest, /bug`,
+      `  /steal (/s), /sticker, /quote (/q), /rob, /imagine, /lyrics, /play (/song), /ytmp3, /ytmp4, /tt, /facebook (/fb), /insta (/ig), /pinterest, /afk, /friend, /setbio, /support, /gclink, /suggest, /bug`,
       ``,
       `👑 *ADMIN & MODERATION:*`,
       `  /kick, /promote, /demote, /mute, /unmute, /ban, /unban, /tagall, /chatbot, /killspawn, /reset, /spawnstatus, /restart`,

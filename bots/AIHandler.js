@@ -249,7 +249,8 @@ async function generateResponse(
 
   // ── Lewd shutdown (first, before any intent/game handling) ──
   if (LEWD_PATTERNS.some(re => re.test(userMessage))) {
-    const text = SP.deflect(personalityKey, scriptCtx);
+    let text = SP.deflect(personalityKey, scriptCtx);
+    if (!text || !String(text).trim()) text = "Let's keep it clean, hunter. 😤"; // Push #28: never blank
     addToHistory(chatId, personalityKey, sender, 'user', `[${senderName}]: ${userMessage}`);
     addToHistory(chatId, personalityKey, sender, 'assistant', text);
     return { text };
@@ -262,10 +263,13 @@ async function generateResponse(
         userMessage, sender, msg, personalityKey, db, saveDatabase
       );
       if (rpgResult.handled) {
-        let text = rpgResult.text;
-        addToHistory(chatId, personalityKey, sender, 'user', `[${senderName}]: ${userMessage}`);
-        addToHistory(chatId, personalityKey, sender, 'assistant', text);
-        return { text, attachment: rpgResult.attachment || null };
+        // Push #28: blank RPG text falls through to scripted chat (never blank).
+        const rtext = (rpgResult.text ?? '').toString().trim();
+        if (rtext || rpgResult.attachment) {
+          addToHistory(chatId, personalityKey, sender, 'user', `[${senderName}]: ${userMessage}`);
+          addToHistory(chatId, personalityKey, sender, 'assistant', rtext);
+          return { text: rtext, attachment: rpgResult.attachment || null };
+        }
       }
     } catch(err) {
       console.error('RPG intent error:', err.message);
@@ -296,6 +300,7 @@ async function generateResponse(
         throw new Error('unwired-intent');
       }
 
+      text = (text || '').trim(); // Push #28: never blank
       if (!text && !attachment) throw new Error('empty-intent');
       addToHistory(chatId, personalityKey, sender, 'user', `[${senderName}]: ${userMessage}`);
       addToHistory(chatId, personalityKey, sender, 'assistant', text);
@@ -308,10 +313,11 @@ async function generateResponse(
   // ── Scripted persona replies ──
   try {
     const s = SP.respond(personalityKey, userMessage, scriptCtx);
-    if (s) {
+    const st = (s ?? '').toString().trim(); // Push #28: never blank
+    if (st) {
       addToHistory(chatId, personalityKey, sender, 'user', `[${senderName}]: ${userMessage}`);
-      addToHistory(chatId, personalityKey, sender, 'assistant', s);
-      return { text: s };
+      addToHistory(chatId, personalityKey, sender, 'assistant', st);
+      return { text: st };
     }
   } catch (err) { console.error('Scripted persona error:', err.message); }
 
@@ -329,7 +335,7 @@ async function generateResponse(
   // ── Scripted fallback: always an answer, never an error ──
   let fb = '';
   try { fb = SP.fallback(personalityKey, scriptCtx); } catch (e) { fb = ''; }
-  if (!fb) fb = 'Hmm, interesting... tell me more! 🤔';
+  if (!fb || !String(fb).trim()) fb = 'Hmm, interesting... tell me more! 🤔'; // Push #28
   if (aiText && aiText.trim()) fb = aiText.trim();
   addToHistory(chatId, personalityKey, sender, 'user', `[${senderName}]: ${userMessage}`);
   addToHistory(chatId, personalityKey, sender, 'assistant', fb);

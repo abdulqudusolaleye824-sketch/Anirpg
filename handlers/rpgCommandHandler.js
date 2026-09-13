@@ -21,10 +21,6 @@ const utilityCmds = {
   yt:         Utility.yt,
   tt:         Utility.tt,
   tiktok:     Utility.tt,
-  fb:         Utility.fb,
-  facebook:   Utility.fb,
-  ig:         Utility.ig,
-  instagram:  Utility.ig,
   math:       Utility.math,
   search:     Utility.search,
 };
@@ -39,6 +35,8 @@ const cctvCmds = {
 const CHUNK_SIZE = 3500;
 
 async function sendChunked(sock, chatId, text, options = {}) {
+  // Push #28: never emit blank text bubbles.
+  if (text === undefined || text === null || !String(text).trim()) return;
   const cleanOptions = { ...options };
   delete cleanOptions.text;
 

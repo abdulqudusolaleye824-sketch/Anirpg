@@ -17,6 +17,7 @@ const fs           = require('fs');
 const path         = require('path');
 const os           = require('os');
 const ToolRunner   = require('../../rpg/utils/ToolRunner');
+const { extractQuotedUrl } = require('./utility');
 
 const COOLDOWNS  = new Map();
 const COOLDOWN_MS = 60_000;
@@ -45,13 +46,16 @@ module.exports = {
   name:        'insta',
   aliases:     ['ig', 'instagram', 'reel', 'reels'],
   description: 'Download an Instagram post/reel video (mp4).',
-  usage:       '/insta <url>',
+  usage:       '/insta <url> (or reply to one)',
   category:    'utility',
 
   async execute(sock, msg, args, getDatabase, saveDatabase, sender) {
     const chatId = msg.key.remoteJid;
 
-    if (!args.length) {
+    // Push #28: no args → try the replied-to message's link.
+    let url = (args[0] || '').trim();
+    if (!url) url = extractQuotedUrl(msg) || '';
+    if (!url) {
       return sock.sendMessage(chatId, {
         text: [
           '📸 *Instagram Downloader*',
@@ -61,13 +65,12 @@ module.exports = {
           '💡 Downloads an Instagram reel/post as .mp4:',
           '  /insta https://www.instagram.com/reel/xxxx/',
           '  /insta https://www.instagram.com/p/xxxx/',
+          '  💡 Or reply to a message containing the link',
           '',
           '⚠️ Works on public posts. Private accounts need IG_COOKIES in .env.',
         ].join('\n'),
       }, { quoted: msg });
     }
-
-    const url = args[0].trim();
     if (!/instagram\.com|instagr\.am|ig\.me/i.test(url)) {
       return sock.sendMessage(chatId, {
         text: '❌ Please paste a valid Instagram link.',
@@ -96,33 +99,38 @@ module.exports = {
     }
 
     const tmpDir  = os.tmpdir();
-    const outPath = path.join(tmpDir, `anirpg_ig_${Date.now()}.mp4`);
+    // Push #28: ext-agnostic output — photo posts come back as jpg, not mp4.
+    const outTemplate = path.join(tmpDir, `anirpg_ig_${Date.now()}.%(ext)s`);
+    let mediaPath = null;
 
     try {
       const cookieArgs = [];
       if (process.env.IG_COOKIES) cookieArgs.push('--cookies', process.env.IG_COOKIES);
-      // Download the best video (Instagram usually gives a single mp4 with audio).
-      await runYtDlp([
+      // Download the best media (reels → mp4, photo posts → jpg).
+      const printed = await runYtDlp([
         url,
         '--no-playlist', '--no-warnings',
         ...cookieArgs,
         '-f', 'best[ext=mp4]/bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best',
-        '--merge-output-format', 'mp4', '--remux-video', 'mp4',
-        '--output', outPath,
+        '--merge-output-format', 'mp4',
+        '--output', outTemplate,
+        '--print', 'after_move:filepath',
         '--max-filesize', String(MAX_SIZE_B),
       ]);
+      mediaPath = printed.trim().split('\n').pop();
 
-      if (!fs.existsSync(outPath)) throw new Error('Output file not created');
+      if (!mediaPath || !fs.existsSync(mediaPath)) throw new Error('Output file not created');
 
-      const stat   = fs.statSync(outPath);
+      const stat   = fs.statSync(mediaPath);
       const sizeMB = (stat.size / 1024 / 1024).toFixed(1);
       if (stat.size > MAX_SIZE_B) throw new Error('File too large to send');
 
-      await sock.sendMessage(chatId, {
-        video:    fs.readFileSync(outPath),
-        mimetype: 'video/mp4',
-        caption:  `📸 *${info.title || 'Instagram post'}*\n👤 ${info.uploader || 'Unknown'}\n📦 ${sizeMB} MB`,
-      }, { quoted: msg });
+      const isImg = /\.(jpg|jpeg|png|webp)$/i.test(mediaPath);
+      const caption = `📸 *${info.title || 'Instagram post'}*\n👤 ${info.uploader || 'Unknown'}\n📦 ${sizeMB} MB`;
+      await sock.sendMessage(chatId, isImg
+        ? { image: fs.readFileSync(mediaPath), caption }
+        : { video: fs.readFileSync(mediaPath), mimetype: 'video/mp4', caption },
+        { quoted: msg });
 
       await sock.sendMessage(chatId, { text: `✅ Done!` });
 
@@ -142,7 +150,7 @@ module.exports = {
         ].join('\n'),
       }, { quoted: msg });
     } finally {
-      try { fs.unlinkSync(outPath); } catch (_) {}
+      try { if (mediaPath) fs.unlinkSync(mediaPath); } catch (_) {}
     }
   },
 };

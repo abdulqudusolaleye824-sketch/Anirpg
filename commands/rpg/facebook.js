@@ -17,6 +17,7 @@ const fs           = require('fs');
 const path         = require('path');
 const os           = require('os');
 const ToolRunner   = require('../../rpg/utils/ToolRunner');
+const { extractQuotedUrl } = require('./utility');
 
 const COOLDOWNS  = new Map();
 const COOLDOWN_MS = 60_000;
@@ -45,13 +46,16 @@ module.exports = {
   name:        'facebook',
   aliases:     ['fb', 'fbdl', 'fbvideo'],
   description: 'Download a Facebook video/reel (mp4).',
-  usage:       '/facebook <url>',
+  usage:       '/facebook <url> (or reply to one)',
   category:    'utility',
 
   async execute(sock, msg, args, getDatabase, saveDatabase, sender) {
     const chatId = msg.key.remoteJid;
 
-    if (!args.length) {
+    // Push #28: no args → try the replied-to message's link.
+    let url = (args[0] || '').trim();
+    if (!url) url = extractQuotedUrl(msg) || '';
+    if (!url) {
       return sock.sendMessage(chatId, {
         text: [
           '📘 *Facebook Downloader*',
@@ -61,13 +65,12 @@ module.exports = {
           '💡 Downloads a Facebook video/reel as .mp4:',
           '  /facebook https://www.facebook.com/reel/xxxx/',
           '  /facebook https://fb.watch/xxxx/',
+          '  💡 Or reply to a message containing the link',
           '',
           '⚠️ Works on public videos. Login-gated posts need FB_COOKIES in .env.',
         ].join('\n'),
       }, { quoted: msg });
     }
-
-    const url = args[0].trim();
     if (!/facebook\.com|fb\.watch|fb\.me|fb\.com/i.test(url)) {
       return sock.sendMessage(chatId, {
         text: '❌ Please paste a valid Facebook link.',

@@ -721,7 +721,7 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
           delete db.pendingRestartNotice;
           if (saveDatabase) saveDatabase();
           setTimeout(() => {
-            sock.sendMessage(chatId, { text }).catch(() => {});
+            if (text && String(text).trim()) sock.sendMessage(chatId, { text }).catch(() => {}); // Push #28
           }, 1200);
         }
       } catch (e) {}
@@ -1131,7 +1131,7 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
         sender, msg, getDatabase, saveDatabase
       );
 
-      if (text) {
+      if (text && String(text).trim()) { // Push #28: silence blank chatter
         await sock.sendMessage(chatId, { text }, { quoted: msg });
       }
 
@@ -1139,7 +1139,7 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
         await sendAttachment(sock, chatId, attachment);
       }
 
-      if (text || attachment) _touchChatWindow(chatId, sender);
+      if ((text && String(text).trim()) || attachment) _touchChatWindow(chatId, sender); // Push #28
 
     } catch (err) {
       console.error(`❌ [${displayName}] AI error:`, err.message);
@@ -1155,6 +1155,8 @@ async function sendAttachment(sock, chatId, attachment, opts = {}) {
   const isGroup = chatId?.endsWith?.('@g.us');
 
   const send = async (content) => {
+    // Push #28: never emit blank text bubbles.
+    if (content && typeof content.text === 'string' && !content.text.trim()) return;
     if (isGroup) return sock.sendMessage(chatId, content);
     return safeSendDM(sock, chatId, content, opts);
   };
@@ -1229,6 +1231,10 @@ function canSendDM(db, playerJid, botJid, botKey) {
 }
 
 async function safeSendDM(sock, playerJid, content, opts = {}) {
+  // Push #28: never emit blank text bubbles.
+  if (content && typeof content.text === 'string' && !content.text.trim()) {
+    return { dropped: true, reason: 'empty-text' };
+  }
   if (opts.welcome) {
     return sock.sendMessage(playerJid, content);
   }
@@ -1281,7 +1287,7 @@ async function sendHiChorus(chatId, responses, quotedMsg) {
       if (!sock || !sock.user?.id) { failed.push(personalityKey); continue; }
 
       const replyOpts = quotedMsg ? { quoted: quotedMsg } : {};
-      if (text) {
+      if (text && String(text).trim()) { // Push #28: silence blank chorus lines
         await sock.sendMessage(chatId, { text }, replyOpts);
       }
 
