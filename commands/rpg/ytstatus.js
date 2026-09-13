@@ -44,7 +44,7 @@ module.exports = {
     const ck = process.env.YT_COOKIES || '';
     lines.push(ck ? `✅ YT_COOKIES: *set* (${ck.length} chars)` : '⚠️ YT_COOKIES: *not set*');
 
-    // ── 4. live search probe ──
+    // ── 4. live search probe (stage 1 of /play) ──
     lines.push('', '🔎 Live YouTube probe (1 result)…');
     let probeOk = false;
     let probeErr = '';
@@ -68,12 +68,48 @@ module.exports = {
       lines.push(`_${probeErr}_`);
     }
 
-    // ── 5. verdict ──
+    // ── 5. media-URL extract probe (stage 2 of /play, no download) ──
+    // Batch-49: search often works while the player API refuses media
+    // URLs — this pinpoints exactly that split. Same args as /play.
+    lines.push('', '🎬 Media-URL probe (no download)…');
+    let extractOk = false;
+    let extractErr = '';
+    try {
+      let audio;
+      try { audio = await ToolRunner.optimalAudioArgs(); }
+      catch (e) { audio = { args: ['-f', 'bestaudio[ext=m4a]/bestaudio'] }; }
+      const x = await ToolRunner.ytDlpRun([
+        ...(audio.args || []),
+        '--no-playlist', '--skip-download', '--print', '%(url)s',
+        'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+      ], { timeout: 45000 });
+      if (x && x.ok && /^https?:\/\//m.test(String(x.stdout || ''))) {
+        extractOk = true;
+        lines.push('✅ Extract: *working* — YouTube hands over media URLs');
+      } else {
+        extractErr = String((x && x.error) || 'empty result').slice(0, 220);
+        lines.push('❌ Extract: *FAILED*');
+        lines.push(`_${extractErr}_`);
+      }
+    } catch (e) {
+      extractErr = String((e && e.message) || e).slice(0, 220);
+      lines.push('❌ Extract: *ERROR*');
+      lines.push(`_${extractErr}_`);
+    }
+
+    // ── 6. verdict ──
     lines.push('', '📋 *Verdict*');
+    const _blocked = (t) => /sign in|confirm|bot|403|429|login|challenge|forbidden/i.test(t || '');
     if (!ytdlpVer) {
       lines.push('• Install yt-dlp on this host, then restart the bot.');
-    } else if (!probeOk && /sign in|confirm|bot|403|429|login|challenge/i.test(probeErr)) {
+    } else if (probeOk && !extractOk && _blocked(extractErr)) {
+      lines.push('• Classic IP flag: search works but YouTube refuses media URLs to this server → set the YT_COOKIES env var, then restart.');
+      lines.push('• YT_COOKIES accepts a cookie-file path OR raw Netscape cookie data pasted in directly.');
+    } else if ((!extractOk || !probeOk) && _blocked(extractErr + '\n' + probeErr)) {
       lines.push('• Host IP is flagged by YouTube → set the YT_COOKIES env var (Netscape cookies from a logged-in browser), then restart.');
+    } else if (!extractOk) {
+      lines.push('• Media extraction fails for an unknown reason — upgrade yt-dlp to latest, then restart.');
+      lines.push('• If it still fails, set YT_COOKIES and restart.');
     } else if (!probeOk) {
       lines.push('• Upgrade yt-dlp to latest, then restart the bot.');
       lines.push('• If it still fails, set YT_COOKIES and restart.');

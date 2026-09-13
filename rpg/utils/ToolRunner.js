@@ -23,6 +23,7 @@
 const { execFile } = require('child_process');
 const path = require('path');
 const fs   = require('fs');
+const os   = require('os');
 
 const YTDLP_CANDS = [
   ['python', '-m', 'yt_dlp'],
@@ -169,9 +170,35 @@ function hasFfmpeg() {
 const YOUTUBE_EXTRACTOR_ARGS = 'youtube:player_client=mweb,web,default,tv,web_safari';
 
 // Optional cookie file (from .env YT_COOKIES or YT_COOKIES_FROM_BROWSER).
+// Batch-49: YT_COOKIES accepts a cookie-FILE path (old behavior) OR raw
+// Netscape cookie DATA pasted straight into the env var (new — the only
+// sane option on hosts with ephemeral filesystems like Railway). Data
+// mode materializes a 0600 temp file; the value itself is never logged.
 function youtubeCookiesArgs() {
   const out = [];
-  if (process.env.YT_COOKIES) out.push('--cookies', process.env.YT_COOKIES);
+  const ck = process.env.YT_COOKIES || '';
+  if (ck) {
+    let isPath = false;
+    try { isPath = fs.existsSync(ck) && fs.statSync(ck).isFile(); } catch (e) { isPath = false; }
+    if (isPath) {
+      out.push('--cookies', ck);
+    } else {
+      try {
+        let data = ck;
+        // Env dashboards often mangle real newlines into literal backslash-n.
+        if (data.indexOf('\n') === -1 && data.indexOf('\\n') !== -1) data = data.split('\\n').join('\n');
+        if (data.charAt(data.length - 1) !== '\n') data += '\n';
+        const fp = path.join(os.tmpdir(), 'anirpg-yt-cookies.txt');
+        let cur = null;
+        try { cur = fs.readFileSync(fp, 'utf8'); } catch (e) { cur = null; }
+        if (cur !== data) {
+          fs.writeFileSync(fp, data, { mode: 0o600 });
+          try { fs.chmodSync(fp, 0o600); } catch (e) {}
+        }
+        out.push('--cookies', fp);
+      } catch (e) { /* fall through cookieless rather than crash */ }
+    }
+  }
   if (process.env.YT_COOKIES_FROM_BROWSER) out.push('--cookies-from-browser', process.env.YT_COOKIES_FROM_BROWSER);
   return out;
 }
