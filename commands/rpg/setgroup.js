@@ -125,6 +125,18 @@ module.exports = {
     }
     saveDatabase();
 
+    // Push #25: --main groups get ALL online bots immediately.
+    let joinLines = '';
+    if (result.status === 'main') {
+      try {
+        const MainJoin = require('../../rpg/utils/MainJoin');
+        const jr = await MainJoin.joinAllToMain(db, chatId, inviteLink, { sock });
+        if (jr && jr.length) joinLines = `\n\n🤖 *Bot join:*\n${MainJoin.formatResults(jr)}`;
+      } catch (e) {
+        joinLines = `\n\n🤖 *Bot join:* skipped (${String((e && e.message) || e).slice(0, 80)})`;
+      }
+    }
+
     const info = AstralGroups.typeInfo(type);
     const mainLine = result.status === 'main'
       ? `👑 *MAIN GROUP* — the bot works here immediately and never expires.`
@@ -133,7 +145,7 @@ module.exports = {
         : `✅ The bot is active in this group.`;
 
     return sock.sendMessage(chatId, {
-      text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n${info.emoji} *GROUP REGISTERED!*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n🎮 Server: ✦ 𝐀𝐬𝐭𝐫𝐚™\n📋 *Type:* ${type}${isMain ? ' 👑 (--main)' : ''}\n🆔 *Group ID:* saved\n${inviteLink ? `🔗 *Invite link:* ${inviteLink}` : ''}\n\n${mainLine}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━`
+      text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n${info.emoji} *GROUP REGISTERED!*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n🎮 Server: ✦ 𝐀𝐬𝐭𝐫𝐚™\n📋 *Type:* ${type}${isMain ? ' 👑 (--main)' : ''}\n🆔 *Group ID:* saved\n${inviteLink ? `🔗 *Invite link:* ${inviteLink}` : ''}\n\n${mainLine}${joinLines}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━`
     }, { quoted: msg });
   },
 };

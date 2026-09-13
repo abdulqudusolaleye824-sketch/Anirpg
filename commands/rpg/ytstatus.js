@@ -9,6 +9,8 @@
 
 const Perms = require('../../utils/permissions');
 const ToolRunner = require('../../rpg/utils/ToolRunner');
+const fs = require('fs');
+const path = require('path');
 
 module.exports = {
   name: 'ytstatus',
@@ -46,9 +48,29 @@ module.exports = {
     try { deno = !!(await ToolRunner.hasDeno()); } catch (e) { deno = false; }
     lines.push(deno ? '✅ Deno: *found*' : '⚠️ Deno: *missing* (challenge solving degraded)');
 
-    // ── 3. YT_COOKIES env (never print the value) ──
+    // ── 3. YT cookies: /setcookies file first, env fallback (never print values) ──
     const ck = process.env.YT_COOKIES || '';
-    lines.push(ck ? `✅ YT_COOKIES: *set* (${ck.length} chars)` : '⚠️ YT_COOKIES: *not set*');
+    let ckFile = null;
+    try {
+      const cands = [];
+      if (process.env.YT_COOKIES_FILE) cands.push(process.env.YT_COOKIES_FILE);
+      cands.push(path.join(process.env.DATA_DIR || '/data', 'yt-cookies.txt'));
+      for (const c of cands) {
+        try {
+          const st = fs.statSync(c);
+          if (st.isFile() && st.size > 100) { ckFile = { size: st.size, mtime: st.mtime }; break; }
+        } catch {}
+      }
+    } catch {}
+    if (ckFile) {
+      let age = '';
+      try { age = ckFile.mtime.toISOString().slice(0, 16).replace('T', ' ') + ' UTC'; } catch {}
+      lines.push(`✅ YT cookies: *file* (${(ckFile.size / 1024).toFixed(1)}KB${age ? `, ${age}` : ''})`);
+    } else if (ck) {
+      lines.push(`✅ YT_COOKIES: *env set* (${ck.length} chars)`);
+    } else {
+      lines.push('⚠️ YT cookies: *not set* — reply to a cookie export with /setcookies');
+    }
 
     // Batch-50: yt-dlp prints WARNINGS first and the fatal ERROR last —
     // capturing the head hid the real failure behind Deno warnings and
@@ -122,15 +144,15 @@ module.exports = {
     // bare "challenge"/"bot" matched WARNING text and misdiagnosed.
     const _blocked = (t) => /sign in to confirm|confirm you.?re not a bot|too many requests|\b429\b|\b403\b|forbidden|login required|\bbot check\b|ip.?block|your ip|captcha/i.test(t || '');
     const _ejs = (t) => /\bjsc\b|ejs|remote-components|signature solving|challenge solving|js runtime|po token/i.test(t || '');
-    const _cookieFix = ck
-      ? 'refresh YT_COOKIES (re-export fresh cookies — sessions expire), then restart.'
-      : 'set the YT_COOKIES env var, then restart.';
+    const _cookieFix = (ck || ckFile)
+      ? 'refresh cookies via /setcookies (reply with a fresh export — sessions expire). No restart needed.'
+      : 'set cookies via /setcookies (reply with a cookie export). No restart needed.';
     const _rawAll = extractRaw + '\n' + probeRaw;
     if (!ytdlpVer) {
       lines.push('• Install yt-dlp on this host, then restart the bot.');
     } else if (probeOk && !extractOk && _blocked(extractErr)) {
       lines.push(`• Classic IP flag: search works but YouTube refuses media URLs to this server → ${_cookieFix}`);
-      lines.push('• YT_COOKIES accepts a cookie-file path OR raw Netscape cookie data pasted in directly.');
+      lines.push('• Cookies live in a file now — /setcookies updates them instantly (env var still works as fallback).');
     } else if ((!extractOk || !probeOk) && _blocked(extractErr + '\n' + probeErr)) {
       lines.push(`• Host IP is flagged by YouTube → ${_cookieFix}`);
     } else if ((!extractOk || !probeOk) && _ejs(_rawAll) && !deno) {
@@ -142,9 +164,9 @@ module.exports = {
       lines.push(`• If it still fails, ${_cookieFix}`);
     } else if (!probeOk) {
       lines.push('• Upgrade yt-dlp to latest, then restart the bot.');
-      lines.push('• If it still fails, set YT_COOKIES and restart.');
-    } else if (!ck) {
-      lines.push('• Backend healthy. If downloads still fail, set YT_COOKIES.');
+      lines.push('• If it still fails, set cookies via /setcookies (no restart needed).');
+    } else if (!ck && !ckFile) {
+      lines.push('• Backend healthy. If downloads still fail, set cookies via /setcookies.');
     } else {
       lines.push('• Backend healthy — /play should work. Restart the bot if you just pushed.');
     }

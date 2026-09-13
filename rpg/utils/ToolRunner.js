@@ -183,7 +183,22 @@ const YOUTUBE_EJS_ARGS = ['--remote-components', 'ejs:npm'];
 // mode materializes a 0600 temp file; the value itself is never logged.
 function youtubeCookiesArgs() {
   const out = [];
-  const ck = process.env.YT_COOKIES || '';
+  // Push #25: /setcookies file takes precedence (live-updated, no restart).
+  let fileCk = null;
+  try {
+    const cands = [];
+    if (process.env.YT_COOKIES_FILE) cands.push(process.env.YT_COOKIES_FILE);
+    const _dd = process.env.DATA_DIR || '/data';
+    cands.push(path.join(_dd, 'yt-cookies.txt'));
+    if (_dd !== '/data') cands.push('/data/yt-cookies.txt');
+    for (const c of cands) {
+      try {
+        const st = fs.statSync(c);
+        if (c && st.isFile() && st.size > 100) { fileCk = c; break; }
+      } catch {}
+    }
+  } catch { fileCk = null; }
+  const ck = fileCk || process.env.YT_COOKIES || '';
   if (ck) {
     let isPath = false;
     try { isPath = fs.existsSync(ck) && fs.statSync(ck).isFile(); } catch (e) { isPath = false; }
