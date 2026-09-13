@@ -21,7 +21,10 @@ const utilityCmds = {
   yt:         Utility.yt,
   tt:         Utility.tt,
   tiktok:     Utility.tt,
-  pinterest:  Utility.pinterest,
+  fb:         Utility.fb,
+  facebook:   Utility.fb,
+  ig:         Utility.ig,
+  instagram:  Utility.ig,
   math:       Utility.math,
   search:     Utility.search,
 };

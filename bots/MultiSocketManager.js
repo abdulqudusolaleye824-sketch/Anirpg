@@ -155,10 +155,12 @@ function _touchChatWindow(chatId, sender) {
 }
 // /chatbot off mutes chatter in a group (slash commands still work).
 function isChatbotMuted(db, chatId) {
+  // Push #27: chatbot defaults OFF — a group chats only after /chatbot on.
   try {
-    return !!(db && db.groupSettings && db.groupSettings[chatId]
-      && db.groupSettings[chatId].chatbot === false);
-  } catch (_) { return false; }
+    if (chatId && !String(chatId).endsWith('@g.us')) return false; // DMs always chat
+    return !(db && db.groupSettings && db.groupSettings[chatId]
+      && db.groupSettings[chatId].chatbot === true);
+  } catch (_) { return true; }
 }
 // ── Batch-37: LID-aware address checks ──────────────────────────────
 // In LID-mode groups, mentions/quotes arrive as the bot's @lid while

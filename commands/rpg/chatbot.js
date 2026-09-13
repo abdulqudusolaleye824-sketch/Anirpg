@@ -57,10 +57,10 @@ module.exports = {
 
     if (!db.groupSettings) db.groupSettings = {};
     if (!db.groupSettings[chatId]) {
-      db.groupSettings[chatId] = { antiLink: false, slowmode: 0, chatbot: true };
+      db.groupSettings[chatId] = { antiLink: false, slowmode: 0, chatbot: false };
     }
     const settings = db.groupSettings[chatId];
-    const isOn = settings.chatbot !== false;
+    const isOn = settings.chatbot === true; // Push #27: default OFF
 
     const sub = String((args || [])[0] || '').toLowerCase();
     if (!sub) {

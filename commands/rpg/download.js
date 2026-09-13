@@ -21,6 +21,7 @@ const fs           = require('fs');
 const path         = require('path');
 const os           = require('os');
 const ToolRunner   = require('../../rpg/utils/ToolRunner');
+const { extractQuotedUrl } = require('./utility');
 
 const COOLDOWNS  = new Map();
 const COOLDOWN_MS = 60_000;              // 1 min per user
@@ -57,13 +58,16 @@ module.exports = {
   name:        'ytmp4',
   aliases:     ['download', 'vd', 'video', 'ytvideo'],
   description: 'Download a YouTube video (mp4). TikTok is /tt.',
-  usage:       '/ytmp4 <url>',
+  usage:       '/ytmp4 <url> (or reply to one)',
   category:    'utility',
 
   async execute(sock, msg, args, getDatabase, saveDatabase, sender) {
     const chatId = msg.key.remoteJid;
 
-    if (!args.length) {
+    // Push #27: no args → try the replied-to message's link.
+    let url = (args[0] || '').trim();
+    if (!url) url = extractQuotedUrl(msg) || '';
+    if (!url) {
       return sock.sendMessage(chatId, {
         text: [
           '🎬 *Video Downloader*',
@@ -73,6 +77,7 @@ module.exports = {
           '💡 Downloads a YouTube video as .mp4:',
           '  /ytmp4 https://youtu.be/xxxx',
           '  /ytmp4 https://www.youtube.com/watch?v=xxxx',
+          '  💡 Or reply to a message containing the link',
           '',
           '📱 TikTok? Use: /tt <url>',
           '',
@@ -81,7 +86,6 @@ module.exports = {
       }, { quoted: msg });
     }
 
-    const url = args[0].trim();
     if (!/^https?:\/\//i.test(url)) {
       return sock.sendMessage(chatId, {
         text: '❌ Please paste a valid link (YouTube or TikTok URL).',

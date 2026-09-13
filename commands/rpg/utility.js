@@ -267,6 +267,30 @@ async function tiktokDownload(url) {
 
 const { ytDlpRun, ffmpegRun, hasFfmpeg } = ToolRunner;
 
+// ── Push #27: pull first http(s) URL out of the replied-to message ────────────
+// Lets every downloader work as a reply: user replies to a link with /tt, /yt,
+// /ytmp4, /fb or /ig (no args) and the quoted link is used.
+function extractQuotedUrl(msg) {
+  try {
+    const ci = msg.message?.extendedTextMessage?.contextInfo
+      || msg.message?.imageMessage?.contextInfo
+      || msg.message?.videoMessage?.contextInfo;
+    let q = ci?.quotedMessage;
+    if (!q) return null;
+    while (q) {
+      if (q.ephemeralMessage?.message) q = q.ephemeralMessage.message;
+      else if (q.viewOnceMessage?.message) q = q.viewOnceMessage.message;
+      else if (q.viewOnceMessageV2?.message) q = q.viewOnceMessageV2.message;
+      else if (q.documentWithCaptionMessage?.message) q = q.documentWithCaptionMessage.message;
+      else break;
+    }
+    const text = q.conversation || q.extendedTextMessage?.text
+      || q.imageMessage?.caption || q.videoMessage?.caption || '';
+    const m = String(text).match(/https?:\/\/[^\s<>"')\]]+/i);
+    return m ? m[0].replace(/[.,;!?]+$/, '') : null;
+  } catch (_) { return null; }
+}
+
 const imagine = {
   name: 'imagine',
   aliases: ['img', 'gen', 'draw'],
@@ -318,19 +342,20 @@ const yt = {
   name: 'yt',
   aliases: ['ytmp3', 'audio'],
   description: 'Download audio from YouTube/SoundCloud',
-  usage: '/yt <youtube url or song name>',
+  usage: '/yt <youtube url or song name> (or reply to a link)',
   category: 'utility',
 
   async execute(sock, msg, args, getDatabase, saveDatabase, sender) {
     const chatId = msg.key.remoteJid;
 
-    if (args.length === 0) {
+    // Push #27: no args → try the replied-to message's link (covers /ytmp3 too).
+    let input = args.join(' ').trim();
+    if (!input) input = extractQuotedUrl(msg) || '';
+    if (!input) {
       return sock.sendMessage(chatId, {
-        text: '❌ Usage: /yt <YouTube URL or song name>\nExample: /yt Jujutsu Kaisen OP',
+        text: '❌ Usage: /yt <YouTube URL or song name>\nExample: /yt Jujutsu Kaisen OP\n💡 Or reply to a message containing a link.',
       }, { quoted: msg });
     }
-
-    const input = args.join(' ');
     const isUrl = input.startsWith('http');
 
     await sock.sendMessage(chatId, {
@@ -414,67 +439,6 @@ const yt = {
 
     } finally {
       try { fs.unlinkSync(audioPath); } catch(e) {}
-    }
-  },
-};
-
-const pinterest = {
-  name: 'pinterest',
-  aliases: ['pin', 'pins'],
-  description: 'Search and send images from Pinterest',
-  usage: '/pinterest <query>',
-  category: 'utility',
-
-  async execute(sock, msg, args, getDatabase, saveDatabase, sender) {
-    const chatId = msg.key.remoteJid;
-
-    if (args.length === 0) {
-      return sock.sendMessage(chatId, {
-        text: '❌ Usage: /pinterest <query>\nExample: /pinterest Solo Leveling fanart',
-      }, { quoted: msg });
-    }
-
-    const query = args.join(' ');
-
-    await sock.sendMessage(chatId, {
-      text: `📌 *Searching Pinterest...*\n"${query}"`,
-    }, { quoted: msg });
-
-    try {
-      const apiUrl = `https://www.pinterest.com/resource/BaseSearchResource/get/?data=%7B%22options%22%3A%7B%22query%22%3A%22${encodeURIComponent(query)}%22%2C%22scope%22%3A%22pins%22%7D%7D&_=${Date.now()}`;
-
-      const data = await fetchJson(apiUrl).catch(() => null);
-
-      let imageUrls = [];
-      if (data?.resource_response?.data?.results) {
-        imageUrls = data.resource_response.data.results
-          .filter(p => p.images?.orig?.url)
-          .map(p => p.images.orig.url)
-          .slice(0, 3);
-      }
-
-      if (imageUrls.length === 0) {
-        return sock.sendMessage(chatId, {
-          text: [
-            `📌 *Pinterest: "${query}"*`,
-            ``,
-            `🔗 View results directly:`,
-            `https://www.pinterest.com/search/pins/?q=${encodeURIComponent(query)}`,
-          ].join('\n'),
-        }, { quoted: msg });
-      }
-
-      const { buffer } = await fetchBuffer(imageUrls[0]);
-      await sock.sendMessage(chatId, {
-        image: buffer,
-        caption: `📌 *Pinterest: ${query}*\n\n🔗 More: https://pinterest.com/search/pins/?q=${encodeURIComponent(query)}`,
-      }, { quoted: msg });
-
-    } catch (err) {
-      console.error('❌ Pinterest error:', err.message);
-      return sock.sendMessage(chatId, {
-        text: `📌 *Pinterest: "${query}"*\n\n🔗 https://www.pinterest.com/search/pins/?q=${encodeURIComponent(query)}`,
-      }, { quoted: msg });
     }
   },
 };
@@ -602,23 +566,136 @@ const search = {
   },
 };
 
-const tt = {
-  name: 'tt',
-  aliases: ['tiktok', 'tok'],
-  description: 'Download a TikTok video',
-  usage: '/tt <tiktok url>',
+// ── Push #27: /fb — Facebook video download via yt-dlp ────────────────────────
+const fb = {
+  name: 'fb',
+  aliases: ['facebook', 'fbdl'],
+  description: 'Download a Facebook video',
+  usage: '/fb <facebook video url> (or reply to one)',
   category: 'utility',
 
   async execute(sock, msg, args, getDatabase, saveDatabase, sender) {
     const chatId = msg.key.remoteJid;
 
-    if (args.length === 0 || !args[0].includes('tiktok.com')) {
+    let url = (args[0] || '').trim();
+    if (!/facebook\.com|fb\.watch/i.test(url)) {
+      const quotedUrl = extractQuotedUrl(msg);
+      if (quotedUrl && /facebook\.com|fb\.watch/i.test(quotedUrl)) url = quotedUrl;
+    }
+    if (!url || !/facebook\.com|fb\.watch/i.test(url)) {
       return sock.sendMessage(chatId, {
-        text: '❌ Usage: /tt <TikTok URL>\nExample: /tt https://www.tiktok.com/@user/video/123',
+        text: '❌ Usage: /fb <Facebook video URL>\nExample: /fb https://www.facebook.com/.../videos/123\n💡 Or reply to a message containing the link.',
       }, { quoted: msg });
     }
 
-    const url = args[0].trim();
+    await sock.sendMessage(chatId, {
+      text: '⬇️ *Downloading Facebook video...*',
+    }, { quoted: msg });
+
+    const tmpDir = TMP_DIR;
+    fs.mkdirSync(tmpDir, { recursive: true });
+    const outPath = path.join(tmpDir, `fb_${Date.now()}.mp4`);
+    const fbArgs = ['--no-playlist', '--no-warnings', '--format', 'best', '--max-filesize', '60m', '--output', outPath];
+    let dl = await ytDlpRun([...fbArgs, url], { timeout: 90000 });
+    if (!dl.ok) {
+      await new Promise(r => setTimeout(r, 2500));
+      fs.rmSync(outPath, { force: true });
+      dl = await ytDlpRun([...fbArgs, url], { timeout: 90000 });
+    }
+    if (!dl.ok || !fs.existsSync(outPath)) {
+      return sock.sendMessage(chatId, {
+        text: `❌ Could not download that Facebook video.\n\n💡 Tips:\n• The video must be public (login-only / friends-only posts fail).\n• Use the full video link (…/videos/… or a share link).`,
+      }, { quoted: msg });
+    }
+    try {
+      const videoBuffer = fs.readFileSync(outPath);
+      await sock.sendMessage(chatId, {
+        video: videoBuffer,
+        mimetype: 'video/mp4',
+        caption: '📘 Downloaded via Astra',
+      }, { quoted: msg });
+    } finally {
+      try { fs.unlinkSync(outPath); } catch(e) {}
+    }
+  },
+};
+
+// ── Push #27: /ig — Instagram reel/post download via yt-dlp ───────────────────
+const ig = {
+  name: 'ig',
+  aliases: ['instagram', 'igdl', 'reel', 'reels'],
+  description: 'Download an Instagram reel or post',
+  usage: '/ig <instagram url> (or reply to one)',
+  category: 'utility',
+
+  async execute(sock, msg, args, getDatabase, saveDatabase, sender) {
+    const chatId = msg.key.remoteJid;
+
+    let url = (args[0] || '').trim();
+    if (!/instagram\.com/i.test(url)) {
+      const quotedUrl = extractQuotedUrl(msg);
+      if (quotedUrl && /instagram\.com/i.test(quotedUrl)) url = quotedUrl;
+    }
+    if (!url || !/instagram\.com/i.test(url)) {
+      return sock.sendMessage(chatId, {
+        text: '❌ Usage: /ig <Instagram URL>\nExample: /ig https://www.instagram.com/reel/xxxx/\n💡 Or reply to a message containing the link.',
+      }, { quoted: msg });
+    }
+
+    await sock.sendMessage(chatId, {
+      text: '⬇️ *Downloading Instagram media...*',
+    }, { quoted: msg });
+
+    const tmpDir = TMP_DIR;
+    fs.mkdirSync(tmpDir, { recursive: true });
+    const outTemplate = path.join(tmpDir, `ig_${Date.now()}.%(ext)s`);
+    const igArgs = ['--no-playlist', '--no-warnings', '--format', 'best', '--max-filesize', '60m',
+      '--output', outTemplate, '--print', 'after_move:filepath'];
+    let dl = await ytDlpRun([...igArgs, url], { timeout: 90000 });
+    if (!dl.ok) {
+      await new Promise(r => setTimeout(r, 2500));
+      dl = await ytDlpRun([...igArgs, url], { timeout: 90000 });
+    }
+    const mediaPath = dl.ok ? dl.stdout.trim().split('\n').pop() : null;
+    if (!dl.ok || !mediaPath || !fs.existsSync(mediaPath)) {
+      return sock.sendMessage(chatId, {
+        text: `❌ Could not download that Instagram post.\n\n💡 Tips:\n• The post must be public (private accounts fail).\n• Instagram rate-limits bots — retry in a minute if it fails.`,
+      }, { quoted: msg });
+    }
+    try {
+      const buf = fs.readFileSync(mediaPath);
+      const isImg = /\.(jpg|jpeg|png|webp)$/i.test(mediaPath);
+      await sock.sendMessage(chatId, isImg
+        ? { image: buf, caption: '📸 Downloaded via Astra' }
+        : { video: buf, mimetype: 'video/mp4', caption: '📸 Downloaded via Astra' },
+        { quoted: msg });
+    } finally {
+      try { fs.unlinkSync(mediaPath); } catch(e) {}
+    }
+  },
+};
+
+const tt = {
+  name: 'tt',
+  aliases: ['tiktok', 'tok'],
+  description: 'Download a TikTok video',
+  usage: '/tt <tiktok url> (or reply to one)',
+  category: 'utility',
+
+  async execute(sock, msg, args, getDatabase, saveDatabase, sender) {
+    const chatId = msg.key.remoteJid;
+
+    // Push #27: no/invalid args → try the replied-to message's link.
+    let url = (args[0] || '').trim();
+    if (!url.includes('tiktok.com')) {
+      const quotedUrl = extractQuotedUrl(msg);
+      if (quotedUrl && quotedUrl.includes('tiktok.com')) url = quotedUrl;
+    }
+    if (!url || !url.includes('tiktok.com')) {
+      return sock.sendMessage(chatId, {
+        text: '❌ Usage: /tt <TikTok URL>\nExample: /tt https://www.tiktok.com/@user/video/123\n💡 Or reply to a message containing the link.',
+      }, { quoted: msg });
+    }
 
     await sock.sendMessage(chatId, {
       text: '⬇️ *Downloading TikTok...*',
@@ -755,4 +832,4 @@ async function handleMp3Reply(sock, msg, chatId) {
   }
 }
 
-module.exports = { imagine, yt, tt, pinterest, math, search, handleMp3Reply };
+module.exports = { imagine, yt, tt, fb, ig, math, search, handleMp3Reply, extractQuotedUrl };
