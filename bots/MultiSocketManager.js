@@ -241,19 +241,29 @@ function persistLinkedBot(getDatabase, saveDatabase, personalityKey, sock, phone
   }
 }
 
-// ── PERSISTENT AUTH BACKUP (fixes Railway redeploy wipe) ─────────────────
-// Auth files live on ephemeral FS (auth/<bot>/). On Railway each redeploy
-// wipes the container. We mirror every bot's auth folder into database
-// (which is persisted via MongoDB) so a fresh container can restore it.
-function backupAuthToDB(personalityKey, authDir, getDatabase, saveDatabase) {
+// ── PERSISTENT AUTH BACKUP (disk-based; Push #23) ─────────────────────
+// History: backups used to be base64-embedded into database.authBackups
+// (Mongo mirror). Baileys auth folders accumulate thousands of pre-key /
+// session files, so the game DB ballooned past MongoDB's 16MB single-doc
+// limit and EVERY save failed — the exact wipe vector. /data is a
+// persistent volume now, so backups live on DISK next to the auth dir and
+// never touch the game database.
+const _authBackupAt = {}; // personalityKey -> last disk-backup timestamp
+const AUTH_BACKUP_MIN_MS = 60 * 1000; // creds.update is hot — 1 backup/min max
+function _authBackupDir(authDir) {
+  return path.join(authDir, '..', 'auth-backups');
+}
+function _authBackupFile(authDir, personalityKey) {
+  return path.join(_authBackupDir(authDir), personalityKey + '.json');
+}
+function backupAuthToDisk(personalityKey, authDir, opts = {}) {
   try {
-    const db = getDatabase?.();
-    if (!db) return;
+    const now = Date.now();
+    if (!opts.force && _authBackupAt[personalityKey] && (now - _authBackupAt[personalityKey]) < AUTH_BACKUP_MIN_MS) return;
     const botAuthDir = path.join(authDir, personalityKey);
     if (!fs.existsSync(botAuthDir)) return;
-    if (!db.authBackups) db.authBackups = {};
     const files = {};
-    function walk(dir, base) {
+    (function walk(dir, base) {
       let entries;
       try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
       for (const e of entries) {
@@ -261,45 +271,70 @@ function backupAuthToDB(personalityKey, authDir, getDatabase, saveDatabase) {
         const rel = path.join(base, e.name);
         if (e.isDirectory()) walk(full, rel);
         else {
-          try {
-            const data = fs.readFileSync(full);
-            files[rel] = data.toString('base64');
-          } catch {}
+          try { files[rel] = fs.readFileSync(full).toString('base64'); } catch {}
         }
       }
-    }
-    walk(botAuthDir, '.');
+    })(botAuthDir, '.');
     if (Object.keys(files).length === 0) return;
-    db.authBackups[personalityKey] = { files, updatedAt: Date.now() };
-    saveDatabase?.();
+    fs.mkdirSync(_authBackupDir(authDir), { recursive: true });
+    fs.writeFileSync(_authBackupFile(authDir, personalityKey), JSON.stringify({ files, updatedAt: now }));
+    _authBackupAt[personalityKey] = now;
   } catch (e) {
     console.error('backupAuth error:', e.message);
   }
 }
+// Backwards-compatible alias (old 4-arg signature still accepted).
+function backupAuthToDB(personalityKey, authDir) {
+  return backupAuthToDisk(personalityKey, authDir);
+}
 
-function restoreAuthFromDB(personalityKey, authDir, getDatabase) {
+function _restoreAuthFiles(botAuthDir, files) {
+  let n = 0;
+  fs.mkdirSync(botAuthDir, { recursive: true });
+  for (const [rel, b64] of Object.entries(files || {})) {
+    const full = path.join(botAuthDir, rel);
+    try {
+      fs.mkdirSync(path.dirname(full), { recursive: true });
+      fs.writeFileSync(full, Buffer.from(b64, 'base64'));
+      n++;
+    } catch {}
+  }
+  return n;
+}
+function restoreAuth(personalityKey, authDir, getDatabase) {
   try {
-    const db = getDatabase?.();
-    if (!db?.authBackups?.[personalityKey]) return false;
     const botAuthDir = path.join(authDir, personalityKey);
     if (fs.existsSync(path.join(botAuthDir, 'creds.json'))) return false;
-    const backup = db.authBackups[personalityKey];
-    if (!backup?.files || Object.keys(backup.files).length === 0) return false;
-    fs.mkdirSync(botAuthDir, { recursive: true });
-    for (const [rel, b64] of Object.entries(backup.files)) {
-      const full = path.join(botAuthDir, rel);
-      try {
-        fs.mkdirSync(path.dirname(full), { recursive: true });
-        fs.writeFileSync(full, Buffer.from(b64, 'base64'));
-      } catch {}
-    }
-    console.log(`♻️  Restored auth for [${personalityKey}] from DB backup (${Object.keys(backup.files).length} files)`);
-    return true;
+    // 1) Disk backup (current scheme).
+    try {
+      const f = _authBackupFile(authDir, personalityKey);
+      if (fs.existsSync(f)) {
+        const b = JSON.parse(fs.readFileSync(f, 'utf8'));
+        if (b?.files && Object.keys(b.files).length > 0) {
+          const n = _restoreAuthFiles(botAuthDir, b.files);
+          console.log(`♻️  Restored auth for [${personalityKey}] from disk backup (${n} files)`);
+          return true;
+        }
+      }
+    } catch {}
+    // 2) Legacy DB backup (one-time migration path for upgraders).
+    try {
+      const db = getDatabase?.();
+      const backup = db?.authBackups?.[personalityKey];
+      if (backup?.files && Object.keys(backup.files).length > 0) {
+        const n = _restoreAuthFiles(botAuthDir, backup.files);
+        console.log(`♻️  Restored auth for [${personalityKey}] from legacy DB backup (${n} files)`);
+        return true;
+      }
+    } catch {}
+    return false;
   } catch (e) {
     console.error('restoreAuth error:', e.message);
     return false;
   }
 }
+// Backwards-compatible alias.
+const restoreAuthFromDB = restoreAuth;
 
 async function startAstraLink(personalityKey, authDir, getDatabase, saveDatabase, options = {}) {
   const method = options.pairingMode === 'qr' ? 'qr' : 'code';
@@ -323,14 +358,17 @@ async function startAstraLink(personalityKey, authDir, getDatabase, saveDatabase
     }
     // Clear old un-registered session state so pre-keys match fresh pairing code
     if (fs.existsSync(botAuthDir)) fs.rmSync(botAuthDir, { recursive: true, force: true });
-    // Also clear persisted backup so fresh pairing starts clean
+    // Also clear persisted backups (disk + legacy DB) so fresh pairing starts clean
     try {
       const db = getDatabase?.();
       if (db?.authBackups?.[personalityKey]) {
         delete db.authBackups[personalityKey];
         saveDatabase?.();
-        console.log(`🧹 Cleared persisted backup for [${personalityKey}] (fresh AstraLink)`);
       }
+      const bf = _authBackupFile(authDir, personalityKey);
+      if (fs.existsSync(bf)) fs.rmSync(bf, { force: true });
+      delete _authBackupAt[personalityKey];
+      console.log(`🧹 Cleared persisted backup for [${personalityKey}] (fresh AstraLink)`);
     } catch {}
   } catch (_) {}
 
@@ -456,8 +494,8 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
     _bootParams[personalityKey] = { authDir, getDatabase, saveDatabase, options: rest };
   } catch (e) {}
   const botAuthDir = path.join(authDir, personalityKey);
-  // Restore from DB backup if ephemeral FS was wiped (Railway redeploy fix)
-  try { restoreAuthFromDB(personalityKey, authDir, getDatabase); } catch {}
+  // Restore from backup if the volume/persistent FS lost auth files.
+  try { restoreAuth(personalityKey, authDir, getDatabase); } catch {}
   fs.mkdirSync(botAuthDir, { recursive: true });
 
   const { state, saveCreds } = await useMultiFileAuthState(botAuthDir);
@@ -670,7 +708,7 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
         code: pairingSessions[personalityKey]?.code || null,
       };
       persistLinkedBot(getDatabase, saveDatabase, personalityKey, sock, pairingPhone);
-      try { backupAuthToDB(personalityKey, authDir, getDatabase, saveDatabase); } catch {}
+      try { backupAuthToDisk(personalityKey, authDir, { force: true }); } catch {}
       console.log(`✅ AstraLink [${displayName}] connection VERIFIED & ACTIVE! (JID: ${jid})`);
 
       // Deliver pending restart completion notice if present in DB
@@ -690,7 +728,7 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
 
   sock.ev.on('creds.update', async (...args) => {
     try { await saveCreds(...args); } catch {}
-    try { backupAuthToDB(personalityKey, authDir, getDatabase, saveDatabase); } catch {}
+    try { backupAuthToDisk(personalityKey, authDir); } catch {}
   });
 
   sock.ev.on('group-participants.update', async ({ id: chatId, participants, action }) => {
@@ -1283,8 +1321,8 @@ module.exports = {
   canSendDM,
   safeSendDM,
   getActiveSocket,
-  backupAuthToDB,
-  restoreAuthFromDB,
+  backupAuthToDisk, backupAuthToDB,
+  restoreAuth, restoreAuthFromDB,
   _bootstrapDispatcher,
   _isOwnBotNumber,
   _recordSentId,

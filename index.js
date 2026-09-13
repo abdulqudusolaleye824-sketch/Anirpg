@@ -90,25 +90,26 @@ async function connectMongo() {
   }
 }
 
-async function loadFromMongo() {
+// Push #23: returns the doc (or null) WITHOUT assigning — startup() picks the
+// fresher of Mongo vs JSON before committing to either.
+async function loadFromMongoDoc() {
   try {
     const doc = await mongoCollection.findOne({ _id: 'main' });
     if (doc) {
       delete doc._id;
-      database = doc;
-      console.log(`✅ Database loaded from MongoDB (${Object.keys(database.users || {}).length} players)`);
-      return true;
+      return doc;
     }
-    return false;
+    return null;
   } catch (err) {
     console.error('❌ MongoDB load failed:', err.message);
-    return false;
+    return null;
   }
 }
 
 let saveTimeout = null;
 let pendingMongoWrite = null;
 let _lastMongoFlush = 0; // Batch-47: max-wait bookkeeping (see below)
+let _mongoSizeWarnAt = 0; // Push #23: throttle for the oversize-mirror warning
 async function saveToMongo() {
   if (!mongoCollection) return;
   if (saveTimeout) clearTimeout(saveTimeout);
@@ -120,6 +121,18 @@ async function saveToMongo() {
   saveTimeout = setTimeout(() => {
     pendingMongoWrite = (async () => {
       try {
+        // Push #23: size guard — never let a bloated DB silently kill the
+        // mirror again. Skip + warn (throttled) instead of error-spamming.
+        let _approx = 0;
+        try { _approx = Buffer.byteLength(JSON.stringify(database), 'utf8'); } catch {}
+        if (_approx > 14 * 1024 * 1024) {
+          const _now = Date.now();
+          if (_now - _mongoSizeWarnAt > 3600 * 1000) {
+            _mongoSizeWarnAt = _now;
+            console.error(`🚨 MongoDB mirror SKIPPED: database is ${(_approx / 1048576).toFixed(1)}MB (limit 16MB). JSON fallback is the live copy — investigate bloat!`);
+          }
+          return;
+        }
         await mongoCollection.replaceOne(
           { _id: 'main' },
           { _id: 'main', ...database },
@@ -369,6 +382,18 @@ async function _writeJsonBackup() {
       const snapshot = JSON.stringify(database, null, 2);
       const tmpPath = DB_PATH + '.tmp';
       await fs.promises.mkdir(path.dirname(DB_PATH), { recursive: true });
+      // Push #23: hourly rotating backup — a second on-disk generation.
+      try {
+        const prev = DB_PATH + '.1';
+        let need = true;
+        try {
+          const st = await fs.promises.stat(prev);
+          need = (Date.now() - st.mtimeMs) > 3600 * 1000;
+        } catch { need = true; }
+        if (need && fs.existsSync(DB_PATH)) {
+          await fs.promises.copyFile(DB_PATH, prev);
+        }
+      } catch {}
       await fs.promises.writeFile(tmpPath, snapshot);
       await fs.promises.rename(tmpPath, DB_PATH);
     } catch (e) {
@@ -391,6 +416,8 @@ async function _writeJsonBackup() {
 }
 
 const saveDatabase = () => {
+  // Push #23: stamp every save so boot can pick the FRESHER mirror.
+  try { database.__savedAt = Date.now(); } catch {}
   saveToMongo();
   _writeJsonBackup();
 };
@@ -1049,15 +1076,61 @@ function startBotScheduler(personalityKey) {
 // ========================================
 async function startup() {
   const mongoOk = await connectMongo();
-  if (mongoOk) {
-    const loaded = await loadFromMongo();
-    if (!loaded) {
-      loadDatabase();
-      await saveToMongo();
-      console.log('📦 Migrated existing JSON data to MongoDB!');
+  // ── Push #23: freshest-wins persistence ──────────────────────────
+  // Mongo and JSON are both mirrors; boot loads whichever is NEWER so a
+  // stale/failed mirror can never wipe live data again.
+  let mongoDoc = null;
+  if (mongoOk) mongoDoc = await loadFromMongoDoc();
+  let jsonDoc = null, jsonAt = 0;
+  try {
+    if (fs.existsSync(DB_PATH)) {
+      jsonDoc = JSON.parse(fs.readFileSync(DB_PATH, 'utf-8'));
+      try { jsonAt = jsonDoc.__savedAt || fs.statSync(DB_PATH).mtimeMs; } catch { jsonAt = jsonDoc.__savedAt || 0; }
     }
+  } catch (e) {
+    console.error('⚠️  JSON database unreadable, ignoring:', e.message);
+    jsonDoc = null;
+  }
+  const mongoAt = (mongoDoc && mongoDoc.__savedAt) || 0;
+  const _kb = (d) => { try { return Math.round(Buffer.byteLength(JSON.stringify(d)) / 1024); } catch { return 0; } };
+  const _fmtT = (t) => t ? new Date(t).toISOString() : 'none';
+  if (mongoDoc && mongoAt >= jsonAt) {
+    database = mongoDoc;
+    console.log(`✅ Database loaded from MongoDB (${Object.keys(database.users || {}).length} players)`);
+    console.log(`💾 Persistence: Mongo ${_kb(mongoDoc)}KB (@${_fmtT(mongoAt)}) vs JSON ${_kb(jsonDoc)}KB (@${_fmtT(jsonAt)}) → loaded MONGO`);
+  } else if (jsonDoc) {
+    loadDatabase(); // re-reads the same file + runs migrations
+    console.log(`💾 Persistence: Mongo ${_kb(mongoDoc)}KB (@${_fmtT(mongoAt)}) vs JSON ${_kb(jsonDoc)}KB (@${_fmtT(jsonAt)}) → loaded JSON`);
+    if (!mongoDoc && mongoOk) console.log('📦 Migrated existing JSON data to MongoDB!');
+    await saveToMongo(); // heal the mirror with the fresh state
   } else {
-    loadDatabase();
+    console.log('💾 Persistence: no Mongo doc, no JSON file → starting FRESH');
+  }
+
+  // ── Push #23: evict auth backups from the game DB (moved to disk) ──
+  try {
+    const dbNow = getDatabase();
+    if (dbNow && dbNow.authBackups && Object.keys(dbNow.authBackups).length > 0) {
+      const keys = Object.keys(dbNow.authBackups);
+      let freed = 0;
+      try { freed = Buffer.byteLength(JSON.stringify(dbNow.authBackups)); } catch {}
+      // Mirror each backup to disk first (best effort) so nothing is lost.
+      try {
+        const bdir = path.join(AUTH_DIR, '..', 'auth-backups');
+        fs.mkdirSync(bdir, { recursive: true });
+        for (const k of keys) {
+          try {
+            const f = path.join(bdir, k + '.json');
+            if (!fs.existsSync(f)) fs.writeFileSync(f, JSON.stringify({ files: (dbNow.authBackups[k] && dbNow.authBackups[k].files) || {}, updatedAt: (dbNow.authBackups[k] && dbNow.authBackups[k].updatedAt) || Date.now() }));
+          } catch {}
+        }
+      } catch {}
+      delete dbNow.authBackups;
+      saveDatabase();
+      console.log(`🧹 Moved auth backups out of game DB → disk (freed ${(freed / 1048576).toFixed(1)}MB, bots: ${keys.join(',')}). Mongo mirror unblocked.`);
+    }
+  } catch (e) {
+    console.error('authBackups migration error:', e.message);
   }
 
   GateKeyManager.loadFromDB(getDatabase());
@@ -1135,19 +1208,32 @@ async function startup() {
     if (process.env['BOT_' + key.toUpperCase()]) linkedKeys.push(key);
   }
 
-  // ── RESTORE PERSISTED AUTH (Railway redeploy fix) ──────────────
-  // If container FS was wiped, auth files are gone but DB backup (Mongo) remains.
-  // Restore each backed-up personality before checking disk.
+  // ── RESTORE PERSISTED AUTH ──────────────────────────────────────
+  // If auth files are gone, restore each backed-up personality from the
+  // disk backups (current scheme) or legacy DB backups, before checking disk.
   try {
     const dbTmp = getDatabase();
-    if (dbTmp?.authBackups) {
-      for (const key of Object.keys(dbTmp.authBackups)) {
+    const diskBackups = {};
+    try {
+      const bdir = path.join(AUTH_DIR, '..', 'auth-backups');
+      if (fs.existsSync(bdir)) {
+        for (const f of fs.readdirSync(bdir)) {
+          if (!f.endsWith('.json')) continue;
+          const key = f.slice(0, -5);
+          if (!ALL_PERSONALITY_KEYS.includes(key)) continue;
+          try { diskBackups[key] = JSON.parse(fs.readFileSync(path.join(bdir, f), 'utf8')); } catch {}
+        }
+      }
+    } catch {}
+    const allBackups = { ...((dbTmp && dbTmp.authBackups) || {}), ...diskBackups };
+    {
+      for (const key of Object.keys(allBackups)) {
         if (!ALL_PERSONALITY_KEYS.includes(key)) continue;
         const authDir = path.join(AUTH_DIR, key);
         const credsFile = path.join(authDir, 'creds.json');
         if (!fs.existsSync(credsFile)) {
           try {
-            const backup = dbTmp.authBackups[key];
+            const backup = allBackups[key];
             if (backup?.files && Object.keys(backup.files).length > 0) {
               fs.mkdirSync(authDir, { recursive: true });
               for (const [rel, b64] of Object.entries(backup.files)) {
@@ -1155,7 +1241,7 @@ async function startup() {
                 fs.mkdirSync(path.dirname(full), { recursive: true });
                 fs.writeFileSync(full, Buffer.from(b64, 'base64'));
               }
-              console.log(`♻️  [startup] Restored auth for [${key}] from DB backup`);
+              console.log(`♻️  [startup] Restored auth for [${key}] from backup`);
             }
           } catch (e) {
             console.error(`⚠️  [startup] restore failed for [${key}]:`, e.message);
@@ -1181,13 +1267,21 @@ async function startup() {
     } catch (e) {}
   }
 
-  // Also check db.linkedBots and db.authBackups
+  // Also check db.linkedBots, legacy db.authBackups, and disk auth backups
   const db = getDatabase();
   if (db) {
     const botKeysFromDB = new Set([
       ...Object.keys(db.linkedBots || {}),
       ...Object.keys(db.authBackups || {})
     ]);
+    try {
+      const bdir = path.join(AUTH_DIR, '..', 'auth-backups');
+      if (fs.existsSync(bdir)) {
+        for (const f of fs.readdirSync(bdir)) {
+          if (f.endsWith('.json')) botKeysFromDB.add(f.slice(0, -5));
+        }
+      }
+    } catch {}
     for (const key of botKeysFromDB) {
       if (ALL_PERSONALITY_KEYS.includes(key) && !linkedKeys.includes(key)) {
         linkedKeys.push(key);
