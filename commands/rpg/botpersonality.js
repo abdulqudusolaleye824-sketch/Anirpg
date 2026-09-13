@@ -226,10 +226,33 @@ const hi = {
     } catch (_) {
       try { present = PersonalityManager.getPresentBots(chatId) || []; } catch {}
     }
-    // STRICT: only bots that are BOTH online (user.id) AND present in this
-    // group respond. No union, no any-online fallback — a bot that isn't
-    // here must stay silent, and no bot may answer on another's behalf.
+    // STRICT: only bots that are BOTH online (user.id) AND in this group
+    // respond — a bot that isn't here must stay silent, and no bot may
+    // answer on another's behalf. Push #26: presence-cache misses (fresh
+    // joins, cold boots) are verified LIVE via groupMetadata instead of
+    // excluding online members that simply haven't been observed yet.
     const presentSet = new Set(present);
+    const unconfirmed = connectedKeys.filter(k => !presentSet.has(k));
+    if (unconfirmed.length) {
+      try {
+        const MSM = require('../../bots/MultiSocketManager');
+        const withTimeout = (pr, ms) => Promise.race([pr, new Promise((_, rej) => setTimeout(() => rej(new Error('probe-timeout')), ms))]);
+        const probes = await Promise.allSettled(unconfirmed.map(async (k) => {
+          const bs = MSM.getSocket(k);
+          if (!bs?.user?.id) return null;
+          try {
+            await withTimeout(bs.groupMetadata(chatId), 8000);
+            return k;
+          } catch { return null; }
+        }));
+        for (const pr of probes) {
+          if (pr.status === 'fulfilled' && pr.value) {
+            presentSet.add(pr.value);
+            try { PersonalityManager.markPresent(chatId, pr.value); } catch {}
+          }
+        }
+      } catch {}
+    }
     const bots = connectedKeys.filter(k => presentSet.has(k));
 
     if (bots.length === 0) {
