@@ -336,6 +336,7 @@ Examples: "「System」 Gate detected.", "「System」 Hunter has leveled up.", 
 // ── In-memory state ───────────────────────────────────────────────────────────
 const activeBots = {};   // { chatId: personalityKey }
 const presentBots = {};  // { chatId: Set<personalityKey> }
+const stoppedBots = {};  // Push #24: { chatId: true } — /stop silenced groups (persisted)
 const botNames = {};     // { personalityKey: customName } — runtime overrides
 
 // ── Persistence hooks ────────────────────────────────────────────────────────
@@ -366,6 +367,7 @@ function _persistActive() {
       sp[cid] = [...s];
     }
     db.botPresent = sp;
+    db.botStopped = Object.assign({}, stoppedBots);
     _dbSave();
   } catch (e) { /* best effort */ }
 }
@@ -382,6 +384,11 @@ function loadPersisted() {
     if (db.botPresent && typeof db.botPresent === 'object') {
       for (const [cid, arr] of Object.entries(db.botPresent)) {
         if (Array.isArray(arr)) presentBots[cid] = new Set(arr);
+      }
+    }
+    if (db.botStopped && typeof db.botStopped === 'object') {
+      for (const cid of Object.keys(db.botStopped)) {
+        if (db.botStopped[cid]) stoppedBots[cid] = true;
       }
     }
     if (db.linkedBots && typeof db.linkedBots === 'object') {
@@ -451,6 +458,7 @@ function anyActive(personalityKey) {
 function activateBot(chatId, nameOrKey) {
   const key = resolvePersonality(nameOrKey);
   if (!key) return { success: false, error: `No personality found for: ${nameOrKey}` };
+  delete stoppedBots[chatId]; // /start + /switch always un-stop the group
   activeBots[chatId] = key;
   if (!activeBots.__lastTouch) activeBots.__lastTouch = {};
   activeBots.__lastTouch[chatId] = Date.now();
@@ -465,7 +473,12 @@ function switchBot(chatId, nameOrKey) {
 
 function deactivateAll(chatId) {
   delete activeBots[chatId];
+  stoppedBots[chatId] = true;
   _persistActive();
+}
+
+function isStopped(chatId) {
+  return !!stoppedBots[chatId];
 }
 
 function getPresentBots(chatId) {
@@ -573,6 +586,7 @@ module.exports = {
   activateBot,
   switchBot,
   deactivateAll,
+  isStopped,
   clearAllActive,
   bindPersistence,
   loadPersisted,

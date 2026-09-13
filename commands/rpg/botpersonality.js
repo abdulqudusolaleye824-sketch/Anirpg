@@ -189,7 +189,19 @@ const switchBot = {
       `🛑 Use /stop to deactivate\n` +
       `━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
 
-    return sock.sendMessage(chatId, { text: greeting }, { quoted: msg });
+    // Push #24: if the newly-activated bot's socket can't deliver, a live sibling delivers (never silent).
+    try {
+      return await sock.sendMessage(chatId, { text: greeting }, { quoted: msg });
+    } catch (e) {
+      try {
+        const MSM = require('../../bots/MultiSocketManager');
+        const fbSock = MSM.getAnySocket ? MSM.getAnySocket() : null;
+        if (fbSock && fbSock !== sock) {
+          return await fbSock.sendMessage(chatId, { text: greeting }, { quoted: msg });
+        }
+      } catch {}
+      throw e;
+    }
   },
 };
 

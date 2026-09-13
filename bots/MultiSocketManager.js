@@ -858,6 +858,8 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
     const rawActiveKey = isGroup ? PersonalityManager.getActiveBot(chatId) : null;
     const isOnlineActive = rawActiveKey && !!(botSockets[rawActiveKey]?.user?.id);
     const activeKey = isOnlineActive ? rawActiveKey : null;
+    // Push #24: /stop means SILENCE (bootstrap commands still handled below so the group can be reactivated).
+    const isStopped = isGroup && PersonalityManager.isStopped && PersonalityManager.isStopped(chatId);
 
     let isTargetMentionedBot = false;
     let resolvedTarget = null;
@@ -902,11 +904,15 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
     if (!isGroup) {
       isActive = true;
     } else if (commandName === 'hi') {
-      // /hi — single handler orchestrates chorus for all present bots (fixes double-reply)
-      // Only the active bot (or first online if no active) handles /hi and then broadcasts via sendHiChorus
-      const firstKey = getFirstOnlineSocketKey();
-      const hiHandler = isOnlineActive ? rawActiveKey : firstKey;
-      isActive = (personalityKey === hiHandler);
+      if (isStopped) {
+        isActive = false;
+      } else {
+        // /hi — single handler orchestrates chorus for all present bots (fixes double-reply)
+        // Only the active bot (or first online if no active) handles /hi and then broadcasts via sendHiChorus
+        const firstKey = getFirstOnlineSocketKey();
+        const hiHandler = isOnlineActive ? rawActiveKey : firstKey;
+        isActive = (personalityKey === hiHandler);
+      }
     } else if (isCommand && (commandName === 'start' || commandName === 'switch')) {
       if (resolvedTarget) {
         isActive = isTargetMentionedBot;
@@ -915,7 +921,9 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
         isActive = isOnlineActive ? (personalityKey === activeKey) : (personalityKey === firstKey);
       }
     } else if (isCommand) {
-      if (isOnlineActive) {
+      if (isStopped && !isBootstrap) {
+        isActive = false;
+      } else if (isOnlineActive) {
         isActive = (personalityKey === activeKey);
       } else {
         const firstKey = getFirstOnlineSocketKey();
@@ -1017,7 +1025,10 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
         } catch (e) {
           console.error(`❌ [${displayName}] command handler error:`, e.message);
           try {
-            await sock.sendMessage(chatId, { text: `❌ Error: ${e.message}` }, { quoted: msg });
+            // Push #24: if our own socket is dead, a LIVE sibling reports the error (no silent failures).
+            const _fbKey = getFirstOnlineSocketKey();
+            const _fbSock = (_fbKey && botSockets[_fbKey]) || sock;
+            await _fbSock.sendMessage(chatId, { text: `❌ Error: ${e.message}` }, { quoted: msg });
           } catch {}
         }
       }

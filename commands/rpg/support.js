@@ -167,6 +167,18 @@ module.exports = {
         dmRes = { ok: true, via: 'serf-buttons' };
       }
     } catch (e) { dmRes = null; }
+    // Push #24: no serf socket → buttons via the invoking bot (never silently drop buttons).
+    if (!dmRes && Buttons?.sendButtons && buttonGroups.length) {
+      try {
+        await Buttons.sendButtons(sock, sender, {
+          text: fullDmText,
+          footer: 'Astra Support',
+          image: supportImage || null, mimetype: 'image/jpeg',
+          buttons: Buttons.urlButtons(buttonGroups.map(g => [g.groupName, g.inviteLink])),
+        });
+        dmRes = { ok: true, via: 'direct-buttons' };
+      } catch (e) { dmRes = null; }
+    }
     if (!dmRes) dmRes = await SerfDM.sendSerfDM(sock, db, sender, dmPayload);
 
     // Notify in group chat (no links) — with the honest delivery result.

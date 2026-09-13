@@ -112,13 +112,24 @@ let _lastMongoFlush = 0; // Batch-47: max-wait bookkeeping (see below)
 let _mongoSizeWarnAt = 0; // Push #23: throttle for the oversize-mirror warning
 async function saveToMongo() {
   if (!mongoCollection) return;
-  if (saveTimeout) clearTimeout(saveTimeout);
-  // Batch-47 CRITICAL: under constant activity the old 2s debounce reset
-  // forever, so Mongo went stale for the WHOLE session and a restart lost
-  // everything. 750ms coalescing + forced flush at 5s max staleness.
-  const _sinceFlush = Date.now() - _lastMongoFlush;
-  const _waitMs = _sinceFlush > 5000 ? 0 : 750;
+  // Push #24: starvation-proof scheduling. The old clearTimeout+reschedule
+  // meant constant activity (>1 save/2s across 5 bots) reset the timer
+  // FOREVER and the mirror never flushed (batch-47's _waitMs was dead code
+  // next to a hardcoded 2000ms). Now: trailing write scheduled ONCE (750ms),
+  // plus a leading-edge flush whenever the mirror is >5s stale.
+  const _now = Date.now();
+  if (_now - _lastMongoFlush > 5000 && !pendingMongoWrite && !saveTimeout) {
+    _doMongoWrite();
+    return;
+  }
+  if (saveTimeout) return;
   saveTimeout = setTimeout(() => {
+    saveTimeout = null;
+    _doMongoWrite();
+  }, 750);
+}
+
+function _doMongoWrite() {
     pendingMongoWrite = (async () => {
       try {
         // Push #23: size guard — never let a bloated DB silently kill the
@@ -152,7 +163,6 @@ async function saveToMongo() {
         pendingMongoWrite = null;
       }
     })();
-  }, 2000);
 }
 
 // ── Persistent data paths ─────────────────────────────────────

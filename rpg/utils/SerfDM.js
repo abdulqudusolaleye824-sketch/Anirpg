@@ -66,7 +66,10 @@ async function sendSerfDM(sock, db, sender, content) {
 
 // One-line group notice for a DM delivery result.
 function resultNotice(title, res) {
-  if (res && res.ok) return `✅ *${title} — SUCCESSFULLY SENT VIA SERF* 📩\nCheck your DM!`;
+  if (res && res.ok) {
+    const via = (res.via === 'direct' || res.via === 'direct-buttons') ? 'DM' : 'SERF';
+    return `✅ *${title} — SUCCESSFULLY SENT VIA ${via}* 📩\nCheck your DM!`;
+  }
   const why = res?.detail || res?.reason || 'unknown error';
   return `❌ *${title} — DM NOT SENT*\n📝 Reason: ${why}`;
 }
