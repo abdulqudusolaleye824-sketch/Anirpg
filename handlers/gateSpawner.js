@@ -127,10 +127,32 @@ class GateSpawner {
   static SPAWN_MIN_INTERVAL = 30; // batch-23: gates every 30–45 min
   static SPAWN_MAX_INTERVAL = 45;
 
-  static initialize(sock, chatId, getDatabase) {
+  static initialize(sock, chatId, getDatabase, saveDatabase) {
     if (!sock) return;
     if (this.activeTimers[chatId]) return;
-    this.scheduleNextGate(sock, chatId, getDatabase);
+    // Batch-50: restart wiped the static maps — heal them first.
+    try { GateManager.rehydrateFromDb(getDatabase()); } catch (e) {}
+    // Batch-50: resume a persisted countdown instead of rolling fresh.
+    try {
+      const db = getDatabase();
+      const meta = (db.gateSpawnMeta && db.gateSpawnMeta[chatId]) || {};
+      if (meta.nextSpawnAt && meta.nextSpawnAt > Date.now()) {
+        const wait = meta.nextSpawnAt - Date.now();
+        console.log(`[GATE] Resumed spawn countdown for ${chatId}: ${Math.ceil(wait / 60000)} min left`);
+        this.activeTimers[chatId] = setTimeout(() => {
+          this.spawnGate(sock, chatId, getDatabase, saveDatabase);
+        }, wait);
+        return;
+      }
+      if (meta.nextSpawnAt && meta.nextSpawnAt <= Date.now()) {
+        console.log(`[GATE] Spawn overdue for ${chatId} — firing in 45s`);
+        this.activeTimers[chatId] = setTimeout(() => {
+          this.spawnGate(sock, chatId, getDatabase, saveDatabase);
+        }, 45000);
+        return;
+      }
+    } catch (e) {}
+    this.scheduleNextGate(sock, chatId, getDatabase, saveDatabase);
   }
 
   static hasUnboughtGate(chatId) {
@@ -142,15 +164,23 @@ class GateSpawner {
     return null;
   }
 
-  static scheduleNextGate(sock, chatId, getDatabase) {
+  static scheduleNextGate(sock, chatId, getDatabase, saveDatabase) {
     const minInterval = this.SPAWN_MIN_INTERVAL * 60 * 1000;
     const maxInterval = this.SPAWN_MAX_INTERVAL * 60 * 1000;
     const randomInterval = Math.floor(Math.random() * (maxInterval - minInterval) + minInterval);
 
     console.log(`[GATE] Next gate in ${Math.floor(randomInterval / 1000 / 60)} minutes for ${chatId}`);
     this.activeTimers[chatId] = setTimeout(() => {
-      this.spawnGate(sock, chatId, getDatabase);
+      this.spawnGate(sock, chatId, getDatabase, saveDatabase);
     }, randomInterval);
+    // Batch-50: persist the countdown so restarts resume it.
+    try {
+      const db = getDatabase();
+      if (!db.gateSpawnMeta) db.gateSpawnMeta = {};
+      const meta = db.gateSpawnMeta[chatId] = db.gateSpawnMeta[chatId] || {};
+      meta.nextSpawnAt = Date.now() + randomInterval;
+      if (saveDatabase) saveDatabase();
+    } catch (e) {}
   }
 
   static checkUnboughtLock(chatId, db) {
@@ -204,12 +234,12 @@ class GateSpawner {
     console.log(`[GATE] ${gate.chatId}: gate ${gate.id} unbought 23h → −70% XP penalty on ${marked} member(s)`);
   }
 
-  static async spawnGate(sock, chatId, getDatabase) {
+  static async spawnGate(sock, chatId, getDatabase, saveDatabase) {
     const db = getDatabase();
 
     if (this.checkUnboughtLock(chatId, db)) {
       this.activeTimers[chatId] = setTimeout(() => {
-        this.scheduleNextGate(sock, chatId, getDatabase);
+        this.scheduleNextGate(sock, chatId, getDatabase, saveDatabase);
       }, Math.max(Math.min(5 * 60 * 1000, GATE_LOCK_MS), 10 * 1000));
       return;
     }
@@ -218,6 +248,13 @@ class GateSpawner {
     const avgLevel = players.length > 0 ? Math.floor(players.reduce((s,p) => s + (p.level||0), 0) / players.length) : 1;
 
     const gate = GateManager.spawnGate(chatId, levelToRank(avgLevel));
+    // Batch-50: spawned gates lived only in memory — a restart wiped
+    // unbought gates. Persist immediately (same bucket raids use).
+    try {
+      if (!db.activeGates) db.activeGates = {};
+      db.activeGates[gate.id] = gate;
+      if (saveDatabase) saveDatabase();
+    } catch (e) {}
 
     if (!db.gateSpawnMeta) db.gateSpawnMeta = {};
     const meta = db.gateSpawnMeta[chatId] = db.gateSpawnMeta[chatId] || {};
@@ -247,7 +284,7 @@ class GateSpawner {
     }
 
     if (this.activeTimers[chatId]) {
-      this.scheduleNextGate(sock, chatId, getDatabase);
+      this.scheduleNextGate(sock, chatId, getDatabase, saveDatabase);
     }
   }
 

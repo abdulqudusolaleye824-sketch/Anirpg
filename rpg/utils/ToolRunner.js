@@ -169,6 +169,13 @@ function hasFfmpeg() {
 // and we pass --cookies automatically.
 const YOUTUBE_EXTRACTOR_ARGS = 'youtube:player_client=mweb,web,default,tv,web_safari';
 
+// Batch-50: YouTube JS-challenge (n/sig) solving moved to EJS scripts.
+// Plain-pip installs (ours: requirements.txt) ship WITHOUT yt-dlp-ejs,
+// so solving fails and strict sessions lose ALL formats. Deno (already in
+// our Dockerfile + nixpacks) can fetch the scripts on-the-fly from npm:
+// https://github.com/yt-dlp/yt-dlp/wiki/EJS — auto-updating, no host change.
+const YOUTUBE_EJS_ARGS = ['--remote-components', 'ejs:npm'];
+
 // Optional cookie file (from .env YT_COOKIES or YT_COOKIES_FROM_BROWSER).
 // Batch-49: YT_COOKIES accepts a cookie-FILE path (old behavior) OR raw
 // Netscape cookie DATA pasted straight into the env var (new — the only
@@ -209,7 +216,7 @@ const YOUTUBE_EXTRACTOR_ARGS_FULL = ['--extractor-args', YOUTUBE_EXTRACTOR_ARGS]
 
 function optimalDownloadArgs({ minimal = false } = {}) {
   return hasFfmpeg().then((ffmpeg) => {
-    const extra = ['--extractor-args', YOUTUBE_EXTRACTOR_ARGS].concat(youtubeCookiesArgs());
+    const extra = ['--extractor-args', YOUTUBE_EXTRACTOR_ARGS].concat(YOUTUBE_EJS_ARGS, youtubeCookiesArgs());
     if (ffmpeg && process.env.FFMPEG_PATH) extra.push('--ffmpeg-location', process.env.FFMPEG_PATH);
     if (!ffmpeg || minimal) {
       // No ffmpeg: pick a single-file progressive format that plays in WhatsApp
@@ -239,7 +246,7 @@ function optimalDownloadArgs({ minimal = false } = {}) {
 // native audio stream (no conversion, no ffmpeg needed). Returns { ffmpeg, args }.
 function optimalAudioArgs() {
   return hasFfmpeg().then((ffmpeg) => {
-    const extra = ['--extractor-args', YOUTUBE_EXTRACTOR_ARGS].concat(youtubeCookiesArgs());
+    const extra = ['--extractor-args', YOUTUBE_EXTRACTOR_ARGS].concat(YOUTUBE_EJS_ARGS, youtubeCookiesArgs());
     if (ffmpeg && process.env.FFMPEG_PATH) extra.push('--ffmpeg-location', process.env.FFMPEG_PATH);
     if (!ffmpeg) {
       // Prefer AAC/m4a (WhatsApp-friendly); falls back to bestaudio (opus).
@@ -275,5 +282,5 @@ module.exports = {
   YTDLP_CANDS, FFMPEG_CANDS,
   resolveTool, runTool,
   ytDlpRun, ffmpegRun, hasFfmpeg, hasDeno, optimalDownloadArgs, optimalAudioArgs,
-  YOUTUBE_EXTRACTOR_ARGS_FULL, youtubeCookiesArgs, parseDownloadPrints,
+  YOUTUBE_EXTRACTOR_ARGS_FULL, YOUTUBE_EJS_ARGS, youtubeCookiesArgs, parseDownloadPrints,
 };

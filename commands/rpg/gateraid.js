@@ -515,7 +515,7 @@ module.exports = {
         const dropLines = GR.monsterKilledBy(gate, target, sender, db);
         if (dropLines.length) killLines.push(...dropLines);
 
-        const remaining = floorMonsters.filter(mm => !mm.defeated).length - 1;
+        const remaining = floorMonsters.filter(mm => !mm.defeated).length;
         killLines.push(``, `👾 *${Math.max(0, remaining)}* monsters remaining on Floor ${floor}`);
 
         if (remaining <= 0) {

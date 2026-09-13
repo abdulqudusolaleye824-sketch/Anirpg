@@ -246,6 +246,7 @@ module.exports = {
       try {
         search = await ToolRunner.ytDlpRun([
           ...ToolRunner.YOUTUBE_EXTRACTOR_ARGS_FULL,
+          ...ToolRunner.YOUTUBE_EJS_ARGS,
           ...ToolRunner.youtubeCookiesArgs(),
           '--flat-playlist',
           '--print', '%(id)s | %(title)s | %(duration)s | %(channel)s',

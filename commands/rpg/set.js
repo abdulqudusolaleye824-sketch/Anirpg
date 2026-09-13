@@ -140,7 +140,7 @@ ${(proSet ? UI.PRO_BAR : UI.FREE_BAR)}`
       if (want) {
         try {
           const GateSpawner = require('../../handlers/gateSpawner');
-          GateSpawner.initialize(sock, chatId, getDatabase);
+          GateSpawner.initialize(sock, chatId, getDatabase, saveDatabase);
         } catch (e) { console.error('GateSpawner init error:', e.message); }
       } else {
         try {

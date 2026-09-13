@@ -1033,7 +1033,7 @@ function startBotScheduler(personalityKey) {
       const spawns = (database.gateSpawns || {});
       for (const [chatId, enabled] of Object.entries(spawns)) {
         if (enabled && chatId.endsWith('@g.us')) {
-          GateSpawner.initialize(sock, chatId, getDatabase);
+          GateSpawner.initialize(sock, chatId, getDatabase, saveDatabase);
         }
       }
     } catch (e) {
@@ -1062,6 +1062,15 @@ async function startup() {
 
   GateKeyManager.loadFromDB(getDatabase());
   console.log('🚪 GateKeyManager loaded');
+
+  // Batch-50: revive persisted gates/raids into memory so a redeploy
+  // resumes exactly where it stopped (no forgotten gates or raids).
+  try {
+    const { GateManager } = require('./rpg/dungeons/GateManager');
+    GateManager.rehydrateFromDb(getDatabase());
+  } catch (e) {
+    console.error('⚠️ Could not rehydrate gates:', e.message);
+  }
 
   // Restore per-group active/present bot choices so a redeploy/restart does
   // NOT silently reset which bot each group is on (the "bots switched on

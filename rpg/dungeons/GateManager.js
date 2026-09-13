@@ -199,6 +199,28 @@ class GateManager {
 
   static getGate(gateId) { return this.activeGates[gateId] || null; }
 
+  // Batch-50: statics die on restart — revive every non-cleared persisted
+  // gate/raid from db.activeGates so a redeploy resumes exactly where it
+  // stopped. Restored as-is (no time judgment here): break/penalty logic
+  // runs at the next touch exactly as if no restart happened.
+  static rehydrateFromDb(db) {
+    let n = 0;
+    try {
+      for (const gate of Object.values((db && db.activeGates) || {})) {
+        if (!gate || !gate.id || gate.cleared) continue;
+        if (this.activeGates[gate.id]) continue;
+        this.activeGates[gate.id] = gate;
+        for (const c of [gate.chatId].filter(Boolean)) {
+          if (!this.gatesByChat[c]) this.gatesByChat[c] = [];
+          if (!this.gatesByChat[c].includes(gate.id)) this.gatesByChat[c].push(gate.id);
+        }
+        n++;
+      }
+    } catch (e) {}
+    if (n) console.log(`[GATE] Rehydrated ${n} gate(s)/raid(s) from DB`);
+    return n;
+  }
+
   static checkGateBreaks(chatId, sock) {
     for (const gateId of (this.gatesByChat[chatId] || [])) {
       const gate = this.activeGates[gateId];

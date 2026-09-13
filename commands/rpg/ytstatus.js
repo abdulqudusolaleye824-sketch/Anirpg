@@ -40,17 +40,35 @@ module.exports = {
     try { ff = !!(await ToolRunner.hasFfmpeg()); } catch (e) { ff = false; }
     lines.push(ff ? '✅ ffmpeg: *found*' : '⚠️ ffmpeg: *missing* (songs send as .m4a)');
 
+    // Batch-50: Deno = JS runtime yt-dlp needs to solve YouTube's
+    // n/signature challenges (EJS). Missing runtime = missing formats.
+    let deno = false;
+    try { deno = !!(await ToolRunner.hasDeno()); } catch (e) { deno = false; }
+    lines.push(deno ? '✅ Deno: *found*' : '⚠️ Deno: *missing* (challenge solving degraded)');
+
     // ── 3. YT_COOKIES env (never print the value) ──
     const ck = process.env.YT_COOKIES || '';
     lines.push(ck ? `✅ YT_COOKIES: *set* (${ck.length} chars)` : '⚠️ YT_COOKIES: *not set*');
+
+    // Batch-50: yt-dlp prints WARNINGS first and the fatal ERROR last —
+    // capturing the head hid the real failure behind Deno warnings and
+    // even misfired the IP-block verdict ("challenge" matched a warning).
+    // Prefer ERROR lines; otherwise take the tail, never the head.
+    const _tailErr = (e) => {
+      const all = String(e || '').split('\n').map((l) => l.trim()).filter(Boolean);
+      const errs = all.filter((l) => /\berror\b/i.test(l));
+      return (errs.length ? errs : all).slice(-2).join('\n').slice(-350) || 'empty result';
+    };
 
     // ── 4. live search probe (stage 1 of /play) ──
     lines.push('', '🔎 Live YouTube probe (1 result)…');
     let probeOk = false;
     let probeErr = '';
+    let probeRaw = '';
     try {
       const r = await ToolRunner.ytDlpRun([
         ...(ToolRunner.YOUTUBE_EXTRACTOR_ARGS_FULL || []),
+        ...(ToolRunner.YOUTUBE_EJS_ARGS || []),
         '--no-playlist', '--print', '%(id)s | %(title).60s',
         'ytsearch1:never gonna give you up',
       ], { timeout: 45000 });
@@ -58,12 +76,12 @@ module.exports = {
         probeOk = true;
         lines.push(`✅ Search: *working* — ${String(r.stdout).trim().split('\n')[0].slice(0, 70)}`);
       } else {
-        probeErr = String((r && r.error) || 'empty result').slice(0, 220);
+        probeErr = _tailErr(r && r.error); probeRaw = String((r && r.error) || '').slice(-2000);
         lines.push('❌ Search: *FAILED*');
         lines.push(`_${probeErr}_`);
       }
     } catch (e) {
-      probeErr = String((e && e.message) || e).slice(0, 220);
+      probeErr = _tailErr((e && e.message) || e); probeRaw = String((e && e.message) || e).slice(-2000);
       lines.push('❌ Search: *ERROR*');
       lines.push(`_${probeErr}_`);
     }
@@ -74,6 +92,7 @@ module.exports = {
     lines.push('', '🎬 Media-URL probe (no download)…');
     let extractOk = false;
     let extractErr = '';
+    let extractRaw = '';
     try {
       let audio;
       try { audio = await ToolRunner.optimalAudioArgs(); }
@@ -87,29 +106,40 @@ module.exports = {
         extractOk = true;
         lines.push('✅ Extract: *working* — YouTube hands over media URLs');
       } else {
-        extractErr = String((x && x.error) || 'empty result').slice(0, 220);
+        extractErr = _tailErr(x && x.error); extractRaw = String((x && x.error) || '').slice(-2000);
         lines.push('❌ Extract: *FAILED*');
         lines.push(`_${extractErr}_`);
       }
     } catch (e) {
-      extractErr = String((e && e.message) || e).slice(0, 220);
+      extractErr = _tailErr((e && e.message) || e); extractRaw = String((e && e.message) || e).slice(-2000);
       lines.push('❌ Extract: *ERROR*');
       lines.push(`_${extractErr}_`);
     }
 
     // ── 6. verdict ──
     lines.push('', '📋 *Verdict*');
-    const _blocked = (t) => /sign in|confirm|bot|403|429|login|challenge|forbidden/i.test(t || '');
+    // Batch-50: strict block patterns, tested against ERROR lines only —
+    // bare "challenge"/"bot" matched WARNING text and misdiagnosed.
+    const _blocked = (t) => /sign in to confirm|confirm you.?re not a bot|too many requests|\b429\b|\b403\b|forbidden|login required|\bbot check\b|ip.?block|your ip|captcha/i.test(t || '');
+    const _ejs = (t) => /\bjsc\b|ejs|remote-components|signature solving|challenge solving|js runtime|po token/i.test(t || '');
+    const _cookieFix = ck
+      ? 'refresh YT_COOKIES (re-export fresh cookies — sessions expire), then restart.'
+      : 'set the YT_COOKIES env var, then restart.';
+    const _rawAll = extractRaw + '\n' + probeRaw;
     if (!ytdlpVer) {
       lines.push('• Install yt-dlp on this host, then restart the bot.');
     } else if (probeOk && !extractOk && _blocked(extractErr)) {
-      lines.push('• Classic IP flag: search works but YouTube refuses media URLs to this server → set the YT_COOKIES env var, then restart.');
+      lines.push(`• Classic IP flag: search works but YouTube refuses media URLs to this server → ${_cookieFix}`);
       lines.push('• YT_COOKIES accepts a cookie-file path OR raw Netscape cookie data pasted in directly.');
     } else if ((!extractOk || !probeOk) && _blocked(extractErr + '\n' + probeErr)) {
-      lines.push('• Host IP is flagged by YouTube → set the YT_COOKIES env var (Netscape cookies from a logged-in browser), then restart.');
+      lines.push(`• Host IP is flagged by YouTube → ${_cookieFix}`);
+    } else if ((!extractOk || !probeOk) && _ejs(_rawAll) && !deno) {
+      lines.push('• YouTube challenge solving is broken: Deno (JS runtime) is missing on this host → rebuild so the Dockerfile/nixpacks Deno step runs, then restart.');
+    } else if ((!extractOk || !probeOk) && _ejs(_rawAll)) {
+      lines.push('• YouTube challenge solving is failing even with Deno → rebuild (requirements now bundle the yt-dlp-ejs solver scripts), then restart.');
     } else if (!extractOk) {
       lines.push('• Media extraction fails for an unknown reason — upgrade yt-dlp to latest, then restart.');
-      lines.push('• If it still fails, set YT_COOKIES and restart.');
+      lines.push(`• If it still fails, ${_cookieFix}`);
     } else if (!probeOk) {
       lines.push('• Upgrade yt-dlp to latest, then restart the bot.');
       lines.push('• If it still fails, set YT_COOKIES and restart.');
