@@ -53,6 +53,20 @@ module.exports = {
       } catch (e) { mirrorLines.push(`  📄 ${p}\n     ❌ ${e.message}`); }
     }
 
+    // Push #32: snapshot ladder + owner backup state.
+    let snapCount = '?', snapNew = '';
+    const lastOwner = db.__lastOwnerSnapAt ? new Date(db.__lastOwnerSnapAt).toISOString().replace('T', ' ').slice(0, 19) : 'never';
+    try {
+      const sroots = [];
+      if (process.env.DATA_DIR) sroots.push(path.join(process.env.DATA_DIR, 'database', 'snapshots'));
+      sroots.push(path.join(__dirname, '..', '..', 'database', 'snapshots'));
+      for (const sd of sroots) {
+        if (fs.existsSync(sd)) {
+          const fl = fs.readdirSync(sd).filter(f => f.endsWith('.json')).sort();
+          if (fl.length) { snapCount = fl.length; snapNew = fl[fl.length - 1]; break; }
+        }
+      }
+    } catch {}
     const memDot = users > 0 ? '✅' : '🔥';
     return sock.sendMessage(chatId, {
       text: [
@@ -61,6 +75,8 @@ module.exports = {
         `${memDot} *MEMORY:* 👥 ${users} players · ⭐ ${mods} mods · 🔑 ${keys} keys`,
         `   🌀 ${agates} active gates · 🏠 ${regGCs} registered GCs`,
         `   💾 last save: ${savedAt}`,
+        `   📸 snapshots: ${snapCount}${snapNew ? ` (newest ${snapNew})` : ''}`,
+        `   📩 owner backup: ${lastOwner}`,
         `   ⏱️ uptime: ${Math.floor(process.uptime() / 60)}m`,
         ``,
         `💽 *JSON MIRROR:*`,

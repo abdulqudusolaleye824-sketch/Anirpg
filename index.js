@@ -109,6 +109,56 @@ async function loadFromMongoDoc() {
 let saveTimeout = null;
 let _bootUsers = 0; // Push #31: users present at boot (write-guard baseline)
 let _bootAt = 0;    // Push #31: boot timestamp
+let _lastSnapAt = 0;       // Push #32: last hourly snapshot
+let _bootHealth = {};      // Push #32: degraded-boot flags for /api/db-health
+const _pendingOwnerAlarms = []; // Push #32: owner DM alarm queue (flushed when a socket is up)
+function _snapDir() { try { return path.join(path.dirname(DB_PATH), 'snapshots'); } catch { return null; } }
+// Push #32 (L2): timestamped snapshot writer. Best-effort, sync, never throws.
+function writeDbSnapshot(tag, obj) {
+  try {
+    const sd = _snapDir();
+    if (!sd) return null;
+    fs.mkdirSync(sd, { recursive: true });
+    const d = new Date();
+    const p = (n) => String(n).padStart(2, '0');
+    const stamp = `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`; // Push #32: seconds included — same-minute boots never collide
+    const fp = path.join(sd, `${tag}-${stamp}.json`);
+    fs.writeFileSync(fp, JSON.stringify(obj || database));
+    return fp;
+  } catch { return null; }
+}
+// Push #32 (L2): prune to 24h of hourlies + newest-per-day x7 + 12 boot snaps.
+// Fail-closed: only our own prefixed files are ever deleted.
+function pruneSnapshots() {
+  try {
+    const sd = _snapDir();
+    if (!sd || !fs.existsSync(sd)) return;
+    const files = fs.readdirSync(sd).filter(f => /^(snap|boot)-.*\.json$/.test(f));
+    const now = Date.now();
+    const mtime = (f) => { try { return fs.statSync(path.join(sd, f)).mtimeMs; } catch { return 0; } };
+    const snaps = files.filter(f => f.startsWith('snap-'));
+    const boots = files.filter(f => f.startsWith('boot-'));
+    const keep = new Set();
+    const dayOf = (t) => new Date(t).toISOString().slice(0, 10);
+    const byDay = {};
+    for (const f of snaps) {
+      const t = mtime(f);
+      if (now - t < 24 * 3600 * 1000) { keep.add(f); continue; }
+      const d = dayOf(t);
+      if (!byDay[d] || t > byDay[d].t) byDay[d] = { f, t };
+    }
+    Object.values(byDay).sort((a, b) => b.t - a.t).slice(0, 7).forEach(x => keep.add(x.f));
+    const keepFinal = new Set(snaps.filter(f => keep.has(f)).sort((a, b) => mtime(b) - mtime(a)).slice(0, 40));
+    for (const f of snaps) if (!keepFinal.has(f)) { try { fs.unlinkSync(path.join(sd, f)); } catch {} }
+    boots.sort((a, b) => mtime(b) - mtime(a)).slice(12).forEach(f => { try { fs.unlinkSync(path.join(sd, f)); } catch {} });
+  } catch {}
+}
+function maybeHourlySnapshot() {
+  if (Date.now() - _lastSnapAt < 3600 * 1000) return;
+  _lastSnapAt = Date.now();
+  writeDbSnapshot('snap');
+  pruneSnapshots();
+}
 let pendingMongoWrite = null;
 let _lastMongoFlush = 0; // Batch-47: max-wait bookkeeping (see below)
 let _mongoSizeWarnAt = 0; // Push #23: throttle for the oversize-mirror warning
@@ -388,6 +438,37 @@ const loadDatabase = () => {
 };
 
 const getDatabase = () => database;
+// Push #32: owner notice loop (L4 daily snapshot DM + degraded alarms).
+async function flushOwnerLoop() {
+  try {
+    const MSM = require('./bots/MultiSocketManager');
+    const SerfDM = require('./rpg/utils/SerfDM');
+    const socks = (MSM.getAllSockets && MSM.getAllSockets()) || {};
+    const liveSock = Object.values(socks).find(s => s?.user?.id);
+    if (!liveSock) return; // no socket yet — retry next tick
+    while (_pendingOwnerAlarms.length) {
+      const text = _pendingOwnerAlarms[0];
+      try {
+        const r = await SerfDM.sendSerfDM(liveSock, database, OWNER_JID, { text });
+        if (r && r.ok) _pendingOwnerAlarms.shift();
+        else break;
+      } catch { break; }
+    }
+    const memUsers = Object.keys(database.users || {}).length;
+    const lastSnap = database.__lastOwnerSnapAt || 0;
+    if (memUsers > 0 && Date.now() - lastSnap > 20 * 3600 * 1000) {
+      const stamp = new Date().toISOString().slice(0, 10);
+      const buf = Buffer.from(JSON.stringify(database));
+      try {
+        const r = await SerfDM.sendSerfDM(liveSock, database, OWNER_JID, {
+          document: buf, fileName: `anirpg-db-${stamp}.json`, mimetype: 'application/json',
+          caption: `💾 *ANIRPG DAILY BACKUP — ${stamp}*\n👥 ${memUsers} players · ⭐ ${(database.botMods || []).length} mods\nKeep this file: it restores the whole bot.`,
+        });
+        if (r && r.ok) { database.__lastOwnerSnapAt = Date.now(); saveDatabase(); }
+      } catch (e) { console.error('owner snapshot send failed:', e.message); }
+    }
+  } catch (e) { /* never crash for notices */ }
+}
 
 // ── JSON write queue ─────────────────────────────────────────────────────────
 let _jsonWriteRunning = false;
@@ -422,6 +503,7 @@ async function _writeJsonBackup() {
       } catch {}
       await fs.promises.writeFile(tmpPath, snapshot);
       await fs.promises.rename(tmpPath, DB_PATH);
+      try { maybeHourlySnapshot(); } catch {} // Push #32: L2 generations
     } catch (e) {
       console.error('❌ JSON backup save failed:', e.message);
     } finally {
@@ -876,10 +958,18 @@ http.createServer(async (req, res) => {
           mongoInfo.doc = doc ? { users: Object.keys(doc.users || {}).length, savedAt: doc.__savedAt ? new Date(doc.__savedAt).toISOString() : null } : null;
         } catch (e) { mongoInfo.error = e.message; }
       }
+      let snapInfo = null; // Push #32: snapshot ladder state
+      try {
+        const sd = _snapDir();
+        const sfiles = fs.readdirSync(sd).filter(f => f.endsWith('.json')).sort();
+        snapInfo = { count: sfiles.length, newest: sfiles[sfiles.length - 1] || null };
+      } catch { snapInfo = null; }
       res.writeHead(200, { 'Content-Type': 'application/json' });
       return res.end(JSON.stringify({
-        ok: true, uptime: process.uptime(), bootUsers: _bootUsers,
+        ok: true, uptime: process.uptime(), bootUsers: _bootUsers, bootHealth: _bootHealth,
         memUsers, dataDir: DATA_DIR, authDir: AUTH_DIR, dbPath: DB_PATH,
+        lastOwnerSnapAt: database.__lastOwnerSnapAt || null,
+        snapshots: snapInfo,
         mongo: mongoInfo, json: jsonInfo, serverTime: Date.now(),
       }));
     } catch (e) {
@@ -1177,6 +1267,17 @@ async function startup() {
   }
   // Push #31: baseline for the write-path guard below.
   try { _bootUsers = Object.keys(database.users || {}).length; _bootAt = Date.now(); } catch {}
+  // Push #32: snapshot both mirrors at boot (before anything can mutate them).
+  try { if (mongoDoc) writeDbSnapshot('boot-mongo', mongoDoc); } catch {}
+  try { if (jsonDoc) writeDbSnapshot('boot-json', jsonDoc); } catch {}
+  try { pruneSnapshots(); } catch {}
+  // Push #32: degraded-boot detection → owner alarm (flushed when a socket is up).
+  _bootHealth = { mongoOk: !!mongoOk, hadMongoDoc: !!mongoDoc, hadJsonDoc: !!jsonDoc, fresh: (!mongoDoc && !jsonDoc) };
+  if (!mongoDoc && !jsonDoc) {
+    _pendingOwnerAlarms.push(`🔥 *BOT BOOTED FRESH — NO DATA FOUND* 🔥\n\nNo Mongo doc and no JSON file at boot. If you expected data, avoid saves and investigate mirrors first.\n\nBoot: ${new Date().toISOString()}`);
+  } else if (!mongoOk) {
+    _pendingOwnerAlarms.push(`⚠️ *BOT BOOTED WITHOUT MONGO* ⚠️\n\nRunning on the JSON mirror only. The off-host copy is stale until Mongo reconnects.\n\nBoot: ${new Date().toISOString()}`);
+  }
 
   // ── Push #23: evict auth backups from the game DB (moved to disk) ──
   try {
@@ -1241,6 +1342,9 @@ async function startup() {
     console.error('⚠️ Scheduler init error:', e.message);
   }
 
+  // Push #32: owner notice loop (alarms + daily snapshot DM).
+  setTimeout(() => { try { flushOwnerLoop(); } catch {} }, 45_000);
+  setInterval(() => { try { flushOwnerLoop(); } catch {} }, 60_000);
   setInterval(() => {
     try {
       GateKeyManager.checkExpiredKeys(null, getDatabase(), saveDatabase);
