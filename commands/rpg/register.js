@@ -229,8 +229,9 @@ async function sendWelcomeDM(sock, sender, name, rank) {
 }
 
 function rollPending(name, sender) {
-  // HARDCODED (batch-40 + push #34): co-owner and blessed JIDs always awaken S-rank.
-  const rank  = (isCoowner(sender) || isSRankBlessed(sender)) ? 'S' : rollAwakeningRank(name + Date.now());
+  // HARDCODED (batch-40 + push #34-35): co-owner always S; blessed JIDs get their mapped rank.
+  const _blessed = blessedRankFor(sender);
+  const rank  = isCoowner(sender) ? 'S' : (_blessed || rollAwakeningRank(name + Date.now()));
   const stats = buildStartingStats(rank);
   const bonus = RANK_BONUSES[rank];
   const power = calculatePowerRating(stats);
@@ -246,14 +247,43 @@ function isCoowner(sender) {
   } catch (e) { return false; }
 }
 
-// HARDCODED (push #34): blessed bare-numbers always awaken S-rank.
+// HARDCODED (push #34-35): blessed bare-number → guaranteed awakening rank.
 // Class roll is untouched (stays fully random) — rank only.
-const SRANK_BLESSED_BARES = ['95000851443902'];
-function isSRankBlessed(sender) {
+const RANK_BLESSED = {
+  '95000851443902': 'S',
+  '179998338113754': 'A',
+};
+function blessedRankFor(sender) {
   try {
     const bare = (j) => String(j || '').split('@')[0].split(':')[0];
-    return !!sender && SRANK_BLESSED_BARES.includes(bare(sender));
-  } catch (e) { return false; }
+    return (sender && RANK_BLESSED[bare(sender)]) || null;
+  } catch (e) { return null; }
+}
+// Push #35: one-time/boot repair — bump already-registered blessed players
+// to their guaranteed rank. Fresh (level-1, ~0 XP) accounts also get the
+// tier's starting stats + bonus top-up; progressed accounts keep earned stats.
+function repairBlessedRanks(db) {
+  try {
+    if (!db || !db.users) return 0;
+    let fixed = 0;
+    for (const key of Object.keys(db.users)) {
+      const p = db.users[key];
+      if (!p || typeof p !== 'object') continue;
+      const want = blessedRankFor(p.id || key);
+      if (!want || p.awakenRank === want) continue;
+      const havePkg = RANK_BONUSES[p.awakenRank] || RANK_BONUSES.E;
+      const wantPkg = RANK_BONUSES[want];
+      p.awakenRank = want;
+      if ((p.level || 1) <= 1 && (p.totalXp || 0) < 100) {
+        p.stats = { ...buildStartingStats(want) };
+        p.baseStats = { ...p.stats };
+        p.manaCrystals = (p.manaCrystals || 0) + Math.max(0, wantPkg.manaStones - havePkg.manaStones);
+        p.upgradePoints = (p.upgradePoints || 0) + Math.max(0, wantPkg.upgradePoints - havePkg.upgradePoints);
+      }
+      fixed++;
+    }
+    return fixed;
+  } catch (e) { return 0; }
 }
 
 function beginningMsg(name, sender) {
@@ -293,13 +323,13 @@ function referralAskMsg(dob) {
 // Finalize a registration. Returns the send payloads (group sends happen here).
 async function finalize(sock, chatId, msg, db, saveDatabase, sender, pending, dob, referrerId) {
   let { name, rank, stats, bonus, power } = pending;
-  // HARDCODED (batch-40 + push #34): co-owner/blessed always awaken S-rank.
-  // Recompute the S-tier starting package in case the pending roll predates this rule.
-  const co = isCoowner(sender) || isSRankBlessed(sender);
-  if (co && rank !== 'S') {
-    rank = 'S';
-    stats = buildStartingStats('S');
-    bonus = RANK_BONUSES['S'];
+  // HARDCODED (batch-40 + push #34-35): co-owner always S; blessed JIDs get
+  // their mapped rank. Recompute the tier package if the pending predates this.
+  const _want = isCoowner(sender) ? 'S' : blessedRankFor(sender);
+  if (_want && rank !== _want) {
+    rank = _want;
+    stats = buildStartingStats(_want);
+    bonus = RANK_BONUSES[_want];
     power = calculatePowerRating(stats);
   }
   const player = buildPlayer(sender, name, rank, stats, bonus, dob, db);
@@ -490,7 +520,8 @@ module.exports = {
   parseDOB,
   // Test hooks (batch-40 co-owner hardcode)
   _isCoowner: isCoowner,
-  _isSRankBlessed: isSRankBlessed, // push #34 test hook
+  _blessedRankFor: blessedRankFor, // push #35 test hook
+  _repairBlessedRanks: repairBlessedRanks, // push #35 boot repair
   _rollPending: rollPending,
   _finalize: finalize,
 };

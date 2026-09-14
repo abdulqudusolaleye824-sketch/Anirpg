@@ -1316,6 +1316,12 @@ async function startup() {
     _pendingOwnerAlarms.push(`⚠️ *BOT BOOTED WITHOUT MONGO* ⚠️\n\nRunning on the JSON mirror only. The off-host copy is stale until Mongo reconnects.\n\nBoot: ${new Date().toISOString()}`);
   }
 
+  // Push #35: repair already-registered blessed players to their guaranteed rank.
+  try {
+    const _fixed = require('./commands/rpg/register')._repairBlessedRanks(database);
+    if (_fixed > 0) { console.log(`🛠️ Repaired ${_fixed} blessed rank(s).`); saveDatabase(); }
+  } catch (e) { console.error('blessed-rank repair failed:', e.message); }
+
   // ── Push #23: evict auth backups from the game DB (moved to disk) ──
   try {
     const dbNow = getDatabase();

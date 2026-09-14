@@ -26,6 +26,29 @@ function findUser(db, jid) {
   }
   return null;
 }
+// Push #35: same scan, but returns the REGISTRATION KEY (full JID).
+function findUserKey(db, jid) {
+  if (!db || !db.users) return null;
+  if (db.users[jid]) return jid;
+  const want = cleanBare(jid);
+  if (!want) return null;
+  for (const k of Object.keys(db.users)) {
+    if (cleanBare(k) === want) return k;
+  }
+  return null;
+}
+// Push #35: staff are stored BARE (set.js pushes targetBare) — a bare number
+// is an INVALID mention, so WA rendered it raw. Resolve to the real full JID
+// (registration key) so the tag links and renders the contact name. No
+// profile (never registered) → try both domains; WA ignores the dud.
+function mentionJidsFor(db, jid) {
+  const key = findUserKey(db, jid);
+  if (key && String(key).includes('@')) return [key];
+  if (String(jid || '').includes('@')) return [jid];
+  const bare = cleanBare(jid);
+  if (!bare) return [];
+  return [`${bare}@lid`, `${bare}@s.whatsapp.net`];
+}
 
 module.exports = {
   name: 'mods',
@@ -67,7 +90,7 @@ module.exports = {
       const bareNum = cleanBare(jid);
       const u = findUser(db, jid);
       const name = u?.name || 'Senku';
-      mentions.push(jid); // Push #30: mention the REAL JID — a rebuilt @s.whatsapp.net never links for @lid users
+      mentions.push(...mentionJidsFor(db, jid)); // Push #35: real full JID — bare numbers never link
 
       txt += `${i + 1}. 👑 Owner\n`;
       txt += `   👤 ${name}\n`;
@@ -87,7 +110,7 @@ module.exports = {
         const bareNum = cleanBare(jid);
         const u = findUser(db, jid);
         const name = u?.name || 'Hunter';
-        mentions.push(jid); // Push #30: mention the REAL JID
+        mentions.push(...mentionJidsFor(db, jid)); // Push #35: real full JID — bare numbers never link
 
         txt += `${i + 1}. ⭐ Mod\n`;
         txt += `   👤 ${name}\n`;
