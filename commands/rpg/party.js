@@ -308,6 +308,51 @@ module.exports = {
       const totalMembers = (raid.members || []).length;
       const allReady = totalMembers > 0 && totalReady === totalMembers;
 
+      // Push #29: live in-raid tracking — floor, monsters, hunters alive.
+      if (raid.status === 'active') {
+        const _liveHp = (m) => {
+          const u = db.users?.[m.id];
+          if (u?.stats) return { hp: u.stats.hp ?? m.hp, max: u.stats.maxHp ?? m.maxHp };
+          const n = GKM.normaliseJid(m.id);
+          const hit = n ? Object.values(db.users || {}).find(x => GKM.normaliseJid(x.id || x.jid || '') === n) : null;
+          if (hit?.stats) return { hp: hit.stats.hp ?? m.hp, max: hit.stats.maxHp ?? m.maxHp };
+          return { hp: m.hp, max: m.maxHp };
+        };
+        const floor = gate.currentFloor || 1;
+        const left = (gate.monsters || []).filter(mm => mm.floor === floor && !mm.defeated);
+        const totalFloor = (gate.monsters || []).filter(mm => mm.floor === floor).length;
+        const aliveCount = (raid.members || []).filter(m => {
+          const L = _liveHp(m);
+          return typeof L.hp !== 'number' || L.hp > 0;
+        }).length;
+        const aliveLines = (raid.members || []).map((m, i) => {
+          const L = _liveHp(m);
+          const down = typeof L.hp === 'number' && L.hp <= 0;
+          const crown = normaliseJid(m.id) === normaliseJid(raid.leader) ? '👑' : '⚔️';
+          return `  ${i + 1}. ${crown} *${m.name}* — ${down ? '💀 DOWN' : `❤️ ${L.hp}/${L.max}`}`;
+        });
+        const treas = gate.accumulatedTreasure || { nexus: 0, crystals: 0 };
+        const bossReady = floor >= gate.totalFloors && left.length === 0 && gate.boss && !gate.boss.defeated;
+        return sock.sendMessage(chatId, {
+          text: [
+            ...(pro ? [UI.PRO_BAR, `${rd.emoji} *RAID IN PROGRESS* 💎`, UI.PRO_BAR] : [`${rd.emoji} *RAID IN PROGRESS*`, UI.FREE_BAR]),
+            `🆔 Gate: *${rd.label}* [\`${activeKey}\`]`,
+            `🗺️ Floor: *${floor}/${gate.totalFloors}*`,
+            `👾 Monsters: *${totalFloor - left.length}/${totalFloor}* cleared`,
+            `❤️ Hunters alive: *${aliveCount}/${totalMembers}*`,
+            ...(treas.nexus > 0 || treas.crystals > 0 ? [`💰 Loot banked: *${treas.nexus.toLocaleString()}* 💠 + *${treas.crystals.toLocaleString()}* 💎`] : []),
+            ...(bossReady ? [``, `🏆 *BOSS READY:* ${gate.boss.name} — ❤️ ${gate.boss.hp}/${gate.boss.maxHp}`, `⚔️ /party boss — engage!`] : []),
+            ``,
+            `👥 *HUNTERS (${totalMembers}):*`,
+            ...(aliveLines.length ? aliveLines : ['  _(party wiped)_']),
+            ``,
+            `${FRAME}`,
+            `⚔️ /attack · 🔮 /skill <name> · 🩹 /party heal`,
+            ...(pro ? [FRAME, UI.PRO_MINI, `💎 *PRO RAID* — floor ${floor}/${gate.totalFloors} · ${aliveCount} alive`] : [FRAME, UI.upsell()]),
+          ].join('\n'),
+        }, { quoted: msg });
+      }
+
       return sock.sendMessage(chatId, {
         text: [
           ...(pro ? [UI.PRO_BAR, `${rd.emoji} *GATE RAID PARTY STATUS* 💎`, UI.PRO_BAR] : [`${rd.emoji} *GATE RAID PARTY STATUS*`, UI.FREE_BAR]),

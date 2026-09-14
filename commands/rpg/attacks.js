@@ -14,6 +14,7 @@
 const DB   = require('../../rpg/utils/AttackPatternDB');
 const Shop = require('../../rpg/utils/AttackShop');
 const GKM  = require('../../rpg/dungeons/GateKeyManager');
+const GR = require('../../rpg/dungeons/GateRaid'); // Push #29: cold-memory revive
 const { GateManager } = require('../../rpg/dungeons/GateManager');
 const Buttons = (() => { try { return require('../../utils/buttons'); } catch (e) { return null; } })();
 
@@ -48,7 +49,15 @@ function detectActiveCombat(player, chatId, db, sender) {
   if (gc?.activeKeyId) {
     const keyData = GKM.getKey(gc.activeKeyId) || db.gateKeys?.[gc.activeKeyId];
     if (keyData) {
-      const gate = GateManager.getGate(keyData.gateId);
+      // Push #29: revive the persisted raid when memory is cold — post-restart
+      // /attack failed here while /party attack self-healed (same call it uses).
+      let gate = GateManager.getGate(keyData.gateId);
+      if (!gate) {
+        try {
+          const revived = GR.resolveCode(gc.activeKeyId, db);
+          if (revived.ok) gate = revived.gate;
+        } catch (e) {}
+      }
       if (gate && gate.raid && gate.raid.status === 'active') {
         const isMember = gate.raid.members?.some(m => normaliseJid(m.id) === sNum);
         if (isMember) {

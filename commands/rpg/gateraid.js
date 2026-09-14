@@ -245,11 +245,11 @@ module.exports = {
 
     // ── STATUS ──────────────────────────────────────────────────
     if (action === 'status' || action === 'info') {
-      const m = gate.raid?.members?.find(x => x.id === sender);
-      if (!gate.raid && !gate.raiders?.includes(sender)) {
+      // Push #29: JID-tolerant membership (same as inRaid).
+      if (!gate.raid && !inRaid(gate, sender)) {
         return sock.sendMessage(chatId, { text: '❌ Start a raid first with your code.' }, { quoted: msg });
       }
-      if (gate.raid && !gate.raid.members.some(x => x.id === sender) && !gate.raiders?.includes(sender)) {
+      if (gate.raid && !inRaid(gate, sender)) {
         return sock.sendMessage(chatId, { text: '❌ You are not part of this raid.' }, { quoted: msg });
       }
       return sock.sendMessage(chatId, { text: GR.statusOf(gate, db) }, { quoted: msg });
@@ -258,6 +258,7 @@ module.exports = {
     // ── HEAL (HEALTH POTION) ───────────────────────────────────
     if (action === 'heal' || action === 'item') {
       if (!inRaid(gate, sender)) return sock.sendMessage(chatId, { text: '❌ You are not in this raid.' }, { quoted: msg });
+      if (raidOver(gate)) return sock.sendMessage(chatId, { text: RAID_OVER_TEXT }, { quoted: msg });
 
       // Party potion cap: max 5 health potions per gate raid collectively
       if ((gate.potionsUsed || 0) >= 5) {
@@ -294,7 +295,7 @@ module.exports = {
 
       gate.potionsUsed = (gate.potionsUsed || 0) + 1;
       try { require('../../rpg/utils/QuestDispatcher').trackAndNotify(player, 'heal', 1, sock, sender, chatId); } catch(e){}
-      const pm = gate.raid?.members?.find(m => m.id === sender);
+      const pm = gate.raid?.members?.find(m => m.id === sender || GR.GKM.normaliseJid(m.id) === GR.GKM.normaliseJid(sender)); // Push #29
       if (pm) pm.hp = player.stats.hp;
 
       try { GR.saveGateState(db, gate); } catch (e) {}
@@ -306,6 +307,7 @@ module.exports = {
 
     // ── REVIVE (REVIVE TOKEN) ──────────────────────────────────
     if (action === 'revive') {
+      if (raidOver(gate)) return sock.sendMessage(chatId, { text: RAID_OVER_TEXT }, { quoted: msg });
       if ((player.inventory?.reviveTokens || 0) <= 0) {
         return sock.sendMessage(chatId, { text: '❌ You have no Revive Tokens!' }, { quoted: msg });
       }
@@ -321,17 +323,22 @@ module.exports = {
       player.inventory.reviveTokens--;
       player.stats.hp = Math.floor((player.stats?.maxHp || 100) * 0.5);
 
-      if (gate.raid) {
-        if (!gate.raid.members.some(m => m.id === sender)) {
-          gate.raid.members.push({ id: sender, name: player.name, hp: player.stats.hp, energy: player.stats.energy || 100, ready: true });
-        } else {
-          const pm = gate.raid.members.find(m => m.id === sender);
-          if (pm) pm.hp = player.stats.hp;
+      // Push #29: JID-tolerant re-add (self-heals stored id on format flips).
+      {
+        const _sN = GR.GKM.normaliseJid(sender);
+        const _same = (id) => id === sender || (_sN && GR.GKM.normaliseJid(id) === _sN);
+        if (gate.raid) {
+          const _ex = gate.raid.members.find(m => _same(m.id));
+          if (!_ex) {
+            gate.raid.members.push({ id: sender, name: player.name, hp: player.stats.hp, energy: player.stats.energy || 100, ready: true });
+          } else {
+            _ex.id = sender; _ex.hp = player.stats.hp;
+          }
         }
-      }
-      if (!gate.raiders?.includes(sender)) {
-        gate.raiders = gate.raiders || [];
-        gate.raiders.push(sender);
+        if (!(gate.raiders || []).some(_same)) {
+          gate.raiders = gate.raiders || [];
+          gate.raiders.push(sender);
+        }
       }
 
       try { GR.saveGateState(db, gate); } catch (e) {}
@@ -344,6 +351,7 @@ module.exports = {
     // ── ADVANCE ─────────────────────────────────────────────────
     if (action === 'advance') {
       if (!inRaid(gate, sender)) return sock.sendMessage(chatId, { text: '❌ You are not in this raid.' }, { quoted: msg });
+      if (raidOver(gate)) return sock.sendMessage(chatId, { text: RAID_OVER_TEXT }, { quoted: msg });
       const floor = gate.currentFloor;
       const floorMonsters = (gate.monsters || []).filter(mm => mm.floor === floor && !mm.defeated);
       if (floorMonsters.length > 0) return sock.sendMessage(chatId, { text: `❌ Clear all monsters on Floor ${floor} first!` }, { quoted: msg });
@@ -375,6 +383,15 @@ module.exports = {
     // ── ATTACK / SKILL ──────────────────────────────────────────
     if (action === 'attack' || action === 'skill') {
       if (!inRaid(gate, sender)) return sock.sendMessage(chatId, { text: '❌ You are not in this raid.' }, { quoted: msg });
+      if (raidOver(gate)) return sock.sendMessage(chatId, { text: RAID_OVER_TEXT }, { quoted: msg });
+      // Push #29: combat lock — one battle flow at a time per gate.
+      const _lock = GR.tryCombatLock(gate.id, sender, player.name);
+      if (!_lock.ok) {
+        return sock.sendMessage(chatId, {
+          text: `⚔️ *${_lock.holderName}* is mid-battle... wait for their flow to finish, then strike!`,
+        }, { quoted: msg });
+      }
+      try {
       const floor = gate.currentFloor;
       const floorMonsters = (gate.monsters || []).filter(mm => mm.floor === floor && !mm.defeated);
 
@@ -602,9 +619,19 @@ module.exports = {
           }
 
           deathLines.push(``, `💀 *YOU FELL IN THE GATE!*`, `Lost ${loss.toLocaleString()} 💎`, `You fled with 1 HP.`);
-          if (gate.raid) gate.raid.members = gate.raid.members.filter(m => m.id !== sender);
-          gate.raiders = (gate.raiders || []).filter(r => r !== sender);
-          try { GR.saveGateState(db, gate); } catch (e) {}
+          // Push #29: JID-tolerant removal + wipe check (never re-persist a
+          // wiped gate — wipeGate already dropped it from every registry).
+          {
+            const _sN = GR.GKM.normaliseJid(sender);
+            const _gone = (id) => id !== sender && (!_sN || GR.GKM.normaliseJid(id) !== _sN);
+            if (gate.raid) gate.raid.members = gate.raid.members.filter(m => _gone(m.id));
+            gate.raiders = (gate.raiders || []).filter(_gone);
+          }
+          if (gate.raid && gate.raid.members.length === 0) {
+            deathLines.push(...GR.wipeGate(gate, key, keyData, chatId, db));
+          } else {
+            try { GR.saveGateState(db, gate); } catch (e) {}
+          }
       saveDatabase();
           return sock.sendMessage(chatId, { text: deathLines.filter(Boolean).join('\n') }, { quoted: msg });
         }
@@ -626,11 +653,21 @@ module.exports = {
       return sock.sendMessage(chatId, {
         text: msg3Lines.filter(Boolean).join('\n')
       }, { quoted: msg });
+      } finally { GR.releaseCombatLock(gate.id); } // Push #29
     }
 
     // ── BOSS ────────────────────────────────────────────────────
     if (action === 'boss') {
       if (!inRaid(gate, sender)) return sock.sendMessage(chatId, { text: '❌ You are not in this raid.' }, { quoted: msg });
+      if (raidOver(gate)) return sock.sendMessage(chatId, { text: RAID_OVER_TEXT }, { quoted: msg });
+      // Push #29: combat lock — one battle flow at a time per gate.
+      const _block = GR.tryCombatLock(gate.id, sender, player.name);
+      if (!_block.ok) {
+        return sock.sendMessage(chatId, {
+          text: `⚔️ *${_block.holderName}* is mid-battle... wait for their flow to finish, then strike!`,
+        }, { quoted: msg });
+      }
+      try {
       const floor = gate.currentFloor;
       const floorMonsters = (gate.monsters || []).filter(mm => mm.floor === floor && !mm.defeated);
       if (floorMonsters.length > 0) return sock.sendMessage(chatId, { text: `❌ Clear all floor ${floor} monsters first!` }, { quoted: msg });
@@ -748,10 +785,18 @@ module.exports = {
             const loss = Math.floor((player.manaCrystals || 0) * 0.15);
             player.manaCrystals = Math.max(0, (player.manaCrystals || 0) - loss);
             lines.push(``, `💀 *YOU FELL BEFORE THE BOSS!*`, `Lost ${loss.toLocaleString()} 💎`, `You fled with 1 HP.`);
-            // Remove from raid
-            if (gate.raid) gate.raid.members = gate.raid.members.filter(m => m.id !== sender);
-            gate.raiders = (gate.raiders || []).filter(r => r !== sender);
-            try { GR.saveGateState(db, gate); } catch (e) {}
+            // Push #29: JID-tolerant removal + wipe check (never re-persist a wiped gate).
+            {
+              const _sN = GR.GKM.normaliseJid(sender);
+              const _gone = (id) => id !== sender && (!_sN || GR.GKM.normaliseJid(id) !== _sN);
+              if (gate.raid) gate.raid.members = gate.raid.members.filter(m => _gone(m.id));
+              gate.raiders = (gate.raiders || []).filter(_gone);
+            }
+            if (gate.raid && gate.raid.members.length === 0) {
+              lines.push(...GR.wipeGate(gate, key, keyData, chatId, db));
+            } else {
+              try { GR.saveGateState(db, gate); } catch (e) {}
+            }
       saveDatabase();
             return sock.sendMessage(chatId, { text: lines.join('\n') }, { quoted: msg });
           }
@@ -760,12 +805,13 @@ module.exports = {
         lines.push(``, `⚔️ /party boss — Attack again`);
       }
 
-      const pm = gate.raid?.members?.find(m => m.id === sender);
+      const pm = gate.raid?.members?.find(m => m.id === sender || GR.GKM.normaliseJid(m.id) === GR.GKM.normaliseJid(sender)); // Push #29
       if (pm) { pm.hp = player.stats.hp; pm.energy = player.stats.energy; }
 
       try { GR.saveGateState(db, gate); } catch (e) {}
       saveDatabase();
       return sock.sendMessage(chatId, { text: lines.join('\n') }, { quoted: msg });
+      } finally { GR.releaseCombatLock(gate.id); } // Push #29
     }
 
     return sock.sendMessage(chatId, {
@@ -776,7 +822,17 @@ module.exports = {
 
 // Helper: is the sender an active raider of this gate?
 function inRaid(gate, sender) {
+  // Push #29: JID-tolerant (exact match fast path, normalised fallback).
   if (gate.raid && gate.raid.members.some(m => m.id === sender)) return true;
   if ((gate.raiders || []).includes(sender)) return true;
-  return false;
+  const sN = GR.GKM.normaliseJid(sender);
+  if (!sN) return false;
+  if (gate.raid && gate.raid.members.some(m => GR.GKM.normaliseJid(m.id) === sN)) return true;
+  return (gate.raiders || []).some(r => GR.GKM.normaliseJid(r) === sN);
 }
+
+// Push #29: ended raids refuse combat/support actions (wipe-safe).
+function raidOver(gate) {
+  return !!gate?.raid && ['done', 'wiped', 'closed'].includes(gate.raid.status);
+}
+const RAID_OVER_TEXT = '❌ This raid has ended. Start a new one: /party create --<KEY>';

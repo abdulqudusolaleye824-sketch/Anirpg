@@ -195,10 +195,66 @@ function raidOf(gate, key, keyData) {
   return gate.raid;
 }
 
+// ── Push #29: per-gate combat lock ───────────────────────────────────
+// Serialises the multi-message battle flow: while one hunter's attack/skill/
+// boss turn is playing out, every other attacking command waits instead of
+// interleaving (which double-spent kills and scrambled HP). In-memory is
+// correct here — single process, and a restart clears all locks anyway.
+const _combatLocks = new Map(); // gateId -> { holder, name, ts }
+const COMBAT_LOCK_MS = 90_000;  // stale-lock auto-expiry (belt + braces)
+function tryCombatLock(gateId, holder, name) {
+  const now = Date.now();
+  const cur = _combatLocks.get(gateId);
+  if (cur && now - cur.ts < COMBAT_LOCK_MS && cur.holder !== holder) {
+    return { ok: false, holderName: cur.name || 'Another hunter' };
+  }
+  _combatLocks.set(gateId, { holder, name, ts: now });
+  return { ok: true };
+}
+function releaseCombatLock(gateId) {
+  try { _combatLocks.delete(gateId); } catch (e) {}
+}
+
+// ── Push #29: party wipe — collapse the gate, free the dungeon GC ────
+// The key is NOT consumed (no claimed/raidComplete stamp — and nothing
+// reads keyData.used), so the party can regroup and retry the same key
+// from a freshly rebuilt gate. resolveCode rebuilds when no snapshot lives.
+function wipeGate(gate, key, keyData, chatId, db) {
+  try {
+    if (gate.raid) { gate.raid.status = 'wiped'; gate.raid.clearedAt = Date.now(); }
+    if (db?.activeGates) delete db.activeGates[gate.id];
+    try { delete GateManager.activeGates[gate.id]; } catch (e) {}
+    try {
+      const chats = [chatId, keyData?.dungeonChatId].filter(Boolean);
+      for (const c of chats) {
+        const arr = GateManager.gatesByChat?.[c];
+        if (Array.isArray(arr)) GateManager.gatesByChat[c] = arr.filter(id => id !== gate.id);
+      }
+    } catch (e) {}
+    const gc = GKM.getDungeonGC(chatId)
+      || (keyData?.dungeonChatId ? GKM.getDungeonGC(keyData.dungeonChatId) : null);
+    if (gc) { gc.activeKeyId = null; try { GKM.saveGCsToDb(db); } catch (e) {} }
+    if (keyData) {
+      keyData.raidStarted = false;
+      try { if (db?.gateKeys?.[key]) db.gateKeys[key].raidStarted = false; } catch (e) {}
+    }
+  } catch (e) { console.error('wipeGate error:', e.message); }
+  return [
+    ``,
+    `💀 *ALL HUNTERS WIPED!*`,
+    `🚪 The gate collapses and the dungeon closes...`,
+    `✅ This dungeon GC is usable again — regroup and run */party create --${key}* to retry!`,
+  ];
+}
+
 function ensureMember(gate, sender, db) {
   const player = db.users?.[sender];
   const raid = gate.raid;
-  let m = raid.members.find(x => x.id === sender);
+  // Push #29: JID-tolerant match (LID/PN/device flips) + self-heal stored id.
+  const sNum = GKM.normaliseJid(sender);
+  let m = raid.members.find(x => x.id === sender)
+    || raid.members.find(x => sNum && GKM.normaliseJid(x.id) === sNum);
+  if (m && m.id !== sender) { m.id = sender; if (player?.name) m.name = player.name; }
   if (!m) {
     m = {
       id: sender,
@@ -591,6 +647,9 @@ module.exports = {
   clearGate,
   saveGateState,
   spawnWildPet,
+  tryCombatLock,
+  releaseCombatLock,
+  wipeGate,
   GKM,
   GateManager,
   GATE_RANKS,
