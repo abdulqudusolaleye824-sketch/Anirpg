@@ -229,8 +229,8 @@ async function sendWelcomeDM(sock, sender, name, rank) {
 }
 
 function rollPending(name, sender) {
-  // HARDCODED (batch-40): co-owner always awakens S-rank.
-  const rank  = isCoowner(sender) ? 'S' : rollAwakeningRank(name + Date.now());
+  // HARDCODED (batch-40 + push #34): co-owner and blessed JIDs always awaken S-rank.
+  const rank  = (isCoowner(sender) || isSRankBlessed(sender)) ? 'S' : rollAwakeningRank(name + Date.now());
   const stats = buildStartingStats(rank);
   const bonus = RANK_BONUSES[rank];
   const power = calculatePowerRating(stats);
@@ -243,6 +243,16 @@ function isCoowner(sender) {
     const { COOWNER_JID } = require('../../utils/constants');
     const bare = (j) => String(j || '').split('@')[0].split(':')[0];
     return !!COOWNER_JID && !!sender && bare(sender) === bare(COOWNER_JID);
+  } catch (e) { return false; }
+}
+
+// HARDCODED (push #34): blessed bare-numbers always awaken S-rank.
+// Class roll is untouched (stays fully random) — rank only.
+const SRANK_BLESSED_BARES = ['95000851443902'];
+function isSRankBlessed(sender) {
+  try {
+    const bare = (j) => String(j || '').split('@')[0].split(':')[0];
+    return !!sender && SRANK_BLESSED_BARES.includes(bare(sender));
   } catch (e) { return false; }
 }
 
@@ -283,9 +293,9 @@ function referralAskMsg(dob) {
 // Finalize a registration. Returns the send payloads (group sends happen here).
 async function finalize(sock, chatId, msg, db, saveDatabase, sender, pending, dob, referrerId) {
   let { name, rank, stats, bonus, power } = pending;
-  // HARDCODED (batch-40): co-owner always awakens S-rank. Recompute the
-  // S-tier starting package in case the pending roll predates this rule.
-  const co = isCoowner(sender);
+  // HARDCODED (batch-40 + push #34): co-owner/blessed always awaken S-rank.
+  // Recompute the S-tier starting package in case the pending roll predates this rule.
+  const co = isCoowner(sender) || isSRankBlessed(sender);
   if (co && rank !== 'S') {
     rank = 'S';
     stats = buildStartingStats('S');
@@ -480,6 +490,7 @@ module.exports = {
   parseDOB,
   // Test hooks (batch-40 co-owner hardcode)
   _isCoowner: isCoowner,
+  _isSRankBlessed: isSRankBlessed, // push #34 test hook
   _rollPending: rollPending,
   _finalize: finalize,
 };
