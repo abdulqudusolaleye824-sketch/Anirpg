@@ -112,6 +112,8 @@ let _bootAt = 0;    // Push #31: boot timestamp
 let _lastSnapAt = 0;       // Push #32: last hourly snapshot
 let _bootHealth = {};      // Push #32: degraded-boot flags for /api/db-health
 const _pendingOwnerAlarms = []; // Push #32: owner DM alarm queue (flushed when a socket is up)
+let _mongoArmed = false;   // Push #33: Atlas write arming (arm-on-first-write)
+let _divergeAlarmAt = 0;   // Push #33: throttle for the divergence alarm
 function _snapDir() { try { return path.join(path.dirname(DB_PATH), 'snapshots'); } catch { return null; } }
 // Push #32 (L2): timestamped snapshot writer. Best-effort, sync, never throws.
 function writeDbSnapshot(tag, obj) {
@@ -203,6 +205,32 @@ function _doMongoWrite() {
         if (_memUsers === 0 && _bootUsers > 0) {
           console.error(`🛡️ Mongo mirror PROTECTED: refusing to overwrite ${_bootUsers} users with an empty DB. Investigate the load path!`);
           return;
+        }
+        // Push #33: arm-on-first-write — never touch Atlas until we've SEEN the remote side.
+        // Closes the fresh-boot + late-Mongo cement (boot=0 bypassed the #31 check).
+        if (!_mongoArmed) {
+          const _forceFlag = (() => { try { return path.join(path.dirname(DB_PATH), 'FORCE_ARM'); } catch { return null; } })();
+          let _remoteUsers = -1;
+          try {
+            const _rd = await mongoCollection.findOne({ _id: 'main' });
+            _remoteUsers = _rd ? Object.keys(_rd.users || {}).length : 0;
+          } catch { _remoteUsers = -1; }
+          if (_remoteUsers < 0) return; // Atlas unreachable — JSON mirror covers; retry arming on next save
+          if (_forceFlag && fs.existsSync(_forceFlag)) {
+            try { fs.unlinkSync(_forceFlag); } catch {}
+            console.error(`⚠️ Mongo force-arm consumed: proceeding with ${_memUsers} users over remote ${_remoteUsers}.`);
+            _mongoArmed = true;
+          } else if (_remoteUsers > _memUsers) {
+            if (Date.now() - _divergeAlarmAt > 3600 * 1000) { // throttled: no alarm/log spam
+              _divergeAlarmAt = Date.now();
+              console.error(`🛡️ MONGO DIVERGED: remote has ${_remoteUsers} users, memory has ${_memUsers} — REFUSING to overwrite. Owner alerted.`);
+              try { writeDbSnapshot('diverged'); } catch {}
+              _pendingOwnerAlarms.push(`🛡️ *MONGO DIVERGENCE — WRITE REFUSED* 🛡️\n\nAtlas holds ${_remoteUsers} users but memory has ${_memUsers}. I refused to overwrite Atlas — your data is safe on BOTH sides.\n\nLocal copy preserved in snapshots/diverged-*.json. Investigate, then /dbforce confirm — or restart to reload from Atlas.`);
+            }
+            return;
+          } else {
+            _mongoArmed = true;
+          }
         }
         await mongoCollection.replaceOne(
           { _id: 'main' },
@@ -1028,7 +1056,7 @@ async function gracefulShutdown(signal) {
   try {
     // Push #31: same empty-DB protection on the shutdown flush.
     const _memUsersSd = Object.keys(database.users || {}).length;
-    if (_memUsersSd > 0 || _bootUsers === 0) {
+    if (_mongoArmed && (_memUsersSd > 0 || _bootUsers === 0)) { // Push #33: never flush unverified
     if (mongoCollection) {
       await Promise.race([
         mongoCollection.replaceOne({ _id: 'main' }, { _id: 'main', ...database }, { upsert: true }),
@@ -1037,7 +1065,7 @@ async function gracefulShutdown(signal) {
       console.log('💾 Final MongoDB flush complete.');
     }
     } else {
-      console.error(`🛡️ Shutdown Mongo flush SKIPPED: refusing to overwrite ${_bootUsers} users with an empty DB.`);
+      console.error(`🛡️ Shutdown Mongo flush SKIPPED: refusing to overwrite ${_bootUsers} users with an empty/unverified DB.`);
     }
   } catch (e) {
     console.error('❌ Final MongoDB flush failed:', e.message);
@@ -1273,6 +1301,15 @@ async function startup() {
   try { pruneSnapshots(); } catch {}
   // Push #32: degraded-boot detection → owner alarm (flushed when a socket is up).
   _bootHealth = { mongoOk: !!mongoOk, hadMongoDoc: !!mongoDoc, hadJsonDoc: !!jsonDoc, fresh: (!mongoDoc && !jsonDoc) };
+  // Push #33: mirrors disagreed at boot → alarm (loser already snapshotted above).
+  try {
+    const _mu = mongoDoc ? Object.keys(mongoDoc.users || {}).length : -1;
+    const _ju = jsonDoc ? Object.keys(jsonDoc.users || {}).length : -1;
+    if (_mu >= 0 && _ju >= 0 && _mu !== _ju) {
+      _bootHealth.disagree = { mongoUsers: _mu, jsonUsers: _ju };
+      _pendingOwnerAlarms.push(`⚠️ *MIRRORS DISAGREED AT BOOT* ⚠️\n\nAtlas: ${_mu} users · JSON: ${_ju} users. Kept the fuller side; the other is preserved in snapshots/boot-*.json.\n\nBoot: ${new Date().toISOString()}`);
+    }
+  } catch {}
   if (!mongoDoc && !jsonDoc) {
     _pendingOwnerAlarms.push(`🔥 *BOT BOOTED FRESH — NO DATA FOUND* 🔥\n\nNo Mongo doc and no JSON file at boot. If you expected data, avoid saves and investigate mirrors first.\n\nBoot: ${new Date().toISOString()}`);
   } else if (!mongoOk) {

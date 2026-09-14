@@ -67,6 +67,16 @@ module.exports = {
         }
       }
     } catch {}
+    // Push #33: diverged snapshot = a Mongo write was refused.
+    let diverged = false;
+    try {
+      const sroots2 = [];
+      if (process.env.DATA_DIR) sroots2.push(path.join(process.env.DATA_DIR, 'database', 'snapshots'));
+      sroots2.push(path.join(__dirname, '..', '..', 'database', 'snapshots'));
+      for (const sd of sroots2) {
+        if (fs.existsSync(sd) && fs.readdirSync(sd).some(f => f.startsWith('diverged-'))) { diverged = true; break; }
+      }
+    } catch {}
     const memDot = users > 0 ? '✅' : '🔥';
     return sock.sendMessage(chatId, {
       text: [
@@ -77,6 +87,7 @@ module.exports = {
         `   💾 last save: ${savedAt}`,
         `   📸 snapshots: ${snapCount}${snapNew ? ` (newest ${snapNew})` : ''}`,
         `   📩 owner backup: ${lastOwner}`,
+        ...(diverged ? ['   ⚠️ DIVERGED: a Mongo write was refused — investigate, then /dbforce confirm'] : []),
         `   ⏱️ uptime: ${Math.floor(process.uptime() / 60)}m`,
         ``,
         `💽 *JSON MIRROR:*`,
