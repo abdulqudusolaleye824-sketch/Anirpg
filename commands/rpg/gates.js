@@ -49,6 +49,7 @@ const gate = {
         return normaliseJid(k.ownedBy) === normaliseJid(sender)
             && !k.expired
             && !k.raidComplete
+            && !k.consumed
             && Date.now() < k.expiresAt;
       });
 
@@ -286,6 +287,7 @@ const gate = {
       const timeLeft = keyData.expired ? 'EXPIRED' : GKM.formatStability(Math.max(0, keyData.expiresAt - Date.now()));
       const status   = keyData.raidComplete ? '✅ Cleared'
         : keyData.expired ? '💀 Expired'
+        : (keyData.consumed && !keyData.raidStarted) ? '🔥 Consumed (single-use)'
         : keyData.raidStarted ? '⚔️ Raid in progress'
         : keyData.dungeonChatId ? '🚪 Gate open'
         : '🔑 Key unused';

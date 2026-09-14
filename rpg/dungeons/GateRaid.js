@@ -216,9 +216,8 @@ function releaseCombatLock(gateId) {
 }
 
 // ── Push #29: party wipe — collapse the gate, free the dungeon GC ────
-// The key is NOT consumed (no claimed/raidComplete stamp — and nothing
-// reads keyData.used), so the party can regroup and retry the same key
-// from a freshly rebuilt gate. resolveCode rebuilds when no snapshot lives.
+// Push #30: the key stays consumed (single-use) — no retry on the same key.
+// The party regroups with a fresh key; the GC itself is usable immediately.
 function wipeGate(gate, key, keyData, chatId, db) {
   try {
     if (gate.raid) { gate.raid.status = 'wiped'; gate.raid.clearedAt = Date.now(); }
@@ -243,7 +242,7 @@ function wipeGate(gate, key, keyData, chatId, db) {
     ``,
     `💀 *ALL HUNTERS WIPED!*`,
     `🚪 The gate collapses and the dungeon closes...`,
-    `✅ This dungeon GC is usable again — regroup and run */party create --${key}* to retry!`,
+    `✅ This dungeon GC is usable again — grab a fresh key for the next run!`,
   ];
 }
 
@@ -273,6 +272,15 @@ function ensureMember(gate, sender, db) {
 // ── ENTRY ───────────────────────────────────────────────────────
 function enter(sender, name, key, keyData, gate, db) {
   const raid = raidOf(gate, key, keyData);
+  // Push #30: single-use keys — fresh entry on a consumed key is refused.
+  // (Members re-running enter on their own live raid pass straight through.)
+  const _alreadyIn = (raid.members || []).some(m =>
+    m.id === sender || GKM.normaliseJid(m.id) === GKM.normaliseJid(sender));
+  if (!_alreadyIn && keyData?.consumed) {
+    return { ok: false, error: '🔥 *This key is already consumed!*\n\nSingle-use: each key opens exactly one party. Buy a fresh gate for another run.' };
+  }
+  // Burn it now — committed from this point on (covers solo + /gateraid enter).
+  try { keyData.consumed = true; if (db?.gateKeys?.[key]) db.gateKeys[key].consumed = true; } catch (e) {}
   const rel = relationOf(sender, keyData, db);
 
   // No-guild hunter (not a member of the owning guild, not an affiliate) → instant SOLO raid.

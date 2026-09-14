@@ -100,6 +100,14 @@ module.exports = {
       const resolved = GR.resolveCode(key, db);
       if (!resolved.ok) return sock.sendMessage(chatId, { text: resolved.error }, { quoted: msg });
       const { gate, keyData } = resolved;
+      // Push #30: keys are single-use — a consumed key can never open another party.
+      if (keyData.consumed) {
+        return sock.sendMessage(chatId, {
+          text: '🔥 *This key is already consumed!*\n\nSingle-use: each key opens exactly one party. Buy a fresh gate for another run.',
+        }, { quoted: msg });
+      }
+      // Burn happens below: solo burns inside GR.enter(); party scenarios burn
+      // right after their raid object is committed (see K6 stamps).
 
       const playerGuild = player.guild || null;
       const affData     = GKM.getAffiliateData(sender, db);
@@ -160,6 +168,8 @@ module.exports = {
         raid.status    = 'recruiting';
         raid.members   = [];
         GR.ensureMember(gate, sender, db);
+      keyData.consumed = true; // Push #30 K6: single-use burn
+      try { if (db.gateKeys?.[key]) db.gateKeys[key].consumed = true; } catch (e) {}
 
         try { GR.saveGateState(db, gate); } catch (e) {}
       saveDatabase();
@@ -218,6 +228,8 @@ module.exports = {
       raid.status    = 'recruiting';
       raid.members   = [];
       GR.ensureMember(gate, sender, db);
+      keyData.consumed = true; // Push #30 K6: single-use burn
+      try { if (db.gateKeys?.[key]) db.gateKeys[key].consumed = true; } catch (e) {}
 
       try { GR.saveGateState(db, gate); } catch (e) {}
       saveDatabase();
