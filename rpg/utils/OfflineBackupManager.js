@@ -4,7 +4,8 @@ const fs = require('fs');
 const path = require('path');
 
 const THREE_DAYS_MS = 3 * 24 * 60 * 60 * 1000;
-const BACKUP_FILE = path.join(__dirname, '..', '..', 'database', 'offline_backup.json');
+const BACKUP_ROOT = process.env.DATA_DIR || path.join(__dirname, '..', '..');
+const BACKUP_FILE = path.join(BACKUP_ROOT, 'database', 'offline_backup.json'); // Push #31: survive redeploys via /data
 
 let isBackupInProgress = false;
 let backupStartedAt = 0;

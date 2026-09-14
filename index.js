@@ -107,6 +107,8 @@ async function loadFromMongoDoc() {
 }
 
 let saveTimeout = null;
+let _bootUsers = 0; // Push #31: users present at boot (write-guard baseline)
+let _bootAt = 0;    // Push #31: boot timestamp
 let pendingMongoWrite = null;
 let _lastMongoFlush = 0; // Batch-47: max-wait bookkeeping (see below)
 let _mongoSizeWarnAt = 0; // Push #23: throttle for the oversize-mirror warning
@@ -142,6 +144,14 @@ function _doMongoWrite() {
             _mongoSizeWarnAt = _now;
             console.error(`🚨 MongoDB mirror SKIPPED: database is ${(_approx / 1048576).toFixed(1)}MB (limit 16MB). JSON fallback is the live copy — investigate bloat!`);
           }
+          return;
+        }
+        // Push #31: NEVER let an emptied in-memory DB clobber a fuller mirror.
+        // Legit flows never delete all users — 0 users after a non-empty boot
+        // means a bad load, and the mirror is the only surviving copy.
+        const _memUsers = Object.keys(database.users || {}).length;
+        if (_memUsers === 0 && _bootUsers > 0) {
+          console.error(`🛡️ Mongo mirror PROTECTED: refusing to overwrite ${_bootUsers} users with an empty DB. Investigate the load path!`);
           return;
         }
         await mongoCollection.replaceOne(
@@ -389,6 +399,12 @@ async function _writeJsonBackup() {
   _jsonWriteRunning = true;
   _jsonWriteInFlight = (async () => {
     try {
+      // Push #31: same protection for the JSON mirror (the .1 rotation is
+      // only hourly — don't poison the live copy with an empty DB).
+      if (Object.keys(database.users || {}).length === 0 && _bootUsers > 0) {
+        console.error(`🛡️ JSON mirror PROTECTED: refusing to overwrite ${_bootUsers} users with an empty DB.`);
+        return;
+      }
       const snapshot = JSON.stringify(database, null, 2);
       const tmpPath = DB_PATH + '.tmp';
       await fs.promises.mkdir(path.dirname(DB_PATH), { recursive: true });
@@ -841,6 +857,37 @@ http.createServer(async (req, res) => {
     return;
   }
 
+  // ── Push #31: GET /api/db-health (DB diagnostics, no Termux needed) ──
+  if (req.method === 'GET' && req.url === '/api/db-health') {
+    try {
+      const memUsers = Object.keys((typeof database !== 'undefined' && database.users) || {}).length;
+      let jsonInfo = null;
+      try {
+        if (fs.existsSync(DB_PATH)) {
+          const st = fs.statSync(DB_PATH);
+          const jd = JSON.parse(fs.readFileSync(DB_PATH, 'utf-8'));
+          jsonInfo = { bytes: st.size, mtime: new Date(st.mtimeMs).toISOString(), users: Object.keys(jd.users || {}).length, savedAt: jd.__savedAt ? new Date(jd.__savedAt).toISOString() : null };
+        }
+      } catch (e) { jsonInfo = { error: e.message }; }
+      let mongoInfo = { configured: !!MONGO_URI, connected: !!mongoCollection };
+      if (mongoCollection) {
+        try {
+          const doc = await mongoCollection.findOne({ _id: 'main' });
+          mongoInfo.doc = doc ? { users: Object.keys(doc.users || {}).length, savedAt: doc.__savedAt ? new Date(doc.__savedAt).toISOString() : null } : null;
+        } catch (e) { mongoInfo.error = e.message; }
+      }
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({
+        ok: true, uptime: process.uptime(), bootUsers: _bootUsers,
+        memUsers, dataDir: DATA_DIR, authDir: AUTH_DIR, dbPath: DB_PATH,
+        mongo: mongoInfo, json: jsonInfo, serverTime: Date.now(),
+      }));
+    } catch (e) {
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({ ok: false, error: e.message }));
+    }
+  }
+
   res.writeHead(404, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify({ error: 'Not found' }));
 
@@ -889,12 +936,18 @@ async function gracefulShutdown(signal) {
     }
   } catch (e) {}
   try {
+    // Push #31: same empty-DB protection on the shutdown flush.
+    const _memUsersSd = Object.keys(database.users || {}).length;
+    if (_memUsersSd > 0 || _bootUsers === 0) {
     if (mongoCollection) {
       await Promise.race([
         mongoCollection.replaceOne({ _id: 'main' }, { _id: 'main', ...database }, { upsert: true }),
         new Promise((_, rej) => setTimeout(() => rej(new Error('final mongo flush timeout')), 10000)),
       ]);
       console.log('💾 Final MongoDB flush complete.');
+    }
+    } else {
+      console.error(`🛡️ Shutdown Mongo flush SKIPPED: refusing to overwrite ${_bootUsers} users with an empty DB.`);
     }
   } catch (e) {
     console.error('❌ Final MongoDB flush failed:', e.message);
@@ -1115,7 +1168,15 @@ async function startup() {
     await saveToMongo(); // heal the mirror with the fresh state
   } else {
     console.log('💾 Persistence: no Mongo doc, no JSON file → starting FRESH');
+    // Push #31: leave a marker so an empty boot is provable after the fact.
+    try {
+      fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
+      fs.writeFileSync(path.join(path.dirname(DB_PATH), `empty-boot-${Date.now()}.marker`),
+        `fresh boot at ${new Date().toISOString()} — no Mongo doc, no JSON file`);
+    } catch {}
   }
+  // Push #31: baseline for the write-path guard below.
+  try { _bootUsers = Object.keys(database.users || {}).length; _bootAt = Date.now(); } catch {}
 
   // ── Push #23: evict auth backups from the game DB (moved to disk) ──
   try {
