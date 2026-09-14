@@ -4,7 +4,7 @@
  * ║  Search & SEND Pinterest images (no API key)        ║
  * ╚══════════════════════════════════════════════════════╝
  *
- * Usage: /pinterest <search query> [|1-10] (default 4 images).
+ * Usage: /pinterest <search query> [|1-10] (default 1 image, HQ only).
  * Sends up to N images to the chat (quoted reply).
  *
  * NOTE on sources: Pinterest's own pages are fully client-rendered (scrapes
@@ -87,7 +87,10 @@ async function searchBrave(query) {
   const clean = String(html).replace(/&amp;/g, '&');
   return [...new Set(
     [...clean.matchAll(/https:\/\/[^"'\s<>]+\.(?:jpg|jpeg|png|webp)(?:\?[^"'\s<>]*)?/gi)]
-      .map((m) => m[0].split('?')[0])
+      .map((m) => m[0].split('?')[0]
+        // Push #36: upgrade Pinterest thumbs to HQ (736x reliably exists).
+        .replace(/i\.pinimg\.com\/236x\//, 'i.pinimg.com/736x/')
+        .replace(/i\.pinimg\.com\/474x\//, 'i.pinimg.com/736x/'))
       .filter((u) => !/brave\.com|favicon|logo|icon|sprite|schema\.org|static\./i.test(u))
   )];
 }
@@ -108,7 +111,7 @@ async function searchFlickr(query) {
 
 // Attempt #3: Wikimedia Commons API (keyless, always relevant when it hits).
 async function searchCommons(query) {
-  const url = `https://commons.wikimedia.org/w/api.php?action=query&format=json&generator=search&gsrsearch=${encodeURIComponent(query)}&gsrnamespace=6&gsrlimit=20&prop=imageinfo&iiprop=url&iiurlwidth=800`;
+  const url = `https://commons.wikimedia.org/w/api.php?action=query&format=json&generator=search&gsrsearch=${encodeURIComponent(query)}&gsrnamespace=6&gsrlimit=20&prop=imageinfo&iiprop=url&iiurlwidth=1600`;
   const html = await get(url);
   let d;
   try { d = JSON.parse(html); } catch (_) { return []; }
@@ -138,13 +141,63 @@ async function collectImages(query) {
   return out;
 }
 
+// Push #36: HQ sniffer — real pixel dims, zero deps. Unknown/exotic → null
+// (still sends, so the pool can't starve on an unparseable header).
+const HQ_MIN_SHORT_SIDE = 500;
+function sniffDims(buf) {
+  try {
+    if (!buf || buf.length < 24) return null;
+    // PNG: IHDR width/height, big-endian at 16/20.
+    if (buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4E && buf[3] === 0x47) {
+      return { w: buf.readUInt32BE(16), h: buf.readUInt32BE(20) };
+    }
+    // GIF: little-endian at 6/8.
+    if (buf[0] === 0x47 && buf[1] === 0x49 && buf[2] === 0x46) {
+      return { w: buf.readUInt16LE(6), h: buf.readUInt16LE(8) };
+    }
+    // JPEG: scan segments for a Start-Of-Frame marker (always pre-SOS).
+    if (buf[0] === 0xFF && buf[1] === 0xD8) {
+      let i = 2;
+      let guard = 0;
+      while (i + 9 < buf.length && guard++ < 200) {
+        if (buf[i] !== 0xFF) { i++; continue; }
+        const m = buf[i + 1];
+        if (m === 0xD8 || m === 0xD9 || (m >= 0xD0 && m <= 0xD7) || m === 0x01) { i += 2; continue; }
+        if (m >= 0xC0 && m <= 0xCF && m !== 0xC4 && m !== 0xC8 && m !== 0xCC) {
+          return { h: buf.readUInt16BE(i + 5), w: buf.readUInt16BE(i + 7) };
+        }
+        const len = buf.readUInt16BE(i + 2);
+        if (len < 2) break;
+        i += 2 + len;
+      }
+      return null;
+    }
+    // WebP: RIFF....WEBP + VP8 / VP8L / VP8X chunk.
+    if (buf.toString('ascii', 0, 4) === 'RIFF' && buf.toString('ascii', 8, 12) === 'WEBP') {
+      const chunk = buf.toString('ascii', 12, 16);
+      if (chunk === 'VP8 ' && buf.length >= 30) {
+        return { w: buf.readUInt16LE(26) & 0x3fff, h: buf.readUInt16LE(28) & 0x3fff };
+      }
+      if (chunk === 'VP8L' && buf.length >= 25) {
+        const b = buf.readUInt32LE(21);
+        return { w: (b & 0x3fff) + 1, h: ((b >> 14) & 0x3fff) + 1 };
+      }
+      if (chunk === 'VP8X' && buf.length >= 30) {
+        return { w: buf.readUIntLE(24, 3) + 1, h: buf.readUIntLE(27, 3) + 1 };
+      }
+      return null;
+    }
+  } catch (_) { /* fall through */ }
+  return null;
+}
+
 // "/pinterest satoru gojo |5" → { query: 'satoru gojo', count: 5 }.
-// Count clamps to 1..10, default 4.
+// Count clamps to 1..10, default 1 (push #36).
 function parseQueryCount(raw) {
   const m = String(raw || '').match(/^(.*?)\s*\|\s*(\d+)\s*$/);
-  if (!m) return { query: String(raw || '').trim(), count: 4 };
+  if (!m) return { query: String(raw || '').trim(), count: 1 };
   const n = parseInt(m[2], 10);
-  return { query: m[1].trim(), count: Number.isFinite(n) ? Math.min(10, Math.max(1, n)) : 4 };
+  return { query: m[1].trim(), count: Number.isFinite(n) ? Math.min(10, Math.max(1, n)) : 1 };
 }
 
 // ---------------------------------------------------------------------------
@@ -163,7 +216,7 @@ module.exports = {
         text: [
           '📌 *Pinterest Image Search*',
           '',
-          '📌 Usage: /pinterest <query> [|1-10]',
+          '📌 Usage: /pinterest <query> [|1-10] — default 1, HQ only',
           '💡 Examples:',
           '  /pinterest anime aesthetic wallpaper',
           '  /pinterest Solo Leveling fanart',
@@ -203,8 +256,8 @@ module.exports = {
       }, { quoted: msg });
     }
 
-    // Push #28: over-fetch — walk the whole pool until `count` actually send.
-    const toSend = imageUrls.slice(0, Math.max(count * 2, 10));
+    // Push #28 + #36: walk the WHOLE pool until `count` HQ images actually send.
+    const toSend = imageUrls;
     let sent = 0;
 
     for (const url of toSend) {
@@ -215,6 +268,8 @@ module.exports = {
         const head = buffer.slice(0, 4).toString('hex');
         const looksImage = /ffd8ff|89504e47|47494638|52494646/.test(head);
         if (!looksImage) throw new Error('Not an image');
+        const dims = sniffDims(buffer); // Push #36: HQ gate
+        if (dims && Math.min(dims.w, dims.h) < HQ_MIN_SHORT_SIDE) throw new Error('Low-res — skipped');
 
         await sock.sendMessage(chatId, {
           image:    buffer,
@@ -233,12 +288,12 @@ module.exports = {
 
     if (sent === 0) {
       return sock.sendMessage(chatId, {
-        text: `❌ Found results but could not download images for: _${query}_`,
+        text: `❌ Found results but no HIGH-QUALITY images for: _${query}_\n\nTry a different search term.`,
       }, { quoted: msg });
     }
     if (sent < count) {
       await sock.sendMessage(chatId, {
-        text: `⚠️ Only ${sent} of ${count} images loaded — the rest failed to download. Try again!`,
+        text: `⚠️ Only ${sent} of ${count} high-quality images loaded — the rest were low-res or failed. Try again!`,
       }, { quoted: msg });
     }
   },
@@ -251,3 +306,4 @@ function resetCooldownsFor(jid) {
 }
 module.exports.resetCooldownsFor = resetCooldownsFor;
 module.exports._parseQueryCount = parseQueryCount;
+module.exports._sniffDims = sniffDims; // push #36 test hook
