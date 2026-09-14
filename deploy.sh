@@ -26,8 +26,16 @@ echo "────────────────────────�
 if command -v pm2 >/dev/null 2>&1; then
   pm2 delete "$APP_NAME" >/dev/null 2>&1 || true
 fi
-# Plain-node path (kill any running index.js of this repo)
-pkill -f "node $PWD/index.js" 2>/dev/null || true
+# Plain-node path — kill ANY node running an index.js, then VERIFY. A narrow
+# pattern once missed a stray and the ghost poisoned the JSON mirror while
+# the main process ran (the 02:00 incident). Push #37.
+pkill -f "node.*index\.js" 2>/dev/null || true
+sleep 2
+for _i in 1 2 3 4 5; do
+  pgrep -f "node.*index\.js" >/dev/null 2>&1 || break
+  [ "$_i" = 5 ] && pkill -9 -f "node.*index\.js" 2>/dev/null || true
+  sleep 2
+done
 
 # Sanity: fail fast on any syntax error in the entry + heavily-used modules
 node -c index.js

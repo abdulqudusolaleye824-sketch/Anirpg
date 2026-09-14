@@ -1009,8 +1009,17 @@ http.createServer(async (req, res) => {
   res.writeHead(404, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify({ error: 'Not found' }));
 
+// Push #37: the HTTP port is the single-instance lock — EADDRINUSE means a
+// live copy already runs, so a would-be ghost MUST die here instead of
+// booting empty and poisoning the JSON mirror (the 02:00 incident).
 }).listen(HEALTH_PORT, () => {
   console.log(`🌐 AstraLink API server on port ${HEALTH_PORT}`);
+}).on('error', (e) => {
+  if (e && e.code === 'EADDRINUSE') {
+    console.error(`🛡️ Another bot instance already holds port ${HEALTH_PORT} — refusing to start (no ghost writes).`);
+    process.exit(1);
+  }
+  console.error('API server error:', e && e.message);
 });
 // ─────────────────────────────────────────────────────────────
 
@@ -1022,6 +1031,20 @@ let _lastUnhandledLog = 0;
 // CANNOT be lost no matter how the process dies next.
 function saveDatabaseSyncNow(reason) {
   try {
+    // Push #37: an empty/stale second process must never cement over the file
+    // (the 02:00 ghost's kill-shot). Fail-open on unreadable files; allow a
+    // 1-user race (a legit /hakai seconds before SIGTERM) so deletions stick.
+    const _memSd = Object.keys(database.users || {}).length;
+    try {
+      if (fs.existsSync(DB_PATH)) {
+        const _f = JSON.parse(fs.readFileSync(DB_PATH, 'utf-8'));
+        const _fu = Object.keys(_f.users || {}).length;
+        if ((_memSd === 0 && _fu > 0) || (_fu - _memSd >= 2)) {
+          console.error(`🛡️ Sync snapshot SKIPPED (${reason}): memory has ${_memSd} users, file has ${_fu} — refusing to shrink the mirror.`);
+          return false;
+        }
+      }
+    } catch (_) { /* fail-open: unreadable file → proceed */ }
     fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
     fs.writeFileSync(DB_PATH, JSON.stringify(database));
     console.log(`💾 Sync DB snapshot written (${reason || 'manual'})`);
@@ -1275,11 +1298,20 @@ async function startup() {
   const mongoAt = (mongoDoc && mongoDoc.__savedAt) || 0;
   const _kb = (d) => { try { return Math.round(Buffer.byteLength(JSON.stringify(d)) / 1024); } catch { return 0; } };
   const _fmtT = (t) => t ? new Date(t).toISOString() : 'none';
-  if (mongoDoc && mongoAt >= jsonAt) {
+  // Push #37: load the FULLER side (count wins; timestamp breaks ties). Time
+  // alone let a newer-but-emptier JSON beat a fuller Mongo — the 02:00 boot
+  // loaded 0 users over Mongo's 4.
+  const _selMu = mongoDoc ? Object.keys(mongoDoc.users || {}).length : -1;
+  const _selJu = jsonDoc ? Object.keys(jsonDoc.users || {}).length : -1;
+  let _loadedFrom = 'fresh';
+  const _mongoWins = mongoDoc && ((_selMu > _selJu) || (_selMu === _selJu && mongoAt >= jsonAt));
+  if (_mongoWins) {
+    _loadedFrom = 'mongo';
     database = mongoDoc;
     console.log(`✅ Database loaded from MongoDB (${Object.keys(database.users || {}).length} players)`);
     console.log(`💾 Persistence: Mongo ${_kb(mongoDoc)}KB (@${_fmtT(mongoAt)}) vs JSON ${_kb(jsonDoc)}KB (@${_fmtT(jsonAt)}) → loaded MONGO`);
   } else if (jsonDoc) {
+    _loadedFrom = 'json';
     loadDatabase(); // re-reads the same file + runs migrations
     console.log(`💾 Persistence: Mongo ${_kb(mongoDoc)}KB (@${_fmtT(mongoAt)}) vs JSON ${_kb(jsonDoc)}KB (@${_fmtT(jsonAt)}) → loaded JSON`);
     if (!mongoDoc && mongoOk) console.log('📦 Migrated existing JSON data to MongoDB!');
@@ -1301,6 +1333,9 @@ async function startup() {
   try { pruneSnapshots(); } catch {}
   // Push #32: degraded-boot detection → owner alarm (flushed when a socket is up).
   _bootHealth = { mongoOk: !!mongoOk, hadMongoDoc: !!mongoDoc, hadJsonDoc: !!jsonDoc, fresh: (!mongoDoc && !jsonDoc) };
+  _bootHealth.loadedFrom = _loadedFrom; // Push #37: prove the selection remotely
+  _bootHealth.mongoUsers = _selMu;
+  _bootHealth.jsonUsers = _selJu;
   // Push #33: mirrors disagreed at boot → alarm (loser already snapshotted above).
   try {
     const _mu = mongoDoc ? Object.keys(mongoDoc.users || {}).length : -1;
