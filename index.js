@@ -1060,8 +1060,21 @@ http.createServer(async (req, res) => {
       try {
         if (fs.existsSync(DB_PATH)) {
           const st = fs.statSync(DB_PATH);
-          const jd = JSON.parse(fs.readFileSync(DB_PATH, 'utf-8'));
-          jsonInfo = { bytes: st.size, mtime: new Date(st.mtimeMs).toISOString(), users: Object.keys(jd.users || {}).length, savedAt: jd.__savedAt ? new Date(jd.__savedAt).toISOString() : null };
+          jsonInfo = { bytes: st.size, mtime: new Date(st.mtimeMs).toISOString(), ageSec: Math.round((Date.now() - st.mtimeMs) / 1000) };
+          // Push #50: only parse the mirror when it is small enough to parse
+          // cheaply. This endpoint used to read + JSON.parse the ENTIRE mirror
+          // (multi-MB once avatars lived in it) on every poll — from the AstraLink
+          // dashboard that is itself a source of the stall it was meant to debug.
+          if (st.size <= 4 * 1024 * 1024) {
+            try {
+              const jd = JSON.parse(fs.readFileSync(DB_PATH, 'utf-8'));
+              jsonInfo.users = Object.keys(jd.users || {}).length;
+              jsonInfo.savedAt = jd.__savedAt ? new Date(jd.__savedAt).toISOString() : null;
+            } catch (e) { jsonInfo.parseError = e.message; }
+          } else {
+            jsonInfo.users = memUsers;
+            jsonInfo.note = 'mirror >4MB — skipped inline parse to keep the loop free; counts come from memory';
+          }
         }
       } catch (e) { jsonInfo = { error: e.message }; }
       let mongoInfo = { configured: !!MONGO_URI, connected: !!mongoCollection };
@@ -1081,6 +1094,16 @@ http.createServer(async (req, res) => {
       return res.end(JSON.stringify({
         ok: true, uptime: process.uptime(), bootUsers: _bootUsers, bootHealth: _bootHealth,
         memUsers, dataDir: DATA_DIR, authDir: AUTH_DIR, dbPath: DB_PATH,
+        // Push #50: live perf readout (loop lag, serialize cost, write count and
+        // the saveDatabase()-calls-per-write ratio — the last one is how you can
+        // tell the coalescer is doing its job).
+        perf: (() => { try { return PerfMonitor.snapshot(); } catch (e) { return { error: e.message }; } })(),
+        blobs: (() => {
+          try {
+            const BlobStore = require('./rpg/utils/BlobStore');
+            return { dir: BlobStore.root(), inlineBytesInDoc: BlobStore.inlineBlobBytes(database) };
+          } catch (e) { return { error: e.message }; }
+        })(),
         lastOwnerSnapAt: database.__lastOwnerSnapAt || null,
         snapshots: snapInfo,
         mongo: mongoInfo, json: jsonInfo, serverTime: Date.now(),
@@ -1676,3 +1699,16 @@ async function startup() {
 }
 
 startup();
+
+// ── Push #50: diagnostics/test surface ─────────────────────────────────────
+// Nothing in the app requires index.js (it is the entrypoint), so exposing these
+// is safe and lets the persistence layer be exercised without mocking it —
+// which is exactly how the write-coalescing below was verified.
+module.exports = {
+  __internals: {
+    get saveDatabase() { return saveDatabase; },
+    get flushSaveNow() { return flushSaveNow; },
+    get database() { return database; },
+    perf: PerfMonitor,
+  },
+};
