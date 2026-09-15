@@ -291,12 +291,16 @@ module.exports = {
       const itemNum = parseInt(args[1]);
 
       const allItems = player.inventory?.items || [];
-      // Full /items list (numbers match /items exactly — synthetics guarded below)
-      const sorted = require('./items')._buildList(player);
+      // Push #50: gear is now included. Previously this used the usables-only
+      // list, so a legendary/epic weapon or armour piece had NO number to gift
+      // by — /equip gift <#> answered "Invalid item number" and the PRO epic+
+      // confirmation could never appear. Numbers here follow /inv order for the
+      // full inventory (gear + usables + counted stacks).
+      const sorted = require('./items')._buildList(player, { includeGear: true });
 
       if (!itemNum || itemNum < 1 || itemNum > sorted.length) {
         return sock.sendMessage(chatId, {
-          text: `❌ Invalid item number!\n\nExample: /equip gift 1 @player\nUse /items to see your items.`
+          text: `❌ Invalid item number!\n\nExample: /equip gift 1 @player\nUse /inv (or /items) to see your items — gear counts too here.`
         }, { quoted: msg });
       }
 

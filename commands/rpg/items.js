@@ -60,7 +60,11 @@ function transferSynthetic(sender, target, entry) {
 
 // Shared builder — /items display, /equip use, /equip gift, /items give
 // and /inv cross-refs all resolve numbers through this.
-function buildList(player) {
+function buildList(player, opts = {}) {
+  // Push #50: `opts.includeGear` widens the list to gear (weapons/armour/…).
+  // /items keeps the usables-only view, but /equip gift NEEDS gear in the
+  // numbering — see the note there. Default off so nothing else changes.
+  const includeGear = !!opts.includeGear;
   const allItems = player.inventory?.items || [];
   const inv = player.inventory || {};
 
@@ -85,10 +89,10 @@ function buildList(player) {
     for (let i = 0; i < (_mats48[_mk] || 0); i++) synthetic.push({ name: _mk, type: 'Material', rarity: 'common', _synthetic: 'mat:' + _mk });
   }
 
-  // Usables only: no gear, no pet food
+  // Usables only: no gear, no pet food (unless the caller asked for gear)
+  const isGearish = (i) => !!i.isGear || (i.type || '').toLowerCase() === 'gear';
   const equippable = allItems.filter(item =>
-    !item.isGear &&
-    (item.type || '').toLowerCase() !== 'gear' &&
+    (includeGear || !isGearish(item)) &&
     !item.isPetFood &&
     (item.type || '').toLowerCase() !== 'petfood' &&
     !PET_FOOD_NAMES.has(item.name)
