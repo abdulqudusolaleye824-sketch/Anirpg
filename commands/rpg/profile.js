@@ -179,9 +179,12 @@ module.exports = {
       // Build card for the locked player (targetId)
       const caption = buildCard(player, db, targetId, mentionedId, isOwnProfile);
       let imageBuffer;
-      if (player.profileImage) {
-        try { imageBuffer = Buffer.from(player.profileImage, 'base64'); } catch (e) { imageBuffer = null; }
-      }
+      try {
+        const BlobStore = require('../../rpg/utils/BlobStore');
+        const _img = await BlobStore.readPlayerImage(player);
+        imageBuffer = _img.buffer;
+        if (_img.migrated) { player.profileImageRef = _img.ref; delete player.profileImage; try { saveDatabase(); } catch (e) {} }
+      } catch (e) { imageBuffer = null; }
       if (!imageBuffer || imageBuffer.length === 0) {
         try { imageBuffer = fs.readFileSync(DEFAULT_PROFILE_IMG); } catch (e) { imageBuffer = null; }
       }
@@ -250,9 +253,15 @@ module.exports = {
     // ── Task 9: profile is an IMAGE card ──────────────────────────────────
     // Custom /seticon image if set, otherwise the default Astra logo.
     let imageBuffer;
-    if (player.profileImage) {
-      try { imageBuffer = Buffer.from(player.profileImage, 'base64'); } catch (e) { imageBuffer = null; }
-    }
+    try {
+      // Push #47: avatar bytes now live in the blob store, not in the game
+      // document (see rpg/utils/BlobStore). A player whose avatar is still the
+      // legacy inline base64 is migrated on this very read.
+      const BlobStore = require('../../rpg/utils/BlobStore');
+      const _img = await BlobStore.readPlayerImage(player);
+      imageBuffer = _img.buffer;
+      if (_img.migrated) { player.profileImageRef = _img.ref; delete player.profileImage; try { saveDatabase(); } catch (e) {} }
+    } catch (e) { imageBuffer = null; }
     if (!imageBuffer || imageBuffer.length === 0) {
       try { imageBuffer = fs.readFileSync(DEFAULT_PROFILE_IMG); } catch (e) { imageBuffer = null; }
     }

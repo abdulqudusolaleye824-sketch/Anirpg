@@ -12,7 +12,6 @@ const RegenManager = require('./rpg/utils/RegenManager');
 const GateManager = require('./rpg/dungeons/GateManager');
 const SeasonManager = require('./rpg/utils/SeasonManager');
 const Announcer = require('./rpg/utils/Announcer');
-const GuildWar = require('./commands/rpg/guildwar');
 
 // ── Astra Multi-Bot System ───────────────────────────────────────────────────
 const PersonalityManager  = require('./bots/PersonalityManager');
@@ -125,7 +124,7 @@ function writeDbSnapshot(tag, obj) {
     const p = (n) => String(n).padStart(2, '0');
     const stamp = `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`; // Push #32: seconds included — same-minute boots never collide
     const fp = path.join(sd, `${tag}-${stamp}.json`);
-    fs.writeFileSync(fp, JSON.stringify(obj || database));
+    fs.writeFileSync(fp, JSON.stringify(obj || database)); // compact (Push #47)
     return fp;
   } catch { return null; }
 }
@@ -161,6 +160,43 @@ function maybeHourlySnapshot() {
   writeDbSnapshot('snap');
   pruneSnapshots();
 }
+// ═══════════════════════════════════════════════════════════════
+// Push #47 — persistence CPU budget (this is what was making the bot crawl)
+//
+// 381 `saveDatabase()` call sites used to each trigger: a pretty-printed
+// JSON.stringify of the WHOLE document (indent costs ~2-3x), a SECOND full
+// stringify purely for the Mongo size guard, and then the driver's own
+// serialize. With hundreds of players the loop was blocked for hundreds of ms
+// per save on a throttled Oracle VM — slow commands, missed WhatsApp
+// keepalives, and a Mongo doc bumping into its 16MB ceiling.
+//
+// Now: the document is serialized ONCE per write window (compact), that string
+// feeds the file write and the size guard, and writes are coalesced into a
+// minimum interval with a bounded maximum wait (so a busy group can never
+// starve persistence, and an idle one never spins).
+// ═══════════════════════════════════════════════════════════════
+const SAVE_MIN_INTERVAL_MS = parseInt(process.env.SAVE_MIN_INTERVAL_MS || '1200', 10);
+const SAVE_MAX_WAIT_MS     = parseInt(process.env.SAVE_MAX_WAIT_MS || '6000', 10);
+let _snap = { str: null, at: 0, bytes: 0 };
+let _saveDirty = false;
+let _saveFirstDirtyAt = 0;
+let _saveTimer = null;
+let _lastWriteAt = 0;
+const PerfMonitor = require('./rpg/utils/PerfMonitor');
+const perfCounters = PerfMonitor.counters;
+
+/** Compact JSON of the live document, memoised for `maxAgeMs`. */
+function serializeDb(maxAgeMs) {
+  const now = Date.now();
+  if (_snap.str && (now - _snap.at) < (maxAgeMs || 0)) { perfCounters.coalescedSaves++; return _snap; }
+  const t0 = Date.now();
+  const str = JSON.stringify(database);
+  _snap = { str, at: now, bytes: Buffer.byteLength(str) };
+  perfCounters.serializes++;
+  perfCounters.lastSerializeMs = Date.now() - t0;
+  return _snap;
+}
+
 let pendingMongoWrite = null;
 let _lastMongoFlush = 0; // Batch-47: max-wait bookkeeping (see below)
 let _mongoSizeWarnAt = 0; // Push #23: throttle for the oversize-mirror warning
@@ -189,7 +225,9 @@ function _doMongoWrite() {
         // Push #23: size guard — never let a bloated DB silently kill the
         // mirror again. Skip + warn (throttled) instead of error-spamming.
         let _approx = 0;
-        try { _approx = Buffer.byteLength(JSON.stringify(database), 'utf8'); } catch {}
+        // Push #47: reuse the memoised serialization instead of stringifying the
+        // whole document a second time just to measure it.
+        try { _approx = serializeDb(250).bytes; } catch (e) { _approx = 0; }
         if (_approx > 14 * 1024 * 1024) {
           const _now = Date.now();
           if (_now - _mongoSizeWarnAt > 3600 * 1000) {
@@ -514,7 +552,11 @@ async function _writeJsonBackup() {
         console.error(`🛡️ JSON mirror PROTECTED: refusing to overwrite ${_bootUsers} users with an empty DB.`);
         return;
       }
-      const snapshot = JSON.stringify(database, null, 2);
+      // Push #47: compact serialization (was pretty-printed with a 2-space
+      // indent — 2-3x the CPU and ~2.5x the bytes for zero benefit; this file is
+      // a machine-read mirror, not something a human edits).
+      const snapshot = serializeDb(400).str;
+      const _writeT0 = Date.now();
       const tmpPath = DB_PATH + '.tmp';
       await fs.promises.mkdir(path.dirname(DB_PATH), { recursive: true });
       // Push #23: hourly rotating backup — a second on-disk generation.
@@ -531,6 +573,10 @@ async function _writeJsonBackup() {
       } catch {}
       await fs.promises.writeFile(tmpPath, snapshot);
       await fs.promises.rename(tmpPath, DB_PATH);
+      perfCounters.writes++;
+      perfCounters.lastWriteMs = Date.now() - _writeT0;
+      _lastWriteAt = Date.now();
+      _snap.at = 0;                      // this snapshot is now consumed
       try { maybeHourlySnapshot(); } catch {} // Push #32: L2 generations
     } catch (e) {
       console.error('❌ JSON backup save failed:', e.message);
@@ -554,11 +600,50 @@ async function _writeJsonBackup() {
 const saveDatabase = () => {
   // Push #23: stamp every save so boot can pick the FRESHER mirror.
   try { database.__savedAt = Date.now(); } catch {}
-  saveToMongo();
-  _writeJsonBackup();
+  _saveDirty = true;
+  try { perfCounters.savesRequested++; } catch (e) {}
+  if (!_saveFirstDirtyAt) _saveFirstDirtyAt = Date.now();
+  const now = Date.now();
+  const sinceWrite = now - _lastWriteAt;
+  const waited = now - _saveFirstDirtyAt;
+  // Outside combat/queue bursts this writes immediately; under load it merges
+  // every save inside the window into ONE serialize + ONE file write, and the
+  // max-wait bound guarantees the mirrors can never be starved (the exact bug
+  // Push #24 fixed for Mongo — the JSON path still had it).
+  if (!_saveTimer && sinceWrite >= SAVE_MIN_INTERVAL_MS) { _flushSaveNow(); return; }
+  if (_saveTimer) return;
+  const delay = Math.max(0, Math.min(SAVE_MIN_INTERVAL_MS - sinceWrite, SAVE_MAX_WAIT_MS - waited));
+  _saveTimer = setTimeout(() => { _saveTimer = null; _flushSaveNow(); }, delay);
+  if (_saveTimer.unref) _saveTimer.unref();
 };
 
+function _flushSaveNow() {
+  if (_saveTimer) { clearTimeout(_saveTimer); _saveTimer = null; }
+  _saveDirty = false;
+  _saveFirstDirtyAt = 0;
+  try { saveToMongo(); } catch (e) {}
+  try { _writeJsonBackup(); } catch (e) {}
+}
+
+/** Force a write right now (shutdown / critical mutation). */
+async function flushSaveNow(reason) {
+  if (_saveTimer) { clearTimeout(_saveTimer); _saveTimer = null; }
+  const wasDirty = _saveDirty;
+  _saveDirty = false; _saveFirstDirtyAt = 0;
+  try { database.__savedAt = Date.now(); } catch {}
+  try { await _writeJsonBackup(); } catch (e) {}
+  try { await _doMongoWrite(); } catch (e) {}
+  if (wasDirty) { /* nothing pending beyond what we just wrote */ }
+  return true;
+}
+
 async function flushJsonBackup() {
+  // Push #47: anything still waiting inside the coalescing window is written
+  // before we return, so a save that landed microseconds before shutdown cannot
+  // be lost.
+  if (_saveDirty || _saveTimer) {
+    try { await flushSaveNow('flushJsonBackup'); } catch (e) {}
+  }
   if (_jsonWriteInFlight) {
     await Promise.race([
       _jsonWriteInFlight,
@@ -1177,14 +1262,32 @@ setInterval(() => {
   }
 }, 60 * 1000);
 
-// Out-of-battle passive HP regeneration (E:1, D:3, C:5, B:7, A:10, S:20 HP/sec)
+// Out-of-battle passive HP + energy regeneration (rates are per SECOND and the
+// manager computes from elapsed time, so the TICK interval only controls how fast
+// the numbers visibly move — it does not change how much a player recovers).
+// Push #47: 5s → 10s, with a cheap pre-filter so healthy players cost nothing.
+// The old loop ran a full in-battle check (which walks every active gate) for
+// every single player, twice a second, for every bot.
+let _regenMod = null;
 setInterval(() => {
-  if (!database?.users) return;
-  const { applyPassiveRegen } = require('./rpg/utils/RegenManager');
-  for (const uId in database.users) {
-    applyPassiveRegen(database.users[uId], database);
-  }
-}, 5000);
+  try {
+    if (!database?.users) return;
+    if (!_regenMod) _regenMod = require('./rpg/utils/RegenManager');
+    for (const uId in database.users) {
+      const u = database.users[uId];
+      if (!u || !u.stats) continue;
+      const hurt = (u.stats.hp || 0) < (u.stats.maxHp || 0);
+      const thirsty = typeof u.stats.energy === 'number' && (u.stats.energy || 0) < (u.stats.maxEnergy || 0);
+      const locked = u.regenLockUntil && u.regenLockUntil > Date.now();
+      // Nothing to do and no lock to clear → skip the expensive in-battle scan.
+      if (!hurt && !thirsty && !locked) { u.lastRegenTime = Date.now(); u.lastEnergyRegenTime = Date.now(); continue; }
+      _regenMod.applyPassiveRegen(u, database);
+    }
+  } catch (e) { /* never let the regen tick take the bot down */ }
+}, 10000);
+
+// Push #47: event-loop lag watchdog (logs when something blocks the loop).
+setInterval(() => { try { PerfMonitor.tick(); } catch (e) {} }, 1000).unref?.();
 
 setTimeout(() => {
   const count = _wipeAndReseedAllDailyQuests();
@@ -1555,11 +1658,19 @@ async function startup() {
   console.log('✅ All bots startup initiated');
 
   // ── Init per-system schedulers that don't depend on any particular bot ─
+  // Push #47: this called GuildWar.resolveExpiredWars() — a method that has
+  // never existed on commands/rpg/guildwar.js (exports name/aliases/description/
+  // execute only). Every 10 minutes it threw TypeError into an empty catch, so
+  // the weekly war never resolved on schedule and GVC victory cards paid late
+  // or not at all. The real resolver is WeeklyGuildWar.
+  const WeeklyGuildWar = require('./rpg/utils/WeeklyGuildWar');
   setInterval(() => {
     try {
       const db = getDatabase();
-      GuildWar.resolveExpiredWars(db, saveDatabase);
-    } catch(e) {}
+      WeeklyGuildWar.checkWeeklyReset(db, saveDatabase);
+    } catch (e) {
+      console.error('⚠️ Weekly Guild War scheduler failed:', e.message);
+    }
   }, 10 * 60 * 1000);
   console.log('⚔️ Guild War system initialized');
 }

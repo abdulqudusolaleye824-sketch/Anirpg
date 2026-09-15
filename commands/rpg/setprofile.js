@@ -72,7 +72,21 @@ module.exports = {
         if (buf.length > 2 * 1024 * 1024) {
           return sock.sendMessage(chatId, { text: '❌ Image too large (max 2 MB). Send a smaller image.' }, { quoted: msg });
         }
-        player.profileImage = buf.toString('base64');
+        // Push #47: the image goes to disk (DATA_DIR/blobs/pp/…) and the player
+        // document keeps only a ~40-byte reference. Storing the base64 inline
+        // made every saveDatabase() serialise ~80KB per player — the main reason
+        // the bot crawls (and why the Mongo doc hits its 16MB cap and stops
+        // mirroring at all).
+        const BlobStore = require('../../rpg/utils/BlobStore');
+        const oldRef = player.profileImageRef;
+        const ref = BlobStore.putSync('pp', player.id || sender, buf);
+        if (ref) {
+          player.profileImageRef = ref;
+          delete player.profileImage;         // drop the inline copy for good
+        } else {
+          player.profileImage = buf.toString('base64'); // disk failed → keep old behaviour
+        }
+        if (oldRef && oldRef !== ref) BlobStore.drop(oldRef).catch(() => {});
         player.cards.seticon -= 1;
         saveDatabase();
         return sock.sendMessage(chatId, {

@@ -78,6 +78,21 @@ module.exports = {
       }
     } catch {}
     const memDot = users > 0 ? '✅' : '🔥';
+    // Push #47: why-is-it-slow visibility + the avatar-blob audit (base64 images
+    // stored inside the game document were the single biggest serialize cost).
+    let perfSection = '';
+    try {
+      const PerfMonitor = require('../../rpg/utils/PerfMonitor');
+      const BlobStore = require('../../rpg/utils/BlobStore');
+      const inlineBytes = BlobStore.inlineBlobBytes(db);
+      const withImg = Object.values(db.users || {}).filter(u => u && (u.profileImage || u.profileImageRef)).length;
+      perfSection = `\n${PerfMonitor.format()}\n` +
+        `  🖼️ avatars: *${withImg}* referenced · inline bytes: *${(inlineBytes / 1024).toFixed(0)}KB*` +
+        (inlineBytes > 256 * 1024
+          ? `\n  ⚠️ *${(inlineBytes / 1048576).toFixed(1)}MB of base64 still inside the document.* These migrate to disk on the next /profile of each player, or move them now: see rpg/utils/BlobStore.`
+          : `\n  ✅ no large inline blobs in the document`);
+    } catch (e) { perfSection = `\n⚠️ perf readout unavailable: ${e.message}`; }
+
     return sock.sendMessage(chatId, {
       text: [
         `🛡️ *DATABASE HEALTH*`,
@@ -92,6 +107,8 @@ module.exports = {
         ``,
         `💽 *JSON MIRROR:*`,
         ...mirrorLines,
+        ``,
+        ...perfSection.split('\n').filter(l => String(l).trim()),
         ``,
         `☁️ Mongo side: /api/db-health`,
       ].join('\n'),
