@@ -67,6 +67,115 @@ const reconnectAttempts = {};
 const _bootParams = {};   // personalityKey -> { authDir, getDatabase, saveDatabase, options }
 const _connecting = new Set(); // keys with a connect already in flight
 const _loggedOut = new Set();  // keys WhatsApp logged out (need manual relink — never auto-reconnect)
+
+// ═══════════════════════════════════════════════════════════════
+// Push #50 — stop a *losing* process from destroying a good session
+//
+// The old close handler treated every 401 as a real logout and then (a) deleted
+// auth/<key>/ and (b) deleted db.authBackups[key] — i.e. it destroyed the live
+// session AND the only recovery copy. On a redeploy (Oracle: old container still
+// connected while the new one starts) WhatsApp hands the 401 to whichever socket
+// it is evicting, so the *stale* process could wipe the session the *healthy*
+// process was still using. Next restart → "not linked", re-scan QR. Repeated
+// restarts, "last active hours/days ago", and bots that stop responding all fit
+// this: two processes fighting over one session.
+//
+// Fixes:
+//   • a per-key lock file with a 90s heartbeat — only the lock HOLDER may take
+//     destructive action on that session;
+//   • a single 401 is no longer fatal: it needs creds to actually say
+//     "not registered", or two consecutive 401s on fresh connections;
+//   • the session is never *deleted* — it is quarantined (timestamped copy in
+//     auth-quarantine/ + the db/disk backup kept), so a wrong call is reversible.
+// ═══════════════════════════════════════════════════════════════
+const _authLocks = new Map();          // key -> { pid, at }
+const _logout401s = {};                // key -> consecutive unverified 401 count
+
+/** Is a recoverable session copy still on hand (disk backup or db backup)? */
+function _restoreAuthAvailable(authDir, key) {
+  try {
+    const f = path.join(_authBackupDir(authDir), key + '.json');
+    if (fs.existsSync(f)) {
+      const raw = JSON.parse(fs.readFileSync(f, 'utf8'));
+      if (raw && raw.files && Object.keys(raw.files).length) return true;
+    }
+  } catch (e) {}
+  return false;
+}
+const AUTH_LOCK_STALE_MS = 90_000;
+const PRESENCE_INTERVAL_MS = 45_000;      // "I'm online" beat, per bot
+const _presenceTimers = {};               // key -> interval
+
+function _authLockFile(authDir, key) {
+  return path.join(authDir, key, '.astra-owner.lock');
+}
+
+function _authLockAcquire(authDir, key) {
+  const f = _authLockFile(authDir, key);
+  const now = Date.now();
+  try {
+    fs.mkdirSync(path.dirname(f), { recursive: true });
+    if (fs.existsSync(f)) {
+      const st = fs.statSync(f);
+      let holder = null;
+      try { holder = JSON.parse(fs.readFileSync(f, 'utf8')); } catch (e) {}
+      const fresh = (now - st.mtimeMs) < AUTH_LOCK_STALE_MS;
+      const mine = holder && holder.pid === process.pid;
+      if (fresh && !mine) {
+        // Another live process owns this session. We keep running (so AstraLink
+        // still works) but we must not touch its credentials/backups.
+        _authLocks.set(key, { pid: holder?.pid ?? 'other', at: now, owned: false });
+        return false;
+      }
+    }
+    fs.writeFileSync(f, JSON.stringify({ pid: process.pid, at: now }));
+    _authLocks.set(key, { pid: process.pid, at: now, owned: true });
+    return true;
+  } catch (e) {
+    // Locking is best-effort; a filesystem hiccup must not block a connect.
+    _authLocks.set(key, { pid: process.pid, at: now, owned: true });
+    return true;
+  }
+}
+
+function _authLockTouch(authDir, key) {
+  const st = _authLocks.get(key);
+  if (!st || st.owned === false) return;
+  try { fs.writeFileSync(_authLockFile(authDir, key), JSON.stringify({ pid: process.pid, at: Date.now() })); st.at = Date.now(); } catch (e) {}
+}
+
+function _authLockOwned(key) {
+  const st = _authLocks.get(key);
+  return !st || st.owned !== false;   // unknown → treat as ours (legacy path)
+}
+
+function _authQuarantine(authDir, key, reason) {
+  // Preserve instead of delete: copy the session into auth-quarantine/, then
+  // clear the live dir so Baileys can pair again if the logout is genuine.
+  try {
+    const botAuthDir = path.join(authDir, key);
+    if (!fs.existsSync(botAuthDir)) return null;
+    const qdir = path.join(authDir, '..', 'auth-quarantine');
+    fs.mkdirSync(qdir, { recursive: true });
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const files = {};
+    (function walk(dir, base) {
+      let entries; try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+      for (const e of entries) {
+        const full = path.join(dir, e.name), rel = path.join(base, e.name);
+        if (e.isDirectory()) walk(full, rel);
+        else { try { files[rel] = fs.readFileSync(full).toString('base64'); } catch (e2) {} }
+      }
+    })(botAuthDir, '.');
+    if (!Object.keys(files).length) return null;
+    const out = path.join(qdir, `${key}-${stamp}.json`);
+    fs.writeFileSync(out, JSON.stringify({ key, reason, at: Date.now(), files }));
+    return out;
+  } catch (e) {
+    console.error(`⚠️ AstraLink [${key}] quarantine failed:`, e.message);
+    return null;
+  }
+}
 let hostBotKey = null;
 
 // Single guarded reconnect path used by BOTH the close handler and the
@@ -497,6 +606,11 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
   } catch (e) {}
   const botAuthDir = path.join(authDir, personalityKey);
   // Restore from backup if the volume/persistent FS lost auth files.
+  // Push #50: take (or refuse) ownership of this session before touching it.
+  const _weOwnAuth = _authLockAcquire(authDir, personalityKey);
+  if (!_weOwnAuth) {
+    console.warn(`⚠️ AstraLink [${personalityKey}] another live process already owns ${path.join(authDir, personalityKey)} — connecting in read-mostly mode: it will NOT clear or rewrite that session/backup. Finish the old process (deploy overlap) to take over cleanly.`);
+  }
   try { restoreAuth(personalityKey, authDir, getDatabase); } catch {}
   fs.mkdirSync(botAuthDir, { recursive: true });
 
@@ -660,18 +774,45 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
 
         _scheduleReconnect(personalityKey, backoffMs, `close code ${code || 'unknown'}`);
       } else {
-        console.log(`❌ AstraLink [${displayName}] connection permanently logged out (code ${code}). Session cleared — manual relink required.`);
+        // Push #50: a 401 alone is NOT proof of a real unlink. It is also what
+        // WhatsApp sends to the *losing* socket when two processes hold the same
+        // session (a redeploy overlap), and acting on it used to delete both the
+        // session and its backup. So: need creds to actually say "not
+        // registered", or a repeated 401 on a fresh connect — and only the lock
+        // holder may touch credentials at all.
+        _logout401s[personalityKey] = (_logout401s[personalityKey] || 0) + 1;
+        const seen = _logout401s[personalityKey];
+        const credsSayRegistered = credsRegistered;
+        const weOwn = _authLockOwned(personalityKey);
+        const proven = !credsSayRegistered && !_restoreAuthAvailable(authDir, personalityKey);
+        const giveUp = weOwn && (proven || seen >= 2);
+
+        if (!giveUp) {
+          console.log(`🩹 AstraLink [${displayName}] got code ${code} (401/loggedOut) but creds still say registered (401 #${seen})${weOwn ? '' : ' and another process owns this session'} — NOT clearing the session. Reconnecting with the existing creds instead of forcing a re-pair.`);
+          try {
+            const db = getDatabase?.();
+            if (db && !db.linkedBots?.[personalityKey] && credsSayRegistered) { /* keep the link record */ }
+          } catch (e) {}
+          _scheduleReconnect(personalityKey, Math.min(15000, seen * 3000 + 2000), `401 #${seen} (unverified logout)`);
+          return;
+        }
+
+        console.log(`❌ AstraLink [${displayName}] logged out (code ${code}, creds not registered). Session quarantined for recovery — relink from AstraLink when ready.`);
         _loggedOut.add(personalityKey);
         reconnectAttempts[personalityKey] = 0;
+        _logout401s[personalityKey] = 0;
         delete botSockets[personalityKey];
         if (hostBotKey === personalityKey) {
           hostBotKey = null;
         }
 
+        // Preserve first, clear second — and the backups are kept, not deleted.
+        const q = _authQuarantine(authDir, personalityKey, `close code ${code}`);
+        if (q) console.log(`🗄️ AstraLink [${displayName}] session archived: ${q}`);
         try {
           if (fs.existsSync(botAuthDir)) {
             fs.rmSync(botAuthDir, { recursive: true, force: true });
-            console.log(`🧹 Purged logged-out session directory for [${displayName}] (${botAuthDir})`);
+            console.log(`🧹 Cleared logged-out session directory for [${displayName}] (${botAuthDir})`);
           }
         } catch (e) {
           console.error(`⚠️ Could not purge auth dir for [${displayName}]:`, e.message);
@@ -681,7 +822,8 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
           const db = getDatabase?.();
           if (db) {
             if (db.linkedBots?.[personalityKey]) delete db.linkedBots[personalityKey];
-            if (db.authBackups?.[personalityKey]) delete db.authBackups[personalityKey];
+            // Push #50: db.authBackups[key] is DELIBERATELY KEPT. Deleting it was
+            // what made an accidental/contested 401 unrecoverable.
             if (db.botActive) {
               for (const [cid, pKey] of Object.entries(db.botActive)) {
                 if (pKey === personalityKey) delete db.botActive[cid];
@@ -694,6 +836,28 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
     } else if (connection === 'open') {
       reconnectAttempts[personalityKey] = 0; // Reset reconnect count on successful connection!
       _loggedOut.delete(personalityKey);
+      _logout401s[personalityKey] = 0;        // a clean connect clears the 401 streak
+      _authLockTouch(authDir, personalityKey);
+      // Push #50: presence keepalive. Without an explicit "available" the number
+      // drifts to "last active a few hours ago" in every client's contact view,
+      // which is the visible half of the "bot went dead" report. Cheap, and it
+      // also refreshes the auth lock so a healthy bot is never mistaken for idle.
+      try {
+        if (sock && typeof sock.sendPresenceAvailable === 'function') {
+          sock.sendPresenceAvailable().catch(() => {});
+          if (!_presenceTimers[personalityKey]) {
+            const t = setInterval(() => {
+              try {
+                if (botSockets[personalityKey] !== sock) { clearInterval(t); delete _presenceTimers[personalityKey]; return; }
+                sock.sendPresenceAvailable().catch(() => {});
+                _authLockTouch(authDir, personalityKey);
+              } catch (e) { clearInterval(t); delete _presenceTimers[personalityKey]; }
+            }, PRESENCE_INTERVAL_MS);
+            if (t.unref) t.unref();
+            _presenceTimers[personalityKey] = t;
+          }
+        }
+      } catch (e) {}
       botSockets[personalityKey] = sock;
       const jid = sock.user?.id || null;
 
