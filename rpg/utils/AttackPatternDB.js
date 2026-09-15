@@ -35,13 +35,19 @@ const EFFECTS = {
 };
 
 // ── Rank config — 2.5x more expensive, unique pricing via variation ───────
+// shopStones is the PRICE YOU PAY in the shop, as an explicit per-rank band
+// (Push #50) — each attack gets its own value inside the band so prices differ
+// per pattern instead of being one flat number per rank. E stays Nexus-only.
 const RANK_CONFIG = {
-  E: { range: [1,   150], dmgMult: 1.0,  nexus: 2000,   stones: 0,     hasEffect: false, cooldown: [30, 90] },
-  D: { range: [151, 300], dmgMult: 1.3,  nexus: 7500,   stones: 0,     hasEffect: false, cooldown: [60, 150] },
-  C: { range: [301, 450], dmgMult: 1.7,  nexus: 25000,  stones: 200,   hasEffect: false, cooldown: [90, 240] },
-  B: { range: [451, 550], dmgMult: 2.2,  nexus: 0,      stones: 1000,  hasEffect: false, cooldown: [120, 360] },
-  A: { range: [551, 650], dmgMult: 3.0,  nexus: 0,      stones: 3750,  hasEffect: true,  cooldown: [180, 480] },
-  S: { range: [651, 750], dmgMult: 4.5,  nexus: 250000, stones: 7500,  hasEffect: true,  cooldown: [300, 600] },
+  E: { range: [1,   150], dmgMult: 1.0,  nexus: 2000,   stones: 0,     shopStones: [0, 0],           hasEffect: false, cooldown: [30, 90] },
+  // D and C are priced in Mana Stones only (nexus 0) — the shop tries Nexus
+  // first, so leaving a Nexus price here would have made the new stone bands
+  // dead numbers for those two tiers.
+  D: { range: [151, 300], dmgMult: 1.3,  nexus: 0,      stones: 0,     shopStones: [10000, 20000],   hasEffect: false, cooldown: [60, 150] },
+  C: { range: [301, 450], dmgMult: 1.7,  nexus: 0,      stones: 200,   shopStones: [20000, 29000],   hasEffect: false, cooldown: [90, 240] },
+  B: { range: [451, 550], dmgMult: 2.2,  nexus: 0,      stones: 1000,  shopStones: [30000, 45000],   hasEffect: false, cooldown: [120, 360] },
+  A: { range: [551, 650], dmgMult: 3.0,  nexus: 0,      stones: 3750,  shopStones: [50000, 70000],   hasEffect: true,  cooldown: [180, 480] },
+  S: { range: [651, 750], dmgMult: 4.5,  nexus: 250000, stones: 7500,  shopStones: [100000, 200000], hasEffect: true,  cooldown: [300, 600] },
 };
 
 // ── Martial arts style pools ──────────────────────────────────────────────────
@@ -194,7 +200,14 @@ function generateAttack(num) {
   // Base is rank cost, variation 0.85–1.35 ensures uniqueness
   const priceVar = 0.85 + (seededRand(seed + 20, 51) / 100); // 0.85–1.35
   const baseNexus  = Math.floor(cfg.nexus * priceVar);
-  const baseStones = Math.floor(cfg.stones * priceVar);
+  // Push #50: the stone price is taken from the rank band (deterministic per
+  // attack id, so a pattern always costs the same) instead of base×3 — which put
+  // A-rank at ~11k and S-rank at ~22k, far below the ~50k–70k / 100k–200k the
+  // economy needs at those tiers.
+  const band = cfg.shopStones || [0, 0];
+  const span = Math.max(0, band[1] - band[0]);
+  const shopStones = span > 0 ? band[0] + seededRand(seed + 21, span + 1) : 0;
+  const baseStones = shopStones > 0 ? Math.max(1, Math.floor(shopStones / 3)) : 0;
 
   // Cooldown — more effective = longer, up to 10 min for S
   const [cdMin, cdMax] = cfg.cooldown;
@@ -224,7 +237,7 @@ function generateAttack(num) {
       nexus:  baseNexus,
       stones: baseStones,
       shopNexus:  baseNexus * 3,
-      shopStones: baseStones * 3,
+      shopStones,
     },
     noMana: true,
   };

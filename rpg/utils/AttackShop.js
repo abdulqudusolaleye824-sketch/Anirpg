@@ -129,14 +129,16 @@ function purchaseFromShop(attackId, sender, db, saveDatabase) {
       return { success: false, error: `Not enough currency.\nNeed: ${nexusNeeded.toLocaleString()} Nexus OR ${stonesNeeded.toLocaleString()} Mana Stones` };
     }
   }
-  // Nexus only (E, D)
+  // Nexus only (E)
+  // Push #50: D moved to the Mana-Stone bands alongside C/B/A/S, so the branch
+  // labels here now match what the shop actually charges.
   else if (nexusNeeded > 0) {
     if ((player.gold || 0) < nexusNeeded) {
       return { success: false, error: `Not enough Nexus.\nNeed: ${nexusNeeded.toLocaleString()} | Have: ${(player.gold||0).toLocaleString()}` };
     }
     player.gold -= nexusNeeded;
   }
-  // Mana Stones only (B, A)
+  // Mana Stones only (D, C, B, A)
   else if (stonesNeeded > 0) {
     if ((player.manaCrystals || 0) < stonesNeeded) {
       return { success: false, error: `Not enough Mana Stones.\nNeed: ${stonesNeeded.toLocaleString()} | Have: ${(player.manaCrystals||0).toLocaleString()}` };
