@@ -1340,6 +1340,11 @@ module.exports = {
   canSendDM,
   safeSendDM,
   getActiveSocket,
+  // Push #47: defined internally (line ~99) but never exported, so the
+  // offline-active-bot failover in handlers/rpgCommandHandler.js called
+  // undefined → TypeError → swallowed by its empty catch. Groups stayed silent
+  // when their active bot dropped instead of failing over.
+  getFirstOnlineSocketKey,
   backupAuthToDisk, backupAuthToDB,
   restoreAuth, restoreAuthFromDB,
   _bootstrapDispatcher,

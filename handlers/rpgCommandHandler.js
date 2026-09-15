@@ -226,6 +226,11 @@ for (const [cmdName, cmd] of Object.entries(commands)) {
   if (!cmd || typeof cmd !== 'object') continue;
   if (Array.isArray(cmd.aliases)) {
     cmd.aliases.forEach(alias => {
+      // Push #47: a REAL command must never be shadowed by another command's
+      // alias. skill.js declares aliases:['skills',…], which mapped /skills to
+      // /skill and made commands/rpg/skills.js (the loadout manager: swap,
+      // upgrade, info, locked, passives) unreachable.
+      if (commands[alias]) return;
       if (!ALIASES[alias]) ALIASES[alias] = cmdName;
     });
   }
@@ -292,7 +297,8 @@ module.exports = async (sock, msg, messageText, config, getDatabase, saveDatabas
     );
   }
 
-  const resolvedCommand = ALIASES[commandName] || commandName;
+  // Push #47: the literal command name wins over any alias mapping.
+  const resolvedCommand = (commandName && commands[commandName]) ? commandName : (ALIASES[commandName] || commandName);
   console.log(`[COMMAND] ${resolvedCommand}${resolvedCommand !== commandName ? ` (alias: ${commandName})` : ''} | Sender: ${sender} | Chat: ${chatId}`);
 
   const db = getDatabase();

@@ -19,6 +19,11 @@
 'use strict';
 
 const { getRandomQuestions, formatQuestion, QUIZ_STATS } = require('../../rpg/data/anime_quiz_200');
+// Push #47: `Buttons` was referenced below but NEVER imported here. The
+// ReferenceError fired inside the detached 3s start-timer, so the rejected
+// promise was unhandled and NO question ever dropped — the intro printed
+// "First question in 3 seconds..." and the quiz silently died.
+const Buttons = require('../../utils/buttons');
 const UI = require('../../rpg/utils/UI');
 const AstralGroups = require('../../rpg/utils/AstralGroups');
 const GC = require('../../rpg/games/GameCenter');

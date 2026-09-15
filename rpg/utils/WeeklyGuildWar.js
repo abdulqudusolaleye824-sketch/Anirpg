@@ -21,6 +21,23 @@ function normaliseJid(jid) {
   return digits.length > 0 ? digits : raw;
 }
 
+/**
+ * Push #47: JID-tolerant player lookup. Guild member ids and db.users keys can
+ * disagree on the device half (@lid vs @s.whatsapp.net, or a :device suffix), and
+ * the payout used an exact `db.users[pid]` — those members silently got no
+ * victory card. Exact key first (fast path), then the digit-normalised form.
+ */
+function findPlayer(db, id) {
+  if (!db?.users || !id) return null;
+  if (db.users[id]) return db.users[id];
+  const want = normaliseJid(id);
+  if (!want) return null;
+  for (const [jid, user] of Object.entries(db.users)) {
+    if (normaliseJid(jid) === want) return user;
+  }
+  return null;
+}
+
 function findGuildForPlayer(db, playerId) {
   if (!db?.guilds) return null;
   const pNum = normaliseJid(playerId);
@@ -70,6 +87,18 @@ function checkWeeklyReset(db, saveDatabase) {
 
 function resolveWeeklyWar(db, weekKey, saveDatabase) {
   const allGuilds = Object.values(db.guilds || {});
+  // Push #47: re-derive weekly totals from members right before ranking. A
+  // guild's weeklyGP is only recomputed when someone earns GP, so a guild whose
+  // last addGP landed before the week flipped could rank at 0 despite earning.
+  for (const g of allGuilds) {
+    if (!Array.isArray(g.members)) continue;
+    let sum = 0;
+    for (const m of g.members) {
+      const u = findPlayer(db, typeof m === 'object' ? m.id : m);
+      if (u) sum += u.weeklyGP || 0;
+    }
+    if (sum > (g.weeklyGP || 0)) g.weeklyGP = sum;
+  }
   const activeGuilds = allGuilds.filter(g => (g.weeklyGP || 0) > 0);
   activeGuilds.sort((a, b) => (b.weeklyGP || 0) - (a.weeklyGP || 0));
 
@@ -146,7 +175,7 @@ function awardVictoryCardToGuildMembers(db, guild, cardType) {
   if (!guild || !Array.isArray(guild.members)) return;
   for (const m of guild.members) {
     const pid = typeof m === 'object' ? m.id : m;
-    const player = db.users?.[pid];
+    const player = findPlayer(db, pid); // was db.users?.[pid] — exact key missed JID twins
     if (player) {
       if (!player.inventory) player.inventory = {};
       if (!player.inventory.cards) player.inventory.cards = {};
@@ -182,6 +211,7 @@ function addGP(db, playerId, points, saveDatabase) {
 }
 
 module.exports = {
+  findPlayer,
   getWeekKey,
   getTimeRemainingInWeek,
   checkWeeklyReset,
