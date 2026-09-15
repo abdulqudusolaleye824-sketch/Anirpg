@@ -66,7 +66,7 @@ async function offer(sock, chatId, msg, giverJid, o) {
   try {
     const Buttons = require('../../utils/buttons');
     if (Buttons && Buttons.sendButtons) {
-      await Buttons.sendButtons(sock, chatId, {
+      const r = await Buttons.sendButtons(sock, chatId, {
         title: '🎁 Confirm Gift',
         text,
         buttons: Buttons.quickReplies([
@@ -74,12 +74,24 @@ async function offer(sock, chatId, msg, giverJid, o) {
           ['❌ Cancel', `${o.cmd} giftcancel`],
         ]),
       }, msg);
-      return { ok: true, via: 'buttons' };
+      // Push #47: WhatsApp does not render native-flow buttons for Web-linked
+      // accounts in GROUP chats, and sendButtons then degrades to its numbered
+      // fallback. Detect that and append the /confirm + /cancel line so the
+      // prompt is always actionable — this is why "the buttons don't work".
+      if (r && r.mode && !String(r.mode).startsWith('interactive')) {
+        try {
+          await sock.sendMessage(chatId, {
+            text: `👆 Those tap targets may not render here.\n\n*/confirm* → send *${o.item.name}* to *${o.recipientName || 'them'}*\n*/cancel* → keep it\n\n(Expires in 2 minutes.)`,
+          }, { quoted: msg });
+        } catch (e) {}
+      }
+      return { ok: true, via: (r && r.mode && String(r.mode).startsWith('interactive')) ? 'buttons' : 'fallback' };
     }
   } catch (e) { /* fall through to typed fallback below */ }
 
   await sock.sendMessage(chatId, {
-    text: text + `\n\nReply *${o.cmd} giftconfirm* to send, or *${o.cmd} giftcancel* to keep it.`,
+    text: text + `\n\n*/confirm* to send it, */cancel* to keep it.` +
+              `\n(or ${o.cmd} giftconfirm / ${o.cmd} giftcancel)`,
   }, { quoted: msg });
   return { ok: true, via: 'plain' };
 }
@@ -103,4 +115,11 @@ function peek(giverJid) {
   return pending.get(giverJid) || null;
 }
 
-module.exports = { needsConfirm, tierRank, offer, take, peek, TTL_MS };
+/** How long is left on the giver's pending gift (for /confirm hints). */
+function remaining(giverJid) {
+  prune();
+  const p = pending.get(giverJid);
+  return p ? Math.max(0, p.expiresAt - Date.now()) : 0;
+}
+
+module.exports = { needsConfirm, tierRank, offer, take, peek, remaining, TTL_MS };

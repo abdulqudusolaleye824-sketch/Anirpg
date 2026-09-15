@@ -200,6 +200,14 @@ module.exports = {
       // Batch-48: counter/card items transfer 1 unit (sender→recipient).
       // Everything is transferable now — no more "bound supply".
       if (selected._synthetic) {
+        // Push #47: synthetic (counted) items bypassed the PRO epic+ confirm —
+        // same rule, same prompt, since these can be epic/legendary too.
+        if (require('../../rpg/utils/GiftConfirm').needsConfirm(pro, selected.rarity)) {
+          return require('../../rpg/utils/GiftConfirm').offer(sock, chatId, msg, sender, {
+            item: { name: selected.name, rarity: selected.rarity },
+            recipientId: mentioned, recipientName: target.name || 'them', cmd: '/items', itemNum,
+          });
+        }
         const _t = transferSynthetic(player, target, selected);
         if (!_t.ok) {
           return sock.sendMessage(chatId, { text: `❌ ${(_t.error || 'Transfer failed.')}` }, { quoted: msg });
@@ -211,12 +219,22 @@ module.exports = {
         }, { quoted: msg });
       }
 
-      // Find and remove the real item
+      // Find and remove the real item.
+      // Push #47: this used to filter gear OUT (`!i.isGear && type!=='gear'`), so
+      // a legendary/epic weapon or armour piece could never be sent from /items —
+      // and therefore never reached the PRO epic-and-up confirmation at all
+      // ("the confirmation screen doesn't work"). Gear is listed by /items, so
+      // it has to be resolvable here too; the name+index match is kept, with the
+      // gear filter dropped and a same-name tie-break on rarity/slot.
       const allItems = player.inventory?.items || [];
-      const idx = allItems.findIndex(i => i.name === selected.name && !i.isGear && (i.type || '').toLowerCase() !== 'gear');
+      let idx = allItems.findIndex(i => i.name === selected.name && !i.isGear && (i.type || '').toLowerCase() !== 'gear');
+      if (idx === -1) {
+        idx = allItems.findIndex(i => i.name === selected.name
+          && String(i.rarity || '').toLowerCase() === String(selected.rarity || '').toLowerCase());
+      }
       if (idx === -1) {
         return sock.sendMessage(chatId, {
-          text: '❌ Item not found in inventory!'
+          text: `❌ Item not found in inventory!\n\nTry the gear path: */equip gift ${itemNum} @user*`
         }, { quoted: msg });
       }
       // PRO epic-and-up gifts need an explicit confirmation (batch-22).
