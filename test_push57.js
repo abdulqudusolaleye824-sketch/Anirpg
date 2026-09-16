@@ -90,11 +90,12 @@ t('a live code reports its remaining life; a stale one reports expired', () => {
 });
 
 console.log('\n── 2. the relink path no longer orphans WhatsApp device slots ──');
-t('a snapshot is staged for logout BEFORE the creds are deleted', () => {
+t('the old session is released (and AWAITED) BEFORE the creds are deleted', () => {
   const src = fs.readFileSync('bots/MultiSocketManager.js', 'utf8');
-  const stage = src.indexOf('_revokeSnapshotAsync(authDir, personalityKey)');
+  const stage = src.indexOf('_releaseOldSlotBeforePairing(authDir, personalityKey)');
   const wipe = src.indexOf('if (fs.existsSync(botAuthDir)) fs.rmSync(botAuthDir, { recursive: true, force: true });');
   assert.ok(stage > 0 && wipe > stage, 'creds are wiped before the old session is released');
+  assert.ok(src.includes('await _releaseOldSlotBeforePairing'), 'the slot release is not awaited — the two-live-sessions race is back');
   assert.ok(/sock\.logout\(\)/.test(src), 'no real logout is ever attempted');
   assert.ok(!/QRCode\.toDataURL\(qr,\s*\{[^}]*#7CFFD0/.test(src), 'QR still rendered on a tinted background');
 });

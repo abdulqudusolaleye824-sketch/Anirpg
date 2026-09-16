@@ -648,7 +648,7 @@ footer a:hover{opacity:1}
         <div id="qrView" style="display:none;text-align:center">
           <div class="code-box" style="padding:22px">
             <img id="qrImg" alt="QR code" style="width:280px;height:280px;image-rendering:pixelated;border-radius:12px;background:#fff;padding:8px"/>
-            <div class="code-hint">Scan this in WhatsApp → Linked Devices → Link a device. <strong>Codes die in ~60s</strong> — always scan the newest one on screen.</div>
+            <div class="code-hint">Scan this in WhatsApp → Linked Devices → Link a device. <strong>Codes die in ~20s</strong> — scan the newest one on screen, immediately.</div>
             <div class="timer-bar" style="margin-top:12px"><div class="timer-fill" id="qrTimerFill" style="width:100%"></div></div>
             <div class="timer-lbl" style="margin-top:6px" id="qrStatus">Connecting…</div>
             <div style="display:flex;gap:8px;margin-top:10px">
@@ -1102,7 +1102,7 @@ async function qrFetch(opts){
       if (img) img.style.opacity = '0.15';
       _qrExpiresAt = 0;
       qrStatusSet('<span style="color:#ff5568;font-weight:700">⛔ WhatsApp has blocked this number (403). It cannot be linked until WhatsApp lifts the block.</span>');
-      qrAdvice('On that phone: open WhatsApp → Settings → Help → Contact us / Request a review. Keep the bot from reconnecting meanwhile — every attempt digs the block deeper. When WhatsApp replies, press “New code”.');
+      qrAdvice('The bot is backing off on its own (5 min → hours) and will retry automatically — after a burst of failed attempts this 403 is often a TEMPORARY penalty, and the QR will appear here the moment the block lifts. Keep the bot from being poked meanwhile — every extra attempt digs the block deeper. If it persists for a full day: on that phone open WhatsApp → Settings → Help → Request a review, then press “New code”.');
       scheduleQrFetch(data.retryInMs || 60000);
       return;
     }

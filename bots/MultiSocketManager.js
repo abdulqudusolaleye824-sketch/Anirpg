@@ -68,7 +68,11 @@ const pairingSessions = {};
 // dead. AstraLink used to hand out `the last QR it ever saw` forever, so a page
 // left open for a minute guaranteed that dialog. Codes now carry an issue time
 // and a sequence number, and a dead one is refused rather than displayed.
-const QR_VALID_MS = Math.max(15000, Number(process.env.ASTRALINK_QR_TTL_MS || 60000) || 60000);
+// Push #62: this must match Baileys' REAL QR lifetime. With no qrTimeout, Baileys
+// lets the FIRST pairing QR live 60s but every QR after that only 20s — presenting
+// a 20s code as valid for 60s is what sends users to scan a dead ref, which is
+// exactly WhatsApp's "Couldn't log in… scan the QR code again". Default 20s, clamped.
+const QR_VALID_MS = Math.min(60000, Math.max(15000, Number(process.env.ASTRALINK_QR_TTL_MS) || 20000));
 let _qrSeq = 0;
 const _qrKickAt = {};   // personality -> last time we restarted a pairing for a dead code
 
@@ -182,7 +186,7 @@ function reconnectPolicy({ code, attempt, restartRequired }) {
     const backoffMs = Math.min(6 * 3600000, 300000 * Math.pow(2, Math.min(5, n - 1)));
     return {
       blocked: true, code: 403, backoffMs, backoffLabel: label(backoffMs),
-      reason: 'WhatsApp refused this number with 403 forbidden — an account/device block, not a connection problem. Re-scanning a QR cannot fix it: open WhatsApp on that phone, read the notice and request a review.',
+      reason: 'WhatsApp refused this number with 403 forbidden — a block, not a connection problem; re-scanning a QR cannot fix it. Often it is a TEMPORARY penalty after a burst of failed attempts: the bot now backs off on its own (5 min → hours) and retries automatically — the QR appears the moment the block lifts. If it persists for a full day, on that phone: WhatsApp → Settings → Help → Request a review.',
     };
   }
   if (restartRequired) return { blocked: false, backoffMs: 1200, backoffLabel: label(1200) };
@@ -706,10 +710,19 @@ async function startAstraLink(personalityKey, authDir, getDatabase, saveDatabase
       try { botSockets[personalityKey].end(undefined); } catch (_) {}
       delete botSockets[personalityKey];
     }
-    // Push #57: stage the outgoing session for a proper WhatsApp logout BEFORE
-    // its keys are destroyed, otherwise the number accumulates orphaned linked
-    // devices (max 4) and every future QR fails with "Couldn't log in".
-    try { _revokeSnapshotAsync(authDir, personalityKey); } catch (e) {}
+    // Push #57: release the outgoing session's device slot BEFORE its keys are
+    // destroyed, otherwise the number accumulates orphaned linked devices (max 4)
+    // and every future QR fails with "Couldn't log in".
+    // Push #62: run it SEQUENTIALLY, capped, before the new pairing socket is
+    // created. The old fire-and-forget version connected the old session in
+    // PARALLEL with the new pairing — two live sessions for one number, and
+    // WhatsApp kills the loser with 401. When the loser was the pairing socket,
+    // the code being scanned died mid-scan ("Couldn't log in… scan again").
+    // A number that is 403-blocked cannot complete a logout either, so skip
+    // the wait for it and go straight to the (reported) blocked retry.
+    if ((pairingSessions[personalityKey] || {}).status !== 'blocked') {
+      try { await _releaseOldSlotBeforePairing(authDir, personalityKey); } catch (e) {}
+    }
     // Clear old un-registered session state so pre-keys match fresh pairing code
     if (fs.existsSync(botAuthDir)) fs.rmSync(botAuthDir, { recursive: true, force: true });
     // Also clear persisted backups (disk + legacy DB) so fresh pairing starts clean
@@ -849,9 +862,11 @@ async function revokeSessionDir(authDir, key, opts = {}) {
   }
 }
 
-function _revokeSnapshotAsync(authDir, personalityKey) {
-  // Never let a slot-release delay or break a pairing attempt: snapshot the
-  // creds, wipe on the copy, in the background.
+async function _releaseOldSlotBeforePairing(authDir, personalityKey) {
+  // Push #62: sequential, capped replacement of the old fire-and-forget
+  // _revokeSnapshotAsync. Snapshot the creds, logout on the copy, and wait at
+  // most CAP_MS — pairing must proceed whether the release succeeds or not.
+  const CAP_MS = 12000;
   try {
     const dir = path.join(authDir, personalityKey);
     if (!fs.existsSync(path.join(dir, 'creds.json'))) return false;
@@ -865,12 +880,12 @@ function _revokeSnapshotAsync(authDir, personalityKey) {
     const snap = path.join(snapRoot, `${personalityKey}-${Date.now()}`);
     fs.mkdirSync(snapRoot, { recursive: true });
     fs.cpSync(dir, snap, { recursive: true });
-    setImmediate(() => {
-      revokeSessionDir(snapRoot, path.basename(snap), { timeoutMs: 30000 })
-        .then((r) => console.log(r.ok ? `🔌 AstraLink [${personalityKey}] released the old device slot (${r.reason})` : `ℹ️  AstraLink [${personalityKey}] old device slot not released: ${r.reason}`))
-        .catch((e) => console.error(`AstraLink [${personalityKey}] slot release error:`, e.message))
-        .finally(() => { try { fs.rmSync(snap, { recursive: true, force: true }); } catch (e) {} });
-    });
+    const work = revokeSessionDir(snapRoot, path.basename(snap), { timeoutMs: CAP_MS })
+      .then((r) => console.log(r.ok ? `🔌 AstraLink [${personalityKey}] released the old device slot (${r.reason})` : `ℹ️  AstraLink [${personalityKey}] old device slot not released: ${r.reason}`))
+      .catch((e) => console.error(`AstraLink [${personalityKey}] slot release error:`, e.message));
+    const cap = new Promise((res) => { const t = setTimeout(res, CAP_MS); if (t.unref) t.unref(); });
+    await Promise.race([work, cap]);
+    try { fs.rmSync(snap, { recursive: true, force: true }); } catch (e) {}
     return true;
   } catch (e) {
     console.error(`⚠️ AstraLink [${personalityKey}] could not stage the old session for logout:`, e.message);
@@ -985,6 +1000,10 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
   const _myGen = _socketGen[personalityKey];
   const sock = makeWASocket({
     version,
+    // Push #62: rotate the pairing QR exactly at the TTL we present to the page.
+    // Without this the first code lives 60s, the rest 20s, and the countdown
+    // advertised dead codes as scannable.
+    qrTimeout: QR_VALID_MS,
     logger: pino({ level: 'silent' }),
     auth: {
       creds: state.creds,
@@ -1068,8 +1087,9 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
 
     if (qr) {
       // Push #57: stamp the code so the page can refuse to show a dead one, and
-      // keep the pairing socket alive — Baileys re-emits a fresh ref roughly
-      // every 20-60s, which is what keeps the picture scannable.
+      // keep the pairing socket alive. Push #62: Baileys now rotates a fresh ref
+      // every QR_VALID_MS (default 20s, via the qrTimeout option), which is what
+      // keeps the picture scannable — and matches the page's countdown.
       if (!isPlausibleQr(qr)) {
         console.error(`⚠️ AstraLink [${displayName}] received a malformed QR (len ${String(qr).length}) — ignoring it instead of rendering an unscannable box`);
       } else {
