@@ -155,8 +155,13 @@ const _boot = async () => {
     const anon = await POST('/api/request-pairing-code', { personality: K, phoneNumber: '2348012345678' });
     assert.strictEqual(anon.status, 401, `pairing an ONLINE bot was allowed anonymously (${anon.status})`);
     assert.match(anon.json.error, /online/i, 'the refusal does not explain that this unlinks it');
+    // Put the secret back: with no token configured there is no owner to honour,
+    // and 401 for an online bot would be the correct answer. (This assertion used
+    // to pass vacuously because a query string kept the request off the route.)
+    process.env.ASTRALINK_ADMIN_TOKEN = 'harness-admin-token';
     const tokd = await POST(`/api/request-pairing-code?token=harness-admin-token`, { personality: K, phoneNumber: 'bad' });
-    assert.notStrictEqual(tokd.status, 401, 'the token was not honoured for the owner');
+    assert.notStrictEqual(tokd.status, 401, `the token was not honoured for the owner (${JSON.stringify(tokd.json).slice(0, 140)})`);
+    assert.strictEqual(tokd.status, 400, 'a bad phone number must be rejected by validation, not the gate');
     delete MSM._sockets()[K];
   });
   t('the token never reaches stdout or the UI markup', () => {

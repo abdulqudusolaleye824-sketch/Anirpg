@@ -796,7 +796,16 @@ http.createServer(async (req, res) => {
     return res.end();
   }
 
-  if (req.method === 'GET' && (req.url === '/' || req.url === '/astralink' || req.url === '/astralink.html')) {
+  // Push #60: `req.url` still carries the query string, so every exact match below
+  // was really "no query string allowed" — a pasted phone link like
+  // `/astralink?personality=gojo` 404'd, and `?token=…` on `/api/bot-status` or
+  // the ops routes would have broken the panel the token is supposed to drive.
+  // Route on the path; handlers that want the query parse it themselves.
+  let _path = req.url || '/';
+  try { _path = new URL(_path, 'http://localhost').pathname; } catch (e) {}
+  _path = _path.replace(/\/+$/, '') || '/';
+
+  if (req.method === 'GET' && (_path === '/' || _path === '/astralink' || _path === '/astralink.html' || _path === '/index.html')) {
     try {
       const html = fs.readFileSync(UI_PATH, 'utf-8');
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
@@ -808,7 +817,7 @@ http.createServer(async (req, res) => {
   }
 
   // ── Health check ──────────────────────────────────────
-  if (req.method === 'GET' && req.url === '/health') {
+  if (req.method === 'GET' && _path === '/health') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     return res.end(JSON.stringify({
       status: 'ok',
@@ -819,7 +828,7 @@ http.createServer(async (req, res) => {
   }
 
   // ── GET /api/bot-status ──────────────────────────────────────
-  if (req.method === 'GET' && req.url === '/api/bot-status') {
+  if (req.method === 'GET' && _path === '/api/bot-status') {
     try {
       const allSockets = MultiSocketManager.getAllSockets();
       const linkedJids = Object.keys(PersonalityManager.linkedNumbers || {});
@@ -865,7 +874,7 @@ http.createServer(async (req, res) => {
   }
 
   // ── GET /api/personalities ───────────────────────────────────
-  if (req.method === 'GET' && req.url === '/api/personalities') {
+  if (req.method === 'GET' && _path === '/api/personalities') {
     const personalities = PersonalityManager.getAllPersonalities()
       .map(k => PersonalityManager.getPersonalityInfo(k));
     res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -875,7 +884,7 @@ http.createServer(async (req, res) => {
   // ── GET /api/qr-status?personality=XXX ───────────────────────
   // Cheap poll for the countdown / rotation. Kept separate from /api/qr so a
   // ticking UI never re-renders a PNG or trips a pairing restart.
-  if (req.method === 'GET' && req.url.startsWith('/api/qr-status')) {
+  if (req.method === 'GET' && _path === '/api/qr-status') {
     const u = new URL(req.url, 'http://localhost');
     const personality = (u.searchParams.get('personality') || '').toLowerCase();
     const q = MultiSocketManager.getLatestQr(personality);
@@ -894,7 +903,7 @@ http.createServer(async (req, res) => {
   // device holding a slot; once they pile up, no QR completes on any phone and
   // WhatsApp says "Couldn't log in. Check your phone's internet connection".
   // This logs the saved session out properly so the slots come back.
-  if (req.method === 'POST' && req.url.startsWith('/api/release-device-slots')) {
+  if (req.method === 'POST' && _path === '/api/release-device-slots') {
     // Logs a WhatsApp session out — that is a bot-unlink button, so it is never
     // callable anonymously on a public port.
     if (!AstraLinkGuard.gate(res, req, new URL(req.url, 'http://localhost'), { mode: 'locked', bucket: 'release' })) return;
@@ -1081,7 +1090,7 @@ http.createServer(async (req, res) => {
 
   // ── POST /api/request-pairing-code ───────────────────────────
   // Body: { phoneNumber: "2348012345678", personality: "hinata" }
-  if (req.method === 'POST' && req.url === '/api/request-pairing-code') {
+  if (req.method === 'POST' && _path === '/api/request-pairing-code') {
     // Starts a pairing for this number (and wipes its un-registered keys). Gated
     // the soft way so the linking page keeps working before a token is set up.
     const _pcUrl = new URL(req.url, 'http://localhost');
@@ -1173,7 +1182,7 @@ http.createServer(async (req, res) => {
   // The user deploys by running ./deploy.sh on the box; this is the same thing
   // behind the admin token, so a phone browser (or a support session) can ship a
   // push without an SSH round-trip. Fail-closed: no token configured → refused.
-  if (req.method === 'POST' && req.url.startsWith('/api/deploy')) {
+  if (req.method === 'POST' && _path === '/api/deploy') {
     const u = new URL(req.url, 'http://localhost');
     if (!AstraLinkGuard.gate(res, req, u, { mode: 'locked', bucket: 'deploy' })) return;
     // Running deploy.sh INSIDE the container is worse than useless: the git pull
@@ -1237,7 +1246,7 @@ http.createServer(async (req, res) => {
   }
 
   // ── GET /api/deploy-status?token=… ───────────────────────────
-  if (req.method === 'GET' && req.url.startsWith('/api/deploy-status')) {
+  if (req.method === 'GET' && _path === '/api/deploy-status') {
     const u = new URL(req.url, 'http://localhost');
     if (!AstraLinkGuard.gate(res, req, u, { mode: 'locked', bucket: 'deploy' })) return;
     let head = _deployedVersion();
@@ -1264,7 +1273,7 @@ http.createServer(async (req, res) => {
   }
 
   // ── POST /api/link-success ────────────────────────────────────
-  if (req.method === 'POST' && req.url === '/api/link-success') {
+  if (req.method === 'POST' && _path === '/api/link-success') {
     // Sends a DM to whoever claims to have just linked — rate-limited so the open
     // port cannot be used as a message cannon.
     if (!AstraLinkGuard.gate(res, req, new URL(req.url, 'http://localhost'), { mode: 'soft', bucket: 'linksuccess' })) return;
@@ -1321,7 +1330,7 @@ http.createServer(async (req, res) => {
   }
 
   // ── Push #31: GET /api/db-health (DB diagnostics, no Termux needed) ──
-  if (req.method === 'GET' && req.url === '/api/db-health') {
+  if (req.method === 'GET' && _path === '/api/db-health') {
     try {
       const memUsers = Object.keys((typeof database !== 'undefined' && database.users) || {}).length;
       let jsonInfo = null;
