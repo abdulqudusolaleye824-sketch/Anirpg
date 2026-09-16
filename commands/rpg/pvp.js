@@ -344,11 +344,39 @@ module.exports = {
         }
       }
 
+      // Skills are validated HERE (at lock-in), spend energy, and respect
+      // cooldowns — Push #54. Before this, /pvp accepted any string as a skill
+      // name and resolveTurn() manufactured a fake 1.5x move for it: no
+      // lookup, no cost, no status effects, and the generic "class-bound
+      // skill" text instead of the skill's own description.
+      let _lockedSkill = null;
+      if (sub === 'skill') {
+        const SCv = require('../../rpg/utils/SkillCatalog');
+        const _res = SCv.resolveSkill(player, args.slice(1).join(' ') || args[1] || '', { allowLibrary: true });
+        if (!_res.ok) {
+          return sock.sendMessage(chatId, { text: `❌ ${_res.error}\n\n${player.energyColor || '💙'} Energy: ${player.stats?.energy || 0}/${player.stats?.maxEnergy || 0}` }, { quoted: msg });
+        }
+        const _entry = _res.entry || _res.skill;
+        const _cost = SCv.effectiveCost(_entry);
+        if ((player.stats?.energy || 0) < _cost) {
+          return sock.sendMessage(chatId, { text: `❌ Not enough ${player.energyType || 'energy'} for *${_entry.name}*!\nNeed ${_cost}, you have ${player.stats?.energy || 0}.\n💡 It refills out of battle only (${require('../../rpg/utils/RegenManager').getEnergyRegenRate(player.awakenRank || 'E')}/s at ${player.awakenRank || 'E'}-Rank).` }, { quoted: msg });
+        }
+        const _cd = SCv.onCooldown(player, _entry);
+        if (!_cd.ready) {
+          return sock.sendMessage(chatId, { text: `⏳ *${_entry.name}* is on cooldown — ${Math.ceil(_cd.msLeft / 1000)}s left.\nUse /skill to see what is ready, or /attack for a basic strike.` }, { quoted: msg });
+        }
+        player.stats.energy = Math.max(0, (player.stats?.energy || 0) - _cost);
+        SCv.setCooldown(player, _entry);
+        try { require('../../rpg/utils/RegenManager').markCombatAction(player); } catch (e) {}
+        _lockedSkill = { name: _entry.name, level: _res.skill.level || 1 };
+      }
+
       // Lock in player's action
       battle.pendingAction = {
         type: sub,
         arg: args[1] || null,
-        skillName: sub === 'skill' ? args.slice(1).join(' ') : null,
+        skillName: sub === 'skill' ? (_lockedSkill?.name || args.slice(1).join(' ')) : null,
+        skillLevel: _lockedSkill?.level || null,
         patternId: sub === 'attack' ? args[1] : null,
       };
 
@@ -457,21 +485,55 @@ async function resolveTurn(sock, chatId, p1, p2, db, saveDatabase) {
     }
     if (act.type === 'skill') {
       const skillName = act.skillName || act.arg || 'Skill';
+      // Build the move FROM THE SKILL, not from a hardcoded template: its own
+      // damage multiplier, its own lore (shown exactly like an attack pattern
+      // description), and the status effects its description promises.
+      let SCm = null, entry = null;
+      try {
+        SCm = require('../../rpg/utils/SkillCatalog');
+        const r = SCm.resolveSkill(player, skillName, { allowLibrary: true });
+        if (r.ok) entry = r.entry || SCm.buildRoster(player).find(e => e.name === r.skill.name);
+        if (entry && act.skillLevel) entry = { ...entry, level: act.skillLevel };
+      } catch (e) {}
+      if (!entry) {
+        // Grandfathered / unknown name: strike instead of inventing damage.
+        return { ...UC.basicStrike(), name: 'Improvised Strike', flavour: 'No technique behind it',
+                 description: 'Your chosen skill is not in your unlocked ladder, so the duel falls back to a basic strike. Run /skill to see what you can actually cast.' };
+      }
+      const _b = SCm ? SCm.levelBonus(entry) : { dmgMult: 1 };
+      const pct = (entry.damagePct || 100) / 100;
+      const st0 = (entry.statuses || [])[0] || null;
+      // Heal/support skills: apply the restore to the caster now and let the
+      // strike land at reduced force (the duel has no separate heal phase).
+      let healNote = '';
+      if ((entry.type === 'heal' || (entry.healingPct || 0) > 0) && player.stats) {
+        const amt = Math.floor((player.stats.maxHp || 100) * ((entry.healingPct || 20) / 100));
+        const before = player.stats.hp || 0;
+        player.stats.hp = Math.min(player.stats.maxHp || 100, before + amt);
+        if (player.stats.hp > before) healNote = ` Restored ${player.stats.hp - before} HP.`;
+      }
+      for (const bf of (entry.buffs || [])) {
+        if (!player.tempBuffs) player.tempBuffs = {};
+        player.tempBuffs[`${entry.name}:${bf.stat}`] = { stat: bf.stat, amount: bf.amount, duration: bf.duration || 2 };
+      }
       return {
         id: 0,
-        rank: 'C',
-        name: skillName,
-        flavour: 'Class technique',
-        description: 'A class-bound skill channeled through practiced form. Not a martial pattern, but the unified engine treats its Atk/Def/Speed/Crit/Accuracy the same way — the calculations are identical across all battle systems.',
-        dmgMult: 1.5,
-        atkMult: 1.2,
-        defMult: 1.1,
-        speedMult: 1.1,
-        critMult: 1.6,
-        accuracy: 88,
-        effect: null,
-        cooldownMs: 30000,
-        cooldownSec: 30,
+        rank: pct >= 3 ? 'S' : pct >= 2.4 ? 'A' : pct >= 1.8 ? 'B' : pct >= 1.2 ? 'C' : 'D',
+        name: entry.name,
+        flavour: `${entry.className || 'Class'} technique`,
+        description: `${entry.description}${healNote}`,
+        effectText: entry.effect,
+        animation: entry.animation,
+        dmgMult: Math.max(0.25, +(pct * _b.dmgMult).toFixed(2)),
+        atkMult: 1.1,
+        defMult: 1.05,
+        speedMult: 1.05,
+        critMult: 1.5 + Math.min(0.6, pct * 0.1),
+        accuracy: 90,
+        effect: st0 ? { type: st0.type, chance: st0.chance ?? 60, duration: st0.duration || 2 } : null,
+        energyCost: SCm ? SCm.effectiveCost(entry) : 0,
+        cooldownMs: SCm ? SCm.cooldownMs(entry) : 15000,
+        cooldownSec: entry.cooldown || 2,
       };
     }
     return UC.basicStrike();

@@ -214,19 +214,42 @@ async function defaultHandler(sock, msg, player, skill, db, saveDatabase, getDat
   }
 
   // Deduct energy, set cooldown
-  player.stats.energy = Math.max(0, (player.stats.energy || 0) - energyCost);
-  player.lastSkillUse[skill.name] = Date.now();
+  let SCC = null;
+  try { SCC = require('../../rpg/utils/SkillCatalog'); } catch (e) {}
+  const realCost = SCC ? SCC.effectiveCost(skill) : energyCost;
+  player.stats.energy = Math.max(0, (player.stats.energy || 0) - realCost);
+  if (SCC) SCC.setCooldown(player, skill);
+  else { player.lastSkillUse = player.lastSkillUse || {}; player.lastSkillUse[skill.name] = Date.now(); }
+  try { require('../../rpg/utils/RegenManager').markCombatAction(player); } catch (e) {}
 
-  // Apply effect (very simplified default)
-  let resultText = `🔮 *${player.name}* used *${skill.name}*!`;
+  // Apply effect
+  let resultText = `🔮 *${player.name}* used *${skill.name}*!\n_${skill.description || 'A class technique, executed.'}_`;
 
-  if (skill.damage && skill.damage > 0) {
-    // Damage skill
+  if (skill.damage > 0 || (skill.damagePct || 0) > 0) {
+    // Catalog maths: skill = % of real ATK (+ technique flat), not the old
+    // `skill.damage * (1 + atk/100)` which barely moved the needle.
     let _gAtkCC = 0;
     try { _gAtkCC = require('../../rpg/utils/GearSystem').getEquippedBonuses(player).atk || 0; } catch (e) {}
-    const atk = (player.stats.atk || 10) + _gAtkCC;
-    const damage = Math.floor(skill.damage * (1 + (atk / 100)));
+    const proxy = { ...player, stats: { ...(player.stats || {}), atk: (player.stats.atk || 10) + _gAtkCC } };
+    const damage = SCC
+      ? SCC.computeDamage(proxy, skill)
+      : Math.floor((skill.damage || 0) * (1 + (_gAtkCC + (player.stats.atk || 10)) / 100));
     resultText += `\n💥 Dealt *${damage.toLocaleString()}* damage!`;
+    // Status the description promised, applied for real.
+    const stats = skill.statuses || [];
+    if (stats.length) {
+      try {
+        const SEM = require('../../rpg/utils/StatusEffectManager');
+        const target = player.dungeon?.currentBattle?.monster || null;
+        for (const st of stats) {
+          if (Math.random() * 100 < (st.chance ?? 100)) {
+            if (target) SEM.applyEffect(target, st.type, st.duration);
+            const def = SEM.EFFECTS?.[st.type];
+            resultText += `\n${def?.emoji || '✨'} ${def?.name || st.type} applied${target ? '' : ' (no live target)'}!`;
+          }
+        }
+      } catch (e) {}
+    }
   }
 
   if (skill.effect && skill.effect.type === 'heal') {
@@ -446,23 +469,23 @@ function getCmdHelp(cmdName) {
 }
 
 function findPlayerSkill(player, className, skillName) {
-  const q = skillName.toLowerCase();
-  // Look in player.skills.active first (the equipped skills)
-  if (player.skills && Array.isArray(player.skills.active)) {
-    const m = player.skills.active.find(s => s.name && s.name.toLowerCase() === q);
-    if (m) return m;
+  // SkillCatalog owns resolution: equipped + library, tolerant by name/number,
+  // and it will not hand back a skill the player has not unlocked yet.
+  try {
+    const SC = require('../../rpg/utils/SkillCatalog');
+    const res = SC.resolveSkill(player, skillName, { allowLibrary: true });
+    if (res.ok) return res.skill;
+    player._skillResolveError = res.error;
+    return null;
+  } catch (e) {
+    const q = String(skillName || '').toLowerCase();
+    for (const arr of [player.skills?.active, player.classSkills, player.availableSkills]) {
+      if (!Array.isArray(arr)) continue;
+      const m = arr.find(s => s && s.name && s.name.toLowerCase() === q);
+      if (m) return m;
+    }
+    return null;
   }
-  // Then player.classSkills (from the new system)
-  if (Array.isArray(player.classSkills)) {
-    const m = player.classSkills.find(s => s.name && s.name.toLowerCase() === q);
-    if (m) return m;
-  }
-  // Then player.availableSkills (library)
-  if (Array.isArray(player.availableSkills)) {
-    const m = player.availableSkills.find(s => s.name && s.name.toLowerCase() === q);
-    if (m) return m;
-  }
-  return null;
 }
 
 function showClassSkillMenu(sock, msg, player, className) {
@@ -472,6 +495,45 @@ function showClassSkillMenu(sock, msg, player, className) {
     return sock.sendMessage(chatId, { text: `❌ Class data not found: ${className}` }, { quoted: msg });
   }
   const playerCmd = getClassCmdName(className);
+
+  // Only UNLOCKED skills are listed. The old menu dumped every class skill
+  // (and every classSkills entry) regardless of level, which is what made the
+  // co-owner look like "all skills unlocked on awakening".
+  let _SC = null;
+  try { _SC = require('../../rpg/utils/SkillCatalog'); } catch (e) {}
+  if (_SC) {
+    const roster = _SC.getRoster(player);
+    if (roster.length) {
+      _SC.syncPlayerSkills(player);
+      const unlocked = _SC.unlockedSkills(player);
+      const passives = _SC.passiveSkills(player);
+      const locked   = _SC.lockedSkills(player);
+      const lns = [];
+      lns.push(`${UI.isPro(player) ? UI.PRO_BAR : UI.FREE_BAR}`);
+      lns.push(`✨ *${className} — SKILL LADDER* (${unlocked.length}/${roster.length} unlocked)`);
+      lns.push(UI.isPro(player) ? UI.PRO_BAR : UI.FREE_BAR);
+      unlocked.forEach((e, i) => {
+        const mine = (player.skills.active.concat(player.availableSkills)).find(s => s.name === e.name) || e;
+        lns.push(`${i + 1}. *${e.name}* [Lv.${e.unlocksAtLevel}]`);
+        lns.push(`   📖 ${e.description}`);
+        lns.push(`   ${e.effect.split('\n').join('\n   ')}`);
+        lns.push(`   ${_SC.effectiveCost(mine)} energy · ${_SC.effectiveCooldownTurns(mine)} turn CD · ⚔️ ${e.damagePct || 0}% ATK`);
+        lns.push('');
+      });
+      if (passives.length) {
+        lns.push(`⚡ *PASSIVES (always on)*`);
+        for (const p of passives) lns.push(`   • *${p.name}* — ${p.effect.split('\n').join(' ')}`);
+        lns.push('');
+      }
+      if (locked.length) {
+        lns.push(`🔒 *LOCKED* — next: ${locked[0].name} at Lv.${locked[0].unlocksAtLevel} (${locked.length} total)`);
+        lns.push(`   /skills locked lists them all`);
+      }
+      lns.push(UI.isPro(player) ? UI.PRO_BAR : UI.FREE_BAR);
+      lns.push(`📌 /skill <name> in combat · /skills to manage your 5 slots`);
+      return sock.sendMessage(msg.key.remoteJid, { text: lns.join('\n') }, { quoted: msg });
+    }
+  }
 
   // Combine player.skills.active + classSkills for display
   const skills = [];
@@ -534,9 +596,17 @@ function normaliseJidShort(jid) {
 
 // Energy + cooldown gate for routed skills (same rules queueBattleAction enforced)
 function skillReady(player, skill) {
-  const energyCost = skill.energyCost || 15;
+  let SC = null;
+  try { SC = require('../../rpg/utils/SkillCatalog'); } catch (e) {}
+  const energyCost = SC ? SC.effectiveCost(skill) : (skill.energyCost || 15);
   if ((player.stats.energy || 0) < energyCost) return { ok: false, reason: `Not enough energy! Need ${energyCost}` };
-  if (player.skillCooldowns?.[skill.name] && Date.now() < player.skillCooldowns[skill.name]) return { ok: false, reason: `${skill.name} is on cooldown` };
+  if (SC) {
+    const cd = SC.onCooldown(player, skill);
+    if (!cd.ready) return { ok: false, reason: `${skill.name} is on cooldown (${Math.ceil(cd.msLeft / 1000)}s)` };
+    return { ok: true };
+  }
+  const until = player.skillCooldowns?.[skill.name] || player.skills?.cooldowns?.[skill.name] || 0;
+  if (until && Date.now() < until) return { ok: false, reason: `${skill.name} is on cooldown` };
   return { ok: true };
 }
 function setSkillCooldown(player, skill) {

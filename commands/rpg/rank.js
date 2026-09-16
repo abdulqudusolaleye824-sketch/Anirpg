@@ -26,7 +26,9 @@ const RANKS = [
 function calcPower(p) {
   const lvl   = p.level || 1;
   const xp    = p.xp    || 0;
-  const xpCap = Math.floor(200 * Math.pow(lvl, 1.8));
+  let xpCap;
+  try { xpCap = require('../../rpg/utils/SoloLevelingCore').getXpRequired(lvl); }
+  catch (e) { xpCap = Math.floor(50000 * Math.pow(1.3116, Math.max(1, lvl) - 1)); }
 
   // Boss kills — bossesDefeated is {total: N, byRank: {...}} object
   const bosses = typeof p.bossesDefeated === 'object'

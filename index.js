@@ -351,7 +351,11 @@ const loadDatabase = () => {
 
         let leveled = false;
         while (true) {
-          const xpNeeded = Math.floor(200 * Math.pow(player.level, 1.8));
+          // Must be the SAME curve the game uses (SoloLevelingCore). The old
+          // local 200*level^1.8 formula is ~250x cheaper than the real one at
+          // low levels, so every boot re-levelled players and subtracted XP
+          // they had legitimately banked. Push #54.
+          const xpNeeded = require('./rpg/utils/SoloLevelingCore').getXpRequired(player.level);
           if (player.xp >= xpNeeded) {
             player.level++;
             player.xp -= xpNeeded;

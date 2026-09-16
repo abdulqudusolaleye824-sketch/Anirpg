@@ -62,8 +62,12 @@ function buildCard(player, db, targetId, mentionedId, isOwnProfile) {
     powerLabel = getPowerLabel(power) || powerLabel;
   } catch (e) {}
 
-  const cls          = player.evolvedClass || player.class;
-  const classBase    = player.classBase || (typeof cls === 'string' ? cls : null);
+  // player.class is a string in current data but an OBJECT on rows written
+  // before the ClassSystem split (and player.evolvedClass can be either). String
+  // interpolation of an object is the "[object Object]" on profiles.
+  const _clsLabel = (c) => (!c ? null : (typeof c === 'object' ? (c.name || c.className || null) : String(c)));
+  const cls          = _clsLabel(player.evolvedClass) || _clsLabel(player.class) || (player.monsterVariant?.name || null);
+  const classBase    = player.classBase || cls;
   const classQuality = player.classQuality || 0;
   const qualLabel    = classBase && classQuality > 0 ? ' — ' + getQualityLabel(classQuality) : '';
   const variantLore  = player.monsterVariant?.lore || null;

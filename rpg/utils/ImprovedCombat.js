@@ -1,4 +1,5 @@
 const SkillDescriptions = require('./SkillDescriptions');
+const SkillCatalog = require('./SkillCatalog');
 const StatusEffectManager = require('./StatusEffectManager');
 const EffectParser = require('./EffectParser');
 let ArtifactSystem; try { ArtifactSystem = require('./ArtifactSystem'); } catch(e) { console.warn('[SILENT] ImprovedCombat: ArtifactSystem not available'); }
@@ -13,29 +14,29 @@ class ImprovedCombat {
   // skillName: string
   // ═══════════════════════════════════════════════════════════════
   static executeSkill(attacker, defender, skillName) {
-    // Find skill in player's active slots
-    const skill = attacker.skills?.active?.find(s =>
-      s.name.toLowerCase() === skillName.toLowerCase()
-    );
-    if (!skill) {
-      return { success: false, message: `❌ You don't have the skill "${skillName}"!` };
+    // ── Resolve through SkillCatalog ────────────────────────────────
+    // Accepts a name, a name prefix or a 1-based number; searches equipped
+    // slots AND the library; refuses locked skills with the level that frees
+    // them. Replaces the old "exact match inside player.skills.active"
+    // lookup, which is what produced "Skill not found" for library skills and
+    // for every Monster-class player.
+    const res = SkillCatalog.resolveSkill(attacker, skillName, { allowLibrary: true });
+    if (!res.ok) {
+      return { success: false, message: res.error, locked: !!res.locked };
     }
+    const skill = res.skill;
+    const entry = res.entry || SkillCatalog.buildRoster(attacker).find(r => r.name === skill.name) || null;
 
-    // Get SkillDescriptions entry (animation, effect text, costs)
-    const className = typeof attacker.class === 'string'
-      ? attacker.class : (attacker.class?.name  || 'Awaiting');
-    const skillInfo = SkillDescriptions.getSkillDescription(className, skill.name);
-
-    if (!skillInfo) {
-      return { success: false, message: `❌ Skill "${skill.name}" not found in skill database!` };
-    }
+    // Catalog entry is authoritative (lore + effect + animation + costs);
+    // SkillDescriptions is only the fallback for un-catalogued classes.
+    const skillInfo = entry || SkillDescriptions.getSkillDescription(
+      SkillCatalog.canonicalClassName(attacker) || 'Unknown', skill.name);
 
     // ── Energy cost ───────────────────────────────────────────
-    // SkillDescriptions has the authoritative cost per class
-    const energyCost =
-      skillInfo.dragonCost || skillInfo.manaCost || skillInfo.holyCost ||
-      skillInfo.hungerCost  || skillInfo.rageCost || skillInfo.focusCost ||
-      skillInfo.energyCost  || skill.energyCost || 20;
+    const energyCost = entry ? SkillCatalog.effectiveCost(entry)
+      : (skillInfo.dragonCost || skillInfo.manaCost || skillInfo.holyCost ||
+         skillInfo.hungerCost  || skillInfo.rageCost || skillInfo.focusCost ||
+         skillInfo.energyCost  || skill.energyCost || 20);
 
     const costType = attacker.energyType || 'Energy';
 
@@ -53,9 +54,9 @@ class ImprovedCombat {
     }
 
     // ── Deduct energy & set cooldown ──────────────────────────
-    attacker.stats.energy -= energyCost;
-    if (!attacker.lastSkillUse) attacker.lastSkillUse = {};
-    attacker.lastSkillUse[skill.name] = Date.now();
+    attacker.stats.energy = Math.max(0, (attacker.stats.energy || 0) - energyCost);
+    SkillCatalog.setCooldown(attacker, entry || skill);
+    try { require('./RegenManager').markCombatAction(attacker); } catch (e) {}
 
     // ── Parse effects from SkillDescriptions effect text ──────
     const parsedEffects = EffectParser.parseSkillEffects(skillInfo.effect);
@@ -136,13 +137,16 @@ class ImprovedCombat {
     const baseAtk = effectiveAtk + weaponBonus;
     const mult = parsedEffects.damageMultiplier || 1.0;
 
-    // New formula: skill.damage + (player.atk * 0.5) scaled by multiplier
-    const skillFlatDmg = skill.damage || 0;
+    // A skill is a MULTIPLIER of real attack power plus its flat technique
+    // bonus. The old maths (flat skill.damage + 35% ATK) put every skill
+    // within a few points of a base attack — that is why "skills do nothing"
+    // and why the boss chamber looked like it ignored them.
     const skillLevel = skill.level || 1;
     const skillLevelMult = 1 + (skillLevel - 1) * 0.08; // +8% per level
-    // Balanced formula: flat skill damage + ATK scaling, both scaled by skill level
+    const pctMult = (entry && entry.damagePct) ? (entry.damagePct / 100) : mult;
+    const skillFlatDmg = (entry && entry.flatDamage) || skill.damage || 0;
     let baseDamage = parsedEffects.damage
-      ? Math.floor((skillFlatDmg * skillLevelMult + effectiveAtk * 0.35) * mult)
+      ? Math.floor((baseAtk * pctMult + skillFlatDmg) * skillLevelMult)
       : 0;
 
     // ── Crit ──────────────────────────────────────────────────
@@ -247,13 +251,24 @@ class ImprovedCombat {
     const lastUse = player.lastSkillUse[skillName];
     if (!lastUse) return { ready: true };
 
-    const skill = player.skills?.active?.find(s => s.name === skillName);
-    if (!skill) return { ready: false, message: `❌ Skill not found!` };
+    // Resolve via the catalog (equipped + library), and honour the timestamp
+    // the catalog already stamped so a cooldown cannot be bypassed by naming
+    // the skill differently.
+    const cd = SkillCatalog.onCooldown(player, { name: skillName });
+    const resolved = SkillCatalog.resolveSkill(player, skillName, { allowLibrary: true });
+    const skill = (resolved.ok && resolved.skill) || player.skills?.active?.find(s => s.name === skillName);
+    if (!skill) return { ready: false, message: resolved.error || `❌ Skill not found!` };
+    if (cd.ready === false) {
+      return { ready: false, timeLeft: cd.msLeft,
+               message: `⏳ ${skillName} is on cooldown! (${Math.ceil(cd.msLeft / 1000)}s remaining)` };
+    }
 
-    const className = typeof player.class === 'string'
-      ? player.class : (player.class?.name  || 'Awaiting');
-    const skillInfo = SkillDescriptions.getSkillDescription(className, skillName);
-    const cooldownMs = ((skillInfo?.cooldown) || skill.cooldown || 3) * 1000;
+    const className = SkillCatalog.canonicalClassName(player)
+      || (typeof player.class === 'string' ? player.class : (player.class?.name || 'Awaiting'));
+    const entry = resolved.entry || SkillCatalog.buildRoster(player).find(r => r.name === skillName);
+    const skillInfo = entry || SkillDescriptions.getSkillDescription(className, skillName);
+    const cooldownMs = entry ? SkillCatalog.cooldownMs(entry)
+                             : (((skillInfo?.cooldown) || skill.cooldown || 3) * 1000);
 
     const timeLeft = lastUse + cooldownMs - now;
     if (timeLeft > 0) {
@@ -426,21 +441,22 @@ class ImprovedCombat {
       };
     }
 
+    // Energy potions are scrapped. Energy is the skill resource and it refills
+    // out of combat only, by rank (E 2/s · D 3/s · C 4/s · B 5/s · A 8/s ·
+    // S 10/s) — see RegenManager.getEnergyRegenRate. Anything still sitting in
+    // an inventory is inert, and mid-fight recovery is no longer purchasable.
     if (itemNum === 2) {
-      // Energy Potion
-      const count = player.inventory.energyPotions || player.inventory.manaPotions || 0;
-      if (count <= 0) return { success: false, message: '❌ You have no Energy Potions!' };
-      const restoreAmount = Math.floor(player.stats.maxEnergy * 0.5);
-      player.stats.energy = Math.min(player.stats.maxEnergy, player.stats.energy + restoreAmount);
-      if (player.inventory.energyPotions > 0) player.inventory.energyPotions--;
-      else player.inventory.manaPotions--;
       return {
-        success: true,
-        narrative: `${player.energyColor || '💙'} Used *Energy Potion*!\nRestored *${restoreAmount}* ${player.energyType || 'Energy'}!\n${player.energyColor || '💙'} Energy: ${player.stats.energy}/${player.stats.maxEnergy}\n`
+        success: false,
+        message: `❌ *${player.energyType || 'Energy'} potions no longer exist.*\n` +
+                 `${player.energyColor || '💙'} ${player.energyType || 'Energy'} refills out of battle only:\n` +
+                 `   E 2/s · D 3/s · C 4/s · B 5/s · A 8/s · S 10/s\n` +
+                 `Regen is paused while you are fighting.\n` +
+                 `${player.energyColor || '💙'} Current: ${player.stats.energy}/${player.stats.maxEnergy}`
       };
     }
 
-    return { success: false, message: '❌ Invalid item number! Use 1 (Health Potion) or 2 (Energy Potion).' };
+    return { success: false, message: '❌ Invalid item number! Use 1 (Health Potion).' };
   }
 
   // ═══════════════════════════════════════════════════════════════

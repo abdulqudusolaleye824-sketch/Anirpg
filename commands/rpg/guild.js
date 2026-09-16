@@ -43,7 +43,6 @@ const REGULAR_SHOP_POOL = [
   { id: 'medium_health_potion', name: 'Medium Health Potion', category: 'Potions', type: 'potion', currency: 'gold', basePrice: 5000, description: 'Restores 25% HP', key: 'mediumHealthPotions' },
   { id: 'higher_health_potion', name: 'Higher Health Potion', category: 'Potions', type: 'potion', currency: 'gold', basePrice: 7000, description: 'Restores 50% HP', key: 'higherHealthPotions' },
   { id: 'health_potion', name: 'Health Potion', category: 'Potions', type: 'potion', currency: 'gold', basePrice: 800, description: 'Restores 10% HP', key: 'lowerHealthPotions' },
-  { id: 'energy_potion', name: 'Energy Potion', category: 'Potions', type: 'potion', currency: 'gold', basePrice: 600, description: 'Restores 50% Energy', key: 'energyPotions' },
   { id: 'revive_token', name: 'Revive Token', category: 'Potions', type: 'potion', currency: 'gold', basePrice: 3000, description: 'Auto-revives once in dungeon', key: 'reviveTokens' },
   { id: 'luck_potion', name: 'Luck Potion', category: 'Potions', type: 'potion', currency: 'gold', basePrice: 2000, description: '+25% catch rate & casino odds', key: 'luckPotion' },
   { id: 'xp_booster', name: 'XP Booster', category: 'Potions', type: 'potion', currency: 'gold', basePrice: 5000, description: '+50% XP for 3 battles', key: 'xpBooster' },
@@ -927,7 +926,7 @@ ${FRAME}`
             player.inventory.mediumHealthPotions = (player.inventory.mediumHealthPotions || 0) + 1;
           } else if (item.key === 'higherHealthPotions') {
             player.inventory.higherHealthPotions = (player.inventory.higherHealthPotions || 0) + 1;
-          } else if (item.key === 'energyPotions') player.inventory.energyPotions = (player.inventory.energyPotions || 0) + 1;
+          } else if (item.key === 'energyPotions') { /* energy potions scrapped */ }
           else if (item.key === 'reviveTokens') player.inventory.reviveTokens = (player.inventory.reviveTokens || 0) + 1;
           else if (item.key === 'luckPotion') player.inventory.items.push({ name: 'Luck Potion', type: 'Consumable', isLuckPotion: true });
           else if (item.key === 'xpBooster') player.inventory.items.push({ name: 'XP Booster', type: 'Consumable', isXpBooster: true, charges: 3 });
@@ -947,7 +946,7 @@ ${FRAME}`
         } else if (item.type === 'ticket') {
           player.summonTickets = (player.summonTickets || 0) + item.amount;
         } else if (item.type === 'bundle') {
-          if (item.bundleId === 1) { player.inventory.healthPotions = (player.inventory.healthPotions||0)+5; player.inventory.energyPotions = (player.inventory.energyPotions||0)+5; player.inventory.reviveTokens = (player.inventory.reviveTokens||0)+1; }
+          if (item.bundleId === 1) { player.inventory.healthPotions = (player.inventory.healthPotions||0)+5; player.inventory.reviveTokens = (player.inventory.reviveTokens||0)+1; }
           else if (item.bundleId === 2) { player.inventory.healthPotions = (player.inventory.healthPotions||0)+10; player.inventory.reviveTokens = (player.inventory.reviveTokens||0)+5; player.inventory.items.push({ name: 'XP Booster', type: 'Consumable', isXpBooster: true, charges: 3 }); }
           else if (item.bundleId === 3) { player.inventory.items.push({ name: 'Elixir of Might', type: 'Consumable', isMightElixir: true, charges: 5, atkBonus: 20 }, { name: 'Shield Scroll', type: 'Consumable', isShieldScroll: true }, { name: 'Luck Potion', type: 'Consumable', isLuckPotion: true }); }
         } else if (item.type === 'pattern') {

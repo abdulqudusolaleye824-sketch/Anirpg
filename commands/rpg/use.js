@@ -190,8 +190,7 @@ module.exports = {
 🧪 Medium HP Potion (25%): ${mediumCount}
 🍷 Higher HP Potion (50%): ${higherCount}
 
-${player.energyColor || '💙'} ${player.energyType || 'Mana'} Potions: ${player.inventory.energyPotions || player.inventory.manaPotions || 0}
-   Restores: 50% ${player.energyType || 'Mana'}
+${player.energyColor || '💙'} ${player.energyType || 'Mana'}: ${player.stats.energy || 0}/${player.stats.maxEnergy || 0} — refills out of battle (potions scrapped)
 
 🎫 Revive Tokens: ${player.inventory.reviveTokens || 0}
    Revives you on death
@@ -206,7 +205,7 @@ ${FRAME}
 /use medium        - Use Medium HP Potion (25% HP)
 /use higher        - Use Higher HP Potion (50% HP)
 /use heal          - Use highest available HP Potion
-/use energy        - Use Mana Potion
+/use energy        - Show energy regen status (potions scrapped)
 /use revive        - Use Revive Token
 /use GVC --gold    - Use Gold Victory Card (15k Nexus + 3k MS)
 /use GVC --silver  - Use Silver Victory Card (10k Nexus + 2k MS)
@@ -350,6 +349,27 @@ ${FRAME}`;
     // ═══════════════════════════════════════
     // 💙 USE ENERGY POTION
     // ═══════════════════════════════════════
+    if ((action === 'energy' || action === 'mana' || action === 'stamina' || action === 'chi' || action === 'rage' || action === 'hunger' || action === 'focus')) {
+      // Energy potions scrapped — rank-based refill outside battle only.
+      const RM = require('../../rpg/utils/RegenManager');
+      const rank = player.awakenRank || 'E';
+      return sock.sendMessage(chatId, {
+        text: [
+          `${player.energyColor || '💙'} *${(player.energyType || 'ENERGY').toUpperCase()} — NO POTIONS*`,
+          `${UI?.FREE_BAR || '━━━━━━━━━━━━━━━━━━━━━━━━━━━'}`,
+          `Potions no longer restore ${(player.energyType || 'energy')}. It refills naturally, out of battle only.`,
+          ``,
+          `⏱️ Your rate (${rank}-Rank): *+${RM.getEnergyRegenRate(rank)}/sec*`,
+          `📊 Now: ${(player.stats.energy || 0)}/${player.stats.maxEnergy || 0}`,
+          `🛑 Paused while you are in a gate, dungeon, boss or PvP fight.`,
+          ``,
+          `💡 Skills are the only sink. Spend ${(player.energyType || 'energy')} on damage turns, let it come back between them.`,
+        ].filter(Boolean).join('\n')
+        }, { quoted: msg });
+    }
+    // ── RETIRED: the old potion path. Unreachable — the block above answers
+    //    every energy-type action. Left in place only so the git history of
+    //    /use stays readable; delete with the next inventory cleanup.
     if (action === 'energy' || action === 'mana' || action === 'stamina' ||
         action === 'focus' || action === 'rage' || action === 'faith' ||
         action === 'blood' || action === 'dragon' || action === 'force') {

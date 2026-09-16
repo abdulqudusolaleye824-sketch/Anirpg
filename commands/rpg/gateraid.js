@@ -393,14 +393,32 @@ module.exports = {
       }
       try {
       const floor = gate.currentFloor;
-      const floorMonsters = (gate.monsters || []).filter(mm => mm.floor === floor && !mm.defeated);
+      let floorMonsters = (gate.monsters || []).filter(mm => mm.floor === floor && !mm.defeated);
 
+      // Push #54: the boss chamber now accepts the GENERAL attack system.
+      // /attack, /attack <patternId> and /skill <name> all work here exactly
+      // as they do on a normal floor. Previously this branch bounced with
+      // "Engage the boss: /party boss", and that command only ever applied the
+      // raid's simplified strike — so patterns and skills were unusable on the
+      // boss and the boss fight ran on base attack.
+      let _fightingBoss = false;
+      let target = floorMonsters[0];
       if (floorMonsters.length === 0) {
-        if (floor >= gate.totalFloors) return sock.sendMessage(chatId, { text: `⚠️ All monsters cleared! Engage the boss:\n/party boss` }, { quoted: msg });
-        return sock.sendMessage(chatId, { text: `✅ Floor ${floor} cleared!\nAdvance: /party advance` }, { quoted: msg });
+        const bossAlive = gate.boss && !gate.boss.defeated && (gate.boss.hp || 0) > 0;
+        if (floor >= gate.totalFloors && bossAlive) {
+          _fightingBoss = true;
+          target = gate.boss;
+          // The generic monster flow below needs atk/def on the target; the
+          // boss carries the same numbers the /party boss branch used.
+          if (typeof target.atk !== 'number') target.atk = Math.floor((GATE_RANKS[gate.rank]?.monsterRange?.[1] || 600) * 0.20);
+          if (typeof target.def !== 'number') target.def  = Math.floor((gate.rankData?.monsterRange?.[1] || 600) * 0.05);
+          if (!Array.isArray(target.statusEffects)) target.statusEffects = [];
+        } else if (floor >= gate.totalFloors) {
+          return sock.sendMessage(chatId, { text: `✅ The boss is already down. This gate is cleared.` }, { quoted: msg });
+        } else {
+          return sock.sendMessage(chatId, { text: `✅ Floor ${floor} cleared!\nAdvance: /party advance` }, { quoted: msg });
+        }
       }
-
-      const target = floorMonsters[0];
       // Check for attack pattern id in skillArg when action is attack (from /attack <id> routed via attacks.js)
       let patternId = null;
       if (action === 'attack' && skillArg) {
@@ -514,6 +532,20 @@ module.exports = {
       });
       target.hp = Math.max(0, monWrap.stats.hp);
       if (pro) await sock.sendMessage(chatId, { text: `💎 *PRO FOCUS* — your raid damage: ${UI.num(gate.damageDealt[sender])}` });
+
+      if (target.hp <= 0 && _fightingBoss) {
+        // Boss finished by the general attack system — run the exact same
+        // settlement /party boss uses (loot, drops, guild GP, recovery,
+        // gate closure), so there is only one reward path to stay correct.
+        const bossLines = [];
+        try { bossLines.push(...await finishBossDefeat()); } catch (e) {
+          console.error('[gateraid] boss settle via /attack failed:', e.message);
+          bossLines.push(`💀 *${target.name}* has fallen!`);
+        }
+        try { GR.saveGateState(db, gate); } catch (e) {}
+        saveDatabase();
+        return sock.sendMessage(chatId, { text: bossLines.filter(Boolean).join('\n') }, { quoted: msg });
+      }
 
       if (target.hp <= 0) {
         // The 5 strike messages are already live — rewards go in their own message.
@@ -656,6 +688,70 @@ module.exports = {
       } finally { GR.releaseCombatLock(gate.id); } // Push #29
     }
 
+    // ── BOSS DEFEAT SETTLEMENT (shared: /party boss AND the general attack
+    //    system, since Push #54 lets /attack + /skill fight the boss too) ──
+    // Returns the lines to show. The caller saves state and sends.
+    const finishBossDefeat = async () => {
+      const out = [];
+        boss.defeated = true;
+        AuraSystem.addAura(player, 'bossKill');
+        try {
+          const QD = require('../../rpg/utils/QuestDispatcher');
+          QD.trackAndNotify(player, 'boss', 1, sock, sender, chatId);
+          QD.trackAndNotify(player, 'clear', 1, sock, sender, chatId);
+        } catch(e){}
+        // Gate clear: +15 GP to the killer's guild (weekly + lifetime + quest)
+        try { require('../../rpg/utils/GuildPointsSystem').addGuildGP(db, sender, 15, 'Gate clear (' + (gate.rank || '?') + '-Rank)', { quest: true, sock, jid: sender, chatId }); } catch(e){}
+
+        const damageDealt = gate.damageDealt || {};
+        const topRaider = Object.entries(damageDealt).sort((a, b) => b[1] - a[1])[0];
+        if (topRaider && topRaider[0] === sender) AuraSystem.addAura(player, 'topRaider');
+
+        awardXP(player, 'gate_boss', saveDatabase, sock, chatId);
+        try { const BRb=require('../../rpg/utils/BattleRewards'); const wb=BRb.giveBattleWinRewards(player, db, 'gate', player.level, sock, chatId); lines.push(BRb.formatRewards(wb)); } catch(e){}
+
+        // Final-blow boss loot → the killer
+        const bossDropLines = [];
+        const bossDrop = GateManager.rollMonsterKillDrop(gate.rank, boss.name);
+        if (bossDrop) {
+          require('../../rpg/utils/RewardInventory').grantItem(player, { ...bossDrop, type: bossDrop.type || 'material', fromGate: gate.id }, 'gate');
+          bossDropLines.push(`🎁 *BOSS DROP → ${player.name}* (final blow): *${bossDrop.name}*`);
+        }
+
+        // Distribute full loot: gold→guild treasury, drops→final-blow, recovery
+        const loot = GR.clearGate(gate, key, keyData, db, saveDatabase);
+
+        out.push(``, `💀 *${boss.name}* HAS BEEN DEFEATED!`, ``);
+        out.push(`🔥 Aura gained!`);
+        if (bossDropLines.length) lines.push(...bossDropLines);
+        out.push(``, `🎁 *LOOT → ${loot.destinationText}*`);
+        out.push(`💠 ${loot.nexus.toLocaleString()} Nexus | 💎 ${loot.crystals.toLocaleString()} Mana Stones`);
+        if (loot.affiliatePayouts && Object.keys(loot.affiliatePayouts).length) {
+        out.pushsh(``, `🤝 *Affiliate / recruiter payouts:*`);
+          for (const [jid, p] of Object.entries(loot.affiliatePayouts)) {
+            const nm = db.users?.[jid]?.name || jid.split('@')[0];
+        out.pushpush(`  • *${nm}* — ${p.percent}% → ${p.gold.toLocaleString()} 💠 + ${p.crystals} 💎`);
+          }
+        }
+        if (loot.contractPayouts && Object.keys(loot.contractPayouts).length) lines.push(`📋 Contracts paid out automatically.`);
+
+        if (loot.wildPet && loot.wildPet.token) {
+        out.pushsh(``, `🐾 *WILD PET APPEARED!*`);
+        out.pushsh(`${loot.wildPet.emoji} *${loot.wildPet.name}* [${loot.wildPet.rarity.toUpperCase()}]`);
+        out.pushsh(`🪤 /caught ${loot.wildPet.token} — hurry, it flees in 60s!`);
+        }
+
+        out.push(``, `💚 *All members: 50% recovery + no cooldown.*`);
+        out.push(`🚪 *GATE ${gate.id} CLEARED!*`);
+        out.push(FRAME);
+        if (pro) {
+          const topName = topRaider ? (db.users?.[topRaider[0]]?.name || 'a raider') : 'none';
+        out.pushsh(UI.PRO_MINI, topRaider && topRaider[0] === sender ? `💎 *PRO SLAYER* — TOP raid damage: ${UI.num(topRaider[1])}! 🔥` : `💎 *PRO SLAYER* — top: ${topName} (${topRaider ? UI.num(topRaider[1]) : 0})`);
+        } else lines.push(UI.upsell());
+      return out;
+    };
+
+
     // ── BOSS ────────────────────────────────────────────────────
     if (action === 'boss') {
       if (!inRaid(gate, sender)) return sock.sendMessage(chatId, { text: '❌ You are not in this raid.' }, { quoted: msg });
@@ -700,61 +796,7 @@ module.exports = {
       const lines = [];
 
       if (boss.hp <= 0) {
-        boss.defeated = true;
-        AuraSystem.addAura(player, 'bossKill');
-        try {
-          const QD = require('../../rpg/utils/QuestDispatcher');
-          QD.trackAndNotify(player, 'boss', 1, sock, sender, chatId);
-          QD.trackAndNotify(player, 'clear', 1, sock, sender, chatId);
-        } catch(e){}
-        // Gate clear: +15 GP to the killer's guild (weekly + lifetime + quest)
-        try { require('../../rpg/utils/GuildPointsSystem').addGuildGP(db, sender, 15, 'Gate clear (' + (gate.rank || '?') + '-Rank)', { quest: true, sock, jid: sender, chatId }); } catch(e){}
-
-        const damageDealt = gate.damageDealt || {};
-        const topRaider = Object.entries(damageDealt).sort((a, b) => b[1] - a[1])[0];
-        if (topRaider && topRaider[0] === sender) AuraSystem.addAura(player, 'topRaider');
-
-        awardXP(player, 'gate_boss', saveDatabase, sock, chatId);
-        try { const BRb=require('../../rpg/utils/BattleRewards'); const wb=BRb.giveBattleWinRewards(player, db, 'gate', player.level, sock, chatId); lines.push(BRb.formatRewards(wb)); } catch(e){}
-
-        // Final-blow boss loot → the killer
-        const bossDropLines = [];
-        const bossDrop = GateManager.rollMonsterKillDrop(gate.rank, boss.name);
-        if (bossDrop) {
-          require('../../rpg/utils/RewardInventory').grantItem(player, { ...bossDrop, type: bossDrop.type || 'material', fromGate: gate.id }, 'gate');
-          bossDropLines.push(`🎁 *BOSS DROP → ${player.name}* (final blow): *${bossDrop.name}*`);
-        }
-
-        // Distribute full loot: gold→guild treasury, drops→final-blow, recovery
-        const loot = GR.clearGate(gate, key, keyData, db, saveDatabase);
-
-        lines.push(``, `💀 *${boss.name}* HAS BEEN DEFEATED!`, ``);
-        lines.push(`🔥 Aura gained!`);
-        if (bossDropLines.length) lines.push(...bossDropLines);
-        lines.push(``, `🎁 *LOOT → ${loot.destinationText}*`);
-        lines.push(`💠 ${loot.nexus.toLocaleString()} Nexus | 💎 ${loot.crystals.toLocaleString()} Mana Stones`);
-        if (loot.affiliatePayouts && Object.keys(loot.affiliatePayouts).length) {
-          lines.push(``, `🤝 *Affiliate / recruiter payouts:*`);
-          for (const [jid, p] of Object.entries(loot.affiliatePayouts)) {
-            const nm = db.users?.[jid]?.name || jid.split('@')[0];
-            lines.push(`  • *${nm}* — ${p.percent}% → ${p.gold.toLocaleString()} 💠 + ${p.crystals} 💎`);
-          }
-        }
-        if (loot.contractPayouts && Object.keys(loot.contractPayouts).length) lines.push(`📋 Contracts paid out automatically.`);
-
-        if (loot.wildPet && loot.wildPet.token) {
-          lines.push(``, `🐾 *WILD PET APPEARED!*`);
-          lines.push(`${loot.wildPet.emoji} *${loot.wildPet.name}* [${loot.wildPet.rarity.toUpperCase()}]`);
-          lines.push(`🪤 /caught ${loot.wildPet.token} — hurry, it flees in 60s!`);
-        }
-
-        lines.push(``, `💚 *All members: 50% recovery + no cooldown.*`);
-        lines.push(`🚪 *GATE ${gate.id} CLEARED!*`);
-        lines.push(FRAME);
-        if (pro) {
-          const topName = topRaider ? (db.users?.[topRaider[0]]?.name || 'a raider') : 'none';
-          lines.push(UI.PRO_MINI, topRaider && topRaider[0] === sender ? `💎 *PRO SLAYER* — TOP raid damage: ${UI.num(topRaider[1])}! 🔥` : `💎 *PRO SLAYER* — top: ${topName} (${topRaider ? UI.num(topRaider[1]) : 0})`);
-        } else lines.push(UI.upsell());
+        lines.push(...await finishBossDefeat());
       } else {
         let _gDefGR2 = 0;
         try { _gDefGR2 = require('../../rpg/utils/GearSystem').getEquippedBonuses(player).def || 0; } catch (e) {}

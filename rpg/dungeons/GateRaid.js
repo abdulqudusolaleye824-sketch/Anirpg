@@ -27,18 +27,38 @@ function playerDamage(player, skillName = null) {
   const atk = (player.stats?.atk || 10) + _gearAtkGR + (player.weapon?.attack || player.weapon?.bonus || 0);
   const magicPower = player.stats?.magicPower || 0;
   if (skillName) {
-    const skill = (player.skills?.active || []).find(s => s.name === skillName);
-    if (!skill) return { damage: 0, blocked: true, reason: `Skill *${skillName}* not found.` };
-    const cd = player.skills?.cooldowns?.[skillName] || 0;
-    if (Date.now() < cd) return { damage: 0, blocked: true, reason: `*${skillName}* is on cooldown!` };
-    if ((player.stats?.energy || 0) < (skill.energyCost || 0)) return { damage: 0, blocked: true, reason: `Not enough energy for *${skillName}*!` };
-    let dmg = (skill.damage || 20) + Math.floor((atk + magicPower) * 0.5);
+    // SkillCatalog: name / prefix / number, equipped OR library, and it tells
+    // you the level that unlocks a locked skill. The old lookup demanded an
+    // exact hit inside player.skills.active — anything else answered
+    // "Skill *X* not found" (which is what the boss chamber did, and what
+    // every Monster-class player hit constantly).
+    const SC = require('../utils/SkillCatalog');
+    const res = SC.resolveSkill(player, skillName, { allowLibrary: true });
+    if (!res.ok) return { damage: 0, blocked: true, reason: res.error, locked: !!res.locked };
+    const skill = res.skill;
+    const entry = res.entry;
+
+    const cd = SC.onCooldown(player, entry || skill);
+    if (!cd.ready) return { damage: 0, blocked: true, reason: `*${skill.name}* is on cooldown! (${Math.ceil(cd.msLeft / 1000)}s)` };
+    const cost = entry ? SC.effectiveCost(entry) : (skill.energyCost || 0);
+    if ((player.stats?.energy || 0) < cost) return { damage: 0, blocked: true, reason: `Not enough energy for *${skill.name}*! Need ${cost}.` };
+
+    // Skills are a multiplier of ATK (plus magic power for casters), not the
+    // old flat `skill.damage || 20` — that flat number is why a Lv.90 skill
+    // landed like a base attack on the boss.
+    let dmg = SC.computeDamage(player, entry || skill, { includeMagic: magicPower > 0, crit: false });
     const isCrit = Math.random() < (player.stats?.critChance || 2) / 100;
     if (isCrit) dmg = Math.floor(dmg * (player.stats?.critDamage || 150) / 100);
-    player.stats.energy = Math.max(0, (player.stats.energy || 0) - (skill.energyCost || 0));
-    if (!player.skills.cooldowns) player.skills.cooldowns = {};
-    player.skills.cooldowns[skillName] = Date.now() + (skill.cooldown || 3) * 1000;
-    return { damage: dmg, isCrit, skillUsed: skill };
+
+    player.stats.energy = Math.max(0, (player.stats.energy || 0) - cost);
+    SC.setCooldown(player, entry || skill);
+    try { require('../utils/RegenManager').markCombatAction(player); } catch (e) {}
+    return {
+      damage: dmg, isCrit, skillUsed: skill,
+      statuses: (entry && entry.statuses) || skill.statuses || [],
+      healingPct: (entry && entry.healingPct) || 0,
+      buffs: (entry && entry.buffs) || [],
+    };
   }
   let dmg = Math.max(5, atk * (0.85 + Math.random() * 0.30));
   const isCrit = Math.random() < (player.stats?.critChance || 2) / 100;
@@ -565,42 +585,79 @@ function clearGate(gate, key, keyData, db, saveDatabase) {
     wildPet.token = wildToken;
   }
 
+  // ── End-of-raid: recovery + XP for EVERY survivor ───────────────────
+  //   • HP/energy: 50% of MAX is ADDED to whatever they have left. The old
+  //     line SET hp to 50% of max, which healed a dying hunter and damaged a
+  //     healthy one at the same time.
+  //   • Everyone alive at the end gets XP, and LevelUpManager then runs so the
+  //     level-up (UP, stats, skill unlocks) fires on the spot, plus Astra Pass
+  //     and Battle Pass XP. Previously only the final-blow hunter was awarded
+  //     via the boss handler.
+  //   • Regen is locked briefly (RegenManager.endCombat) so the raid does not
+  //     cascade into a full instant recovery the second it ends.
   let recovered = 0;
+  const survivorIds = [];
   const WeeklyGuildWar = require('../utils/WeeklyGuildWar');
+  let RegenMgr = null;
+  try { RegenMgr = require('../utils/RegenManager'); } catch (e) {}
+  let QD = null;
+  try { QD = require('../utils/QuestDispatcher'); } catch (e) {}
+
   for (const m of raiders) {
-    const p = db.users?.[m.id];
+    const p = db.users?.[m.id] || findUserByBare(db, m.id);
+    // Was this hunter standing when the gate closed? Must be read BEFORE the
+    // +50% recovery runs — otherwise a 0-HP corpse is "alive" after being
+    // healed and gets rewarded for a raid they did not survive.
+    const _wasAlive = p ? ((p.stats?.hp || 0) > 0 || (m.hp || 0) > 0) : false;
     if (p) {
       if (!p.stats_history) p.stats_history = {};
       p.stats_history.gatesCleared = (p.stats_history.gatesCleared || 0) + 1;
-      p.stats.hp = Math.min(p.stats.maxHp, Math.floor((p.stats.maxHp || 100) * 0.5));
-      if (p.stats.maxEnergy) p.stats.energy = Math.min(p.stats.maxEnergy, Math.floor(p.stats.maxEnergy * 0.5));
-      if (p.dungeonCooldown) p.dungeonCooldown = 0;
-      recovered++;
+
+      // Down hunters get nothing at all: no recovery, no XP, no pass XP.
+      if (_wasAlive) {
+        const maxHp = p.stats.maxHp || 100;
+        p.stats.hp = Math.min(maxHp, Math.max(0, p.stats.hp || 0) + Math.floor(maxHp * 0.5));
+        if (p.stats.maxEnergy) {
+          p.stats.energy = Math.min(p.stats.maxEnergy, Math.max(0, p.stats.energy || 0) + Math.floor(p.stats.maxEnergy * 0.5));
+        }
+        if (p.dungeonCooldown) p.dungeonCooldown = 0;
+        // Recovery stops here. Rank regen resumes after the short lock window
+        // instead of dumping a full heal the instant the raid ends.
+        if (RegenMgr) RegenMgr.endCombat(p);
+        recovered++;
+
+        // Everyone standing is paid: XP → (LevelUpManager → level-up stats,
+        // upgrade points, skill unlocks) plus Astra Pass and Battle Pass XP,
+        // all inside awardXP(). The final-blow hunter additionally keeps their
+        // boss drop + kill rewards (handled by the caller).
+        survivorIds.push(p.id || m.id);
+        try {
+          const { awardXP } = require('../utils/SilentXP');
+          awardXP(p, 'gate_complete', saveDatabase, null, null);
+        } catch (e) {}
+        if (QD) { try { QD.trackAndNotify(p, 'clear', 1, null, p.id, gate.chatId); } catch (e) {} }
+      }
     }
     const pm = raid.members?.find(x => x.id === m.id);
     if (pm && p) { pm.hp = p.stats.hp; pm.energy = p.stats.energy; }
+  }
 
-  // Award Weekly GP: goes to party leader if alive; if not, shared equally among survivors
+  // Weekly GP: leader if alive, otherwise split among survivors. This block
+  // used to sit INSIDE the member loop, so a 5-man party paid the 300 GP five
+  // times over to the same leader.
   const leaderId = raid.leader || raiders[0]?.id;
-  const leaderUser = db.users?.[leaderId];
+  const leaderUser = db.users?.[leaderId] || findUserByBare(db, leaderId);
   const leaderMember = raid.members?.find(m => m.id === leaderId);
   const leaderAlive = (leaderUser?.stats?.hp || 0) > 0 || (leaderMember?.hp || 0) > 0;
-
-  const survivors = raiders.filter(m => {
-    const u = db.users?.[m.id];
-    return (u?.stats?.hp || 0) > 0 || (m.hp || 0) > 0;
-  });
-
   const totalGP = 300;
 
   if (leaderAlive && leaderId) {
     try { WeeklyGuildWar.addGP(db, leaderId, totalGP, saveDatabase); } catch(e) {}
-  } else if (survivors.length > 0) {
-    const shareGP = Math.max(1, Math.floor(totalGP / survivors.length));
-    for (const surv of survivors) {
-      try { WeeklyGuildWar.addGP(db, surv.id, shareGP, saveDatabase); } catch(e) {}
+  } else if (survivorIds.length > 0) {
+    const shareGP = Math.max(1, Math.floor(totalGP / survivorIds.length));
+    for (const sid of survivorIds) {
+      try { WeeklyGuildWar.addGP(db, sid, shareGP, saveDatabase); } catch(e) {}
     }
-  }
   }
 
   try { if (db && db.activeGates) delete db.activeGates[gate.id]; } catch (e) {}
@@ -622,6 +679,17 @@ function clearGate(gate, key, keyData, db, saveDatabase) {
     nexus, crystals, destinationText, dest, guild,
     contractPayouts, affiliatePayouts, wildPet, recovered, raiders, wildToken,
   };
+}
+
+// Raid members can be keyed under a different JID domain than db.users
+// (@lid vs @s.whatsapp.net). Matching only on the exact string silently
+// skipped recovery + XP for those hunters.
+function findUserByBare(db, jid) {
+  if (!db?.users || !jid) return null;
+  if (db.users[jid]) return db.users[jid];
+  const bare = String(jid).split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
+  if (!bare) return null;
+  return Object.values(db.users).find(u => u && String(u.id || '').split('@')[0].split(':')[0].replace(/[^0-9]/g, '') === bare) || null;
 }
 
 function spawnWildPet(gate) {

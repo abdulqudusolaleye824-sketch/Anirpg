@@ -71,6 +71,17 @@ module.exports = {
     const action = args[0]?.toLowerCase();
     const className = (player.class && typeof player.class==='object') ? player.class.name : (player.class || 'Classless');
     const maxSlots = getMaxSlots(player);
+
+    // SkillCatalog re-derives the loadout BEFORE anything reads it: locked
+    // skills are pushed out of the equipped list and the library, stale copies
+    // are refreshed with current numbers, and skills unlocked by a level gained
+    // anywhere (even mid-raid) appear instantly.
+    try {
+      const SC = require('../../rpg/utils/SkillCatalog');
+      SC.syncPlayerSkills(player);
+      if (!player._skillCatalogSeen && player.skills?.locked?.length) player._skillCatalogSeen = true;
+    } catch (e) { console.warn('[SkillCatalog] /skills sync failed:', e.message); }
+
     const equipped = player.skills?.active || [];
     const library  = player.availableSkills || [];
 
@@ -95,7 +106,7 @@ module.exports = {
 
     // ── LOCKED SKILLS ─────────────────────────────────────────
     if (action === 'locked') {
-      const locked = player.skills?.locked || [];
+      const locked = (player.skills?.locked || []).slice().sort((a, b) => (a.unlocksAtLevel || 0) - (b.unlocksAtLevel || 0));
       if (locked.length === 0) {
         return sock.sendMessage(chatId, { text: '✅ You have unlocked all available skills!' }, { quoted: msg });
       }

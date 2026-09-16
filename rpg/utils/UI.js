@@ -44,9 +44,16 @@ function timer(ms) {
   return `${s}s`;
 }
 
-// Shared XP curve (matches stats.js).
+// Shared XP curve — delegates to the ONE authoritative formula so every bar /
+// "XP: x/y" line on a card reads the same number the level-up code uses.
+// (This used to be 200*level^1.8, which is not the game's curve: the bar said
+// a player was nearly levelled when they were nowhere near it.)
 function xpForLevel(level) {
-  return Math.floor(200 * Math.pow(Math.max(1, Number(level) || 1), 1.8));
+  try {
+    return require('./SoloLevelingCore').getXpRequired(Math.max(1, Number(level) || 1));
+  } catch (e) {
+    return Math.floor(50000 * Math.pow(1.3116, Math.max(1, Number(level) || 1) - 1));
+  }
 }
 
 function upsell() {

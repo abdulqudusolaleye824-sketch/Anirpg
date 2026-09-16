@@ -252,7 +252,9 @@ async function generateProfileCard(player) {
   const en = player.stats?.energy || player.stats?.mana || 0;
   const maxEn = player.stats?.maxEnergy || player.stats?.maxMana || 100;
   const xp = player.xp || 0;
-  const xpNeeded = Math.floor(200 * Math.pow(lvl, 1.8));
+  let xpNeeded;
+  try { xpNeeded = require('./SoloLevelingCore').getXpRequired(lvl); }
+  catch (e) { xpNeeded = Math.floor(50000 * Math.pow(1.3116, Math.max(1, lvl) - 1)); }
 
   const bars = [
     { label:'❤️ HP', cur:hp, max:maxHp, c1:'#c0392b', c2:'#ff6b6b', sub:`${hp.toLocaleString()} / ${maxHp.toLocaleString()}` },

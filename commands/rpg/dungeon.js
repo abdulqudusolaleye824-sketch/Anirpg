@@ -1208,12 +1208,16 @@ module.exports = {
         return sock.sendMessage(chatId, { text: `🩹 *${player.name}* healed *+${heal} HP*!\n❤️ ${player.stats.hp}/${player.stats.maxHp}\n🩹 Potions used: ${party.sharedItems.healthPotionsUsed}/5` }, { quoted: msg });
       }
       if (itemType === 'ep' || itemType === 'energy') {
-        if (player.stats.hp <= 0) return sock.sendMessage(chatId, { text: '❌ You are dead! Use /dungeon item revive first.' }, { quoted: msg });
-        if (!DungeonPartyManager.useItem(party.id, 'energyPotions', 1)) return sock.sendMessage(chatId, { text: '❌ No Energy Potions in party inventory!' }, { quoted: msg });
-        const rest = Math.floor(player.stats.maxEnergy * 0.5);
-        player.stats.energy = Math.min(player.stats.maxEnergy, player.stats.energy + rest);
-        saveDatabase();
-        return sock.sendMessage(chatId, { text: `💙 *${player.name}* restored *+${rest} Energy*!\n💙 ${player.stats.energy}/${player.stats.maxEnergy}` }, { quoted: msg });
+        // Energy potions scrapped: energy is the skill resource and it does not
+        // come back mid-fight at all (rank refill runs OUT of battle only).
+        const RM = require('../../rpg/utils/RegenManager');
+        const rank = player.awakenRank || 'E';
+        return sock.sendMessage(chatId, {
+          text: `❌ *Energy potions no longer exist.*\n` +
+                `${player.energyColor || '💙'} ${player.energyType || 'Energy'} refills *outside* battle only (${RM.getEnergyRegenRate(rank)}/s at ${rank}-Rank).\n` +
+                `Regen is paused inside this dungeon — that is by design.\n` +
+                `${player.energyColor || '💙'} Now: ${player.stats.energy}/${player.stats.maxEnergy}`
+        }, { quoted: msg });
       }
       if (itemType === 'revive') {
         if (player.stats.hp > 0) return sock.sendMessage(chatId, { text: '❌ You are not dead!' }, { quoted: msg });

@@ -128,6 +128,18 @@ class LevelUpManager {
     }
 
     if (levelsGained > 0) {
+      // Leveling up unlocks skills INSTANTLY — no extra tick, no "special"
+      // event, and it works mid-raid/mid-game because this runs inside the
+      // same synchronous call that just raised the level.
+      try {
+        const SC = require('./SkillCatalog');
+        const before = new Set((player.skills?.active || []).concat(player.availableSkills || []).map(s => s.name));
+        SC.syncPlayerSkills(player);
+        for (const s of (player.skills?.active || []).concat(player.availableSkills || [])) {
+          if (!before.has(s.name)) newSkills.push({ name: s.name, damage: s.damage, energyCost: s.energyCost, cooldown: s.cooldown });
+        }
+      } catch (e) { console.warn('[SkillCatalog] post-level-up sync failed:', e.message); }
+
       if (saveDatabase) saveDatabase();
       console.log(`✨ ${player.name} leveled up ${levelsGained} time(s) to Level ${player.level}`);
       
@@ -179,6 +191,25 @@ class LevelUpManager {
   // UNLOCK SKILL - Uses SkillDescriptions.js for complete data
   // ═══════════════════════════════════════════════════════════════
   static unlockSkillForLevel(player, level) {
+    // ── SkillCatalog path ─────────────────────────────────────────
+    // The catalog gives EVERY class the same 20-skill ladder (one unlock per
+    // 5 levels), including the ones the hand-written schedule below never
+    // covered — Monster (and its 50 variant names), Senku, Rogue. Those
+    // players previously got zero skills, so every combat lookup answered
+    // "Skill not found". The schedule stays as a fallback only.
+    try {
+      const SC = require('./SkillCatalog');
+      const roster = SC.getRoster(player);
+      if (roster.length) {
+        SC.syncPlayerSkills(player);
+        const entry = roster.find(e => e.unlocksAtLevel === level);
+        if (!entry) return null;
+        const owned = (player.skills?.active || []).concat(player.availableSkills || []).concat(player.skills?.passive || []);
+        const got = owned.find(s => s.name === entry.name);
+        return got ? { name: got.name, damage: got.damage, energyCost: got.energyCost, cooldown: got.cooldown } : null;
+      }
+    } catch (e) { console.warn('[SkillCatalog] unlockSkillForLevel fell back to schedule:', e.message); }
+
     const className = typeof player.class === 'object' ? player.class.name : player.class;
     
     // Skill unlock schedule: Which skill unlocks at which level
@@ -607,6 +638,18 @@ class LevelUpManager {
   // GRANT MISSING SKILLS (For existing players)
   // ═══════════════════════════════════════════════════════════════
   static grantMissingSkills(player) {
+    // SkillCatalog owns the ladder now: one call re-derives equipped/library/
+    // locked/passive for the player's class + level and prunes stale grants
+    // (e.g. the old "privileged players get every skill" awakening).
+    try {
+      const SC = require('./SkillCatalog');
+      if (SC.getRoster(player).length) {
+        const before = ((player.skills?.active || []).length + (player.availableSkills || []).length);
+        const r = SC.syncPlayerSkills(player);
+        return Math.max(0, r.unlocked - before);
+      }
+    } catch (e) { console.warn('[SkillCatalog] grantMissingSkills fell back:', e.message); }
+
     const currentLevel = player.level;
     
     if (!player.skills) player.skills = { active: [], passive: [] };

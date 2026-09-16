@@ -12,12 +12,39 @@ cd "$(dirname "$0")"
 echo "──────────────────────────────────────────────"
 echo "   Deploying AniRPG — pulling latest code…"
 echo "──────────────────────────────────────────────"
-git pull --ff-only
+# Refuse to pull over local DATA — database.json / auth are runtime state, not
+# source, and a merge conflict there is how a deploy eats a database.
+if ! git diff --quiet -- database auth 2>/dev/null; then
+  echo "❌ Local changes to database/ or auth/ — committing a safety copy first."
+  git add -A database auth 2>/dev/null || true
+  git -c user.email=deploy@local -c user.name=deploy commit -qm "deploy.sh safety commit ($STAMP)" 2>/dev/null || true
+fi
+git pull --ff-only || { echo "❌ git pull failed — NOTHING was restarted. Your running bot and database are untouched."; exit 1; }
 
 echo "──────────────────────────────────────────────"
 echo "   Installing dependencies…"
 echo "──────────────────────────────────────────────"
 npm install --omit=dev
+
+# ═══ DATA SAFETY: snapshot BEFORE anything changes ════════════════════════
+# A deploy must never be the reason your players disappear. Copy the live JSON
+# mirror AND the WhatsApp auth session to disk before the pull, before the
+# kill, before anything can go wrong — so even a bad deploy is recoverable with
+# one cp. (The bot also snapshots hourly/boot on its own; this is the belt.)
+DATA_DIR="${DATA_DIR:-$PWD}"
+SNAP_DIR="$DATA_DIR/deploy-snapshots"
+mkdir -p "$SNAP_DIR"
+STAMP="$(date -u +%Y%m%d-%H%M%SZ)"
+for SRC in "$DATA_DIR/database/database.json" "$DATA_DIR/database/database.json.1"; do
+  [ -f "$SRC" ] && cp -a "$SRC" "$SNAP_DIR/$(basename "$SRC").pre-deploy-$STAMP" && echo "  ✓ snapshotted $(basename "$SRC")"
+done
+if [ -d "$DATA_DIR/auth" ]; then
+  tar czf "$SNAP_DIR/auth.pre-deploy-$STAMP.tgz" -C "$DATA_DIR" auth 2>/dev/null \
+    && echo "  ✓ snapshotted auth/ (WhatsApp sessions)"
+fi
+# keep the newest 20 snapshots, drop the rest
+ls -1t "$SNAP_DIR" 2>/dev/null | tail -n +21 | while read -r F; do rm -f "$SNAP_DIR/$F"; done
+echo "  → snapshots in $SNAP_DIR"
 
 echo "──────────────────────────────────────────────"
 echo "   De-registering old process (if any)…"

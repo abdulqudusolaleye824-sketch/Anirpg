@@ -34,7 +34,6 @@ const CONSUMABLES = [
   {id:1,name:'Lower Health Potion',emoji:'🩹',desc:'Restores 10% HP',cost:800,key:'lowerHealthPotions'},
   {id:2,name:'Medium Health Potion',emoji:'🧪',desc:'Restores 25% HP',cost:5000,key:'mediumHealthPotions'},
   {id:3,name:'Higher Health Potion',emoji:'🍷',desc:'Restores 50% HP',cost:7000,key:'higherHealthPotions'},
-  {id:4,name:'Energy Potion',emoji:'⚡',desc:'Restores 50% Energy',cost:600,key:'energyPotions'},
   {id:5,name:'Revive Token',emoji:'🎫',desc:'Auto-revive once in dungeon',cost:3000,key:'reviveTokens'},
   {id:6,name:'Luck Potion',emoji:'🍀',desc:'+25% catch rate & casino odds',cost:2000,key:'luckPotion'},
   {id:7,name:'XP Booster',emoji:'✨',desc:'+50% XP for 3 battles',cost:5000,key:'xpBooster'},
@@ -398,7 +397,7 @@ ${FRAME}`
         updatePlayerNexus(player,-bundle.cost,null);
         try { require('../../rpg/utils/TransactionLog').logTransaction(player, { type: 'shop_buy', amount: bundle.cost, currency: '💠', note: `${bundle.name || `bundle`}` }); } catch (e) {};
         let received='';
-        if(bundle.id===1){player.inventory.healthPotions=(player.inventory.healthPotions||0)+5;if(player.inventory.energyPotions!==undefined)player.inventory.energyPotions=(player.inventory.energyPotions||0)+5;else player.inventory.manaPotions=(player.inventory.manaPotions||0)+5;player.inventory.reviveTokens=(player.inventory.reviveTokens||0)+1;received='🩹 5 HP Potions\n⚡ 5 Energy Potions\n🎫 1 Revive Token';}
+        if(bundle.id===1){player.inventory.healthPotions=(player.inventory.healthPotions||0)+5;player.inventory.reviveTokens=(player.inventory.reviveTokens||0)+1;received='🩹 5 HP Potions\n🎫 1 Revive Token';}
         else if(bundle.id===2){player.inventory.healthPotions=(player.inventory.healthPotions||0)+10;player.inventory.reviveTokens=(player.inventory.reviveTokens||0)+5;player.inventory.items.push({name:'XP Booster',type:'Consumable',isXpBooster:true,charges:3});received='🩹 10 HP Potions\n🎫 5 Revive Tokens\n✨ 1 XP Booster';}
         else if(bundle.id===3){player.inventory.items.push({name:'Elixir of Might',type:'Consumable',isMightElixir:true,charges:5,atkBonus:20});player.inventory.items.push({name:'Shield Scroll',type:'Consumable',isShieldScroll:true});player.inventory.items.push({name:'Luck Potion',type:'Consumable',isLuckPotion:true});player.inventory.items.push({name:'Luck Potion',type:'Consumable',isLuckPotion:true});received='💪 Elixir of Might\n🛡️ Shield Scroll\n🍀 2 Luck Potions';}
         else if(bundle.id===4){player.manaCrystals=(player.manaCrystals||0)+200;player.summonTickets=(player.summonTickets||0)+3;received='💎 200 Mana Stones\n🎟️ 3 Summon Tickets';}

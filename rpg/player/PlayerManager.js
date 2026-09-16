@@ -848,7 +848,8 @@ class PlayerManager {
   }
 
   static calculateLevelUpXP(level) {
-    return Math.floor(200 * Math.pow(level, 1.8));
+    try { return require('../utils/SoloLevelingCore').getXpRequired(level); }
+    catch (e) { return Math.floor(50000 * Math.pow(1.3116, Math.max(1, level) - 1)); }
   }
 
   static applyLevelUp(player) {

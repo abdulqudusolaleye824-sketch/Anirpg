@@ -130,9 +130,23 @@ module.exports = {
                 : quality >= 30 ? '⭐⭐'
                 : '⭐';
 
-    const rawSkills = (player.classSkills || data.skills || []);
+    // Only skills the player has actually UNLOCKED are listed. classSkills used
+    // to dump the whole class kit regardless of level, which is what made the
+    // co-owner look like "all skills unlocked after awakening".
+    let SCc = null;
+    try { SCc = require('../../rpg/utils/SkillCatalog'); SCc.syncPlayerSkills(player); } catch (e) {}
+    let rawSkills;
+    if (SCc && SCc.getRoster(player).length) {
+      rawSkills = SCc.unlockedSkills(player).concat(SCc.passiveSkills(player));
+    } else {
+      rawSkills = (player.classSkills || data.skills || []).filter(s => {
+        const need = s.unlocksAtLevel || s.unlockedAt || 0;
+        return !need || (player.level || 1) >= need;
+      });
+    }
+    const _clsName = SCc ? SCc.canonicalClassName(player) : (typeof player.class === 'object' ? player.class?.name : player.class);
     const skillLines = rawSkills.map((s, i) => {
-      const sd = getSkillDescription(player.class, s.name) || {};
+      const sd = getSkillDescription(_clsName, s.name) || {};
       const desc = s.desc || sd.description || 'No description.';
       const eff = sd.effect ? `\n     ✨ ${sd.effect.replace(/\n/g, '\n     ')}` : '';
       return `  ${i+1}. *${s.name}*\n     ${desc}${eff}`;
