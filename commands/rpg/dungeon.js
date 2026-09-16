@@ -798,6 +798,25 @@ module.exports = {
         if (lsPctSolo > 0) {
           const healLS = Math.floor(playerDmg * lsPctSolo);
           if (healLS > 0) { player.stats.hp = Math.min(player.stats.maxHp, player.stats.hp + healLS); log += `💚 Lifesteal: +${healLS} HP\n`; }
+
+        // Push #55: the pet fights this round too — attack pets land their own
+        // ability, support pets mend, and a clear pays the scavenger + pet XP.
+        try {
+          const PetCombat = require('../../rpg/utils/PetCombat');
+          const _st = PetCombat.abilityStrike(sender, monster.stats);
+          if (_st?.damage) { monster.stats.hp = Math.max(0, (monster.stats.hp || 0) - _st.damage); log += _st.line + '\n'; }
+          const _ph = PetCombat.healPlayer(sender, player);
+          if (_ph.healed > 0) log += `💚 *${_ph.petName}* mended *${_ph.healed}* HP\n`;
+          if ((monster.stats.hp || 0) <= 0) {
+            const _pr = PetCombat.rewardPet(sender, { won: true, exp: 25 + (monster.level || 1) * 5 });
+            if (_pr) log += _pr.join('\n') + '\n';
+            const _sv = PetCombat.scavenge(sender, monster.rewardGold || monster.gold || 500);
+            if (_sv.bonus > 0) {
+              player.gold = (player.gold || 0) + _sv.bonus;
+              log += `🐾 *${_sv.pet?.nickname || _sv.pet?.name || 'Scavenger'}* dug up *${_sv.bonus.toLocaleString()}* Nexus\n`;
+            }
+          }
+        } catch (e) {}
         }
 
         monster.stats.hp = Math.max(0, monster.stats.hp - playerDmg);
@@ -951,6 +970,24 @@ module.exports = {
       if (lsPct > 0) {
         const heal = Math.floor(dmg * lsPct);
         if (heal > 0) { player.stats.hp = Math.min(player.stats.maxHp, player.stats.hp + heal); log += `💚 Lifesteal: +${heal} HP\n`; }
+        // Push #55: the pet fights this round too — attack pets land their own
+        // ability, support pets mend, and a clear pays the scavenger + pet XP.
+        try {
+          const PetCombat = require('../../rpg/utils/PetCombat');
+          const _st = PetCombat.abilityStrike(sender, monster.stats);
+          if (_st?.damage) { monster.stats.hp = Math.max(0, (monster.stats.hp || 0) - _st.damage); log += _st.line + '\n'; }
+          const _ph = PetCombat.healPlayer(sender, player);
+          if (_ph.healed > 0) log += `💚 *${_ph.petName}* mended *${_ph.healed}* HP\n`;
+          if ((monster.stats.hp || 0) <= 0) {
+            const _pr = PetCombat.rewardPet(sender, { won: true, exp: 25 + (monster.level || 1) * 5 });
+            if (_pr) log += _pr.join('\n') + '\n';
+            const _sv = PetCombat.scavenge(sender, monster.rewardGold || monster.gold || 500);
+            if (_sv.bonus > 0) {
+              player.gold = (player.gold || 0) + _sv.bonus;
+              log += `🐾 *${_sv.pet?.nickname || _sv.pet?.name || 'Scavenger'}* dug up *${_sv.bonus.toLocaleString()}* Nexus\n`;
+            }
+          }
+        } catch (e) {}
       }
 
       monster.stats.hp -= dmg;

@@ -592,19 +592,36 @@ async function resolveTurn(sock, chatId, p1, p2, db, saveDatabase) {
     res2 = { damage: 0, missed: false, crit: false, effective: 'skipped', _skipped: true };
   }
 
+  // Push #55: pets fight in the arena. Before this, PvP only ever called
+  // checkPetSacrifice — ATK bonuses, support heals and abilities did nothing.
+  const PetCombat = require('../../rpg/utils/PetCombat');
+  let _pet1 = null, _pet2 = null;
+  try { _pet1 = PetCombat.abilityStrike(id1, p2.stats ? p2 : null); } catch (e) {}
+  try { _pet2 = PetCombat.abilityStrike(id2, p1.stats ? p1 : null); } catch (e) {}
+
   if (!p1Skipped && m1) {
     res1 = UC.calcMoveDamage(p1, p2, m1);
+    try {
+      const _a = PetCombat.atkBonus(id1) || 0;
+      if (_a > 0) res1.damage = Math.max(1, (res1.damage || 0) + _a);
+      if (_pet1?.damage) { res1.damage = Math.max(1, (res1.damage || 0) + _pet1.damage); res1.petLine = _pet1.line; }
+    } catch (e) {}
     if (m1.id) UC.setCooldown(p1, m1.id, m1);
     if (m1.id) { try { require('../../rpg/utils/QuestDispatcher').trackAndNotify(p1, 'pattern', 1, sock, id1, chatId); } catch(e){} }
   }
   if (!p2Skipped && m2) {
     res2 = UC.calcMoveDamage(p2, p1, m2);
+    try {
+      const _a = PetCombat.atkBonus(id2) || 0;
+      if (_a > 0) res2.damage = Math.max(1, (res2.damage || 0) + _a);
+      if (_pet2?.damage) { res2.damage = Math.max(1, (res2.damage || 0) + _pet2.damage); res2.petLine = _pet2.line; }
+    } catch (e) {}
     if (m2.id) UC.setCooldown(p2, m2.id, m2);
     if (m2.id) { try { require('../../rpg/utils/QuestDispatcher').trackAndNotify(p2, 'pattern', 1, sock, id2, chatId); } catch(e){} }
   }
 
-  const p1Spd = (p1.stats?.speed || 50) * (m1?.speedMult || 1);
-  const p2Spd = (p2.stats?.speed || 50) * (m2?.speedMult || 1);
+  const p1Spd = ((p1.stats?.speed || 50) + (PetCombat.spdBonus(id1) || 0)) * (m1?.speedMult || 1);
+  const p2Spd = ((p2.stats?.speed || 50) + (PetCombat.spdBonus(id2) || 0)) * (m2?.speedMult || 1);
   const p1First = p1Spd > p2Spd || (p1Spd === p2Spd && Math.random() < 0.5);
   const order = p1First ? [{p:p1,opp:p2,move:m1,res:res1,name:name1,oppName:name2,skipped:p1Skipped,skipMsg:skipMsg1},
                            {p:p2,opp:p1,move:m2,res:res2,name:name2,oppName:name1,skipped:p2Skipped,skipMsg:skipMsg2}]
@@ -644,6 +661,18 @@ async function resolveTurn(sock, chatId, p1, p2, db, saveDatabase) {
       });
       o._sent = true; // the 5 messages are already live — don't resend below
       segment = pt.texts.join('\n');
+      // Push #55: pet ability line + support-pet mend for the round.
+      const _petMsg = [];
+      try { if (o.res?.petLine) _petMsg.push(o.res.petLine); } catch (e) {}
+      try {
+        const _pid = (o.p === p1 ? id1 : id2);
+        const _ph = PetCombat.healPlayer(_pid, o.p);
+        if (_ph.healed > 0) _petMsg.push(`💚 *${o.name}'s ${_ph.petName}* mended *${_ph.healed}* HP → ${_ph.hp}/${o.p.stats?.maxHp || 100}`);
+      } catch (e) {}
+      if (_petMsg.length) {
+        segment += `\n${_petMsg.join('\n')}`;
+        try { await sock.sendMessage(chatId, { text: _petMsg.join('\n'), mentions: [id1, id2] }); } catch (e) {}
+      }
       const tickLogs = UC.tickStatuses(o.opp);
       const selfTick = UC.tickStatuses(o.p);
       const _ticks = [...tickLogs, ...selfTick];

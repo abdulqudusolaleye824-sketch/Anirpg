@@ -27,6 +27,30 @@ const AIHandler          = require('./AIHandler');
 const SerfManager        = require('../rpg/utils/SerfManager');
 const Perms              = require('../utils/permissions');
 const QRCode             = require('qrcode');
+
+// ── Push #55: config.json was read from disk and JSON.parsed for EVERY
+// inbound message on EVERY bot — 5 sockets meant 5 synchronous fs reads in the
+// hot path, which stalls the event loop (and therefore reply latency) under
+// group load. Memoised with an mtime check so config edits still apply
+// within a second.
+let _cfgCache = null, _cfgMtime = 0, _cfgAt = 0;
+function readConfigCached() {
+  const file = path.join(__dirname, '..', 'config.json');
+  const now = Date.now();
+  try {
+    if (!_cfgCache || now - _cfgAt > 1000) {
+      const mt = fs.statSync(file).mtimeMs;
+      if (!_cfgCache || mt !== _cfgMtime) {
+        _cfgCache = JSON.parse(fs.readFileSync(file, 'utf-8'));
+        _cfgMtime = mt;
+      }
+      _cfgAt = now;
+    }
+  } catch (e) {
+    if (!_cfgCache) _cfgCache = { prefix: '/', ownerId: 'admin' };
+  }
+  return _cfgCache;
+}
 const QRTerminal = (()=>{ try { return require('qrcode-terminal'); } catch(e){ return null; } })();
 // NOTE: native interactive buttons are back (utils/buttons) — relayed with the
 // stanza nodes WhatsApp requires (biz/interactive + the DM bot node), so they
@@ -67,6 +91,112 @@ const reconnectAttempts = {};
 const _bootParams = {};   // personalityKey -> { authDir, getDatabase, saveDatabase, options }
 const _connecting = new Set(); // keys with a connect already in flight
 const _loggedOut = new Set();  // keys WhatsApp logged out (need manual relink — never auto-reconnect)
+const _startInflight = new Set(); // keys mid-startAstraLink (single-flight guard)
+// Push #55: every socket gets a generation number for its personality. A
+// superseded socket's `close` event used to fall into the shared handler and
+// `delete botSockets[personalityKey]` — i.e. the zombie unregistered the LIVE
+// socket, leaving a connected-but-unroutable bot (silent groups, /switch
+// dead, reconnect churn). Superseded sockets now ignore their own events.
+const _socketGen = Object.create(null);
+
+// ═══════════════════════════════════════════════════════════════
+// Push #55 — is a bot ACTUALLY usable, or just "connected"?
+//
+// This is what made whole groups go silent. Routing decisions (which bot
+// answers a group, who owns /switch) trusted `socket.user.id`, which Baileys
+// keeps populated after the account is blocked, rate-limited, or the websocket
+// has quietly died. So one zombie bot owned every group in the process and
+// nobody answered — and /switch, the escape hatch, was also owned by that
+// zombie (only the mentioned bot handles it), so the group could not even
+// recover itself.
+//
+// Usability now means: a live socket, an open websocket, and sends that
+// actually land. Failures are counted per bot and a bot with a run of failed
+// sends is skipped until it proves itself again.
+// ═══════════════════════════════════════════════════════════════
+const _sendHealth = Object.create(null); // key -> { fail, lastFailAt, lastOkAt, lastErr }
+const SEND_FAIL_THRESHOLD = Number(process.env.BOT_SEND_FAIL_THRESHOLD || 3);
+const SEND_COOLDOWN_MS    = Number(process.env.BOT_SEND_COOLDOWN_MS || 90 * 1000);
+const STALL_SCAN_MS       = Number(process.env.BOT_STALL_SCAN_MS || 45 * 1000);
+const STALL_KILL_MS       = Number(process.env.BOT_STALL_KILL_MS || 4 * 60 * 1000);
+
+function markSendResult(key, ok, err) {
+  if (!key) return;
+  const h = _sendHealth[key] || (_sendHealth[key] = { fail: 0, lastFailAt: 0, lastOkAt: 0, lastErr: null });
+  if (ok) { h.fail = 0; h.lastOkAt = Date.now(); h.lastErr = null; return; }
+  h.fail = (h.fail || 0) + 1;
+  h.lastFailAt = Date.now();
+  h.lastErr = String(err?.message || err || '').slice(0, 160);
+}
+
+function _wsReady(key) {
+  const s = botSockets[key];
+  if (!s) return false;
+  try {
+    const rs = s.ws?.readyState;
+    if (rs != null) return rs === 1; // WebSocket.OPEN
+    const st = s.connectionState?.connection;
+    if (st) return st === 'open';
+    return true; // no introspection available — trust user.id as before
+  } catch (e) { return true; }
+}
+
+function isBotUsable(key) {
+  const s = botSockets[key];
+  if (!s || !s.user?.id) return false;
+  if (_loggedOut.has(key)) return false;
+  if (!_wsReady(key)) return false;
+  const h = _sendHealth[key];
+  if (h && h.fail >= SEND_FAIL_THRESHOLD && (Date.now() - (h.lastFailAt || 0)) < SEND_COOLDOWN_MS) return false;
+  return true;
+}
+
+function botHealthReport() {
+  return Object.keys(botSockets).sort().map(k => ({
+    key: k,
+    online: !!botSockets[k]?.user?.id,
+    usable: isBotUsable(k),
+    wsOpen: _wsReady(k),
+    sendFails: _sendHealth[k]?.fail || 0,
+    lastErr: _sendHealth[k]?.lastErr || null,
+    lastOkAt: _sendHealth[k]?.lastOkAt || 0,
+  }));
+}
+
+// A half-dead socket is worse than a dead one: it holds the groups and answers
+// nothing. If a bot has had no successful send and no inbound traffic for
+// STALL_KILL_MS while its websocket looks open, end() it so Baileys reconnects.
+let _stallSweeper = null;
+function startStallSweeper(ctx) {
+  if (_stallSweeper) return;
+  _stallSweeper = setInterval(() => {
+    try {
+      for (const key of Object.keys(botSockets)) {
+        const s = botSockets[key];
+        if (!s || !s.user?.id || _loggedOut.has(key)) continue;
+        const h = _sendHealth[key] || {};
+        const lastOk = Math.max(h.lastOkAt || 0, key === '_lastRecv' ? 0 : 0);
+        const idle = Date.now() - (lastOk || (h.firstSeenAt || 0));
+        if (lastOk && idle > STALL_KILL_MS && _wsReady(key)) {
+          console.log(`🩺 AstraLink [${key}] no successful send for ${Math.round(idle / 1000)}s — forcing a reconnect of the stalled socket`);
+          try { s.ev?.removeAllListeners?.(); } catch (e) {}
+          try { s.end(new Error('stalled')); } catch (e) {}
+          try { delete botSockets[key]; } catch (e) {}
+          _scheduleReconnect(key, 2500, 'stalled socket recycled');
+          _sendHealth[key] = { fail: 0, lastFailAt: 0, lastOkAt: 0, lastErr: null };
+        } else if (!lastOk && !h.firstSeenAt) {
+          (_sendHealth[key] = h).firstSeenAt = Date.now();
+        }
+      }
+    } catch (e) { console.error('stall sweeper error:', e.message); }
+  }, STALL_SCAN_MS);
+  try { _stallSweeper.unref?.(); } catch (e) {}
+}
+
+function clearSendHealth(key) {
+  if (key) { delete _sendHealth[key]; return; }
+  for (const k of Object.keys(_sendHealth)) delete _sendHealth[k];
+}
 
 // ═══════════════════════════════════════════════════════════════
 // Push #50 — stop a *losing* process from destroying a good session
@@ -206,8 +336,50 @@ function _credsRegistered(authDir, personalityKey) {
 }
 
 function getFirstOnlineSocketKey() {
-  const keys = Object.keys(botSockets).filter(k => !!botSockets[k]?.user?.id).sort();
-  return keys[0] || null;
+  // Push #55: prefer a bot whose sends actually land. A zombie that still
+  // reports user.id must never be the default responder for every group.
+  const online = Object.keys(botSockets).filter(k => !!botSockets[k]?.user?.id).sort();
+  const usable = online.filter(isBotUsable);
+  return usable[0] || online[0] || null;
+}
+
+function getFirstUsableSocketKey() {
+  const usable = Object.keys(botSockets).filter(k => isBotUsable(k)).sort();
+  return usable[0] || getFirstOnlineSocketKey();
+}
+
+/**
+ * Which bot owns this chat right now. Falls over to another live bot when the
+ * configured active bot is logged out, half-dead or failing to send — and
+ * persists the takeover so all five sockets agree immediately instead of every
+ * bot waiting for a bot that will never answer.
+ */
+const _takeoverAt = new Map(); // chatId -> when we last re-assigned it (no per-message writes)
+const TAKEOVER_COOLDOWN_MS = 60 * 1000;
+
+function resolveResponderKey(chatId, isGroup) {
+  const raw = isGroup ? PersonalityManager.getActiveBot(chatId) : null;
+  if (raw && isBotUsable(raw)) return raw;
+
+  // Prefer a bot that is actually IN this group — a live bot that is not a
+  // member cannot reply here, so promoting it would just move the silence.
+  let present = [];
+  try { present = (PersonalityManager.getPresentBots(chatId) || []).filter(isBotUsable); } catch (e) {}
+  const alt = present.sort()[0] || getFirstUsableSocketKey();
+
+  if (alt && isGroup && alt !== raw && (Date.now() - (_takeoverAt.get(chatId) || 0)) > TAKEOVER_COOLDOWN_MS) {
+    _takeoverAt.set(chatId, Date.now());
+    // Only persist when the new bot is verifiably in the group.
+    if (present.includes(alt)) {
+      try {
+        if (typeof PersonalityManager.switchBot === 'function') PersonalityManager.switchBot(chatId, alt);
+        console.log(`🔀 [${chatId.split('@')[0]}] active bot ${raw || 'none'} is not answering → handed the group to *${alt}*`);
+      } catch (e) {}
+    } else {
+      console.log(`🔀 [${chatId.split('@')[0]}] active bot ${raw || 'none'} is not answering → answering via *${alt}* (no linked bot in this group is verified present)`);
+    }
+  }
+  return alt;
 }
 
 function getHostSocket() {
@@ -461,9 +633,37 @@ async function startAstraLink(personalityKey, authDir, getDatabase, saveDatabase
     return { success: false, error: `${PersonalityManager.getDisplayName(personalityKey)} is already online.` };
   }
 
+  // Push #55 — two bugs that made AstraLink QR codes "not work":
+  //  (a) Every /api/qr poll that found no QR yet called startAstraLink again
+  //      with forceRelink, which ENDED the socket that was mid-pairing and
+  //      deleted its keys. The QR on screen belonged to a dead socket, so the
+  //      scan never completed. A pairing already in flight is now reused.
+  //  (b) end() left the old socket's listeners attached, so its close handler
+  //      scheduled ANOTHER connectBot for the same personality. Two sockets on
+  //      one number → WhatsApp kills the loser with 401 → the bot "unlinks
+  //      itself", and the reconnect churn stalls every reply (this is the
+  //      slowness). A superseded socket must ignore its own close event.
+  const _ps = pairingSessions[personalityKey];
+  const _inflight = _ps && ['starting', 'awaiting_qr', 'code_ready', 'connecting'].includes(_ps.status)
+    && (Date.now() - (_ps.startedAt || 0)) < 5 * 60 * 1000;
+  if (_inflight && !options.abandonSession) {
+    return {
+      success: true, reused: true, personality: personalityKey,
+      method: _ps.method || method, hasQr: !!_ps.qr, hasCode: !!_ps.code, status: _ps.status,
+    };
+  }
+  if (_startInflight.has(personalityKey)) {
+    return { success: true, reused: true, personality: personalityKey, status: 'starting' };
+  }
+  _startInflight.add(personalityKey);
+  try { setTimeout(() => _startInflight.delete(personalityKey), 10000).unref(); } catch (e) { _startInflight.delete(personalityKey); }
+
   const botAuthDir = path.join(authDir, personalityKey);
   try {
     if (botSockets[personalityKey]) {
+      // Push #55: drop the listeners FIRST so the dying socket cannot delete
+      // or reconnect the replacement we are about to create.
+      try { botSockets[personalityKey].ev?.removeAllListeners?.(); } catch (_) {}
       try { botSockets[personalityKey].end(undefined); } catch (_) {}
       delete botSockets[personalityKey];
     }
@@ -626,6 +826,9 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
     ? makeCacheableSignalKeyStore(state.keys, pino({ level: 'silent' }))
     : state.keys;
 
+  startStallSweeper();
+  _socketGen[personalityKey] = (_socketGen[personalityKey] || 0) + 1;
+  const _myGen = _socketGen[personalityKey];
   const sock = makeWASocket({
     version,
     logger: pino({ level: 'silent' }),
@@ -690,7 +893,15 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
           return null;
         }
       } catch (e) {}
-      const _res = await _rawSend(jid, content, options);
+      let _res;
+      try {
+        _res = await _rawSend(jid, content, options);
+        try { markSendResult(personalityKey, true); } catch (e) {}
+      } catch (e) {
+        // A failing send is the only reliable proof a "connected" bot is mute.
+        try { markSendResult(personalityKey, false, e); } catch (__) {}
+        throw e;
+      }
       try { _recordSentId(_res?.key?.id); } catch (e) {}
       return _res;
     };
@@ -750,10 +961,18 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
     }
 
     if (connection === 'close') {
+      // Push #55: this event may belong to a socket we already replaced
+      // (startAstraLink / a relink / /restart). Reacting to it used to delete
+      // the CURRENT socket and schedule a second connect for the same number.
+      if (_socketGen[personalityKey] !== _myGen) {
+        console.log(`🧟 AstraLink [${displayName}] ignored a close event from a superseded socket (gen ${_myGen} vs live ${_socketGen[personalityKey]})`);
+        try { sock.ev.removeAllListeners(); } catch (e) {}
+        return;
+      }
       const code = lastDisconnect?.error?.output?.statusCode;
       const isLoggedOut = code === DisconnectReason.loggedOut || code === 401;
       const restartRequired = code === DisconnectReason.restartRequired || code === 515;
-      delete botSockets[personalityKey];
+      if (botSockets[personalityKey] === sock) delete botSockets[personalityKey];
 
       let credsRegistered = false;
       try {
@@ -988,7 +1207,7 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
     const db = getDatabase();
     const bareSender = String(sender).split('@')[0];
 
-    const config = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'config.json'), 'utf-8'));
+    const config = readConfigCached();
     const isCommand = messageText.startsWith(config.prefix);
 
     // Sibling-bot loop prevention for non-command messages (e.g. AI chat).
@@ -1021,9 +1240,12 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
     const isBootstrap = BOOTSTRAP_COMMANDS.has(commandName);
 
     // Active bot determination with strict /start and /switch handling
+    // Push #55: the "active bot" is now whoever can ACTUALLY reply, not
+    // whoever the mapping happens to name. See resolveResponderKey.
     const rawActiveKey = isGroup ? PersonalityManager.getActiveBot(chatId) : null;
-    const isOnlineActive = rawActiveKey && !!(botSockets[rawActiveKey]?.user?.id);
-    const activeKey = isOnlineActive ? rawActiveKey : null;
+    const responderKey = isGroup ? resolveResponderKey(chatId, true) : personalityKey;
+    const isOnlineActive = !!responderKey;
+    const activeKey = responderKey;
     // Push #24: /stop means SILENCE (bootstrap commands still handled below so the group can be reactivated).
     const isStopped = isGroup && PersonalityManager.isStopped && PersonalityManager.isStopped(chatId);
 
@@ -1040,6 +1262,10 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
         const _onlineList = () => Object.keys(botSockets).filter(k=>botSockets[k]?.user?.id).sort().join(', ') || 'none';
         // EVERY socket runs this block, so every live bot sends the chorus.
         const _offlineChorus = async (why) => {
+          // Push #55: one voice answers, not five (the chorus was 5 identical
+          // messages per bad command AND 5 blocks of duplicated work per group
+          // message — a real share of the "bot is slow" symptom).
+          if (personalityKey !== getFirstUsableSocketKey()) return;
           try {
             await sock.sendMessage(chatId, {
               text: `🚫 *THAT BOT IS OFFLINE*\n\n${why}\nThe /${commandName} command couldn't be processed.\n\n📋 *Online bots:* ${_onlineList()}\n\nTry */bots* to see all personalities.`,
@@ -1062,7 +1288,14 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
         }
 
         // Mentioned target bot IS online -> ONLY mentioned bot handles this /start or /switch!
-        isTargetMentionedBot = (personalityKey === resolvedTarget);
+        // Push #55: normally the mentioned bot acknowledges its own /switch.
+        // If that bot is half-dead (user.id set, sends never land) the switch
+        // used to die with it — which is how a banned bot muted every group and
+        // /switch could not rescue it. Now the responding bot performs the
+        // switch instead, so the escape hatch never depends on the broken bot.
+        isTargetMentionedBot = isBotUsable(resolvedTarget)
+          ? (personalityKey === resolvedTarget)
+          : (personalityKey === responderKey);
       }
     }
 
@@ -1089,19 +1322,18 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
     } else if (isCommand) {
       if (isStopped && !isBootstrap) {
         isActive = false;
-      } else if (isOnlineActive) {
-        isActive = (personalityKey === activeKey);
       } else {
-        const firstKey = getFirstOnlineSocketKey();
-        isActive = (personalityKey === firstKey);
+        // Failover is baked into activeKey now: a dead "active" bot can no
+        // longer mute a group, and no second bot duplicates the reply.
+        isActive = (personalityKey === (activeKey || getFirstUsableSocketKey()));
       }
     } else {
-      // AI chat messages
-      if (isOnlineActive) {
-        isActive = (personalityKey === activeKey);
-      } else {
-        isActive = false;
-      }
+      // AI chat stays stricter than commands: only the group's OWN bot chats,
+      // and only while it can actually send. A group that was never activated
+      // must not start receiving replies from some other online bot — and a
+      // group whose bot went quiet goes back to chat-only silence instead of
+      // being adopted by a bot nobody asked for.
+      isActive = !!(rawActiveKey && isBotUsable(rawActiveKey)) && (personalityKey === rawActiveKey);
     }
 
     if (isGroup) {
@@ -1473,14 +1705,23 @@ async function sendHiChorus(chatId, responses, quotedMsg) {
 
 function getActiveSocket(chatId) {
   const PersonalityManager = require('./PersonalityManager');
+  // Push #55: send through the active bot only when it can actually send.
   const activeKey = PersonalityManager.getActiveBot(chatId);
-  if (activeKey && botSockets[activeKey]?.user?.id) return botSockets[activeKey];
+  if (activeKey && isBotUsable(activeKey)) return botSockets[activeKey];
   return getAnySocket();
 }
 
 module.exports = {
   connectBot,
   startAstraLink,
+  // Push #55: bot liveness / health
+  isBotUsable,
+  getFirstUsableSocketKey,
+  botHealthReport,
+  clearSendHealth,
+  markSendResult,
+  startStallSweeper,
+  readConfigCached,
   getPairingSession,
   listPairingSessions,
   getSocket,

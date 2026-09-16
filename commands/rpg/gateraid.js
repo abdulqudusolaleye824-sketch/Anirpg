@@ -14,6 +14,7 @@
 'use strict';
 
 const GR = require('../../rpg/dungeons/GateRaid');
+const PetCombat = require('../../rpg/utils/PetCombat');
 const { GateManager, GATE_RANKS } = require('../../rpg/dungeons/GateManager');
 const { AuraSystem } = require('../../rpg/utils/AuraSystem');
 const LevelUpManager = require('../../rpg/utils/LevelUpManager');
@@ -495,6 +496,16 @@ module.exports = {
       } else {
         const useSkill = action === 'skill' ? skillArg : null;
         result = GR.playerDamage(player, useSkill);
+        // Push #55: pets count in the general attack flow as well (this is the
+        // path /attack and /skill take outside /party).
+        try {
+          const _pba = PetCombat.atkBonus(sender) || 0;
+          if (_pba > 0) result.damage = Math.max(1, (result.damage || 0) + _pba);
+          if (target && !result.blocked) {
+            const _st = PetCombat.abilityStrike(sender, target);
+            if (_st) { result.damage = Math.max(1, (result.damage || 0) + _st.damage); result.petLine = _st.line; }
+          }
+        } catch (e) {}
       }
       if (result.blocked) return sock.sendMessage(chatId, { text: `❌ ${result.reason}` }, { quoted: msg });
 
@@ -547,6 +558,14 @@ module.exports = {
         return sock.sendMessage(chatId, { text: bossLines.filter(Boolean).join('\n') }, { quoted: msg });
       }
 
+      // Push #55: the pet's own strike lands in the same round (attack pets
+      // used to be a flat ATK number and nothing else).
+      let _petStrike = null, _petLines = [];
+      try {
+        _petStrike = PetCombat.abilityStrike(sender, target);
+        if (_petStrike) _petLines.push(_petStrike.line);
+      } catch (e) {}
+
       if (target.hp <= 0) {
         // The 5 strike messages are already live — rewards go in their own message.
         const killLines = [];
@@ -563,6 +582,12 @@ module.exports = {
 
         const dropLines = GR.monsterKilledBy(gate, target, sender, db);
         if (dropLines.length) killLines.push(...dropLines);
+
+        // Push #55: the pet earns XP from the kill (bonding + evolution path)
+        try {
+          const _pr = PetCombat.rewardPet(sender, { won: true, exp: 20 + (target.level || 1) * 6 });
+          if (_pr) killLines.push(..._pr);
+        } catch (e) {}
 
         const remaining = floorMonsters.filter(mm => !mm.defeated).length;
         killLines.push(``, `👾 *${Math.max(0, remaining)}* monsters remaining on Floor ${floor}`);
@@ -592,7 +617,7 @@ module.exports = {
       try { _monCanAct = require('../../rpg/utils/UnifiedCombat').canAct({ statusEffects: target.statusEffects || [] }); } catch(e){}
       let _gDefGR = 0;
       try { _gDefGR = require('../../rpg/utils/GearSystem').getEquippedBonuses(player).def || 0; } catch (e) {}
-      const def = (player.stats?.def || 5) + (player.weapon?.defense || 0) + _gDefGR;
+      const def = (player.stats?.def || 5) + (player.weapon?.defense || 0) + _gDefGR + (PetCombat.defBonus(sender) || 0);
       const dmg = _monCanAct.canAct ? GR.monsterDamage(target, def) : 0;
 
       const skillPool = [
@@ -680,6 +705,13 @@ module.exports = {
         ...(pro ? [FRAME] : [FRAME, UI.upsell()]),
       ];
 
+      // Push #55: support pets actually heal now, and any pet line the round
+      // produced (ability strike) gets shown instead of vanishing.
+      try {
+        const _ph = PetCombat.healPlayer(sender, player);
+        if (_ph.healed > 0) msg3Lines.push(`💚 *${_ph.petName || 'Pet'}* mended *${_ph.healed}* HP → ${_ph.hp}/${player.stats.maxHp}`);
+      } catch (e) {}
+      if (_petLines.length && target.hp > 0) msg3Lines.push(..._petLines);
       try { GR.saveGateState(db, gate); } catch (e) {}
       saveDatabase();
       return sock.sendMessage(chatId, {
@@ -708,7 +740,7 @@ module.exports = {
         if (topRaider && topRaider[0] === sender) AuraSystem.addAura(player, 'topRaider');
 
         awardXP(player, 'gate_boss', saveDatabase, sock, chatId);
-        try { const BRb=require('../../rpg/utils/BattleRewards'); const wb=BRb.giveBattleWinRewards(player, db, 'gate', player.level, sock, chatId); lines.push(BRb.formatRewards(wb)); } catch(e){}
+        try { const BRb=require('../../rpg/utils/BattleRewards'); const wb=BRb.giveBattleWinRewards(player, db, 'gate', player.level, sock, chatId); out.push(BRb.formatRewards(wb)); } catch(e){}
 
         // Final-blow boss loot → the killer
         const bossDropLines = [];
@@ -723,31 +755,50 @@ module.exports = {
 
         out.push(``, `💀 *${boss.name}* HAS BEEN DEFEATED!`, ``);
         out.push(`🔥 Aura gained!`);
-        if (bossDropLines.length) lines.push(...bossDropLines);
+        if (bossDropLines.length) out.push(...bossDropLines);
         out.push(``, `🎁 *LOOT → ${loot.destinationText}*`);
         out.push(`💠 ${loot.nexus.toLocaleString()} Nexus | 💎 ${loot.crystals.toLocaleString()} Mana Stones`);
         if (loot.affiliatePayouts && Object.keys(loot.affiliatePayouts).length) {
-        out.pushsh(``, `🤝 *Affiliate / recruiter payouts:*`);
+        out.push(``, `🤝 *Affiliate / recruiter payouts:*`);
           for (const [jid, p] of Object.entries(loot.affiliatePayouts)) {
             const nm = db.users?.[jid]?.name || jid.split('@')[0];
-        out.pushpush(`  • *${nm}* — ${p.percent}% → ${p.gold.toLocaleString()} 💠 + ${p.crystals} 💎`);
+        out.push(`  • *${nm}* — ${p.percent}% → ${p.gold.toLocaleString()} 💠 + ${p.crystals} 💎`);
           }
         }
-        if (loot.contractPayouts && Object.keys(loot.contractPayouts).length) lines.push(`📋 Contracts paid out automatically.`);
+        if (loot.contractPayouts && Object.keys(loot.contractPayouts).length) out.push(`📋 Contracts paid out automatically.`);
 
         if (loot.wildPet && loot.wildPet.token) {
-        out.pushsh(``, `🐾 *WILD PET APPEARED!*`);
-        out.pushsh(`${loot.wildPet.emoji} *${loot.wildPet.name}* [${loot.wildPet.rarity.toUpperCase()}]`);
-        out.pushsh(`🪤 /caught ${loot.wildPet.token} — hurry, it flees in 60s!`);
+        out.push(``, `🐾 *WILD PET APPEARED!*`);
+        out.push(`${loot.wildPet.emoji} *${loot.wildPet.name}* [${loot.wildPet.rarity.toUpperCase()}]`);
+        out.push(`🪤 /caught ${loot.wildPet.token} — hurry, it flees in 60s!`);
         }
 
-        out.push(``, `💚 *All members: 50% recovery + no cooldown.*`);
+        // Push #55: scavenger pets pay out on the clear, and every raider's
+        // active pet gets XP for the fight (previously pets gained nothing).
+        try {
+          const _sv = PetCombat.scavenge(sender, loot.nexus || 0);
+          if (_sv.bonus > 0) {
+            player.gold = (player.gold || 0) + _sv.bonus;
+            player.manaCrystals = (player.manaCrystals || 0) + Math.floor(_sv.bonus / 10);
+            out.push(``, `${_sv.pet?.emoji || '🐾'} *${_sv.pet?.nickname || _sv.pet?.name || 'Scavenger'}* dug up *${_sv.bonus.toLocaleString()}* 💠 Nexus (+${Math.floor(_sv.bonus / 10)} 💎)`);
+          }
+          const _pr = PetCombat.rewardPet(sender, { won: true, exp: 120 });
+          if (_pr) out.push(..._pr);
+        } catch (e) {}
+        try {
+          for (const m of (gate.raid?.members || [])) {
+            const _mp = db.users?.[m.id];
+            if (_mp && _mp.stats?.hp > 0) PetCombat.rewardPet(m.id, { won: true, exp: 120 });
+          }
+        } catch (e) {}
+
+        out.push(``, `💚 *All members: +50% max HP recovery, no cooldown.*`);
         out.push(`🚪 *GATE ${gate.id} CLEARED!*`);
         out.push(FRAME);
         if (pro) {
           const topName = topRaider ? (db.users?.[topRaider[0]]?.name || 'a raider') : 'none';
-        out.pushsh(UI.PRO_MINI, topRaider && topRaider[0] === sender ? `💎 *PRO SLAYER* — TOP raid damage: ${UI.num(topRaider[1])}! 🔥` : `💎 *PRO SLAYER* — top: ${topName} (${topRaider ? UI.num(topRaider[1]) : 0})`);
-        } else lines.push(UI.upsell());
+        out.push(UI.PRO_MINI, topRaider && topRaider[0] === sender ? `💎 *PRO SLAYER* — TOP raid damage: ${UI.num(topRaider[1])}! 🔥` : `💎 *PRO SLAYER* — top: ${topName} (${topRaider ? UI.num(topRaider[1]) : 0})`);
+        } else out.push(UI.upsell());
       return out;
     };
 
@@ -773,6 +824,16 @@ module.exports = {
       const boss = gate.boss;
       const result = GR.playerDamage(player, skillArg || null);
       if (result.blocked) return sock.sendMessage(chatId, { text: `❌ ${result.reason}` }, { quoted: msg });
+      // Push #55: pets fight the boss too — ATK bonus + their own ability hit.
+      try {
+        const _pbAtk = PetCombat.atkBonus(sender) || 0;
+        if (_pbAtk > 0) result.damage = Math.max(1, (result.damage || 0) + _pbAtk);
+        const _bstrike = PetCombat.abilityStrike(sender, boss);
+        if (_bstrike) {
+          result.damage = Math.max(1, (result.damage || 0) + _bstrike.damage);
+          result.petLine = _bstrike.line;
+        }
+      } catch (e) {}
 
       if (!gate.damageDealt) gate.damageDealt = {};
       gate.damageDealt[sender] = (gate.damageDealt[sender] || 0) + result.damage;
@@ -794,6 +855,12 @@ module.exports = {
       boss.hp = Math.max(0, bossWrap.stats.hp);
 
       const lines = [];
+      // Push #55: the boss round reports what the pet did too.
+      try { if (result.petLine) lines.push(result.petLine); } catch (e) {}
+      try {
+        const _bh = PetCombat.healPlayer(sender, player);
+        if (_bh.healed > 0) lines.push(`💚 *${_bh.petName}* mended *${_bh.healed}* HP → ${_bh.hp}/${player.stats.maxHp}`);
+      } catch (e) {}
 
       if (boss.hp <= 0) {
         lines.push(...await finishBossDefeat());

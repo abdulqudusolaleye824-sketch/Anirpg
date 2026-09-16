@@ -204,12 +204,11 @@ t('no regen at all while a battle is live', () => {
 });
 
 console.log('\n── 5. Gate economy ──');
-t('A/S gate mana-stone prices are in the 30k–80k band', () => {
-  for (const r of ['A', 'S']) {
-    const [a, b] = GATE_RANKS[r].manaPriceRange;
-    assert.ok(a >= 30000 && b <= 80000 && a < b, `${r}: ${a}-${b}`);
-  }
+t('A gates cost 30k–50k stones, S gates 55k–105k (the bands the user set)', () => {
+  assert.deepStrictEqual(GATE_RANKS.A.manaPriceRange, [30000, 50000], 'A: ' + GATE_RANKS.A.manaPriceRange.join('-'));
+  assert.deepStrictEqual(GATE_RANKS.S.manaPriceRange, [55000, 105000], 'S: ' + GATE_RANKS.S.manaPriceRange.join('-'));
 });
+
 t('loot pays 3–4× the Nexus spent, every spawn', () => {
   for (let i = 0; i < 60; i++) {
     const g = GateManager.spawnGate('123@g.us', 'A');

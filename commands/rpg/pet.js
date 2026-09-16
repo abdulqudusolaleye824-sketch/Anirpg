@@ -106,6 +106,14 @@ module.exports = {
           pet.evolution.options.forEach(o => { txt += `• ${o.name}\n`; });
           txt += `/pet evolve ${idx+1} [id] to evolve`;
         }
+        // Push #55: lore + origin card, and what the pet actually does in a fight.
+        let _loreBlock = '';
+        try { _loreBlock = require('../../rpg/utils/PetLore').render(pet); } catch (e) {}
+        let _liveLine = '';
+        try { _liveLine = require('../../rpg/utils/PetCombat').statusLine(sender); } catch (e) {}
+        if (_loreBlock) txt += `\n${FRAME}\n${_loreBlock}\n${FRAME}`;
+        const _isActive = PetManager.getActivePet(sender)?.instanceId === pet.instanceId;
+        if (_isActive && _liveLine) txt += `\n${_liveLine}`;
         txt += `\n${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO BOND* — 💕 ${pet.bonding}/100 · 😊 ${pet.happiness}/100 · 🍖 ${pet.hunger}/100` : `\n${UI.upsell()}`);
         return sock.sendMessage(chatId, { text: txt }, { quoted: msg });
       }

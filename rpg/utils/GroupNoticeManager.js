@@ -189,6 +189,16 @@ async function announceMembership(sock, chatId, participants, action, db) {
   if (!Array.isArray(participants) || participants.length === 0) return 'ignored';
   if (action !== 'add' && action !== 'remove') return 'ignored';
 
+  // Push #55: the announcements space (set with /setspace → db.announceGC) is
+  // for announcements ONLY — hardcoded, no setting to flip. Compared on the
+  // bare node so the :device suffix on either side can never bypass it. Joins and leaves
+  // used to bury every real announcement in welcome spam.
+  const _annGc = db?.announceGC || db?.announcementGC || null;
+  if (_annGc) {
+    const _bare = (j) => String(j || '').split('@')[0].split(':')[0].replace(/\s+/g, '').toLowerCase();
+    if (_bare(_annGc) === _bare(chatId)) return 'ignored';
+  }
+
   if (action === 'add' && !isWelcomeEnabled(db, chatId)) return 'off';
   if (action === 'remove' && !isGoodbyeEnabled(db, chatId)) return 'off';
 

@@ -28,6 +28,46 @@ function buildSha() {
 
 let _restarting = false; // cross-invocation lock: no stacked /restarts
 
+// Push #55: which personalities SHOULD be connected. /restart used to iterate
+// `getAllSockets()` — but a bot whose socket had already been dropped from the
+// registry was therefore never reconnected ("restarted 1 bot(s)" while nothing
+// was actually online, and a bot that died mid-ban could never be brought back
+// by /restart). The desired set now comes from the persisted link records and
+// the auth folders on disk.
+function linkableKeys(db) {
+  const out = new Set();
+  try {
+    for (const k of Object.keys(MultiSocketManager.getAllSockets() || {})) out.add(k);
+  } catch (e) {}
+  try {
+    for (const k of (PersonalityManager.getAllPersonalities() || [])) {
+      if (db?.linkedBots?.[k]) out.add(k);
+    }
+  } catch (e) {}
+  try {
+    const AUTH_DIR = process.env.AUTH_DIR || path.join(process.cwd(), 'auth');
+    for (const f of require('fs').readdirSync(AUTH_DIR)) {
+      const k = f.replace(/\/.*/, '');
+      if (!k || k === 'auth-backups') continue;
+      try {
+        if (require('fs').existsSync(path.join(AUTH_DIR, k, 'creds.json'))) out.add(k);
+      } catch (e) {}
+    }
+  } catch (e) {}
+  return [...out].sort();
+}
+
+// One glanceable line per bot, so a mod can see WHY the group went quiet.
+function healthFooter() {
+  try {
+    const rep = MultiSocketManager.botHealthReport?.() || [];
+    if (!rep.length) return '';
+    return `\n\n📶 *BOT HEALTH*\n` + rep.map(r =>
+      `  ${r.usable ? '✅' : r.online ? '⚠️' : '🔴'} *${r.key}* — ${r.usable ? 'replying' : r.online ? 'connected but not sending' : 'offline'}${r.sendFails ? ` (${r.sendFails} send fail${r.sendFails > 1 ? 's' : ''}${r.lastErr ? `: ${r.lastErr}` : ''})` : ''}`
+    ).join('\n');
+  } catch (e) { return ''; }
+}
+
 // Best-effort ack across sockets: the invoking socket may be half-dead, so
 // on failure every other online socket is tried until one send lands.
 async function sendAck(chatId, text, msg, preferredSock) {
@@ -110,6 +150,27 @@ module.exports = {
 
     const targetArg = args[0]?.trim();
 
+    // Push #55: `/restart health` — diagnosis without reconnecting anything.
+    if (targetArg === 'health' || targetArg === 'status') {
+      const rep = MultiSocketManager.botHealthReport?.() || [];
+      const lines = Object.keys(db.registeredGCs || {}).length;
+      const stuck = rep.filter(r => r.online && !r.usable);
+      return sock.sendMessage(chatId, {
+        text: [
+          `📶 *BOT HEALTH* — ${rep.filter(r => r.usable).length}/${rep.length} replying`,
+          ``,
+          ...(rep.length ? rep.map(r =>
+            `${r.usable ? '✅' : r.online ? '⚠️' : '🔴'} *${r.key}* · ws ${r.wsOpen ? 'open' : 'closed'} · ${r.sendFails} failed send${r.sendFails === 1 ? '' : 's'}` +
+            (r.lastErr ? `\n   ↳ ${r.lastErr}` : '') +
+            (r.lastOkAt ? `\n   last good send ${Math.round((Date.now() - r.lastOkAt) / 1000)}s ago` : '\n   no successful send since boot')
+          ) : ['No sockets registered.']),
+          ``,
+          `*${lines}* group(s) with the bot registered.`,
+          stuck.length ? `⚠️ *${stuck.map(s => s.key).join(', ')}* ${stuck.length > 1 ? 'are' : 'is'} connected but NOT answering — groups have been handed to a working bot automatically; run */restart* to repair them.` : '✅ Every registered bot is answering.',
+        ].join('\n'),
+      }, { quoted: msg });
+    }
+
     // ── 1. Restart Specific Bot ──────────────────────────────────────────────
     if (targetArg) {
       const pKey = PersonalityManager.resolvePersonality(targetArg);
@@ -123,9 +184,12 @@ module.exports = {
       const displayName = PersonalityManager.getDisplayName(pKey);
       const sha = buildSha();
 
+      // Push #55: a bot that accumulated send failures is treated as mute for
+      // routing; a restart must clear that verdict or it stays benched.
+      try { MultiSocketManager.clearSendHealth?.(pKey); } catch (e) {}
       await sendAck(chatId, `🔄 *Restarting 1 bot:* ${displayName} (\`${pKey}\`)…`, msg, sock);
 
-      const completionText = `✨ *Successfully restarted ${displayName}!* 🤖⚡\n\n🔖 Build: \`${sha}\`\n📌 Code updates deploy via GitHub push — /restart refreshes connections only.`;
+      const completionText = `✨ *Successfully restarted ${displayName}!* 🤖⚡\n\n🔖 Build: \`${sha}\`${healthFooter()}\n📌 Code updates deploy via GitHub push — /restart refreshes connections only.`;
 
       // Persisted BEFORE the restart: if anything dies mid-flight, the
       // connection-verified handler delivers this notice on next boot.
@@ -164,11 +228,20 @@ module.exports = {
 
     // ── 2. Restart ALL Linked Bots ──────────────────────────────────────────
     const allSockets = MultiSocketManager.getAllSockets();
-    const activeKeys = Object.keys(allSockets);
-    const count = activeKeys.length || 1;
+    // Push #55: reconnect every bot that SHOULD be linked, not just the ones
+    // that still have a live socket — that is what makes /restart able to
+    // recover a bot that dropped (or was dropped by a ban).
+    const activeKeys = linkableKeys(db);
+    const count = activeKeys.length;
+    if (!count) {
+      return sock.sendMessage(chatId, {
+        text: `🔴 *No linked bots found.*\n\nNothing to restart — no auth session exists on this server, so the bots must be paired again from the AstraLink page (QR or pairing code).\n\nIf they were linked before, the auth folder moved: check \`AUTH_DIR\` (currently \`${process.env.AUTH_DIR || path.join(process.cwd(), 'auth')}\`).`,
+      }, { quoted: msg });
+    }
+    try { MultiSocketManager.clearSendHealth?.(); } catch (e) {}
 
     const shaAll = buildSha();
-    const completionText = `✨ *Successfully restarted ${count} bot(s)!* 🚀⚡\n\nAll ${count} linked bot sockets are back online and ready.\n🔖 Build: \`${shaAll}\`\n📌 Code updates deploy via GitHub push — /restart refreshes connections only.`;
+    const completionText = `✨ *Successfully restarted ${count} bot(s)!* 🚀⚡\n\nAll ${count} linked bot sockets are back online and ready.\n🔖 Build: \`${shaAll}\`${healthFooter()}\n📌 Code updates deploy via GitHub push — /restart refreshes connections only.`;
 
     // Save pending notice to DB in case PM2 process restart interrupts socket
     db.pendingRestartNotice = { chatId, text: completionText };
@@ -180,16 +253,27 @@ module.exports = {
       const AUTH_DIR = process.env.AUTH_DIR || path.join(process.cwd(), 'auth');
       const rpgCommandHandler = require('../../handlers/rpgCommandHandler');
 
+      const _reLinked = [];
       for (const key of activeKeys) {
         const s = allSockets[key];
         if (s) {
           try { s.end(undefined); } catch (e) {}
+        } else {
+          _reLinked.push(key); // had no socket at all — this is a rescue, not a refresh
         }
-        await MultiSocketManager.connectBot(key, AUTH_DIR, getDatabase, saveDatabase, {
-          rpgCommandHandler
-        });
-        await new Promise(r => setTimeout(r, 600));
+        try {
+          await MultiSocketManager.connectBot(key, AUTH_DIR, getDatabase, saveDatabase, {
+            rpgCommandHandler
+          });
+        } catch (e) {
+          console.error(`[restart] connectBot(${key}) failed:`, e.message);
+        }
+        // Push #55: stagger in parallel-ish bursts instead of one blocking
+        // 600ms sleep per bot — 5 bots used to burn 3s of dead air before the
+        // first reconnect even started.
+        await new Promise(r => setTimeout(r, 200));
       }
+      if (_reLinked.length) console.log(`[restart] re-established missing sockets for: ${_reLinked.join(', ')}`);
 
       // Wait for a TRULY online socket, then deliver. The persisted notice
       // is cleared ONLY on confirmed delivery — otherwise the
