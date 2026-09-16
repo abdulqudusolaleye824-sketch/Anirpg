@@ -648,8 +648,14 @@ footer a:hover{opacity:1}
         <div id="qrView" style="display:none;text-align:center">
           <div class="code-box" style="padding:22px">
             <img id="qrImg" alt="QR code" style="width:280px;height:280px;image-rendering:pixelated;border-radius:12px;background:#fff;padding:8px"/>
-            <div class="code-hint">Scan this in WhatsApp → Linked Devices → Link a device.</div>
-            <div class="timer-lbl" style="margin-top:10px" id="qrStatus">Connecting…</div>
+            <div class="code-hint">Scan this in WhatsApp → Linked Devices → Link a device. <strong>Codes die in ~60s</strong> — always scan the newest one on screen.</div>
+            <div class="timer-bar" style="margin-top:12px"><div class="timer-fill" id="qrTimerFill" style="width:100%"></div></div>
+            <div class="timer-lbl" style="margin-top:6px" id="qrStatus">Connecting…</div>
+            <div style="display:flex;gap:8px;margin-top:10px">
+              <button class="btn btn-ghost" style="flex:1" onclick="newQrCode(this)">🔄 New code</button>
+              <button class="btn btn-ghost" style="flex:1" onclick="releaseSlots(this)">🔌 Free old device slots</button>
+            </div>
+            <div id="qrAdvice" style="display:none;margin-top:12px;text-align:left;font-size:12.5px;line-height:1.55;background:rgba(255,180,60,.10);border:1px solid rgba(255,180,60,.35);border-radius:10px;padding:10px 12px"></div>
           </div>
         </div>
 
@@ -1021,7 +1027,8 @@ function enableQrMode(btn){
   document.getElementById('psubQr').style.display = 'block';
   if (btn) btn.style.display = 'none';
   document.getElementById('codeToggle').style.display = 'inline-block';
-  document.getElementById('qrStatus').textContent = 'Connecting…';
+  document.getElementById('qrStatus').textContent = 'Opening a pairing session…';
+  qrAdvice('');
   pollQr();
 }
 
@@ -1040,49 +1047,130 @@ function enableCodeMode(btn){
   }
 }
 
+// ══ QR polling engine (Push #57) ══════════════════════════════════════════
+// A WhatsApp pairing code is only alive for about a minute. The old loop just
+// repainted whatever the server last saw, so a page open for two minutes showed a
+// dead code and WhatsApp answered the scan with "Couldn't log in. Check your
+// phone's internet connection…" on every device. The server now refuses to hand
+// out dead codes, and this loop shows the remaining life, swaps the picture only
+// when the sequence actually changes, and schedules its own next fetch.
+let _qrSeq = -1, _qrExpiresAt = 0, _qrTtl = 60000, _qrDeadStreak = 0;
+let _qrNextFetch = null, _qrTick = null, _qrBusy = false;
+
+function qrStatusSet(t){ const el = document.getElementById('qrStatus'); if (el) el.textContent = t; }
+function qrAdvice(html){
+  const el = document.getElementById('qrAdvice');
+  if (!el) return;
+  if (!html) { el.style.display = 'none'; el.innerHTML = ''; return; }
+  el.style.display = 'block'; el.innerHTML = html;
+}
+const QR_DEVICE_ADVICE = '⚠️ <strong>Several codes, no link completed.</strong> WhatsApp allows only '
+  + '<strong>4 linked devices</strong> per number, and bot sessions that were never logged out keep '
+  + 'holding those slots — while they are full, <em>every</em> QR fails with “Couldn&#39;t log in” '
+  + 'on every phone.<br><br>'
+  + '1. On the <strong>bot&#39;s</strong> phone: WhatsApp → Settings → <strong>Linked devices</strong> → log <strong>everything</strong> out.<br>'
+  + '2. Come back here and press <strong>🔌 Free old device slots</strong>, then <strong>🔄 New code</strong>.<br>'
+  + '3. Or skip the QR entirely: <strong>🔢 Use pairing code</strong> (Settings → Linked devices → “Link with phone number”).';
+
+
+function qrTickLoop(){
+  clearInterval(_qrTick);
+  _qrTick = setInterval(() => {
+    const fill = document.getElementById('qrTimerFill');
+    const left = Math.max(0, _qrExpiresAt - Date.now());
+    if (fill) fill.style.width = (_qrTtl ? Math.round((left / _qrTtl) * 100) : 0) + '%';
+    if (_qrExpiresAt && left <= 0) qrStatusSet('Code expired — fetching a fresh one…');
+    else if (_qrExpiresAt) qrStatusSet(`Scan now — this code dies in ${Math.ceil(left / 1000)}s`);
+  }, 500);
+}
+
+async function qrFetch(opts){
+  if (_qrBusy) return;
+  _qrBusy = true;
+  try {
+    const q = (opts && opts.fresh) ? '&fresh=1' : ((opts && opts.now) ? '&now=1' : '');
+    const resp = await fetch(`${BOT_API}/api/qr?personality=${selected}${q}`);
+    const data = await resp.json();
+    const img  = document.getElementById('qrImg');
+    hideLoading();
+
+    if (data.connected || data.alreadyConnected) {
+      qrStatusSet(data.error || '✅ Already linked and online.');
+      qrAdvice('');
+      _qrExpiresAt = 0;
+      setTimeout(() => { if (_qrMode) fetchBotStatus(); }, 1500);
+      return;
+    }
+
+    if (data.success && (data.dataUri || data.qr)) {
+      _qrDeadStreak = 0;
+      if (img && data.seq !== _qrSeq) {
+        if (data.dataUri) { img.src = data.dataUri; img.style.opacity = '1'; }
+        else if (window.QRCode) { const c = document.createElement('canvas'); new QRCode(c, { text: data.qr, width: 280, height: 280, colorDark: '#000000', colorLight: '#ffffff' }); img.replaceWith(c); c.id = 'qrImg'; c.style.imageRendering = 'pixelated'; c.style.background = '#fff'; c.style.padding = '8px'; c.style.borderRadius = '12px'; img = c; }
+        _qrSeq = data.seq;
+      }
+      _qrTtl = data.ttlMs || 60000;
+      _qrExpiresAt = Date.now() + (data.expiresIn || _qrTtl);
+      qrTickLoop();
+      if (data.advisory) qrAdvice(QR_DEVICE_ADVICE);
+      scheduleQrFetch(data.refreshInMs || 5000);
+      return;
+    }
+
+    // No usable code right now (expired / still generating). Say so instead of
+    // leaving a dead picture up.
+    if (img) img.style.opacity = '0.15';
+    _qrExpiresAt = 0;
+    _qrDeadStreak++;
+    qrStatusSet(data.error || 'Waiting for the bot to open a pairing session…');
+    if (data.expired || _qrDeadStreak >= 3) qrAdvice(QR_DEVICE_ADVICE);
+    scheduleQrFetch(data.retryInMs || 2500);
+  } catch (e) {
+    qrStatusSet('Bot offline? ' + e.message);
+    scheduleQrFetch(4000);
+  } finally {
+    _qrBusy = false;
+  }
+}
+
+function scheduleQrFetch(ms){
+  clearTimeout(_qrNextFetch);
+  if (!_qrMode) return;
+  _qrNextFetch = setTimeout(() => qrFetch(), Math.max(1500, ms || 5000));
+}
+
 function pollQr(){
   if (!_qrMode) return;
-  clearInterval(_qrTimer);
-  _qrTimer = setInterval(async () => {
-    try {
-      const resp = await fetch(`${BOT_API}/api/qr?personality=${selected}`);
-      const data = await resp.json();
-      const img = document.getElementById('qrImg');
-      const st  = document.getElementById('qrStatus');
-      if (data.success && data.dataUri) {
-        img.src = data.dataUri;
-        img.style.opacity = '1';
-        st.textContent = 'Scan with WhatsApp to link. Refreshing every ~5s…';
-      } else if (data.success && data.qr && window.QRCode) {
-        // Fallback: render raw string client-side.
-        img.src = '';
-        const el = document.createElement('div');
-        el.innerHTML = '';
-        const c = document.createElement('canvas');
-        new QRCode(c, { text: data.qr, width: 280, height: 280 });
-        img.replaceWith(c);
-        c.style.imageRendering = 'pixelated';
-        c.style.background = '#fff'; c.style.padding = '8px'; c.style.borderRadius = '12px';
-        st.textContent = 'Scan with WhatsApp to link.';
-      } else {
-        st.textContent = data.error || 'No QR yet — is this bot waiting for a link?';
-      }
-    } catch (e) {
-      document.getElementById('qrStatus').textContent = 'Bot offline? ' + e.message;
-    }
-  }, 5000);
-  // immediate first fetch
-  pollQrOnce();
+  clearTimeout(_qrNextFetch); clearInterval(_qrTick);
+  _qrSeq = -1; _qrDeadStreak = 0; _qrExpiresAt = 0;
+  qrAdvice('');
+  // First paint must not wait on the server's generate loop.
+  qrFetch({ now: 1 });
 }
-function pollQrOnce(){
-  fetch(`${BOT_API}/api/qr?personality=${selected}`)
-    .then(r=>r.json())
-    .then(data=>{
-      const img = document.getElementById('qrImg');
-      if (data.success && data.dataUri) { img.src = data.dataUri; img.style.opacity='1'; document.getElementById('qrStatus').textContent='Scan with WhatsApp to link.'; }
-      else document.getElementById('qrStatus').textContent = data.error || 'No QR yet.';
-    })
-    .catch(e=>{ document.getElementById('qrStatus').textContent = 'Bot offline? '+e.message; });
+
+function newQrCode(btn){
+  const old = btn ? btn.textContent : '';
+  if (btn) { btn.textContent = 'Rotating…'; btn.disabled = true; }
+  qrFetch({ fresh: 1 }).finally(() => { if (btn) { btn.textContent = old; btn.disabled = false; } });
+}
+
+async function releaseSlots(btn){
+  if (!selected) { qrStatusSet('Pick a bot first.'); return; }
+  const includeLive = window.confirm('This logs the saved session(s) out on WhatsApp so the 4 device slots free up.\n\nPress OK to release stale sessions only.\nPress Cancel to abort.');
+  if (!includeLive) return;
+  if (btn) btn.disabled = true;
+  qrStatusSet('Releasing old device slots…');
+  try {
+    const r = await fetch(`${BOT_API}/api/release-device-slots`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ personality: selected }),
+    });
+    const d = await r.json();
+    qrStatusSet(d.success ? '✅ Old session logged out — press 🔄 New code.' : ('⚠️ ' + (d.error || 'could not release it')));
+    if (d.success) { _qrDeadStreak = 0; qrAdvice(''); }
+  } catch (e) {
+    qrStatusSet('⚠️ ' + e.message);
+  } finally { if (btn) btn.disabled = false; }
 }
 
 function refreshCode(){

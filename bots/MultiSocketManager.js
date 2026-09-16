@@ -60,6 +60,22 @@ const QRTerminal = (()=>{ try { return require('qrcode-terminal'); } catch(e){ r
 
 const botSockets = {};
 const pairingSessions = {};
+
+// Push #57 — a Baileys QR is a short-lived *pairing ref*, not a picture. Once
+// its ref expires on WhatsApp's servers the phone answers any scan with
+// "Couldn't log in. Check your phone's internet connection and scan the QR code
+// again." — identical on every device, because the code, not the phone, is
+// dead. AstraLink used to hand out `the last QR it ever saw` forever, so a page
+// left open for a minute guaranteed that dialog. Codes now carry an issue time
+// and a sequence number, and a dead one is refused rather than displayed.
+const QR_VALID_MS = Math.max(15000, Number(process.env.ASTRALINK_QR_TTL_MS || 60000) || 60000);
+let _qrSeq = 0;
+const _qrKickAt = {};   // personality -> last time we restarted a pairing for a dead code
+
+// A real pairing ref looks like: 2@<noiseB64>,<identityB64>,<ref>
+function isPlausibleQr(qr) {
+  return typeof qr === 'string' && qr.startsWith('2@') && qr.split(',').length === 3 && qr.length > 40;
+}
 // IDs of messages OUR OWN sockets sent (all personalities, this process).
 // WhatsApp echoes sibling-bot messages back to us with fromMe=false, so this
 // registry is the bulletproof sibling-recognition layer: no JID matching,
@@ -667,6 +683,10 @@ async function startAstraLink(personalityKey, authDir, getDatabase, saveDatabase
       try { botSockets[personalityKey].end(undefined); } catch (_) {}
       delete botSockets[personalityKey];
     }
+    // Push #57: stage the outgoing session for a proper WhatsApp logout BEFORE
+    // its keys are destroyed, otherwise the number accumulates orphaned linked
+    // devices (max 4) and every future QR fails with "Couldn't log in".
+    try { _revokeSnapshotAsync(authDir, personalityKey); } catch (e) {}
     // Clear old un-registered session state so pre-keys match fresh pairing code
     if (fs.existsSync(botAuthDir)) fs.rmSync(botAuthDir, { recursive: true, force: true });
     // Also clear persisted backups (disk + legacy DB) so fresh pairing starts clean
@@ -718,10 +738,120 @@ function getPendingSocket(personalityKey) {
   return botSockets[personalityKey] || null;
 }
 
+/**
+ * The QR the AstraLink page should show, with its remaining life.
+ * `valid` is the part that matters: a code that exists but has expired, or that
+ * belongs to a socket which is no longer alive, must NOT be rendered as if it
+ * were scannable — that is precisely what produces WhatsApp's "Couldn't log in"
+ * dialog on every device at once.
+ */
 function getLatestQr(personalityKey) {
   const session = pairingSessions[personalityKey];
-  if (!session) return { qr: null, dataUri: null };
-  return { qr: session.qr || null, dataUri: session.qrDataUrl || null };
+  const sock = botSockets[personalityKey];
+  const connected = !!sock?.user?.id;
+  if (!session) {
+    return { qr: null, dataUri: null, seq: 0, ageMs: null, expiresIn: 0, valid: false, status: 'idle', connected, waiting: false, ttlMs: QR_VALID_MS };
+  }
+  const ageMs = session.qrAt ? Date.now() - session.qrAt : null;
+  const expiresIn = ageMs === null ? 0 : Math.max(0, QR_VALID_MS - ageMs);
+  const waiting = !connected && !!sock;
+  return {
+    qr: session.qr || null,
+    dataUri: session.qrDataUrl || null,
+    seq: session.qrSeq || 0,
+    ageMs,
+    expiresIn,
+    valid: !!session.qr && isPlausibleQr(session.qr) && expiresIn > 0 && waiting,
+    expired: !!session.qr && expiresIn <= 0,
+    status: session.status || (connected ? 'connected' : 'idle'),
+    connected,
+    waiting,
+    socketAlive: !!sock,
+    error: session.error || null,
+    ttlMs: QR_VALID_MS,
+  };
+}
+
+/**
+ * Push #57: free a WhatsApp device slot.
+ *
+ * WhatsApp allows a number only four linked devices. AstraLink's relink deleted
+ * the local keys without telling WhatsApp, so every "Link" click left an orphan
+ * session holding a slot; once they pile up, *no* QR can complete on *any*
+ * phone and the error is the "Couldn't log in" dialog. Best-effort logout with
+ * the saved creds, which is the only thing that releases them.
+ */
+async function revokeSessionDir(authDir, key, opts = {}) {
+  const timeoutMs = Math.max(6000, Number(opts.timeoutMs) || 25000);
+  const dir = path.join(authDir || '', String(key || ''));
+  let registered = false;
+  try {
+    const creds = JSON.parse(fs.readFileSync(path.join(dir, 'creds.json'), 'utf8'));
+    registered = !!(creds.registered || creds.me);
+  } catch (e) {
+    return { ok: false, reason: 'no registered session on disk — nothing to release' };
+  }
+  if (!registered) return { ok: false, reason: 'the saved session was never registered — it holds no device slot' };
+
+  let sock = null;
+  try {
+    const logger = pino({ level: 'silent' });
+    const { state } = await useMultiFileAuthState(dir);
+    const ver = await fetchLatestBaileysVersion().catch(() => ({ version: [2, 3000, 1023601545] }));
+    sock = makeWASocket({
+      logger,
+      version: ver.version,
+      browser: Browsers.macOS('Chrome'),
+      auth: makeCacheableSignalKeyStore(state.creds, state.keys),
+      printQRInTerminal: false,
+    });
+    let opened = false;
+    sock.ev.on('connection.update', (u) => { if (u.connection === 'open') opened = true; });
+    const waitUntil = Date.now() + Math.min(12000, timeoutMs);
+    while (Date.now() < waitUntil && !opened) await new Promise(r => setTimeout(r, 250));
+    if (!opened) {
+      return { ok: false, reason: 'WhatsApp would not accept the saved session — unlink by hand: WhatsApp → Settings → Linked devices → log out everything' };
+    }
+    await Promise.race([
+      sock.logout(),
+      new Promise((_, rej) => { const t = setTimeout(() => rej(new Error('logout timed out')), timeoutMs); t.unref?.(); }),
+    ]);
+    try { fs.rmSync(dir, { recursive: true, force: true }); } catch (e) {}
+    return { ok: true, reason: 'logged the old session out on WhatsApp and cleared its local keys' };
+  } catch (e) {
+    return { ok: false, reason: `could not log the old session out: ${e.message}` };
+  } finally {
+    try { sock?.end?.(); } catch (e) {}
+  }
+}
+
+function _revokeSnapshotAsync(authDir, personalityKey) {
+  // Never let a slot-release delay or break a pairing attempt: snapshot the
+  // creds, wipe on the copy, in the background.
+  try {
+    const dir = path.join(authDir, personalityKey);
+    if (!fs.existsSync(path.join(dir, 'creds.json'))) return false;
+    let registered = false;
+    try {
+      const c = JSON.parse(fs.readFileSync(path.join(dir, 'creds.json'), 'utf8'));
+      registered = !!(c.registered || c.me?.id);
+    } catch (e) {}
+    if (!registered) return false;
+    const snapRoot = path.join(authDir, '.revoke');
+    const snap = path.join(snapRoot, `${personalityKey}-${Date.now()}`);
+    fs.mkdirSync(snapRoot, { recursive: true });
+    fs.cpSync(dir, snap, { recursive: true });
+    setImmediate(() => {
+      revokeSessionDir(snapRoot, path.basename(snap), { timeoutMs: 30000 })
+        .then((r) => console.log(r.ok ? `🔌 AstraLink [${personalityKey}] released the old device slot (${r.reason})` : `ℹ️  AstraLink [${personalityKey}] old device slot not released: ${r.reason}`))
+        .catch((e) => console.error(`AstraLink [${personalityKey}] slot release error:`, e.message))
+        .finally(() => { try { fs.rmSync(snap, { recursive: true, force: true }); } catch (e) {} });
+    });
+    return true;
+  } catch (e) {
+    console.error(`⚠️ AstraLink [${personalityKey}] could not stage the old session for logout:`, e.message);
+    return false;
+  }
 }
 
 function cleanJid(jid) {
@@ -913,22 +1043,35 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
     const { connection, lastDisconnect, qr } = update;
 
     if (qr) {
+      // Push #57: stamp the code so the page can refuse to show a dead one, and
+      // keep the pairing socket alive — Baileys re-emits a fresh ref roughly
+      // every 20-60s, which is what keeps the picture scannable.
+      if (!isPlausibleQr(qr)) {
+        console.error(`⚠️ AstraLink [${displayName}] received a malformed QR (len ${String(qr).length}) — ignoring it instead of rendering an unscannable box`);
+      } else {
       pairingSessions[personalityKey] = {
         ...(pairingSessions[personalityKey] || {}),
         status: pairingMode === 'code' ? 'awaiting_code' : 'awaiting_qr',
         method: pairingMode || 'qr',
         qr,
+        qrAt: Date.now(),
+        qrSeq: ++_qrSeq,
         startedAt: pairingSessions[personalityKey]?.startedAt || Date.now(),
       };
 
       try {
+        // Pure black on pure white: a tinted background (it used to be #7CFFD0)
+        // costs contrast, and low-contrast QRs are a classic cause of a phone
+        // "reading" the code and then rejecting it.
         pairingSessions[personalityKey].qrDataUrl = await QRCode.toDataURL(qr, {
-          width: 360,
+          width: 420,
           margin: 2,
-          color: { dark: '#061018', light: '#7CFFD0' },
+          errorCorrectionLevel: 'M',
+          color: { dark: '#000000', light: '#ffffff' },
         });
       } catch (e) {
         console.error('QR encode error:', e.message);
+      }
       }
 
       if (pairingMode === 'code' && pairingPhone && !pairingCodeRequested && !sock.authState.creds.registered) {
@@ -1724,6 +1867,9 @@ module.exports = {
   readConfigCached,
   getPairingSession,
   listPairingSessions,
+  QR_VALID_MS,
+  isPlausibleQr,
+  revokeSessionDir,
   getSocket,
   getPendingSocket,
   getLatestQr,
@@ -1757,4 +1903,5 @@ module.exports = {
   _recordSentId,
   _wasSentByUs,
   _sockets: () => botSockets,
+  _pairing: () => pairingSessions,   // introspection/test hook
 };
