@@ -71,6 +71,8 @@ const { OWNER_JID, COOWNER_JID, PRIVILEGED_JIDS } = require('./utils/constants')
 // "AstraLink host" — whichever bot socket we use to issue pairing codes —
 // is just whichever socket the HTTP API happens to call. There is no
 // special "primary" bot anymore.
+const AstraLinkGuard = require('./utils/AstraLinkGuard');
+const { spawn } = require('child_process');
 const _qrServes = {};   // personality -> codes handed out since the last successful link
 const _qrKickAt = {};     // personality -> last deliberate pairing restart
 let _astralinkHostKey = null;
@@ -787,7 +789,7 @@ http.createServer(async (req, res) => {
 
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-astralink-token, authorization');
 
   if (req.method === 'OPTIONS') {
     res.writeHead(204);
@@ -890,6 +892,9 @@ http.createServer(async (req, res) => {
   // WhatsApp says "Couldn't log in. Check your phone's internet connection".
   // This logs the saved session out properly so the slots come back.
   if (req.method === 'POST' && req.url.startsWith('/api/release-device-slots')) {
+    // Logs a WhatsApp session out — that is a bot-unlink button, so it is never
+    // callable anonymously on a public port.
+    if (!AstraLinkGuard.gate(res, req, new URL(req.url, 'http://localhost'), { mode: 'locked', bucket: 'release' })) return;
     let body = '';
     req.on('data', c => { body += c; });
     req.on('end', async () => {
@@ -968,6 +973,9 @@ http.createServer(async (req, res) => {
     // stages the outgoing session for logout.
     const noWait = u.searchParams.get('now') === '1';
     const wantFresh = u.searchParams.get('fresh') === '1';
+    // Rotating deliberately abandons the in-flight pairing, so it is gated (soft:
+    // rate-limited until a token exists, then token-only).
+    if (wantFresh && !AstraLinkGuard.gate(res, req, u, { mode: 'soft', bucket: `fresh:${personality}` })) return;
     const sinceKick = Date.now() - (_qrKickAt[personality] || 0);
     if (wantFresh && sinceKick < 8000) {
       return send(200, { success: false, retryInMs: 8000 - sinceKick, error: 'A new code is already on its way — wait a moment.' });
@@ -1056,6 +1064,10 @@ http.createServer(async (req, res) => {
   // ── POST /api/request-pairing-code ───────────────────────────
   // Body: { phoneNumber: "2348012345678", personality: "hinata" }
   if (req.method === 'POST' && req.url === '/api/request-pairing-code') {
+    // Starts a pairing for this number (and wipes its un-registered keys). Gated
+    // the soft way so the linking page keeps working before a token is set up.
+    const _pcUrl = new URL(req.url, 'http://localhost');
+    if (!AstraLinkGuard.gate(res, req, _pcUrl, { mode: 'soft', bucket: 'paircode' })) return;
     let body = '';
     req.on('data', chunk => { body += chunk; });
     req.on('end', async () => {
@@ -1076,6 +1088,19 @@ http.createServer(async (req, res) => {
         // actually pair for THIS personality (its pending socket). Using an
         // unrelated already-connected bot generates a code for the wrong
         // account, which is why WhatsApp said "Couldn't link device".
+        // A pairing-code request for a personality that is ALREADY ONLINE means
+        // "wipe this session and relink" — startAstraLink would delete the live
+        // keys. On a port the whole internet can reach, that is a remote unlink
+        // button, so it needs the admin token. Pairing a bot that is not linked
+        // yet has nothing to destroy and stays open to the page.
+        const pcKey = String(personality || '').toLowerCase();
+        if (MultiSocketManager.getSocket(pcKey)?.user?.id && !AstraLinkGuard.tokenOk(req, _pcUrl)) {
+          res.writeHead(401, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({
+            success: false, needsToken: true,
+            error: `${PersonalityManager.getDisplayName(pcKey)} is online. Re-pairing an online bot unlinks it — pass the ASTRALINK_ADMIN_TOKEN (?token=…) to do that on purpose.`,
+          }));
+        }
         const cleanNumber = phoneNumber.replace(/[^0-9]/g, '');
         if (cleanNumber.length < 7 || cleanNumber.length > 15) {
           res.writeHead(400, { 'Content-Type': 'application/json' });
@@ -1126,8 +1151,96 @@ http.createServer(async (req, res) => {
     return;
   }
 
+  // ── POST /api/deploy?token=… — pull main and restart, from anywhere ──────
+  // The user deploys by running ./deploy.sh on the box; this is the same thing
+  // behind the admin token, so a phone browser (or a support session) can ship a
+  // push without an SSH round-trip. Fail-closed: no token configured → refused.
+  if (req.method === 'POST' && req.url.startsWith('/api/deploy')) {
+    const u = new URL(req.url, 'http://localhost');
+    if (!AstraLinkGuard.gate(res, req, u, { mode: 'locked', bucket: 'deploy' })) return;
+    const DATA = process.env.DATA_DIR || __dirname;
+    const lockFile = path.join(DATA, '.deploy.lock');
+    const headBefore = (() => {
+      try { return require('child_process').execSync('git rev-parse --short HEAD', { cwd: __dirname, timeout: 4000 }).toString().trim(); } catch (e) { return 'unknown'; }
+    })();
+    let running = false;
+    try {
+      const st = fs.statSync(lockFile);
+      const age = Date.now() - st.mtimeMs;
+      if (age < 15 * 60 * 1000) {
+        let pid = null; try { pid = parseInt(fs.readFileSync(lockFile, 'utf8'), 10) || null; } catch (e) {}
+        if (pid && (() => { try { process.kill(pid, 0); return true; } catch (e) { return false; } })()) running = true;
+      }
+    } catch (e) {}
+    if (running) {
+      res.writeHead(409, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({ success: false, error: 'A deploy is already running. Check /api/deploy-status.' }));
+    }
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const logDir = process.env.ASTRALINK_DEPLOY_LOG_DIR || path.join(__dirname, 'logs');
+    try { fs.mkdirSync(logDir, { recursive: true }); } catch (e) {}
+    const logFile = path.join(logDir, `deploy-${stamp}.log`);
+    const cmd = process.env.ASTRALINK_DEPLOY_CMD || './deploy.sh';
+    try {
+      fs.writeFileSync(lockFile, String(process.pid));
+      const fd = fs.openSync(logFile, 'a');
+      // detached + own process group: deploy.sh kills node (us) by design, and
+      // the script must survive that to finish starting the new process.
+      const child = spawn('/bin/bash', ['-lc', `${cmd} 2>&1`], {
+        cwd: __dirname, detached: true, stdio: ['ignore', fd, fd], env: process.env,
+      });
+      fs.closeSync(fd);
+      child.unref();
+      try { fs.writeFileSync(lockFile, String(child.pid || process.pid)); } catch (e) {}
+      // The admin token rides in the query string — never echo the URL into logs.
+      console.log(`🚀 AstraLink deploy started (pid ${child.pid}) → ${path.basename(logFile)} (HEAD ${headBefore})`);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({
+        success: true, started: true, pid: child.pid || null, log: `logs/${path.basename(logFile)}`,
+        headBefore, uptimeSeconds: Math.round(process.uptime()),
+        note: 'The bot restarts as part of this — the page will drop for a few seconds. Poll /api/deploy-status.',
+      }));
+    } catch (e) {
+      try { fs.rmSync(lockFile, { force: true }); } catch (e2) {}
+      console.error('❌ AstraLink deploy failed to start:', e.message);
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({ success: false, error: e.message }));
+    }
+  }
+
+  // ── GET /api/deploy-status?token=… ───────────────────────────
+  if (req.method === 'GET' && req.url.startsWith('/api/deploy-status')) {
+    const u = new URL(req.url, 'http://localhost');
+    if (!AstraLinkGuard.gate(res, req, u, { mode: 'locked', bucket: 'deploy' })) return;
+    let head = 'unknown';
+    try { head = require('child_process').execSync('git rev-parse --short HEAD', { cwd: __dirname, timeout: 4000 }).toString().trim(); } catch (e) {}
+    const logDir = process.env.ASTRALINK_DEPLOY_LOG_DIR || path.join(__dirname, 'logs');
+    let log = null, logName = null, done = null;
+    try {
+      const files = fs.readdirSync(logDir).filter(f => f.startsWith('deploy-') && f.endsWith('.log')).sort();
+      logName = files[files.length - 1] || null;
+      if (logName) {
+        const full = path.join(logDir, logName);
+        const txt = fs.readFileSync(full, 'utf8');
+        log = txt.replace(new RegExp('x-access-token:[^@\\s]+', 'g'), 'x-access-token:***').replace(/ASTRALINK_ADMIN_TOKEN=\S+/g, 'ASTRALINK_ADMIN_TOKEN=***').slice(-2600);
+        done = /DEPLOY COMPLETE/.test(txt) ? 'complete' : (/❌|git pull failed|npm ERR/i.test(txt.slice(-900)) ? 'failed?' : 'running');
+      }
+    } catch (e) {}
+    let lockAge = null, locked = false;
+    try { lockAge = Date.now() - fs.statSync(path.join(process.env.DATA_DIR || __dirname, '.deploy.lock')).mtimeMs; locked = lockAge < 15 * 60 * 1000; } catch (e) {}
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    return res.end(JSON.stringify({
+      success: true, head, uptimeSeconds: Math.round(process.uptime()),
+      botsConnected: Object.values(MultiSocketManager.getAllSockets() || {}).filter(s => s?.user?.id).length,
+      log: logName, logTail: log, state: done, lockActive: locked,
+    }));
+  }
+
   // ── POST /api/link-success ────────────────────────────────────
   if (req.method === 'POST' && req.url === '/api/link-success') {
+    // Sends a DM to whoever claims to have just linked — rate-limited so the open
+    // port cannot be used as a message cannon.
+    if (!AstraLinkGuard.gate(res, req, new URL(req.url, 'http://localhost'), { mode: 'soft', bucket: 'linksuccess' })) return;
     let body = '';
     req.on('data', chunk => { body += chunk; });
     req.on('end', async () => {

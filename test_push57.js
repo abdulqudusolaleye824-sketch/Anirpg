@@ -160,15 +160,23 @@ await at('nothing to pair yet responds instantly instead of hanging', async () =
 await at('bad input and the device-slot route are handled, and the page still serves', async () => {
   assert.strictEqual((await get('/api/qr')).status, 400);
   assert.strictEqual((await get('/api/qr?personality=nope')).status, 400);
-  const rel = await get('/api/release-device-slots', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ personality: KEY }) });
+  // Push #58 gated this endpoint behind ASTRALINK_ADMIN_TOKEN, because the port is
+  // public. Refusing outright with no secret configured is the contract now.
+  const locked = await get('/api/release-device-slots', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ personality: KEY }) });
+  assert.strictEqual(locked.status, 503, `unauthenticated release was not refused (${locked.status})`);
+  assert.strictEqual(locked.json.disabled, true);
+  process.env.ASTRALINK_ADMIN_TOKEN = 'push57-route-token';
+  const rel = await get('/api/release-device-slots?token=push57-route-token', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ personality: KEY }) });
   assert.ok([200, 502].includes(rel.status), `release route returned ${rel.status}`);
   assert.match(JSON.stringify(rel.json), /device slot|registered session|online right now|linked/i);
-  const bogus = await get('/api/release-device-slots', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ personality: 'zzz' }) });
+  const bogus = await get('/api/release-device-slots?token=push57-route-token', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ personality: 'zzz' }) });
   assert.strictEqual(bogus.status, 400);
+  delete process.env.ASTRALINK_ADMIN_TOKEN;
   const page = await fetch(`http://127.0.0.1:${process.env.PORT}/astralink`);
   const html = await page.text();
   assert.ok(html.includes('id="qrTimerFill"'), 'the countdown bar is not in the page');
   assert.ok(html.includes('function newQrCode') && html.includes('function releaseSlots'), 'the QR controls are not wired');
+  assert.ok(html.includes('id="adminBar"') && html.includes('ASTRALINK_ADMIN_TOKEN'), 'the owner-ops token UI is missing');
   assert.ok(html.includes('free old device slots') || html.includes('Free old device slots'), 'no slot-release button label');
   assert.ok(/data\.seq !== _qrSeq|seq !== _qrSeq/.test(html), 'the picture is repainted from stale data instead of only on a new code');
   assert.ok(html.includes("Couldn&#39;t log in"), 'the 4-device explanation is missing');
