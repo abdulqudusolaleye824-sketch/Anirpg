@@ -1,5 +1,6 @@
-// AniRPG — Push #59 harness: a WhatsApp 403 is treated as a block, and the
-// deploy endpoints stop pretending they can update a Docker container.
+// AniRPG — Push #59 harness: a WhatsApp 403 is treated as a block.
+// (Rewritten for Push #61: the deploy endpoints it used to police no longer
+// exist — the harness now asserts they are gone.)
 'use strict';
 process.chdir(__dirname);
 process.env.PORT = '3999';
@@ -7,9 +8,11 @@ process.env.AUTH_DIR = '/tmp/a59test/auth';
 process.env.DATA_DIR = '/tmp/a59test/data';
 process.env.ASTRALINK_DEPLOY_LOG_DIR = '/tmp/a59test/logs';
 // Deliberately NOT set at boot: the container guard must refuse ./deploy.sh.
+// Push #61: no admin token, and the deploy routes (with their container
+// guard) are gone — there is nothing left to configure here.
 delete process.env.ASTRALINK_DEPLOY_CMD;
-process.env.ASTRALINK_IN_CONTAINER = '1';
-process.env.ASTRALINK_ADMIN_TOKEN = 'harness-59-token';
+delete process.env.ASTRALINK_IN_CONTAINER;
+delete process.env.ASTRALINK_ADMIN_TOKEN;
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
@@ -112,7 +115,7 @@ const _boot = (async () => {
     assert.ok(!r.json.qr && !r.json.dataUri, 'a code was handed out anyway');
   });
   await at('an explicit "New code" (fresh=1) still forces a retry', async () => {
-    const r = await call(`/api/qr?personality=${K}&fresh=1&now=1&token=harness-59-token`);
+    const r = await call(`/api/qr?personality=${K}&fresh=1&now=1`);
     assert.notStrictEqual(r.json.blocked, true, `the manual retry was refused too (${JSON.stringify(r.json).slice(0, 160)})`);
   });
   await at('/api/bot-status reports the block for that bot', async () => {
@@ -128,47 +131,19 @@ const _boot = (async () => {
     assert.ok(row.blocked, 'no blocked field: the UI cannot show 403');
     assert.match(row.blocked.reason, /simulated 403/);
   });
-  await at('deploy inside a container refuses instead of lying', async () => {
-    const r = await call('/api/deploy?token=harness-59-token', { method: 'POST' });
-    assert.strictEqual(r.status, 409, `got ${r.status}: ${JSON.stringify(r.json)}`);
-    assert.strictEqual(r.json.inContainer, true);
-    assert.match(r.json.error, /container/i);
-    assert.match(r.json.error, /auto-update\.sh/, 'the refusal does not name the thing that does work');
-    assert.strictEqual(fs.readdirSync('/tmp/a59test/logs').filter((f) => f.startsWith('deploy-')).length, 0, 'a useless deploy ran anyway');
-    assert.ok(!fs.existsSync('/tmp/a59test/data/.deploy.lock'), 'a lock was left behind by a refused deploy');
-  });
-  await at('…and obeys ASTRALINK_DEPLOY_CMD when the operator knows better', async () => {
-    process.env.ASTRALINK_DEPLOY_CMD = "echo '🚀 host deploy'; echo ' ✅ DEPLOY COMPLETE'";
-    const r = await call('/api/deploy?token=harness-59-token', { method: 'POST' });
-    assert.strictEqual(r.status, 200, JSON.stringify(r.json).slice(0, 200));
-    assert.strictEqual(r.json.started, true);
-    assert.ok(!JSON.stringify(r.json).includes('harness-59-token'), 'the token was echoed back');
-    await sleep(2500);
-    const st = await call('/api/deploy-status?token=harness-59-token');
-    assert.strictEqual(st.json.state, 'complete', JSON.stringify(st.json).slice(0, 200));
-    assert.match(st.json.logTail, /DEPLOY COMPLETE/);
-    assert.ok(!JSON.stringify(st.json).includes('harness-59-token'), 'the token reached the log tail');
-  });
-  await at('deploy-status names the running build (no .git needed)', async () => {
-    const vf = path.join(__dirname, 'VERSION');
-    const had = fs.existsSync(vf);
-    const before = had ? fs.readFileSync(vf, 'utf8') : null;
-    fs.writeFileSync(vf, 'feedface (🚫 Push #59: test subject)\nextra noise\n');
-    const viaFile = await call('/api/deploy-status?token=harness-59-token');
-    assert.strictEqual(viaFile.json.head, 'feedface (🚫 Push #59: test subject)', `VERSION not honoured: ${viaFile.json.head}`);
-    assert.notStrictEqual(viaFile.json.head, 'unknown', 'still blind about which build is live');
-    if (had) fs.writeFileSync(vf, before); else fs.rmSync(vf, { force: true });
-  });
-  await at('a stranger cannot reach any of it: 401 with a token set, 503 fail-closed without', async () => {
+  await at('Push #61: the deploy endpoints are gone — 404, and nothing runs', async () => {
     const a = await call('/api/deploy', { method: 'POST' });
-    assert.strictEqual(a.status, 401, `deploy with no token answered ${a.status}`);
-    assert.strictEqual(a.json.needsToken, true);
-    process.env.ASTRALINK_ADMIN_TOKEN = '';
-    const b = await call('/api/deploy', { method: 'POST' });
-    assert.strictEqual(b.status, 503, `unconfigured deploy answered ${b.status} — must fail CLOSED`);
-    assert.strictEqual(b.json.disabled, true);
-    assert.match(b.json.error, /ASTRALINK_ADMIN_TOKEN/);
-    process.env.ASTRALINK_ADMIN_TOKEN = 'harness-59-token';
+    assert.strictEqual(a.status, 404, `deploy answered ${a.status} — the route survived`);
+    const b = await call('/api/deploy-status');
+    assert.strictEqual(b.status, 404, `deploy-status answered ${b.status} — it leaks build state`);
+    assert.strictEqual(fs.readdirSync('/tmp/a59test/logs').filter((f) => f.startsWith('deploy-')).length, 0, 'a deploy ran anyway');
+    assert.ok(!fs.existsSync('/tmp/a59test/data/.deploy.lock'), 'a lock appeared from a removed route');
+  });
+  await at('Push #61: a stranger reaches the linking routes with no secret at all', async () => {
+    const rel = await call('/api/release-device-slots', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ personality: 'zzz' }) });
+    assert.ok([400, 429].includes(rel.status), `release answered ${rel.status} (validation 400 or a 429 brake)`);
+    const pc = await call('/api/request-pairing-code', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ personality: 'zzz', phoneNumber: '2348012345678' }) });
+    assert.strictEqual(pc.status, 400, `pairing answered ${pc.status}`);
   });
   delete MSM._pairing()[K];
   delete MSM._sockets()[K];
@@ -181,7 +156,6 @@ const _boot = (async () => {
     assert.match(html, /blockedIds/, 'a blocked persona is still selectable as if it were free');
     const src = fs.readFileSync('index.js', 'utf8');
     assert.match(src, /q\.blocked && !wantFresh/, 'the qr route lost the block check');
-    assert.match(src, /ASTRALINK_IN_CONTAINER|\/\.dockerenv/, 'the container guard was removed');
     const env = fs.readFileSync('.env.example', 'utf8');
     assert.match(env, /BOT_RECONNECT_MAX_MS/, 'the reconnect ceiling is undocumented');
     const git = fs.readFileSync('.gitignore', 'utf8');

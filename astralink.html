@@ -693,24 +693,6 @@ footer a:hover{opacity:1}
       </div>
     </div>
 
-    <!-- ═══ OWNER OPS (token-gated): deploy the push, free stuck slots ═══ -->
-    <div id="adminBar" style="width:100%;max-width:430px;margin-top:20px;padding:14px;border:1px dashed rgba(255,255,255,.18);border-radius:14px;background:rgba(255,255,255,.03)">
-      <div style="font-family:var(--mono);font-size:.68rem;letter-spacing:.09em;color:var(--text-dim);text-transform:uppercase">🔐 Owner ops</div>
-      <div style="font-size:.76rem;color:var(--text-dim);margin:7px 0 10px;line-height:1.5">
-        Runs <code>./deploy.sh</code> on the server (git pull + safe restart) without needing SSH. Needs
-        <code>ASTRALINK_ADMIN_TOKEN</code> in <code>.env</code> — this page is reachable from the whole internet,
-        so anything destructive requires the secret.
-      </div>
-      <input id="admTok" type="password" placeholder="admin token (value of ASTRALINK_ADMIN_TOKEN)" autocomplete="off"
-        style="width:100%;box-sizing:border-box;padding:10px;border-radius:9px;border:1px solid rgba(255,255,255,.16);background:rgba(0,0,0,.25);color:inherit;font-family:var(--mono);font-size:.8rem"
-        onchange="saveAdmTok()"/>
-      <div class="btn-row" style="width:100%;margin-top:10px;gap:8px">
-        <button class="btn btn-ghost" style="flex:1" onclick="opsDeploy(this)">🚀 Deploy latest</button>
-        <button class="btn btn-ghost" style="flex:1" onclick="opsStatus(this)">↺ Status</button>
-      </div>
-      <div id="opsOut" style="font-family:var(--mono);font-size:.68rem;line-height:1.55;color:var(--text-dim);margin-top:10px;white-space:pre-wrap;word-break:break-word"></div>
-    </div>
-
     <!-- ═══ PANEL 4: SUCCESS ═══ -->
     <div class="panel" id="p4">
       <div class="success-area">
@@ -935,7 +917,7 @@ async function goStep3(){
   showLoading('REQUESTING PAIRING CODE...');
 
   try {
-    const resp = await fetch(`${BOT_API}/api/request-pairing-code${tokQS()}`, {
+    const resp = await fetch(`${BOT_API}/api/request-pairing-code`, {
       method:'POST',
       headers:{'Content-Type':'application/json'},
       body: JSON.stringify({ phoneNumber: fullNumber, personality: selected })
@@ -1107,7 +1089,7 @@ async function qrFetch(opts){
   if (_qrBusy) return;
   _qrBusy = true;
   try {
-    const q = (opts && opts.fresh) ? ('&fresh=1' + tokQS()) : ((opts && opts.now) ? '&now=1' : '');
+    const q = (opts && opts.fresh) ? '&fresh=1' : ((opts && opts.now) ? '&now=1' : '');
     const resp = await fetch(`${BOT_API}/api/qr?personality=${selected}${q}`);
     const data = await resp.json();
     const img  = document.getElementById('qrImg');
@@ -1179,68 +1161,6 @@ function pollQr(){
   qrFetch({ now: 1 });
 }
 
-// ── Owner token plumbing (Push #58) ────────────────────────────────────────
-// The API is world-reachable, so the state-changing calls carry a shared secret.
-function admTok(){
-  const el = document.getElementById('admTok');
-  const v = (el && el.value.trim()) || localStorage.getItem('astralinkAdminToken') || '';
-  return v;
-}
-function saveAdmTok(){
-  const el = document.getElementById('admTok');
-  if (el && el.value.trim()) localStorage.setItem('astralinkAdminToken', el.value.trim());
-  else localStorage.removeItem('astralinkAdminToken');
-}
-function tokQS(){ const t = admTok(); return t ? ('&token=' + encodeURIComponent(t)) : ''; }
-function opsOut(txt){ const el = document.getElementById('opsOut'); if (el) el.textContent = txt || ''; }
-function opsFetch(path, opts){
-  const t = admTok();
-  return fetch(`${BOT_API}${path}`, {
-    ...(opts||{}),
-    headers: { 'Content-Type': 'application/json', ...(t ? { 'x-astralink-token': t } : {}) },
-  }).then(async r => ({ status: r.status, json: await r.json().catch(() => null) }));
-}
-async function opsDeploy(btn){
-  const tok = admTok();
-  if (!tok) { opsOut('⚠️ Paste the ASTRALINK_ADMIN_TOKEN from .env first. (Add the line to .env on the server and restart once — until then these buttons are disabled by design.)'); return; }
-  localStorage.setItem('astralinkAdminToken', tok);
-  if (btn) btn.disabled = true;
-  opsOut('Starting deploy… the page will drop for a few seconds while the bot restarts.');
-  try {
-    const r = await opsFetch('/api/deploy?token=' + encodeURIComponent(tok), { method: 'POST' });
-    const d = r.json || {};
-    if (r.status === 200 && d.started) {
-      opsOut(`🚀 Deploy started (pid ${d.pid}). HEAD before: ${d.headBefore}.\nPolling status…\n${(d.log||'')}`);
-      let n = 0;
-      const tick = setInterval(async () => {
-        n++;
-        try {
-          const s = await opsFetch('/api/deploy-status?token=' + encodeURIComponent(tok));
-          const j = s.json || {};
-          opsOut(`HEAD ${j.head || '?'} · uptime ${j.uptimeSeconds}s · bots online ${j.botsConnected} · ${j.state || 'running'}\n${(j.logTail || '').split('\n').slice(-6).join('\n')}`);
-          if (j.state === 'complete' || n > 40) { clearInterval(tick); opsOut('✅ Deploy finished — reload the page if the bot is back.'); }
-        } catch (e) { opsOut('Bot is restarting… ' + e.message); }
-      }, 6000);
-    } else {
-      opsOut('⚠️ ' + (r.status === 401 ? 'Wrong token.' : r.status === 503 ? 'Deploy is disabled: set ASTRALINK_ADMIN_TOKEN in .env and restart the bot once.' : (d.error || 'HTTP ' + r.status)));
-    }
-  } catch (e) {
-    opsOut('⚠️ ' + e.message + ' — if the bot was mid-restart, wait 30s and press ↺ Status.');
-  } finally { if (btn) btn.disabled = false; }
-}
-async function opsStatus(btn){
-  if (btn) btn.disabled = true;
-  opsOut('Reading status…');
-  try {
-    const r = await opsFetch('/api/deploy-status' + (admTok() ? ('?token=' + encodeURIComponent(admTok())) : ''));
-    if (r.status === 503 || r.status === 401) { opsOut('⚠️ ' + ((r.json && r.json.error) || 'token needed')); return; }
-    const j = r.json || {};
-    opsOut(`HEAD ${j.head || '?'} · uptime ${j.uptimeSeconds}s · bots online ${j.botsConnected}\nlast deploy: ${j.log || 'none'} (${j.state || 'n/a'})${j.lockActive ? ' · lock held' : ''}\n${(j.logTail || '').split('\n').slice(-8).join('\n')}`);
-  } catch (e) { opsOut('⚠️ ' + e.message); }
-  finally { if (btn) btn.disabled = false; }
-}
-try { const saved = localStorage.getItem('astralinkAdminToken'); if (saved) document.getElementById('admTok').value = saved; } catch (e) {}
-
 function newQrCode(btn){
   const old = btn ? btn.textContent : '';
   if (btn) { btn.textContent = 'Rotating…'; btn.disabled = true; }
@@ -1254,14 +1174,13 @@ async function releaseSlots(btn){
   if (btn) btn.disabled = true;
   qrStatusSet('Releasing old device slots…');
   try {
-    const r = await fetch(`${BOT_API}/api/release-device-slots?token=${encodeURIComponent(admTok())}`, {
+    const r = await fetch(`${BOT_API}/api/release-device-slots`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ personality: selected }),
     });
-    if (r.status === 503 || r.status === 401) {
+    if (r.status === 429) {
       const d0 = await r.json().catch(() => ({}));
-      qrStatusSet('⚠️ ' + (d0.error || 'needs the admin token — paste it in Owner ops below'));
-      qrAdvice((d0.error || 'This endpoint can log a bot out of WhatsApp, so it needs ASTRALINK_ADMIN_TOKEN. Paste the token into the "Owner ops" box on the first screen and try again.'));
+      qrStatusSet('⚠️ ' + (d0.error || 'too many attempts — wait a minute and try again'));
       if (btn) btn.disabled = false;
       return;
     }
@@ -1276,7 +1195,7 @@ async function releaseSlots(btn){
 function refreshCode(){
   showLoading('REFRESHING CODE...');
   const fullNumber = linkedCC + linkedPhone;
-  fetch(`${BOT_API}/api/request-pairing-code${tokQS()}`,{
+  fetch(`${BOT_API}/api/request-pairing-code`,{
     method:'POST',
     headers:{'Content-Type':'application/json'},
     body:JSON.stringify({phoneNumber:fullNumber,personality:selected})

@@ -4,7 +4,9 @@ process.chdir(__dirname);
 process.env.PORT = '3998';
 process.env.AUTH_DIR = '/tmp/a60test/auth';
 process.env.DATA_DIR = '/tmp/a60test/data';
-process.env.ASTRALINK_ADMIN_TOKEN = 'harness-60-token';
+// Push #61: no admin token anymore — and the ops routes these tests used to
+// poke no longer exist.
+delete process.env.ASTRALINK_ADMIN_TOKEN;
 delete process.env.ASTRALINK_IN_CONTAINER;
 delete process.env.ASTRALINK_DEPLOY_CMD;
 const assert = require('assert');
@@ -66,18 +68,19 @@ require('./index.js');
     delete PersonalityManager.linkedNumbers['2348001112223@s.whatsapp.net'];
     delete MSM._pairing()['kira'];
   });
-  await at('the ops routes accept a token in the query string', async () => {
-    const r = await raw('/api/deploy-status?token=harness-60-token');
-    assert.strictEqual(r.status, 200, `deploy-status → ${r.status}`);
-    assert.ok(/^[0-9a-f]{7,}/.test(r.json.head), `head not reported: ${r.json.head}`);
-    const p = await raw('/api/qr-status?personality=gojo');
+  await at('Push #61: the state routes are token-free — a query string is just a query string', async () => {
+    const p = await raw('/api/qr-status?personality=gojo&x=1');
     assert.strictEqual(p.status, 200, `qr-status → ${p.status}`);
-    const rel = await raw('/api/release-device-slots?token=harness-60-token', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ personality: 'nobody' }) });
-    assert.ok(rel.status === 400 || rel.status === 502 || rel.status === 200, `release accepted an unknown personality: ${rel.status} ${rel.text.slice(0, 120)}`);
+    const rel = await raw('/api/release-device-slots?x=1', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ personality: 'nobody' }) });
+    assert.ok(rel.status === 400 || rel.status === 502 || rel.status === 200, `release answered ${rel.status} ${rel.text.slice(0, 120)}`);
+    const dep = await raw('/api/deploy-status?token=harness-60-token');
+    assert.strictEqual(dep.status, 404, `deploy-status still exists (${dep.status})`);
   });
-  await at('tightened: POST /api/deploy-status can no longer trigger a deploy', async () => {
-    const r = await raw('/api/deploy-status?token=harness-60-token', { method: 'POST' });
-    assert.strictEqual(r.status, 404, `a POST to the status route did something (${r.status})`);
+  await at('Push #61: the ops routes are gone — POST or GET, a 404 either way', async () => {
+    const r = await raw('/api/deploy-status?x=1', { method: 'POST' });
+    assert.strictEqual(r.status, 404, `POST to a removed route did something (${r.status})`);
+    const d = await raw('/api/deploy', { method: 'POST' });
+    assert.strictEqual(d.status, 404, `deploy still exists (${d.status})`);
     assert.ok(!fs.existsSync('/tmp/a60test/data/.deploy.lock'), 'a deploy lock appeared anyway');
   });
   await at('an unknown path is still a 404 (nothing over-matched)', async () => {
