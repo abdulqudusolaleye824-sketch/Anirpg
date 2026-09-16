@@ -805,11 +805,10 @@ async function markLinkedPersonas(){
     const resp = await fetch(`${BOT_API}/api/bot-status`);
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     const data = await resp.json();
-    const linkedIds = new Set(
-      (data && Array.isArray(data.bots) ? data.bots : [])
-        .filter(b => b.connected)
-        .map(b => b.key)
-    );
+    const _bots = (data && Array.isArray(data.bots)) ? data.bots : [];
+    const linkedIds = new Set(_bots.filter(b => b.connected).map(b => b.key));
+    // Push #59: a blocked number is not "free" — mark it so nobody picks it.
+    const blockedIds = new Set(_bots.filter(b => b.blocked && !b.connected).map(b => b.key));
     document.querySelectorAll('.pcard').forEach(card => {
       const id = card.dataset.id;
       if (linkedIds.has(id)) {
@@ -818,6 +817,8 @@ async function markLinkedPersonas(){
       } else {
         card.classList.remove('linked');
         card.querySelector('.plinkbadge') && (card.querySelector('.plinkbadge').style.display = 'none');
+        card.title = blockedIds.has(id) ? '⛔ WhatsApp blocked this number (403) — appeal the block on that phone before linking' : '';
+        card.style.outline = blockedIds.has(id) ? '1px solid rgba(255,85,104,.7)' : '';
       }
     });
   } catch(e) {
@@ -1112,6 +1113,18 @@ async function qrFetch(opts){
     const img  = document.getElementById('qrImg');
     hideLoading();
 
+    if (data.blocked) {
+      // Push #59: WhatsApp closed the websocket with 403 forbidden. The ACCOUNT is
+      // blocked — no QR will ever complete — so stop the pairing loop and say what
+      // to do instead of letting someone scan a code for an hour.
+      if (img) img.style.opacity = '0.15';
+      _qrExpiresAt = 0;
+      qrStatusSet('<span style="color:#ff5568;font-weight:700">⛔ WhatsApp has blocked this number (403). It cannot be linked until WhatsApp lifts the block.</span>');
+      qrAdvice('On that phone: open WhatsApp → Settings → Help → Contact us / Request a review. Keep the bot from reconnecting meanwhile — every attempt digs the block deeper. When WhatsApp replies, press “New code”.');
+      scheduleQrFetch(data.retryInMs || 60000);
+      return;
+    }
+
     if (data.connected || data.alreadyConnected) {
       qrStatusSet(data.error || '✅ Already linked and online.');
       qrAdvice('');
@@ -1310,10 +1323,11 @@ function updateStatusPill(data){
   const text = document.getElementById('botStatusText');
   const connectedCount = (data.primary.connected ? 1 : 0)
                        + (data.bots?.filter(b => b.connected).length || 0);
+  const blockedCount = (data.bots?.filter(b => b.blocked).length || 0);
   const totalCount = 1 + (data.bots?.length || 0);
   if (connectedCount === 0) {
     dot.className = 'dot off';
-    text.textContent = 'NO BOTS';
+    text.textContent = blockedCount ? `⛔ ${blockedCount} BLOCKED` : 'NO BOTS';
   } else if (connectedCount === totalCount) {
     dot.className = 'dot';
     text.textContent = `${connectedCount}/${totalCount} ONLINE`;
@@ -1363,7 +1377,7 @@ async function renderStatus(){
           <div class="bname">${b.displayName}</div>
           <div class="btheme">${b.jid.split('@')[0]} · ${b.theme}</div>
         </div>
-        <div class="blbl ${b.connected ? 'on' : 'off'}">${b.connected ? 'ONLINE' : 'OFFLINE'}</div>
+        <div class="blbl ${b.connected ? 'on' : 'off'}"${b.blocked ? ' title="WhatsApp blocked this number (403) — request a review on that phone"' : ''}>${b.connected ? 'ONLINE' : b.blocked ? 'BLOCKED' : 'OFFLINE'}</div>
         <div class="bdot ${b.connected ? 'on' : 'off'}"></div>
       </div>
     `;

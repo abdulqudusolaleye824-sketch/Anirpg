@@ -824,6 +824,7 @@ http.createServer(async (req, res) => {
       const allSockets = MultiSocketManager.getAllSockets();
       const linkedJids = Object.keys(PersonalityManager.linkedNumbers || {});
       const bots = [];
+      const _psAll = MultiSocketManager.listPairingSessions ? MultiSocketManager.listPairingSessions() : {};
       const seen = new Set();
       for (const jid of linkedJids) {
         const key = PersonalityManager.linkedNumbers[jid];
@@ -840,6 +841,8 @@ http.createServer(async (req, res) => {
           emoji: PersonalityManager.getPersonalityInfo(key)?.emoji || '🤖',
           theme: PersonalityManager.getPersonalityInfo(key)?.theme || 'Unknown',
           jid: botJid || jid, connected, active: activeNow,
+          // A 403 is a block, not a dropped link — the page must say which.
+          blocked: (_psAll[key] && _psAll[key].blocked) || null,
         });
       }
 
@@ -980,8 +983,23 @@ http.createServer(async (req, res) => {
     if (wantFresh && sinceKick < 8000) {
       return send(200, { success: false, retryInMs: 8000 - sinceKick, error: 'A new code is already on its way — wait a moment.' });
     }
-    const mayKick = !sockNow || (wantFresh && !q.connected);
-    if (mayKick && (!q.qr || q.expired || wantFresh)) {
+    // Push #59: WhatsApp closed this number with 403 forbidden — the ACCOUNT is
+    // blocked, not the link. A new code can never complete, so refuse instead of
+    // wiping a session and burning another QR ref every time the page polls.
+    // `fresh=1` still forces a try, for the case where the block was lifted.
+    if (q.blocked && !wantFresh) {
+      return send(200, {
+        success: false, blocked: true, retryInMs: 600000,
+        error: q.blocked.reason, blockedSince: q.blocked.at, blockedAttempts: q.blocked.attempts,
+      });
+    }
+    // A socket that exists but never completed pairing still needs the kick: the
+    // old `!sockNow` test left the page parked at "opening a pairing session…"
+    // forever while a reconnect loop held the key. Throttled so a 2s poll can't
+    // restart the pairing over and over.
+    const mayKick = !q.connected;
+    const kickThrottled = !wantFresh && (Date.now() - (_qrKickAt[personality] || 0)) < 10000;
+    if (mayKick && (!q.qr || q.expired || wantFresh) && !kickThrottled) {
       _qrKickAt[personality] = Date.now();
       await startAstraLink(personality, AUTH_DIR, getDatabase, saveDatabase, {
         pairingMode: 'qr',
@@ -1158,11 +1176,21 @@ http.createServer(async (req, res) => {
   if (req.method === 'POST' && req.url.startsWith('/api/deploy')) {
     const u = new URL(req.url, 'http://localhost');
     if (!AstraLinkGuard.gate(res, req, u, { mode: 'locked', bucket: 'deploy' })) return;
+    // Running deploy.sh INSIDE the container is worse than useless: the git pull
+    // lands in the container's own filesystem (thrown away at the next start) and
+    // the restart brings back the SAME image. Host-side deploys (auto-update.sh
+    // from cron, or ASTRALINK_DEPLOY_CMD) own this, so say so instead of lying.
+    const inContainer = process.env.ASTRALINK_IN_CONTAINER === '1' || fs.existsSync('/.dockerenv');
+    if (inContainer && !process.env.ASTRALINK_DEPLOY_CMD) {
+      res.writeHead(409, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({
+        success: false, inContainer: true,
+        error: 'This bot runs inside a Docker container, where ./deploy.sh cannot update anything (the pull is discarded and the old image restarts). The host pulls and rebuilds — auto-update.sh runs from cron every 5 minutes here. Or set ASTRALINK_DEPLOY_CMD to the command that actually redeploys you.',
+      }));
+    }
     const DATA = process.env.DATA_DIR || __dirname;
     const lockFile = path.join(DATA, '.deploy.lock');
-    const headBefore = (() => {
-      try { return require('child_process').execSync('git rev-parse --short HEAD', { cwd: __dirname, timeout: 4000 }).toString().trim(); } catch (e) { return 'unknown'; }
-    })();
+    const headBefore = _deployedVersion();
     let running = false;
     try {
       const st = fs.statSync(lockFile);
@@ -1212,8 +1240,7 @@ http.createServer(async (req, res) => {
   if (req.method === 'GET' && req.url.startsWith('/api/deploy-status')) {
     const u = new URL(req.url, 'http://localhost');
     if (!AstraLinkGuard.gate(res, req, u, { mode: 'locked', bucket: 'deploy' })) return;
-    let head = 'unknown';
-    try { head = require('child_process').execSync('git rev-parse --short HEAD', { cwd: __dirname, timeout: 4000 }).toString().trim(); } catch (e) {}
+    let head = _deployedVersion();
     const logDir = process.env.ASTRALINK_DEPLOY_LOG_DIR || path.join(__dirname, 'logs');
     let log = null, logName = null, done = null;
     try {
@@ -1521,6 +1548,21 @@ function _scheduleNextWATMidnight() {
 // earn GP or open /guildwar, and even then the 🥇🥈🥉 cards were dropped into
 // inventories in total silence — so winners never saw a victory card.
 let _lastWarWeekKey = null;
+/**
+ * Which build is actually running. A git checkout answers with the commit; a
+ * Docker image has no .git at all, so auto-update.sh stamps a VERSION file at
+ * build time and that becomes the answer.
+ */
+function _deployedVersion() {
+  try {
+    const v = fs.readFileSync(path.join(__dirname, 'VERSION'), 'utf8').trim();
+    if (v) return v.split('\n')[0].trim();
+  } catch (e) {}
+  try {
+    return require('child_process').execSync('git rev-parse --short HEAD', { cwd: __dirname, timeout: 4000 }).toString().trim();
+  } catch (e) { return 'unknown'; }
+}
+
 function _announceWeeklyWarIfClosed() {
   try {
     const WGW = require('./rpg/utils/WeeklyGuildWar');

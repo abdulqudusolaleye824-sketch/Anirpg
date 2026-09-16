@@ -167,6 +167,29 @@ function isBotUsable(key) {
   return true;
 }
 
+/**
+ * How long to wait before retrying a closed socket — and when to admit a retry
+ * cannot help. (Push #59, written from production: three bot numbers were
+ * reconnecting every 30 seconds for hours against `403 forbidden`, which is
+ * WhatsApp saying the ACCOUNT is blocked. No QR code, no re-pair and no number of
+ * retries fixes that, and the hammering only digs the block deeper.)
+ */
+const RECONNECT_MAX_MS = Math.min(6 * 3600000, Number(process.env.BOT_RECONNECT_MAX_MS || 300000) || 300000);
+function reconnectPolicy({ code, attempt, restartRequired }) {
+  const n = Math.max(1, Number(attempt) || 1);
+  const label = (ms) => (ms < 60000 ? `${Math.max(1, Math.round(ms / 1000))}s` : `${Math.round(ms / 60000)} min`);
+  if (Number(code) === 403) {
+    const backoffMs = Math.min(6 * 3600000, 300000 * Math.pow(2, Math.min(5, n - 1)));
+    return {
+      blocked: true, code: 403, backoffMs, backoffLabel: label(backoffMs),
+      reason: 'WhatsApp refused this number with 403 forbidden — an account/device block, not a connection problem. Re-scanning a QR cannot fix it: open WhatsApp on that phone, read the notice and request a review.',
+    };
+  }
+  if (restartRequired) return { blocked: false, backoffMs: 1200, backoffLabel: label(1200) };
+  const backoffMs = Math.min(RECONNECT_MAX_MS, n * 2000 + 1000);
+  return { blocked: false, backoffMs, backoffLabel: label(backoffMs) };
+}
+
 function botHealthReport() {
   return Object.keys(botSockets).sort().map(k => ({
     key: k,
@@ -768,6 +791,7 @@ function getLatestQr(personalityKey) {
     waiting,
     socketAlive: !!sock,
     error: session.error || null,
+    blocked: session.blocked || null,
     ttlMs: QR_VALID_MS,
   };
 }
@@ -1126,9 +1150,29 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
       if (!isLoggedOut) {
         const attempt = (reconnectAttempts[personalityKey] || 0) + 1;
         reconnectAttempts[personalityKey] = attempt;
-        const backoffMs = restartRequired ? 1200 : Math.min(30000, attempt * 2000 + 1000);
+        const policy = reconnectPolicy({ code, attempt, restartRequired });
+        const backoffMs = policy.backoffMs;
 
-        console.log(`📡 AstraLink [${displayName}] connection closed (code ${code || 'unknown'}). Reconnecting in ${Math.round(backoffMs / 1000)}s (attempt #${attempt})…`);
+        if (policy.blocked) {
+          // Say it once, loudly, and put it where the UI and /health can show it —
+          // otherwise the operator keeps scanning QR codes for a number that is
+          // blocked server-side and blames the linking page.
+          pairingSessions[personalityKey] = {
+            ...(pairingSessions[personalityKey] || {}),
+            status: 'blocked',
+            blocked: { code: 403, reason: policy.reason, at: Date.now(), attempts: attempt },
+            error: policy.reason,
+          };
+          if (attempt <= 2 || attempt % 20 === 0) {
+            console.error(`🚫 AstraLink [${displayName}] ${policy.reason} Retrying in ${policy.backoffLabel} (attempt #${attempt}).`);
+          }
+        } else {
+          if ((pairingSessions[personalityKey] || {}).status === 'blocked') {
+            delete pairingSessions[personalityKey].blocked;
+            pairingSessions[personalityKey].status = 'connecting';
+          }
+          console.log(`📡 AstraLink [${displayName}] connection closed (code ${code || 'unknown'}). Reconnecting in ${policy.backoffLabel} (attempt #${attempt})…`);
+        }
 
         const nextOpts = (credsRegistered || fs.existsSync(path.join(botAuthDir, 'creds.json')))
           ? { ...options, pairingMode: null, pairingPhone: null }
@@ -1856,6 +1900,8 @@ function getActiveSocket(chatId) {
 
 module.exports = {
   connectBot,
+  reconnectPolicy,
+  RECONNECT_MAX_MS,
   startAstraLink,
   // Push #55: bot liveness / health
   isBotUsable,

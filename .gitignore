@@ -73,3 +73,6 @@ coverage/
 *.local
 tmp/
 temp/
+
+# auto-update.sh stamps the running build for /api/deploy-status (never commit)
+VERSION
