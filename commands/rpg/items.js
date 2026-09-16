@@ -14,7 +14,10 @@ const PET_FOOD_NAMES = new Set([
 
 const RARITY_ORDER = { mythic:0, legendary:1, epic:2, rare:3, uncommon:4, common:5 };
 
-function getTypeEmoji(type) {
+function getTypeEmoji(type, item = null) {
+  // Push #56: guild-shop purchases arrive as sealed boxes — show them as boxes,
+  // not as a mystery 💊 consumable, so /items and /equip use read the same.
+  if (item && item.isSealedPackage) return '📦';
   const emojiMap = {
     'Weapon':'⚔️','Armor':'🛡️','Accessory':'💍','Potion':'🧪',
     'Material':'🧱','Consumable':'💊','Catalyst':'⚗️','Buff':'✨','PetFood':'🐾'
@@ -276,7 +279,8 @@ module.exports = {
 
     sorted.forEach((item, i) => {
       const countStr = item.count > 1 ? ` ×${item.count}` : '';
-      message += `${i+1}. ${getTypeEmoji(item.type)} *${item.name}*${countStr}\n`;
+      const _sealHint = item.isSealedPackage ? ` _(sealed — /equip use ${i + 1})_` : '';
+      message += `${i+1}. ${getTypeEmoji(item.type, item)} *${item.name}*${countStr}${_sealHint}\n`;
       message += `   ⭐ ${item.rarity || 'common'} | 📦 ${item.type || 'Item'}\n`;
     });
 

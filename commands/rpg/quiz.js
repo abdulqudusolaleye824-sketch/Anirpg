@@ -154,19 +154,39 @@ async function sendQuestion(sock, session, db, saveDatabase) {
   session.lockedName       = null;
 
   const text = formatQuestion(q, current, total, UI.isPro(db.users?.[session.hostJid]));
+  // Push #56: the question now DROPS WITH BUTTONS per option.
+  // Groups get a real tappable list button (4 rows, one per option — tapping
+  // one sends `/a <letter>` straight into the answer path). Quick replies are
+  // kept for DMs, and the numbered text menu is only the last resort, because
+  // WhatsApp does not render native_flow buttons for every client — which is
+  // exactly what made previous quiz questions look button-less.
+  const _letters = ['A', 'B', 'C', 'D'].filter((L) => q.options?.[L]);
+  const _rows = _letters.map((L) => ({
+    id: `/a ${L}`,
+    title: `${L}. ${String(q.options[L]).slice(0, 60)}`,
+    description: `Tap to answer ${L}`,
+  }));
   let sent = false;
-  if (Buttons) {
+  if (Buttons?.sendList && _rows.length >= 2) {
+    const r = await Buttons.sendList(sock, session.chatId, {
+      title: `🎌 Question ${current}/${total} — tap your answer`,
+      text,
+      buttonText: '🎯 Answer',
+      footer: 'Fastest correct answer locks the question',
+      sectionTitle: 'Options',
+      rows: _rows,
+    });
+    sent = r && r.mode === 'list';
+  }
+  if (!sent && Buttons) {
     try {
-      await Buttons.sendButtons(sock, session.chatId, {
+      const r = await Buttons.sendButtons(sock, session.chatId, {
         text,
-        buttons: Buttons.quickReplies([
-          [`🅰️ ${q.options.A}`.slice(0, 24), '/a A'],
-          [`🅱️ ${q.options.B}`.slice(0, 24), '/a B'],
-          [`🇨 ${q.options.C}`.slice(0, 24), '/a C'],
-          [`🇩 ${q.options.D}`.slice(0, 24), '/a D'],
-        ]),
+        buttons: Buttons.quickReplies(_letters.map((L, i) => [
+          `${['🅰️','🅱️','🇨️','🇩️'][i] || `${L}.`} ${q.options[L]}`.slice(0, 24), `/a ${L}`,
+        ])),
       });
-      sent = true;
+      sent = r && r.mode !== 'menu' && r.mode !== 'plain';
     } catch (e) { /* fall through to plain text */ }
   }
   if (!sent) await sock.sendMessage(session.chatId, { text });

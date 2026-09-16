@@ -153,7 +153,7 @@ module.exports = {
     }
 
     if (action==='scrolls'||action==='scroll') {
-      const stones = player.manaStones || player.manaCrystals || 0;
+      const stones = _stoneBalance(player);
       const lines = [...(pro ? [UI.PRO_BAR,`📜 *RECIPE SCROLLS* 💎`,UI.PRO_BAR] : [`📜 *RECIPE SCROLLS*`,UI.FREE_BAR]),`💎 Your Mana Stones: *${stones.toLocaleString()}*`,``,`⚠️ Contents unknown until purchased.`,`📖 Read scrolls in DMs to reveal recipe + key.`,``];
       for (const s of SCROLL_SHOP_ITEMS) {
         const can = stones >= s.cost ? '✅' : '❌';
@@ -285,6 +285,20 @@ ${FRAME}`
       return sock.sendMessage(chatId,{text:`${FRAME}\n⚔️ *WEAPON EQUIPPED!*\n${FRAME}\n✨ *${w.name}*\n⚔️ +${w.bonus} ATK${w.defBonus?`\n🛡️ +${w.defBonus} DEF`:''}\n💠 Spent: ${w.cost.toLocaleString()} 💠 (+${tax} 💠 tax)\n💠 Nexus left: ${(player.gold||0).toLocaleString()}\n${FRAME}`},{quoted:msg});
     }
 
+    // Push #56: one resolver for the Mana Stone wallet. Every other system
+    // (guild shop, gates, crafting, attack patterns) reads and debits
+    // `manaCrystals`; the scroll path preferred a legacy `manaStones` field for
+    // BOTH the check and the debit, so a stale `manaStones: 0` made a scroll
+    // free (or blocked a rich player), and the "Have:" number disagreed with
+    // /balance. Legacy-only accounts keep working; everyone else is now read
+    // from the wallet they actually see.
+    function _stoneField(p) {
+      return (p && p.manaStones !== undefined && p.manaCrystals === undefined) ? 'manaStones' : 'manaCrystals';
+    }
+    function _stoneBalance(p) {
+      return Math.max(0, Number(p?.[_stoneField(p)]) || 0);
+    }
+
     if (action==='buy') {
       const cat=args[1]?.toLowerCase();
       const num=parseInt(args[2]);
@@ -298,16 +312,26 @@ ${FRAME}`
           const list = SCROLL_SHOP_ITEMS.map(s => `${s.emoji} *${s.id}* — ${s.name} (${s.cost.toLocaleString()} MS)`).join('\n');
           return sock.sendMessage(chatId, { text: `📜 *RECIPE SCROLLS*\n${FRAME}\n${list}\n${FRAME}\nUsage: /shop buy scroll sc1` }, { quoted: msg });
         }
-        const manaStones = player.manaStones || player.manaCrystals || 0;
-        if (manaStones < scrollItem.cost) {
-          return sock.sendMessage(chatId, { text: `❌ Not enough Mana Stones!\nNeed: *${scrollItem.cost.toLocaleString()}*\nHave: *${manaStones.toLocaleString()}*` }, { quoted: msg });
+        // Push #56: the scroll is minted BEFORE the money moves. buyScroll()
+        // returns null for any rarity its recipe pools do not carry (the pools
+        // are keyed 'Common'/'Rare'/… while other callers pass lowercase), and
+        // the old order pushed that null into inventory.scrolls — the player
+        // paid Mana Stones for an entry that then blew up /scroll read.
+        const newScroll = buyScroll(scrollItem.rarity) || buyScroll(String(scrollItem.rarity || '').charAt(0).toUpperCase() + String(scrollItem.rarity || '').slice(1)) || buyScroll('Common');
+        if (!newScroll) {
+          return sock.sendMessage(chatId, { text: `❌ *${scrollItem.name}* could not be sealed by the guild scribe just now — recipe pools are being re-forged.\n\n💎 No Mana Stones were taken.` }, { quoted: msg });
         }
-        if (player.manaStones !== undefined) player.manaStones -= scrollItem.cost;
-        else player.manaCrystals -= scrollItem.cost;
+        const manaStones = _stoneBalance(player);
+        if (manaStones < scrollItem.cost) {
+          return sock.sendMessage(chatId, { text: `❌ Not enough Mana Stones!\nNeed: *${scrollItem.cost.toLocaleString()}* 💎\nHave: *${manaStones.toLocaleString()}* 💎\n\n💡 /balance shows your live wallet.` }, { quoted: msg });
+        }
+        const _sf = _stoneField(player);
+        player[_sf] = manaStones - scrollItem.cost;
+        if (_sf === 'manaCrystals' && player.manaStones !== undefined) player.manaStones = player.manaCrystals;
+        if (player.inventory && player.inventory.manaStones !== undefined) player.inventory.manaStones = player[_sf];
         try { require('../../rpg/utils/TransactionLog').logTransaction(player, { type: 'shop_buy', amount: scrollItem.cost, currency: '💎', note: `${scrollItem.name}` }); } catch (e) {};
         if (!player.inventory) player.inventory = {};
         if (!player.inventory.scrolls) player.inventory.scrolls = [];
-        const newScroll = buyScroll(scrollItem.rarity);
         player.inventory.scrolls.push(newScroll);
         try { require('../../rpg/utils/QuestDispatcher').trackAndNotify(player, 'shop', 1, sock, sender, chatId); } catch(e){}
         saveDatabase();

@@ -120,6 +120,39 @@ async function searchCommons(query) {
     .filter((u) => /^https:\/\//.test(u));
 }
 
+/**
+ * Push #56: per-query image memory. Every URL already shown for a search is
+ * remembered on the DB, and the pool is filtered against it, so /pinterest gojo
+ * twice never re-posts the same picture. When a search has shown everything it
+ * can find, the rotation restarts (and says so) instead of failing — the
+ * sources are capped at ~20 candidates, so exhaustion is normal, not an error.
+ * Pure-ish (mutates db.pinterestSeen) and exported for testing.
+ */
+const PINTEREST_MEMORY = 150;
+function filterUnseen(db, query, urls) {
+  const key = String(query || '').trim().toLowerCase();
+  if (!db || typeof db !== 'object') return { urls: (urls || []).slice(), recycled: false, key };
+  if (!db.pinterestSeen || typeof db.pinterestSeen !== 'object') db.pinterestSeen = {};
+  const seen = new Set(db.pinterestSeen[key] || []);
+  const pool = (urls || []).slice();
+  let recycled = false;
+  let fresh = pool.filter((u) => !seen.has(u));
+  if (!fresh.length && seen.size) {
+    recycled = true;
+    db.pinterestSeen[key] = [];
+    fresh = pool;
+  }
+  return { urls: fresh, recycled, key };
+}
+
+function rememberShown(db, key, urls) {
+  if (!db || typeof db !== 'object' || !key) return 0;
+  if (!db.pinterestSeen || typeof db.pinterestSeen !== 'object') db.pinterestSeen = {};
+  const prev = Array.isArray(db.pinterestSeen[key]) ? db.pinterestSeen[key] : [];
+  db.pinterestSeen[key] = [...new Set([...prev, ...(urls || [])])].slice(-PINTEREST_MEMORY);
+  return db.pinterestSeen[key].length;
+}
+
 async function collectImages(query) {
   // Merge sources until the candidate pool is healthy — a thin pool gets
   // supplemented, so one walled source can't starve the result.
@@ -256,8 +289,15 @@ module.exports = {
       }, { quoted: msg });
     }
 
+    // Push #56: dedupe the pool against what this query has already shown.
+    const _unseen = filterUnseen(db, query, imageUrls);
+    const _histKey = _unseen.key;
+    const _recycled = _unseen.recycled;
+    const _fresh = _unseen.urls;
+    const _sentUrls = [];
+
     // Push #28 + #36: walk the WHOLE pool until `count` HQ images actually send.
-    const toSend = imageUrls;
+    const toSend = _fresh.length ? _fresh : imageUrls;
     let sent = 0;
 
     for (const url of toSend) {
@@ -277,13 +317,22 @@ module.exports = {
                   : /47494638/.test(head) ? 'image/gif'
                   : /52494646/.test(head) ? 'image/webp'
                   : 'image/jpeg',
-          caption:  sent === 0 ? `📌 _${query}_` : '',
+          caption:  sent === 0 ? `📌 _${query}_` + (_recycled ? ' · ♻️ fresh rotation' : '') : '',
         }, { quoted: msg });
         sent++;
+        _sentUrls.push(url);
         if (sent < toSend.length) await new Promise((r) => setTimeout(r, 500));
       } catch (err) {
         console.error('⚠️ Pinterest image send error:', err.message);
       }
+    }
+
+    // Remember what was shown (bounded per query, so the DB stays small).
+    if (_sentUrls.length) {
+      try {
+        rememberShown(db, _histKey, _sentUrls);
+        if (typeof saveDatabase === 'function') saveDatabase();
+      } catch (e) { console.error('⚠️ pinterest history save skipped:', e.message); }
     }
 
     if (sent === 0) {
@@ -307,3 +356,5 @@ function resetCooldownsFor(jid) {
 module.exports.resetCooldownsFor = resetCooldownsFor;
 module.exports._parseQueryCount = parseQueryCount;
 module.exports._sniffDims = sniffDims; // push #36 test hook
+module.exports._filterUnseen = filterUnseen;   // push #56 test hook
+module.exports._rememberShown = rememberShown; // push #56 test hook

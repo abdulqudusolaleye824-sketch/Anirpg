@@ -914,49 +914,22 @@ ${FRAME}`
         // Decrement stock unit
         item.unitsLeft -= 1;
 
-        // Grant item to player inventory
+        // Push #56: the purchase is SEALED into an inventory package instead of
+        // being half-applied inline. Opening it (/equip use <#>) routes every
+        // payload to the system that owns it — attack patterns now land in
+        // /attacks, which the old `inventory.patterns` push never did.
+        const Sealed = require('../../rpg/utils/SealedPackages');
         if (!player.inventory) player.inventory = { healthPotions:0, energyPotions:0, reviveTokens:0, items:[] };
         if (!player.inventory.items) player.inventory.items = [];
-
-        if (item.type === 'potion') {
-          if (item.key === 'lowerHealthPotions' || item.key === 'healthPotions') {
-            player.inventory.lowerHealthPotions = (player.inventory.lowerHealthPotions || 0) + 1;
-            player.inventory.healthPotions = (player.inventory.healthPotions || 0) + 1;
-          } else if (item.key === 'mediumHealthPotions') {
-            player.inventory.mediumHealthPotions = (player.inventory.mediumHealthPotions || 0) + 1;
-          } else if (item.key === 'higherHealthPotions') {
-            player.inventory.higherHealthPotions = (player.inventory.higherHealthPotions || 0) + 1;
-          } else if (item.key === 'energyPotions') { /* energy potions scrapped */ }
-          else if (item.key === 'reviveTokens') player.inventory.reviveTokens = (player.inventory.reviveTokens || 0) + 1;
-          else if (item.key === 'luckPotion') player.inventory.items.push({ name: 'Luck Potion', type: 'Consumable', isLuckPotion: true });
-          else if (item.key === 'xpBooster') player.inventory.items.push({ name: 'XP Booster', type: 'Consumable', isXpBooster: true, charges: 3 });
-          else if (item.key === 'goldMult') player.inventory.items.push({ name: 'Nexus Multiplier', type: 'Consumable', isNexusMult: true, charges: 3 });
-          else if (item.key === 'shieldScroll') player.inventory.items.push({ name: 'Shield Scroll', type: 'Consumable', isShieldScroll: true });
-          else if (item.key === 'mightElixir') player.inventory.items.push({ name: 'Elixir of Might', type: 'Consumable', isMightElixir: true, charges: 5, atkBonus: 20 });
-        } else if (item.type === 'pet_food') {
-          if (!player.inventory.petFood) player.inventory.petFood = {};
-          player.inventory.petFood[item.id] = (player.inventory.petFood[item.id] || 0) + 1;
-        } else if (item.type === 'stat') {
-          if (!player.stats) player.stats = {};
-          if (item.stat === 'atk') player.stats.atk = (player.stats.atk || 10) + item.amount;
-          else if (item.stat === 'def') player.stats.def = (player.stats.def || 5) + item.amount;
-          else if (item.stat === 'hp') { player.stats.maxHp = (player.stats.maxHp || 100) + item.amount; player.stats.hp = Math.min(player.stats.hp + item.amount, player.stats.maxHp); }
-          else if (item.stat === 'spd') player.stats.speed = (player.stats.speed || 10) + item.amount;
-          else if (item.stat === 'crit') player.stats.critChance = (player.stats.critChance || 0) + item.amount;
-        } else if (item.type === 'ticket') {
-          player.summonTickets = (player.summonTickets || 0) + item.amount;
-        } else if (item.type === 'bundle') {
-          if (item.bundleId === 1) { player.inventory.healthPotions = (player.inventory.healthPotions||0)+5; player.inventory.reviveTokens = (player.inventory.reviveTokens||0)+1; }
-          else if (item.bundleId === 2) { player.inventory.healthPotions = (player.inventory.healthPotions||0)+10; player.inventory.reviveTokens = (player.inventory.reviveTokens||0)+5; player.inventory.items.push({ name: 'XP Booster', type: 'Consumable', isXpBooster: true, charges: 3 }); }
-          else if (item.bundleId === 3) { player.inventory.items.push({ name: 'Elixir of Might', type: 'Consumable', isMightElixir: true, charges: 5, atkBonus: 20 }, { name: 'Shield Scroll', type: 'Consumable', isShieldScroll: true }, { name: 'Luck Potion', type: 'Consumable', isLuckPotion: true }); }
-        } else if (item.type === 'pattern') {
-          if (!player.inventory.patterns) player.inventory.patterns = [];
-          player.inventory.patterns.push({ ...item, boughtAt: Date.now() });
-        } else if (item.type === 'scroll') {
-          const { buyScroll } = require('../../rpg/utils/CraftingSystem');
-          if (!player.inventory.scrolls) player.inventory.scrolls = [];
-          player.inventory.scrolls.push(buyScroll(item.rarity || 'common'));
+        const _pkg = Sealed.seal(item, { from: 'Guild Shop', price: discountedPrice, currency: item.currency, guild: playerGuild?.name || null });
+        if (item.type === 'pattern') {
+          // Roll the pattern number at purchase so the receipt names the same
+          // technique the player will open.
+          const rank = Sealed.PATTERN_RANK_FOR_ITEM?.[item.id] || 'B';
+          _pkg.pkg.patternId = Sealed.rollPatternId(rank, player.attackPatterns?.owned || []);
+          _pkg.pkg.shopItem.rank = rank;
         }
+        player.inventory.items.push(_pkg);
 
         saveDatabase();
 
@@ -970,11 +943,14 @@ ${FRAME}`
             `🛍️ *GUILD SHOP PURCHASE*`,
             `${FRAME}`,
             `🎁 Purchased: *${item.name}*`,
+            `📦 Sealed in your inventory as *${_pkg.name}*`,
+            `👉 /equip use <#> to open it — /items lists the numbers`,
+            ...(item.type === 'pattern' && _pkg.pkg.patternId ? [`⚔️ Attack pattern *#${_pkg.pkg.patternId}* is inside — it lands in */attacks* when you open the box`] : []),
             `🏷️ Guild Discount: *${discountPct}% OFF*`,
             `💰 Paid: *${costDisplay}*`,
             `📦 Units Left Today: *${item.unitsLeft}/5 units*`,
             `${FRAME}`,
-            `✅ Item added to your inventory!`,
+            `✅ Package added to your inventory — open it to receive the item!`,
             `${FRAME}`,
           ].join('\n'),
         }, { quoted: msg });
@@ -1030,16 +1006,61 @@ ${FRAME}
 🏰 ${playerGuild.name}
 ${FRAME}\n`;
 
-      if (playerGuild.members && playerGuild.members.length > 0) {
-        playerGuild.members.forEach((member, i) => {
-          const rankEmoji = member.rank === 'Leader' || member.rank === 'Guild Master' ? '👑' : member.rank === 'Officer' ? '⭐' : '👤';
-          memberList += `${i + 1}. ${rankEmoji} ${member.name || 'Unknown'}\n`;
-          memberList += `   ${member.rank || 'Member'}\n\n`;
-        });
+      // Push #56: the roster used to read `member.rank` off `guild.members`,
+      // which is an array of bare JID strings for every guild created before the
+      // hire-flow existed — so members showed as "Unknown / Member" and the
+      // rank was never visible. Normalise BOTH stored shapes (strings and
+      // {id,rank} objects), merge in memberData, and show each hunter's
+      // guild rank AND their own awaken rank / level / GP.
+      const byId = new Map();
+      const touch = (entry) => {
+        const id = (entry && typeof entry === 'object') ? (entry.id || entry.jid) : entry;
+        if (!id) return;
+        const key = String(id).split(':')[0];
+        const cur = byId.get(key) || { id, guildRank: null, name: null, joinedAt: null };
+        if (entry && typeof entry === 'object') {
+          if (entry.rank) cur.guildRank = entry.rank;
+          if (entry.name) cur.name = entry.name;
+          if (entry.joinedAt) cur.joinedAt = entry.joinedAt;
+        }
+        byId.set(key, cur);
+      };
+      (playerGuild.members || []).forEach(touch);
+      (playerGuild.memberData || []).forEach(touch);
+      if (playerGuild.leader) {
+        const lk = String(playerGuild.leader).split(':')[0];
+        const rec = byId.get(lk) || { id: playerGuild.leader, guildRank: null, name: null };
+        rec.guildRank = rec.guildRank || 'Guild Master';
+        byId.set(lk, rec);
       }
 
+      const RANK_EMOJI = { 'Guild Master': '👑', 'Leader': '👑', 'Vice': '⭐', 'Vice GM': '⭐', 'Vice Guild Master': '⭐', 'Officer': '⭐' };
+      const rows = [...byId.values()].map((m) => {
+        const u = db.users?.[m.id];
+        const guildRank = m.guildRank || (String(playerGuild.leader).split(':')[0] === String(m.id).split(':')[0] ? 'Guild Master' : 'Member');
+        const emoji = RANK_EMOJI[guildRank] || (String(guildRank).toLowerCase().includes('member') ? '👤' : '🎖️');
+        return {
+          ...m, u, guildRank, emoji,
+          name: m.name || u?.name || String(m.id).split('@')[0],
+          level: u?.level || 0,
+          hunterRank: u?.awakenRank || u?.rank || '—',
+          wgp: u?.weeklyGP || 0, tgp: u?.totalGP || 0,
+          inGame: !!u,
+        };
+      }).sort((a, b) => (b.guildRank === 'Guild Master') - (a.guildRank === 'Guild Master') || (b.tgp - a.tgp) || (b.level - a.level));
+
+      for (const [i, r] of rows.entries()) {
+        memberList += `${i + 1}. ${r.emoji} *${r.name}*${r.inGame ? '' : ' _(unregistered)_'}\n`;
+        memberList += `    🏅 Guild Rank: *${r.guildRank}* · ⚡ Hunter: *${r.hunterRank}-Rank Lv.${r.level || '?'}*\n`;
+        memberList += `    💠 GP: *${r.wgp.toLocaleString()}* wk / *${r.tgp.toLocaleString()}* total\n\n`;
+      }
+      if (!rows.length) memberList += `_(no roster entries)_\n\n`;
+
+      const officers = rows.filter(r => RANK_EMOJI[r.guildRank]).length;
       memberList += `${FRAME}\n`;
-      memberList += `Total: ${playerGuild.members.length}/${maxM}`;
+      memberList += `Total: ${rows.length}/${maxM} · 👑 1 GM · ⭐ ${Math.max(0, officers - 1)} officer(s)\n`;
+      memberList += `Guild Points: *${(playerGuild.guildPoints || playerGuild.totalGP || 0).toLocaleString()} GP*\n`;
+      memberList += `${FRAME}\n💡 /guild promote @user · /guild demote @user · /guild kick @user`;
 
       return sock.sendMessage(chatId, { text: memberList });
     }
@@ -1165,7 +1186,27 @@ ${FRAME}\n`;
         });
       }
 
-      playerGuild.members = playerGuild.members.filter(m => m.id !== sender);
+      // Push #56: `members` is a bare-JID array for every pre-hire guild, so
+      // the old `m.id !== sender` filter matched nothing and leavers stayed on
+      // the roster forever (inflating the guild and its GP totals).
+      const _mid = (m) => String((m && typeof m === 'object') ? (m.id || m.jid) : m).split(':')[0];
+      playerGuild.members = (playerGuild.members || []).filter(m => _mid(m) !== String(sender).split(':')[0]);
+      if (Array.isArray(playerGuild.memberData)) {
+        playerGuild.memberData = playerGuild.memberData.filter(m => _mid(m) !== String(sender).split(':')[0]);
+      }
+      if (Array.isArray(playerGuild.officers)) {
+        playerGuild.officers = playerGuild.officers.filter(m => _mid(m) !== String(sender).split(':')[0]);
+      }
+      try {
+        let w = 0, t = 0;
+        for (const id of playerGuild.members.map(_mid)) {
+          const u = db.users?.[id];
+          if (u) { w += u.weeklyGP || 0; t += u.totalGP || 0; }
+        }
+        playerGuild.weeklyGP = Math.max(0, w);
+        playerGuild.totalGP = Math.max(0, t);
+        playerGuild.guildPoints = Math.max(0, t);
+      } catch (e) {}
       player.guild = null;
       saveDatabase();
 
@@ -1367,10 +1408,35 @@ ${FRAME}\n`;
       }
 
       const guildId = Object.keys(db.guilds).find(id => db.guilds[id] === playerGuild);
+      // Push #56: disbanding used to delete the guild object and leave every
+      // member believing they were still in it (dangling `player.guild`, which
+      // made /guild error and /profile lie). Free the roster first.
+      const _mid2 = (m) => String((m && typeof m === 'object') ? (m.id || m.jid) : m).split(':')[0];
+      const roster = [...new Set([...(playerGuild.members || []).map(_mid2), ...(playerGuild.memberData || []).map(_mid2)])];
+      let freed = 0;
+      for (const bare of roster) {
+        for (const jid of Object.keys(db.users || {})) {
+          if (String(jid).split(':')[0] !== bare) continue;
+          if (db.users[jid]?.guild === playerGuild.name || db.users[jid]?.guild === playerGuild.id) {
+            db.users[jid].guild = null;
+            db.users[jid].guildJoinedAt = null;
+            freed++;
+          }
+        }
+      }
+      try {
+        for (const col of ['guildInvites', 'guildContracts']) {
+          if (!db[col]) continue;
+          for (const k of Object.keys(db[col])) {
+            const v = db[col][k];
+            if (v && (v.guildId === guildId || v.guild === playerGuild.name || v.guildName === playerGuild.name)) delete db[col][k];
+          }
+        }
+      } catch (e) {}
       delete db.guilds[guildId];
       saveDatabase();
 
-      return sock.sendMessage(chatId, { text: `✅ *${playerGuild.name}* has been disbanded.` });
+      return sock.sendMessage(chatId, { text: `✅ *${playerGuild.name}* has been disbanded.\n\n👥 ${freed} member(s) are now guildless — their guild records were wiped with it.\n/Guild join <name> or /guild create <name>.` });
     }
 
     return sock.sendMessage(chatId, {

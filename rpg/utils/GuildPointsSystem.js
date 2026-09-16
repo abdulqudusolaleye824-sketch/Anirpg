@@ -81,7 +81,7 @@ function onGuildRaidKill(guild) {
 // ── GP from donation ──────────────────────────────────────────────────────────
 function onDonation(guild, goldAmount) {
   const gpEarned = Math.floor(goldAmount / 5000);
-  if (gpEarned > 0) awardGP(guild, gpEarned, `Donation: ${goldAmount.toLocaleString()} gold`);
+  if (gpEarned > 0) awardGP(guild, gpEarned, `Donation: ${goldAmount.toLocaleString()} Nexus`);
   return gpEarned;
 }
 

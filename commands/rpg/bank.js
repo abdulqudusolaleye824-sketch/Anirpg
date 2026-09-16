@@ -264,7 +264,7 @@ ${FRAME}`
         } catch {}
         if (_notifySock) {
           await _notifySock.sendMessage(bank.owner, {
-            text: `🏦 NEW ACCOUNT!\n\n${player.name} joined ${bank.name}\nDeposit: ${initialDeposit} gold`
+            text: `🏦 NEW ACCOUNT!\n\n${player.name} joined ${bank.name}\nDeposit: ${initialDeposit} Nexus`
           });
         } else {
           try { console.log(`[BANK] Skipped NEW ACCOUNT DM to ${bank.owner} — no serf`); } catch {}
@@ -424,7 +424,7 @@ ${FRAME}`
         } catch {}
         if (_notifySock2) {
           await _notifySock2.sendMessage(bank.owner, {
-            text: `💠 BANK INTEREST!\n\n${player.name} withdrew ${amount}\nYou earned: ${result.interest} gold`
+            text: `💠 BANK INTEREST!\n\n${player.name} withdrew ${amount}\nYou earned: ${result.interest} Nexus`
           });
         } else {
           try { console.log(`[BANK] Skipped BANK INTEREST DM to ${bank.owner} — no serf`); } catch {}

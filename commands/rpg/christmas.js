@@ -279,7 +279,7 @@ ${boss.weakness === player.class.name ? '✨ *CLASS ADVANTAGE!* +50% DMG!\n━�
       const giftCost = 100;
       if (player.gold < giftCost) {
         await sock.sendMessage(chatId, {
-          text: `❌ Not enough Nexus!\n\n💠 Need: ${giftCost} Nexus\n💠 Have: ${player.gold} gold`
+          text: `❌ Not enough Nexus!\n\n💠 Need: ${giftCost} Nexus\n💠 Have: ${player.gold} Nexus`
         }, { quoted: msg });
         return;
       }

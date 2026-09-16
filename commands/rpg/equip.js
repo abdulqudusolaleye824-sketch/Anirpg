@@ -108,6 +108,25 @@ module.exports = {
       const type = (selectedStack.type || '').toLowerCase();
       const itemName = selectedStack.name;
 
+      // ── Push #56: sealed packages (guild-shop purchases, event drops) ──
+      if (selectedStack.isSealedPackage) {
+        const Sealed = require('../../rpg/utils/SealedPackages');
+        const res = Sealed.openAndConsume(player, selectedStack);
+        if (!res.ok) return sock.sendMessage(chatId, { text: `❌ ${res.error}` }, { quoted: msg });
+        saveDatabase();
+        return sock.sendMessage(chatId, {
+          text: [
+            `📦 *PACKAGE OPENED*`,
+            ``,
+            `🎁 ${selectedStack.pkg?.shopItem?.name || itemName}`,
+            ...res.lines.map(l => `  ${l}`),
+            ``,
+            ...(res.routed === 'pattern' ? [`⚔️ Open */attacks* to use it in battle (it is equipped if you had a free slot).`] : []),
+            ...(res.routed === 'scroll' ? [`📜 */scroll* to forge it into a rune.`] : []),
+          ].join('\n'),
+        }, { quoted: msg });
+      }
+
       // ── Health Potion ──
       if (itemName === 'Health Potion') {
         if ((inv.healthPotions || 0) < 1) return sock.sendMessage(chatId, { text: `❌ No Health Potions!` }, { quoted: msg });

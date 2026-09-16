@@ -158,15 +158,23 @@ module.exports = {
       if (!player.awakenPassives) player.awakenPassives = [];
       player.awakenPassives.push(tierData.passive);
 
-      // Class evolution on Tier 2
+      // Class evolution on Tier 2. The drama module is the authority so Monster
+      // variants and Healer (both missing from the old table) evolve too.
       let evolutionMsg = '';
+      let Drama = null;
+      try { Drama = require('../../rpg/utils/AwakeningDrama'); } catch (e) {}
       if (nextTier === 2) {
-        const evo = CLASS_EVOLUTIONS[className];
+        const evo = (Drama && Drama.evolvedName(player, className)) || CLASS_EVOLUTIONS[className];
         if (evo) {
           player.evolvedClass = evo;
           evolutionMsg = `\n\n🔥 *CLASS EVOLVED!*\n${className} → *${evo}*\nYour class has transcended its limits!`;
         }
       }
+
+      player.awakenings = player.awakenings || [];
+      player.awakenings.push({ tier: nextTier, at: Date.now(), class: className, evolved: player.evolvedClass || null });
+      player.stats_history = player.stats_history || {};
+      player.stats_history.awakenings = (player.stats_history.awakenings || 0) + 1;
 
       saveDatabase();
 
@@ -196,7 +204,23 @@ module.exports = {
         ...(pro ? [UI.PRO_MINI, `💎 *PRO ASCEND* — Tier ${nextTier} · +${b.atk} ATK`] : [UI.upsell()]),
       ].filter(l => l !== null).join('\n');
 
-      return sock.sendMessage(chatId, { text: lines }, { quoted: msg });
+      await sock.sendMessage(chatId, { text: lines }, { quoted: msg });
+
+      // Push #56 — the lore drama. Every class gets its own written rite, sent
+      // as SEPARATE messages after the stat card so it lands like a cutscene
+      // instead of a wall of text (this also covers the Monster-variant request:
+      // monsters get moulting lore in their own message, not appended stats).
+      try {
+        const msgs = (Drama || require('../../rpg/utils/AwakeningDrama'))
+          .buildDrama({ player, tier: nextTier, className, pro, UI });
+        for (const dm of msgs) {
+          await new Promise(r => setTimeout(r, 700));
+          await sock.sendMessage(chatId, { text: dm });
+        }
+      } catch (e) {
+        console.error('[awaken] lore drama failed:', e.message);
+      }
+      return;
     }
 
     return sock.sendMessage(chatId, { text: '❌ Usage: /awaken or /awaken confirm' }, { quoted: msg });

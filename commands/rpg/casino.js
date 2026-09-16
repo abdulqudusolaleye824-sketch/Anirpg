@@ -501,7 +501,7 @@ ${message}
 
 ${FRAME}
 💠 Bet: ${betAmount} Nexus
-${winAmount >= 0 ? `💵 Won: ${winAmount} gold` : `💸 Lost: ${Math.abs(winAmount)} gold · 🌀 Aura \u2212${_auraHit}`}
+${winAmount >= 0 ? `💵 Won: ${winAmount} Nexus` : `💸 Lost: ${Math.abs(winAmount)} Nexus · 🌀 Aura \u2212${_auraHit}`}
 💼 Balance: ${player.gold || 0} Nexus
 ${FRAME}${isJackpot ? '\n🏆 JACKPOT WINNER! 🏆' : ''}`;
 
@@ -514,7 +514,7 @@ ${FRAME}${isJackpot ? '\n🏆 JACKPOT WINNER! 🏆' : ''}`;
               `🎰 *SLOT MACHINE* 🎰`,
               `${FRAME}`,
               ``,
-              `💠 Wager: ${betAmount.toLocaleString()} gold`,
+              `💠 Wager: ${betAmount.toLocaleString()} Nexus`,
               `${FRAME}`,
             ].join('\n'),
           },
@@ -531,10 +531,10 @@ ${FRAME}${isJackpot ? '\n🏆 JACKPOT WINNER! 🏆' : ''}`;
               `${FRAME}`,
               message,
               ``,
-              `💠 Bet: ${betAmount.toLocaleString()} gold`,
+              `💠 Bet: ${betAmount.toLocaleString()} Nexus`,
               winAmount >= 0
-                ? `💵 Won: +${winAmount.toLocaleString()} gold`
-                : `💸 Lost: ${Math.abs(winAmount).toLocaleString()} gold · 🌀 Aura \u2212${_auraHit}`,
+                ? `💵 Won: +${winAmount.toLocaleString()} Nexus`
+                : `💸 Lost: ${Math.abs(winAmount).toLocaleString()} Nexus · 🌀 Aura \u2212${_auraHit}`,
               `💼 Balance: *${(player.gold || 0).toLocaleString()}* gold`,
               ...(pro ? [`📊 Lifetime: +${UI.num(player.casino.totalWon)} / -${UI.num(player.casino.totalLost)}`] : []),
               isJackpot ? `\n🏆 *JACKPOT WINNER!* 🏆` : '',
@@ -664,7 +664,7 @@ ${FRAME}
 ${result}
 ${FRAME}
 💠 Bet: ${betAmount} Nexus
-${winAmount > 0 ? `💵 Won: ${winAmount} gold` : winAmount < 0 ? `💸 Lost: ${Math.abs(winAmount)} gold · 🌀 Aura \u2212${_auraHit}` : `➖ No change`}
+${winAmount > 0 ? `💵 Won: ${winAmount} Nexus` : winAmount < 0 ? `💸 Lost: ${Math.abs(winAmount)} Nexus · 🌀 Aura \u2212${_auraHit}` : `➖ No change`}
 💼 Balance: ${player.gold || 0} Nexus
 ${FRAME}`;
 
@@ -677,7 +677,7 @@ ${FRAME}`;
               `🃏 *BLACKJACK* 🃏`,
               `${FRAME}`,
               ``,
-              `💠 Wager: ${betAmount.toLocaleString()} gold`,
+              `💠 Wager: ${betAmount.toLocaleString()} Nexus`,
               `${FRAME}`,
             ].join('\n'),
           },
@@ -696,11 +696,11 @@ ${FRAME}`;
               `${FRAME}`,
               result,
               ``,
-              `💠 Bet: ${betAmount.toLocaleString()} gold`,
+              `💠 Bet: ${betAmount.toLocaleString()} Nexus`,
               winAmount > 0
-                ? `💵 Won: +${winAmount.toLocaleString()} gold`
+                ? `💵 Won: +${winAmount.toLocaleString()} Nexus`
                 : winAmount < 0
-                  ? `💸 Lost: ${Math.abs(winAmount).toLocaleString()} gold · 🌀 Aura \u2212${_auraHit}`
+                  ? `💸 Lost: ${Math.abs(winAmount).toLocaleString()} Nexus · 🌀 Aura \u2212${_auraHit}`
                   : `➖ No change`,
               `💼 Balance: *${(player.gold || 0).toLocaleString()}* gold`,
               ...(pro ? [`📊 Lifetime: +${UI.num(player.casino.totalWon)} / -${UI.num(player.casino.totalLost)}`] : []),
@@ -822,7 +822,7 @@ Result: ${spin} (${spin === 0 ? 'Green' : isRed ? 'Red' : 'Black'})
 ${won ? `🎉 YOU WIN! ${multiplier}x payout! 🎉` : `❌ Better luck next time!`}
 ${FRAME}
 💠 Bet: ${betAmount} Nexus
-${winAmount > 0 ? `💵 Won: ${winAmount} gold` : `💸 Lost: ${Math.abs(winAmount)} gold · 🌀 Aura \u2212${_auraHit}`}
+${winAmount > 0 ? `💵 Won: ${winAmount} Nexus` : `💸 Lost: ${Math.abs(winAmount)} Nexus · 🌀 Aura \u2212${_auraHit}`}
 💼 Balance: ${player.gold || 0} Nexus
 ${FRAME}`;
 
@@ -836,7 +836,7 @@ ${FRAME}`;
               `${FRAME}`,
               ``,
               `🎯 Your Bet: *${choice}*`,
-              `💠 Wager: ${betAmount.toLocaleString()} gold`,
+              `💠 Wager: ${betAmount.toLocaleString()} Nexus`,
               `${FRAME}`,
             ].join('\n'),
           },
@@ -854,10 +854,10 @@ ${FRAME}`;
               `${FRAME}`,
               won ? `🎉 *YOU WIN!* ${multiplier}x payout!` : `❌ *Better luck next time!*`,
               ``,
-              `💠 Bet: ${betAmount.toLocaleString()} gold`,
+              `💠 Bet: ${betAmount.toLocaleString()} Nexus`,
               winAmount > 0
-                ? `💵 Won: +${winAmount.toLocaleString()} gold`
-                : `💸 Lost: ${Math.abs(winAmount).toLocaleString()} gold · 🌀 Aura \u2212${_auraHit}`,
+                ? `💵 Won: +${winAmount.toLocaleString()} Nexus`
+                : `💸 Lost: ${Math.abs(winAmount).toLocaleString()} Nexus · 🌀 Aura \u2212${_auraHit}`,
               `💼 Balance: *${(player.gold || 0).toLocaleString()}* gold`,
               ...(pro ? [`📊 Lifetime: +${UI.num(player.casino.totalWon)} / -${UI.num(player.casino.totalLost)}`] : []),
               `${FRAME}`,
@@ -969,7 +969,7 @@ ${won ? `✅ YOU WIN! Roll is ${prediction} ${target}!` : `❌ YOU LOSE! Roll is
 ${FRAME}
 💠 Bet: ${betAmount} Nexus
 🎰 Multiplier: ${multiplier.toFixed(2)}x
-${winAmount > 0 ? `💵 Won: ${winAmount} gold` : `💸 Lost: ${Math.abs(winAmount)} gold · 🌀 Aura \u2212${_auraHit}`}
+${winAmount > 0 ? `💵 Won: ${winAmount} Nexus` : `💸 Lost: ${Math.abs(winAmount)} Nexus · 🌀 Aura \u2212${_auraHit}`}
 💼 Balance: ${player.gold || 0} Nexus
 ${FRAME}`;
 
@@ -986,7 +986,7 @@ ${FRAME}`;
               `${FRAME}`,
               ``,
               `🎯 Your Bet: *${prediction.toUpperCase()} ${target}*`,
-              `💠 Wager: ${betAmount.toLocaleString()} gold`,
+              `💠 Wager: ${betAmount.toLocaleString()} Nexus`,
               `${FRAME}`,
             ].join('\n'),
           },
@@ -1012,8 +1012,8 @@ ${FRAME}`;
               ``,
               `🎰 Multiplier: ${multiplier.toFixed(2)}x`,
               winAmount > 0
-                ? `💵 Won: +${winAmount.toLocaleString()} gold`
-                : `💸 Lost: ${Math.abs(winAmount).toLocaleString()} gold · 🌀 Aura \u2212${_auraHit}`,
+                ? `💵 Won: +${winAmount.toLocaleString()} Nexus`
+                : `💸 Lost: ${Math.abs(winAmount).toLocaleString()} Nexus · 🌀 Aura \u2212${_auraHit}`,
               `💼 Balance: *${(player.gold || 0).toLocaleString()}* gold`,
               ...(pro ? [`📊 Lifetime: +${UI.num(player.casino.totalWon)} / -${UI.num(player.casino.totalLost)}`] : []),
               `${FRAME}`,

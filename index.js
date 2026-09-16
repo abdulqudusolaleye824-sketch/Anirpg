@@ -1279,6 +1279,45 @@ function _scheduleNextWATMidnight() {
   }, safeWait);
 }
 
+// Push #56 — the Weekly Guild War now closes on a timer AND announces its
+// victory card. Before this, resolution only happened when somebody happened to
+// earn GP or open /guildwar, and even then the 🥇🥈🥉 cards were dropped into
+// inventories in total silence — so winners never saw a victory card.
+let _lastWarWeekKey = null;
+function _announceWeeklyWarIfClosed() {
+  try {
+    const WGW = require('./rpg/utils/WeeklyGuildWar');
+    const week = WGW.getWeekKey();
+    const stale = database.guildWarWeekly && database.guildWarWeekly.currentWeek && database.guildWarWeekly.currentWeek !== week;
+    if (!stale) { _lastWarWeekKey = week; return; }
+    _lastWarWeekKey = week;
+    const summary = WGW.checkWeeklyReset(database, saveDatabase);
+    if (!summary) return;
+    const text = WGW.buildResultsCard(summary, database);
+    if (!text) { console.log('🏆 Weekly Guild War resolved (no podium to announce)'); return; }
+    const targets = [...new Set([
+      database.announceGC,
+      database.community && database.community.main_groupId,
+    ].filter(Boolean))];
+    const sock = MultiSocketManager.getAnySocket ? MultiSocketManager.getAnySocket() : MultiSocketManager.getHostSocket();
+    if (!sock || !targets.length) {
+      console.log('🏆 Weekly Guild War resolved — no announcement target/socket yet (results are stored, /guildwar shows them)');
+      return;
+    }
+    for (const jid of targets) {
+      try { Promise.resolve(sock.sendMessage(jid, { text })).catch(() => {}); } catch (e) {}
+    }
+    for (const g of [summary.first, summary.second, summary.third]) {
+      if (g) console.log(`🏆 ${g.name}: ${g.granted}/${g.size} victory card(s) granted (${g.gp} GP)`);
+    }
+    if (summary.mvp) console.log(`⭐ Weekly MVP: ${summary.mvp.name} (${summary.mvp.gp} GP)`);
+    saveDatabase();
+  } catch (e) {
+    console.error('weekly war scheduler error:', e.message);
+  }
+}
+setInterval(_announceWeeklyWarIfClosed, 10 * 60 * 1000).unref?.();
+
 setInterval(() => {
   const currentKey = getWATDayKey();
   if (currentKey !== _lastWATDayKey) {

@@ -309,7 +309,43 @@ async function sendButtons(sock, chatId, opts, quoted) {
   return { mode: 'plain', chunks: 0, ids: [(sent && sent.key && sent.key.id) || null] };
 }
 
+/**
+ * Classic listMessage — a REAL tappable button for ordinary linked WhatsApp
+ * numbers. Interactive native_flow buttons (quick replies) are only rendered
+ * by some clients, which is why /quiz questions dropped as a numbered text
+ * block: the send "succeeded", the button just never existed. Tapping a row
+ * sends that row's id as a normal message, so ids should be commands.
+ * opts = { text, title, buttonText, footer, sectionTitle, rows:[{id,title,description}] }
+ */
+async function sendList(sock, chatId, opts = {}, quoted = null) {
+  const rows = (opts.rows || [])
+    .filter((r) => r && r.id && r.title)
+    .slice(0, 10)
+    .map((r) => {
+      const row = { rowId: String(r.id), title: String(r.title).slice(0, 72) };
+      if (r.description) row.description = String(r.description).slice(0, 120);
+      return row;
+    });
+  if (!rows.length || !sock || typeof sock.sendMessage !== 'function') return { mode: 'none', rows: rows.length };
+  try {
+    await sock.sendMessage(chatId, {
+      list: {
+        title: String(opts.title || 'Choose').slice(0, 96),
+        text: opts.text || '',
+        buttonText: String(opts.buttonText || '⚡ Choose').slice(0, 30),
+        footerText: String(opts.footer || '').slice(0, 96) || undefined,
+        sections: [{ title: String(opts.sectionTitle || 'Options').slice(0, 24), rows }],
+      },
+    }, quoted ? { quoted } : {});
+    return { mode: 'list', rows: rows.length, chunks: 1 };
+  } catch (e) {
+    console.error('buttons list failed:', e.message);
+    return { mode: 'failed', error: e.message, rows: rows.length };
+  }
+}
+
 module.exports = {
+  sendList,
   quickReplies,
   urlButtons,
   copyButtons,

@@ -72,7 +72,7 @@ ${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n` + (_deskIn ? `💎 *PRO DESK* — incomi
       
       if (!recipientArg) {
         return sock.sendMessage(chatId, { 
-          text: '❌ Please specify recipient!\n\nExample: /trade offer @1234567890 100 gold' 
+          text: '❌ Please specify recipient!\n\nExample: /trade offer @1234567890 100 Nexus' 
         }, { quoted: msg });
       }
 
