@@ -60,6 +60,9 @@ const QRTerminal = (()=>{ try { return require('qrcode-terminal'); } catch(e){ r
 
 const botSockets = {};
 const pairingSessions = {};
+// Push #64 — /link <bot> (owner DM). Throttle: one deliberate pairing start per
+// personality per 30s, so a double-tap can't burn QR refs back-to-back.
+const _linkKickAt = {};
 
 // Push #57 — a Baileys QR is a short-lived *pairing ref*, not a picture. Once
 // its ref expires on WhatsApp's servers the phone answers any scan with
@@ -1165,6 +1168,14 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
       } catch (e) {
         console.error('QR encode error:', e.message);
       }
+
+      // Push #64: the AstraLink web page is RETIRED — pairing QRs print in the
+      // CONSOLE now (pm2 logs / Oracle terminal). The code rotates every
+      // QR_VALID_MS, so make it unmistakable which one to scan.
+      try {
+        const termQr = await QRCode.toString(qr, { type: 'terminal', small: false, margin: 2 });
+        console.log(`\n🔗 AstraLink [${displayName}] — PAIRING QR (screenshot this, then scan it with the bot's phone):\n   ⏱ a fresh one prints every ${Math.round(QR_VALID_MS / 1000)}s — ALWAYS scan the NEWEST one:\n${termQr}\n`);
+      } catch (e) { console.error('Terminal QR render error:', e.message); }
       }
 
       if (pairingMode === 'code' && pairingPhone && !pairingCodeRequested && !sock.authState.creds.registered) {
@@ -1660,6 +1671,76 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
           mentions: [sender],
         }, { quoted: msg });
       } catch (e) { /* best effort */ }
+    }
+
+    // ── Push #64: /link <bot> — the AstraLink page is retired; pairing is now
+    // an OWNER-ONLY DM command. The QR prints in the CONSOLE (pm2 logs / Oracle
+    // terminal) and rotates every QR_VALID_MS. This runs BEFORE the RPG
+    // dispatcher so /link never falls through to a game command.
+    if (!isGroup && isCommand && commandName === 'link') {
+      let isOwner = false;
+      try { isOwner = Perms.isBotOwner(db, sender); } catch (e) {}
+      if (!isOwner) return; // not the owner — never acknowledge
+      const parts = messageText.slice(config.prefix.length).trim().split(/\s+/);
+      const targetArg = (parts[1] || '').toLowerCase();
+      if (!targetArg) {
+        const list = PersonalityManager.getAllPersonalities()
+          .map(k => `/${config.prefix}link ${k}`).join('  ');
+        try { await sock.sendMessage(chatId, { text:
+          `🔗 *Link a bot's number (owner only)*\n\n${list}\n\n` +
+          `The QR prints in the CONSOLE (pm2 logs / Oracle terminal) within a few ` +
+          `seconds — screenshot the NEWEST one and scan it with the bot's phone.`
+        }, { quoted: msg }); } catch (e) {}
+        return;
+      }
+      const targetKey = PersonalityManager.resolvePersonality(targetArg);
+      if (!targetKey) {
+        try { await sock.sendMessage(chatId, { text:
+          `❓ "${targetArg}" doesn't match any bot. Available: ${PersonalityManager.getAllPersonalities().join(', ')}`
+        }, { quoted: msg }); } catch (e) {}
+        return;
+      }
+      const sinceLink = Date.now() - (_linkKickAt[targetKey] || 0);
+      if (sinceLink < 30000) {
+        try { await sock.sendMessage(chatId, { text:
+          `⏳ ${PersonalityManager.getDisplayName(targetKey)}: a pairing attempt just started — ` +
+          `its QR is in the console already (or within a few seconds).`
+        }, { quoted: msg }); } catch (e) {}
+        return;
+      }
+      const sess = pairingSessions[targetKey];
+      if (botSockets[targetKey]?.user?.id) {
+        try { await sock.sendMessage(chatId, { text:
+          `✅ ${PersonalityManager.getDisplayName(targetKey)} is already linked and online — no QR needed.`
+        }, { quoted: msg }); } catch (e) {}
+        return;
+      }
+      if (sess && sess.blocked) {
+        try { await sock.sendMessage(chatId, { text:
+          `🚫 ${PersonalityManager.getDisplayName(targetKey)} is 403-blocked by WhatsApp ` +
+          `(attempt ${sess.blocked.attempts}). It backs off and retries on its own — the QR ` +
+          `prints in the console the moment the block lifts. Scanning can't fix this.`
+        }, { quoted: msg }); } catch (e) {}
+        return;
+      }
+      _linkKickAt[targetKey] = Date.now();
+      try { await sock.sendMessage(chatId, { text:
+        `🔗 Starting pairing for *${PersonalityManager.getDisplayName(targetKey)}*…\n\n` +
+        `Watch the CONSOLE (pm2 logs / Oracle terminal) — the QR appears within a few ` +
+        `seconds and a fresh one prints every ${Math.round(QR_VALID_MS / 1000)}s. ` +
+        `Screenshot the NEWEST one and scan it with the bot's phone.`
+      }, { quoted: msg }); } catch (e) {}
+      try {
+        await startAstraLink(targetKey, authDir, getDatabase, saveDatabase, {
+          pairingMode: 'qr', forceRelink: true,
+        });
+      } catch (e) {
+        console.error(`❌ /link [${targetKey}] failed:`, e.message);
+        try { await sock.sendMessage(chatId, { text:
+          `❌ Could not start pairing for ${PersonalityManager.getDisplayName(targetKey)}: ${e.message}`
+        }, { quoted: msg }); } catch (_) {}
+      }
+      return;
     }
 
     // ── RPG Command handling ──────────────────────────────────────────

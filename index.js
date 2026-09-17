@@ -71,23 +71,12 @@ const { OWNER_JID, COOWNER_JID, PRIVILEGED_JIDS } = require('./utils/constants')
 // "AstraLink host" — whichever bot socket we use to issue pairing codes —
 // is just whichever socket the HTTP API happens to call. There is no
 // special "primary" bot anymore.
-// Push #61: AstraLink has no admin token — the link page is free for everyone.
-// The state-changing routes below keep a tiny per-bucket rate limit (a brake,
-// not a secret) so the open port cannot be used as a pairing/QR/message cannon.
-const _AL_RATE_LIMIT = Number(process.env.ASTRALINK_RATE_LIMIT || 6);
-const _AL_RATE_WINDOW_MS = Number(process.env.ASTRALINK_RATE_WINDOW_MS || 60000);
-const _alBuckets = new Map();
-function alRateOk(bucket) {
-  const now = Date.now();
-  const hit = _alBuckets.get(bucket);
-  if (!hit || now > hit.resetAt) { _alBuckets.set(bucket, { n: 1, resetAt: now + _AL_RATE_WINDOW_MS }); return { ok: true, remaining: _AL_RATE_LIMIT - 1 }; }
-  hit.n += 1;
-  if (hit.n > _AL_RATE_LIMIT) return { ok: false, retryInMs: Math.max(500, hit.resetAt - now) };
-  return { ok: true, remaining: _AL_RATE_LIMIT - hit.n };
-}
+// Push #64: the AstraLink web page is RETIRED. Pairing now happens via the
+// owner's DM command `/link <bot>` — the QR prints in the console (pm2 logs /
+// Oracle terminal) and rotates every QR_VALID_MS. The only routes left on this
+// port are read-only ops endpoints (/health, /api/bot-status, /api/personalities,
+// /api/db-health).
 const { spawn } = require('child_process');
-const _qrServes = {};   // personality -> codes handed out since the last successful link
-const _qrKickAt = {};     // personality -> last deliberate pairing restart
 let _astralinkHostKey = null;
 let _astralinkHostSock = null;
 
@@ -795,9 +784,6 @@ async function onGroupJoin(sock, personalityKey, chatId, participants, action) {
 const http = require('http');
 const HEALTH_PORT = parseInt(process.env.PORT || '3000');
 
-const UI_PATH = process.env.ASTRALINK_UI_PATH
-  || path.join(__dirname, 'astralink.html');
-
 http.createServer(async (req, res) => {
 
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -817,17 +803,6 @@ http.createServer(async (req, res) => {
   let _path = req.url || '/';
   try { _path = new URL(_path, 'http://localhost').pathname; } catch (e) {}
   _path = _path.replace(/\/+$/, '') || '/';
-
-  if (req.method === 'GET' && (_path === '/' || _path === '/astralink' || _path === '/astralink.html' || _path === '/index.html')) {
-    try {
-      const html = fs.readFileSync(UI_PATH, 'utf-8');
-      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-      return res.end(html);
-    } catch (e) {
-      res.writeHead(500, { 'Content-Type': 'text/plain' });
-      return res.end(`AstraLink UI not found at ${UI_PATH}\n${e.message}\n`);
-    }
-  }
 
   // ── Health check ──────────────────────────────────────
   if (req.method === 'GET' && _path === '/health') {
@@ -892,361 +867,6 @@ http.createServer(async (req, res) => {
       .map(k => PersonalityManager.getPersonalityInfo(k));
     res.writeHead(200, { 'Content-Type': 'application/json' });
     return res.end(JSON.stringify({ personalities }));
-  }
-
-  // ── GET /api/qr-status?personality=XXX ───────────────────────
-  // Cheap poll for the countdown / rotation. Kept separate from /api/qr so a
-  // ticking UI never re-renders a PNG or trips a pairing restart.
-  if (req.method === 'GET' && _path === '/api/qr-status') {
-    const u = new URL(req.url, 'http://localhost');
-    const personality = (u.searchParams.get('personality') || '').toLowerCase();
-    const q = MultiSocketManager.getLatestQr(personality);
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({
-      success: true,
-      status: q.status, connected: q.connected, waiting: q.waiting,
-      seq: q.seq, ageMs: q.ageMs, expiresIn: q.expiresIn,
-      valid: q.valid, expired: !!q.expired, ttlMs: q.ttlMs, error: q.error || null,
-    }));
-  }
-
-  // ── POST /api/release-device-slots ───────────────────────────
-  // WhatsApp allows FOUR linked devices per number. AstraLink used to delete a
-  // session's local keys without logging out, so every relink left an orphan
-  // device holding a slot; once they pile up, no QR completes on any phone and
-  // WhatsApp says "Couldn't log in. Check your phone's internet connection".
-  // This logs the saved session out properly so the slots come back.
-  if (req.method === 'POST' && _path === '/api/release-device-slots') {
-    // Push #61: free for the page (no admin token), rate-limited only.
-    const _alr = alRateOk('release');
-    if (!_alr.ok) {
-      res.writeHead(429, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify({ success: false, error: 'Too many attempts — wait a minute and try again.', retryInMs: _alr.retryInMs }));
-    }
-    let body = '';
-    req.on('data', c => { body += c; });
-    req.on('end', async () => {
-      const send = (code, obj) => {
-        res.writeHead(code, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify(obj));
-      };
-      try {
-        const parsed = body ? JSON.parse(body) : {};
-        const personality = String(parsed.personality || '').toLowerCase();
-        const force = parsed.force === true || parsed.force === '1';
-        if (!personality || !PersonalityManager.getAllPersonalities().includes(personality)) {
-          return send(400, { success: false, error: 'Unknown or missing personality' });
-        }
-        const name = PersonalityManager.getDisplayName(personality);
-        const sock = MultiSocketManager.getSocket(personality);
-        if (sock?.user?.id && !force) {
-          return send(200, { success: false, error: `${name} is online right now — logging it out would unlink a working bot. Tick "include the live session" to do it anyway.` });
-        }
-        let out;
-        if (sock?.user?.id) {
-          try {
-            await Promise.race([
-              sock.logout(),
-              new Promise((_, rej) => { const t = setTimeout(() => rej(new Error('logout timed out')), 20000); t.unref?.(); }),
-            ]);
-            out = { ok: true, reason: 'logged the live session out on WhatsApp' };
-          } catch (e) { out = { ok: false, reason: e.message }; }
-        } else {
-          out = await MultiSocketManager.revokeSessionDir(AUTH_DIR, personality, { timeoutMs: 30000 });
-        }
-        console.log(`🔌 AstraLink release-device-slots [${personality}]: ${out.ok ? '✓' : '✗'} ${out.reason}`);
-        return send(out.ok ? 200 : 502, { success: out.ok, error: out.ok ? null : out.reason, reason: out.reason, displayName: name });
-      } catch (e) {
-        console.error('❌ AstraLink release-device-slots error:', e.message);
-        return send(500, { success: false, error: e.message });
-      }
-    });
-    return;
-  }
-
-  // ── GET /api/qr?personality=XXX ─────────────────────────────
-  // The pairing code Baileys is currently offering, as a scannable PNG data URI.
-  // Push #57: only codes that are still VALID on WhatsApp's side are handed out.
-  if (req.method === 'GET' && new URL(req.url, 'http://localhost').pathname === '/api/qr') {
-    const u = new URL(req.url, 'http://localhost');
-    const personality = (u.searchParams.get('personality') || '').toLowerCase();
-    const send = (code, obj) => {
-      res.writeHead(code, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify(obj));
-    };
-
-    if (!personality) return send(400, { success: false, error: 'Missing personality parameter' });
-    if (!PersonalityManager.getAllPersonalities().includes(personality)) {
-      return send(400, { success: false, error: `Unknown personality: ${personality}` });
-    }
-
-    const { startAstraLink, getLatestQr } = MultiSocketManager;
-    const TTL = MultiSocketManager.QR_VALID_MS || 60000;
-
-    let q = getLatestQr(personality);
-    const lastSeqBeforeKick = q.seq;
-    const sockNow = MultiSocketManager.getSocket(personality);
-
-    if (q.connected) {
-      _qrServes[personality] = 0;
-      return send(200, {
-        success: false, alreadyConnected: true,
-        error: `${PersonalityManager.getDisplayName(personality)} is already linked and online — no code needed.`,
-      });
-    }
-
-    // "New code" (fresh=1) rotates the pairing deliberately — allowed only while
-    // the number is NOT already linked, so a button press can never wipe a live
-    // session. Throttled: each rotation burns a QR ref, and startAstraLink also
-    // stages the outgoing session for logout.
-    const noWait = u.searchParams.get('now') === '1';
-    const wantFresh = u.searchParams.get('fresh') === '1';
-    // Rotating deliberately abandons the in-flight pairing, so it is rate-limited.
-    const _alf = alRateOk(`fresh:${personality}`);
-    if (wantFresh && !_alf.ok) {
-      return send(429, { success: false, error: 'Too many attempts — wait a minute and try again.', retryInMs: _alf.retryInMs });
-    }
-    const sinceKick = Date.now() - (_qrKickAt[personality] || 0);
-    if (wantFresh && sinceKick < 8000) {
-      return send(200, { success: false, retryInMs: 8000 - sinceKick, error: 'A new code is already on its way — wait a moment.' });
-    }
-    // Push #59: WhatsApp closed this number with 403 forbidden — the ACCOUNT is
-    // blocked, not the link. A new code can never complete, so refuse instead of
-    // wiping a session and burning another QR ref every time the page polls.
-    // `fresh=1` still forces a try, for the case where the block was lifted.
-    if (q.blocked && !wantFresh) {
-      return send(200, {
-        success: false, blocked: true, retryInMs: 600000,
-        error: q.blocked.reason, blockedSince: q.blocked.at, blockedAttempts: q.blocked.attempts,
-      });
-    }
-    // A socket that exists but never completed pairing still needs the kick: the
-    // old `!sockNow` test left the page parked at "opening a pairing session…"
-    // forever while a reconnect loop held the key. Throttled so a 2s poll can't
-    // restart the pairing over and over.
-    const mayKick = !q.connected;
-    const kickThrottled = !wantFresh && (Date.now() - (_qrKickAt[personality] || 0)) < 10000;
-    if (mayKick && (!q.qr || q.expired || wantFresh) && !kickThrottled) {
-      _qrKickAt[personality] = Date.now();
-      await startAstraLink(personality, AUTH_DIR, getDatabase, saveDatabase, {
-        pairingMode: 'qr',
-        forceRelink: true,
-        // An explicit "New code" press means "throw this pairing away and give me
-        // another", so it must bypass the in-flight reuse guard (a routine poll
-        // never does — that is what used to invalidate the code being scanned).
-        ...(wantFresh ? { abandonSession: true } : {}),
-      });
-      if (!noWait) for (let t = 0; t < 14; t++) {
-        q = getLatestQr(personality);
-        if (q.valid && q.seq !== lastSeqBeforeKick) break;
-        await new Promise(r => setTimeout(r, 500));
-      }
-    }
-
-    // Wait for a *valid* code, not merely any code. `now=1` skips the wait so the
-    // page paints instantly instead of staring at a spinner for seven seconds.
-    if (!noWait) for (let t = 0; t < 14; t++) {
-      q = getLatestQr(personality);
-      if (q.valid) break;
-      await new Promise(r => setTimeout(r, 500));
-    }
-
-    if (!q.qr) {
-      return send(200, {
-        success: false, phase: 'waiting', retryInMs: 2000, seq: q.seq,
-        error: 'The bot is opening a pairing session… keep this page open, it refreshes itself.',
-      });
-    }
-    if (!q.valid) {
-      // Expired, or minted by a socket that has since gone: showing this box is
-      // how the user ends up with "Couldn't log in" on every device.
-      return send(200, {
-        success: false, expired: true, retryInMs: 2000, seq: q.seq,
-        ageMs: q.ageMs, ttlMs: TTL, status: q.status,
-        error: q.socketAlive
-          ? 'That code just expired — a fresh one arrives in a few seconds. Scan the NEXT code, not this one.'
-          : 'The pairing session dropped. Restarting it — scan the NEXT code, not this one.',
-      });
-    }
-
-    let dataUri = q.dataUri;
-    if (!dataUri && q.qr) {
-      try {
-        const QRCode = require('qrcode');
-        dataUri = await QRCode.toDataURL(q.qr, {
-          width: 420, margin: 2, errorCorrectionLevel: 'M',
-          color: { dark: '#000000', light: '#ffffff' },
-        });
-      } catch (e) {
-        console.error('QR dataUri generation error:', e.message);
-      }
-    }
-
-    // Self-diagnosis: many codes handed out, nothing ever linked → the number's
-    // four device slots are almost certainly full of orphan sessions.
-    _qrServes[personality] = (_qrServes[personality] || 0) + 1;
-    const serves = _qrServes[personality];
-    const advisory = serves >= 4 && !q.connected
-      ? `⚠️ ${serves} codes shown, no link completed. WhatsApp only allows 4 linked devices per number — on the BOT's phone open WhatsApp → Settings → Linked devices and log every one out, then press "Release old device slots". Pairing by number (the 8-character code) bypasses the QR path entirely.`
-      : null;
-
-    return send(200, {
-      success: true,
-      qr: q.qr,
-      dataUri: dataUri || null,
-      seq: q.seq,
-      ageMs: q.ageMs,
-      expiresIn: q.expiresIn,
-      ttlMs: TTL,
-      refreshInMs: Math.max(5000, Math.floor(q.expiresIn / 2)),
-      status: q.status,
-      connected: q.connected,
-      serves,
-      advisory,
-    });
-  }
-
-  // ── POST /api/request-pairing-code ───────────────────────────
-  // Body: { phoneNumber: "2348012345678", personality: "hinata" }
-  if (req.method === 'POST' && _path === '/api/request-pairing-code') {
-    // Push #61: free for everyone — no admin token. Each call burns a pairing
-    // ref, so it is rate-limited.
-    const _alp = alRateOk('paircode');
-    if (!_alp.ok) {
-      res.writeHead(429, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify({ success: false, error: 'Too many attempts — wait a minute and try again.', retryInMs: _alp.retryInMs }));
-    }
-    let body = '';
-    req.on('data', chunk => { body += chunk; });
-    req.on('end', async () => {
-      try {
-        const { phoneNumber, personality } = JSON.parse(body);
-
-        if (!phoneNumber || !personality) {
-          res.writeHead(400, { 'Content-Type': 'application/json' });
-          return res.end(JSON.stringify({ success: false, error: 'Missing phoneNumber or personality' }));
-        }
-
-        if (!PersonalityManager.getAllPersonalities().includes(personality)) {
-          res.writeHead(400, { 'Content-Type': 'application/json' });
-          return res.end(JSON.stringify({ success: false, error: `Unknown personality: ${personality}` }));
-        }
-
-        // CRITICAL: a pairing code MUST be requested on the socket that will
-        // actually pair for THIS personality (its pending socket). Using an
-        // unrelated already-connected bot generates a code for the wrong
-        // account, which is why WhatsApp said "Couldn't link device".
-        // Push #61: no admin token — a code request for an already-online bot is
-        // allowed and simply relinks it (that is how the page switches numbers).
-        const cleanNumber = phoneNumber.replace(/[^0-9]/g, '');
-        if (cleanNumber.length < 7 || cleanNumber.length > 15) {
-          res.writeHead(400, { 'Content-Type': 'application/json' });
-          return res.end(JSON.stringify({ success: false, error: 'Invalid phone number length' }));
-        }
-
-        const { startAstraLink, getPairingSession } = MultiSocketManager;
-        const started = await startAstraLink(personality, AUTH_DIR, getDatabase, saveDatabase, {
-          pairingMode: 'code',
-          pairingPhone: cleanNumber,
-          forceRelink: true,
-        });
-
-        if (!started || !started.success) {
-          res.writeHead(500, { 'Content-Type': 'application/json' });
-          return res.end(JSON.stringify({ success: false, error: started?.error || 'Failed to start AstraLink for this personality.' }));
-        }
-
-        let session = null;
-        for (let t = 0; t < 50; t++) {          // up to ~25s for the socket + code
-          await new Promise(r => setTimeout(r, 500));
-          const s = getPairingSession(personality);
-          if (s && (s.status === 'code_ready' || s.status === 'connected')) { session = s; break; }
-          if (s && s.status === 'error') {
-            res.writeHead(500, { 'Content-Type': 'application/json' });
-            return res.end(JSON.stringify({ success: false, error: s.error || 'AstraLink pairing failed.' }));
-          }
-        }
-
-        const code = session?.code;
-        if (!code) {
-          res.writeHead(503, { 'Content-Type': 'application/json' });
-          return res.end(JSON.stringify({ success: false, error: 'Timed out waiting for the pairing code. Click Link again.' }));
-        }
-
-        const formatted = code.length === 8 ? `${code.slice(0, 4)}-${code.slice(4)}` : code;
-        const pInfo = PersonalityManager.getPersonalityInfo(personality);
-        console.log(`🔗 AstraLink pairing code issued: +${cleanNumber} → ${pInfo?.displayName || personality} | ${formatted}`);
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        return res.end(JSON.stringify({ success: true, code: formatted, personality: pInfo }));
-
-      } catch (err) {
-        console.error('❌ AstraLink pairing code error:', err.message);
-        res.writeHead(500, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ success: false, error: err.message }));
-      }
-    });
-    return;
-  }
-
-  // ── POST /api/link-success ────────────────────────────────────
-  if (req.method === 'POST' && _path === '/api/link-success') {
-    // Sends a DM to whoever claims to have just linked — free for the page,
-    // rate-limited so the open port cannot be used as a message cannon.
-    const _all = alRateOk('linksuccess');
-    if (!_all.ok) {
-      res.writeHead(429, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify({ success: false, error: 'Too many attempts — wait a minute and try again.', retryInMs: _all.retryInMs }));
-    }
-    let body = '';
-    req.on('data', chunk => { body += chunk; });
-    req.on('end', async () => {
-      try {
-        const { phoneNumber, personality } = JSON.parse(body);
-        const pInfo = PersonalityManager.getPersonalityInfo(personality);
-        // A completed link clears the "codes shown, nothing linked" counter.
-        _qrServes[String(personality || '').toLowerCase()] = 0;
-
-        const allSockets = MultiSocketManager.getAllSockets();
-        const targetSock = allSockets[personality] || MultiSocketManager.getAnySocket();
-        if (!targetSock) {
-          res.writeHead(503, { 'Content-Type': 'application/json' });
-          return res.end(JSON.stringify({ success: false, error: 'Bot socket not ready' }));
-        }
-
-        const cleanNumber = phoneNumber.replace(/[^0-9]/g, '');
-        const botSelfJid = targetSock.user?.id;
-
-        if (botSelfJid) {
-          const displayName = pInfo?.displayName || personality;
-          const emoji = pInfo?.emoji || '🤖';
-          const theme = pInfo?.theme || 'Unknown';
-
-          const dmText =
-            `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-            `${emoji} *AstraLink — Connection Successful*\n` +
-            `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
-            `✅ A new number has been linked to Astra!\n\n` +
-            `📱 *Number:* +${cleanNumber}\n` +
-            `🎭 *Personality:* ${displayName}\n` +
-            `🎌 *Theme:* ${theme}\n\n` +
-            `The bot is now active on this number as *${displayName}*.\n` +
-            `Use */start ${personality}* in any group to activate this personality.\n\n` +
-            `━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
-
-          await targetSock.sendMessage(botSelfJid, { text: dmText });
-          console.log(`✅ AstraLink self-DM sent: +${cleanNumber} → ${displayName}`);
-        }
-
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ success: true }));
-
-      } catch (err) {
-        console.error('❌ AstraLink link-success DM error:', err.message);
-        res.writeHead(500, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ success: false, error: err.message }));
-      }
-    });
-    return;
   }
 
   // ── Push #31: GET /api/db-health (DB diagnostics, no Termux needed) ──
@@ -1318,7 +938,7 @@ http.createServer(async (req, res) => {
 // live copy already runs, so a would-be ghost MUST die here instead of
 // booting empty and poisoning the JSON mirror (the 02:00 incident).
 }).listen(HEALTH_PORT, () => {
-  console.log(`🌐 AstraLink API server on port ${HEALTH_PORT}`);
+  console.log(`🌐 API server on port ${HEALTH_PORT} (ops endpoints only — pairing is via /link, QR in console)`);
 }).on('error', (e) => {
   if (e && e.code === 'EADDRINUSE') {
     console.error(`🛡️ Another bot instance already holds port ${HEALTH_PORT} — refusing to start (no ghost writes).`);
@@ -1905,7 +1525,7 @@ async function startup() {
   }
 
   if (linkedKeys.length === 0) {
-    console.log('ℹ️  No bots configured/linked. Add BOT_HINATA= to .env or link via the AstraLink site.');
+    console.log('ℹ️  No bots configured/linked. Add BOT_HINATA= to .env or link a new number: DM /link <bot> (owner) — the QR appears in the console.');
     return;
   }
 
