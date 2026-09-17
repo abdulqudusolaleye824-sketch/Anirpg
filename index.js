@@ -302,6 +302,16 @@ const DATA_DIR   = process.env.DATA_DIR || __dirname;
 const AUTH_DIR   = process.env.AUTH_DIR || path.join(DATA_DIR, 'auth');
 const DB_PATH    = path.join(DATA_DIR, 'database', 'database.json');
 
+// Push #65: SQLite becomes the LIVE copy of the game DB (atomic, single file,
+// one row per top-level collection); JSON demotes to a backup mirror and Atlas
+// stays the off-host mirror. QuickDB (updates.sqlite) tracks push/version state.
+// Both degrade to no-ops with a loud warning if their native module fails —
+// a storage upgrade must never take the bot down.
+const Storage = require('./db/Storage');
+const Updates = require('./db/updates');
+Storage.init(DATA_DIR);
+Updates.init(DATA_DIR);
+
 const fs_sync = require('fs');
 [AUTH_DIR, path.dirname(DB_PATH)].forEach(d => {
   if (!fs_sync.existsSync(d)) fs_sync.mkdirSync(d, { recursive: true });
@@ -309,9 +319,13 @@ const fs_sync = require('fs');
 
 // Initialize database
 let database = { users: {}, banlist: {}, dailyQuests: {}, botMods: [], botOwners: [] };
-const loadDatabase = () => {
+const loadDatabase = (memDoc = null) => {
   try {
-    if (fs.existsSync(DB_PATH)) {
+    if (memDoc) {
+      // Push #65: adopt a doc loaded from the SQLite live store (or a fuller
+      // backup mirror) — it runs the exact same normalization as the file path.
+      database = memDoc;
+    } else if (fs.existsSync(DB_PATH)) {
       const data = fs.readFileSync(DB_PATH, 'utf-8');
       database = JSON.parse(data);
 
@@ -631,6 +645,9 @@ function _flushSaveNow() {
   if (_saveTimer) { clearTimeout(_saveTimer); _saveTimer = null; }
   _saveDirty = false;
   _saveFirstDirtyAt = 0;
+  // Push #65: the SQLite live store is written FIRST — it is synchronous and
+  // atomic, so the crash-safe copy always leads the (async) mirrors.
+  try { Storage.save(database); } catch (e) {}
   try { saveToMongo(); } catch (e) {}
   try { _writeJsonBackup(); } catch (e) {}
 }
@@ -641,6 +658,7 @@ async function flushSaveNow(reason) {
   const wasDirty = _saveDirty;
   _saveDirty = false; _saveFirstDirtyAt = 0;
   try { database.__savedAt = Date.now(); } catch {}
+  try { Storage.save(database); } catch (e) {} // Push #65: live store first
   try { await _writeJsonBackup(); } catch (e) {}
   try { await _doMongoWrite(); } catch (e) {}
   if (wasDirty) { /* nothing pending beyond what we just wrote */ }
@@ -923,7 +941,11 @@ http.createServer(async (req, res) => {
         })(),
         lastOwnerSnapAt: database.__lastOwnerSnapAt || null,
         snapshots: snapInfo,
-        mongo: mongoInfo, json: jsonInfo, serverTime: Date.now(),
+        mongo: mongoInfo, json: jsonInfo,
+        // Push #65: the new live store + QuickDB update state
+        sqlite: (() => { try { return Storage.info(); } catch (e) { return { available: false, error: e.message }; } })(),
+        updates: await Updates.getUpdateInfo(),
+        serverTime: Date.now(),
       }));
     } catch (e) {
       res.writeHead(500, { 'Content-Type': 'application/json' });
@@ -972,6 +994,7 @@ function saveDatabaseSyncNow(reason) {
     } catch (_) { /* fail-open: unreadable file → proceed */ }
     fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
     fs.writeFileSync(DB_PATH, JSON.stringify(database));
+    try { Storage.save(database); } catch (e) {} // Push #65: crash-safe live store too
     console.log(`💾 Sync DB snapshot written (${reason || 'manual'})`);
     return true;
   } catch (e) {
@@ -1019,6 +1042,8 @@ async function gracefulShutdown(signal) {
     console.error('❌ Final MongoDB flush failed:', e.message);
   }
   saveDatabaseSyncNow(signal);
+  try { Storage.close(); } catch (e) {}      // Push #65
+  try { await Updates.close(); } catch (e) {} // Push #65
   try { if (mongoClient) await mongoClient.close(); } catch (e) {}
   process.exit(0);
 }
@@ -1277,6 +1302,12 @@ async function startup() {
     console.error('⚠️  JSON database unreadable, ignoring:', e.message);
     jsonDoc = null;
   }
+  // Push #65: SQLite is the LIVE copy. Mongo + JSON are backup mirrors, and
+  // the fuller-wins invariant is preserved at the new top of the stack: if a
+  // backup holds MORE users than SQLite, adopt the backup and RESEED SQLite.
+  const sqliteDoc = Storage.load();
+  const _selSu = sqliteDoc ? Object.keys(sqliteDoc.users || {}).length : -1;
+  const sqliteAt = (sqliteDoc && sqliteDoc.__savedAt) || 0;
   const mongoAt = (mongoDoc && mongoDoc.__savedAt) || 0;
   const _kb = (d) => { try { return Math.round(Buffer.byteLength(JSON.stringify(d)) / 1024); } catch { return 0; } };
   const _fmtT = (t) => t ? new Date(t).toISOString() : 'none';
@@ -1287,24 +1318,43 @@ async function startup() {
   const _selJu = jsonDoc ? Object.keys(jsonDoc.users || {}).length : -1;
   let _loadedFrom = 'fresh';
   const _mongoWins = mongoDoc && ((_selMu > _selJu) || (_selMu === _selJu && mongoAt >= jsonAt));
-  if (_mongoWins) {
+  const _backupDoc = _mongoWins ? mongoDoc : jsonDoc;
+  const _backupUsers = _backupDoc ? Object.keys(_backupDoc.users || {}).length : -1;
+  if (sqliteDoc) {
+    if (_backupDoc && _backupUsers > _selSu) {
+      // Divergence: a backup mirror is FULLER than the live store — adopt it.
+      _loadedFrom = _mongoWins ? 'mongo' : 'json';
+      _pendingOwnerAlarms.push(`🛡️ *SQLITE DIVERGED AT BOOT* 🛡️\n\n${_mongoWins ? 'Atlas' : 'JSON'} holds ${_backupUsers} users but the SQLite live store has ${_selSu}. I adopted the fuller backup and reseeded SQLite — your data is safe on both sides.\n\nBoot: ${new Date().toISOString()}`);
+      loadDatabase(_backupDoc); // same normalization as every other path
+      try { Storage.save(database); } catch (e) {}
+      console.log(`✅ Database loaded from ${_mongoWins ? 'MongoDB' : 'JSON'} (fuller than SQLite) — live store reseeded`);
+    } else {
+      _loadedFrom = 'sqlite';
+      loadDatabase(sqliteDoc); // runs the exact same boot normalization as the file path
+      console.log(`✅ Database loaded from SQLite live store (${Object.keys(database.users || {}).length} players)`);
+      console.log(`💾 Persistence: SQLite ${_kb(sqliteDoc)}KB (@${_fmtT(sqliteAt)}) vs Mongo ${_kb(mongoDoc)}KB (@${_fmtT(mongoAt)}) vs JSON ${_kb(jsonDoc)}KB (@${_fmtT(jsonAt)}) → loaded SQLITE`);
+    }
+    if (mongoOk) await saveToMongo(); // keep the off-host mirror current
+  } else if (_mongoWins) {
     _loadedFrom = 'mongo';
     database = mongoDoc;
     console.log(`✅ Database loaded from MongoDB (${Object.keys(database.users || {}).length} players)`);
     console.log(`💾 Persistence: Mongo ${_kb(mongoDoc)}KB (@${_fmtT(mongoAt)}) vs JSON ${_kb(jsonDoc)}KB (@${_fmtT(jsonAt)}) → loaded MONGO`);
+    try { if (Storage.save(database)) console.log(`🗄️ SQLite live store seeded from MongoDB (${_selMu} players)`); } catch (e) {}
   } else if (jsonDoc) {
     _loadedFrom = 'json';
     loadDatabase(); // re-reads the same file + runs migrations
     console.log(`💾 Persistence: Mongo ${_kb(mongoDoc)}KB (@${_fmtT(mongoAt)}) vs JSON ${_kb(jsonDoc)}KB (@${_fmtT(jsonAt)}) → loaded JSON`);
+    try { if (Storage.save(database)) console.log(`🗄️ SQLite live store seeded from JSON (${_selJu} players)`); } catch (e) {}
     if (!mongoDoc && mongoOk) console.log('📦 Migrated existing JSON data to MongoDB!');
     await saveToMongo(); // heal the mirror with the fresh state
   } else {
-    console.log('💾 Persistence: no Mongo doc, no JSON file → starting FRESH');
+    console.log('💾 Persistence: no SQLite doc, no Mongo doc, no JSON file → starting FRESH');
     // Push #31: leave a marker so an empty boot is provable after the fact.
     try {
       fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
       fs.writeFileSync(path.join(path.dirname(DB_PATH), `empty-boot-${Date.now()}.marker`),
-        `fresh boot at ${new Date().toISOString()} — no Mongo doc, no JSON file`);
+        `fresh boot at ${new Date().toISOString()} — no SQLite doc, no Mongo doc, no JSON file`);
     } catch {}
   }
   // Push #31: baseline for the write-path guard below.
@@ -1314,10 +1364,13 @@ async function startup() {
   try { if (jsonDoc) writeDbSnapshot('boot-json', jsonDoc); } catch {}
   try { pruneSnapshots(); } catch {}
   // Push #32: degraded-boot detection → owner alarm (flushed when a socket is up).
-  _bootHealth = { mongoOk: !!mongoOk, hadMongoDoc: !!mongoDoc, hadJsonDoc: !!jsonDoc, fresh: (!mongoDoc && !jsonDoc) };
+  _bootHealth = { mongoOk: !!mongoOk, hadSqliteDoc: !!sqliteDoc, hadMongoDoc: !!mongoDoc, hadJsonDoc: !!jsonDoc, fresh: (!sqliteDoc && !mongoDoc && !jsonDoc) };
   _bootHealth.loadedFrom = _loadedFrom; // Push #37: prove the selection remotely
   _bootHealth.mongoUsers = _selMu;
   _bootHealth.jsonUsers = _selJu;
+  _bootHealth.sqliteUsers = _selSu;   // Push #65: prove the live-store selection remotely
+  // Push #65: record this boot in QuickDB (push version, boot count, prev→now).
+  Updates.recordBoot().catch(() => {});
   // Push #33: mirrors disagreed at boot → alarm (loser already snapshotted above).
   try {
     const _mu = mongoDoc ? Object.keys(mongoDoc.users || {}).length : -1;
@@ -1327,7 +1380,7 @@ async function startup() {
       _pendingOwnerAlarms.push(`⚠️ *MIRRORS DISAGREED AT BOOT* ⚠️\n\nAtlas: ${_mu} users · JSON: ${_ju} users. Kept the fuller side; the other is preserved in snapshots/boot-*.json.\n\nBoot: ${new Date().toISOString()}`);
     }
   } catch {}
-  if (!mongoDoc && !jsonDoc) {
+  if (!sqliteDoc && !mongoDoc && !jsonDoc) {
     _pendingOwnerAlarms.push(`🔥 *BOT BOOTED FRESH — NO DATA FOUND* 🔥\n\nNo Mongo doc and no JSON file at boot. If you expected data, avoid saves and investigate mirrors first.\n\nBoot: ${new Date().toISOString()}`);
   } else if (!mongoOk) {
     _pendingOwnerAlarms.push(`⚠️ *BOT BOOTED WITHOUT MONGO* ⚠️\n\nRunning on the JSON mirror only. The off-host copy is stale until Mongo reconnects.\n\nBoot: ${new Date().toISOString()}`);
