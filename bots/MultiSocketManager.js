@@ -80,6 +80,53 @@ const _qrKickAt = {};   // personality -> last time we restarted a pairing for a
 function isPlausibleQr(qr) {
   return typeof qr === 'string' && qr.startsWith('2@') && qr.split(',').length === 3 && qr.length > 40;
 }
+
+// ── Push #63: WhatsApp version lookup that CANNOT stall pairing ────────────
+// connectBot used to do `await fetchLatestBaileysVersion()` with no timeout,
+// no cache and no fallback. Baileys implements that as a bare fetch to
+// raw.githubusercontent.com — when GitHub stalls from this box, connectBot
+// hung FOREVER before the socket was even created: session stuck at
+// "starting", page stuck on "opening a pairing session…", no QR, no 403,
+// no error — and every retry re-hit the same hang. Pairing could silently
+// never even try. Now: 6h cache, hard 8s timeout, then the version bundled
+// with the installed Baileys build. Pairing always proceeds.
+let _waVersion = null, _waVersionAt = 0;
+const WA_VERSION_TTL_MS = 6 * 3600000;
+function _bundledWaVersion() {
+  // The Baileys build ships the exact WA version it was tested against in
+  // lib/Defaults/index.js (`const version = [2, 3000, ...]`). Prefer it over
+  // any hard-coded guess.
+  try {
+    const f = require.resolve('@whiskeysockets/baileys/lib/Defaults/index.js');
+    const m = fs.readFileSync(f, 'utf8').match(/const version = \[(\d+),\s*(\d+),\s*(\d+)\]/);
+    if (m) return [Number(m[1]), Number(m[2]), Number(m[3])];
+  } catch (e) {}
+  return [2, 3000, 1023601545];
+}
+function _waVersionTestReset() { _waVersion = null; _waVersionAt = 0; }
+async function getWaVersion() {
+  if (_waVersion && Date.now() - _waVersionAt < WA_VERSION_TTL_MS) return _waVersion;
+  try {
+    const { version } = await Promise.race([
+      fetchLatestBaileysVersion(),
+      new Promise((_, rej) => {
+        const t = setTimeout(() => rej(new Error('WA version fetch timed out (8s)')), 8000);
+        if (t.unref) t.unref();
+      }),
+    ]);
+    _waVersion = version; _waVersionAt = Date.now();
+    return version;
+  } catch (e) {
+    if (_waVersion) {
+      console.warn(`⚠️ AstraLink: ${e.message} — using cached WA version ${_waVersion.join('.')}`);
+      return _waVersion;
+    }
+    const v = _bundledWaVersion();
+    console.warn(`⚠️ AstraLink: ${e.message} — no cache, using the version bundled with this Baileys build: ${v.join('.')}`);
+    return v;
+  }
+}
+
 // IDs of messages OUR OWN sockets sent (all personalities, this process).
 // WhatsApp echoes sibling-bot messages back to us with fromMe=false, so this
 // registry is the bulletproof sibling-recognition layer: no JID matching,
@@ -834,7 +881,7 @@ async function revokeSessionDir(authDir, key, opts = {}) {
   try {
     const logger = pino({ level: 'silent' });
     const { state } = await useMultiFileAuthState(dir);
-    const ver = await fetchLatestBaileysVersion().catch(() => ({ version: [2, 3000, 1023601545] }));
+    const ver = { version: await getWaVersion() };
     sock = makeWASocket({
       logger,
       version: ver.version,
@@ -984,7 +1031,9 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
   fs.mkdirSync(botAuthDir, { recursive: true });
 
   const { state, saveCreds } = await useMultiFileAuthState(botAuthDir);
-  const { version } = await fetchLatestBaileysVersion();
+  // Push #63: version lookup that cannot hang pairing (cached / 8s timeout /
+  // bundled-version fallback) — see getWaVersion() above.
+  const version = await getWaVersion();
 
   const displayName = PersonalityManager.getDisplayName(personalityKey);
 
@@ -1935,6 +1984,10 @@ module.exports = {
   listPairingSessions,
   QR_VALID_MS,
   isPlausibleQr,
+  // Push #63: WhatsApp version lookup (cached / 8s timeout / bundled fallback)
+  getWaVersion,
+  _bundledWaVersion,
+  _waVersionTestReset,
   revokeSessionDir,
   getSocket,
   getPendingSocket,
