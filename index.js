@@ -5,7 +5,7 @@ const fs = require('fs');
 let cachedConfig = JSON.parse(fs.readFileSync('./config.json', 'utf-8'));
 const path = require('path');
 const readline = require('readline');
-const { MongoClient } = require('mongodb');
+const mongoose = require('mongoose'); // Push #66: the schema layer (what typegoose builds on) — typed mirror doc, no build step
 const rpgCommandHandler = require('./handlers/rpgCommandHandler');
 const PlayerMigration = require('./rpg/utils/PlayerMigration');
 const RegenManager = require('./rpg/utils/RegenManager');
@@ -53,11 +53,45 @@ for (const key of PERSONALITY_KEYS) {
 // production/multi-device deployments.
 const MONGO_URI = process.env.MONGODB_URI || '';
 if (!MONGO_URI) {
-  console.log('ℹ️  MONGODB_URI not set — running on local JSON database (Mongo optional).');
+  console.log('ℹ️  MONGODB_URI not set — running on the local SQLite/JSON database (Mongo optional).');
 }
-let mongoClient = null;
+let mongoClient = null;       // the mongoose instance (kept name for the call sites)
 let mongoDb = null;
-let mongoCollection = null;
+let mongoCollection = null;   // the DatabaseMirror model
+
+// Push #66 — the Atlas mirror is now a real SCHEMA (the mongoose layer that
+// typegoose sits on: typed fields, indexes, timestamps — with no build step,
+// since this repo is plain JS). One document holds the whole database:
+//   { _id: 'main', doc: <game DB>, userCount, botPush, updatedAt }
+// Docs written before this push spread the game-DB fields at the top level;
+// loadFromMongoDoc() still understands that legacy shape and the first save
+// rewrites it into the schema shape transparently.
+function databaseMirrorSchema() {
+  return new mongoose.Schema({
+    _id: { type: String },
+    doc: { type: mongoose.Schema.Types.Mixed },  // the full game DB (loose by design)
+    userCount: { type: Number, default: 0 },     // denormalized — health checks without parsing
+    botPush: { type: Number, default: null },    // which push wrote this doc
+    updatedAt: { type: Number, default: Date.now },
+  }, { strict: false });
+}
+// Push #66 helper: a mirror doc (new or legacy shape) → the game-DB object.
+function _mirrorToDb(m) {
+  if (!m) return null;
+  const raw = typeof m.toObject === 'function' ? m.toObject({ virtuals: false }) : m;
+  if (raw.doc && typeof raw.doc === 'object') return raw.doc;          // Push #66 shape
+  const { _id, __v, doc, userCount, botPush, updatedAt, ...rest } = raw; // legacy: spread fields
+  return Object.keys(rest).length ? rest : null;
+}
+function _mirrorDocToWrite() {
+  return {
+    _id: 'main',
+    doc: database,
+    userCount: Object.keys(database.users || {}).length,
+    botPush: (typeof Updates !== 'undefined' && Updates.BOT_VERSION) || null,
+    updatedAt: Date.now(),
+  };
+}
 
 // ── Owner / co-owner JIDs (single source of truth) ──────────────────────────
 const { OWNER_JID, COOWNER_JID, PRIVILEGED_JIDS } = require('./utils/constants');
@@ -81,13 +115,13 @@ let _astralinkHostKey = null;
 let _astralinkHostSock = null;
 
 async function connectMongo() {
-  if (!MONGO_URI) return false; // Mongo optional — no URI means local JSON DB only
+  if (!MONGO_URI) return false; // Mongo optional — no URI means local DB only
   try {
-    mongoClient = new MongoClient(MONGO_URI);
-    await mongoClient.connect();
-    mongoDb = mongoClient.db('rpgbot');
-    mongoCollection = mongoDb.collection('database');
-    console.log('✅ MongoDB connected successfully!');
+    await mongoose.connect(MONGO_URI, { serverSelectionTimeoutMS: 8000, autoIndex: true });
+    mongoClient = mongoose;
+    mongoCollection = mongoose.models.DatabaseMirror
+      || mongoose.model('DatabaseMirror', databaseMirrorSchema());
+    console.log('✅ MongoDB connected successfully! (DatabaseMirror schema — Push #66)');
     return true;
   } catch (err) {
     console.error('❌ MongoDB connection failed:', err.message);
@@ -100,9 +134,10 @@ async function connectMongo() {
 async function loadFromMongoDoc() {
   try {
     const doc = await mongoCollection.findOne({ _id: 'main' });
-    if (doc) {
-      delete doc._id;
-      return doc;
+    const db = _mirrorToDb(doc); // Push #66: understands the schema shape AND the legacy spread shape
+    if (db) {
+      if (doc.doc === undefined) console.log('📦 Legacy Atlas doc detected — it will be rewritten to the DatabaseMirror schema on the next save (Push #66).');
+      return db;
     }
     return null;
   } catch (err) {
@@ -257,7 +292,8 @@ function _doMongoWrite() {
           let _remoteUsers = -1;
           try {
             const _rd = await mongoCollection.findOne({ _id: 'main' });
-            _remoteUsers = _rd ? Object.keys(_rd.users || {}).length : 0;
+            const _rdDb = _mirrorToDb(_rd); // Push #66: schema or legacy shape
+            _remoteUsers = _rdDb ? Object.keys(_rdDb.users || {}).length : 0;
           } catch { _remoteUsers = -1; }
           if (_remoteUsers < 0) return; // Atlas unreachable — JSON mirror covers; retry arming on next save
           if (_forceFlag && fs.existsSync(_forceFlag)) {
@@ -276,9 +312,11 @@ function _doMongoWrite() {
             _mongoArmed = true;
           }
         }
+        // Push #66: the typed DatabaseMirror document (game DB in `doc` +
+        // schema metadata). replaceOne on the model applies the schema.
         await mongoCollection.replaceOne(
           { _id: 'main' },
-          { _id: 'main', ...database },
+          _mirrorDocToWrite(),
           { upsert: true }
         );
         _lastMongoFlush = Date.now();
@@ -916,7 +954,14 @@ http.createServer(async (req, res) => {
       if (mongoCollection) {
         try {
           const doc = await mongoCollection.findOne({ _id: 'main' });
-          mongoInfo.doc = doc ? { users: Object.keys(doc.users || {}).length, savedAt: doc.__savedAt ? new Date(doc.__savedAt).toISOString() : null } : null;
+          const _d = _mirrorToDb(doc); // Push #66: schema or legacy shape
+          mongoInfo.doc = doc ? {
+            users: Object.keys((_d || {}).users || {}).length,
+            savedAt: (_d && _d.__savedAt) ? new Date(_d.__savedAt).toISOString() : (doc.updatedAt ? new Date(doc.updatedAt).toISOString() : null),
+            userCount: doc.userCount !== undefined ? doc.userCount : null,
+            botPush: doc.botPush !== undefined ? doc.botPush : null,
+            schema: doc.doc !== undefined ? 'push66' : 'legacy',
+          } : null;
         } catch (e) { mongoInfo.error = e.message; }
       }
       let snapInfo = null; // Push #32: snapshot ladder state
@@ -1030,7 +1075,7 @@ async function gracefulShutdown(signal) {
     if (_mongoArmed && (_memUsersSd > 0 || _bootUsers === 0)) { // Push #33: never flush unverified
     if (mongoCollection) {
       await Promise.race([
-        mongoCollection.replaceOne({ _id: 'main' }, { _id: 'main', ...database }, { upsert: true }),
+        mongoCollection.replaceOne({ _id: 'main' }, _mirrorDocToWrite(), { upsert: true }), // Push #66: schema shape
         new Promise((_, rej) => setTimeout(() => rej(new Error('final mongo flush timeout')), 10000)),
       ]);
       console.log('💾 Final MongoDB flush complete.');
@@ -1044,7 +1089,7 @@ async function gracefulShutdown(signal) {
   saveDatabaseSyncNow(signal);
   try { Storage.close(); } catch (e) {}      // Push #65
   try { await Updates.close(); } catch (e) {} // Push #65
-  try { if (mongoClient) await mongoClient.close(); } catch (e) {}
+  try { if (mongoClient) await mongoClient.disconnect(); } catch (e) {} // Push #66: mongoose
   process.exit(0);
 }
 process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
