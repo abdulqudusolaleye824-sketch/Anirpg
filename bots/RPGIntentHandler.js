@@ -22,9 +22,11 @@ function getRole(sender, db) {
   const senderNum   = normaliseJid(sender);
   const ownerNum    = normaliseJid(ownerJid);
   const coOwnerNum  = normaliseJid(coOwnerJid);
+  // Push #69: the co-owner's phone number is an equal identity (JID forms vary).
+  const coOwnerPhoneNum = (() => { try { return normaliseJid(require('../utils/constants').COOWNER_PHONE || ''); } catch (e) { return ''; } })();
 
   if (senderNum && (senderNum === ownerNum || senderNum === '221951679328499'))   return 'owner';
-  if (senderNum && (senderNum === coOwnerNum || senderNum === '194592469209292')) return 'coowner';
+  if (senderNum && (senderNum === coOwnerNum || senderNum === '194592469209292' || (coOwnerPhoneNum && senderNum === coOwnerPhoneNum))) return 'coowner';
   if ((db?.botMods || []).some(a => normaliseJid(a) === senderNum)) return 'admin';
   return 'player';
 }

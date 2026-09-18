@@ -32,18 +32,40 @@ const OWNER_JID = stripDevice(
   '221951679328499@lid'
 );
 
-// COOWNER_JID — secondary owner. Same convention.
-// Push #68: updated to the co-owner's LIVE number (the old @lid identity no
-// longer matches on modern clients, which silently stripped owner rights —
-// including /link — from the co-owner). Override in your .env to change.
+// COOWNER_JID — secondary owner (legacy LID identity). Same convention.
+// NOTE (Push #69): the co-owner is ALSO recognized by COOWNER_PHONE (their
+// personal number) — see isCoownerJid(). Both identities count.
 const COOWNER_JID = stripDevice(
   (process.env.COOWNER_JID && process.env.COOWNER_JID.trim()) ||
+  '194592469209292@lid'
+);
+
+// Push #69: the co-owner's personal PHONE number. Modern WhatsApp delivers
+// sender JIDs in different forms (legacy @lid vs @s.whatsapp.net number,
+// with/without :device), and a single stale identity is exactly what
+// silently stripped the co-owner's owner rights (all owner commands + /link).
+// We therefore treat BOTH identities as the co-owner. Override with the env
+// var COOWNER_PHONE if the number ever changes.
+const COOWNER_PHONE = stripDevice(
+  (process.env.COOWNER_PHONE && process.env.COOWNER_PHONE.trim()) ||
   '2347062052095@s.whatsapp.net'
 );
 
+// Every built-in co-owner identity (lid + phone), deduped.
+const COOWNER_ALL = [...new Set([COOWNER_JID, COOWNER_PHONE].filter(Boolean))];
+
+// True when the given JID (any form: lid / phone / :device-suffixed) is the
+// co-owner. Compare on bare numbers only.
+function isCoownerJid(jid) {
+  const bare = (j) => String(j || '').split('@')[0].split(':')[0];
+  const s = bare(jid);
+  if (!s) return false;
+  return COOWNER_ALL.some(c => bare(c) === s);
+}
+
 // PRIVELEGED_JIDS — set of JIDs that bypass rate limits & cooldowns
 // (currently OWNER + COOWNER). Add more by pushing additional JIDs.
-const PRIVILEGED_JIDS = new Set([OWNER_JID, COOWNER_JID].filter(Boolean));
+const PRIVILEGED_JIDS = new Set([OWNER_JID, COOWNER_JID, COOWNER_PHONE].filter(Boolean));
 
 // Helper: is a sender privileged?
 function isPrivileged(jid) {
@@ -69,6 +91,9 @@ const CURRENCY = {
 module.exports = {
   OWNER_JID,
   COOWNER_JID,
+  COOWNER_PHONE,
+  COOWNER_ALL,
+  isCoownerJid,
   PRIVILEGED_JIDS,
   OWNER_NUMBER,
   isPrivileged,

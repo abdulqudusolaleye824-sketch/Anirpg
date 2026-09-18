@@ -1,5 +1,23 @@
 # AniRPG — Patch Drop (features + bug fixes + UI restyle)
 
+## Push #70 — Kick severance fix + profile via tag/reply (2026-09-18)
+
+1. **`/guild kick` now pays the ×2 severance it was always supposed to.** The spec in `GuildContractManager.js` ("Kicking a contracted member pays the hunter ×2 of the REMAINING balance of their contract") was dead code — the kick branch never called it, so kicked members got nothing. New `creditKickPayout()` terminates the contract, credits the hunter with `2 × (weekly Nexus + weekly Mana) × weeks remaining` (Nexus → `gold`, Mana → `manaCrystals`), clears any pending wage approval for them, and the kick announcement now shows the severance line. **Voluntary `/guild leave` is untouched** — normal leave gets no severance, by design.
+2. **Profile by tag or reply.** `/profile` now resolves its target in this order: explicit @-tag → replied-to message author → yourself. Lookup is JID-form tolerant (lid vs phone, ±`:device` suffix), so a reply/tag delivered in a different form than the stored key no longer says "not registered". Bare `/profile` still shows your own card; locked-profile DM flow unchanged.
+3. `GuildContractManager` now exports `findUserInDb` + `creditKickPayout`. Tests → 32 checks (kick severance math 3000 N + 60 M on a 4w/1w-paid contract; leave branch verified untouched; profile via reply/tag/device-suffix/own/unknown-target).
+
+## Push #69 — Co-owner dual-identity fix + repo/live sync (2026-09-18)
+
+**Co-owner identity**
+1. The co-owner was silently stripped of ALL owner rights (owner commands, `/link`, super-user bank deposit) — the recognized identity was a single legacy `@lid` JID, but WhatsApp delivers the co-owner's messages in different JID forms (legacy `@lid` vs `@s.whatsapp.net` phone number, ±`:device` suffix), and the `.env` on the box pinned the stale lid form.
+2. Fix: the co-owner is now recognized in **both** forms — `utils/constants.js` adds `COOWNER_PHONE` (personal number, env-overridable via `COOWNER_PHONE`) and `isCoownerJid()` (bare-number match across every JID form). Wired into every authority gate: `permissions.getBotOwners` built-ins (owner tier → all owner commands + `/link`), `register.js` co-owner S-rank, `RPGIntentHandler.getRole`, `approveserf.js` mod/owner check, `bank.js` super-user deposit. A stale `.env` `COOWNER_JID` no longer matters — the phone number is always recognized regardless of env, and a real `.env` change still works.
+
+**Live sync**
+3. `bots/MultiSocketManager.js` in the repo now matches the LIVE container file (includes the 09-18 QR pairing hotfix: wa.me `#fragment` extraction, base64url charset guard, variable reference-field count, `small:true` terminal QRs). The repo no longer carries a stale MSM that would regress QR pairing if ever copied into the box.
+
+**Tests**
+4. `test_push68.js` → 29 checks: co-owner accepted in lid/phone/device-suffixed forms → owner tier; strangers rejected; identity wiring verified across register/intent/serf/bank.
+
 ## Push #68 — Bug patches + gameplay improv (2026-09-18)
 
 **Crash fixes**

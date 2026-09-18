@@ -174,17 +174,33 @@ module.exports = {
     const chatId = msg.key?.remoteJid;
     const db     = getDatabase();
 
-    // Allow viewing another player's profile
-    const mentionedId = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid?.[0];
-    const targetId    = mentionedId || sender;
-    const isOwnProfile = targetId === sender;
-    const player       = db.users[targetId];
+    // Push #70: viewing another player's profile via TAG or REPLY.
+    //   /profile           → own profile
+    //   /profile @tag      → the tagged player
+    //   /profile (reply)   → the player whose message was replied to
+    const _ctx        = msg.message?.extendedTextMessage?.contextInfo;
+    const mentionedId = _ctx?.mentionedJid?.[0] || null;
+    const _part       = _ctx?.participant;
+    const repliedToId = (_part && (String(_part).endsWith('@s.whatsapp.net') || String(_part).endsWith('@lid')))
+      ? _part : null;
+    const targetId    = mentionedId || repliedToId || sender;
+    const _bareJid    = (j) => String(j || '').split('@')[0].split(':')[0];
+    const isOwnProfile = _bareJid(targetId) === _bareJid(sender);
+    let player = db.users?.[targetId];
+    if (!player) {
+      // Tolerant lookup — mentions/replies can arrive in a different JID
+      // form than the one stored (lid vs number, ±:device suffix).
+      try {
+        const CM = require('../../rpg/utils/GuildContractManager');
+        player = CM.findUserInDb(db, CM.normaliseJid(targetId));
+      } catch (e) { player = null; }
+    }
 
     if (!player) {
       return sock.sendMessage(chatId, {
-        text: mentionedId
-          ? `❌ That player is not registered.`
-          : `❌ You are not registered! Use */register* to awaken.`,
+        text: isOwnProfile
+          ? `❌ You are not registered! Use */register* to awaken.`
+          : `❌ That player is not registered.`,
       }, { quoted: msg });
     }
 

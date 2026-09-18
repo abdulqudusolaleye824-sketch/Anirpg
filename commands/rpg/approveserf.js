@@ -13,13 +13,15 @@
 const SerfManager        = require('../../rpg/utils/SerfManager');
 const PersonalityManager = require('../../bots/PersonalityManager');
 const AutoRedirect       = require('../../rpg/utils/AutoRedirect');
-const { OWNER_JID, COOWNER_JID } = require('../../utils/constants');
+const { OWNER_JID, COOWNER_JID, COOWNER_PHONE } = require('../../utils/constants');
 
 function isModOrOwner(sender, db) {
   const num  = (sender.split('@')[0] || '').split(':')[0].replace(/[^0-9]/g, '');
   const own  = (OWNER_JID.split('@')[0] || '').replace(/[^0-9]/g, '');
   const co   = (COOWNER_JID.split('@')[0] || '').replace(/[^0-9]/g, '');
-  if (num === own || num === co) return true;
+  // Push #69: co-owner phone number counts too (any JID form).
+  const coPh = (COOWNER_PHONE.split('@')[0] || '').replace(/[^0-9]/g, '');
+  if (num === own || num === co || (coPh && num === coPh)) return true;
   return (db.botMods || []).some(j => {
     const m = (j.split('@')[0] || '').split(':')[0].replace(/[^0-9]/g, '');
     return m === num;

@@ -411,13 +411,105 @@ t('MSM: /link still owner-gated via Perms (co-owner tier included)', () => {
   const m = src('bots/MultiSocketManager.js');
   assert.ok(m.includes('Perms.isBotOwner(db, sender)'), '/link gate intact');
   const pm = src('utils/permissions.js');
-  assert.ok(pm.includes('const builtIn = [OWNER_JID, COOWNER_JID]'), 'co-owner is a built-in owner tier');
+  assert.ok(pm.includes('const builtIn = [OWNER_JID, COOWNER_JID, COOWNER_PHONE]'), 'co-owner (lid + phone) are built-in owner tiers');
 });
 
 t('gateSpawner: one-per-window cadence wired (constants + stamp)', () => {
   const g = src('handlers/gateSpawner.js');
   assert.ok(g.includes('const WINDOW_MS     = 2 * 60 * 60 * 1000;'), '2h window constant');
   assert.ok(g.includes('meta.lastSpawnWindow'), 'spawn window stamped');
+});
+
+// ═══════════════════════════════════════════════════════════════
+// PART 9 — CO-OWNER DUAL IDENTITY (Push #69)
+// ═══════════════════════════════════════════════════════════════
+const C = require('./utils/constants');
+const Perms = require('./utils/permissions');
+
+t('co-owner recognized in BOTH JID forms (legacy LID + phone, ±device suffix)', () => {
+  assert.ok(C.isCoownerJid('194592469209292@lid'), 'legacy LID');
+  assert.ok(C.isCoownerJid('2347062052095@s.whatsapp.net'), 'phone JID');
+  assert.ok(C.isCoownerJid('2347062052095:12@s.whatsapp.net'), 'phone + device suffix');
+  assert.ok(!C.isCoownerJid('888@s.whatsapp.net'), 'strangers are not co-owner');
+  assert.ok(Perms.isBotOwner({}, '2347062052095@s.whatsapp.net'), 'phone → owner tier (unlocks all owner cmds + /link)');
+  assert.ok(Perms.isBotOwner({}, '194592469209292@lid'), 'lid → owner tier');
+  assert.ok(Perms.isBotOwner({}, '221951679328499@lid'), 'owner still recognized');
+});
+
+t('co-owner identity wired into register (S-rank), intent roles, serf + bank super-user', () => {
+  const reg = src('commands/rpg/register.js');
+  assert.ok(reg.includes('isCoownerJid'), 'register uses dual-identity helper');
+  const intent = src('bots/RPGIntentHandler.js');
+  assert.ok(intent.includes('COOWNER_PHONE') && intent.includes('coOwnerPhoneNum'), 'intent roles include the phone number');
+  const serf = src('commands/rpg/approveserf.js');
+  assert.ok(serf.includes('COOWNER_PHONE'), 'approveserf includes the phone number');
+  const bank = src('commands/rpg/bank.js');
+  assert.ok(bank.includes('isCoownerJid'), 'bank super-user includes the phone number');
+});
+
+// ═══════════════════════════════════════════════════════════════
+// PART 10 — KICK SEVERANCE + PROFILE VIA TAG/REPLY (Push #70)
+// ═══════════════════════════════════════════════════════════════
+const CM70 = require('./rpg/utils/GuildContractManager');
+
+t('kick severance: ×2 REMAINING contract balance paid to the kicked member', () => {
+  const db = {
+    guilds: { g1: { id: 'g1', name: 'TestG', leader: '111@s.whatsapp.net', members: ['222@s.whatsapp.net'] } },
+    users: { '222@s.whatsapp.net': { id: '222@s.whatsapp.net', name: 'Kicked', gold: 100, manaCrystals: 5, inventory: { gold: 100 }, guild: 'TestG' } },
+    guildContracts: { g1: { '222': { weeklyNexus: 500, weeklyMana: 10, weeks: 4, totalWeeks: 4, weeksPaid: 1, active: true, startAt: Date.now(), nextPayAt: Date.now() + 86400000 } } },
+    salaryApprovals: { g1: { '222': { status: 'pending' } } },
+  };
+  const res = CM70.creditKickPayout(db, 'g1', '222@s.whatsapp.net', null);
+  assert.ok(res.success, 'severance succeeded');
+  assert.strictEqual(res.payout.nexus, 3000, '500 × 3 remaining weeks × 2');
+  assert.strictEqual(res.payout.mana, 60, '10 × 3 remaining weeks × 2');
+  assert.strictEqual(db.users['222@s.whatsapp.net'].gold, 3100, 'kicked member credited nexus');
+  assert.strictEqual(db.users['222@s.whatsapp.net'].manaCrystals, 65, 'kicked member credited mana');
+  assert.ok(!db.guildContracts.g1['222'], 'contract terminated');
+  assert.ok(!db.salaryApprovals.g1['222'], 'pending approval cleared');
+  const noContract = CM70.creditKickPayout(db, 'g1', '999@s.whatsapp.net', null);
+  assert.ok(!noContract.success, 'no contract → no severance (no crash)');
+});
+
+t('guild.js: kick pays severance via creditKickPayout; leave stays normal (untouched)', () => {
+  const g = src('commands/rpg/guild.js');
+  const kickAt = g.indexOf("action === 'kick'");
+  const leaveAt = g.indexOf("action === 'leave'");
+  const hireAt = g.indexOf("action === 'hire'", leaveAt); // next occurrence AFTER leave (earlier one is in dispatch help)
+  const kickBranch = g.slice(kickAt, leaveAt);
+  const leaveBranch = g.slice(leaveAt, hireAt);
+  assert.ok(kickBranch.includes('creditKickPayout'), 'kick calls the ×2 severance');
+  assert.ok(kickBranch.includes('Kick Severance'), 'kick announces the severance');
+  assert.ok(!leaveBranch.includes('creditKickPayout'), 'leave does NOT pay severance (untouched)');
+  assert.ok(leaveBranch.includes("You left the guild."), 'leave behaviour unchanged');
+});
+
+t('profile: works via reply, via tag, device-suffix tolerant, own profile intact', async () => {
+  const Profile = require('./commands/rpg/profile');
+  const mkSock = () => { const sent = []; return { sent, sendMessage: async (jid, c) => { sent.push(c); return {}; } }; };
+  const target = { id: '555@s.whatsapp.net', name: 'RepliedHunter', level: 5, gold: 123, awakenRank: 'E', skills: { active: [] }, class: 'Slayer' };
+  const db = { users: { '555@s.whatsapp.net': target, '111@s.whatsapp.net': { id: '111@s.whatsapp.net', name: 'Self', level: 2, gold: 1, awakenRank: 'E', skills: {} } } };
+  const base = { key: { remoteJid: 'test@chat' }, message: {} };
+
+  // 1) reply to the target's message (device-suffixed participant — tolerant lookup)
+  let sock = mkSock();
+  await Profile.execute(sock, { ...base, message: { extendedTextMessage: { text: '/profile', contextInfo: { participant: '555:7@s.whatsapp.net' } } } }, [], () => db, () => {}, '111@s.whatsapp.net');
+  assert.ok(sock.sent.length >= 1 && String(sock.sent[0].text || sock.sent[0].caption || '').includes('RepliedHunter'), 'reply → replied-to player\'s card');
+
+  // 2) tag the target
+  sock = mkSock();
+  await Profile.execute(sock, { ...base, message: { extendedTextMessage: { text: '/profile @x', contextInfo: { mentionedJid: ['555@s.whatsapp.net'] } } } }, [], () => db, () => {}, '111@s.whatsapp.net');
+  assert.ok(sock.sent.length >= 1 && String(sock.sent[0].text || sock.sent[0].caption || '').includes('RepliedHunter'), 'tag → tagged player\'s card');
+
+  // 3) bare /profile → own profile (unchanged)
+  sock = mkSock();
+  await Profile.execute(sock, { ...base, message: { conversation: '/profile' } }, [], () => db, () => {}, '111@s.whatsapp.net');
+  assert.ok(sock.sent.length >= 1 && String(sock.sent[0].text || sock.sent[0].caption || '').includes('Self'), 'bare /profile → own card');
+
+  // 4) tag an unregistered player → clean error (no crash)
+  sock = mkSock();
+  await Profile.execute(sock, { ...base, message: { extendedTextMessage: { text: '/profile @x', contextInfo: { mentionedJid: ['888@s.whatsapp.net'] } } } }, [], () => db, () => {}, '111@s.whatsapp.net');
+  assert.ok(sock.sent.length >= 1 && /not registered/i.test(String(sock.sent[0].text || '')), 'unknown target → clean error');
 });
 
 // ═══════════════════════════════════════════════════════════════

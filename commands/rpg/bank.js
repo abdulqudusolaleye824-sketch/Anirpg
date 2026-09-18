@@ -211,7 +211,12 @@ ${FRAME}`
 
       const BOT_OWNER = '221951679328499@lid';
       const CO_OWNER  = '194592469209292@lid';
-      const isSuperUser = sender === BOT_OWNER || sender === CO_OWNER;
+      // Push #69: match on bare numbers (any JID form) and include the
+      // co-owner's phone number.
+      const _bare = (j) => String(j || '').split('@')[0].split(':')[0];
+      const _s = _bare(sender);
+      let isSuperUser = _s === _bare(BOT_OWNER) || _s === _bare(CO_OWNER);
+      try { isSuperUser = isSuperUser || require('../../utils/constants').isCoownerJid(sender); } catch (e) {}
       const isBankOwner = bank.owner === sender;
 
       // Bank owners can register at their own bank (no deposit required)

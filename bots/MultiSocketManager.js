@@ -79,10 +79,23 @@ const QR_VALID_MS = Math.min(60000, Math.max(15000, Number(process.env.ASTRALINK
 let _qrSeq = 0;
 const _qrKickAt = {};   // personality -> last time we restarted a pairing for a dead code
 
-// A real pairing ref looks like: 2@<noiseB64>,<identityB64>,<ref>
+// A real pairing ref looks like: 2@<field>,<field>,... — the field count
+// varies by protocol version (3 parts pre-2026, 5 parts observed 2026-09-18).
+// Sep 2026 change: WhatsApp hands the ref inside a URL —
+// https://wa.me/settings/linked_devices#2@... — ref in the #fragment.
+// Validate prefix/charset only; ALWAYS render the ORIGINAL full payload so
+// the phone scanner sees exactly what WhatsApp's servers issued.
 function isPlausibleQr(qr) {
-  return typeof qr === 'string' && qr.startsWith('2@') && qr.split(',').length === 3 && qr.length > 40;
+  if (typeof qr !== 'string') return false;
+  let ref = qr;
+  if (qr.startsWith('https://wa.me/')) {
+    const hash = qr.indexOf('#');
+    if (hash === -1) return false;
+    ref = qr.slice(hash + 1);
+  }
+  return /^2@[A-Za-z0-9+/=,]+$/.test(ref) && ref.length > 40;
 }
+
 
 // ── Push #63: WhatsApp version lookup that CANNOT stall pairing ────────────
 // connectBot used to do `await fetchLatestBaileysVersion()` with no timeout,
@@ -1173,7 +1186,7 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
       // CONSOLE now (pm2 logs / Oracle terminal). The code rotates every
       // QR_VALID_MS, so make it unmistakable which one to scan.
       try {
-        const termQr = await QRCode.toString(qr, { type: 'terminal', small: false, margin: 2 });
+        const termQr = await QRCode.toString(qr, { type: 'terminal', small: true, margin: 2 });
         console.log(`\n🔗 AstraLink [${displayName}] — PAIRING QR (screenshot this, then scan it with the bot's phone):\n   ⏱ a fresh one prints every ${Math.round(QR_VALID_MS / 1000)}s — ALWAYS scan the NEWEST one:\n${termQr}\n`);
       } catch (e) { console.error('Terminal QR render error:', e.message); }
       }

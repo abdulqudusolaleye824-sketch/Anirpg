@@ -144,6 +144,34 @@ function kickPayout(db, guildId, playerJid, saveDatabase) {
   return { success: true, payout, contract: c };
 }
 
+// Push #70: kickPayout + actually CREDIT the hunter in one call.
+// (guild.js's /guild kick was never calling kickPayout — the ×2 severance
+// documented in the header above was dead code. Voluntary /guild leave
+// deliberately does NOT use this: normal leave gets no severance.)
+// Returns kickPayout's result plus { user, credited }.
+function creditKickPayout(db, guildRef, playerJid, saveDatabase) {
+  const res = kickPayout(db, guildRef, playerJid, null);
+  if (!res.success) return res;
+  const user = findUserInDb(db, normaliseJid(playerJid));
+  let credited = false;
+  if (user && ((res.payout.nexus || 0) > 0 || (res.payout.mana || 0) > 0)) {
+    user.gold = (user.gold || 0) + res.payout.nexus;
+    user.manaCrystals = (user.manaCrystals || 0) + res.payout.mana;
+    if (user.inventory) user.inventory.gold = user.gold;
+    credited = true;
+  }
+  // Drop any pending wage approval for the kicked member — the contract is
+  // gone, and a stale Pay/Skip DM must not linger in the approvals store.
+  try {
+    const g = findGuild(db, guildRef);
+    const realId = g?.id || guildRef;
+    const bare = normaliseJid(playerJid);
+    if (db.salaryApprovals?.[realId]?.[bare]) delete db.salaryApprovals[realId][bare];
+  } catch (e) {}
+  if (saveDatabase) saveDatabase();
+  return { ...res, user, credited };
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // Push #68 — Weekly wage pipeline
 //
@@ -565,9 +593,9 @@ function getSalaryStatus(db, playerJid) {
 }
 
 module.exports = {
-  Week, normaliseJid, rankOf,
+  Week, normaliseJid, rankOf, findUserInDb,
   isGuildMasterOrVice, isGuildMember,
-  getContract, hire, remainingBalance, kickPayout, processWeeklyPay,
+  getContract, hire, remainingBalance, kickPayout, creditKickPayout, processWeeklyPay,
   // Push #68
   MIN_WEEKLY_DAILIES, APPROVAL_TIMEOUT_MS,
   weekKey, weeklyDailyClaims,

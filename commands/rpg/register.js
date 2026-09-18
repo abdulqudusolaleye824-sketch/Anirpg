@@ -239,11 +239,12 @@ function rollPending(name, sender) {
 }
 
 // HARDCODED (batch-40): co-owner identity check (bare-number, LID-safe).
+// Push #69: also matches the co-owner's phone number (isCoownerJid covers
+// both the legacy LID and the phone identity).
 function isCoowner(sender) {
   try {
-    const { COOWNER_JID } = require('../../utils/constants');
-    const bare = (j) => String(j || '').split('@')[0].split(':')[0];
-    return !!COOWNER_JID && !!sender && bare(sender) === bare(COOWNER_JID);
+    const { isCoownerJid } = require('../../utils/constants');
+    return !!sender && isCoownerJid(sender);
   } catch (e) { return false; }
 }
 

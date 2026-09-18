@@ -15,7 +15,7 @@
 
 'use strict';
 
-const { OWNER_JID, COOWNER_JID, isPrivileged, stripDevice } = require('./constants');
+const { OWNER_JID, COOWNER_JID, COOWNER_PHONE, isPrivileged, stripDevice } = require('./constants');
 
 /**
  * The two top-tier JIDs are always botOwners, regardless of what's in the DB.
@@ -32,7 +32,9 @@ function bare(jid) {
 function getBotOwners(db) {
   if (!db) db = {};
   if (!Array.isArray(db.botOwners)) db.botOwners = [];
-  const builtIn = [OWNER_JID, COOWNER_JID].filter(Boolean);
+  // Push #69: built-ins include the co-owner's PHONE number as well as the
+  // legacy LID, so the co-owner keeps owner rights in every JID form.
+  const builtIn = [OWNER_JID, COOWNER_JID, COOWNER_PHONE].filter(Boolean);
   // Merge, dedupe, ensure built-in are always present
   const set = new Set(builtIn);
   for (const j of db.botOwners) set.add(stripDevice(j));

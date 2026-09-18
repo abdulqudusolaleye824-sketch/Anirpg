@@ -1161,14 +1161,28 @@ ${FRAME}\n`;
         return sock.sendMessage(chatId, { text: '❌ That hunter is not a member of your guild!' }, { quoted: msg });
       }
 
+      // Push #70: KICK SEVERANCE — a kicked contracted member is paid ×2 the
+      // REMAINING balance of their contract (per the GuildContractManager
+      // spec). This used to be dead code — the kick never called it, so
+      // kicked members got nothing. Voluntary /guild leave gets no severance
+      // (normal leave, untouched).
+      let kickSev = null;
+      try {
+        const CM = require('../../rpg/utils/GuildContractManager');
+        kickSev = CM.creditKickPayout(db, playerGuild, targetId, null) || null; // saved by the saveDatabase() below
+      } catch (e) { console.error('[GUILD] kick severance failed:', e.message); }
+
       playerGuild.members.splice(idx, 1);
-      const kicked = db.users?.[targetId];
+      const kicked = (kickSev && kickSev.user) || db.users?.[targetId];
       if (kicked) kicked.guild = null;
       saveDatabase();
 
       const kName = kicked?.name || ('@' + targetId.split('@')[0]);
+      const sevLine = (kickSev && kickSev.success && ((kickSev.payout.nexus || 0) > 0 || (kickSev.payout.mana || 0) > 0))
+        ? `\n💸 *Kick Severance:* +${(kickSev.payout.nexus || 0).toLocaleString()} 💠 Nexus, +${(kickSev.payout.mana || 0).toLocaleString()} 💎 Mana Stones _(×2 remaining contract)_`
+        : '';
       return sock.sendMessage(chatId, {
-        text: `${FRAME}\n🪓 *GUILD KICK!*\n${FRAME}\n🏰 Guild: *${playerGuild.name}*\n👤 Removed: *${kName}*\n${FRAME}`,
+        text: `${FRAME}\n🪓 *GUILD KICK!*\n${FRAME}\n🏰 Guild: *${playerGuild.name}*\n👤 Removed: *${kName}*\n${sevLine}${FRAME}`,
         mentions: [targetId]
       }, { quoted: msg });
     }
