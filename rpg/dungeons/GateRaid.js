@@ -225,8 +225,12 @@ const COMBAT_LOCK_MS = 90_000;  // stale-lock auto-expiry (belt + braces)
 function tryCombatLock(gateId, holder, name) {
   const now = Date.now();
   const cur = _combatLocks.get(gateId);
-  if (cur && now - cur.ts < COMBAT_LOCK_MS && cur.holder !== holder) {
-    return { ok: false, holderName: cur.name || 'Another hunter' };
+  // Push #68: the holder is blocked as well. The old self-exempt check let
+  // the SAME hunter re-enter /attack (or /party boss) while their own
+  // multi-message flow was still resolving — other hunters were locked out
+  // but the actor could double-move.
+  if (cur && now - cur.ts < COMBAT_LOCK_MS) {
+    return { ok: false, holderName: cur.name || 'Another hunter', self: cur.holder === holder };
   }
   _combatLocks.set(gateId, { holder, name, ts: now });
   return { ok: true };

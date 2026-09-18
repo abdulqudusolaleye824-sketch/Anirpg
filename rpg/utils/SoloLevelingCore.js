@@ -47,16 +47,16 @@ const AWAKENING_RANKS = {
     label: 'A-Rank', emoji: '🟡', color: 'gold',
     gateAccess: ['F', 'E', 'D', 'C', 'B', 'A'],
     statMultiplier: 3.0,
-    spawnChance: 0.17, // 17%
+    spawnChance: 0.199, // 19.9% (Push #68: 17% + the 2.9% freed by the S nerf)
     baseStats: { hp: 280, atk: 38, def: 28, speed: 118, maxEnergy: 175 },
-    description: 'Elite awakeners. Roughly 17% of hunters.',
+    description: 'Elite awakeners. Roughly 20% of hunters.',
     xpMultiplier: 1.5,
   },
   S: {
     label: 'S-Rank', emoji: '🔴', color: 'red',
     gateAccess: ['F', 'E', 'D', 'C', 'B', 'A', 'S', 'DISASTER'],
     statMultiplier: 4.5,
-    spawnChance: 0.03, // 3%
+    spawnChance: 0.001, // 0.1% (Push #68: registration S-rank nerf — was 3%)
     baseStats: { hp: 420, atk: 62, def: 45, speed: 135, maxEnergy: 220 },
     description: 'The pinnacle of human potential. Feared by all. Known by few.',
     xpMultiplier: 2.0,

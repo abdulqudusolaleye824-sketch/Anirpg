@@ -128,6 +128,25 @@ function buildCard(player, db, targetId, mentionedId, isOwnProfile) {
     petDisplay !== 'None' ? `🐾 Active Pet: ${petDisplay}` : null,
     `🎖️ Titles: *${titlesOwned}* | Equipped: *${equippedTitle}*`,
     `⭐ Pro Status: *${proLabel}*`,
+    // Push #68: weekly wage status on the profile card (due / processing /
+    // paid / skipped — full detail in /wages).
+    (() => {
+      try {
+        const CM = require('../../rpg/utils/GuildContractManager');
+        const st = CM.getSalaryStatus(db, targetId);
+        if (!['active', 'completed', 'defaulted'].includes(st.state)) return null;
+        const c = st.contract || {};
+        const fmtD = (ms) => (ms ? new Date(ms + 3600000).toISOString().slice(0, 10) : '');
+        if (st.state === 'defaulted') return `💰 *Wages:* 🔴 Defaulted (treasury short)`;
+        if (st.state === 'completed') return `💰 *Wages:* ✅ Contract fully paid`;
+        let due;
+        if (st.dueState === 'processing') due = `🔄 processing (master approval)`;
+        else if (st.dueState === 'will_skip') due = `⚠️ due now — ${st.claims}/${st.minClaims} dailies (will skip)`;
+        else if (st.dueState === 'due_now') due = `🟡 due now`;
+        else due = `next ${fmtD(st.nextPayAt)}`;
+        return `💰 *Wages:* 🟢 active — ${due}`;
+      } catch (e) { return null; }
+    })(),
     isBanned ? `🚫 Banned: *True*` : null,
     `📆 Joined: *${regDate}*`,
   ].filter(l => l !== null);

@@ -104,6 +104,14 @@ module.exports = {
     }
     player.dailyQuest.streak = (player.dailyQuest.streak || 0) + 1;
     player.dailyQuest.lastClaimed = now;
+    // Push #68: weekly /daily counter (WAT Monday-anchored week) — feeds the
+    // guild wage activity gate: members need 3+ claims a week to earn wages.
+    try {
+      const CMw = require('../../rpg/utils/GuildContractManager');
+      const _wk = CMw.weekKey(now);
+      if (player.dailyWeek && player.dailyWeek.key === _wk) player.dailyWeek.count = (player.dailyWeek.count || 0) + 1;
+      else player.dailyWeek = { key: _wk, count: 1 };
+    } catch (e) {}
     // Daily Quest System: only tick Devoted quest on successful claim (not on Already Claimed)
     try { const { trackAndNotify } = require('../../rpg/utils/QuestDispatcher'); trackAndNotify(player, 'daily', 1, sock, sender, chatId); } catch(e){}
     DC.trackProgress(player, 'claim_daily', 1);

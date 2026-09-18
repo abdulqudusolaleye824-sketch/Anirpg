@@ -1,5 +1,38 @@
 # AniRPG — Patch Drop (features + bug fixes + UI restyle)
 
+## Push #68 — Bug patches + gameplay improv (2026-09-18)
+
+**Crash fixes**
+1. `/party boss` → "boss is not defined" — `finishBossDefeat` now binds the boss from `gate.boss` (it referenced a block-scoped local from the `/party boss` branch, so EVERY boss settlement crashed — via `/party boss` or the general `/attack` flow).
+2. `/attack` → "_petLines is not defined" — `_petLines` was declared inside the `if (canAct)` block but read in the counter-attack epilogue; every STUNNED player's attack crashed. Declaration hoisted to execute scope.
+3. Combat self-lock — the combat lock exempted the holder, so a player could re-run `/attack`/`/party boss` before their own 5-message flow finished (others were locked out, the actor wasn't). `tryCombatLock` now blocks everyone, including the holder, with a tailored "your last move is still resolving" message.
+
+**Wage system (guild salaries)**
+4. Activity gate — members with fewer than **3 /daily claims in the current WAT week** are auto-skipped at pay time (week advances, no payout, DM explains what's needed). Counter maintained by `/daily` (`player.dailyWeek`).
+5. Pro guildmaster approval — when the guild master is a PRO player, each member's due wage goes to the master as a DM with **✅ Pay / ❌ Skip** list buttons (`/wageyes` `/wageno`, resolved in `handlers/rpgCommandHandler.js` before the DM command gate). Unanswered approvals auto-PAY after 24h; if the master can't receive DMs (no serf / serf offline) the week auto-pays too — earned wages aren't held hostage. Non-pro masters keep auto-pay.
+6. New **`/wages`** (`/wage`) — the payroll pipeline: due date, processing (awaiting master), paid, skipped history, this week's daily gate. Separate from `/contract` (terms).
+7. **`/profile`** now carries a one-line wage status (active / due / processing / paid / defaulted).
+8. `GuildContractManager` — `weekKey`, `weeklyDailyClaims`, `getSalaryStatus`, `tryResolveApprovalBySender`, `payOneWeek`/`skipWeek` (payHistory kept per contract, last 12 weeks).
+
+**Owner tools**
+9. New owner command **`/bleep <E|D|C|B|A|S> @player`** — changes a player's awakening rank and applies the rank's stat floor as a PURE IMPROVEMENT (stats raised to at least the new rank's base, never lowered) + the upgrade-point/mana-stone bonus delta. Level, class and XP untouched.
+10. Co-owner recognition — `utils/constants.js` COOWNER_JID updated to the co-owner's live number (the stale `@lid` identity no longer matched, silently stripping the co-owner of ALL owner commands + `/link`).
+
+**Balance**
+11. Registration S-rank: **3% → 0.1%** (freed 2.9% to A: 17% → 19.9%).
+12. Gate S-rank: **5% → 9.9% (+4.9%)**, funded by C gates (35% → 30.1%).
+
+**World pacing**
+13. Gate spawns: exactly **one gate per 2-hour WAT window** (midnight–2am → 1, 2am–4am → 1, …), dropping at a RANDOM moment inside the window. Countdown still persists across restarts (`gateSpawnMeta.nextSpawnAt`); each spawn stamps `lastSpawnWindow`.
+14. Quiz: the Games-lobby button now starts an explicit **10-question** round (`/quiz 10`); `/quiz 3` still works, max 20 per round (default was already 10).
+
+**Tests:** `test_push68.js` — 27/27 (crash-structure checks, combat-lock behavior, full wage-engine matrix, Monte-Carlo rank odds, 2h-window scheduling, /wages + /bleep execution).
+
+> NOTE: the container's `/app/index.js` carries the `/api/db-restore` runtime endpoint (Push #67 era) which is NOT in this repo — the #68 deploy must not clobber `index.js`.
+
+---
+
+
 121 files: 7 brand-new, 114 modified. `patches/` mirrors repo layout — copy over repo root, review, commit, push (Railway auto-deploys).
 
 ## 🆕 NEW FILES (7)

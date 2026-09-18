@@ -28,7 +28,7 @@ module.exports = {
       '🎮 *GAMES LOBBY* 🎮',
       pro ? (UI.PRO_MINI + '\n' + '🎮 PRO ARCADE') : null,
       ``,
-      `📝 *Anime Quiz* — /quiz <1-20>, answer with /a A/B/C/D`,
+      `📝 *Anime Quiz* — /quiz <1-20> (default 10), answer with /a A/B/C/D`,
       `   🏆 25 XP + 15 💠/correct · winner +100 XP + 50 💠 + 100–150 ✨ Pass XP`,
       ``,
       `❌ *Tic-Tac-Toe* — /ttt @user`,
@@ -56,7 +56,9 @@ module.exports = {
         return await Buttons.sendButtons(sock, chatId, {
           text,
           buttons: Buttons.quickReplies([
-            ['📝 Quiz', '/quiz'],
+            // Push #68: the button starts an explicit 10-question round
+            // (previously bare /quiz — "endless" rounds from stale flows).
+            ['📝 Quiz', '/quiz 10'],
             ['❌ Tic-Tac-Toe', '/ttt'],
             ['♞ Chess', '/chess'],
             ['🧩 Emoji', '/emoji'],

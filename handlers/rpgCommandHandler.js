@@ -368,6 +368,25 @@ module.exports = async (sock, msg, messageText, config, getDatabase, saveDatabas
   ]);
 
   const isDM = !chatId.endsWith('@g.us');
+
+  // ── Push #68: /wageyes <guildId> <memberBare> | /wageno — guild-master
+  // wage-approval buttons (the DM list buttons deliver their row-id as plain
+  // text). Resolved BEFORE the DM command gate: a pro guild master is a
+  // regular player for DM rules, so the approval tap must not be swallowed.
+  // Non-matching taps (stale buttons) are swallowed silently — never
+  // fall through to the dispatcher.
+  if (isDM && (commandName === 'wageyes' || commandName === 'wageno')) {
+    try {
+      const CM = require('../rpg/utils/GuildContractManager');
+      const wparts = messageText.slice(config.prefix.length).trim().split(/\s+/);
+      const wres = CM.tryResolveApprovalBySender(db, sender, commandName === 'wageyes', saveDatabase, wparts[1] || '', wparts[2] || '');
+      if (wres.handled) {
+        return sock.sendMessage(chatId, { text: wres.result }, { quoted: msg });
+      }
+    } catch (e) { console.error('wage approval error:', e.message); }
+    return;
+  }
+
   if (isDM) {
     if (!isPrivilegedUser) {
       return sock.sendMessage(

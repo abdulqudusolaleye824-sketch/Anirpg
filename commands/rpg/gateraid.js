@@ -389,7 +389,12 @@ module.exports = {
       const _lock = GR.tryCombatLock(gate.id, sender, player.name);
       if (!_lock.ok) {
         return sock.sendMessage(chatId, {
-          text: `⚔️ *${_lock.holderName}* is mid-battle... wait for their flow to finish, then strike!`,
+          // Push #68: the actor's OWN pending flow blocks them too (previously
+          // the same holder could re-enter /attack before their 5-message
+          // flow finished — double-spent kills and scrambled HP).
+          text: _lock.self
+            ? `⏳ *Your last move is still resolving!* Wait a moment before striking again.`
+            : `⚔️ *${_lock.holderName}* is mid-battle... wait for their flow to finish, then strike!`,
         }, { quoted: msg });
       }
       try {
@@ -460,6 +465,9 @@ module.exports = {
         const [_fxEmo, _fxWord] = _grFxMap[_grCanAct.reason] || ['💫', 'STUNNED 💫'];
         await sock.sendMessage(chatId, { text: `${FRAME}\n${_fxEmo} *YOU ARE ${_fxWord}!*${pro ? ' 💎' : ''}\n${FRAME}\n_${player.name} cannot move this turn — strike lost!_\n💢 *But the battle plays on...*\n${FRAME}` }, { quoted: msg });
       }
+      // Push #68: pet round output declared at execute scope so the stunned
+      // path (which skips the strike block) can't hit "_petLines is not defined".
+      let _petStrike = null, _petLines = [];
       const UCgFlow = require('../../rpg/utils/UnifiedCombat');
       if (_grCanAct.canAct) {
       let result;
@@ -560,10 +568,12 @@ module.exports = {
 
       // Push #55: the pet's own strike lands in the same round (attack pets
       // used to be a flat ATK number and nothing else).
-      let _petStrike = null, _petLines = [];
+      // Push #68: _petStrike/_petLines are declared at execute scope (see
+      // below) — when the player is stunned this whole block is skipped and
+      // the counter-attack epilogue still reads _petLines.
       try {
-        _petStrike = PetCombat.abilityStrike(sender, target);
-        if (_petStrike) _petLines.push(_petStrike.line);
+        const _ps = PetCombat.abilityStrike(sender, target);
+        if (_ps) _petLines.push(_ps.line);
       } catch (e) {}
 
       if (target.hp <= 0) {
@@ -725,6 +735,11 @@ module.exports = {
     // Returns the lines to show. The caller saves state and sends.
     const finishBossDefeat = async () => {
       const out = [];
+        // Push #68: capture the boss from the gate. The `boss` local in the
+        // /party boss branch is block-scoped and was NOT visible here, so
+        // every boss settlement (via /party boss OR the general /attack flow)
+        // crashed with "boss is not defined".
+        const boss = gate.boss;
         boss.defeated = true;
         AuraSystem.addAura(player, 'bossKill');
         try {
@@ -811,7 +826,9 @@ module.exports = {
       const _block = GR.tryCombatLock(gate.id, sender, player.name);
       if (!_block.ok) {
         return sock.sendMessage(chatId, {
-          text: `⚔️ *${_block.holderName}* is mid-battle... wait for their flow to finish, then strike!`,
+          text: _block.self
+            ? `⏳ *Your last move is still resolving!* Wait a moment before striking again.`
+            : `⚔️ *${_block.holderName}* is mid-battle... wait for their flow to finish, then strike!`,
         }, { quoted: msg });
       }
       try {

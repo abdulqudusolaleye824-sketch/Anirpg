@@ -114,11 +114,13 @@ class GateManager {
 
   static rollGateRank(groupAvgRank = 'E') {
     const roll = Math.random();
-    if (roll < 0.05) return 'S';       // 5%
-    if (roll < 0.20) return 'A';       // 15%
-    if (roll < 0.45) return 'B';       // 25%
-    if (roll < 0.80) return 'C';       // 35%
-    if (roll < 0.90) return 'D';       // 10%
+    // Push #68: +4.9% to the S-rank gate roll (5% → 9.9%), funded by C-rank
+    // gates (35% → 30.1%). Distribution still sums to 100%.
+    if (roll < 0.099) return 'S';      // 9.9%
+    if (roll < 0.249) return 'A';      // 15%
+    if (roll < 0.499) return 'B';      // 25%
+    if (roll < 0.80)  return 'C';      // 30.1%
+    if (roll < 0.90)  return 'D';      // 10%
     return 'E';                        // 10%
   }
 

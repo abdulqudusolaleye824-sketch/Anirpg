@@ -122,10 +122,27 @@ const PENALTY_TRIGGER_MS   = 23 * 60 * 60 * 1000;
 const PENALTY_DURATION_MS  = 48 * 60 * 60 * 1000;
 const GATE_LOCK_MS         = 24 * 60 * 60 * 1000;
 
+// ── Push #68: gate spawn cadence ────────────────────────────────────────────
+// Exactly ONE gate per 2-hour WAT window (midnight–2am → 1 gate, 2am–4am →
+// 1 gate, ... 22–24 → 1 gate), dropping at a RANDOM moment inside the window.
+// WAT = UTC+1 (the game's house timezone).
+const WAT_OFFSET_MS = 3600000;
+const WINDOW_MS     = 2 * 60 * 60 * 1000;
+const MIN_LEAD_MS   = 10 * 60 * 1000; // never schedule a spawn <10min out
+
 class GateSpawner {
   static activeTimers = {};
-  static SPAWN_MIN_INTERVAL = 30; // batch-23: gates every 30–45 min
+  // batch-23 (legacy): gates every 30–45 min — superseded by Push #68 windows.
+  static SPAWN_MIN_INTERVAL = 30;
   static SPAWN_MAX_INTERVAL = 45;
+
+  static watWindowIndex(now = Date.now()) {
+    return Math.floor((now + WAT_OFFSET_MS) / WINDOW_MS);
+  }
+  static windowRange(idx) {
+    const start = idx * WINDOW_MS - WAT_OFFSET_MS;
+    return { start, end: start + WINDOW_MS };
+  }
 
   static initialize(sock, chatId, getDatabase, saveDatabase) {
     if (!sock) return;
@@ -164,23 +181,47 @@ class GateSpawner {
     return null;
   }
 
-  static scheduleNextGate(sock, chatId, getDatabase, saveDatabase) {
-    const minInterval = this.SPAWN_MIN_INTERVAL * 60 * 1000;
-    const maxInterval = this.SPAWN_MAX_INTERVAL * 60 * 1000;
-    const randomInterval = Math.floor(Math.random() * (maxInterval - minInterval) + minInterval);
+  static scheduleNextGate(sock, chatId, getDatabase, saveDatabase, _now = Date.now()) {
+    const now = _now;
+    const db = getDatabase();
+    if (!db.gateSpawnMeta) db.gateSpawnMeta = {};
+    const meta = db.gateSpawnMeta[chatId] = db.gateSpawnMeta[chatId] || {};
 
-    console.log(`[GATE] Next gate in ${Math.floor(randomInterval / 1000 / 60)} minutes for ${chatId}`);
+    // Resume a valid persisted countdown (Batch-50): still in the future and
+    // inside the CURRENT 2h window.
+    const curIdx = this.watWindowIndex(now);
+    const cur = this.windowRange(curIdx);
+    if (meta.nextSpawnAt && meta.nextSpawnAt > now && meta.nextSpawnAt <= cur.end) {
+      const wait = meta.nextSpawnAt - now;
+      console.log(`[GATE] Resuming in-window spawn for ${chatId}: ${Math.ceil(wait / 60000)} min left`);
+      this.activeTimers[chatId] = setTimeout(() => {
+        this.spawnGate(sock, chatId, getDatabase, saveDatabase);
+      }, wait);
+      return;
+    }
+
+    // Push #68: pick ONE random moment — in the current window if ≥10 min of
+    // it remain, otherwise in the next window. One spawn per window.
+    let targetAt, targetIdx;
+    if (cur.end - now > MIN_LEAD_MS) {
+      const earliest = now + MIN_LEAD_MS;
+      targetAt = earliest + Math.random() * Math.max(0, cur.end - earliest);
+      targetIdx = curIdx;
+    } else {
+      const nxt = this.windowRange(curIdx + 1);
+      targetAt = nxt.start + Math.random() * (WINDOW_MS - MIN_LEAD_MS);
+      targetIdx = curIdx + 1;
+    }
+    const wait = Math.max(1000, targetAt - now);
+
+    console.log(`[GATE] Next gate in ${Math.ceil(wait / 60000)} minutes (2h window ${targetIdx}) for ${chatId}`);
     this.activeTimers[chatId] = setTimeout(() => {
       this.spawnGate(sock, chatId, getDatabase, saveDatabase);
-    }, randomInterval);
-    // Batch-50: persist the countdown so restarts resume it.
-    try {
-      const db = getDatabase();
-      if (!db.gateSpawnMeta) db.gateSpawnMeta = {};
-      const meta = db.gateSpawnMeta[chatId] = db.gateSpawnMeta[chatId] || {};
-      meta.nextSpawnAt = Date.now() + randomInterval;
-      if (saveDatabase) saveDatabase();
-    } catch (e) {}
+    }, wait);
+    // Persist the countdown so restarts resume it (Batch-50).
+    meta.nextSpawnAt = targetAt;
+    meta.spawnWindow = targetIdx;
+    try { if (saveDatabase) saveDatabase(); } catch (e) {}
   }
 
   static checkUnboughtLock(chatId, db) {
@@ -263,6 +304,8 @@ class GateSpawner {
       meta.lastUnboughtSpawnAt = gate.spawnTime;
       meta.penaltyApplied = false;
     }
+    // Push #68: stamp the window this gate occupied (one per window).
+    try { meta.lastSpawnWindow = this.watWindowIndex(gate.spawnTime); meta.nextSpawnAt = null; } catch (e) {}
     if (!meta.penaltyParticipants) meta.penaltyParticipants = await this.captureParticipants(sock, chatId, db);
 
     try {

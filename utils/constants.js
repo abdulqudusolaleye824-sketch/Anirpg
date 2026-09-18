@@ -33,9 +33,12 @@ const OWNER_JID = stripDevice(
 );
 
 // COOWNER_JID — secondary owner. Same convention.
+// Push #68: updated to the co-owner's LIVE number (the old @lid identity no
+// longer matches on modern clients, which silently stripped owner rights —
+// including /link — from the co-owner). Override in your .env to change.
 const COOWNER_JID = stripDevice(
   (process.env.COOWNER_JID && process.env.COOWNER_JID.trim()) ||
-  '194592469209292@lid'
+  '2347062052095@s.whatsapp.net'
 );
 
 // PRIVELEGED_JIDS — set of JIDs that bypass rate limits & cooldowns

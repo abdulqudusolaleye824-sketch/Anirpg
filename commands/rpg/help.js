@@ -203,7 +203,7 @@ module.exports = {
       `  /class, /awaken, /attacks, /summon, /craft, /forge, /enchant, /upgrade, /pet, /artifact, /aura, /constellation, /skin, /title`,
       ``,
       `🏰 *GUILD & ECONOMY:*`,
-      `  /guild, /guildwar (/gw), /market, /trade, /shop, /bank, /casino`,
+      `  /guild, /guildwar (/gw), /market, /trade, /shop, /bank, /casino, /contract, /wages`,
       ``,
       `🎮 *MINI-GAMES (games GC):*`,
       `  /games, /quiz, /a, /ttt, /chess (/ch), /move, /forfeit, /emoji, /guess, /hangman, /hang, /typerace — play in a GC set up with /setgroup games --main`,
