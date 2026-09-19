@@ -1,5 +1,12 @@
 # AniRPG — Patch Drop (features + bug fixes + UI restyle)
 
+## Push #73 — rate-overlimit backoff, /version, profaq price, rules 16–17 (2026-09-19)
+
+1. **`rate-overlimit` no longer surfaces as a command error.** WhatsApp throttles OUR sends; the handler now backs off and retries (1.5s → 3s → 6s → 12s) instead of failing the command instantly, and if a throttle still slips through it is swallowed rather than shown as "❌ An error occurred… Error: rate-overlimit" (the game state had already advanced).
+2. **`/version`** — prints the running build (git commit from `VERSION`, package version, uptime, and whether `/recon` `/burnkey` `/catch` exist in this container). Use it to confirm a deploy landed.
+3. `/profaq`: Monthly Pro Card is **$5** equivalent (was wrongly $30).
+4. `/rules`: **16.** keep the community friendly and insult-free; **17.** have fun.
+
 ## Push #72 — Pro UP bonus, Mana Stones wording, skill placeholders, multi-turn effects + status synergy, /weekly crash, auto-deploy watcher (2026-09-19)
 
 1. **Pro cards grant Upgrade Points:** Weekly +20, Monthly +100, Yearly +1,200 (both purchase and `/prostore use weekly`); shown in the store list and activation card.

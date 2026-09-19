@@ -25,7 +25,7 @@ module.exports = {
         `   • Price: *2,000 PC* | Duration: *7 Days*`,
         `   • Bonus: *500,000 Nexus* & *50,000 Mana Stones*`,
         ``,
-        `📜 *Monthly Pro Card* ($30 equivalent)`,
+        `📜 *Monthly Pro Card* ($5 equivalent)`,
         `   • Price: *5,000 PC* | Duration: *30 Days*`,
         `   • Bonus: *2,000,000 Nexus* & *200,000 Mana Stones*`,
         ``,

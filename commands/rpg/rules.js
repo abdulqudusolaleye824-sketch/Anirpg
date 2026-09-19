@@ -42,6 +42,10 @@ module.exports = {
 
 *15.* 🚫 SPAMMING IS FORBIDDEN.
 
+*16.* 🤝 Keep the community friendly and insult-free. No harassment, slurs, or personal attacks — toward hunters, mods, or the Creator. Banter is fine; disrespect is not.
+
+*17.* 🎉 HAVE FUN! Arise is a game — raid together, celebrate wins, laugh at wipes, and help new hunters level up.
+
 ${FRAME}
 🙏 Thank you for your anticipated cooperation!
 ${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO MEMBER* — play by the code` : `\n${UI.upsell()}`);

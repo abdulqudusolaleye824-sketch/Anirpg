@@ -881,13 +881,27 @@ module.exports = async (sock, msg, messageText, config, getDatabase, saveDatabas
             if (!hasMedia && content.text && content.text.length > CHUNK_SIZE) {
               return sendChunked(target, jid, content.text, opts);
             }
-            try {
-              return await target.sendMessage(jid, content, opts);
-            } catch (err) {
-              const cleanOpts = { ...opts };
-              delete cleanOpts.quoted;
-              return await target.sendMessage(jid, content, cleanOpts);
+            // Push #73: WhatsApp "rate-overlimit" is a throttle on OUR sends,
+            // not a bug in the command. Back off and retry (1.5s, 3s, 6s)
+            // instead of hammering again instantly and then aborting the
+            // whole command with an error card.
+            const isRate = (e) => /rate-overlimit|overlimit|429|too many/i.test(String(e && (e.message || e.data?.reason || e)));
+            let lastErr = null;
+            for (let attempt = 0; attempt < 4; attempt++) {
+              try {
+                const o = attempt === 0 ? opts : (() => { const c = { ...(opts || {}) }; delete c.quoted; return c; })();
+                return await target.sendMessage(jid, content, o);
+              } catch (err) {
+                lastErr = err;
+                if (!isRate(err)) {
+                  if (attempt === 0) continue; // one retry without `quoted` for non-rate errors
+                  throw err;
+                }
+                await new Promise(r => setTimeout(r, 1500 * Math.pow(2, attempt)));
+              }
             }
+            console.error('[send] gave up after rate-overlimit backoff:', lastErr && lastErr.message);
+            return null;
           };
         }
         return typeof target[prop] === 'function' ? target[prop].bind(target) : target[prop];
@@ -932,6 +946,9 @@ module.exports = async (sock, msg, messageText, config, getDatabase, saveDatabas
 
     } catch (error) {
       console.error(`❌ Error executing ${resolvedCommand}:`, error);
+      // Push #73: a WhatsApp send throttle must never be reported to the
+      // community as a command failure — the game state already advanced.
+      if (/rate-overlimit|overlimit/i.test(String(error && error.message))) return;
 
       // Hardened: if the error card itself can't send (e.g. WhatsApp
       // rate-overlimit), swallow it instead of rejecting unhandled (which
