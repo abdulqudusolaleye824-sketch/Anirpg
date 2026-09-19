@@ -40,7 +40,11 @@ function getPlayerWeekly(player) {
   if (!player.weeklyChallenges || player.weeklyChallenges.week !== key) {
     player.weeklyChallenges = { week: key, progress: {}, claimed: [] };
   }
-  return player.weeklyChallenges;
+  // Older records (or a partial restore) can lack these → "reading 'pvp_s'" crash.
+  const wc = player.weeklyChallenges;
+  if (!wc.progress || typeof wc.progress !== 'object') wc.progress = {};
+  if (!Array.isArray(wc.claimed)) wc.claimed = [];
+  return wc;
 }
 
 function trackWeeklyProgress(player, type, count = 1) {

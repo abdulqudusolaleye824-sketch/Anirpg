@@ -505,7 +505,7 @@ module.exports = {
         }
       } else {
         const useSkill = action === 'skill' ? skillArg : null;
-        result = GR.playerDamage(player, useSkill);
+        result = GR.playerDamage(player, useSkill, { statusEffects: target.statusEffects || [] });
         // Push #55: pets count in the general attack flow as well (this is the
         // path /attack and /skill take outside /party).
         try {
@@ -554,6 +554,7 @@ module.exports = {
       target.hp = Math.max(0, monWrap.stats.hp);
       // Push #71: recovery skills report the HP they actually restored.
       if (result.healed > 0) await sock.sendMessage(chatId, { text: `💚 *${result.skillUsed?.name || 'Recovery'}* restored *${result.healed}* HP → ${player.stats.hp}/${player.stats.maxHp}` });
+      if ((result.synergyNotes || []).length) await sock.sendMessage(chatId, { text: `⚡ *SYNERGY* ${result.synergyNotes.join(' · ')}` });
       if (pro) await sock.sendMessage(chatId, { text: `💎 *PRO FOCUS* — your raid damage: ${UI.num(gate.damageDealt[sender])}` });
 
       if (target.hp <= 0 && _fightingBoss) {
@@ -846,7 +847,7 @@ module.exports = {
       if (gate.boss.defeated) return sock.sendMessage(chatId, { text: '✅ Boss already defeated!' }, { quoted: msg });
 
       const boss = gate.boss;
-      const result = GR.playerDamage(player, skillArg || null);
+      const result = GR.playerDamage(player, skillArg || null, { statusEffects: (boss.statusEffects = boss.statusEffects || []) });
       if (result.blocked) return sock.sendMessage(chatId, { text: `❌ ${result.reason}` }, { quoted: msg });
       // Push #55: pets fight the boss too — ATK bonus + their own ability hit.
       try {
@@ -880,6 +881,7 @@ module.exports = {
 
       const lines = [];
       if (result.healed > 0) lines.push(`💚 *${result.skillUsed?.name || 'Recovery'}* restored *${result.healed}* HP → ${player.stats.hp}/${player.stats.maxHp}`);
+      if ((result.synergyNotes || []).length) lines.push(`⚡ *SYNERGY* ${result.synergyNotes.join(' · ')}`);
       // Push #55: the boss round reports what the pet did too.
       try { if (result.petLine) lines.push(result.petLine); } catch (e) {}
       try {

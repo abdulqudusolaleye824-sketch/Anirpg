@@ -290,7 +290,7 @@ Legendary equipment you equip for powerful passive effects.
 • Quiz: /quiz <1-20> starts an anime quiz (anyone answers with /a A/B/C/D, 30s per question); /quiz scores / /quiz stats / /quiz stop. Pays Nexus + Astra XP per correct answer.
 • Tic-Tac-Toe: /ttt @user challenges; /ttt accept starts; /ttt mark <cell> plays (cells a1..c3, letter = row, X moves first); /ttt forfeit resigns; /ttt stats shows your record.
 • Chess: /ch @user challenges (challenger is White); /accept-ch / /reject-ch; /move e2 e4 plays (also /move e2e4 and /move castle kingside|queenside); /forfeit-chess resigns. Full rules: castling, en passant, auto-queen promotion, check/checkmate/stalemate.
-• Winners get 15,000 xp (Tic-Tac-Toe +2,000 Moonstones, Chess +5,000 Moonstones); draws pay 2,500 xp each. Moonstone winnings cap at 50,000 MS/day per player. Pro members earn 2×.
+• Winners get 15,000 xp (Tic-Tac-Toe +2,000 Mana Stones, Chess +5,000 Mana Stones); draws pay 2,500 xp each. Mana Stone winnings cap at 50,000 💎/day per player. Pro members earn 2×.
 • One game per group at a time per game; unanswered challenges expire after 5 minutes.
 
 === END OF GAME KNOWLEDGE ===

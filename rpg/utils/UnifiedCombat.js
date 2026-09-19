@@ -138,10 +138,17 @@ function calcMoveDamage(attacker, defender, move) {
     raw = Math.floor(raw * critMult);
   }
 
+  // Push #72: status synergy — moves hit harder vs a target already afflicted.
+  let synergyNotes = [];
+  try {
+    const syn = require('./StatusSynergy').bonusFor(move, defender);
+    if (syn.mult !== 1) { raw = Math.max(1, Math.floor(raw * syn.mult)); synergyNotes = syn.notes; }
+  } catch (e) {}
+
   // Determine effectiveness for longer description
   const effectiveness = raw > 200 ? 'devastating' : raw > 120 ? 'powerful' : raw > 60 ? 'solid' : 'light';
 
-  return { damage: raw, missed: false, crit: isCrit, effective: effectiveness, capability, variance, atkMult, defMult, speedMult, critMult, accuracy: acc };
+  return { damage: raw, missed: false, crit: isCrit, effective: effectiveness, capability, variance, atkMult, defMult, speedMult, critMult, accuracy: acc, synergyNotes };
 }
 
 // Process status effect application
@@ -154,10 +161,13 @@ function tryApplyEffect(attack, attacker, defender) {
   // Check existing — refresh
   const existing = defender.statusEffects.find(e => e.type === attack.effect.type);
   if (existing) {
-    existing.duration = Math.max(existing.duration, attack.effect.duration);
+    existing.duration = Math.max(existing.duration, Number(attack.effect.duration) || 2, 2);
     return existing;
   }
-  const eff = { type: attack.effect.type, duration: attack.effect.duration, sourceAttack: attack.id };
+  // Push #72: player-applied statuses last at least 2 turns (they used to
+  // expire on the very next tick, so DoTs/debuffs never mattered).
+  const _dur = Math.max(2, Number(attack.effect.duration) || 2);
+  const eff = { type: attack.effect.type, duration: _dur, sourceAttack: attack.id };
   defender.statusEffects.push(eff);
   return eff;
 }
@@ -250,6 +260,7 @@ function buildTurnMessage(attacker, defender, move, result, isPlayerTurn = true)
     msg += `💨 *Missed!* The strike sliced air — no damage.\n`;
   } else {
     if (result.crit) msg += `💥 *CRITICAL!* ×${move.critMult} — the hit found the perfect opening!\n`;
+    for (const n of (result.synergyNotes || [])) msg += `⚡ *SYNERGY* ${n}\n`;
     msg += `💢 Dealt *${result.damage}* damage`;
     if (result.effective === 'devastating') msg += ` — _devastating impact, the ground trembled_`;
     else if (result.effective === 'powerful') msg += ` — _powerful, the defender staggered_`;
@@ -347,7 +358,7 @@ async function playTurn(sock, chatId, o) {
     : `⚔️ *It is effective!* A solid hit.`;
   const t4 = result.missed
     ? `💢 *${atkName} dealt 0 damage.*`
-    : `💢 *${atkName} dealt ${result.damage} damage!*${result.crit ? ' 💥 CRITICAL!' : ''}`;
+    : `💢 *${atkName} dealt ${result.damage} damage!*${result.crit ? ' 💥 CRITICAL!' : ''}${(result.synergyNotes || []).length ? ' ⚡ ' + result.synergyNotes.join(' · ') : ''}`;
   const aBar = BarSystem.getHPBar(attacker.stats?.hp || 0, attacker.stats?.maxHp || 100, isPro(attacker));
   let dBar;
   if (o.defenderBar === 'boss' && BarSystem.getBossHPBar) dBar = BarSystem.getBossHPBar(defender.stats?.hp || 0, defender.stats?.maxHp || 100);

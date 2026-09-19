@@ -184,14 +184,14 @@ function generateAttack(num) {
     const hasEff     = seededRand(seed + 5, 100) < 70; // 70% chance for A/S
     if (hasEff) {
       const effKey  = effectKeys[seededRand(seed + 6, effectKeys.length)];
-      const duration = 1 + seededRand(seed + 7, 3); // 1–3 turns
+      const duration = 2 + seededRand(seed + 7, 3); // Push #72: 2–4 turns
       const chance   = 35 + seededRand(seed + 8, 46); // 35–80% proc chance
       effect = { type: effKey, duration, chance, ...EFFECTS[effKey] };
     }
   } else if (rank === 'B' && seededRand(seed + 5, 100) < 15) {
     // 15% chance for B to have a weak effect (1 turn, low chance)
     const effKey = Object.keys(EFFECTS)[seededRand(seed + 6, Object.keys(EFFECTS).length)];
-    const duration = 1;
+    const duration = 2; // Push #72: multi-turn
     const chance = 20 + seededRand(seed + 8, 21); // 20–40%
     effect = { type: effKey, duration, chance, ...EFFECTS[effKey] };
   }

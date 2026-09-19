@@ -148,7 +148,7 @@ module.exports = {
           ``,
           `🏆 Wins: *${s.wins}*   ❌ Losses: *${s.losses}*   🤝 Draws: *${s.draws}*`,
           `💠 Nexus earned: *${(s.nxEarned || 0).toLocaleString()}*`,
-          (s.msEarned > 0) ? `💎 Legacy Moonstones: *${s.msEarned.toLocaleString()}*` : null,
+          (s.msEarned > 0) ? `💎 Mana Stones: *${s.msEarned.toLocaleString()}*` : null,
           (UI.isPro(player) ? UI.PRO_BAR : UI.FREE_BAR),
         ].filter((x) => x !== null).join('\n'),
       }, { quoted: msg });

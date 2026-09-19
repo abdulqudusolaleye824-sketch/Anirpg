@@ -129,9 +129,9 @@ class EffectParser {
     } else if (/\bfreeze\b/.test(text) && /\d+%/.test(text) && !/aoe freeze/.test(text)) {
       // e.g. "50% chance to FREEZE (1 turn)"
       const c = (text.match(/(\d+)%\s+(?:chance|to)/i)||[])[1] || 60;
-      effects.statusEffects.push({ type: 'freeze', chance: parseInt(c), duration: 1 });
+      effects.statusEffects.push({ type: 'freeze', chance: parseInt(c), duration: 2 });
     } else if (/aoe freeze|frost volley|absolute zero/i.test(text)) {
-      effects.statusEffects.push({ type: 'freeze', chance: 60, duration: 1 });
+      effects.statusEffects.push({ type: 'freeze', chance: 60, duration: 2 });
     }
 
     // POISON

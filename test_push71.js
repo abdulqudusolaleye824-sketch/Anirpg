@@ -157,10 +157,30 @@ const src = (p) => fs.readFileSync(p, 'utf8');
   check('/inv & /find use ItemEmoji', src('commands/rpg/inventory.js').includes('IE.tag(') && src('commands/rpg/find.js').includes('ItemEmoji'));
 }
 
+
+// ── Push #72 ──
+{
+  const S = require('./rpg/utils/StatusSynergy');
+  check('#72 synergy: fire vs frozen ×1.5', S.bonusFor({ name: 'Hellfire Bolt', effect: { type: 'burn' } }, { statusEffects: [{ type: 'freeze' }] }).mult === 1.5);
+  check('#72 synergy: no status → ×1', S.bonusFor({ name: 'Slash' }, { statusEffects: [] }).mult === 1);
+  const UC = require('./rpg/utils/UnifiedCombat');
+  const d = { statusEffects: [] }; UC.tryApplyEffect({ id: 'x', effect: { type: 'burn', chance: 100, duration: 1 } }, {}, d);
+  check('#72 player-applied status lasts ≥2 turns', d.statusEffects[0].duration >= 2);
+  check('#72 UnifiedCombat/GateRaid/SkillCatalog wired to synergy', src('rpg/utils/UnifiedCombat.js').includes('StatusSynergy') && src('rpg/dungeons/GateRaid.js').includes('StatusSynergy') && src('rpg/utils/SkillCatalog.js').includes('StatusSynergy'));
+  const SC = require('./rpg/utils/SkillCatalog'); const CS = require('./rpg/utils/ClassSystem');
+  const p = { name: 'T', level: 60, stats: { hp: 100, maxHp: 1000, atk: 100, def: 50, speed: 30, energy: 500, maxEnergy: 500 } }; CS.applyClassToPlayer(p, 'Necromancer'); p.class = 'Necromancer'; p.classBase = 'Necromancer';
+  check('#72 no {p} placeholders in skill ladder', !JSON.stringify(SC.getRoster(p)).includes('{p}'));
+  const wk = src('commands/rpg/weekly.js');
+  check('#72 /weekly guards missing progress', wk.includes("if (!wc.progress || typeof wc.progress !== 'object') wc.progress = {};"));
+  const ps = src('commands/rpg/prostore.js');
+  check('#72 pro tiers grant UP 20/100/1200', ps.includes('upgradePoints: 20') && ps.includes('upgradePoints: 100') && ps.includes('upgradePoints: 1200') && ps.split('tier.upgradePoints || 0').length === 3);
+  check('#72 no user-facing "Moonstones"', !/Moonstones/.test(src('commands/rpg/send.js')) && !/Legacy Moonstones/.test(src('commands/rpg/tictactoe.js')));
+}
+
 // ── syntax of every touched file ──
 {
   const { execSync } = require('child_process');
-  const files = ['commands/rpg/guild.js','commands/rpg/recon.js','commands/rpg/burnkey.js','commands/rpg/food.js','commands/rpg/pet.js','commands/rpg/wages.js','commands/rpg/party.js','commands/rpg/gates.js','commands/rpg/gateraid.js','commands/rpg/reset.js','commands/rpg/inventory.js','commands/rpg/find.js','commands/rpg/caught.js','commands/rpg/classcmd_dispatcher.js','commands/rpg/profile.js','commands/rpg/stats.js','rpg/utils/GuildContractManager.js','rpg/utils/TransactionLog.js','rpg/utils/SoloLevelingCore.js','rpg/utils/ClassSystem.js','rpg/utils/PetDatabase.js','rpg/utils/PetManager.js','rpg/utils/CraftingSystem.js','rpg/utils/ItemEmoji.js','rpg/utils/ImprovedCombat.js','rpg/utils/AttackShop.js','rpg/utils/SealedPackages.js','rpg/utils/MonsterAbilities.js','rpg/dungeons/GateManager.js','rpg/dungeons/GateRaid.js','rpg/dungeons/GateKeyManager.js','rpg/data/SoloLevelingMonsters.js','rpg/data/recipes_sololeveling.js','bots/RPGIntentHandler.js','rpg/utils/StatsCard.js'];
+  const files = ['commands/rpg/guild.js','commands/rpg/recon.js','commands/rpg/burnkey.js','commands/rpg/food.js','commands/rpg/pet.js','commands/rpg/wages.js','commands/rpg/party.js','commands/rpg/gates.js','commands/rpg/gateraid.js','commands/rpg/reset.js','commands/rpg/inventory.js','commands/rpg/find.js','commands/rpg/caught.js','commands/rpg/classcmd_dispatcher.js','commands/rpg/profile.js','commands/rpg/stats.js','rpg/utils/GuildContractManager.js','rpg/utils/TransactionLog.js','rpg/utils/SoloLevelingCore.js','rpg/utils/ClassSystem.js','rpg/utils/PetDatabase.js','rpg/utils/PetManager.js','rpg/utils/CraftingSystem.js','rpg/utils/ItemEmoji.js','rpg/utils/ImprovedCombat.js','rpg/utils/AttackShop.js','rpg/utils/SealedPackages.js','rpg/utils/MonsterAbilities.js','rpg/dungeons/GateManager.js','rpg/dungeons/GateRaid.js','rpg/dungeons/GateKeyManager.js','rpg/data/SoloLevelingMonsters.js','rpg/data/recipes_sololeveling.js','bots/RPGIntentHandler.js','rpg/utils/StatsCard.js','rpg/utils/StatusSynergy.js','rpg/utils/UnifiedCombat.js','rpg/utils/AttackPatternDB.js','rpg/utils/EffectParser.js','commands/rpg/prostore.js','commands/rpg/weekly.js','commands/rpg/send.js','commands/rpg/tictactoe.js','commands/rpg/chess.js'];
   let ok = true; for (const f of files) { try { execSync(`node --check ${f}`, { stdio: 'pipe' }); } catch (e) { ok = false; console.log('  syntax:', f); } }
   check(`node --check on ${files.length} touched files`, ok);
 }

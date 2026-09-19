@@ -1,5 +1,16 @@
 # AniRPG — Patch Drop (features + bug fixes + UI restyle)
 
+## Push #72 — Pro UP bonus, Mana Stones wording, skill placeholders, multi-turn effects + status synergy, /weekly crash, auto-deploy watcher (2026-09-19)
+
+1. **Pro cards grant Upgrade Points:** Weekly +20, Monthly +100, Yearly +1,200 (both purchase and `/prostore use weekly`); shown in the store list and activation card.
+2. **"Moonstones" → "Mana Stones"** everywhere users see it (`/send` receipt, chess/tic-tac-toe stats, game knowledge).
+3. **Skill ladder placeholders fixed** — `{p}` / `{p/N}` in class signature moves now show the real potency ("absorbing 60% of incoming damage"), not the template.
+4. **Multi-turn status effects for players:** any status a player inflicts lasts ≥2 turns (attack patterns 2–4 turns, catalog skills min 2, freeze 2) instead of expiring on the next tick.
+5. **Status synergy (players *and* monsters):** `rpg/utils/StatusSynergy.js` — 17 rules, e.g. fire vs *frozen* ×1.5, blunt vs frozen ×1.35, cutting vs *bleeding* ×1.3, drain vs bleeding ×1.4, anything vs *stunned/paralyzed* ×1.2, finishers vs *weakened* ×1.3, holy vs *cursed* ×1.35, ice vs *burning* ×0.8 (steam). Wired into `UnifiedCombat.calcMoveDamage` (PvP, dungeons, gate counters), `SkillCatalog.computeDamage`, and `GateRaid.playerDamage` (normal + boss). Turn messages print `⚡ SYNERGY …`.
+6. **`/weekly claim` crash** (`reading 'pvp_s'`): older/partial `weeklyChallenges` records lacked `progress`/`claimed` → now backfilled.
+7. **`scripts/autodeploy.sh`** — the 5-min git watcher (fetch → snapshot DB/auth → stash drift → ff pull/reset → npm i → restart docker/pm2/systemd/node → health probe; flock'd; logs to `/var/log/anirpg-autodeploy.log`).
+8. Tests → `test_push71.js` 66 checks.
+
 ## Push #71 — 12-point fix drop: guild money, power, keys, Senku, pets, /catch, recovery, Solo Leveling bestiary, emojis (2026-09-19)
 
 1. **Guild kick ×2 severance (regression of #70) — actually pays now.** `guild.js` passed the guild *object* into `creditKickPayout`, which keyed the contract lookup as `db.guildContracts['[object Object]']` → "no contract" → no payout. `findGuild` accepts objects, kick passes id+name, and the stray `[object Object]` bucket is purged on next `/guild`. Severance is ledgered (`kick_severance`).

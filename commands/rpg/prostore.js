@@ -13,6 +13,7 @@ const PRO_TIERS = {
     days: 7,
     nexus: 500000,
     crystals: 50000,
+    upgradePoints: 20,
     emoji: '🎫'
   },
   monthly: {
@@ -21,6 +22,7 @@ const PRO_TIERS = {
     days: 30,
     nexus: 2000000,
     crystals: 200000,
+    upgradePoints: 100,
     emoji: '📜'
   },
   yearly: {
@@ -29,6 +31,7 @@ const PRO_TIERS = {
     days: 365,
     nexus: 20000000,
     crystals: 2000000,
+    upgradePoints: 1200,
     emoji: '👑'
   }
 };
@@ -90,7 +93,7 @@ module.exports = {
         txt += `${tier.emoji} *${tier.name.toUpperCase()}*\n`;
         txt += `   💰 Cost: *${tier.cost.toLocaleString()} PC*\n`;
         txt += `   ⏰ Duration: *${tier.days} Days*\n`;
-        txt += `   🎁 Bonus: +${tier.nexus.toLocaleString()} 💠 Nexus & +${tier.crystals.toLocaleString()} 💎 Mana Stones\n`;
+        txt += `   🎁 Bonus: +${tier.nexus.toLocaleString()} 💠 Nexus & +${tier.crystals.toLocaleString()} 💎 Mana Stones & +${tier.upgradePoints} ⬆️ Upgrade Points\n`;
         txt += `   📌 Command: /prostore buy ${key}\n\n`;
       });
 
@@ -199,6 +202,7 @@ module.exports = {
       player.procoin -= tier.cost;
       player.gold = (player.gold || 0) + tier.nexus;
       player.manaCrystals = (player.manaCrystals || 0) + tier.crystals;
+      player.upgradePoints = (player.upgradePoints || 0) + (tier.upgradePoints || 0); // Push #72
       try { require('../../rpg/utils/TransactionLog').logTransaction(player, { type: 'prostore_buy', amount: tier.cost, currency: 'PC', note: `${tier.name}` }); } catch (e) {};
       try { require('../../rpg/utils/TransactionLog').logTransaction(player, { type: 'prostore_bonus', amount: tier.nexus, currency: '💠', note: `${tier.name}` }); } catch (e) {};
       try { require('../../rpg/utils/TransactionLog').logTransaction(player, { type: 'prostore_bonus', amount: tier.crystals, currency: '💎', note: `${tier.name}` }); } catch (e) {};
@@ -223,6 +227,7 @@ module.exports = {
           `🎁 *BONUS LOOT RECEIVED:*`,
           `• +${tier.nexus.toLocaleString()} 💠 Nexus`,
           `• +${tier.crystals.toLocaleString()} 💎 Mana Stones`,
+          `• +${tier.upgradePoints} ⬆️ Upgrade Points (/upgrade)`,
           ``,
           `✨ *UNLOCKED PRO PERKS:*`,
           `• ⚡ 2× EXP on ALL platforms (Pass, Dungeons, Aura, Raids)`,
@@ -253,6 +258,7 @@ module.exports = {
       player.cards.pro_weekly -= 1;
       player.gold = (player.gold || 0) + tier.nexus;
       player.manaCrystals = (player.manaCrystals || 0) + tier.crystals;
+      player.upgradePoints = (player.upgradePoints || 0) + (tier.upgradePoints || 0); // Push #72
       try { require('../../rpg/utils/TransactionLog').logTransaction(player, { type: 'procard_use', amount: 1, currency: '🎫', note: tier.name }); } catch (e) {}
       try { require('../../rpg/utils/TransactionLog').logTransaction(player, { type: 'prostore_bonus', amount: tier.nexus, currency: '💠', note: tier.name }); } catch (e) {}
       try { require('../../rpg/utils/TransactionLog').logTransaction(player, { type: 'prostore_bonus', amount: tier.crystals, currency: '💎', note: tier.name }); } catch (e) {}
@@ -274,6 +280,7 @@ module.exports = {
           `🎁 *BONUS LOOT RECEIVED:*`,
           `• +${tier.nexus.toLocaleString()} 💠 Nexus`,
           `• +${tier.crystals.toLocaleString()} 💎 Mana Stones`,
+          `• +${tier.upgradePoints} ⬆️ Upgrade Points (/upgrade)`,
           ``,
           `✨ *UNLOCKED PRO PERKS:*`,
           `• ⚡ 2× EXP on ALL platforms (Pass, Dungeons, Aura, Raids)`,

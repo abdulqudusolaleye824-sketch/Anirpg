@@ -5,7 +5,7 @@ const { COOWNER_JID } = require('../../utils/constants');
 
 module.exports = {
   name: 'send',
-  description: 'Send Nexus or Moonstones to another hunter',
+  description: 'Send Nexus or Mana Stones to another hunter',
 
   async execute(sock, msg, args, getDatabase, saveDatabase, sender) {
     const chatId = msg.key.remoteJid;
@@ -230,13 +230,13 @@ module.exports = {
       const senderStones = player.manaCrystals || 0;
       if (senderStones < totalCost) {
         await sock.sendMessage(chatId, {
-          text: `❌ Not enough Moonstones!\n\nNeed: ${totalCost} 💎 (${amount} + ${fee} fee)\nHave: ${senderStones} 💎`
+          text: `❌ Not enough Mana Stones!\n\nNeed: ${totalCost} 💎 (${amount} + ${fee} fee)\nHave: ${senderStones} 💎`
         }, { quoted: msg });
         return;
       }
 
       // Sender pays amount + fee; recipient gets the FULL amount; the fee
-      // stays in Moonstones (batch-23 — no more gold printed from stone fees).
+      // stays in Mana Stones (batch-23 — no more gold printed from stone fees).
       player.manaCrystals = senderStones - totalCost;
       recipient.manaCrystals = (recipient.manaCrystals || 0) + amount;
       if (player.inventory) player.inventory.manaCrystals = player.manaCrystals;
@@ -245,7 +245,7 @@ module.exports = {
       logTransaction(player, { type:'send', amount: totalCost, currency:'💎', note:`→ ${recipient.name} (${amount} + ${fee} fee)` });
       logTransaction(recipient, { type:'receive', amount, currency:'💎', note:`← ${player.name}` });
 
-      // (moonstone fee accrues in Moonstones on the System account — see below)
+      // (moonstone fee accrues in Mana Stones on the System account — see below)
       
       if (!db.users[BOT_OWNER_ID]) {
         db.users[BOT_OWNER_ID] = {
@@ -265,12 +265,12 @@ module.exports = {
         text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ✅ MOONSTONES SENT! ✅
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━
-💎 Amount: ${amount} Moonstones
-💸 Transaction Fee: ${fee} Moonstones (5%)
-💎 Recipient Gets: ${amount} Moonstones
+💎 Amount: ${amount} Mana Stones
+💸 Transaction Fee: ${fee} Mana Stones (5%)
+💎 Recipient Gets: ${amount} Mana Stones
 👤 To: @${mentionTag}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━
-💎 Your Moonstones Left: ${player.manaCrystals}
+💎 Your Mana Stones Left: ${player.manaCrystals}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
         mentions: [mentionJid]
       }, { quoted: msg });

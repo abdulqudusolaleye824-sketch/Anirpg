@@ -314,7 +314,7 @@ function normalise(className, raw, index) {
     .map(s => ({
       type: s.type,
       chance: Math.max(5, Math.min(100, Number(s.chance ?? s.percent ?? 100))),
-      duration: Math.max(1, Number(s.duration ?? s.turns ?? 2)),
+      duration: Math.max(2, Number(s.duration ?? s.turns ?? 2)), // Push #72: multi-turn
     }));
 
   let type        = String(raw.type || (statuses.length && !parsed.damageMultiplier ? 'debuff' : 'damage')).toLowerCase();
@@ -381,10 +381,14 @@ function buildRoster(className) {
       for (const s of cls.skills) {
         if (!s || !s.name || seen.has(String(s.name).toLowerCase())) continue;
         seen.add(String(s.name).toLowerCase());
+        // Fill {p} / {p/N} with the move's potency — the raw class file keeps
+        // placeholders and they were leaking into /skills ("absorbing {p}%").
+        const pot = Number(s.maxPotency) || 0;
+        const fill = (t) => String(t || '').replace(/{p\/(\d+)}/g, (_, d) => String(Math.floor(pot / parseInt(d, 10)))).replace(/{p}/g, String(pot));
         raws.unshift({
-          name: s.name, type: s.type,
-          description: s.desc ? `Class signature technique — ${s.desc}` : undefined,
-          effect: s.desc ? `• ${s.desc}` : undefined,
+          name: s.name, type: s.type, maxPotency: pot,
+          description: s.desc ? `Class signature technique — ${fill(s.desc)}` : undefined,
+          effect: s.desc ? `• ${fill(s.desc)}` : undefined,
           energyCost: s.type === 'passive' ? 0 : 25,
           cooldown: s.type === 'passive' ? 0 : 2,
         });
@@ -459,6 +463,9 @@ function computeDamage(player, skill, opts = {}) {
   if (opts.crit) dmg = dmg * (1 + (Number(st.critDamage || 150) - 100) / 100);
   dmg = Math.max(1, Math.floor(dmg));
   if (opts.def) dmg = Math.max(1, dmg - Math.floor(Number(opts.def) * 0.35));
+  if (opts.target) { // Push #72: status synergy
+    try { const syn = require('./StatusSynergy').bonusFor(skill, opts.target); if (syn.mult !== 1) { dmg = Math.max(1, Math.floor(dmg * syn.mult)); if (opts.notes) opts.notes.push(...syn.notes); } } catch (e) {}
+  }
   return dmg;
 }
 

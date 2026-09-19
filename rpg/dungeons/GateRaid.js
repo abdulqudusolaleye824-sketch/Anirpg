@@ -21,7 +21,7 @@ const { GateManager, GATE_RANKS } = require('./GateManager');
 const MAX_PARTY = 10;
 
 // ── Combat math (shared with the command for consistent damage) ──
-function playerDamage(player, skillName = null) {
+function playerDamage(player, skillName = null, target = null) {
   let _gearAtkGR = 0;
   try { _gearAtkGR = require('../utils/GearSystem').getEquippedBonuses(player).atk || 0; } catch (e) {}
   const atk = (player.stats?.atk || 10) + _gearAtkGR + (player.weapon?.attack || player.weapon?.bonus || 0);
@@ -46,7 +46,8 @@ function playerDamage(player, skillName = null) {
     // Skills are a multiplier of ATK (plus magic power for casters), not the
     // old flat `skill.damage || 20` — that flat number is why a Lv.90 skill
     // landed like a base attack on the boss.
-    let dmg = SC.computeDamage(player, entry || skill, { includeMagic: magicPower > 0, crit: false });
+    const synergyNotes = [];
+    let dmg = SC.computeDamage(player, entry || skill, { includeMagic: magicPower > 0, crit: false, target, notes: synergyNotes });
     const isCrit = Math.random() < (player.stats?.critChance || 2) / 100;
     if (isCrit) dmg = Math.floor(dmg * (player.stats?.critDamage || 150) / 100);
 
@@ -73,13 +74,16 @@ function playerDamage(player, skillName = null) {
       statuses: (entry && entry.statuses) || skill.statuses || [],
       healingPct: _healPct,
       healed,
+      synergyNotes,
       buffs: (entry && entry.buffs) || [],
     };
   }
   let dmg = Math.max(5, atk * (0.85 + Math.random() * 0.30));
   const isCrit = Math.random() < (player.stats?.critChance || 2) / 100;
   if (isCrit) dmg = Math.floor(dmg * (player.stats?.critDamage || 150) / 100);
-  return { damage: Math.floor(dmg), isCrit };
+  let synergyNotes = [];
+  if (target) { try { const syn = require('../utils/StatusSynergy').bonusFor({ name: 'strike', description: 'basic strike' }, target); if (syn.mult !== 1) { dmg *= syn.mult; synergyNotes = syn.notes; } } catch (e) {} }
+  return { damage: Math.floor(dmg), isCrit, synergyNotes };
 }
 
 function monsterDamage(monster, def) {
