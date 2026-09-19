@@ -112,16 +112,23 @@ function ensureClassBonuses(player) {
   }
   const want = classBonuses(player);
   const q = quality(player);
+  // Push #74b: a `legacy` record was written by the first #74 build WITHOUT
+  // adding anything to stats (it assumed awakening had). Convert it: nothing
+  // to strip, apply now, record as real.
+  if (rec && rec.legacy) {
+    _add(player, want);
+    player.classBonusApplied = { cls, quality: q, bonuses: want, at: Date.now() };
+    player.classPowerV74 = true;
+    return { changed: true, bonuses: want };
+  }
   if (rec && rec.cls === cls && rec.quality === q && JSON.stringify(rec.bonuses || {}) === JSON.stringify(want || {})) {
     return { changed: false, bonuses: want };
   }
-  // Legacy: awakened before this module existed → the awakening already added
-  // the bonuses once (applyClassToPlayer). Record without re-adding.
-  if (!rec && player.classAwakenedAt && !player.classPowerV74) {
-    player.classBonusApplied = { cls, quality: q, bonuses: want, at: Date.now(), legacy: true };
-    player.classPowerV74 = true;
-    return { changed: false, bonuses: want };
-  }
+  // Push #74b: legacy hunters (awakened before this module) are NOT skipped
+  // any more — the old "already applied at awakening" assumption was wrong for
+  // most of them (recon / migration / direct class set paths never applied a
+  // thing), and the ones it was right for get a one-time modest top-up rather
+  // than staying permanently short. Applied exactly once; idempotent after.
   if (rec && rec.bonuses) _remove(player, rec.bonuses);
   _add(player, want);
   player.classBonusApplied = { cls, quality: q, bonuses: want, at: Date.now() };
@@ -218,9 +225,9 @@ function passiveMultipliers(player) {
 function recalibrate(player) {
   if (!player) return { ok: false };
   const before = JSON.stringify(player.stats || {});
-  if (player.classBonusApplied && player.classBonusApplied.bonuses) _remove(player, player.classBonusApplied.bonuses);
+  if (player.classBonusApplied && player.classBonusApplied.bonuses && !player.classBonusApplied.legacy) _remove(player, player.classBonusApplied.bonuses);
   delete player.classBonusApplied;
-  player.classPowerV74 = true;         // never treat as legacy again
+  player.classPowerV74 = true;
   const res = ensureClassBonuses(player);
   let skills = { changed: false };
   const SC = _sc();

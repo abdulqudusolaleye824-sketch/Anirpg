@@ -88,13 +88,39 @@ async function _pushQrToSubscribers(targetKey, qr, seq) {
     if (Date.now() > sub.until) { list.splice(list.indexOf(sub), 1); continue; }
     if (sub.seq === seq) continue;
     sub.seq = seq;
-    const sk = botSockets[sub.sockKey] || botSockets[getFirstUsableSocketKey()];
+    const sk = (botSockets[sub.sockKey]?.user?.id ? botSockets[sub.sockKey] : null) || botSockets[getFirstUsableSocketKey()];
     if (!sk) continue;
     try {
       await sk.sendMessage(sub.jid, { image: png, caption:
-        `🔗 *${name} — PAIRING QR*\n\nWhatsApp → Linked devices → Link a device → scan THIS.\n⏱ Valid ~${Math.round(QR_VALID_MS / 1000)}s — a fresh one arrives automatically. Always scan the NEWEST.` });
+        `🔗 *${name} — PAIRING QR #${seq}*\n\nWhatsApp → Linked devices → Link a device → scan THIS.\n⏱ Valid ~${Math.round(QR_VALID_MS / 1000)}s — a fresh one arrives automatically; ALWAYS scan the newest.\n🛑 /stoplink to stop.` }, { asSelf: true });
     } catch (e) {}
   }
+}
+// Push #74b: /stoplink — stop QR spam. Unsubscribes the caller's DM from every
+// target and, if nobody is still watching a pairing socket, ends that
+// pairing socket so the terminal stops printing QRs too.
+function stopLink(jid) {
+  const stopped = [];
+  for (const targetKey of Object.keys(_qrSubscribers)) {
+    const list = _qrSubscribers[targetKey];
+    const before = list.length;
+    _qrSubscribers[targetKey] = list.filter(x => x.jid !== jid);
+    if (_qrSubscribers[targetKey].length !== before) stopped.push(targetKey);
+    if (_qrSubscribers[targetKey].length === 0) {
+      delete _qrSubscribers[targetKey];
+      const s = botSockets[targetKey];
+      const ps = pairingSessions[targetKey];
+      if (s && !s.user?.id && ps && ['starting', 'awaiting_qr', 'code_ready'].includes(ps.status)) {
+        try { s.ev?.removeAllListeners?.(); } catch (e) {}
+        try { s.end(undefined); } catch (e) {}
+        delete botSockets[targetKey];
+        pairingSessions[targetKey] = { ...ps, status: 'stopped', qr: null, qrDataUrl: null };
+        _linkKickAt[targetKey] = 0;
+      }
+    }
+  }
+  for (const k of Object.keys(_linkPending)) if (k === jid) delete _linkPending[k];
+  return stopped;
 }
 function _notifyLinkSubscribers(targetKey, text) {
   const list = _qrSubscribers[targetKey];
@@ -1330,6 +1356,19 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
           pairingSessions[personalityKey].status = 'connecting';
         }
         console.log(`📡 AstraLink [${displayName}] connection closed (code ${code || 'unknown'}). Reconnecting in ${policy.backoffLabel} (attempt #${attempt})…`);
+        // Push #74b: people watching the QR in a DM must know the scanned code
+        // just died (this is WhatsApp's "connection error" moment) and that a
+        // fresh one follows — otherwise they keep scanning a dead image.
+        try {
+          const ps = pairingSessions[personalityKey];
+          if (ps && ['awaiting_qr', 'starting'].includes(ps.status) && _qrSubscribers[personalityKey]?.length) {
+            const why = restartRequired ? 'scan accepted — finishing the handshake' : `pairing socket dropped (code ${code || 'unknown'})`;
+            for (const sub of _qrSubscribers[personalityKey]) {
+              const sk = botSockets[sub.sockKey]?.user?.id ? botSockets[sub.sockKey] : botSockets[getFirstUsableSocketKey()];
+              if (sk) sk.sendMessage(sub.jid, { text: restartRequired ? `⏳ ${displayName}: ${why}…` : `⚠️ ${displayName}: ${why}. Ignore the last QR — a new one arrives in a moment (or /stoplink).` }, { asSelf: true }).catch(() => {});
+            }
+          }
+        } catch (e) {}
 
         const nextOpts = (credsRegistered || fs.existsSync(path.join(botAuthDir, 'creds.json')))
           ? { ...options, pairingMode: null, pairingPhone: null }
@@ -1803,6 +1842,13 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
       await _runLinkFlow(pend.targetKey);
       return;
     }
+    if (!isGroup && isCommand && (commandName === 'stoplink' || commandName === 'linkstop' || commandName === 'stopqr')) {
+      const stopped = stopLink(chatId);
+      try { await sock.sendMessage(chatId, { text: stopped.length
+        ? `🛑 Stopped QR delivery for *${stopped.map(k => PersonalityManager.getDisplayName(k)).join(', ')}*. Send /link <bot> to start again.`
+        : `ℹ️ No QR delivery was running for you.` }, { quoted: msg }); } catch (e) {}
+      return;
+    }
     if (!isGroup && isCommand && commandName === 'link') {
       const parts = messageText.slice(config.prefix.length).trim().split(/\s+/);
       const targetArg = (parts[1] || '').toLowerCase();
@@ -2155,7 +2201,7 @@ module.exports = {
   isBotUsable,
   getFirstUsableSocketKey,
   botHealthReport,
-  clearSendHealth, markRestart,
+  clearSendHealth, markRestart, stopLink,
   markSendResult,
   startStallSweeper,
   readConfigCached,

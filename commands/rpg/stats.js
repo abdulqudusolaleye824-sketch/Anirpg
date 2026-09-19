@@ -136,6 +136,16 @@ module.exports = {
       const cData = CLASS_DATA[className];
       msg2 += `\n${cData?.emoji || '🎭'} Class: *${className}* ${qualLabel || ''}`;
       if (quality > 0) msg2 += `\n   Quality: *${quality}%*`;
+      try { // Push #74: show what the class actually adds to the numbers below
+        const CP = require('../../rpg/utils/ClassPower');
+        const b = player.classBonusApplied && player.classBonusApplied.bonuses;
+        if (b) { const f = CP.formatBonuses(b); if (f) msg2 += `\n   Class bonus: ${f}`; }
+        const pm = CP.passiveMultipliers(player);
+        const pl = [];
+        if (pm.atk) pl.push(`ATK +${pm.atk}%`); if (pm.def) pl.push(`DEF +${pm.def}%`); if (pm.crit) pl.push(`CRIT +${pm.crit}%`);
+        if (pm.dodge) pl.push(`DODGE +${pm.dodge}%`); if (pm.speed) pl.push(`SPD +${pm.speed}%`); if (pm.lifesteal) pl.push(`LS +${pm.lifesteal}%`);
+        if (pl.length) msg2 += `\n   Passives: ${pl.join(' · ')}`;
+      } catch (e) {}
     } else {
       msg2 += `\n🎭 Class: _Awaiting awakening..._`;
     }

@@ -21,6 +21,9 @@
 16. **Skill upgrade costs ×3** for all classes: 45k → 150k → 360k → 900k.
 17. **Astra Pass / Battle Pass XP curve steepened**: tier cost = 1,500 × 1.09^tier (tier 1 ≈ 1.6k, tier 30 ≈ 20k, tier 49 ≈ 103k). A full free grinder tops out around tier 30 (~200k XP/season); 50 (~1.2M) needs Pro/Premium multipliers. `/pass` shows the real requirement.
 
+18. **Class stats now actually change (#74b).** The first #74 build tagged everyone who awakened before it as "legacy — already applied" and added nothing. That assumption was wrong; legacy hunters now receive their quality-scaled class bonus once (idempotent), and stale legacy records are converted on the next command. `/stats` shows `Class bonus:` and `Passives:` lines.
+19. **`/link` QR flow:** image is numbered (#seq), always sent by the bot you're talking to, and when the pairing socket drops mid-scan you get a "ignore the last QR, new one coming" notice instead of silence. New **`/stoplink`** (aliases `/linkstop`, `/stopqr`) stops QR delivery and ends the pairing socket if nobody else is watching.
+
 ## Push #73 — rate-overlimit backoff, /version, profaq price, rules 16–17 (2026-09-19)
 
 1. **`rate-overlimit` no longer surfaces as a command error.** WhatsApp throttles OUR sends; the handler now backs off and retries (1.5s → 3s → 6s → 12s) instead of failing the command instantly, and if a throttle still slips through it is swallowed rather than shown as "❌ An error occurred… Error: rate-overlimit" (the game state had already advanced).
