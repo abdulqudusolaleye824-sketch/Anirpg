@@ -24,7 +24,10 @@ const MAX_PARTY = 10;
 function playerDamage(player, skillName = null, target = null) {
   let _gearAtkGR = 0;
   try { _gearAtkGR = require('../utils/GearSystem').getEquippedBonuses(player).atk || 0; } catch (e) {}
-  const atk = (player.stats?.atk || 10) + _gearAtkGR + (player.weapon?.attack || player.weapon?.bonus || 0);
+  let _pm74 = { atk: 0, crit: 0, skillDmg: 0 };
+  try { _pm74 = require('../utils/ClassPower').passiveMultipliers(player); } catch (e) {}
+  // Push #74: class passives (+X% ATK, quality-scaled) apply to every raid hit.
+  const atk = Math.floor(((player.stats?.atk || 10) + _gearAtkGR + (player.weapon?.attack || player.weapon?.bonus || 0)) * (1 + (_pm74.atk || 0) / 100));
   const magicPower = player.stats?.magicPower || 0;
   if (skillName) {
     // SkillCatalog: name / prefix / number, equipped OR library, and it tells
@@ -48,7 +51,9 @@ function playerDamage(player, skillName = null, target = null) {
     // landed like a base attack on the boss.
     const synergyNotes = [];
     let dmg = SC.computeDamage(player, entry || skill, { includeMagic: magicPower > 0, crit: false, target, notes: synergyNotes });
-    const isCrit = Math.random() < (player.stats?.critChance || 2) / 100;
+    if (_pm74.atk || _pm74.skillDmg) dmg = Math.max(1, Math.floor(dmg * (1 + ((_pm74.atk || 0) + (_pm74.skillDmg || 0)) / 100)));
+    if (target) { try { dmg = Math.max(1, Math.floor(dmg * require('../utils/UnifiedCombat').weakenTakenMult(target))); } catch (e) {} }
+    const isCrit = Math.random() < ((player.stats?.critChance || 2) + (_pm74.crit || 0)) / 100;
     if (isCrit) dmg = Math.floor(dmg * (player.stats?.critDamage || 150) / 100);
 
     player.stats.energy = Math.max(0, (player.stats.energy || 0) - cost);
@@ -79,14 +84,30 @@ function playerDamage(player, skillName = null, target = null) {
     };
   }
   let dmg = Math.max(5, atk * (0.85 + Math.random() * 0.30));
-  const isCrit = Math.random() < (player.stats?.critChance || 2) / 100;
+  if (target) { try { dmg = Math.max(1, dmg * require('../utils/UnifiedCombat').weakenTakenMult(target)); } catch (e) {} }
+  const isCrit = Math.random() < ((player.stats?.critChance || 2) + (_pm74.crit || 0)) / 100;
   if (isCrit) dmg = Math.floor(dmg * (player.stats?.critDamage || 150) / 100);
   let synergyNotes = [];
   if (target) { try { const syn = require('../utils/StatusSynergy').bonusFor({ name: 'strike', description: 'basic strike' }, target); if (syn.mult !== 1) { dmg *= syn.mult; synergyNotes = syn.notes; } } catch (e) {} }
   return { damage: Math.floor(dmg), isCrit, synergyNotes };
 }
 
-function monsterDamage(monster, def) {
+function monsterDamage(monster, def, player = null) {
+  // Push #74: the hunter can DODGE (speed vs monster speed + evasion +
+  // passives); passives also cut damage taken; WEAKEN on the hunter hurts.
+  if (player) {
+    try {
+      const UC = require('../utils/UnifiedCombat');
+      const CP = require('../utils/ClassPower');
+      const pm = CP.passiveMultipliers(player);
+      const mon = { stats: { speed: monster.speed || 10, atk: monster.atk || 10 }, statusEffects: monster.statusEffects || [] };
+      const held = (player.statusEffects || []).some(e => ['stun', 'freeze', 'paralyze'].includes(String(e.type || '').toLowerCase()));
+      if (!held && Math.random() * 100 < UC.dodgeChance(mon, player, pm)) return 0;
+      let raw = Math.max(3, (monster.atk || 10) - Math.floor(((def || 5) * (1 + (pm.def || 0) / 100)) * 0.5));
+      raw = raw * (0.8 + Math.random() * 0.4) * UC.weakenTakenMult(player) * (1 + (pm.dmgTaken || 0) / 100);
+      return Math.max(0, Math.floor(raw));
+    } catch (e) {}
+  }
   const raw = Math.max(3, (monster.atk || 10) - Math.floor((def || 5) * 0.5));
   return Math.floor(raw * (0.8 + Math.random() * 0.4));
 }
@@ -386,6 +407,8 @@ function start(sender, keyData, gate, db) {
   raid.status = 'active';
   raid.startedAt = Date.now();
   gate.raidStarted = true;
+  // Push #74: monster SEVERITY is calibrated to the party, not random.
+  try { calibrateToParty(gate, raid, db); } catch (e) { console.error('calibrateToParty:', e.message); }
   // Single-use: launching the raid consumes the key (no second runs)
   try {
     keyData.used = true; keyData.raidStarted = true;
@@ -396,6 +419,65 @@ function start(sender, keyData, gate, db) {
   gate.raiders = gate.raiders || [];
   raid.members.forEach(m => { if (!gate.raiders.includes(m.id)) gate.raiders.push(m.id); });
   return { ok: true, raid };
+}
+
+// ── Push #74: party-calibrated severity ─────────────────────────
+// The gate spawned with a random 60–100% strength before anyone joined. At
+// raid start we know the party: total power vs the rank's expected power per
+// hunter decides how hard the monsters hit and how much HP they carry.
+//   ratio = partyPower / (expectedPowerForRank × members)
+//   severity = clamp(0.70 … 1.60, 0.55 + ratio × 0.55)  → stronger parties
+//   face stronger monsters, weak parties get a fair fight.
+// LUCK: each member with an active Luck Potion / luck stat shaves severity
+// (max −15% total). The result is shown on the raid-start card.
+const RANK_EXPECTED_POWER = { E: 1500, D: 3500, C: 7000, B: 14000, A: 28000, S: 55000 };
+function partyLuck(raid, db) {
+  let luck = 0;
+  for (const m of raid.members || []) {
+    const u = db && db.users ? db.users[m.id] : null;
+    if (!u) continue;
+    const lp = u.activeEffects && u.activeEffects.luckPotion;
+    if (lp && lp.active && (!lp.expiresAt || lp.expiresAt > Date.now())) luck += 5;
+    luck += Math.min(5, Number(u.stats && u.stats.luck || 0) / 10);
+  }
+  return Math.min(15, luck);
+}
+function calibrateToParty(gate, raid, db) {
+  if (!gate || !raid || !Array.isArray(raid.members) || !raid.members.length) return null;
+  if (gate.calibrated) return gate.calibrated;
+  let SLC = null;
+  try { SLC = require('../utils/SoloLevelingCore'); } catch (e) {}
+  let total = 0, n = 0;
+  for (const m of raid.members) {
+    const u = db && db.users ? db.users[m.id] : null;
+    if (!u) continue;
+    n++;
+    let p = 0;
+    try { p = SLC && SLC.calculatePlayerPower ? SLC.calculatePlayerPower(u) : 0; } catch (e) {}
+    total += p;
+  }
+  if (!n) return null;
+  const expected = (RANK_EXPECTED_POWER[gate.rank] || 1500) * n;
+  const ratio = expected > 0 ? total / expected : 1;
+  const luck = partyLuck(raid, db);
+  let severity = 0.55 + ratio * 0.55;
+  severity = Math.max(0.70, Math.min(1.60, severity));
+  severity = severity * (1 - luck / 100);
+  severity = Math.round(severity * 100) / 100;
+  for (const mon of gate.monsters || []) {
+    if (!mon || mon.defeated) continue;
+    mon.maxHp = Math.max(5, Math.floor((mon.maxHp || mon.hp || 10) * severity));
+    mon.hp = mon.maxHp;
+    mon.atk = Math.max(1, Math.floor((mon.atk || 5) * severity));
+    mon.def = Math.floor((mon.def || 0) * severity);
+  }
+  if (gate.boss && !gate.boss.defeated) {
+    gate.boss.maxHp = Math.max(50, Math.floor((gate.boss.maxHp || gate.boss.hp || 400) * severity));
+    gate.boss.hp = gate.boss.maxHp;
+  }
+  const label = severity >= 1.4 ? '☠️ NIGHTMARE' : severity >= 1.2 ? '🔴 Severe' : severity >= 1.0 ? '🟠 Hard' : severity >= 0.85 ? '🟡 Standard' : '🟢 Mild';
+  gate.calibrated = { severity, label, partyPower: Math.floor(total), expected: Math.floor(expected), luck, members: n, at: Date.now() };
+  return gate.calibrated;
 }
 
 // ── Status ──────────────────────────────────────────────────────
@@ -727,6 +809,7 @@ function spawnWildPet(gate) {
 }
 
 module.exports = {
+  calibrateToParty, partyLuck, RANK_EXPECTED_POWER,
   MAX_PARTY,
   playerDamage,
   monsterDamage,

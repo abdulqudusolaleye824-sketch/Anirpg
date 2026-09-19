@@ -21,7 +21,7 @@ function skillLevelBar(level, maxLevel=5) {
 function skillUpgradeCost(currentLevel) {
   // Cost to upgrade FROM this level to next: lv1→2, lv2→3, lv3→4, lv4→5
   // Balanced — early upgrades affordable, max level is a real grind
-  const costs = [15000, 50000, 120000, 300000];
+  const costs = [45000, 150000, 360000, 900000]; // Push #74: ×3 for all classes
   return costs[currentLevel - 1] ?? null; // null = already max level
 }
 

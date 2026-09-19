@@ -77,6 +77,7 @@ class PetManager {
       evolution:    template.evolution || null,
       vulnerable:   template.vulnerable || false,
       acquiredDate: Date.now(),
+      gender:       Math.random() < 0.5 ? 'male' : 'female', // Push #74
     };
   }
 
@@ -110,9 +111,11 @@ class PetManager {
     if (!pd.eggs[eggIndex]) return { success: false, message: '❌ No egg at that slot!' };
     if (pd.pets.length >= 20) return { success: false, message: '❌ Pet storage full! (Max 20)' };
     const eggInst = pd.eggs[eggIndex];
-    const template = hatchEgg(eggInst.eggId);
+    // Push #74: bred eggs carry a fixed species (lineage) — honour it.
+    const template = (eggInst.bred && eggInst.childId && PET_DATABASE[eggInst.childId]) ? PET_DATABASE[eggInst.childId] : hatchEgg(eggInst.eggId);
     if (!template) return { success: false, message: '❌ Egg hatching failed!' };
     const newPet = this.createPet(template);
+    if (eggInst.bred) { newPet.lineage = eggInst.parents || null; newPet.hybrid = !!eggInst.mixed; }
     pd.pets.push(newPet);
     pd.eggs.splice(eggIndex, 1);
     if (!pd.activePet) pd.activePet = newPet.instanceId;
@@ -121,7 +124,7 @@ class PetManager {
       success: true,
       pet: newPet,
       isFirstPet: pd.pets.length === 1,
-      message: `🐣 The egg hatched!\n${newPet.emoji} *${newPet.name}* appeared!\nRole: *${newPet.role.toUpperCase()}*\n\nLevel up your pet to evolve it!`,
+      message: `🐣 The egg hatched!\n${newPet.emoji} *${newPet.name}* ${newPet.gender === 'male' ? '♂️' : '♀️'} appeared!${newPet.hybrid ? '\n🌈 *A HYBRID!*' : ''}\nRole: *${newPet.role.toUpperCase()}*\n\nLevel up your pet to evolve it!`,
     };
   }
 

@@ -13,7 +13,10 @@ const XP_PER_LEVEL = 500; // base only — real cost scales (see xpForLevel)
 // 59,000 XP: a consistent free grinder (~37k/season) lands ~75%, a Pro
 // grinding the same (2x) clears it, Pro+premium (4x) clears it twice over.
 function xpForLevel(level) {
-  return 500 + 50 * Math.max(0, level || 0);
+  // Push #74: STEEP curve. 1,500 × 1.09^level — tier 1 = 1,635, tier 30 ≈
+  // 19,900, tier 49 ≈ 103,000. 0→30 ≈ 200k XP (a full free grinder's season);
+  // 0→50 ≈ 1.1M — only Pro/Premium multipliers (2×/4×) get there.
+  return Math.floor(1500 * Math.pow(1.09, Math.max(0, level || 0)));
 }
 
 // ── Current season config (update monthly) ────────────────────────

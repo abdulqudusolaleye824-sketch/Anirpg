@@ -28,6 +28,7 @@ module.exports = {
     { name: 'Terror Howl',    type: 'debuff',  maxPotency: 50,  desc: 'Inflicts FEAR (😱) on enemies: ATK -{p}% & target deals 50% reduced damage' },
     // ── Active skills (utility) ──
     { name: 'War Shout',      type: 'debuff',  maxPotency: 35,  desc: 'Inflicts FEAR (😱) and STUN (⚡) on all enemies for 1 turn' },
+    { name: 'Bone Breaker',   type: 'debuff',  maxPotency: 40,  desc: 'Deals {p}% ATK and WEAKENS (💔) the target: it takes 25% more damage for 3 turns' },
     { name: 'Last Breath',    type: 'heal',    maxPotency: 35,  desc: 'Restore {p}% max HP, but removes all buffs' },
     // ── Passives ──
     { name: 'Blood Frenzy',        type: 'passive', maxPotency: 60,  desc: 'Below 30% HP: ATK +{p}%, lifesteal +10%' },

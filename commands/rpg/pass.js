@@ -334,7 +334,7 @@ module.exports = {
 
     const imageBuffer = await renderAstraPassImage(player, passData, page);
 
-    const xpReq = 1000;
+    let xpReq = 1000; try { xpReq = require('../../rpg/utils/AstraPass').xpForLevel(ap.level || 1); } catch (e) {}
     const xpPct = Math.min(100, Math.floor(((ap.xp || 0) / xpReq) * 100));
     const xpBar = UI.bar(ap.xp || 0, xpReq, 10, pro);
 

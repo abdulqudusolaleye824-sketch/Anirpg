@@ -127,6 +127,25 @@ module.exports = {
         }, { quoted: msg });
       }
 
+      // ── Push #74: /equip use on a HEALTH potion obeys the same gate-raid
+      // party cap (5) and PvP rules as /use — it was a silent bypass.
+      const _isHealPotion = /health potion$/i.test(String(itemName || ''));
+      const _hpKey = { 'Health Potion': 'healthPotions', 'Medium Health Potion': 'mediumHealthPotions', 'Higher Health Potion': 'higherHealthPotions', 'Lower Health Potion': 'lowerHealthPotions' }[itemName];
+      if (_isHealPotion && _hpKey && (inv[_hpKey] || 0) >= 1) {
+        let _ib = null;
+        try { _ib = require('../../rpg/utils/RegenManager').checkInBattle(player, db); } catch (e) {}
+        if (_ib && _ib.type === 'gateraid') {
+          const gate = _ib.battle;
+          if ((gate.potionsUsed || 0) >= 5) {
+            return sock.sendMessage(chatId, { text: `❌ *Gate Raid Potion Limit Reached!*\n\nCollective party cap: *5/5 Health Potions used* in this raid.` }, { quoted: msg });
+          }
+          gate.potionsUsed = (gate.potionsUsed || 0) + 1;
+        }
+        if (_ib && _ib.type === 'pvp') {
+          return sock.sendMessage(chatId, { text: `❌ Potions can't be used through /equip during PvP — use */use potion*.` }, { quoted: msg });
+        }
+      }
+
       // ── Health Potion ──
       if (itemName === 'Health Potion') {
         if ((inv.healthPotions || 0) < 1) return sock.sendMessage(chatId, { text: `❌ No Health Potions!` }, { quoted: msg });
@@ -234,6 +253,16 @@ module.exports = {
 
       // ── Apply stat bonus ──
       const statResult = applyItemBonus(player, item);
+      // Push #74: crafted weapons can carry an on-hit status (e.g. Kasaka
+      // blades → POISON). Absorbing one teaches the hunter that strike.
+      if (item.onHit && item.onHit.type) {
+        if (!player.weaponEffects) player.weaponEffects = {};
+        const prev = player.weaponEffects[item.onHit.type];
+        if (!prev || (prev.chance || 0) < (item.onHit.chance || 0)) {
+          player.weaponEffects[item.onHit.type] = { chance: item.onHit.chance || 30, duration: item.onHit.duration || 4, from: item.name };
+        }
+        statResult.changes.push(`☠️ On-hit ${item.onHit.type.toUpperCase()} ${item.onHit.chance || 30}% (${item.onHit.duration || 4}t)`);
+      }
 
       // ── Log this equip so /idletransfiguration can audit it ──
       if (!player.equippedLog) player.equippedLog = [];

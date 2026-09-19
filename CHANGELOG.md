@@ -1,5 +1,26 @@
 # AniRPG — Patch Drop (features + bug fixes + UI restyle)
 
+## Push #74 — class power for real, dodge, poison/fear/weaken, party-calibrated gates, +300 monsters, pet mating & eggs, /link by password, multi-bot fixes (2026-09-19)
+
+1. **Class stats are now REALLY applied.** Every awakened hunter carries their class's stat bonuses scaled by quality % (`rpg/utils/ClassPower.js`, idempotent, recorded in `classBonusApplied`). Skill passives ("+15% ATK", "Below 30% HP: ATK +60%", "+25% crit", "reduces damage taken 20%") are live multipliers in every combat path (gate raids, PvP, /battle), also quality-scaled.
+2. **`Class: [object Object]` fixed** — `PlayerMigration` ran on every command and turned `player.class` into an object; it now always writes the string back. `/class` shows the bonuses actually applied + live passives.
+3. **`/globalskill`** (owner/co-owner, DM only): recalibrates every hunter — strips + re-applies class bonuses, rebuilds skill ladders, normalises legacy class objects. Safe to run repeatedly.
+4. **DODGE**: defenders roll to evade based on speed difference (+0.25%/pt, cap ±20), gear evasion, passive dodge and temp dodge buffs (0–45%). Works for hunters vs monsters/bosses and in PvP. Frozen/stunned/paralyzed never dodge.
+5. **Statuses**: POISON is a real ≥4-turn DoT on 80+ monsters (Kasaka, spiders, nagas, plague…), on crafted venom weapons (`onHit`, absorbed via `/equip` → on-hit poison), and Archer **Venom Arrow** / Poison Arrow. Berserker gets **Bone Breaker** (WEAKEN) + fear on War Shout/Terror Howl/Savage Roar (EffectParser now parses fear). **WEAKEN = target takes +25% damage** (weakened +15%, enfeeble +10%).
+6. **Gate severity is calibrated to the party, not random.** At `/party start` monsters + boss are scaled by party power vs the rank's expected power (×0.70–1.60), minus party luck (Luck Potions, up to −15%). Shown on the raid-start card.
+7. **+300 monsters**: ~50 new per rank (E→S, 96–100 each), calibrated tiers/roles, 4 new craft materials per rank, 36 new Solo Leveling recipes (incl. venom edges) — every recipe material is droppable.
+8. **Pet mating**: pets have ♂️/♀️; `/pet mate <#> <#>` (own pets) or `/pet mate <♂️#> @player <♀️#>` → `/pet mate accept`. Compatible species/element families, 12h cooldown, the ♀️ owner receives the egg; hybrids possible. `/eggs`, `/egg <#>` (lineage), `/eggs give <#> @player`, `/pet give <#> @player`.
+9. **`/equip use` on potions** now obeys the gate-raid 5-potion party cap (and is blocked in PvP) — it was a silent bypass.
+10. **rate-overlimit is handled inside the socket wrapper** for every send: backs off 1.5→3→6→12s, then drops silently. Nothing about it ever reaches a chat, and throttles no longer mark a bot "unusable".
+11. **Multi-bot**: a NON-active bot can never post in a group that has its own bot (sends are redirected to the group's bot); stand-in takeover is temporary and never persisted (this is what left Mikasa stuck in other bots' GCs); `getActiveSocket` never falls back to "any socket" in groups; /switch to a silent bot now works even when nobody is marked active.
+12. **`/link <bot>` from any DM**: asks for the link password (`LINK_PASSWORD` env, default set), then sends the pairing QR **as an image into the DM** — the same QR as the terminal, refreshed every 20s for 5 min. `/link lunar <password>` works inline.
+13. **403 block/backoff system scrapped** (Lunar unbanned): a 403 is a normal close with the normal short backoff, re-pairs normally; "Scanning can't fix this" message removed.
+
+14. **Sluggish bots / replaying hours-old commands FIXED.** After a reconnect WhatsApp replays the offline queue as "new" messages; the bot answered those (slowly, in order) and ignored live ones. Every message older than 90s (`MAX_MSG_AGE_MS`) is now dropped on arrival; `/restart` also discards everything sent before it, clears takeover + send-health state. New **`/restart hard`** restarts the whole process (Docker brings it back in ~30s) for a truly fresh start.
+15. **`/hi` is answered by every bot individually** — each socket greets only as itself (no chorus/orchestrator).
+16. **Skill upgrade costs ×3** for all classes: 45k → 150k → 360k → 900k.
+17. **Astra Pass / Battle Pass XP curve steepened**: tier cost = 1,500 × 1.09^tier (tier 1 ≈ 1.6k, tier 30 ≈ 20k, tier 49 ≈ 103k). A full free grinder tops out around tier 30 (~200k XP/season); 50 (~1.2M) needs Pro/Premium multipliers. `/pass` shows the real requirement.
+
 ## Push #73 — rate-overlimit backoff, /version, profaq price, rules 16–17 (2026-09-19)
 
 1. **`rate-overlimit` no longer surfaces as a command error.** WhatsApp throttles OUR sends; the handler now backs off and retries (1.5s → 3s → 6s → 12s) instead of failing the command instantly, and if a throttle still slips through it is swallowed rather than shown as "❌ An error occurred… Error: rate-overlimit" (the game state had already advanced).

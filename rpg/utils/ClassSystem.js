@@ -263,6 +263,8 @@ function stripClassFromPlayer(player) {
   delete player.classBase;
   delete player.classSkills;
   delete player.classQuality;
+  delete player.classBonusApplied;
+  player.classPowerV74 = true;
   delete player.monsterVariant;
   delete player.evolvedClass;
   if (player.skills) { player.skills.active = []; player.skills.locked = []; }
@@ -313,8 +315,12 @@ function applyClassToPlayer(player, className) {
   }
 
   // Apply stat bonuses scaled by quality
+  // Push #74: record what was applied so ClassPower.ensureClassBonuses never
+  // double-applies and can strip it exactly on recon.
+  const _applied74 = {};
   for (const [stat, max] of Object.entries(data.maxBonuses || {})) {
     const bonus = applyQuality(max, quality);
+    { const _k = stat === 'hp' ? 'maxHp' : stat; _applied74[_k] = (_applied74[_k] || 0) + bonus; }
     if (stat === 'hp' || stat === 'maxHp') {
       player.stats.maxHp = (player.stats.maxHp || 100) + bonus;
       player.stats.hp    = Math.min(player.stats.hp || 100, player.stats.maxHp);
@@ -326,6 +332,9 @@ function applyClassToPlayer(player, className) {
       player.stats[stat] = (player.stats[stat] || 0) + bonus;
     }
   }
+
+  player.classBonusApplied = { cls: className, quality, bonuses: _applied74, at: Date.now() };
+  player.classPowerV74 = true;
 
   // Assign class skills scaled by quality
   player.classSkills = (data.skills || []).map(skill => ({

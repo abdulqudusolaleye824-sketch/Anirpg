@@ -56,12 +56,23 @@ function calcMoveDamage(attacker, defender, move) {
   // Accuracy check first — stunned defenders can't dodge (auto-hit).
   // Attacker accuracy mods (blind/fear) come from the status table.
   const _defFx = defender.statusEffects || [];
-  const _noDodge = _defFx.some(e => (e.type || '').toLowerCase() === 'stun');
+  const _noDodge = _defFx.some(e => ['stun', 'freeze', 'paralyze'].includes((e.type || '').toLowerCase()));
   let acc = move.accuracy != null ? move.accuracy : 85;
   try { acc *= SEM.getStatModifiers(attacker).accuracyMod; } catch (e) {}
   const roll = Math.random() * 100;
   if (!_noDodge && roll > acc) {
     return { damage: 0, missed: true, crit: false, effective: 'missed', capability: 1 };
+  }
+  // Push #74: DODGE — the defender's own roll, driven by SPEED difference +
+  // gear evasion + passive dodge. (Accuracy above is the attacker missing;
+  // this is the defender getting out of the way.)
+  let _pmA = null, _pmD = null;
+  try { const CP = require('./ClassPower'); _pmA = CP.passiveMultipliers(attacker); _pmD = CP.passiveMultipliers(defender); } catch (e) {}
+  if (!_noDodge && !move.undodgeable) {
+    const dodge = dodgeChance(attacker, defender, _pmD);
+    if (Math.random() * 100 < dodge) {
+      return { damage: 0, missed: true, dodged: true, crit: false, effective: 'missed', capability: 1, dodgeChance: dodge };
+    }
   }
 
   // Base ATK vs DEF — equipped gear always counts (players AND monsters
@@ -95,8 +106,11 @@ function calcMoveDamage(attacker, defender, move) {
   // Defender's DEF reduced by defMult inverse? If defMult >1, it's attacker defense? Actually treat as defender DEF * (1/defMult) for high defMult attacks that pierce?
   // Simpler: atkMult boosts attacker, defMult boosts attacker defense? We'll interpret as:
   // effectiveAtk = atkBase * atkMult, effectiveDef = defBase / defMult (so higher defMult on move means more armor pen)
-  const effectiveAtk = atkBase * atkMult;
-  const effectiveDef = defBase / Math.max(0.1, defMult);
+  // Push #74: class passives (quality-scaled) are real stat multipliers.
+  const _passAtk = 1 + ((_pmA && _pmA.atk) || 0) / 100;
+  const _passDef = 1 + ((_pmD && _pmD.def) || 0) / 100;
+  const effectiveAtk = atkBase * atkMult * _passAtk;
+  const effectiveDef = (defBase * _passDef) / Math.max(0.1, defMult);
 
   // Status multipliers — single-sourced from StatusEffectManager (weakness
   // -75% ATK, fear -50% all stats, stun -50% speed, curse/enfeeble DEF cuts).
@@ -133,10 +147,17 @@ function calcMoveDamage(attacker, defender, move) {
   const defSpd = ((defender.stats?.speed || 50) + _gearSpdD) * (defMods.speedMod || 1);
   if (atkSpd > defSpd) critChance += 0.02;
 
-  const isCrit = Math.random() < critChance;
+  critChance += ((attacker.stats?.critChance || 0) + ((_pmA && _pmA.crit) || 0)) / 100;
+  const isCrit = Math.random() < Math.min(0.75, critChance);
   if (isCrit) {
     raw = Math.floor(raw * critMult);
   }
+  // Push #74: WEAKEN on the defender → takes more damage; passive damage reduction.
+  try {
+    const _wk = weakenTakenMult(defender);
+    if (_wk !== 1) raw = Math.max(1, Math.floor(raw * _wk));
+  } catch (e) {}
+  if (_pmD && _pmD.dmgTaken) raw = Math.max(1, Math.floor(raw * (1 + _pmD.dmgTaken / 100)));
 
   // Push #72: status synergy — moves hit harder vs a target already afflicted.
   let synergyNotes = [];
@@ -152,6 +173,46 @@ function calcMoveDamage(attacker, defender, move) {
 }
 
 // Process status effect application
+// Push #74: dodge chance (percent) for defender vs attacker.
+//   base 3% + speed edge (each point of speed the defender has over the
+//   attacker = +0.25%, capped +20%) + gear evasion + passive dodge − attacker
+//   speed edge. Clamped 0–45%. Frozen/stunned/paralyzed never dodge.
+function dodgeChance(attacker, defender, pmD) {
+  let gearEvaD = 0, gearSpdA = 0, gearSpdD = 0;
+  try {
+    const { getEquippedBonuses } = require('./GearSystem');
+    const ga = getEquippedBonuses(attacker) || {}; const gd = getEquippedBonuses(defender) || {};
+    gearEvaD = gd.evasion || 0; gearSpdA = ga.speed || 0; gearSpdD = gd.speed || 0;
+  } catch (e) {}
+  let am = { speedMod: 1 }, dm = { speedMod: 1 };
+  try { am = SEM.getStatModifiers(attacker); dm = SEM.getStatModifiers(defender); } catch (e) {}
+  const aSpd = ((attacker.stats?.speed || 50) + gearSpdA) * (am.speedMod || 1);
+  const dSpd = ((defender.stats?.speed || 50) + gearSpdD) * (dm.speedMod || 1);
+  const edge = Math.max(-20, Math.min(20, (dSpd - aSpd) * 0.25));
+  let dodge = 3 + edge + gearEvaD + ((pmD && pmD.dodge) || 0) + (defender.stats?.evasion || 0) + (defender.stats?.dodge || 0);
+  // Temporary dodge buffs (Evasive Step, Gale Ward …)
+  try {
+    const tb = defender.tempBuffs || {};
+    for (const v of Object.values(tb)) { if (v && (v.stat === 'dodge' || v.stat === 'evasion') && v.duration > 0) dodge += Number(v.amount) || 0; }
+    if (tb.dodge && tb.dodge.duration > 0) dodge += (Number(tb.dodge.bonus) || 0) * 100;
+  } catch (e) {}
+  return Math.max(0, Math.min(45, dodge));
+}
+
+// Push #74: WEAKEN / WEAKENED / ENFEEBLE = the target TAKES more damage.
+//   weaken/weakness +25%, weakened +15%, enfeeble +10% (stacking, cap +50%).
+function weakenTakenMult(entity) {
+  const fx = (entity && entity.statusEffects) || [];
+  let add = 0;
+  for (const e of fx) {
+    const t = String(e.type || '').toLowerCase();
+    if (t === 'weaken' || t === 'weakness') add += 25;
+    else if (t === 'weakened') add += 15;
+    else if (t === 'enfeeble') add += 10;
+  }
+  return 1 + Math.min(50, add) / 100;
+}
+
 function tryApplyEffect(attack, attacker, defender) {
   if (!attack.effect) return null;
   const chance = attack.effect.chance || 50;
@@ -161,12 +222,15 @@ function tryApplyEffect(attack, attacker, defender) {
   // Check existing — refresh
   const existing = defender.statusEffects.find(e => e.type === attack.effect.type);
   if (existing) {
-    existing.duration = Math.max(existing.duration, Number(attack.effect.duration) || 2, 2);
+    const _min = String(attack.effect.type || '').toLowerCase() === 'poison' ? 4 : 2;
+    existing.duration = Math.max(existing.duration, Number(attack.effect.duration) || 2, _min);
     return existing;
   }
   // Push #72: player-applied statuses last at least 2 turns (they used to
   // expire on the very next tick, so DoTs/debuffs never mattered).
-  const _dur = Math.max(2, Number(attack.effect.duration) || 2);
+  let _dur = Math.max(2, Number(attack.effect.duration) || 2);
+  // Push #74: POISON is a real DoT — never shorter than 4 turns.
+  if (String(attack.effect.type || '').toLowerCase() === 'poison') _dur = Math.max(4, _dur);
   const eff = { type: attack.effect.type, duration: _dur, sourceAttack: attack.id };
   defender.statusEffects.push(eff);
   return eff;
@@ -337,6 +401,14 @@ async function playTurn(sock, chatId, o) {
   if (!result.missed && (result.damage || 0) > 0) {
     if (defender.stats) defender.stats.hp = Math.max(0, (defender.stats.hp || 0) - result.damage);
     try { statusApplied = tryApplyEffect(move, attacker, defender); } catch (e) { statusApplied = null; }
+    // Push #74: absorbed weapon on-hit statuses (crafted venom blades …)
+    try {
+      for (const [type, w] of Object.entries(attacker.weaponEffects || {})) {
+        if (!w || Math.random() * 100 > (w.chance || 0)) continue;
+        const got = tryApplyEffect({ id: 'weapon', effect: { type, chance: 100, duration: w.duration || 4 } }, attacker, defender);
+        if (got && !statusApplied) statusApplied = got;
+      }
+    } catch (e) {}
   }
   const tier = effectivenessTier(result, !!statusApplied);
 
@@ -350,7 +422,7 @@ async function playTurn(sock, chatId, o) {
   const t1 = `${tag}${o.prepend ? o.prepend + '\n' : ''}⚔️ *${atkName} Uses ${moveName}!*`;
   const t2 = [desc ? `_${desc}_` : null, effLabel, `⏳ Cooldown: ${formatCd(cdMs)}`].filter(Boolean).join('\n'); // batch-47: full description
   let t3;
-  if (tier === 'missed') t3 = `💨 *It missed!* ${atkName}'s attack sliced air.`;
+  if (tier === 'missed') t3 = result.dodged ? `💨 *DODGED!* ${defName} slipped clear of ${atkName}'s attack!` : `💨 *It missed!* ${atkName}'s attack sliced air.`;
   else if (tier === 'very') t3 = `🔥 *It is very effective!* ${defName} is ${_fxWord(statusApplied.type)}!`;
   else if (tier === 'weak') t3 = `🛡️ *It is not effective...* ${defName}'s defense held firm.`;
   else t3 = statusApplied
@@ -375,6 +447,7 @@ async function playTurn(sock, chatId, o) {
 }
 
 module.exports = {
+  dodgeChance, weakenTakenMult,
   isPro,
   getCooldownMs,
   isOnCooldown,

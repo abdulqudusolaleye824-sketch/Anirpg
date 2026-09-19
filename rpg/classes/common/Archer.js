@@ -15,5 +15,6 @@ module.exports = {
       { name: 'Eagle Eye',     type: 'passive', maxPotency: 25,  desc: 'Crit chance +{p}%' },
       { name: 'Barrage',       type: 'damage',  maxPotency: 220, desc: 'Fires {p}% ATK across 3 rapid shots' },
       { name: "Hunter's Mark", type: 'debuff',  maxPotency: 30,  desc: 'Target takes {p}% more damage for 3 turns' },
+      { name: 'Venom Arrow',   type: 'damage',  maxPotency: 140, desc: 'Deals {p}% ATK and applies POISON (☠️) for 4 turns' },
     ],
 };

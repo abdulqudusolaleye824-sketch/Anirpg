@@ -118,6 +118,8 @@ class ImprovedCombat {
     }
     const _atkBuffBoost = BuffManager ? BuffManager.getAtkBoost(attacker) : 0;
     let effectiveAtk = (attacker.stats.atk || 0) + (_artBonus.atk || 0) + _atkBuffBoost;
+    // Push #74: quality-scaled class passives (+X% ATK / skill damage)
+    try { const _pm = require('./ClassPower').passiveMultipliers(attacker); effectiveAtk = Math.floor(effectiveAtk * (1 + ((_pm.atk || 0) + (_pm.skillDmg || 0)) / 100)); } catch (e) {}
 
     // Apply passive skills (Rampage, Blood Rage, etc.)
     const passives = attacker.skills?.passive || [];
@@ -352,10 +354,13 @@ class ImprovedCombat {
   // ═══════════════════════════════════════════════════════════════
   static processAttack(player, monster, battle) {
     const weaponBonus = player.weapon?.bonus || player.weapon?.attack || 0;
-    const baseAtk = (player.stats.atk || 10) + weaponBonus;
-    const isCrit = Math.random() < (0.1 + (player.stats.critChance || 0) / 100);
+    let _pm = { atk: 0, crit: 0, def: 0, dmgTaken: 0 };
+    try { _pm = require('./ClassPower').passiveMultipliers(player); } catch (e) {}
+    const baseAtk = Math.floor(((player.stats.atk || 10) + weaponBonus) * (1 + (_pm.atk || 0) / 100));
+    const isCrit = Math.random() < (0.1 + ((player.stats.critChance || 0) + (_pm.crit || 0)) / 100);
     let damage = Math.max(1, baseAtk - Math.floor((monster.stats?.def || monster.def || 0) * 0.4));
     if (isCrit) damage = Math.floor(damage * 1.5);
+    try { damage = Math.max(1, Math.floor(damage * require('./UnifiedCombat').weakenTakenMult(monster))); } catch (e) {}
 
     const monsterHp = monster.stats ? monster.stats : monster;
     const hpKey = monster.stats ? 'hp' : 'hp';
@@ -375,11 +380,18 @@ class ImprovedCombat {
     if (!victory) {
       // Monster counter-attack
       const monsterAtk = monster.stats?.atk || monster.atk || 10;
-      const playerDef = Math.floor((player.stats.def || 0) * 0.4);
-      const monsterDmg = Math.max(1, monsterAtk - playerDef);
+      const playerDef = Math.floor((player.stats.def || 0) * (1 + (_pm.def || 0) / 100) * 0.4);
+      let monsterDmg = Math.max(1, monsterAtk - playerDef);
+      let _dodged = false;
+      try {
+        const UC = require('./UnifiedCombat');
+        const mon = { stats: { speed: monster.stats?.speed || monster.speed || 10 }, statusEffects: monster.statusEffects || [] };
+        if (Math.random() * 100 < UC.dodgeChance(mon, player, _pm)) { _dodged = true; monsterDmg = 0; }
+        else monsterDmg = Math.max(1, Math.floor(monsterDmg * UC.weakenTakenMult(player) * (1 + (_pm.dmgTaken || 0) / 100)));
+      } catch (e) {}
       player.stats.hp = Math.max(0, player.stats.hp - monsterDmg);
       narrative += `\n👹 ${monster.name} counter-attacks!\n`;
-      narrative += `💢 You took *${monsterDmg}* damage!\n`;
+      narrative += _dodged ? `💨 *DODGED!* You slipped clear of the attack!\n` : `💢 You took *${monsterDmg}* damage!\n`;
       narrative += `❤️ Your HP: ${player.stats.hp}/${player.stats.maxHp}\n`;
     }
 

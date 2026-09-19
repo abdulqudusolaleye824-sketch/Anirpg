@@ -171,9 +171,18 @@ class EffectParser {
       effects.statusEffects.push({ type: 'slow', chance, duration: 2 });
     }
 
-    // WEAKEN
-    if (/\bweaken\b/.test(text)) {
-      effects.statusEffects.push({ type: 'weaken', chance: 100, duration: 3 });
+    // WEAKEN — Push #74: also "weakens", "-X% ATK for the target", "takes X% more damage"
+    if (/\bweakens?\b|(?:target|enem(?:y|ies))[^.\n]*takes?\s+\d+%\s+more damage|target[^.\n]*-\d+%\s*atk/i.test(text)) {
+      const wm = text.match(/(\d+)%\s+chance\s+(?:to\s+)?weaken/i);
+      effects.statusEffects.push({ type: 'weaken', chance: wm ? parseInt(wm[1]) : 100, duration: 3 });
+    }
+
+    // FEAR — Push #74: "Fears all enemies", "inflicts FEAR", "terrify", "intimidates"
+    if (/\bfears?\b|\bfeared\b|terrif|intimidat/i.test(text)) {
+      const fm = text.match(/(\d+)%\s+chance\s+(?:to\s+)?(?:inflict\s+)?fear/i);
+      if (!effects.statusEffects.find(e => e.type === 'fear')) {
+        effects.statusEffects.push({ type: 'fear', chance: fm ? parseInt(fm[1]) : 70, duration: 2 });
+      }
     }
 
     // ── BUFFS (self) ──────────────────────────────────────────

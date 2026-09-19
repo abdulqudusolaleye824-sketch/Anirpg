@@ -212,103 +212,27 @@ const hi = {
 
   async execute(sock, msg, args, getDatabase, saveDatabase, sender) {
     const chatId = msg.key.remoteJid;
-
-    let connectedKeys = [];
-    let present = [];
+    // Push #74: /hi is handled by EVERY bot INDIVIDUALLY. This socket greets
+    // only as itself — no chorus, no bot speaking for another. Each linked bot
+    // in the group runs this same code on its own socket, so the group sees
+    // one greeting per present bot.
+    let myKey = null;
     try {
       const MSM = require('../../bots/MultiSocketManager');
       const all = MSM.getAllSockets() || {};
-      // Only count actually online bots (user.id present) for hi
-      connectedKeys = Object.keys(all).filter(k => all[k]?.user?.id);
-      present = PersonalityManager.getPresentBots(chatId) || [];
-      // Filter present to only those that are actually online
-      present = present.filter(k => all[k]?.user?.id);
-    } catch (_) {
-      try { present = PersonalityManager.getPresentBots(chatId) || []; } catch {}
-    }
-    // STRICT: only bots that are BOTH online (user.id) AND in this group
-    // respond — a bot that isn't here must stay silent, and no bot may
-    // answer on another's behalf. Push #26: presence-cache misses (fresh
-    // joins, cold boots) are verified LIVE via groupMetadata instead of
-    // excluding online members that simply haven't been observed yet.
-    const presentSet = new Set(present);
-    const unconfirmed = connectedKeys.filter(k => !presentSet.has(k));
-    if (unconfirmed.length) {
-      try {
-        const MSM = require('../../bots/MultiSocketManager');
-        const withTimeout = (pr, ms) => Promise.race([pr, new Promise((_, rej) => setTimeout(() => rej(new Error('probe-timeout')), ms))]);
-        const probes = await Promise.allSettled(unconfirmed.map(async (k) => {
-          const bs = MSM.getSocket(k);
-          if (!bs?.user?.id) return null;
-          try {
-            await withTimeout(bs.groupMetadata(chatId), 8000);
-            return k;
-          } catch { return null; }
-        }));
-        for (const pr of probes) {
-          if (pr.status === 'fulfilled' && pr.value) {
-            presentSet.add(pr.value);
-            try { PersonalityManager.markPresent(chatId, pr.value); } catch {}
-          }
-        }
-      } catch {}
-    }
-    const bots = connectedKeys.filter(k => presentSet.has(k));
-
-    if (bots.length === 0) {
-      return sock.sendMessage(chatId, {
-        text: '💤 No bots are currently connected/present in this group.\nUse /start <botname> to activate one!',
-      }, { quoted: msg });
-    }
-
+      myKey = Object.keys(all).find(k => all[k] === sock) || null;
+    } catch (e) {}
+    if (!myKey) { try { myKey = PersonalityManager.getPersonalityForSocket?.(sock) || null; } catch (e) {} }
+    if (!sock?.user?.id) return;
     const senderName = msg.pushName || sender.split('@')[0];
     const greeting = args.length > 0 ? `Hi ${senderName}! ${args.join(' ')}` : `Hi ${senderName}!`;
-
-    let responses = [];
+    const info = myKey ? PersonalityManager.getPersonalityInfo(myKey) : null;
+    const displayName = myKey ? PersonalityManager.getDisplayName(myKey) : (sock.user?.name || 'Bot');
+    const emoji = info?.emoji || '🤖';
+    try { if (myKey && chatId.endsWith('@g.us')) PersonalityManager.markPresent(chatId, myKey); } catch (e) {}
     try {
-      const MSM = require('../../bots/MultiSocketManager');
-      for (const key of bots) {
-        const bsock = MSM.getSocket(key);
-        if (!bsock?.user?.id) continue;
-        const info = PersonalityManager.getPersonalityInfo(key);
-        const displayName = PersonalityManager.getDisplayName(key);
-        const emoji = info?.emoji || '🤖';
-        responses.push({
-          personalityKey: key,
-          displayName,
-          text: `${greeting} — ${emoji} I'm ${displayName}!`,
-          attachment: null,
-        });
-      }
-    } catch (e) { /* best effort */ }
-
-    if (responses.length === 0) {
-      return sock.sendMessage(chatId, {
-        text: '⚠️ Bots are present but their sockets aren\'t ready right now.',
-      }, { quoted: msg });
-    }
-
-    // The chorus reports exactly which greetings landed; retry ONLY the
-    // missing ones — each via its OWN socket. A bot whose socket can't
-    // deliver stays silent: no bot may ever speak for another bot.
-    let delivered = [];
-    try {
-      const MultiSocketManager = require('../../bots/MultiSocketManager');
-      const report = await MultiSocketManager.sendHiChorus(chatId, responses, msg);
-      delivered = (report && report.delivered) || [];
-    } catch (e) { delivered = []; }
-    const missing = responses.filter((r) => !delivered.includes(r.personalityKey));
-    for (let i = 0; i < missing.length; i++) {
-      const r = missing[i];
-      try {
-        const MultiSocketManager = require('../../bots/MultiSocketManager');
-        const own = MultiSocketManager.getSocket(r.personalityKey);
-        if (own && own.user?.id && r.text) {
-          await own.sendMessage(chatId, { text: r.text }, { quoted: msg });
-        }
-      } catch (e) { /* stays silent — never impersonate */ }
-      if (i < missing.length - 1) await new Promise((rr) => setTimeout(rr, 800));
-    }
+      await sock.sendMessage(chatId, { text: `${greeting} — ${emoji} I'm ${displayName}!` }, { quoted: msg, asSelf: true });
+    } catch (e) { /* stays silent — never impersonate */ }
   },
 };
 

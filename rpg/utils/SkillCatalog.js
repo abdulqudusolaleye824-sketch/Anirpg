@@ -447,7 +447,7 @@ function cooldownMs(skill) {
 }
 
 function skillUpgradeCost(level) {
-  const costs = [15000, 50000, 120000, 300000];
+  const costs = [45000, 150000, 360000, 900000]; // Push #74: ×3 for all classes
   return costs[(level || 1) - 1] ?? null;
 }
 

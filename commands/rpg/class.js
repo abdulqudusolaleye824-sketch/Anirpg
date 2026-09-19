@@ -152,9 +152,13 @@ module.exports = {
       return `  ${i+1}. *${s.name}*\n     ${desc}${eff}`;
     });
 
-    // Stat bonuses at this quality
+    // Stat bonuses at this quality — Push #74: these are now REALLY applied
+    // (ClassPower.ensureClassBonuses) and shown from the applied record.
+    try { require('../../rpg/utils/ClassPower').ensureClassBonuses(player); } catch (e) {}
+    const _appliedB = (player.classBonusApplied && player.classBonusApplied.bonuses) || null;
     const bonusLines = Object.entries(data.maxBonuses || {}).map(([stat, max]) => {
-      const actual = Math.floor(Math.max(0.10, quality/100) * max);
+      const _k = stat === 'hp' ? 'maxHp' : stat;
+      const actual = _appliedB && _appliedB[_k] != null ? _appliedB[_k] : Math.floor((quality/100) * max);
       const label  = stat === 'hp' ? 'HP' : stat === 'atk' ? 'ATK' : stat === 'def' ? 'DEF'
         : stat === 'speed' ? 'Speed' : stat === 'maxEnergy' ? 'Energy' : stat === 'magicPower' ? 'Magic Pwr' : stat;
       return `  ${actual > 0 ? '+' : ''}${actual} ${label}`;
@@ -170,7 +174,7 @@ module.exports = {
       text: [
         ...(pro ? [UI.PRO_BAR, `${data.emoji || '🎭'} *${player.name}'s CLASS GUIDE* 💎`, UI.PRO_BAR] : [`${data.emoji || '🎭'} *${player.name}'s CLASS GUIDE*`, UI.FREE_BAR]),
         ``,
-        `🎭 Class: *${player.class}*`,
+        `🎭 Class: *${typeof player.class === 'object' ? (player.class?.name || 'Unknown') : player.class}*`,
         `📜 Description: _${data.lore || data.description || 'A unique awakener class.'}_`,
         ``,
         `✨ Quality: *${quality}%* ${stars}`,
@@ -178,8 +182,9 @@ module.exports = {
         `📅 Awakened: ${awakenDate}`,
         ``,
         FRAME,
-        `📊 *STAT BONUSES:*`,
+        `📊 *STAT BONUSES* (applied to your stats, scaled by ${quality}% quality):`,
         ...bonusLines,
+        ...(() => { try { const pm = require('../../rpg/utils/ClassPower').passiveMultipliers(player); const parts = []; if (pm.atk) parts.push(`ATK +${pm.atk.toFixed(0)}%`); if (pm.def) parts.push(`DEF +${pm.def.toFixed(0)}%`); if (pm.crit) parts.push(`Crit +${pm.crit.toFixed(0)}%`); if (pm.dodge) parts.push(`Dodge +${pm.dodge.toFixed(0)}%`); if (pm.dmgTaken) parts.push(`Dmg taken ${pm.dmgTaken.toFixed(0)}%`); return parts.length ? [`🌀 Passives (live): ${parts.join(' · ')}`] : []; } catch (e) { return []; } })(),
         ``,
         FRAME,
         `⚡ *CLASS SKILLS:*`,

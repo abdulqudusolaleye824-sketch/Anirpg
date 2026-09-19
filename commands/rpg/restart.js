@@ -150,6 +150,19 @@ module.exports = {
 
     const targetArg = args[0]?.trim();
 
+    // Push #74: `/restart hard` — full process restart (Docker/PM2 bring it
+    // back). Use when the sockets are alive but everything is sluggish:
+    // clears every in-memory queue, timer and half-dead websocket at once.
+    if (targetArg === 'hard' || targetArg === 'process') {
+      db.pendingRestartNotice = { chatId, text: `✨ *Process restarted!* 🚀 Build \`${buildSha()}\` — fresh memory, fresh sockets.` };
+      saveDatabase();
+      await sendAck(chatId, `♻️ *Hard restart* — the whole process is going down and coming back (≈20–60s). Messages sent while it's down are ignored, not replayed.`, msg, sock);
+      setTimeout(() => { try { process.exit(0); } catch (e) {} }, 1500);
+      return;
+    }
+    // Every /restart: drop the pre-restart backlog + reset takeover/health state.
+    try { MultiSocketManager.markRestart?.(); } catch (e) {}
+
     // Push #55: `/restart health` — diagnosis without reconnecting anything.
     if (targetArg === 'health' || targetArg === 'status') {
       const rep = MultiSocketManager.botHealthReport?.() || [];

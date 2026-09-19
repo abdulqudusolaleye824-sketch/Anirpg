@@ -233,6 +233,7 @@ module.exports = {
           ...(pro ? [UI.PRO_BAR, `${rd.emoji} *RAID STARTED!* 💎`, UI.PRO_BAR] : [`${rd.emoji} *RAID STARTED!*`, UI.FREE_BAR]),
           `${rd.label} [${gate.id}]`,
           ...(gate.strengthPct ? [`💪 Strength: *${require('../../rpg/dungeons/GateManager').strengthText(gate.rank, gate.strengthPct)}*`] : []),
+          ...(gate.calibrated ? [`🎯 Severity: *${gate.calibrated.label}* ×${gate.calibrated.severity} — tuned to your party's power (${gate.calibrated.partyPower.toLocaleString()})${gate.calibrated.luck ? ` · 🍀 luck −${gate.calibrated.luck}%` : ''}`] : []),
           `🗺️ Floor 1/${gate.totalFloors}`,
           ``,
           `👥 *Party (${raid.members.length}):*`,
@@ -633,7 +634,7 @@ module.exports = {
       let _gDefGR = 0;
       try { _gDefGR = require('../../rpg/utils/GearSystem').getEquippedBonuses(player).def || 0; } catch (e) {}
       const def = (player.stats?.def || 5) + (player.weapon?.defense || 0) + _gDefGR + (PetCombat.defBonus(sender) || 0);
-      const dmg = _monCanAct.canAct ? GR.monsterDamage(target, def) : 0;
+      const dmg = _monCanAct.canAct ? GR.monsterDamage(target, def, player) : 0;
 
       // Push #71: status chance per move (was a flat 100% — every counter
       // stunned/burned/feared the hunter, which made recovery pointless).
@@ -663,7 +664,7 @@ module.exports = {
         await UCgFlow.playTurn(sock, chatId, {
           attacker: monAtk, defender: player,
           move: { name: monsterSkill.name, description: `A ferocious ${_skillBare} technique.`, cooldownMs: 0, effect: { type: monsterSkill.effect, chance: (monsterSkill.chance || 35), duration: 2 } }, // Push #71: no more 100% status
-          result: { damage: dmg, crit: false, missed: false },
+          result: { damage: dmg, crit: false, missed: dmg <= 0, dodged: dmg <= 0 },
           tag: `💢 *MONSTER COUNTER-ATTACK*`, gapMs: 600,
         });
       }
@@ -896,12 +897,13 @@ module.exports = {
         try { _gDefGR2 = require('../../rpg/utils/GearSystem').getEquippedBonuses(player).def || 0; } catch (e) {}
         const def = (player.stats?.def || 5) + (player.weapon?.defense || 0) + _gDefGR2;
         const bossAtk = Math.floor(GATE_RANKS[gate.rank].monsterRange[1] * 0.20);
-        const dmg = Math.max(10, bossAtk - Math.floor(def * 0.4));
+        // Push #74: boss hits go through the same dodge/passive/weaken maths.
+        const dmg = GR.monsterDamage({ atk: bossAtk, speed: 14, statusEffects: boss.statusEffects || [] }, def, player);
         const bossAtkW = { name: boss.name, stats: { hp: boss.hp, maxHp: boss.maxHp }, statusEffects: [] };
         await UCgBoss.playTurn(sock, chatId, {
           attacker: bossAtkW, defender: player,
           move: { name: 'Retaliation', description: 'The boss lashes out with overwhelming force.', cooldownMs: 0 },
-          result: { damage: dmg, crit: false, missed: false },
+          result: { damage: dmg, crit: false, missed: dmg <= 0, dodged: dmg <= 0 },
           tag: `💢 *BOSS COUNTER*`, gapMs: 600,
         });
         const heal = GR.lifeSteal(player, result.damage);

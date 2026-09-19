@@ -56,6 +56,16 @@ function migratePlayer(player) {
   }
   // Normalize player.class into the legacy object form so the rest of
   // this migration function (which reads .name) keeps working.
+  // Push #74: the canonical on-disk form is a STRING. The object form leaked
+  // to every display as "Class: [object Object]" because this ran on EVERY
+  // command. Work on a local view and always write the string back.
+  const _clsName = className;
+  const _finish = (p) => {
+    if (p && p.class && typeof p.class === 'object') p.class = p.class.name || _clsName;
+    // Push #74: class stat bonuses are guaranteed on every hunter (idempotent).
+    try { require('./ClassPower').ensureClassBonuses(p); } catch (e) {}
+    return p;
+  };
   if (typeof player.class === 'string') {
     player.class = { name: player.class };
   }
@@ -88,7 +98,7 @@ function migratePlayer(player) {
   // If player already has energy system, apply artifacts and return
   if (player.energyType && player.stats.energy !== undefined && player.stats.maxEnergy !== undefined) {
     applyArtifacts(player);
-    return player;
+    return _finish(player);
   }
 
   console.log(`Migrating player: ${player.name} (${player.class.name})`);
@@ -99,7 +109,7 @@ function migratePlayer(player) {
     // Preserve divine/special classes even if not yet loaded — do not overwrite
     if (player.class.name === 'Senku') {
       console.log('Senku class detected — skipping migration fallback');
-      return player;
+      return _finish(player);
     }
     console.error(`⚠️ Unknown class: ${player.class.name} - Using Warrior as fallback`);
     
@@ -113,7 +123,7 @@ function migratePlayer(player) {
     }
     
     applyArtifacts(player);
-    return player;
+    return _finish(player);
   }
 
   player.energyType = classDef.energyType;
@@ -174,7 +184,7 @@ function migratePlayer(player) {
   console.log(`✅ Migrated ${player.name}: ${player.energyType} (${player.stats.energy}/${player.stats.maxEnergy})`);
 
   migrateSkills(player);
-  return player;
+  return _finish(player);
 }
 
 // ✅ NEW: Apply all artifact stat bonuses

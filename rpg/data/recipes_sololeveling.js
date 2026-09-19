@@ -9,8 +9,11 @@
 const SL_RECIPES = {
   "Common": {
     "weapons": [
+      {"output":"Kobold Iron Blade","stats":{"atk":16,"bonus":16,"critChance":1},"durability":80,"materials":{"Kobold Iron Nail":3,"Bat Sonar Gland":1,"E-Rank Mana Essence":1},"set":"sololeveling"},
+      {"output":"Slime Acid Venom Edge","stats":{"atk":14,"bonus":14,"critChance":1},"durability":74,"materials":{"Slime Acid Sac":3,"Kobold Iron Nail":1,"E-Rank Mana Essence":1},"set":"sololeveling","onHit":{"type":"poison","chance":40,"duration":4}},
       {
         "output": "Centipede Blade",
+        "onHit": {"type": "poison", "chance": 35, "duration": 4},
         "stats": {
           "atk": 13,
           "bonus": 13,
@@ -41,6 +44,7 @@ const SL_RECIPES = {
       },
       {
         "output": "Centipede Greataxe",
+        "onHit": {"type": "poison", "chance": 35, "duration": 4},
         "stats": {
           "atk": 15,
           "bonus": 15,
@@ -101,6 +105,7 @@ const SL_RECIPES = {
       }
     ],
     "helmet": [
+      {"output":"Bat Sonar Helm","stats":{"def":8,"bonus":8,"hp":28},"durability":80,"materials":{"Bat Sonar Gland":3,"Boar Bristle Hide":1,"E-Rank Mana Essence":1},"set":"sololeveling"},
       {
         "output": "Lycan Pup Helm",
         "stats": {
@@ -187,6 +192,7 @@ const SL_RECIPES = {
       }
     ],
     "chest": [
+      {"output":"Boar Bristle Plate","stats":{"def":12,"bonus":12,"hp":42},"durability":90,"materials":{"Boar Bristle Hide":4,"Bat Sonar Gland":2,"E-Rank Mana Essence":2},"set":"sololeveling"},
       {
         "output": "Rat Plate",
         "stats": {
@@ -359,6 +365,7 @@ const SL_RECIPES = {
       }
     ],
     "boots": [
+      {"output":"Kobold Iron Treads","stats":{"def":5,"bonus":5,"speed":2},"durability":80,"materials":{"Kobold Iron Nail":2,"Slime Acid Sac":2,"E-Rank Mana Essence":1},"set":"sololeveling"},
       {
         "output": "Centipede Greaves",
         "stats": {
@@ -531,6 +538,7 @@ const SL_RECIPES = {
       }
     ],
     "accessories": [
+      {"output":"Slime Acid Charm","stats":{"atk":4,"def":4,"bonus":8,"critChance":2},"durability":80,"materials":{"Slime Acid Sac":2,"Boar Bristle Hide":2,"E-Rank Mana Essence":1},"set":"sololeveling"},
       {
         "output": "Kobold Ring",
         "stats": {
@@ -589,6 +597,7 @@ const SL_RECIPES = {
       },
       {
         "output": "Centipede Talisman",
+        "onHit": {"type": "poison", "chance": 35, "duration": 4},
         "stats": {
           "atk": 2,
           "critChance": 2
@@ -603,6 +612,7 @@ const SL_RECIPES = {
       },
       {
         "output": "Centipede Ring",
+        "onHit": {"type": "poison", "chance": 35, "duration": 4},
         "stats": {
           "atk": 2,
           "critChance": 2
@@ -619,6 +629,7 @@ const SL_RECIPES = {
     "artifacts": [
       {
         "output": "Spider Core",
+        "onHit": {"type": "poison", "chance": 35, "duration": 4},
         "stats": {
           "atk": 4,
           "def": 3,
@@ -694,6 +705,7 @@ const SL_RECIPES = {
       },
       {
         "output": "Centipede Core",
+        "onHit": {"type": "poison", "chance": 35, "duration": 4},
         "stats": {
           "atk": 4,
           "def": 3,
@@ -711,6 +723,8 @@ const SL_RECIPES = {
   },
   "Uncommon": {
     "weapons": [
+      {"output":"Hobgoblin War Blade","stats":{"atk":38,"bonus":38,"critChance":1},"durability":125,"materials":{"Hobgoblin War Paint":3,"Lycan Moon Claw":1,"D-Rank Mana Essence":1},"set":"sololeveling"},
+      {"output":"Kasaka Venom Venom Edge","stats":{"atk":36,"bonus":36,"critChance":1},"durability":119,"materials":{"Kasaka Venom Fang":3,"Hobgoblin War Paint":1,"D-Rank Mana Essence":1},"set":"sololeveling","onHit":{"type":"poison","chance":40,"duration":4}},
       {
         "output": "Harpy Blade",
         "stats": {
@@ -758,6 +772,7 @@ const SL_RECIPES = {
       },
       {
         "output": "Kasaka Warstaff",
+        "onHit": {"type": "poison", "chance": 35, "duration": 4},
         "stats": {
           "atk": 35,
           "bonus": 35,
@@ -803,6 +818,7 @@ const SL_RECIPES = {
       }
     ],
     "helmet": [
+      {"output":"Lycan Moon Helm","stats":{"def":21,"bonus":21,"hp":72},"durability":125,"materials":{"Lycan Moon Claw":3,"Harpy Wind Talon":1,"D-Rank Mana Essence":1},"set":"sololeveling"},
       {
         "output": "Kasaka Helm",
         "stats": {
@@ -889,6 +905,7 @@ const SL_RECIPES = {
       }
     ],
     "chest": [
+      {"output":"Harpy Wind Plate","stats":{"def":32,"bonus":32,"hp":108},"durability":135,"materials":{"Harpy Wind Talon":4,"Lycan Moon Claw":2,"D-Rank Mana Essence":2},"set":"sololeveling"},
       {
         "output": "Orc Plate",
         "stats": {
@@ -1061,6 +1078,7 @@ const SL_RECIPES = {
       }
     ],
     "boots": [
+      {"output":"Hobgoblin War Treads","stats":{"def":14,"bonus":14,"speed":3},"durability":125,"materials":{"Hobgoblin War Paint":2,"Kasaka Venom Fang":2,"D-Rank Mana Essence":1},"set":"sololeveling"},
       {
         "output": "Ice Wolf Greaves",
         "stats": {
@@ -1233,6 +1251,7 @@ const SL_RECIPES = {
       }
     ],
     "accessories": [
+      {"output":"Kasaka Venom Charm","stats":{"atk":10,"def":10,"bonus":21,"critChance":2},"durability":125,"materials":{"Kasaka Venom Fang":2,"Harpy Wind Talon":2,"D-Rank Mana Essence":1},"set":"sololeveling"},
       {
         "output": "Lycan Steel Ring",
         "stats": {
@@ -1277,6 +1296,7 @@ const SL_RECIPES = {
       },
       {
         "output": "Kasaka Band",
+        "onHit": {"type": "poison", "chance": 35, "duration": 4},
         "stats": {
           "atk": 5,
           "critChance": 3
@@ -1413,6 +1433,8 @@ const SL_RECIPES = {
   },
   "Rare": {
     "weapons": [
+      {"output":"Naga Coral Blade","stats":{"atk":72,"bonus":72,"critChance":2},"durability":180,"materials":{"Naga Coral Scale":3,"Cerberus Ember Fang":1,"C-Rank Mana Essence":1},"set":"sololeveling"},
+      {"output":"Gargoyle Sky Venom Edge","stats":{"atk":70,"bonus":70,"critChance":2},"durability":174,"materials":{"Gargoyle Sky Stone":3,"Naga Coral Scale":1,"C-Rank Mana Essence":1},"set":"sololeveling","onHit":{"type":"poison","chance":40,"duration":4}},
       {
         "output": "Frost Wolf Blade",
         "stats": {
@@ -1505,6 +1527,7 @@ const SL_RECIPES = {
       }
     ],
     "helmet": [
+      {"output":"Cerberus Ember Helm","stats":{"def":42,"bonus":42,"hp":140},"durability":180,"materials":{"Cerberus Ember Fang":3,"Ant Warrior Plate":1,"C-Rank Mana Essence":1},"set":"sololeveling"},
       {
         "output": "High Orc Helm",
         "stats": {
@@ -1591,6 +1614,7 @@ const SL_RECIPES = {
       }
     ],
     "chest": [
+      {"output":"Ant Warrior Plate","stats":{"def":63,"bonus":63,"hp":210},"durability":190,"materials":{"Ant Warrior Plate":4,"Cerberus Ember Fang":2,"C-Rank Mana Essence":2},"set":"sololeveling"},
       {
         "output": "Frost Wolf Plate",
         "stats": {
@@ -1763,6 +1787,7 @@ const SL_RECIPES = {
       }
     ],
     "boots": [
+      {"output":"Naga Coral Treads","stats":{"def":28,"bonus":28,"speed":4},"durability":180,"materials":{"Naga Coral Scale":2,"Gargoyle Sky Stone":2,"C-Rank Mana Essence":1},"set":"sololeveling"},
       {
         "output": "Frost Wolf Greaves",
         "stats": {
@@ -1935,6 +1960,7 @@ const SL_RECIPES = {
       }
     ],
     "accessories": [
+      {"output":"Gargoyle Sky Charm","stats":{"atk":21,"def":21,"bonus":42,"critChance":2},"durability":180,"materials":{"Gargoyle Sky Stone":2,"Ant Warrior Plate":2,"C-Rank Mana Essence":1},"set":"sololeveling"},
       {
         "output": "Ant Ring",
         "stats": {
@@ -2007,6 +2033,7 @@ const SL_RECIPES = {
       },
       {
         "output": "Kasaka Venom Ring",
+        "onHit": {"type": "poison", "chance": 35, "duration": 4},
         "stats": {
           "atk": 11,
           "critChance": 4
@@ -2115,6 +2142,8 @@ const SL_RECIPES = {
   },
   "Epic": {
     "weapons": [
+      {"output":"Yeti Frost Blade","stats":{"atk":122,"bonus":122,"critChance":4},"durability":240,"materials":{"Yeti Frost Heart":3,"Wyvern Storm Scale":1,"B-Rank Mana Essence":1},"set":"sololeveling"},
+      {"output":"Demon Blood Venom Edge","stats":{"atk":120,"bonus":120,"critChance":4},"durability":234,"materials":{"Demon Blood Ruby":3,"Yeti Frost Heart":1,"B-Rank Mana Essence":1},"set":"sololeveling","onHit":{"type":"poison","chance":40,"duration":4}},
       {
         "output": "Wyvern Wing Blade",
         "stats": {
@@ -2207,6 +2236,7 @@ const SL_RECIPES = {
       }
     ],
     "helmet": [
+      {"output":"Wyvern Storm Helm","stats":{"def":72,"bonus":72,"hp":240},"durability":240,"materials":{"Wyvern Storm Scale":3,"Titan Lizard Bone":1,"B-Rank Mana Essence":1},"set":"sololeveling"},
       {
         "output": "Iron Golem Helm",
         "stats": {
@@ -2293,6 +2323,7 @@ const SL_RECIPES = {
       }
     ],
     "chest": [
+      {"output":"Titan Lizard Plate","stats":{"def":108,"bonus":108,"hp":360},"durability":250,"materials":{"Titan Lizard Bone":4,"Wyvern Storm Scale":2,"B-Rank Mana Essence":2},"set":"sololeveling"},
       {
         "output": "Ant Soldier Plate",
         "stats": {
@@ -2465,6 +2496,7 @@ const SL_RECIPES = {
       }
     ],
     "boots": [
+      {"output":"Yeti Frost Treads","stats":{"def":48,"bonus":48,"speed":6},"durability":240,"materials":{"Yeti Frost Heart":2,"Demon Blood Ruby":2,"B-Rank Mana Essence":1},"set":"sololeveling"},
       {
         "output": "Yeti Greaves",
         "stats": {
@@ -2637,6 +2669,7 @@ const SL_RECIPES = {
       }
     ],
     "accessories": [
+      {"output":"Demon Blood Charm","stats":{"atk":36,"def":36,"bonus":72,"critChance":2},"durability":240,"materials":{"Demon Blood Ruby":2,"Titan Lizard Bone":2,"B-Rank Mana Essence":1},"set":"sololeveling"},
       {
         "output": "Ant Mage Ring",
         "stats": {
@@ -2817,6 +2850,8 @@ const SL_RECIPES = {
   },
   "Legendary": {
     "weapons": [
+      {"output":"Igris Crimson Blade","stats":{"atk":202,"bonus":202,"critChance":6},"durability":320,"materials":{"Igris Crimson Plume":3,"Kargalgan Shaman Bone":1,"A-Rank Mana Essence":1},"set":"sololeveling"},
+      {"output":"Vulcan Molten Venom Edge","stats":{"atk":200,"bonus":200,"critChance":6},"durability":314,"materials":{"Vulcan Molten Core":3,"Igris Crimson Plume":1,"A-Rank Mana Essence":1},"set":"sololeveling","onHit":{"type":"poison","chance":40,"duration":4}},
       {
         "output": "Elder Wyvern Blade",
         "stats": {
@@ -2909,6 +2944,7 @@ const SL_RECIPES = {
       }
     ],
     "helmet": [
+      {"output":"Kargalgan Shaman Helm","stats":{"def":120,"bonus":120,"hp":400},"durability":320,"materials":{"Kargalgan Shaman Bone":3,"Elder Wyvern Eye":1,"A-Rank Mana Essence":1},"set":"sololeveling"},
       {
         "output": "Knight Remnant Helm",
         "stats": {
@@ -2995,6 +3031,7 @@ const SL_RECIPES = {
       }
     ],
     "chest": [
+      {"output":"Elder Wyvern Plate","stats":{"def":180,"bonus":180,"hp":600},"durability":330,"materials":{"Elder Wyvern Eye":4,"Kargalgan Shaman Bone":2,"A-Rank Mana Essence":2},"set":"sololeveling"},
       {
         "output": "Frost Giant Plate",
         "stats": {
@@ -3167,6 +3204,7 @@ const SL_RECIPES = {
       }
     ],
     "boots": [
+      {"output":"Igris Crimson Treads","stats":{"def":80,"bonus":80,"speed":8},"durability":320,"materials":{"Igris Crimson Plume":2,"Vulcan Molten Core":2,"A-Rank Mana Essence":1},"set":"sololeveling"},
       {
         "output": "Vulcan Greaves",
         "stats": {
@@ -3339,6 +3377,7 @@ const SL_RECIPES = {
       }
     ],
     "accessories": [
+      {"output":"Vulcan Molten Charm","stats":{"atk":60,"def":60,"bonus":120,"critChance":2},"durability":320,"materials":{"Vulcan Molten Core":2,"Elder Wyvern Eye":2,"A-Rank Mana Essence":1},"set":"sololeveling"},
       {
         "output": "Vulcan Ring",
         "stats": {
@@ -3519,6 +3558,8 @@ const SL_RECIPES = {
   },
   "Mythic": {
     "weapons": [
+      {"output":"Beru Royal Blade","stats":{"atk":342,"bonus":342,"critChance":9},"durability":420,"materials":{"Beru Royal Chitin":3,"Kamish Void Fang":1,"S-Rank Mana Essence":1},"set":"sololeveling"},
+      {"output":"Antares Star Venom Edge","stats":{"atk":340,"bonus":340,"critChance":9},"durability":414,"materials":{"Antares Star Scale":3,"Beru Royal Chitin":1,"S-Rank Mana Essence":1},"set":"sololeveling","onHit":{"type":"poison","chance":40,"duration":4}},
       {
         "output": "Monarch Shadow Blade",
         "stats": {
@@ -3611,6 +3652,7 @@ const SL_RECIPES = {
       }
     ],
     "helmet": [
+      {"output":"Kamish Void Helm","stats":{"def":204,"bonus":204,"hp":680},"durability":420,"materials":{"Kamish Void Fang":3,"Monarch Abyss Crystal":1,"S-Rank Mana Essence":1},"set":"sololeveling"},
       {
         "output": "Destruction Beast Helm",
         "stats": {
@@ -3697,6 +3739,7 @@ const SL_RECIPES = {
       }
     ],
     "chest": [
+      {"output":"Monarch Abyss Plate","stats":{"def":306,"bonus":306,"hp":1020},"durability":430,"materials":{"Monarch Abyss Crystal":4,"Kamish Void Fang":2,"S-Rank Mana Essence":2},"set":"sololeveling"},
       {
         "output": "Ant King Plate",
         "stats": {
@@ -3869,6 +3912,7 @@ const SL_RECIPES = {
       }
     ],
     "boots": [
+      {"output":"Beru Royal Treads","stats":{"def":136,"bonus":136,"speed":13},"durability":420,"materials":{"Beru Royal Chitin":2,"Antares Star Scale":2,"S-Rank Mana Essence":1},"set":"sololeveling"},
       {
         "output": "Ant King Greaves",
         "stats": {
@@ -4041,6 +4085,7 @@ const SL_RECIPES = {
       }
     ],
     "accessories": [
+      {"output":"Antares Star Charm","stats":{"atk":102,"def":102,"bonus":204,"critChance":2},"durability":420,"materials":{"Antares Star Scale":2,"Monarch Abyss Crystal":2,"S-Rank Mana Essence":1},"set":"sololeveling"},
       {
         "output": "Destruction Beast Ring",
         "stats": {
@@ -4099,6 +4144,7 @@ const SL_RECIPES = {
       },
       {
         "output": "Plague Queen Talisman",
+        "onHit": {"type": "poison", "chance": 35, "duration": 4},
         "stats": {
           "atk": 46,
           "critChance": 16

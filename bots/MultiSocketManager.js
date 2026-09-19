@@ -63,6 +63,48 @@ const pairingSessions = {};
 // Push #64 — /link <bot> (owner DM). Throttle: one deliberate pairing start per
 // personality per 30s, so a double-tap can't burn QR refs back-to-back.
 const _linkKickAt = {};
+const MAX_MSG_AGE_MS = Number(process.env.MAX_MSG_AGE_MS || 90 * 1000);
+let _staleDropped = 0;
+// Push #74: /link from a DM — password gate + QR delivered INTO the DM.
+// _linkPending[senderJid] = { targetKey, sockKey, at } while we wait for the password.
+// _qrSubscribers[targetKey] = [{ sockKey, jid, seq, until }] receive each new QR as an image.
+const _linkPending = {};
+const _qrSubscribers = {};
+const LINK_PASSWORD = String(process.env.LINK_PASSWORD || process.env.BOT_LINK_PASSWORD || 'astra2026');
+const LINK_SUB_MS = 5 * 60 * 1000;
+function subscribeQr(targetKey, sockKey, jid) {
+  const list = _qrSubscribers[targetKey] || (_qrSubscribers[targetKey] = []);
+  const ex = list.find(x => x.jid === jid);
+  if (ex) { ex.sockKey = sockKey; ex.until = Date.now() + LINK_SUB_MS; return; }
+  list.push({ sockKey, jid, seq: 0, until: Date.now() + LINK_SUB_MS });
+}
+async function _pushQrToSubscribers(targetKey, qr, seq) {
+  const list = _qrSubscribers[targetKey];
+  if (!list || !list.length) return;
+  let png = null;
+  try { png = await QRCode.toBuffer(qr, { width: 480, margin: 2, errorCorrectionLevel: 'M', color: { dark: '#000000', light: '#ffffff' } }); } catch (e) { return; }
+  const name = PersonalityManager.getDisplayName(targetKey);
+  for (const sub of list.slice()) {
+    if (Date.now() > sub.until) { list.splice(list.indexOf(sub), 1); continue; }
+    if (sub.seq === seq) continue;
+    sub.seq = seq;
+    const sk = botSockets[sub.sockKey] || botSockets[getFirstUsableSocketKey()];
+    if (!sk) continue;
+    try {
+      await sk.sendMessage(sub.jid, { image: png, caption:
+        `🔗 *${name} — PAIRING QR*\n\nWhatsApp → Linked devices → Link a device → scan THIS.\n⏱ Valid ~${Math.round(QR_VALID_MS / 1000)}s — a fresh one arrives automatically. Always scan the NEWEST.` });
+    } catch (e) {}
+  }
+}
+function _notifyLinkSubscribers(targetKey, text) {
+  const list = _qrSubscribers[targetKey];
+  if (!list) return;
+  for (const sub of list) {
+    const sk = botSockets[sub.sockKey] || botSockets[getFirstUsableSocketKey()];
+    if (sk) { try { sk.sendMessage(sub.jid, { text }).catch(() => {}); } catch (e) {} }
+  }
+  delete _qrSubscribers[targetKey];
+}
 
 // Push #57 — a Baileys QR is a short-lived *pairing ref*, not a picture. Once
 // its ref expires on WhatsApp's servers the phone answers any scan with
@@ -207,9 +249,13 @@ function markSendResult(key, ok, err) {
   if (!key) return;
   const h = _sendHealth[key] || (_sendHealth[key] = { fail: 0, lastFailAt: 0, lastOkAt: 0, lastErr: null });
   if (ok) { h.fail = 0; h.lastOkAt = Date.now(); h.lastErr = null; return; }
+  const m = String(err?.message || err || '');
+  // Push #74: rate-overlimit / timeouts are TRANSIENT — they must never mark a
+  // healthy bot "unusable" (that is what handed groups to the wrong bot).
+  if (/rate|overlimit|timed? ?out|429/i.test(m)) return;
   h.fail = (h.fail || 0) + 1;
   h.lastFailAt = Date.now();
-  h.lastErr = String(err?.message || err || '').slice(0, 160);
+  h.lastErr = m.slice(0, 160);
 }
 
 function _wsReady(key) {
@@ -245,13 +291,8 @@ const RECONNECT_MAX_MS = Math.min(6 * 3600000, Number(process.env.BOT_RECONNECT_
 function reconnectPolicy({ code, attempt, restartRequired }) {
   const n = Math.max(1, Number(attempt) || 1);
   const label = (ms) => (ms < 60000 ? `${Math.max(1, Math.round(ms / 1000))}s` : `${Math.round(ms / 60000)} min`);
-  if (Number(code) === 403) {
-    const backoffMs = Math.min(6 * 3600000, 300000 * Math.pow(2, Math.min(5, n - 1)));
-    return {
-      blocked: true, code: 403, backoffMs, backoffLabel: label(backoffMs),
-      reason: 'WhatsApp refused this number with 403 forbidden — a block, not a connection problem; re-scanning a QR cannot fix it. Often it is a TEMPORARY penalty after a burst of failed attempts: the bot now backs off on its own (5 min → hours) and retries automatically — the QR appears the moment the block lifts. If it persists for a full day, on that phone: WhatsApp → Settings → Help → Request a review.',
-    };
-  }
+  // Push #74: the 403 "account blocked" back-off system is SCRAPPED. A 403 is
+  // now a normal close: same short backoff as any other code, re-pairs normally.
   if (restartRequired) return { blocked: false, backoffMs: 1200, backoffLabel: label(1200) };
   const backoffMs = Math.min(RECONNECT_MAX_MS, n * 2000 + 1000);
   return { blocked: false, backoffMs, backoffLabel: label(backoffMs) };
@@ -299,6 +340,15 @@ function startStallSweeper(ctx) {
   try { _stallSweeper.unref?.(); } catch (e) {}
 }
 
+// Push #74: /restart hooks — drop everything queued before the restart and
+// reset per-group takeover state so groups answer through their own bot.
+let _ignoreBeforeTs = 0;
+function markRestart() {
+  _ignoreBeforeTs = Date.now();
+  try { _takeoverAt.clear(); } catch (e) {}
+  for (const k of Object.keys(_sendHealth)) delete _sendHealth[k];
+  return _ignoreBeforeTs;
+}
 function clearSendHealth(key) {
   if (key) { delete _sendHealth[key]; return; }
   for (const k of Object.keys(_sendHealth)) delete _sendHealth[k];
@@ -473,18 +523,15 @@ function resolveResponderKey(chatId, isGroup) {
   try { present = (PersonalityManager.getPresentBots(chatId) || []).filter(isBotUsable); } catch (e) {}
   const alt = present.sort()[0] || getFirstUsableSocketKey();
 
-  if (alt && isGroup && alt !== raw && (Date.now() - (_takeoverAt.get(chatId) || 0)) > TAKEOVER_COOLDOWN_MS) {
+  // Push #74: a stand-in answers TEMPORARILY only. The group's chosen bot is
+  // never overwritten — the moment it is usable again it takes back over.
+  // (Persisting the takeover is what left Mikasa "stuck" in other bots' GCs.)
+  if (raw && present.length && !present.includes(raw) && (Date.now() - (_takeoverAt.get(chatId) || 0)) > TAKEOVER_COOLDOWN_MS) {
     _takeoverAt.set(chatId, Date.now());
-    // Only persist when the new bot is verifiably in the group.
-    if (present.includes(alt)) {
-      try {
-        if (typeof PersonalityManager.switchBot === 'function') PersonalityManager.switchBot(chatId, alt);
-        console.log(`🔀 [${chatId.split('@')[0]}] active bot ${raw || 'none'} is not answering → handed the group to *${alt}*`);
-      } catch (e) {}
-    } else {
-      console.log(`🔀 [${chatId.split('@')[0]}] active bot ${raw || 'none'} is not answering → answering via *${alt}* (no linked bot in this group is verified present)`);
-    }
+    console.log(`🔀 [${chatId.split('@')[0]}] active bot ${raw} is not answering → answering via *${alt}* (temporary, not persisted)`);
   }
+  if (!raw) return alt;              // group never picked a bot → first usable answers
+  return present.length ? alt : null; // stand-in only if a usable bot is actually IN the group
   return alt;
 }
 
@@ -783,9 +830,7 @@ async function startAstraLink(personalityKey, authDir, getDatabase, saveDatabase
     // the code being scanned died mid-scan ("Couldn't log in… scan again").
     // A number that is 403-blocked cannot complete a logout either, so skip
     // the wait for it and go straight to the (reported) blocked retry.
-    if ((pairingSessions[personalityKey] || {}).status !== 'blocked') {
-      try { await _releaseOldSlotBeforePairing(authDir, personalityKey); } catch (e) {}
-    }
+    try { await _releaseOldSlotBeforePairing(authDir, personalityKey); } catch (e) {}
     // Clear old un-registered session state so pre-keys match fresh pairing code
     if (fs.existsSync(botAuthDir)) fs.rmSync(botAuthDir, { recursive: true, force: true });
     // Also clear persisted backups (disk + legacy DB) so fresh pairing starts clean
@@ -1131,14 +1176,47 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
           return null;
         }
       } catch (e) {}
-      let _res;
+      // Push #74: a NON-ACTIVE bot must never post in a group that has its
+      // own bot. Redirect to the group's bot (or a usable bot that is present)
+      // — the message still lands, just from the right personality.
       try {
-        _res = await _rawSend(jid, content, options);
-        try { markSendResult(personalityKey, true); } catch (e) {}
-      } catch (e) {
-        // A failing send is the only reliable proof a "connected" bot is mute.
-        try { markSendResult(personalityKey, false, e); } catch (__) {}
-        throw e;
+        if (String(jid || '').endsWith('@g.us') && !(options && options.asSelf) && !(content && (content.delete || content.react))) {
+          const act = PersonalityManager.getActiveBot(jid);
+          if (act && act !== personalityKey && isBotUsable(act) && botSockets[act]) {
+            return await botSockets[act].sendMessage(jid, content, options);
+          }
+          if (!act) {
+            let present = [];
+            try { present = (PersonalityManager.getPresentBots(jid) || []); } catch (e) {}
+            if (present.length && !present.includes(personalityKey)) {
+              const alt = present.filter(isBotUsable).sort()[0];
+              if (alt && botSockets[alt]) return await botSockets[alt].sendMessage(jid, content, options);
+            }
+          }
+        }
+      } catch (e) {}
+      if (options && options.asSelf) { options = { ...options }; delete options.asSelf; }
+      let _res;
+      // Push #74: WhatsApp rate-overlimit is handled HERE, once, for every
+      // send in the bot: back off and retry (1.5s → 3s → 6s → 12s); if it still
+      // will not go, resolve SILENTLY — nothing about it ever reaches a chat.
+      const _isRate = (e) => /rate-overlimit|overlimit|429/i.test(String(e && e.message || e || ''));
+      const _delays = [1500, 3000, 6000, 12000];
+      for (let _i = 0; ; _i++) {
+        try {
+          _res = await _rawSend(jid, content, options);
+          try { markSendResult(personalityKey, true); } catch (e) {}
+          break;
+        } catch (e) {
+          if (_isRate(e)) {
+            if (_i < _delays.length) { await new Promise(r => setTimeout(r, _delays[_i])); continue; }
+            console.warn(`⏳ [${personalityKey}] rate-overlimit persisted → dropped one send to ${jid} silently`);
+            return { key: { remoteJid: jid, id: null, fromMe: true }, rateDropped: true };
+          }
+          // A failing send is the only reliable proof a "connected" bot is mute.
+          try { markSendResult(personalityKey, false, e); } catch (__) {}
+          throw e;
+        }
       }
       try { _recordSentId(_res?.key?.id); } catch (e) {}
       return _res;
@@ -1189,6 +1267,7 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
         const termQr = await QRCode.toString(qr, { type: 'terminal', small: true, margin: 2 });
         console.log(`\n🔗 AstraLink [${displayName}] — PAIRING QR (screenshot this, then scan it with the bot's phone):\n   ⏱ a fresh one prints every ${Math.round(QR_VALID_MS / 1000)}s — ALWAYS scan the NEWEST one:\n${termQr}\n`);
       } catch (e) { console.error('Terminal QR render error:', e.message); }
+      try { _pushQrToSubscribers(personalityKey, qr, pairingSessions[personalityKey].qrSeq).catch(() => {}); } catch (e) {}
       }
 
       if (pairingMode === 'code' && pairingPhone && !pairingCodeRequested && !sock.authState.creds.registered) {
@@ -1246,26 +1325,11 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
         const policy = reconnectPolicy({ code, attempt, restartRequired });
         const backoffMs = policy.backoffMs;
 
-        if (policy.blocked) {
-          // Say it once, loudly, and put it where the UI and /health can show it —
-          // otherwise the operator keeps scanning QR codes for a number that is
-          // blocked server-side and blames the linking page.
-          pairingSessions[personalityKey] = {
-            ...(pairingSessions[personalityKey] || {}),
-            status: 'blocked',
-            blocked: { code: 403, reason: policy.reason, at: Date.now(), attempts: attempt },
-            error: policy.reason,
-          };
-          if (attempt <= 2 || attempt % 20 === 0) {
-            console.error(`🚫 AstraLink [${displayName}] ${policy.reason} Retrying in ${policy.backoffLabel} (attempt #${attempt}).`);
-          }
-        } else {
-          if ((pairingSessions[personalityKey] || {}).status === 'blocked') {
-            delete pairingSessions[personalityKey].blocked;
-            pairingSessions[personalityKey].status = 'connecting';
-          }
-          console.log(`📡 AstraLink [${displayName}] connection closed (code ${code || 'unknown'}). Reconnecting in ${policy.backoffLabel} (attempt #${attempt})…`);
+        if ((pairingSessions[personalityKey] || {}).status === 'blocked') {
+          delete pairingSessions[personalityKey].blocked;
+          pairingSessions[personalityKey].status = 'connecting';
         }
+        console.log(`📡 AstraLink [${displayName}] connection closed (code ${code || 'unknown'}). Reconnecting in ${policy.backoffLabel} (attempt #${attempt})…`);
 
         const nextOpts = (credsRegistered || fs.existsSync(path.join(botAuthDir, 'creds.json')))
           ? { ...options, pairingMode: null, pairingPhone: null }
@@ -1333,6 +1397,7 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
         } catch (_) {}
       }
     } else if (connection === 'open') {
+      try { _notifyLinkSubscribers(personalityKey, `✅ *${displayName}* is linked and online!`); } catch (e) {}
       reconnectAttempts[personalityKey] = 0; // Reset reconnect count on successful connection!
       _loggedOut.delete(personalityKey);
       _logout401s[personalityKey] = 0;        // a clean connect clears the 401 streak
@@ -1441,6 +1506,19 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
     if (!msg.message || msg.key.fromMe) return;
     // Own-send echo (a SIBLING bot's message arriving back): never process.
     if (msg.key?.id && _wasSentByUs(msg.key.id)) return;
+    // Push #74: STALE BACKLOG GUARD. After a reconnect WhatsApp replays the
+    // offline queue as fresh 'notify' upserts — the bot then re-answered
+    // commands sent HOURS ago, slowly, while ignoring new ones. Anything older
+    // than MAX_MSG_AGE_MS is dropped on the floor (never a command, never AI).
+    try {
+      const tsRaw = msg.messageTimestamp;
+      const ts = Number(typeof tsRaw === 'object' && tsRaw !== null ? (tsRaw.low ?? tsRaw.toNumber?.() ?? 0) : tsRaw) * 1000;
+      if (ts > 0 && (Date.now() - ts > MAX_MSG_AGE_MS || ts < _ignoreBeforeTs)) {
+        _staleDropped++;
+        if (_staleDropped % 25 === 1) console.log(`🕰️ [${personalityKey}] dropped stale message(s) from backlog (${Math.round((Date.now() - ts) / 60000)} min old, total ${_staleDropped})`);
+        return;
+      }
+    } catch (e) {}
 
     // Unwrap Baileys message containers (ephemeralMessage, viewOnceMessage, documentWithCaptionMessage, editedMessage, etc.)
     const realMessage = unwrapMessage(msg);
@@ -1575,7 +1653,7 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
         // switch instead, so the escape hatch never depends on the broken bot.
         isTargetMentionedBot = isBotUsable(resolvedTarget)
           ? (personalityKey === resolvedTarget)
-          : (personalityKey === responderKey);
+          : (personalityKey === (responderKey || getFirstUsableSocketKey()));
       }
     }
 
@@ -1586,11 +1664,9 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
       if (isStopped) {
         isActive = false;
       } else {
-        // /hi — single handler orchestrates chorus for all present bots (fixes double-reply)
-        // Only the active bot (or first online if no active) handles /hi and then broadcasts via sendHiChorus
-        const firstKey = getFirstOnlineSocketKey();
-        const hiHandler = isOnlineActive ? rawActiveKey : firstKey;
-        isActive = (personalityKey === hiHandler);
+        // Push #74: /hi is answered by EVERY bot individually (each socket
+        // handles its own greeting; botpersonality /hi is per-bot now).
+        isActive = !!sock?.user?.id;
       }
     } else if (isCommand && (commandName === 'start' || commandName === 'switch')) {
       if (resolvedTarget) {
@@ -1686,23 +1762,54 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
       } catch (e) { /* best effort */ }
     }
 
-    // ── Push #64: /link <bot> — the AstraLink page is retired; pairing is now
-    // an OWNER-ONLY DM command. The QR prints in the CONSOLE (pm2 logs / Oracle
-    // terminal) and rotates every QR_VALID_MS. This runs BEFORE the RPG
-    // dispatcher so /link never falls through to a game command.
+    // ── Push #74: /link <bot> from a DM — anyone with the LINK PASSWORD.
+    // Flow: /link <bot> → bot asks for the password → user replies with it →
+    // pairing starts and every fresh QR is sent INTO this DM as an image
+    // (same QR that prints in the terminal).
+    const _runLinkFlow = async (targetKey) => {
+      const tName = PersonalityManager.getDisplayName(targetKey);
+      if (botSockets[targetKey]?.user?.id) {
+        try { await sock.sendMessage(chatId, { text: `✅ ${tName} is already linked and online — no QR needed.` }, { quoted: msg }); } catch (e) {}
+        return;
+      }
+      subscribeQr(targetKey, personalityKey, chatId);
+      const sess = pairingSessions[targetKey];
+      const sinceLink = Date.now() - (_linkKickAt[targetKey] || 0);
+      if (sinceLink < 30000 && sess && sess.qr && isPlausibleQr(sess.qr)) {
+        try { await sock.sendMessage(chatId, { text: `🔗 Pairing for *${tName}* is already running — sending you its QR now.` }, { quoted: msg }); } catch (e) {}
+        try { await _pushQrToSubscribers(targetKey, sess.qr, sess.qrSeq); } catch (e) {}
+        return;
+      }
+      _linkKickAt[targetKey] = Date.now();
+      try { await sock.sendMessage(chatId, { text: `🔗 Starting pairing for *${tName}*… the QR image arrives here in a few seconds (fresh one every ${Math.round(QR_VALID_MS / 1000)}s for 5 min).` }, { quoted: msg }); } catch (e) {}
+      try {
+        await startAstraLink(targetKey, authDir, getDatabase, saveDatabase, { pairingMode: 'qr', forceRelink: true });
+      } catch (e) {
+        console.error(`❌ /link [${targetKey}] failed:`, e.message);
+        try { await sock.sendMessage(chatId, { text: `❌ Could not start pairing for ${tName}: ${e.message}` }, { quoted: msg }); } catch (_) {}
+      }
+    };
+    if (!isGroup && _linkPending[sender] && !isCommand && messageText.trim()) {
+      const pend = _linkPending[sender];
+      delete _linkPending[sender];
+      if (Date.now() - pend.at > 2 * 60 * 1000) {
+        try { await sock.sendMessage(chatId, { text: '⏳ That /link request expired. Send /link <bot> again.' }, { quoted: msg }); } catch (e) {}
+        return;
+      }
+      if (messageText.trim() !== LINK_PASSWORD) {
+        try { await sock.sendMessage(chatId, { text: '❌ Wrong password.' }, { quoted: msg }); } catch (e) {}
+        return;
+      }
+      await _runLinkFlow(pend.targetKey);
+      return;
+    }
     if (!isGroup && isCommand && commandName === 'link') {
-      let isOwner = false;
-      try { isOwner = Perms.isBotOwner(db, sender); } catch (e) {}
-      if (!isOwner) return; // not the owner — never acknowledge
       const parts = messageText.slice(config.prefix.length).trim().split(/\s+/);
       const targetArg = (parts[1] || '').toLowerCase();
       if (!targetArg) {
-        const list = PersonalityManager.getAllPersonalities()
-          .map(k => `/${config.prefix}link ${k}`).join('  ');
+        const list = PersonalityManager.getAllPersonalities().map(k => `/link ${k}`).join('  ');
         try { await sock.sendMessage(chatId, { text:
-          `🔗 *Link a bot's number (owner only)*\n\n${list}\n\n` +
-          `The QR prints in the CONSOLE (pm2 logs / Oracle terminal) within a few ` +
-          `seconds — screenshot the NEWEST one and scan it with the bot's phone.`
+          `🔗 *Link a bot's number*\n\n${list}\n\nYou'll be asked for the link password, then the QR is sent to you here.`
         }, { quoted: msg }); } catch (e) {}
         return;
       }
@@ -1713,46 +1820,14 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
         }, { quoted: msg }); } catch (e) {}
         return;
       }
-      const sinceLink = Date.now() - (_linkKickAt[targetKey] || 0);
-      if (sinceLink < 30000) {
-        try { await sock.sendMessage(chatId, { text:
-          `⏳ ${PersonalityManager.getDisplayName(targetKey)}: a pairing attempt just started — ` +
-          `its QR is in the console already (or within a few seconds).`
-        }, { quoted: msg }); } catch (e) {}
+      // Password may be supplied inline: /link lunar <password>
+      if (parts[2]) {
+        if (parts.slice(2).join(' ') === LINK_PASSWORD) { await _runLinkFlow(targetKey); return; }
+        try { await sock.sendMessage(chatId, { text: '❌ Wrong password.' }, { quoted: msg }); } catch (e) {}
         return;
       }
-      const sess = pairingSessions[targetKey];
-      if (botSockets[targetKey]?.user?.id) {
-        try { await sock.sendMessage(chatId, { text:
-          `✅ ${PersonalityManager.getDisplayName(targetKey)} is already linked and online — no QR needed.`
-        }, { quoted: msg }); } catch (e) {}
-        return;
-      }
-      if (sess && sess.blocked) {
-        try { await sock.sendMessage(chatId, { text:
-          `🚫 ${PersonalityManager.getDisplayName(targetKey)} is 403-blocked by WhatsApp ` +
-          `(attempt ${sess.blocked.attempts}). It backs off and retries on its own — the QR ` +
-          `prints in the console the moment the block lifts. Scanning can't fix this.`
-        }, { quoted: msg }); } catch (e) {}
-        return;
-      }
-      _linkKickAt[targetKey] = Date.now();
-      try { await sock.sendMessage(chatId, { text:
-        `🔗 Starting pairing for *${PersonalityManager.getDisplayName(targetKey)}*…\n\n` +
-        `Watch the CONSOLE (pm2 logs / Oracle terminal) — the QR appears within a few ` +
-        `seconds and a fresh one prints every ${Math.round(QR_VALID_MS / 1000)}s. ` +
-        `Screenshot the NEWEST one and scan it with the bot's phone.`
-      }, { quoted: msg }); } catch (e) {}
-      try {
-        await startAstraLink(targetKey, authDir, getDatabase, saveDatabase, {
-          pairingMode: 'qr', forceRelink: true,
-        });
-      } catch (e) {
-        console.error(`❌ /link [${targetKey}] failed:`, e.message);
-        try { await sock.sendMessage(chatId, { text:
-          `❌ Could not start pairing for ${PersonalityManager.getDisplayName(targetKey)}: ${e.message}`
-        }, { quoted: msg }); } catch (_) {}
-      }
+      _linkPending[sender] = { targetKey, at: Date.now() };
+      try { await sock.sendMessage(chatId, { text: `🔐 Send the *link password* to receive the QR for *${PersonalityManager.getDisplayName(targetKey)}*.` }, { quoted: msg }); } catch (e) {}
       return;
     }
 
@@ -1933,7 +2008,7 @@ async function sendAs(personalityKey, chatId, content, opts = {}) {
   if (isGroup) {
     const activeKey = PersonalityManager.getActiveBot(chatId);
     const targetKey = activeKey || personalityKey;
-    const sock = botSockets[targetKey] || getActiveSocket(chatId);
+    const sock = (targetKey && isBotUsable(targetKey) ? botSockets[targetKey] : null) || getActiveSocket(chatId);
     if (sock) return sock.sendMessage(chatId, content);
     return { dropped: true, reason: 'no-socket' };
   }
@@ -2032,7 +2107,7 @@ async function sendHiChorus(chatId, responses, quotedMsg) {
       const sock = botSockets[personalityKey];
       if (!sock || !sock.user?.id) { failed.push(personalityKey); continue; }
 
-      const replyOpts = quotedMsg ? { quoted: quotedMsg } : {};
+      const replyOpts = quotedMsg ? { quoted: quotedMsg, asSelf: true } : { asSelf: true };
       if (text && String(text).trim()) { // Push #28: silence blank chorus lines
         await sock.sendMessage(chatId, { text }, replyOpts);
       }
@@ -2058,6 +2133,16 @@ function getActiveSocket(chatId) {
   // Push #55: send through the active bot only when it can actually send.
   const activeKey = PersonalityManager.getActiveBot(chatId);
   if (activeKey && isBotUsable(activeKey)) return botSockets[activeKey];
+  // Push #74: in a GROUP only a bot that is actually a member of that group
+  // may stand in — never "any socket" (that is how a non-active bot ended up
+  // posting in other bots' GCs).
+  if (String(chatId || '').endsWith('@g.us')) {
+    let present = [];
+    try { present = (PersonalityManager.getPresentBots(chatId) || []).filter(isBotUsable).sort(); } catch (e) {}
+    if (present.length) return botSockets[present[0]];
+    if (activeKey && botSockets[activeKey]?.user?.id) return botSockets[activeKey];
+    return null;
+  }
   return getAnySocket();
 }
 
@@ -2070,7 +2155,7 @@ module.exports = {
   isBotUsable,
   getFirstUsableSocketKey,
   botHealthReport,
-  clearSendHealth,
+  clearSendHealth, markRestart,
   markSendResult,
   startStallSweeper,
   readConfigCached,

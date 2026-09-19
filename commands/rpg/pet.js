@@ -41,7 +41,8 @@ module.exports = {
         pets.forEach((pet, i) => {
           const isActive = active?.instanceId === pet.instanceId;
           const re = roleEmoji[pet.role] || '⚔️';
-          txt += `${isActive ? '▶️' : `${i+1}.`} ${pet.emoji} *${pet.nickname || pet.name}* ${re}\n`;
+          let _g = ''; try { _g = require('../../rpg/utils/PetBreeding').genderIcon(pet); } catch (e) {}
+          txt += `${isActive ? '▶️' : `${i+1}.`} ${pet.emoji} *${pet.nickname || pet.name}* ${_g} ${re}\n`;
           txt += `   Lv.${pet.level} | ${pet.rarity.toUpperCase()} | ${pet.role?.toUpperCase()}\n`;
           txt += `   💕 ${pet.bonding}/100 | 😊 ${pet.happiness}/100 | 🍖 ${pet.hunger}/100\n\n`;
         });
@@ -238,6 +239,51 @@ module.exports = {
       }
 
       // ── RELEASE ─────────────────────────────────────────────
+      // ── Push #74: MATING / GIVE ───────────────────────────────
+      if (sub === 'mate' || sub === 'breed') {
+        const PB = require('../../rpg/utils/PetBreeding');
+        const a1 = (args[1] || '').toLowerCase();
+        if (a1 === 'accept') { const r = PB.accept(sender); return sock.sendMessage(chatId, { text: r.message }, { quoted: msg }); }
+        if (a1 === 'decline' || a1 === 'reject') { const r = PB.decline(sender); return sock.sendMessage(chatId, { text: r.message }, { quoted: msg }); }
+        const ctx = msg.message?.extendedTextMessage?.contextInfo || {};
+        const other = ctx.mentionedJid?.[0] || ctx.participant || null;
+        if (!args[1]) {
+          return sock.sendMessage(chatId, { text: [
+            `💞 *PET MATING*`,
+            `/pet mate <my#> <my#>            — two of your own pets (♂️ + ♀️)`,
+            `/pet mate <my ♂️#> @player <their ♀️#> — cross-player (they /pet mate accept)`,
+            `/pet mate accept | decline`,
+            ``,
+            `Rules: opposite genders, both Lv.${PB.MIN_LEVEL}+, happy & fed, compatible species. The ♀️ owner gets the egg. Hybrids happen!`,
+            `Genders show in /pet list (♂️/♀️).`,
+          ].join('\n') }, { quoted: msg });
+        }
+        if (other && other !== sender) {
+          const male = PB.findPet(sender, args[1]);
+          const theirRef = args.find((a, i) => i >= 2 && /^\d+$/.test(a)) || args[args.length - 1];
+          const female = PB.findPet(other, theirRef);
+          if (!male) return sock.sendMessage(chatId, { text: '❌ Your pet not found. /pet list' }, { quoted: msg });
+          if (!female) return sock.sendMessage(chatId, { text: `❌ Their pet #${theirRef} not found.` }, { quoted: msg });
+          const r = PB.propose(sender, male, other, female);
+          return sock.sendMessage(chatId, { text: r.message, mentions: [other] }, { quoted: msg });
+        }
+        const p1 = PB.findPet(sender, args[1]); const p2 = PB.findPet(sender, args[2]);
+        if (!p1 || !p2) return sock.sendMessage(chatId, { text: '❌ Usage: /pet mate <#> <#> — see /pet list' }, { quoted: msg });
+        const male = PB.genderOf(p1) === 'male' ? p1 : p2; const female = male === p1 ? p2 : p1;
+        const r = PB.breed(sender, male, sender, female);
+        return sock.sendMessage(chatId, { text: r.message }, { quoted: msg });
+      }
+      if (sub === 'give' || sub === 'gift' || sub === 'transfer') {
+        const PB = require('../../rpg/utils/PetBreeding');
+        const ctx = msg.message?.extendedTextMessage?.contextInfo || {};
+        const to = ctx.mentionedJid?.[0] || ctx.participant || null;
+        if (!to) return sock.sendMessage(chatId, { text: '❌ Usage: /pet give <#> @player (mention or reply)' }, { quoted: msg });
+        const pet = PB.findPet(sender, args[1]);
+        if (!pet) return sock.sendMessage(chatId, { text: '❌ Pet not found. /pet list' }, { quoted: msg });
+        const r = PB.givePet(sender, pet, to);
+        return sock.sendMessage(chatId, { text: r.message + (r.success ? `\n→ @${String(to).split('@')[0]}` : ''), mentions: r.success ? [to] : [] }, { quoted: msg });
+      }
+
       if (sub === 'release' || sub === 'delete') {
         const idx = parseInt(args[1]) - 1;
         const pets = PetManager.getPlayerPets(sender);
@@ -250,7 +296,7 @@ module.exports = {
 
       // ── DEFAULT / HELP ───────────────────────────────────────
       return sock.sendMessage(chatId, {
-        text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🐾 *PET SYSTEM*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n🥚 Find eggs in dungeons\n🐣 Hatch them to get pets\n📈 Level pets up through battles\n🌟 Evolve at level 10\n\n*Pet Roles:*\n⚔️ Attack — fights with you\n💚 Support — heals & buffs you\n💠 Scavenger — finds extra Nexus/loot\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n📋 *COMMANDS*\n/pet list           — All pets\n/pet eggs           — Your eggs\n/pet hatch [#]      — Hatch egg\n/pet info [#]       — Pet details\n/pet active [#]     — Set active\n/pet feed [#] [food] — Feed pet\n/pet foods          — Food list\n/pet evolve [#]     — Evolve\n/pet rename [#] [name] — Rename\n/pet release [#]    — Release\n━━━━━━━━━━━━━━━━━━━━━━━━━━━`
+        text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🐾 *PET SYSTEM*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n🥚 Find eggs in dungeons\n🐣 Hatch them to get pets\n📈 Level pets up through battles\n🌟 Evolve at level 10\n\n*Pet Roles:*\n⚔️ Attack — fights with you\n💚 Support — heals & buffs you\n💠 Scavenger — finds extra Nexus/loot\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n📋 *COMMANDS*\n/pet list           — All pets\n/pet eggs           — Your eggs\n/pet hatch [#]      — Hatch egg\n/pet info [#]       — Pet details\n/pet active [#]     — Set active\n/pet feed [#] [food] — Feed pet\n/pet foods          — Food list\n/pet evolve [#]     — Evolve\n/pet rename [#] [name] — Rename\n/pet release [#]    — Release\n/pet mate <#> <#>   — Breed (♂️+♀️) → egg\n/pet give <#> @user — Give a pet\n/eggs · /egg <#>    — Egg bag & info\n━━━━━━━━━━━━━━━━━━━━━━━━━━━`
       }, { quoted: msg });
 
     } catch(err) {

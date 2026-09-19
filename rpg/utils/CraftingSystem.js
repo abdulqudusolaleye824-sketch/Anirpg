@@ -123,6 +123,7 @@ function attemptCraft(player, itemName, key, db) {
     ...recipe.stats, durability: recipe.durability, maxDurability: recipe.durability,
     infusions: [], craftedAt: Date.now(), craftedBy: player.name || 'Unknown Hunter', fromKey: key,
     ...(recipe.lore ? { lore: recipe.lore } : {}),
+    ...(recipe.onHit ? { onHit: recipe.onHit } : {}),
   };
   // Commit to the live inventory: wearables → items (normalized gear shape,
   // visible to /gear + /equip). Artifacts keep their own bucket (the artifact

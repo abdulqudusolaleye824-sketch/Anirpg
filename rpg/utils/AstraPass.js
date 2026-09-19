@@ -11,7 +11,7 @@
 
 'use strict';
 
-const XP_PER_LEVEL = 1000;
+const XP_PER_LEVEL = 1635; // first tier (see xpForLevel)
 const PASS_LEVELS = 50;
 
 function getPassState(player) {
@@ -34,7 +34,10 @@ function getPassState(player) {
 // +50% across the board — 1125 first, +45 per tier (tier 50 costs 3,375).
 // Season total 0→50 = 111,375 XP.
 function xpForLevel(level) {
-  return 1125 + 45 * Math.max(0, level || 0);
+  // Push #74: STEEP curve. 1,500 × 1.09^level — tier 1 = 1,635, tier 30 ≈
+  // 19,900, tier 49 ≈ 103,000. 0→30 ≈ 200k XP (a full free grinder's season);
+  // 0→50 ≈ 1.1M — only Pro/Premium multipliers (2×/4×) get there.
+  return Math.floor(1500 * Math.pow(1.09, Math.max(0, level || 0)));
 }
 
 function _levelUp(ap) {
