@@ -125,6 +125,36 @@ function calculatePowerRating(stats, gear = [], pet = null) {
   return Math.floor(power);
 }
 
+// ─── PLAYER POWER (Push #71) ──────────────────────────────────────
+// ONE number for every screen. /profile fed gear-inclusive stats + gear
+// list + pet; /stats fed gear + weapon + title + constellation totals and no
+// pet — so the two cards disagreed (2,320 vs 2,9xx). Everything now calls
+// this: base stats + gear + weapon + title + constellation, plus pet.
+function calculatePlayerPower(player) {
+  if (!player) return 0;
+  const b = player.stats || {};
+  let gear = {};
+  try { gear = require('./GearSystem').getEquippedBonuses(player) || {}; } catch (e) {}
+  let title = {};
+  try { title = require('./TitleSystem').getEquippedBoost(player) || {}; } catch (e) {}
+  let cons = {};
+  try { cons = require('./ConstellationSystem').getSponsorBonus(player) || {}; } catch (e) {}
+  const weaponBonus = player.weapon?.bonus || player.weapon?.attack || 0;
+  const stats = {
+    hp:         b.hp || 0,
+    maxHp:      (b.maxHp || 100) + (gear.hp || 0) + (title.maxHp || 0) + (cons.maxHp || 0),
+    atk:        (b.atk || 0) + (gear.atk || 0) + weaponBonus + (title.atk || 0) + (cons.atk || 0),
+    def:        (b.def || 0) + (gear.def || 0) + (title.def || 0) + (cons.def || 0),
+    speed:      (b.speed || 0) + (gear.speed || 0) + (title.speed || 0) + (cons.speed || 0),
+    critChance: (b.critChance || 0) + (gear.crit || 0),
+    critDamage: b.critDamage || 0,
+    magicPower: b.magicPower || 0,
+    lifesteal:  b.lifesteal || 0,
+    maxEnergy:  b.maxEnergy || 0,
+  };
+  return calculatePowerRating(stats, [], player.pet || null);
+}
+
 // ─── POWER RANK LABEL ─────────────────────────────────────────────
 function getPowerLabel(power) {
   if (power < 1000) return { label: 'Unranked', emoji: '⬜' };
@@ -333,6 +363,7 @@ module.exports = {
   getXpRequired,
   getTotalXpToLevel,
   calculatePowerRating,
+  calculatePlayerPower,
   getPowerLabel,
   rollAwakeningRank,
   buildStartingStats,

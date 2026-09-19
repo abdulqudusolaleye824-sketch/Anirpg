@@ -123,6 +123,7 @@ module.exports = {
     player.manaCrystals = (player.manaCrystals || 0) - cost.crystals;
     if (!player.inventory) player.inventory = {};
     player.inventory.gold = player.gold;
+    try { require('../../rpg/utils/TransactionLog').logSpend(player, 'catch_cost', cost.gold, cost.crystals, petTemplate.name); } catch (e) {}
 
     // Luck Potion check
     const luckIdx = (player.inventory?.items || []).findIndex(i => i.name === 'Luck Potion' || i.isLuckPotion);

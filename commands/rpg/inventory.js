@@ -29,7 +29,16 @@ function collectBuckets(player) {
   const gearItems    = [...items.filter(i => i.isGear || i.type === 'gear'), ...legacyGear];
   const legacyMats   = (inv.materials || []).map(m => (typeof m === 'string' ? { name: m, type: 'material', rarity: 'common' } : { ...m, type: 'material', rarity: m.rarity || 'common' }));
   const consumables  = [...items.filter(i => !i.isGear && i.type !== 'gear' && !i.isPetFood && i.type !== 'PetFood'), ...legacyMats];
-  const petFoodItems = items.filter(i => i.isPetFood || i.type === 'PetFood');
+  // Push #71: pet food lives in ONE id-keyed bucket (inventory.petFood).
+  let petFoodItems = [];
+  try {
+    const PDB = require('../../rpg/utils/PetDatabase');
+    PDB.normalisePetFood(player);
+    for (const [id, n] of Object.entries(player.inventory?.petFood || {})) {
+      const f = PDB.PET_FOOD[id];
+      for (let k = 0; k < (n | 0); k++) petFoodItems.push({ id, name: f ? f.name : id, type: 'PetFood', isPetFood: true, rarity: (f && f.cost >= 3000) ? 'rare' : (f && f.cost >= 1200) ? 'uncommon' : 'common', emoji: f?.emoji });
+    }
+  } catch (e) { petFoodItems = items.filter(i => i.isPetFood || i.type === 'PetFood'); }
   return { gearItems, consumables, petFoodItems };
 }
 
@@ -113,6 +122,7 @@ module.exports = {
     const inv   = player.inventory || {};
 
     const rarityEmoji = { mythic:'🌌', legendary:'🟠', epic:'🟣', rare:'🔵', uncommon:'🟢', common:'⚪' };
+    const IE = require('../../rpg/utils/ItemEmoji'); // Push #71: item glyphs
     const rarityOrder = { mythic:0, legendary:1, epic:2, rare:3, uncommon:4, common:5 };
 
     const serials = serialList(player);
@@ -125,7 +135,7 @@ module.exports = {
         return sock.sendMessage(chatId, { text: `❌ No item at serial ${slotArg}.\nYou have ${serials.length} entries.\nUse /inv to see your full inventory.` }, { quoted: msg });
       }
       const item = entry.ref || {};
-      const re      = rarityEmoji[entry.rarity] || '📦';
+      const re      = IE.tag(entry.ref || entry);
       const rarName = (entry.rarity||'common').charAt(0).toUpperCase() + (entry.rarity||'common').slice(1);
 
       let detail = pro ? `${UI.PRO_BAR}\n${re} *${entry.name}* 💎\n${UI.PRO_BAR}\n` : `${re} *${entry.name}*\n${UI.FREE_BAR}\n`;
@@ -219,7 +229,7 @@ module.exports = {
           const cnt = e.count > 1 ? ` ×${e.count}` : '';
           const slot = e.kind === 'gear' ? ` [${e.slot || '?'}]` : '';
           const dur = e.kind === 'gear' && e.ref ? ` 🔧${e.ref.durability ?? '?'}/${e.ref.maxDurability ?? e.ref.durability ?? '?'}` : '';
-          const emo = e.kind === 'card' ? '🃏' : (rarityEmoji[e.rarity] || '📦');
+          const emo = e.kind === 'card' ? `${rarityEmoji[e.rarity] || '⚪'}🃏` : IE.tag(e.ref || e);
           simple += `  *${i + 1}.* ${emo} ${e.name}${slot}${cnt}${dur}${eq}\n`;
         });
         if (serials.length > MAX_SHOW) simple += `  _...and ${serials.length - MAX_SHOW} more_\n`;
@@ -249,7 +259,7 @@ module.exports = {
       message += `  _None — clear dungeons to find gear!_\n`;
     } else {
       sortedGear.forEach((g, i) => {
-        const re  = rarityEmoji[g.rarity] || '📦';
+        const re  = IE.tag(g);
         const dur = `🔧${g.durability||'?'}/${g.maxDurability||g.durability||'?'}`;
         const eq  = player.equippedGear?.[g.slot]?.name === g.name ? ' ✅' : '';
         const mythicFlag = g.rarity === 'mythic' ? ' 📖' : '';
@@ -271,7 +281,7 @@ module.exports = {
 
     message += `💊 *POTIONS & CONSUMABLES*\n`;
     for (const p of oldPotions) {
-      message += `  ${rarityEmoji[p.rarity]||'📦'} ${p.name} ×${p.count}\n`;
+      message += `  ${rarityEmoji[p.rarity]||'⚪'}🧪 ${p.name} ×${p.count}\n`;
     }
     const _buffNames = { xpBooster:['✨','XP Booster'], goldMult:['💠','Nexus Multiplier'], shieldScroll:['🛡️','Shield Scroll'], mightElixir:['💪','Elixir of Might'], luckPotion:['🍀','Luck Potion'], gvcGold:['🥇','Gold EXP Buff (2×)'], gvcSilver:['🥈','Silver EXP Buff (1.5×)'], gvcBronze:['🥉','Bronze EXP Buff (1.25×)'] };
     for (const [bk, [be, bn]] of Object.entries(_buffNames)) {
@@ -286,7 +296,7 @@ module.exports = {
     if (consSorted.length === 0 && oldPotions.length === 0) message += `  _None_\n`;
     for (const item of consSorted) {
       const cnt = item.count > 1 ? ` ×${item.count}` : '';
-      message += `  ${rarityEmoji[item.rarity]||'📦'} ${item.name}${cnt}\n`;
+      message += `  ${IE.tag(item)} ${item.name}${cnt}\n`;
     }
     message += `\n`;
 
@@ -301,7 +311,7 @@ module.exports = {
         foodStacked[item.name].count++;
       }
       Object.values(foodStacked).sort((a,b)=>(rarityOrder[a.rarity]||6)-(rarityOrder[b.rarity]||6))
-        .forEach(item => { message += `  ${rarityEmoji[item.rarity]||'🐾'} ${item.name} ×${item.count}\n`; });
+        .forEach(item => { message += `  ${IE.tag(item)} ${item.name} ×${item.count}\n`; });
     }
     message += `\n`;
 
@@ -354,7 +364,7 @@ module.exports = {
       message += `  _None — use /summon to pull!_\n`;
     } else {
       summonArts.slice(0, 5).forEach((a, i) => {
-        const re   = rarityEmoji[a.rarity] || '📦';
+        const re   = `${rarityEmoji[a.rarity] || '⚪'}🃏`;
         const cons = a.constellation > 1 ? ` C${a.constellation}` : '';
         message += `  ${i+1}. ${re} ${a.name} [${(a.rarity||'').toUpperCase()}]${cons}\n`;
       });
@@ -398,7 +408,7 @@ module.exports = {
     if (pro) {
       const byRar = {};
       for (const g of sortedGear) byRar[g.rarity || 'common'] = (byRar[g.rarity || 'common'] || 0) + 1;
-      const rarStr = Object.entries(byRar).map(([r, n]) => `${rarityEmoji[r] || '📦'}×${n}`).join(' ');
+      const rarStr = Object.entries(byRar).map(([r, n]) => `${rarityEmoji[r] || '⚪'}×${n}`).join(' ');
       message += `\n${UI.PRO_MINI}\n💎 *PRO HOARD* — ${sortedGear.length} gear · ${consSorted.length} stacks\n  ${rarStr || '_No gear yet_'}\n`;
     }
     message += `\n${FRAME}\n`;

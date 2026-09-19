@@ -135,6 +135,7 @@ module.exports = {
 
       // Apply cost
       player.manaCrystals -= tierData.cost.crystals;
+      try { require('../../rpg/utils/TransactionLog').logSpend(player, 'awaken', 0, tierData.cost.crystals); } catch (e) {}
       player.gold         -= tierData.cost.gold;
 
       // Apply stat boosts

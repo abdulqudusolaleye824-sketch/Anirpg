@@ -422,4 +422,64 @@ function hatchEgg(eggId) {
   return PET_DATABASE[petId] || null;
 }
 
-module.exports = { PET_DATABASE, PET_FOOD, EGG_TYPES, EGG_SPAWN_WEIGHTS, rollEggType, hatchEgg };
+// Push #71: one resolver for every spelling of a food (id, name, legacy shop id).
+const _FOOD_ALIASES = {
+  pet_food_kibble: 'kibble', pet_food_royal: 'royal_feed', pet_food_beast: 'beast_feast', pet_food_elixir: 'magic_berry',
+  monster_kibble: 'kibble', royal_monster_feed: 'royal_feed', raw_meat: 'meat', fresh_fish: 'fish', healing_herb: 'herb', dense_bone: 'bone',
+};
+function resolvePetFood(q) {
+  if (!q) return null;
+  const raw = String(q).trim();
+  const key = raw.toLowerCase().replace(/\s+/g, '_');
+  if (PET_FOOD[key]) return { id: key, ...PET_FOOD[key] };
+  if (_FOOD_ALIASES[key] && PET_FOOD[_FOOD_ALIASES[key]]) return { id: _FOOD_ALIASES[key], ...PET_FOOD[_FOOD_ALIASES[key]] };
+  const byName = Object.entries(PET_FOOD).find(([, f]) => f.name.toLowerCase() === raw.toLowerCase());
+  if (byName) return { id: byName[0], ...byName[1] };
+  const byPrefix = Object.entries(PET_FOOD).find(([id, f]) => f.name.toLowerCase().startsWith(raw.toLowerCase()) || id.startsWith(key));
+  return byPrefix ? { id: byPrefix[0], ...byPrefix[1] } : null;
+}
+
+// Pet-food inventory — ONE bucket: player.inventory.petFood[foodId] = count.
+// (Gate drops + sealed guild-shop boxes + /shop all land here; /pet feed consumes here.)
+function petFoodCount(player, foodId) { return (player?.inventory?.petFood?.[foodId] | 0); }
+function addPetFood(player, foodId, qty = 1) {
+  if (!player.inventory) player.inventory = {};
+  if (!player.inventory.petFood) player.inventory.petFood = {};
+  player.inventory.petFood[foodId] = (player.inventory.petFood[foodId] | 0) + qty;
+  return player.inventory.petFood[foodId];
+}
+// Migrate legacy formats (items[] entries with isPetFood, name-keyed petFood) into id-keyed counts.
+function normalisePetFood(player) {
+  if (!player || !player.inventory) return;
+  const inv = player.inventory;
+  if (!inv.petFood) inv.petFood = {};
+  for (const k of Object.keys(inv.petFood)) {
+    if (PET_FOOD[k]) continue;
+    const f = resolvePetFood(k);
+    const n = inv.petFood[k] | 0;
+    delete inv.petFood[k];
+    if (f && n > 0) inv.petFood[f.id] = (inv.petFood[f.id] | 0) + n;
+  }
+  if (Array.isArray(inv.items)) {
+    const keep = [];
+    for (const it of inv.items) {
+      const isFood = it && (it.isPetFood || String(it.type || '').toLowerCase() === 'petfood' || String(it.type || '') === 'pet_food');
+      if (!isFood) { keep.push(it); continue; }
+      const f = resolvePetFood(it.id || it.name);
+      if (f) inv.petFood[f.id] = (inv.petFood[f.id] | 0) + (it.count || it.qty || 1);
+      else keep.push(it);
+    }
+    inv.items = keep;
+  }
+}
+function consumePetFood(player, foodId, qty = 1) {
+  normalisePetFood(player);
+  const have = petFoodCount(player, foodId);
+  if (have < qty) return false;
+  player.inventory.petFood[foodId] = have - qty;
+  if (player.inventory.petFood[foodId] <= 0) delete player.inventory.petFood[foodId];
+  return true;
+}
+
+module.exports = { PET_DATABASE, PET_FOOD, EGG_TYPES, EGG_SPAWN_WEIGHTS, rollEggType, hatchEgg,
+  resolvePetFood, petFoodCount, addPetFood, consumePetFood, normalisePetFood };

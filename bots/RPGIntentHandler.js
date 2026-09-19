@@ -235,7 +235,7 @@ function buildProfileText(player) {
   let stats = player.stats || {};
   try {
     const equipped = Object.values(player.equippedGear || player.equipped || {}).filter(Boolean);
-    power      = calculatePowerRating(stats, equipped, player.pet) || 0;
+    power      = require('../../rpg/utils/SoloLevelingCore').calculatePlayerPower(player) || 0;
     powerLabel = getPowerLabel(power) || powerLabel;
   } catch(e) {}
 

@@ -25,6 +25,17 @@ function normaliseJid(jid) {
   return GKM.normaliseJid(jid);
 }
 
+
+// Push #71: gate strength line for every party/gate screen.
+function strengthLine(gate) {
+  try {
+    const GM = require('../../rpg/dungeons/GateManager');
+    const pct = gate?.strengthPct;
+    if (!pct) return null;
+    return `💪 Strength: *${GM.strengthText(gate.rank, pct)}*`;
+  } catch (e) { return null; }
+}
+
 module.exports = {
   name: 'party',
   aliases: ['praid', 'raidparty'],
@@ -139,6 +150,7 @@ module.exports = {
           text: [
             ...(pro ? [UI.PRO_BAR, `${rd.emoji} *SOLO GATE RAID LAUNCHED!* 💎`, UI.PRO_BAR] : [`${rd.emoji} *SOLO GATE RAID LAUNCHED!*`, UI.FREE_BAR]),
             `🆔 Key: \`${key}\` (${rd.label})`,
+            strengthLine(gate),
             `👤 Hunter: *${player.name}* (Solo)`,
             `🗺️ Floor: 1/${gate.totalFloors}`,
             `${FRAME}`,
@@ -148,7 +160,7 @@ module.exports = {
             `/attack — attack the monster`,
             `/skill <name> — use a class skill`,
             ...(pro ? [FRAME, UI.PRO_MINI, `💎 *PRO DELVE* — ${rd.label} gate · ${gate.totalFloors} floors`] : [FRAME, UI.upsell()]),
-          ].join('\n'),
+          ].filter(Boolean).join('\n'),
         }, { quoted: msg });
       }
 
@@ -178,6 +190,8 @@ module.exports = {
         const affText = [
             ...(pro ? [UI.PRO_BAR, `👥 *AFFILIATE PARTY CREATED!* 💎`, UI.PRO_BAR] : [`👥 *AFFILIATE PARTY CREATED!*`, UI.FREE_BAR]),
             `🆔 Gate: *${rd.label}* [\`${key}\`]`,
+          strengthLine(gate),
+            strengthLine(gate),
             `👑 Leader: *${player.name}* (Granted Affiliate)`,
             `🏰 Guild: *${affData.guildName}*`,
             ``,
@@ -187,7 +201,7 @@ module.exports = {
             `${FRAME}`,
             `📌 Run */party ready* when ready. Leader uses */party raid* to launch!`,
             ...(pro ? [FRAME, UI.PRO_MINI, `💎 *PRO MUSTER* — recruiting up to ${GR.MAX_PARTY} hunters`] : [FRAME, UI.upsell()]),
-          ].join('\n');
+          ].filter(Boolean).join('\n');
         try {
           if (Buttons?.sendButtons) {
             await Buttons.sendButtons(sock, chatId, {
@@ -349,6 +363,8 @@ module.exports = {
           text: [
             ...(pro ? [UI.PRO_BAR, `${rd.emoji} *RAID IN PROGRESS* 💎`, UI.PRO_BAR] : [`${rd.emoji} *RAID IN PROGRESS*`, UI.FREE_BAR]),
             `🆔 Gate: *${rd.label}* [\`${activeKey}\`]`,
+          strengthLine(gate),
+            strengthLine(gate),
             `🗺️ Floor: *${floor}/${gate.totalFloors}*`,
             `👾 Monsters: *${totalFloor - left.length}/${totalFloor}* cleared`,
             `❤️ Hunters alive: *${aliveCount}/${totalMembers}*`,
@@ -361,7 +377,7 @@ module.exports = {
             `${FRAME}`,
             `⚔️ /attack · 🔮 /skill <name> · 🩹 /party heal`,
             ...(pro ? [FRAME, UI.PRO_MINI, `💎 *PRO RAID* — floor ${floor}/${gate.totalFloors} · ${aliveCount} alive`] : [FRAME, UI.upsell()]),
-          ].join('\n'),
+          ].filter(Boolean).join('\n'),
         }, { quoted: msg });
       }
 
@@ -518,6 +534,7 @@ module.exports = {
         text: [
           ...(pro ? [UI.PRO_BAR, `${rd.emoji} *DUNGEON RAID LAUNCHED!* 💎`, UI.PRO_BAR] : [`${rd.emoji} *DUNGEON RAID LAUNCHED!*`, UI.FREE_BAR]),
           `📍 Gate: *${rd.label}* [\`${activeKey}\`]`,
+          strengthLine(gate),
           `🗺️ Entering Floor 1/${gate.totalFloors}`,
           ``,
           `👥 *RAID TEAM (${raid.members.length}):*`,
@@ -529,7 +546,7 @@ module.exports = {
           `/party status — floor status`,
           `/party advance — next floor · /party boss — final floor`,
           ...(pro ? [FRAME, UI.PRO_MINI, `💎 *PRO BREACH* — floor 1/${gate.totalFloors} · ${raid.members.length} hunters`] : [FRAME, UI.upsell()]),
-        ].join('\n'),
+        ].filter(Boolean).join('\n'),
       }, { quoted: msg });
     }
 

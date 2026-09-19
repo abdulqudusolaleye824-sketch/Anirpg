@@ -9,6 +9,58 @@ const fs   = require('fs');
 
 const { MONSTER_DROPS, BASE_MATERIALS, rollMonsterDrop, rollBossDrop, rollBaseMaterial, getRandomMonster, getRandomBoss } = require('../data/MonsterDrops');
 
+const SL = require('../data/SoloLevelingMonsters');
+
+// Push #71 — GATE STRENGTH. Every gate rolls a strength 60–100 % of the
+// strongest possible gate of its rank. 100 % = max HP roll for every monster,
+// tier-5 Solo Leveling monsters allowed, boss at full HP. Lower % = weaker
+// pool + scaled HP, so a fresh E-rank party can clear a 65 % E gate while a
+// 100 % E gate needs a full squad. The % is shown on every gate/party screen.
+function rollGateStrength() {
+  // Bell-ish: mostly 70–90, occasional 60 / 100.
+  const r = (Math.random() + Math.random()) / 2;
+  return Math.max(60, Math.min(100, Math.round(60 + r * 40)));
+}
+function strengthLabel(pct) {
+  if (pct >= 95) return '☠️ MAXIMUM';
+  if (pct >= 85) return '🔴 Severe';
+  if (pct >= 75) return '🟠 Hard';
+  if (pct >= 65) return '🟡 Standard';
+  return '🟢 Mild';
+}
+function strengthText(rank, pct) {
+  return `${rank} rank gate ${pct}% — ${strengthLabel(pct)}${pct >= 100 ? ` (strongest possible ${rank}-rank gate)` : ''}`;
+}
+// Shared by spawnGate() and GateRaid.reconstruct(): same monsters everywhere.
+function buildGateMonsters(rank, floors, strengthPct = 100) {
+  const rd = GATE_RANKS[rank] || GATE_RANKS.E;
+  const [minHp, maxHp] = rd.monsterRange || [15, 45];
+  const scale = Math.max(0.6, Math.min(1, strengthPct / 100));
+  const monsters = [];
+  const count = floors * 3;
+  for (let i = 0; i < count; i++) {
+    const floor = Math.floor(i / 3) + 1;
+    const m = SL.pickForStrength(rank, strengthPct);
+    const prof = SL.ROLE_PROFILE[m.role] || SL.ROLE_PROFILE.brute;
+    // Deeper floors + higher tier + gate strength push the HP roll upward.
+    const floorBias = (floor - 1) / Math.max(1, floors - 1);            // 0..1
+    const tierBias  = (m.tier - 1) / 4;                                   // 0..1
+    const roll = Math.random() * 0.5 + floorBias * 0.25 + tierBias * 0.25; // 0..1
+    const baseHp = Math.floor((minHp + roll * (maxHp - minHp)) * scale);
+    const hp = Math.max(5, Math.floor(baseHp * prof.hp));
+    monsters.push({
+      name: m.name, role: m.role, tier: m.tier,
+      hp, maxHp: hp,
+      atk: Math.max(1, Math.floor(baseHp * prof.atk)),
+      def: Math.floor(baseHp * prof.def),
+      speed: Math.round(10 * prof.speed),
+      skills: m.skills,
+      floor, defeated: false,
+    });
+  }
+  return monsters;
+}
+
 const GATE_RANKS = {
   E: { emoji:'⚫', label:'E-Rank Gate', floors:3, monsterRange:[15,45], bossHp:400,   priceRange:[3000,6000],      manaPriceRange:[0,0],        currency:'nexus', currencySafe:[800,1400], lootTier:'common',    isFree:false, description:'Standard low-tier gate. Costs Nexus.' },
   D: { emoji:'🟤', label:'D-Rank Gate', floors:4, monsterRange:[45,105], bossHp:1000,  priceRange:[8000,16000],     manaPriceRange:[0,0],        currency:'nexus', currencySafe:[2000,3600], lootTier:'uncommon',  isFree:false, description:'Mid-low tier. Costs Nexus.' },
@@ -78,14 +130,10 @@ class GateManager {
       crystalLoot = Math.floor(purchasePrice * lootMultiplier * 0.25);
     }
 
-    const monsters = [];
-    const count = rankData.floors * 3;
-    const [minHp, maxHp] = rankData.monsterRange;
-    for (let i = 0; i < count; i++) {
-      const monsterData = pool[Math.floor(Math.random() * pool.length)];
-      const hp = Math.floor(minHp + Math.random() * (maxHp - minHp));
-      monsters.push({ name: monsterData.name, hp, maxHp: hp, atk: Math.floor(hp * 0.15), def: Math.floor(hp * 0.05), floor: Math.floor(i / 3) + 1, defeated: false });
-    }
+    // Push #71: Solo Leveling bestiary + gate strength %.
+    const strengthPct = rollGateStrength();
+    const monsters = buildGateMonsters(rank, rankData.floors, strengthPct);
+    const bossHp = Math.floor(rankData.bossHp * Math.max(0.6, strengthPct / 100));
 
     const loot = this.generateBossLoot(rank, 6);
 
@@ -99,8 +147,9 @@ class GateManager {
       cleared: false, broken: false, active: true,
       raiders: [], guildRaiders: [], externalRaiders: [], pendingApplicants: [],
       raidStarted: false, raidStartTime: null,
+      strengthPct, strengthLabel: strengthLabel(strengthPct),
       currentFloor: 0, totalFloors: rankData.floors, monsters,
-      boss: { name: bossName, hp: rankData.bossHp, maxHp: rankData.bossHp, defeated: false },
+      boss: { name: bossName, hp: bossHp, maxHp: bossHp, defeated: false },
       bossLoot: loot, lootDistributed: false,
       monstersKilled: 0, damageDealt: {},
     };
@@ -137,6 +186,14 @@ class GateManager {
   }
 
   static rollMonsterKillDrop(rank, monsterName) {
+    // Push #71: bestiary monsters drop their own craft materials (45%).
+    const sl = SL.SL_BY_NAME[monsterName];
+    if (sl) {
+      if (Math.random() > 0.45) return null;
+      const name = sl.drops[Math.floor(Math.random() * sl.drops.length)];
+      const rarity = { E: 'common', D: 'uncommon', C: 'rare', B: 'rare', A: 'epic', S: 'legendary' }[sl.rank] || 'common';
+      return { name, type: 'material', source: 'monster', from: monsterName, rarity };
+    }
     const { drop, monster } = rollMonsterDrop(rank, monsterName);
     return drop ? { name: drop, type: 'material', source: 'monster', from: monster?.name || monsterName } : null;
   }
@@ -146,7 +203,7 @@ class GateManager {
     if (!gate) return { success:false, reason:'Gate not found.' };
     if (gate.owned) return { success:false, reason:`Already purchased by *${gate.ownedBy}*.` };
     if (gate.broken || gate.cleared) return { success:false, reason:'Gate is no longer active.' };
-    const guild = db.guilds?.[guildName];
+    const guild = require('../utils/GuildContractManager').findGuild(db, guildName); // Push #71: guilds are keyed by id, not name
     if (!guild) return { success:false, reason:'Guild not found.' };
 
     const isBoth = gate.currency === 'both' || ['B','A','S'].includes(gate.rank);
@@ -292,6 +349,7 @@ GateManager.formatGateAnnouncement = function(gate) {
     ``,
     `🔑 Gate ID: *${gate.id}*`,
     `${rd.emoji} Rank: *${rd.label}*`,
+    gate.strengthPct ? `💪 Strength: *${strengthText(gate.rank, gate.strengthPct)}*` : null,
     `💰 Guild Purchase: *${priceTxt}*`,
     `⏰ Breaks in: *${timeLeft} minutes*`,
     ``,
@@ -315,4 +373,10 @@ GateManager.formatGateAnnouncement = function(gate) {
   return { text: caption };
 };
 
-module.exports = { GateManager, GATE_RANKS, LOOT_TABLES, GATE_MONSTERS, GATE_BOSSES };
+// Push #71 exports
+GateManager.rollGateStrength = rollGateStrength;
+GateManager.strengthLabel = strengthLabel;
+GateManager.strengthText = strengthText;
+GateManager.buildGateMonsters = buildGateMonsters;
+
+module.exports = { GateManager, GATE_RANKS, LOOT_TABLES, GATE_MONSTERS, GATE_BOSSES, rollGateStrength, strengthLabel, strengthText, buildGateMonsters };

@@ -38,10 +38,16 @@ module.exports = {
     const pro = UI.isPro(db.users?.[sender] || {});
     const FRAME = pro ? UI.PRO_BAR : UI.FREE_BAR;
 
-    const mentionedId = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid?.[0];
-    const targetId = mentionedId || sender;
+    const _ctx = msg.message?.extendedTextMessage?.contextInfo;
+    const mentionedId = _ctx?.mentionedJid?.[0] || _ctx?.participant || null;
+    let targetId = mentionedId || sender;
     const isOwn = targetId === sender;
-    const player = db.users[targetId];
+    // Push #71: live lookup — resolve lid/phone variants, never a cached row.
+    let player = db.users[targetId];
+    if (!player) {
+      player = CM.findUserInDb(db, CM.normaliseJid(targetId)) || null;
+      if (player) targetId = Object.keys(db.users).find(k => db.users[k] === player) || targetId;
+    }
 
     if (!player) {
       return sock.sendMessage(chatId, {
@@ -49,13 +55,14 @@ module.exports = {
       }, { quoted: msg });
     }
 
-    // Settle any due weeks before displaying (idempotent).
+    // Settle any due weeks before displaying (idempotent), then re-read so
+    // every number below is post-settlement LIVE state. Persist if anything moved.
+    let _settled = false;
     try {
-      if (player.guild) {
-        const g = CM.getSalaryStatus(db, targetId);
-        if (g.guildId) CM.processWeeklyPay(db, g.guildId, null);
-      }
+      const g0 = CM.getSalaryStatus(db, targetId);
+      if (g0.guildId) { const r = CM.processWeeklyPay(db, g0.guildId, null); if (r && r.length) _settled = true; }
     } catch (e) {}
+    if (_settled) { try { saveDatabase(); } catch (e) {} }
 
     const st = CM.getSalaryStatus(db, targetId);
     const who = isOwn ? 'Your' : `*${player.name}'s*`;
@@ -147,6 +154,8 @@ module.exports = {
       ``,
       `🏰 Guild: *${st.guild}*`,
       `💰 Weekly wage: *${(c.weeklyNexus || 0).toLocaleString()} Nexus* + *${(c.weeklyMana || 0).toLocaleString()} Mana Stones*`,
+      `🏦 Guild treasury now: 💠 ${Number(st.treasury || 0).toLocaleString()} · 💎 ${Number(st.manaTreasury || 0).toLocaleString()} ${st.canGuildPay ? '✅ can cover next wage' : '⚠️ short for next wage'}`,
+      `👛 Your balance now: 💠 ${Number(player.gold || 0).toLocaleString()} · 💎 ${Number(player.manaCrystals || 0).toLocaleString()}`,
       ``,
       FRAME,
       `${dueIcon} *STATUS:* ${dueLine}`,

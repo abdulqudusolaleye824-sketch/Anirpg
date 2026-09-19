@@ -16,6 +16,21 @@ const Mythic    = require('../data/recipes_mythic.js');
 
 const RECIPES = { Common, Uncommon, Rare, Epic, Legendary, Mythic };
 
+// Push #71: Solo Leveling recipes (built from the new bestiary drops) join the
+// scroll pools — a scroll of each rarity can now roll either a classic or an
+// SL recipe, so the new gate materials are actually craftable.
+try {
+  const SLR = require('../data/recipes_sololeveling.js');
+  for (const [rarity, groups] of Object.entries(SLR)) {
+    if (!RECIPES[rarity]) continue;
+    for (const [type, list] of Object.entries(groups)) {
+      if (!Array.isArray(RECIPES[rarity][type])) RECIPES[rarity][type] = [];
+      const have = new Set(RECIPES[rarity][type].map(r => r.output));
+      for (const r of list) if (!have.has(r.output)) RECIPES[rarity][type].push(r);
+    }
+  }
+} catch (e) { console.error('[Crafting] SL recipes not loaded:', e.message); }
+
 const SCROLL_RARITIES = {
   Common:    { emoji: '⬜', cost: 500,    description: 'A worn scroll. Simple recipes inside.' },
   Uncommon:  { emoji: '🟩', cost: 1500,   description: 'A sealed scroll. Moderate recipes await.' },
@@ -141,7 +156,21 @@ function formatScrollRead(scroll, player = null) {
   const subTypeStr = recipe.subtype ? ` (${recipe.subtype.charAt(0).toUpperCase() + recipe.subtype.slice(1)})` : '';
   const typeDisplay = `${mainType}${subTypeStr}`;
 
-  const matLines = Object.entries(recipe.materials || {}).map(([mat, qty]) => `  • ${mat} ×${qty}`).join('\n');
+  // Push #71: show WHERE each Solo Leveling material drops.
+  let _src = {};
+  try {
+    const SL = require('../data/SoloLevelingMonsters');
+    for (const [rank, list] of Object.entries(SL.SL_MONSTERS)) for (const m of list) for (const d of m.drops) {
+      if (!_src[d]) _src[d] = { rank, from: [] };
+      if (_src[d].from.length < 2 && !_src[d].from.includes(m.name)) _src[d].from.push(m.name);
+    }
+  } catch (e) {}
+  const matLines = Object.entries(recipe.materials || {}).map(([mat, qty]) => {
+    const s = _src[mat];
+    const have = player ? RI.countMaterial(player, mat) : null;
+    const tail = s ? (mat.endsWith('Mana Essence') ? `  _(any ${s.rank}-rank gate monster)_` : `  _(${s.rank}-gate: ${s.from.join(', ')})_`) : '';
+    return `  • ${mat} ×${qty}${have !== null ? ` (have ${have})` : ''}${tail}`;
+  }).join('\n');
   const statLines = Object.entries(recipe.stats || {}).filter(([, v]) => v).map(([k, v]) => `${k}: ${v > 0 ? '+' : ''}${v}`).join(' | ');
   return [
     ...(scrollPro ? [UI.PRO_BAR, `${scroll.emoji || '📜'} *${(scroll.rarity || 'Common').toUpperCase()} RECIPE SCROLL* 💎`, UI.PRO_BAR] : [`${scroll.emoji || '📜'} *${(scroll.rarity || 'Common').toUpperCase()} RECIPE SCROLL*`, UI.FREE_BAR]),

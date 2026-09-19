@@ -184,6 +184,7 @@ module.exports = {
       // Deduct cost from sender
       player.gold -= GIFT_COST.gold;
       player.manaCrystals -= GIFT_COST.crystals;
+      try { require('../../rpg/utils/TransactionLog').logSpend(player, 'gift', GIFT_COST.gold, GIFT_COST.crystals); } catch (e) {}
 
       // Apply gift to receiver
       if (!target.inventory) target.inventory = {};

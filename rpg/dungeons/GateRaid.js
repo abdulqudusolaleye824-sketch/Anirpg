@@ -53,10 +53,26 @@ function playerDamage(player, skillName = null) {
     player.stats.energy = Math.max(0, (player.stats.energy || 0) - cost);
     SC.setCooldown(player, entry || skill);
     try { require('../utils/RegenManager').markCombatAction(player); } catch (e) {}
+    // Push #71: RECOVERY SKILLS — healingPct was computed here and returned,
+    // but no caller ever applied it, so heals in gate raids restored 0 HP.
+    // Apply it to the hunter now (heal-type skills deal no damage).
+    const _healPct = Number((entry && entry.healingPct) || 0);
+    const _isHealSkill = String((entry && entry.type) || skill.type || '').toLowerCase() === 'heal';
+    let healed = 0;
+    // Hybrids (Holy Strike, Dark Feast, Water Wave…) hit AND heal; pure heal
+    // moves heal only.
+    if (_healPct > 0) {
+      const maxHp = player.stats.maxHp || 100;
+      const before = player.stats.hp || 0;
+      player.stats.hp = Math.min(maxHp, before + Math.floor(maxHp * _healPct / 100));
+      healed = player.stats.hp - before;
+      if (_isHealSkill) dmg = 0;
+    }
     return {
       damage: dmg, isCrit, skillUsed: skill,
       statuses: (entry && entry.statuses) || skill.statuses || [],
-      healingPct: (entry && entry.healingPct) || 0,
+      healingPct: _healPct,
+      healed,
       buffs: (entry && entry.buffs) || [],
     };
   }
@@ -123,15 +139,12 @@ function resolveCode(code, db = null) {
       const pool = (MONSTER_DROPS[rank] && MONSTER_DROPS[rank].monsters) || MONSTER_DROPS['E'].monsters;
       const bossPool = (MONSTER_DROPS[rank] && MONSTER_DROPS[rank].bosses) || MONSTER_DROPS['E'].bosses;
       const bossData = bossPool[Math.floor(Math.random()*bossPool.length)];
-      const monsters = [];
-      const count = totalFloors * 3;
-      const [minHp, maxHp] = rd.monsterRange || [15,45];
-      for (let i=0;i<count;i++) {
-        const monsterData = pool[Math.floor(Math.random()*pool.length)];
-        const hp = Math.floor(minHp + Math.random()*(maxHp-minHp));
-        monsters.push({ name: monsterData.name, hp, maxHp: hp, atk: Math.floor(hp*0.15), def: Math.floor(hp*0.05), floor: Math.floor(i/3)+1, defeated:false });
-      }
+      // Push #71: same bestiary/strength builder as spawnGate.
+      const strengthPct = keyData.strengthPct || GateManager.rollGateStrength();
+      const monsters = GateManager.buildGateMonsters(rank, totalFloors, strengthPct);
+      const bossHp = Math.floor(rd.bossHp * Math.max(0.6, strengthPct / 100));
       gate = {
+        strengthPct, strengthLabel: GateManager.strengthLabel(strengthPct),
         id: keyData.gateId,
         chatId: keyData.spawnChatId || keyData.dungeonChatId || 'unknown@g.us',
         rank, rankData: rd,
@@ -148,7 +161,7 @@ function resolveCode(code, db = null) {
         raidStarted:false, raidStartTime:null,
         currentFloor:0, totalFloors,
         monsters,
-        boss: { name: bossData.name, hp: rd.bossHp, maxHp: rd.bossHp, defeated:false },
+        boss: { name: bossData.name, hp: bossHp, maxHp: bossHp, defeated:false },
         bossLoot: [],
         lootDistributed:false,
         monstersKilled:0, damageDealt:{},
@@ -447,7 +460,8 @@ function monsterKilledBy(gate, monster, sender, db) {
     lines.push(`🎁 *DROP → ${player.name}* (final blow): *${drop.name}*`);
   } else {
     const { rollBaseMaterial } = require('../data/MonsterDrops');
-    const baseMat = rollBaseMaterial(gate.rank || 'E');
+    // Push #71: 1-in-4 misses become the rank's Mana Essence (SL recipe binder).
+    const baseMat = Math.random() < 0.25 ? `${gate.rank || 'E'}-Rank Mana Essence` : rollBaseMaterial(gate.rank || 'E');
     if (baseMat) {
       RI.grantItem(player, { name: baseMat, type: 'material', rarity: 'common', fromGate: gate.id }, 'gate');
       lines.push(`🎁 *DROP → ${player.name}*: *${baseMat}*`);
@@ -461,9 +475,8 @@ function monsterKilledBy(gate, monster, sender, db) {
       { name: 'Royal Monster Feed', restore: 100, rarity: 'uncommon' }
     ];
     const food = foodList[Math.floor(Math.random() * foodList.length)];
-    player.inventory.items.push({ name: food.name, type: 'PetFood', isPetFood: true, restore: food.restore, rarity: food.rarity });
-    if (!player.inventory.petFood) player.inventory.petFood = {};
-    player.inventory.petFood[food.name] = (player.inventory.petFood[food.name] || 0) + 1;
+    // Push #71: one pet-food bucket (id-keyed) — /pet feed consumes from here.
+    try { const PDB = require('../utils/PetDatabase'); const f = PDB.resolvePetFood(food.name); PDB.addPetFood(player, f ? f.id : 'kibble', 1); } catch (e) {}
     lines.push(`🍖 *PET FOOD DROP → ${player.name}*: *${food.name}*`);
   }
 

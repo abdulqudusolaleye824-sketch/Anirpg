@@ -230,6 +230,7 @@ function resetAllocations(player) {
   }
   
   player.gold -= resetCost;
+  try { require('./TransactionLog').logSpend(player, 'stat_reset', resetCost, 0); } catch (e) {}
   player.upgradePoints = (player.upgradePoints || 0) + totalPointsSpent;
   player.statAllocations = { hp: 0, atk: 0, def: 0, magicPower: 0, speed: 0, critChance: 0, critDamage: 0, lifesteal: 0, energy: 0 };
   

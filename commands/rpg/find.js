@@ -29,7 +29,12 @@ module.exports = {
 
     // Build sectioned lists (same order as /inventory)
     const gearItems    = [...items.filter(i => i.isGear)].sort((a,b)=>(rarityOrder[a.rarity]||6)-(rarityOrder[b.rarity]||6));
-    const petFoodItems = items.filter(i => i.isPetFood || i.type === 'PetFood');
+    let petFoodItems = [];
+    try {
+      const PDB = require('../../rpg/utils/PetDatabase');
+      PDB.normalisePetFood(player);
+      for (const [id, n] of Object.entries(player.inventory?.petFood || {})) { const f = PDB.PET_FOOD[id]; for (let k = 0; k < (n | 0); k++) petFoodItems.push({ id, name: f ? f.name : id, type: 'PetFood', isPetFood: true }); }
+    } catch (e) { petFoodItems = items.filter(i => i.isPetFood || i.type === 'PetFood'); }
     const consumables  = items.filter(i => !i.isGear && !i.isPetFood && i.type !== 'PetFood');
 
     // Old-style potions as virtual entries
@@ -113,7 +118,7 @@ module.exports = {
     message += '\n';
 
     for (const r of results) {
-      const re = rarityEmoji[r.rarity] || '📦';
+      const re = require('../../rpg/utils/ItemEmoji').tag(r.ref || r); // Push #71
       message += re + ' *' + r.name + '* ' + r.detail + '\n';
       message += '   📂 ' + r.section + ' #' + r.pos + ' — ' + r.cmd + '\n\n';
     }

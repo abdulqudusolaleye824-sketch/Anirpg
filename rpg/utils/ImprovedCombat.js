@@ -91,6 +91,22 @@ class ImprovedCombat {
       if (parsedEffects.damageMultiplier === 0 && (skill.damage || 0) > 0) parsedEffects.damageMultiplier = 1.0;
     }
 
+    // Push #71: RECOVERY SKILLS. Catalog entries carry `healingPct` for every
+    // heal-type skill (Last Breath, Inner Peace, Renew, …) but the engine only
+    // honoured a regex `selfHeal` parsed from prose — so most classes' heals
+    // "activated" and restored 0 HP. Feed the catalog value into the same
+    // special so every class heals for real, in every combat path.
+    try {
+      const _hp = Number(entry && entry.healingPct) || 0;
+      const _isHeal = String((entry && entry.type) || skill.type || '').toLowerCase() === 'heal';
+      // Hybrid moves (Holy Strike, Dark Feast, Water Wave…) both hit AND heal;
+      // pure heal-type moves heal only.
+      if (_hp > 0 && !parsedEffects.special.some(s => s.type === 'selfHeal')) {
+        parsedEffects.special.push({ type: 'selfHeal', percent: _hp });
+      }
+      if (_isHeal) { parsedEffects.damage = false; parsedEffects.damageMultiplier = 0; }
+    } catch (e) {}
+
     // ── Calculate base damage ─────────────────────────────────
     const weaponBonus = attacker.weapon?.bonus || attacker.weapon?.attack || 0;
 

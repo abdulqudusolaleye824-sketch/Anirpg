@@ -443,6 +443,11 @@ module.exports = {
 
     // 6. Wipe Target Data — the player, their guilds, and every reference
     const guildNames = _guildSnapshot.owned.map(o => o.guild?.name).filter(Boolean);
+    // Push #71: a reset player's gate keys are burnt immediately.
+    try {
+      const _burned = require('../../rpg/dungeons/GateKeyManager').burnKeysOf(targetJid, db, { by: sender });
+      if (_burned.length) _log.push(`gate keys burnt: ${_burned.map(b => `${b.key} (${b.rank || '?'})`).join(', ')}`);
+    } catch (e) { console.error('[reset] key burn failed:', e.message); }
     delete db.users[targetJid];
     wipeLiveSessions(db, _variants, _log);
     scrubCollections(db, _variants, _log);

@@ -299,7 +299,7 @@ class MonsterAbilities {
       name: 'Apocalypse',
       animation: '💀 Reality itself begins to unravel...\n🌌 APOCALYPSE! The end of all things!\n💀 Existence itself is threatened!',
       damageMultiplier: 5.0,
-      statusEffect: { type: 'doom', chance: 100, duration: 10, damage: 50 }
+      statusEffect: { type: 'doom', chance: 60, duration: 10, damage: 50 } // Push #71: was 100%
     },
     
     'Void Touch': {

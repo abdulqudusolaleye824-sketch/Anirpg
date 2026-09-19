@@ -56,9 +56,8 @@ function buildCard(player, db, targetId, mentionedId, isOwnProfile) {
 
   let power = 0, powerLabel = { emoji: '⚪', label: 'Unknown' };
   try {
-    let _effStats = player.stats || {};
-    try { _effStats = require('../../rpg/utils/GearSystem').getEffectiveStats(player); } catch (e) {}
-    power = calculatePowerRating(_effStats, Object.values(player.equippedGear || player.equipped || {}).filter(Boolean), player.pet) || 0;
+    // Push #71: same number as /stats (one shared formula).
+    power = require('../../rpg/utils/SoloLevelingCore').calculatePlayerPower(player) || 0;
     powerLabel = getPowerLabel(power) || powerLabel;
   } catch (e) {}
 

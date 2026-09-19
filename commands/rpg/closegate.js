@@ -137,7 +137,7 @@ module.exports = {
           `📦 → ${loot.destinationText || 'party leader'}`,
           `💚 +50% HP recovery for ${loot.recovered ?? survivors.length} hunter(s)`,
           `✨ XP · level-up XP · Astra Pass XP · Battle Pass XP awarded to everyone standing.`,
-          loot.wildPet ? `🐾 Wild pet spawned: ${loot.wildPet.name} — /caught ${loot.wildPet.token}` : '',
+          loot.wildPet ? `🐾 Wild pet spawned: ${loot.wildPet.name} — */catch*` : '',
         );
       } catch (e) {
         console.error('[closegate] clear settlement failed:', e.message);

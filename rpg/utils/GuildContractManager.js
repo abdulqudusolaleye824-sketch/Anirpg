@@ -39,8 +39,90 @@ function findUserInDb(db, bare) {
 function findGuild(db, ref) {
   if (!db?.guilds) return null;
   if (!ref) return null;
+  // Push #71: accept a guild OBJECT too (guild.js passes `playerGuild`).
+  if (typeof ref === 'object') {
+    if (ref.id && db.guilds[ref.id]) return db.guilds[ref.id];
+    return findGuild(db, ref.name) || ref;
+  }
   if (db.guilds[ref]) return db.guilds[ref];
   return Object.values(db.guilds).find(g => g && g.name && g.name.toLowerCase() === String(ref).toLowerCase()) || null;
+}
+
+// Push #71 — ONE resolver for "which guild is this player in".
+// guild.js matched `m.id === sender` (exact JID) while every money path
+// (deposit / gate loot / wages / GateKeyManager) resolved by NAME through
+// player.guild or by normalised number. A dual identity (lid vs phone) or a
+// stale/duplicate guild record therefore made /guild info read a DIFFERENT
+// object than the one the Nexus landed in.
+function resolvePlayerGuild(db, sender, playerRow = null) {
+  if (!db?.guilds) return null;
+  const me = normaliseJid(sender);
+  const player = playerRow || findUserInDb(db, me);
+  const inRoster = (g) => {
+    if (!g) return false;
+    if (normaliseJid(g.leader) === me) return true;
+    for (const arr of [g.members, g.memberData, g.officers]) {
+      for (const m of (arr || [])) {
+        const id = (m && typeof m === 'object') ? (m.id || m.jid) : m;
+        if (normaliseJid(id) === me) return true;
+      }
+    }
+    return false;
+  };
+  const all = Object.entries(db.guilds).filter(([, g]) => g && typeof g === 'object');
+  const wantName = player?.guild ? String(player.guild).toLowerCase() : null;
+  let hit = wantName ? all.find(([, g]) => g.name && g.name.toLowerCase() === wantName && inRoster(g)) : null;
+  if (!hit) hit = all.find(([, g]) => inRoster(g));
+  if (!hit && wantName) {
+    hit = all.find(([, g]) => g.name && g.name.toLowerCase() === wantName);
+    if (hit && player) {
+      const g = hit[1];
+      if (!Array.isArray(g.members)) g.members = [];
+      g.members.push({ id: sender, name: player.name, rank: 'Member', joinedAt: Date.now(), restoredAt: Date.now() });
+    }
+  }
+  if (!hit) return null;
+  const [gid, g] = hit;
+  if (!g.id) g.id = gid;
+  if (player && g.name && player.guild !== g.name) player.guild = g.name;
+  return g;
+}
+
+// Push #71 — duplicate-name guild records split the treasury between two
+// objects. Merge into the canonical one (most members, then oldest) —
+// Nexus, Mana, GP and roster summed — and drop the rest.
+function mergeDuplicateGuilds(db) {
+  if (!db?.guilds) return [];
+  const byName = {};
+  for (const [gid, g] of Object.entries(db.guilds)) {
+    if (!g || typeof g !== 'object' || !g.name) continue;
+    const k = String(g.name).trim().toLowerCase();
+    (byName[k] = byName[k] || []).push([gid, g]);
+  }
+  const merged = [];
+  for (const list of Object.values(byName)) {
+    if (list.length < 2) continue;
+    list.sort((a, b) => ((b[1].members || []).length - (a[1].members || []).length) || ((a[1].createdAt || 0) - (b[1].createdAt || 0)));
+    const [keepId, keep] = list[0];
+    if (!keep.id) keep.id = keepId;
+    for (const [gid, g] of list.slice(1)) {
+      keep.treasury = (keep.treasury || 0) + (g.treasury || 0);
+      keep.manaTreasury = (keep.manaTreasury || 0) + (g.manaTreasury || 0);
+      keep.totalRaids = (keep.totalRaids || 0) + (g.totalRaids || 0);
+      keep.weeklyGP = (keep.weeklyGP || 0) + (g.weeklyGP || 0);
+      keep.totalGP = (keep.totalGP || 0) + (g.totalGP || 0);
+      keep.guildPoints = (keep.guildPoints || 0) + (g.guildPoints || 0);
+      const have = new Set((keep.members || []).map(m => normaliseJid(typeof m === 'object' ? m.id : m)));
+      for (const m of (g.members || [])) {
+        const id = normaliseJid(typeof m === 'object' ? m.id : m);
+        if (id && !have.has(id)) { (keep.members = keep.members || []).push(m); have.add(id); }
+      }
+      if (db.guildContracts) for (const c of Object.values(db.guildContracts)) if (c && c.guildId === gid) c.guildId = keepId;
+      delete db.guilds[gid];
+      merged.push({ name: keep.name, keptId: keepId, droppedId: gid });
+    }
+  }
+  return merged;
 }
 
 // Roles allowed to run /guild hire + sign formal contracts.
@@ -159,6 +241,7 @@ function creditKickPayout(db, guildRef, playerJid, saveDatabase) {
     user.manaCrystals = (user.manaCrystals || 0) + res.payout.mana;
     if (user.inventory) user.inventory.gold = user.gold;
     credited = true;
+    try { require('./TransactionLog').logCredit(user, 'kick_severance', res.payout.nexus, res.payout.mana, 'x2 remaining contract'); } catch (e) {}
   }
   // Drop any pending wage approval for the kicked member — the contract is
   // gone, and a stale Pay/Skip DM must not linger in the approvals store.
@@ -265,6 +348,7 @@ function payOneWeek(db, guild, bare, c, now = Date.now()) {
     user.gold = (user.gold || 0) + reqNexus;
     user.manaCrystals = (user.manaCrystals || 0) + reqMana;
     if (user.inventory) user.inventory.gold = user.gold;
+    try { require('./TransactionLog').logCredit(user, 'wage', reqNexus, reqMana, guild.name); } catch (e) {}
   }
 
   c.weeksPaid = (c.weeksPaid || 0) + 1;
@@ -556,13 +640,28 @@ function tryResolveApprovalBySender(db, senderJid, approve, saveDatabase, guildR
 function getSalaryStatus(db, playerJid) {
   const user = findUserInDb(db, playerJid);
   if (!user) return { state: 'unregistered' };
-  const guildRef = user.guild;
-  if (!guildRef) return { state: 'no_guild' };
-  const guild = findGuild(db, guildRef);
-  if (!guild) return { state: 'no_guild', guildRef };
-  const realId = guild.id || guildRef;
-  const c = (db.guildContracts?.[realId] || {})[normaliseJid(playerJid)] || null;
-  if (!c) return { state: 'no_contract', guild: guild.name, guildId: realId };
+  // Push #71: resolve by LIVE membership (not just the cached user.guild name)
+  // so a rename / re-created record / dual identity can't show stale wages.
+  const guild = resolvePlayerGuild(db, playerJid, user) || (user.guild ? findGuild(db, user.guild) : null);
+  if (!guild) return { state: 'no_guild', guildRef: user.guild || null };
+  const realId = guild.id || Object.keys(db.guilds || {}).find(k => db.guilds[k] === guild) || user.guild;
+  const me = normaliseJid(playerJid);
+  let c = (db.guildContracts?.[realId] || {})[me] || null;
+  if (!c && db.guildContracts) {
+    // Contract filed under an old id / the guild's name / '[object Object]' → move it home.
+    for (const [bucketId, bucket] of Object.entries(db.guildContracts)) {
+      if (bucketId === realId || !bucket || !bucket[me]) continue;
+      const stray = bucket[me];
+      const belongs = bucketId === guild.name || bucketId === '[object Object]' || !db.guilds?.[bucketId];
+      if (!belongs) continue;
+      _contracts(db, realId)[me] = stray;
+      delete bucket[me];
+      if (!Object.keys(bucket).length) delete db.guildContracts[bucketId];
+      c = stray;
+      break;
+    }
+  }
+  if (!c) return { state: 'no_contract', guild: guild.name, guildId: realId, treasury: guild.treasury || 0, manaTreasury: guild.manaTreasury || 0 };
 
   const now = Date.now();
   const weeksLeft = Math.max(0, (c.weeks || 0) - (c.weeksPaid || 0));
@@ -586,6 +685,8 @@ function getSalaryStatus(db, playerJid) {
 
   return {
     state, contract: c, guild: guild.name, guildId: realId,
+    treasury: guild.treasury || 0, manaTreasury: guild.manaTreasury || 0,
+    canGuildPay: (guild.treasury || 0) >= (c.weeklyNexus || 0) && (guild.manaTreasury || 0) >= (c.weeklyMana || 0),
     claims, minClaims: MIN_WEEKLY_DAILIES,
     dueState, nextPayAt: c.nextPayAt, lastPayAt: c.lastPayAt,
     lastPaid, weeksLeft, approval: ap,
@@ -593,7 +694,7 @@ function getSalaryStatus(db, playerJid) {
 }
 
 module.exports = {
-  Week, normaliseJid, rankOf, findUserInDb,
+  Week, normaliseJid, rankOf, findUserInDb, findGuild, resolvePlayerGuild, mergeDuplicateGuilds,
   isGuildMasterOrVice, isGuildMember,
   getContract, hire, remainingBalance, kickPayout, creditKickPayout, processWeeklyPay,
   // Push #68

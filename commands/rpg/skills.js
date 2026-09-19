@@ -172,6 +172,7 @@ module.exports = {
       const cost = skillUpgradeCost(lv);
       if ((player.gold||0) < cost) return sock.sendMessage(chatId, { text: `❌ Not enough Nexus!\nNeed: 💠 ${cost.toLocaleString()}\nHave: 💠 ${(player.gold||0).toLocaleString()}` }, { quoted: msg });
       player.gold -= cost;
+      try { require('../../rpg/utils/TransactionLog').logSpend(player, 'skill_upgrade', cost, 0); } catch (e) {}
       skill.level = lv + 1;
       const newBonuses = applySkillLevelBonus(skill);
       const bar = skillLevelBar(skill.level, max);

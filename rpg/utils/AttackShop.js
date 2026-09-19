@@ -109,6 +109,7 @@ function purchaseFromShop(attackId, sender, db, saveDatabase) {
   const rank         = atk.rank;
 
   // S-rank requires BOTH
+  const _preGold71 = player.gold || 0, _preMana71 = player.manaCrystals || 0; // Push #71 ledger
   if (rank === 'S') {
     if ((player.gold || 0) < nexusNeeded) {
       return { success: false, error: `Not enough Nexus.\nNeed: ${nexusNeeded.toLocaleString()} | Have: ${(player.gold||0).toLocaleString()}` };
@@ -145,6 +146,14 @@ function purchaseFromShop(attackId, sender, db, saveDatabase) {
     }
     player.manaCrystals -= stonesNeeded;
   }
+
+  // Push #71: ledger the spend (whichever currency branch actually charged)
+  try {
+    const TL = require('./TransactionLog');
+    const paidN = Math.max(0, (_preGold71 || 0) - (player.gold || 0));
+    const paidM = Math.max(0, (_preMana71 || 0) - (player.manaCrystals || 0));
+    TL.logSpend(player, 'pattern_buy', paidN, paidM, `#${attackId}`);
+  } catch (e) {}
 
   // Purchase
   player.attackPatterns.owned.push(attackId);

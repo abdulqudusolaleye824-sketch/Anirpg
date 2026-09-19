@@ -118,7 +118,7 @@ module.exports = {
     const qualLabel   = className ? getQualityLabel(quality) : null;
 
     // ── Power rating ──────────────────────────────────────────
-    const powerRating = calculatePowerRating({ atk: totalAtk, def: totalDef, maxHp: totalHp, speed: totalSpd, critChance: totalCrit, magicPower: player.stats.magicPower||0 }, [], null);
+    const powerRating = require('../../rpg/utils/SoloLevelingCore').calculatePlayerPower(player); // Push #71: shared with /profile
     const powerLabel  = getPowerLabel(powerRating);
 
     // ══ Build message ═════════════════════════════════════════

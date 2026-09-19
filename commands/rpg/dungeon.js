@@ -296,6 +296,7 @@ module.exports = {
       if ((player.gold || 0) < cost) return sock.sendMessage(chatId, { text: `❌ Not enough Nexus!\nNeed: ${cost.toLocaleString()} 💠 | Have: ${(player.gold||0).toLocaleString()} 💠` }, { quoted: msg });
 
       player.gold -= cost;
+      try { require('../../rpg/utils/TransactionLog').logSpend(player, 'dungeon_entry', cost, 0); } catch (e) {}
       if (item.shared) {
         DungeonPartyManager.addItem(party.id, item.key, qty);
       } else {

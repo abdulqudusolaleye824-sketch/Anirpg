@@ -23,6 +23,8 @@ const CREDIT_TYPES = new Set([
   'send_receive', 'gift_receive',
   'quest_reward', 'dungeon_reward', 'pvp_reward', 'game_win',
   'prostore_bonus', 'admin_grant', 'shop_swap',
+  // Push #71
+  'guild_withdraw', 'kick_severance', 'wage', 'gate_loot', 'raid_salvage',
 ]);
 
 const TYPE_ICONS = {
@@ -38,6 +40,11 @@ const TYPE_ICONS = {
   quest_reward: '📜', dungeon_reward: '⚔️', pvp_reward: '🏆', game_win: '🎮',
   prostore_buy: '💎', prostore_bonus: '🎁',
   admin_grant: '🛡️',
+  // Push #71 — spends that were silently missing from the ledger
+  guild_deposit: '🏰', guild_withdraw: '🏰', guild_found: '🏰', kick_severance: '💸', wage: '💰',
+  catch_cost: '🪤', skill_upgrade: '📚', enchant: '🔮', gift: '🎁', dungeon_entry: '🚪',
+  artifact: '🏺', pattern_buy: '🥋', stat_reset: '♻️', gate_key: '🔑', awaken: '🌋',
+  pet_food: '🍖', gate_loot: '🏰', raid_salvage: '💰', guild_upgrade: '⬆️', guild_shop: '🛍️',
 };
 
 const TYPE_LABELS = {
@@ -54,6 +61,13 @@ const TYPE_LABELS = {
   quest_reward: 'Quest reward', dungeon_reward: 'Dungeon reward', pvp_reward: 'PvP reward', game_win: 'Game win',
   prostore_buy: 'Pro Store', prostore_bonus: 'Pro Store bonus',
   admin_grant: 'Admin grant',
+  // Push #71
+  guild_deposit: 'Guild deposit', guild_withdraw: 'Guild withdrawal', guild_found: 'Guild founded',
+  kick_severance: 'Kick severance', wage: 'Guild wage',
+  catch_cost: 'Pet catch', skill_upgrade: 'Skill upgrade', enchant: 'Enchant', gift: 'Gift sent',
+  dungeon_entry: 'Dungeon entry', artifact: 'Artifact', pattern_buy: 'Attack pattern', stat_reset: 'Stat reset',
+  gate_key: 'Gate key', awaken: 'Awakening', pet_food: 'Pet food', gate_loot: 'Gate loot', raid_salvage: 'Raid salvage',
+  guild_upgrade: 'Guild upgrade', guild_shop: 'Guild shop',
 };
 
 /**
@@ -123,4 +137,14 @@ function buildHistoryText(player, limit = 50) {
   return lines.join('\n');
 }
 
-module.exports = { logTransaction, buildHistoryText, isCredit, signFor, formatTx, CREDIT_TYPES, MAX_TRANSACTIONS };
+// Push #71: one-liners for the spend sites that never logged (that is why the
+// PRO LEDGER showed only credits while the balance sat below their sum).
+function logSpend(player, type, nexus = 0, mana = 0, note = '') {
+  try {
+    if (nexus > 0) logTransaction(player, { type, amount: nexus, currency: '💠', note });
+    if (mana > 0)  logTransaction(player, { type, amount: mana,  currency: '💎', note });
+  } catch (e) {}
+}
+function logCredit(player, type, nexus = 0, mana = 0, note = '') { logSpend(player, type, nexus, mana, note); }
+
+module.exports = { logTransaction, logSpend, logCredit, buildHistoryText, isCredit, signFor, formatTx, CREDIT_TYPES, MAX_TRANSACTIONS };

@@ -172,6 +172,7 @@ module.exports = {
           `${FRAME}`,
           ...(pro ? [`${rd.emoji} *${solo ? 'SOLO' : 'PARTY'} RAID — RECRUITING* 💎`, UI.PRO_BAR] : [`${rd.emoji} *${solo ? 'SOLO' : 'PARTY'} RAID — RECRUITING*`, UI.FREE_BAR]),
           `${rd.label} [${gate.id}]`,
+          ...(gate.strengthPct ? [`💪 Strength: *${require('../../rpg/dungeons/GateManager').strengthText(gate.rank, gate.strengthPct)}*`] : []),
           ``,
           isOpenKey
             ? `🔓 *Affiliate key* — open to everyone, no guild required.`
@@ -231,6 +232,7 @@ module.exports = {
         text: [
           ...(pro ? [UI.PRO_BAR, `${rd.emoji} *RAID STARTED!* 💎`, UI.PRO_BAR] : [`${rd.emoji} *RAID STARTED!*`, UI.FREE_BAR]),
           `${rd.label} [${gate.id}]`,
+          ...(gate.strengthPct ? [`💪 Strength: *${require('../../rpg/dungeons/GateManager').strengthText(gate.rank, gate.strengthPct)}*`] : []),
           `🗺️ Floor 1/${gate.totalFloors}`,
           ``,
           `👥 *Party (${raid.members.length}):*`,
@@ -550,6 +552,8 @@ module.exports = {
         tag: atkTitle, defenderBar: 'monster', gapMs: 600,
       });
       target.hp = Math.max(0, monWrap.stats.hp);
+      // Push #71: recovery skills report the HP they actually restored.
+      if (result.healed > 0) await sock.sendMessage(chatId, { text: `💚 *${result.skillUsed?.name || 'Recovery'}* restored *${result.healed}* HP → ${player.stats.hp}/${player.stats.maxHp}` });
       if (pro) await sock.sendMessage(chatId, { text: `💎 *PRO FOCUS* — your raid damage: ${UI.num(gate.damageDealt[sender])}` });
 
       if (target.hp <= 0 && _fightingBoss) {
@@ -630,14 +634,17 @@ module.exports = {
       const def = (player.stats?.def || 5) + (player.weapon?.defense || 0) + _gDefGR + (PetCombat.defBonus(sender) || 0);
       const dmg = _monCanAct.canAct ? GR.monsterDamage(target, def) : 0;
 
+      // Push #71: status chance per move (was a flat 100% — every counter
+      // stunned/burned/feared the hunter, which made recovery pointless).
       const skillPool = [
-        { name: '🔥 Flame Spurt', effect: 'burn' },
-        { name: '⚡ Volt Shock', effect: 'stun' },
-        { name: '🩸 Savage Bite', effect: 'bleed' },
-        { name: '😱 Terror Howl', effect: 'fear' },
-        { name: '🌀 Void Crush', effect: 'weaken' }
+        { name: '🔥 Flame Spurt', effect: 'burn',   chance: 40 },
+        { name: '⚡ Volt Shock',  effect: 'stun',   chance: 25 },
+        { name: '🩸 Savage Bite', effect: 'bleed',  chance: 40 },
+        { name: '😱 Terror Howl', effect: 'fear',   chance: 30 },
+        { name: '🌀 Void Crush',  effect: 'weaken', chance: 35 }
       ];
-      const monsterSkill = _monCanAct.canAct ? skillPool[Math.floor(Math.random() * skillPool.length)] : null;
+      const _pool71 = (Array.isArray(target.skills) && target.skills.length) ? target.skills : skillPool; // Push #71: bestiary moves
+      const monsterSkill = _monCanAct.canAct ? _pool71[Math.floor(Math.random() * _pool71.length)] : null;
       if (!_monCanAct.canAct) {
         const _fzWord = _monCanAct.reason === 'frozen' ? 'frozen solid' : _monCanAct.reason === 'paralyzed' ? 'paralyzed' : 'stunned';
         const _fzEmo = _monCanAct.reason === 'frozen' ? '❄️' : _monCanAct.reason === 'paralyzed' ? '🔱' : '💫';
@@ -654,7 +661,7 @@ module.exports = {
         const monAtk = { name: target.name, stats: { hp: target.hp, maxHp: target.maxHp }, statusEffects: target.statusEffects || [] };
         await UCgFlow.playTurn(sock, chatId, {
           attacker: monAtk, defender: player,
-          move: { name: monsterSkill.name, description: `A ferocious ${_skillBare} technique.`, cooldownMs: 0, effect: { type: monsterSkill.effect, chance: 100, duration: 2 } },
+          move: { name: monsterSkill.name, description: `A ferocious ${_skillBare} technique.`, cooldownMs: 0, effect: { type: monsterSkill.effect, chance: (monsterSkill.chance || 35), duration: 2 } }, // Push #71: no more 100% status
           result: { damage: dmg, crit: false, missed: false },
           tag: `💢 *MONSTER COUNTER-ATTACK*`, gapMs: 600,
         });
@@ -785,7 +792,7 @@ module.exports = {
         if (loot.wildPet && loot.wildPet.token) {
         out.push(``, `🐾 *WILD PET APPEARED!*`);
         out.push(`${loot.wildPet.emoji} *${loot.wildPet.name}* [${loot.wildPet.rarity.toUpperCase()}]`);
-        out.push(`🪤 /caught ${loot.wildPet.token} — hurry, it flees in 60s!`);
+        out.push(`🪤 */catch* — hurry, it flees in 60s!`);
         }
 
         // Push #55: scavenger pets pay out on the clear, and every raider's
@@ -872,6 +879,7 @@ module.exports = {
       boss.hp = Math.max(0, bossWrap.stats.hp);
 
       const lines = [];
+      if (result.healed > 0) lines.push(`💚 *${result.skillUsed?.name || 'Recovery'}* restored *${result.healed}* HP → ${player.stats.hp}/${player.stats.maxHp}`);
       // Push #55: the boss round reports what the pet did too.
       try { if (result.petLine) lines.push(result.petLine); } catch (e) {}
       try {

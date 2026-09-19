@@ -70,6 +70,7 @@ module.exports = {
 
       player.gold -= data.cost;
       if (data.crystals > 0) player.manaCrystals -= data.crystals;
+      try { require('../../rpg/utils/TransactionLog').logSpend(player, 'enchant', data.cost, data.crystals || 0); } catch (e) {}
 
       const roll = Math.random() * 100;
 

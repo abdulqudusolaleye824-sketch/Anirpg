@@ -154,10 +154,16 @@ module.exports = {
 
     const action = args[0]?.toLowerCase();
 
-    // Find player's guild
-    const playerGuild = Object.values(db.guilds).find(g => 
-      g.members && g.members.some(m => m.id === sender || m === sender)
-    );
+    // Push #71: merge duplicate guild records, purge the '[object Object]'
+    // contract bucket the #70 kick bug created, then resolve the player's guild
+    // through the SAME resolver every money path uses → /guild info is live.
+    const _CM71 = require('../../rpg/utils/GuildContractManager');
+    try {
+      const _m = _CM71.mergeDuplicateGuilds(db);
+      if (_m.length) console.log('[guild] merged duplicate guild records:', JSON.stringify(_m));
+      if (db.guildContracts && db.guildContracts['[object Object]']) delete db.guildContracts['[object Object]'];
+    } catch (e) {}
+    const playerGuild = _CM71.resolvePlayerGuild(db, sender, player);
 
     // ═══════════════════════════════════════════════════════════════════
     // /guild list — Table of all registered guilds
@@ -342,6 +348,7 @@ module.exports = {
         }, { quoted: msg });
       }
       player.gold -= 1000;
+      try { require('../../rpg/utils/TransactionLog').logSpend(player, 'guild_shop', 1000, 0, 'Guild bio'); } catch (e) {}
       if (player.inventory) player.inventory.gold = player.gold;
       playerGuild.bio = bio;
       saveDatabase();
@@ -519,6 +526,7 @@ module.exports = {
         player.gold = playerNexus - NEXUS_REQ;
         player.manaCrystals = playerMana - MANA_REQ;
         if (player.inventory) player.inventory.gold = player.gold;
+        try { require('../../rpg/utils/TransactionLog').logSpend(player, 'guild_found', NEXUS_REQ, MANA_REQ, guildName); } catch (e) {}
       }
 
       const guildId = `guild_${Date.now()}`;
@@ -635,7 +643,7 @@ ${FRAME}`
       let power = 0, powerLabel = { emoji: '⚪', label: 'Unknown' };
       try {
         const { calculatePowerRating, getPowerLabel } = require('../../rpg/utils/SoloLevelingCore');
-        power = calculatePowerRating(player.stats || {}, Object.values(player.equippedGear || player.equipped || {}).filter(Boolean), player.pet) || 0;
+        power = require('../../rpg/utils/SoloLevelingCore').calculatePlayerPower(player) || 0;
         powerLabel = getPowerLabel(power) || powerLabel;
       } catch (e) {}
 
@@ -900,6 +908,7 @@ ${FRAME}`
             }, { quoted: msg });
           }
           player.gold = playerGold - discountedPrice;
+          try { require('../../rpg/utils/TransactionLog').logSpend(player, 'guild_shop', discountedPrice, 0, item.name); } catch (e) {}
           if (player.inventory) player.inventory.gold = player.gold;
         } else {
           const playerMana = player.manaCrystals || 0;
@@ -909,6 +918,7 @@ ${FRAME}`
             }, { quoted: msg });
           }
           player.manaCrystals = playerMana - discountedPrice;
+          try { require('../../rpg/utils/TransactionLog').logSpend(player, 'guild_shop', 0, discountedPrice, item.name); } catch (e) {}
         }
 
         // Decrement stock unit
@@ -1169,7 +1179,7 @@ ${FRAME}\n`;
       let kickSev = null;
       try {
         const CM = require('../../rpg/utils/GuildContractManager');
-        kickSev = CM.creditKickPayout(db, playerGuild, targetId, null) || null; // saved by the saveDatabase() below
+        kickSev = CM.creditKickPayout(db, playerGuild.id || playerGuild.name, targetId, null) || null; // saved by the saveDatabase() below
       } catch (e) { console.error('[GUILD] kick severance failed:', e.message); }
 
       playerGuild.members.splice(idx, 1);
@@ -1379,6 +1389,7 @@ ${FRAME}\n`;
           playerGuild.treasury -= amount;
           player.gold = (player.gold || 0) + amount;
           if (player.inventory) player.inventory.gold = player.gold;
+          try { require('../../rpg/utils/TransactionLog').logCredit(player, 'guild_withdraw', amount, 0, playerGuild.name); } catch (e) {}
           saveDatabase();
           return sock.sendMessage(chatId, { text: `✅ *Withdrew* 💠 ${amount.toLocaleString()} Nexus to your balance.\n🏰 Treasury now: ${(playerGuild.treasury || 0).toLocaleString()} Nexus` });
         }
@@ -1387,6 +1398,7 @@ ${FRAME}\n`;
         player.gold = bal - amount;
         if (player.inventory) player.inventory.gold = player.gold;
         playerGuild.treasury = (playerGuild.treasury || 0) + amount;
+        try { require('../../rpg/utils/TransactionLog').logSpend(player, 'guild_deposit', amount, 0, playerGuild.name); } catch (e) {}
         try { require('../../rpg/utils/QuestDispatcher').trackAndNotify(player, 'donate', 1, sock, sender, chatId); } catch(e){}
         saveDatabase();
         return sock.sendMessage(chatId, { text: `✅ *Deposited* 💠 ${amount.toLocaleString()} Nexus to the guild.\n🏰 Treasury now: ${(playerGuild.treasury || 0).toLocaleString()} Nexus` });
@@ -1397,6 +1409,7 @@ ${FRAME}\n`;
         if (avail < amount) return sock.sendMessage(chatId, { text: `❌ Treasury only has ${avail.toLocaleString()} Mana Stones.` });
         playerGuild.manaTreasury -= amount;
         player.manaCrystals = (player.manaCrystals || 0) + amount;
+        try { require('../../rpg/utils/TransactionLog').logCredit(player, 'guild_withdraw', 0, amount, playerGuild.name); } catch (e) {}
         saveDatabase();
         return sock.sendMessage(chatId, { text: `✅ *Withdrew* 💎 ${amount.toLocaleString()} Mana Stones.\n🏰 Treasury now: ${(playerGuild.manaTreasury || 0).toLocaleString()} 💎` });
       }
@@ -1404,6 +1417,7 @@ ${FRAME}\n`;
       if (bal < amount) return sock.sendMessage(chatId, { text: `❌ You have ${bal.toLocaleString()} Mana Stones.` });
       player.manaCrystals = bal - amount;
       playerGuild.manaTreasury = (playerGuild.manaTreasury || 0) + amount;
+      try { require('../../rpg/utils/TransactionLog').logSpend(player, 'guild_deposit', 0, amount, playerGuild.name); } catch (e) {}
       try { require('../../rpg/utils/QuestDispatcher').trackAndNotify(player, 'donate', 1, sock, sender, chatId); } catch(e){}
       saveDatabase();
       return sock.sendMessage(chatId, { text: `✅ *Deposited* 💎 ${amount.toLocaleString()} Mana Stones.\n🏰 Treasury now: ${(playerGuild.manaTreasury || 0).toLocaleString()} 💎` });

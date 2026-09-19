@@ -179,9 +179,11 @@ function open(player, entry) {
       break;
     }
     case 'pet_food': {
-      if (!player.inventory.petFood) player.inventory.petFood = {};
-      player.inventory.petFood[src.id] = (player.inventory.petFood[src.id] || 0) + 1;
-      lines.push(`🐾 ${src.name} ×1 for your pet`);
+      // Push #71: land in the id-keyed bucket /pet feed reads.
+      const PDB = require('./PetDatabase');
+      const f = PDB.resolvePetFood(src.id) || PDB.resolvePetFood(src.name);
+      PDB.addPetFood(player, f ? f.id : 'kibble', 1);
+      lines.push(`🐾 ${f ? f.name : src.name} ×1 → /pet feed [#] ${f ? f.id : 'kibble'}`);
       break;
     }
     case 'bundle': {

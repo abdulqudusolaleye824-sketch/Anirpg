@@ -283,7 +283,25 @@ function normalise(className, raw, index) {
     }
   } catch (e) { /* parser drift must never brick a skill */ }
 
-  const selfHeal = (parsed.special || []).find(s => s && s.type === 'selfHeal');
+  let selfHeal = (parsed.special || []).find(s => s && s.type === 'selfHeal');
+
+  // Push #71 — RECOVERY DETECTION FOR EVERY CLASS.
+  // EffectParser only tagged "heal you / major heal / lay on hands", so
+  // Healer's "Heals 40% max HP", Shaman's "Heal 60% max HP", Paladin's
+  // "Allies heal 15%…", Monk's "Heal 25% HP + …" all came through as plain
+  // damage with healingPct 0 → the button said "healed" nothing. Any effect
+  // line that heals/restores/regenerates HP now yields a real heal %.
+  if (!selfHeal) {
+    const txt = `${effect}\n${desc}`;
+    const isLifesteal = /lifesteal|drain|leech|siphon|steal/i.test(txt) && !/heal(?:s|ing)?\s+\d+%|restor/i.test(effect);
+    const healLine = effect.split('\n').find(l => /\b(heal|heals|healing|restore|restores|regenerat\w*|recover|recovers|mend|renew\w*|revive|revives)\b/i.test(l) && /\bhp|health|max hp|wound|party|all(?:y|ies)|self|you\b/i.test(l) && !/damage.*heal|heal.*damage dealt/i.test(l));
+    if (healLine && !isLifesteal) {
+      const m = healLine.match(/(\d{1,3})\s*%/);
+      let pct = m ? parseInt(m[1], 10) : 0;
+      if (!pct) pct = /world|miracle|resurrect|revive|sanctuary|supreme|massive/i.test(healLine) ? 60 : /greatly|major|mass|full/i.test(healLine) ? 45 : 25;
+      selfHeal = { type: 'selfHeal', percent: Math.max(5, Math.min(100, pct)), inferred: true };
+    }
+  }
 
   const statuses = (parsed.statusEffects || [])
     .map(s => {
@@ -299,7 +317,9 @@ function normalise(className, raw, index) {
       duration: Math.max(1, Number(s.duration ?? s.turns ?? 2)),
     }));
 
-  const type      = String(raw.type || (statuses.length && !parsed.damageMultiplier ? 'debuff' : 'damage')).toLowerCase();
+  let type        = String(raw.type || (statuses.length && !parsed.damageMultiplier ? 'debuff' : 'damage')).toLowerCase();
+  // Push #71: a healing move with no stated ATK multiplier IS a heal skill.
+  if (type === 'damage' && selfHeal && !parsed.damageMultiplier) type = 'heal';
   const isPassive = type === 'passive' || /•\s*passive/i.test(effect);
 
   const energyCost = Math.max(0, Number(

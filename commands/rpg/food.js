@@ -1,129 +1,100 @@
-// /food — pet food only, numbered, stackable
-// /food give [#] [qty] @player — transfer food to another player
+// /food — pet food pantry (Push #71: one id-keyed bucket, feeds /pet feed)
+// /food                         — numbered list of what you own
+// /food give [#] [qty] @player  — transfer food to another player
+'use strict';
+
+const UI = require('../../rpg/utils/UI');
+const PDB = require('../../rpg/utils/PetDatabase');
+
+function pantry(player) {
+  PDB.normalisePetFood(player);
+  const bag = player.inventory?.petFood || {};
+  return Object.entries(bag)
+    .filter(([, n]) => (n | 0) > 0)
+    .map(([id, n]) => ({ id, count: n | 0, ...(PDB.PET_FOOD[id] || { name: id, emoji: '🍖', hungerRestore: 0, bondingBonus: 0, xpBonus: 0, cost: 0 }) }))
+    .sort((a, b) => (b.cost || 0) - (a.cost || 0) || a.name.localeCompare(b.name));
+}
+
 module.exports = {
   name: 'food',
+  aliases: ['pantry', 'petfood'],
   description: 'View and transfer your pet food',
 
   async execute(sock, msg, args, getDatabase, saveDatabase, sender) {
     const chatId = msg.key.remoteJid;
     const db = getDatabase();
     const player = db.users[sender];
+    if (!player) return sock.sendMessage(chatId, { text: '❌ You are not registered!' }, { quoted: msg });
 
-    if (!player) {
-      return sock.sendMessage(chatId, { text: '❌ You are not registered!' }, { quoted: msg });
-    }
-    const UI = require('../../rpg/utils/UI');
     const pro = UI.isPro(player);
     const FRAME = pro ? UI.PRO_BAR : UI.FREE_BAR;
+    const sub = (args[0] || '').toLowerCase();
+    const list = pantry(player);
 
-    const subCmd = args[0]?.toLowerCase();
-
-    const PET_FOOD_NAMES = new Set([
-      'Gel','Water','Meat','Bone','Coal','Fish','Fire Gem','Electric Mana Stone',
-      'Metal','Shadow Essence','Dragon Meat','Rare Gems','Spirit Essence',
-      'Celestial Fruit','Ice Mana Stone','Phoenix Tears','Chaos Shard',
-      'Ancient Stone','Void Mana Stone','Star Dust','Primordial Essence','Existence Shard'
-    ]);
-
-    const allItems = player.inventory?.items || [];
-
-    const foodItems = allItems.filter(item =>
-      item.isPetFood ||
-      (item.type || '').toLowerCase() === 'petfood' ||
-      PET_FOOD_NAMES.has(item.name)
-    );
-
-    // Stack by name
-    const rarityOrder = { mythic:0, legendary:1, epic:2, rare:3, uncommon:4, common:5 };
-    const stacked = {};
-    for (const item of foodItems) {
-      if (!stacked[item.name]) stacked[item.name] = { ...item, count: 0 };
-      stacked[item.name].count++;
-    }
-    const sorted = Object.values(stacked).sort((a, b) => {
-      const ra = rarityOrder[(a.rarity||'').toLowerCase()] ?? 6;
-      const rb = rarityOrder[(b.rarity||'').toLowerCase()] ?? 6;
-      return ra - rb || a.name.localeCompare(b.name);
-    });
-
-    // ── /food give [#] [qty] @player ──────────────────────────
-    if (subCmd === 'give') {
+    // ── /food give [#] [qty] @player ─────────────────────────────
+    if (sub === 'give') {
       const itemNum = parseInt(args[1]);
-      const qty = parseInt(args[2]) || 1;
-
-      if (!itemNum || itemNum < 1 || itemNum > sorted.length) {
-        return sock.sendMessage(chatId, {
-          text: `❌ Invalid food number!\n\nUse /food to see your numbered list.\nExample: /food give 1 5 @player`
-        }, { quoted: msg });
+      const qty = Math.max(1, parseInt(args[2]) || 1);
+      if (!itemNum || itemNum < 1 || itemNum > list.length) {
+        return sock.sendMessage(chatId, { text: `❌ Invalid food number!\n\nUse /food to see your numbered list.\nExample: /food give 1 5 @player` }, { quoted: msg });
       }
-
-      const mentions = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
-      if (!mentions.length) {
-        return sock.sendMessage(chatId, {
-          text: `❌ Tag a player!\nExample: /food give ${itemNum} ${qty} @player`
-        }, { quoted: msg });
+      const ctx = msg.message?.extendedTextMessage?.contextInfo;
+      const recipientId = ctx?.mentionedJid?.[0] || ctx?.participant;
+      if (!recipientId) return sock.sendMessage(chatId, { text: `❌ Tag or reply to a player!\nExample: /food give ${itemNum} ${qty} @player` }, { quoted: msg });
+      if (recipientId === sender) return sock.sendMessage(chatId, { text: `❌ Can't give to yourself!` }, { quoted: msg });
+      let recipient = db.users[recipientId];
+      if (!recipient) {
+        try { recipient = require('../../rpg/utils/GuildContractManager').findUserInDb(db, require('../../rpg/utils/GuildContractManager').normaliseJid(recipientId)); } catch (e) {}
       }
+      if (!recipient) return sock.sendMessage(chatId, { text: `❌ That player is not registered!` }, { quoted: msg });
 
-      const recipientId = mentions[0];
-      if (recipientId === sender)
-        return sock.sendMessage(chatId, { text: `❌ Can't give to yourself!` }, { quoted: msg });
+      const sel = list[itemNum - 1];
+      if (qty > sel.count) return sock.sendMessage(chatId, { text: `❌ You only have ${sel.count}× *${sel.name}*!` }, { quoted: msg });
 
-      const recipient = db.users[recipientId];
-      if (!recipient)
-        return sock.sendMessage(chatId, { text: `❌ That player is not registered!` }, { quoted: msg });
-
-      const selected = sorted[itemNum - 1];
-      if (qty > selected.count) {
-        return sock.sendMessage(chatId, {
-          text: `❌ You only have ${selected.count}× *${selected.name}*!`
-        }, { quoted: msg });
-      }
-
-      // Move qty items from sender to recipient
-      let moved = 0;
-      if (!recipient.inventory) recipient.inventory = { items: [] };
-      if (!recipient.inventory.items) recipient.inventory.items = [];
-
-      for (let i = allItems.length - 1; i >= 0 && moved < qty; i--) {
-        const it = allItems[i];
-        if (it.name === selected.name && (it.isPetFood || PET_FOOD_NAMES.has(it.name) || (it.type||'').toLowerCase() === 'petfood')) {
-          recipient.inventory.items.push({ ...it });
-          allItems.splice(i, 1);
-          moved++;
-        }
-      }
-
+      PDB.consumePetFood(player, sel.id, qty);
+      PDB.addPetFood(recipient, sel.id, qty);
       saveDatabase();
 
-      const rarityEmoji = { mythic:'🌌', legendary:'🟠', epic:'🟣', rare:'🔵', uncommon:'🟢', common:'⚪' };
-      const re = rarityEmoji[(selected.rarity||'').toLowerCase()] || '🍖';
-
       return sock.sendMessage(chatId, {
-        text: (pro ? `${UI.PRO_BAR}\n🍖 *FOOD TRANSFERRED!* 💎\n${UI.PRO_BAR}\n\n${re} *${selected.name}*` : `🍖 *FOOD TRANSFERRED!*\n${UI.FREE_BAR}\n\n${re} *${selected.name}*`)+` ×${moved}\n\n📤 From: *${player.name}*\n📥 To: *${recipient.name}*\n${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO PANTRY* — sent ${selected.name} ×${moved}` : `\n${UI.upsell()}`),
-        mentions: [recipientId]
+        text: [
+          ...(pro ? [UI.PRO_BAR, `🍖 *FOOD TRANSFERRED!* 💎`, UI.PRO_BAR] : [`🍖 *FOOD TRANSFERRED!*`, UI.FREE_BAR]),
+          ``,
+          `${sel.emoji} *${sel.name}* ×${qty}`,
+          ``,
+          `📤 From: *${player.name}*`,
+          `📥 To: *${recipient.name}*`,
+          FRAME,
+          ...(pro ? [UI.PRO_MINI, `💎 *PRO PANTRY* — sent ${sel.name} ×${qty}`] : [UI.upsell()]),
+        ].join('\n'),
+        mentions: [recipientId],
       }, { quoted: msg });
     }
 
-    // ── Default: numbered food list ────────────────────────────
-    if (sorted.length === 0) {
+    // ── Default: numbered pantry ─────────────────────────────────
+    if (!list.length) {
       return sock.sendMessage(chatId, {
-        text: (pro ? `${UI.PRO_BAR}\n🍖 *PET FOOD* 💎\n${UI.PRO_BAR}\n\n❌ No pet food!\n\n💡 Clear dungeons to find food drops.\n📌 /pet foods — see all food types\n${UI.PRO_BAR}\n${UI.PRO_MINI}\n💎 *PRO PANTRY* — pantry empty` : `🍖 *PET FOOD*\n${UI.FREE_BAR}\n\n❌ No pet food!\n\n💡 Clear dungeons to find food drops.\n📌 /pet foods — see all food types\n${UI.FREE_BAR}\n${UI.upsell()}`)
+        text: [
+          ...(pro ? [UI.PRO_BAR, `🍖 *PET FOOD* 💎`, UI.PRO_BAR] : [`🍖 *PET FOOD*`, UI.FREE_BAR]),
+          ``,
+          `❌ Your pantry is empty.`,
+          ``,
+          `🛍️ Buy: */pet foods* → \`/pet buy <food> [qty]\` (💠 Nexus)`,
+          `⚔️ Or clear gates — monsters drop food.`,
+          FRAME,
+          ...(pro ? [UI.PRO_MINI, `💎 *PRO PANTRY* — pantry empty`] : [UI.upsell()]),
+        ].join('\n'),
       }, { quoted: msg });
     }
 
-    const rarityEmoji = { mythic:'🌌', legendary:'🟠', epic:'🟣', rare:'🔵', uncommon:'🟢', common:'⚪' };
-
-    let message = pro ? `${UI.PRO_BAR}\n🍖 *PET FOOD INVENTORY* 💎\n${UI.PRO_BAR}\n\n` : `🍖 *PET FOOD INVENTORY*\n${UI.FREE_BAR}\n\n`;
-    sorted.forEach((item, i) => {
-      const re = rarityEmoji[(item.rarity||'').toLowerCase()] || '🍖';
-      message += `*${i+1}.* ${re} ${item.name} ×${item.count}\n`;
-    });
-    message += `\n${FRAME}\n`;
-    message += `/pet feed [pet#] [food name] — feed pet\n`;
-    message += `/food give [#] [qty] @player — transfer\n`;
-    message += `/pet foods — all food types\n`;
-    message += `${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO PANTRY* — ${sorted.length} kinds` : `\n${UI.upsell()}`);
-
-    return sock.sendMessage(chatId, { text: message }, { quoted: msg });
-  }
+    const lines = [
+      ...(pro ? [UI.PRO_BAR, `🍖 *PET FOOD PANTRY* 💎`, UI.PRO_BAR] : [`🍖 *PET FOOD PANTRY*`, UI.FREE_BAR]),
+      ``,
+      ...list.map((f, i) => `*${i + 1}.* ${f.emoji} ${f.name} ×${f.count}  _(hunger -${f.hungerRestore} · bond +${f.bondingBonus} · xp +${f.xpBonus})_\n     🍖 \`/pet feed [#] ${f.id}\``),
+      ``,
+      FRAME,
+      `📤 /food give [#] [qty] @player   ·   🛍️ /pet foods`,
+      ...(pro ? [UI.PRO_MINI, `💎 *PRO PANTRY* — ${list.reduce((a, f) => a + f.count, 0)} portions across ${list.length} kinds`] : [UI.upsell()]),
+    ];
+    return sock.sendMessage(chatId, { text: lines.join('\n') }, { quoted: msg });
+  },
 };

@@ -164,7 +164,7 @@ module.exports = {
         if (isNaN(idx) || !pets[idx] || !foodName) {
           return sock.sendMessage(chatId, { text: '❌ Usage: /pet feed [#] [food]\nSee /pet foods' }, { quoted: msg });
         }
-        const result = PetManager.feedPet(sender, pets[idx].instanceId, foodName);
+        const result = PetManager.feedPet(sender, pets[idx].instanceId, foodName, player);
         if (result && result.success) {
           try { require('../../rpg/utils/QuestDispatcher').trackAndNotify(player, 'feed', 1, sock, sender, chatId); } catch(e){}
           saveDatabase();
@@ -172,14 +172,36 @@ module.exports = {
         return sock.sendMessage(chatId, { text: result.message }, { quoted: msg });
       }
 
+      // ── BUY FOOD (Push #71: shop → inventory → feed) ────────
+      if (sub === 'buy') {
+        const PDB = require('../../rpg/utils/PetDatabase');
+        const qty = Math.max(1, Math.min(99, parseInt(args[args.length - 1]) || 1));
+        const nameArgs = (!isNaN(parseInt(args[args.length - 1])) && args.length > 2) ? args.slice(1, -1) : args.slice(1);
+        const food = PDB.resolvePetFood(nameArgs.join(' '));
+        if (!food) return sock.sendMessage(chatId, { text: '❌ Usage: /pet buy <food> [qty]\nSee /pet foods for names.' }, { quoted: msg });
+        const total = food.cost * qty;
+        if ((player.gold || 0) < total) {
+          return sock.sendMessage(chatId, { text: `❌ Not enough Nexus.\n${food.emoji} ${food.name} ×${qty} = 💠 ${total.toLocaleString()}\nYou have: 💠 ${(player.gold || 0).toLocaleString()}` }, { quoted: msg });
+        }
+        player.gold -= total;
+        if (player.inventory) player.inventory.gold = player.gold;
+        const now = PDB.addPetFood(player, food.id, qty);
+        try { require('../../rpg/utils/TransactionLog').logSpend(player, 'pet_food', total, 0, `${food.name} ×${qty}`); } catch (e) {}
+        saveDatabase();
+        return sock.sendMessage(chatId, { text: `${FRAME}\n🛍️ *PET FOOD BOUGHT*\n${FRAME}\n${food.emoji} *${food.name}* ×${qty} → 🎒 inventory (now ×${now})\n💠 Paid: ${total.toLocaleString()} Nexus · Balance: ${(player.gold || 0).toLocaleString()}\n\n🍖 Feed: /pet feed [#] ${food.id}\n${FRAME}` }, { quoted: msg });
+      }
+
       // ── FOODS LIST ──────────────────────────────────────────
-      if (sub === 'foods' || sub === 'food') {
-        let txt = `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🍖 *PET FOOD*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
-        Object.values(PET_FOOD).forEach(f => {
-          txt += `${f.emoji} *${f.name}* — ${f.cost.toLocaleString()}g\n`;
-          txt += `   Hunger -${f.hungerRestore} | Bonding +${f.bondingBonus} | XP +${f.xpBonus}\n\n`;
+      if (sub === 'foods' || sub === 'food' || sub === 'shop') {
+        const PDB = require('../../rpg/utils/PetDatabase');
+        PDB.normalisePetFood(player);
+        let txt = `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🍖 *PET FOOD SHOP* (💠 Nexus)\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n💠 Balance: *${(player.gold || 0).toLocaleString()}*\n\n`;
+        Object.entries(PET_FOOD).forEach(([id, f]) => {
+          const have = PDB.petFoodCount(player, id);
+          txt += `${f.emoji} *${f.name}* — 💠 ${f.cost.toLocaleString()} Nexus${have ? `  _(owned ×${have})_` : ''}\n`;
+          txt += `   Hunger -${f.hungerRestore} | Bonding +${f.bondingBonus} | XP +${f.xpBonus}  ·  \`/pet buy ${id}\`\n\n`;
         });
-        txt += `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n/pet feed [#] [food name]`;
+        txt += `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🛒 /pet buy <food> [qty]  →  🎒 /food  →  🍖 /pet feed [#] <food>`;
         return sock.sendMessage(chatId, { text: txt }, { quoted: msg });
       }
 

@@ -178,6 +178,7 @@ function purchaseGateKey(sender, gate, db, saveDatabase) {
       }
       if (player.inventory) player.inventory.gold = player.gold;
       paymentSource = 'personal';
+      try { require('../utils/TransactionLog').logSpend(player, 'gate_key', nexusPrice, isBoth ? manaPrice : 0, `${gate.rank}-Rank gate`); } catch (e) {}
     } else {
       const needTxt = isBoth
         ? `${nexusPrice.toLocaleString()} 💠 Nexus AND ${manaPrice.toLocaleString()} 💎 Mana Stones`
@@ -200,6 +201,7 @@ function purchaseGateKey(sender, gate, db, saveDatabase) {
     key,
     gateId:       gate.id,
     gateRank:     gate.rank,
+    strengthPct:  gate.strengthPct || null, // Push #71
     spawnChatId:  gate.chatId,
     ownedBy:      sender,
     guildName:    isAff ? affData.guildName : guildName,
@@ -321,6 +323,37 @@ function checkExpiredKeys(sock, db, saveDatabase) {
   saveDatabase();
 }
 
+// Push #71: burn EVERY live key a hunter owns (used by /burnkey and by
+// /reset so a wiped player's keys die with them). Returns the burned list.
+function burnKeysOf(playerJid, db, opts = {}) {
+  const me = normaliseJid(playerJid);
+  const burned = [];
+  if (!me) return burned;
+  const seen = new Set();
+  const consider = (key, k) => {
+    if (!k || seen.has(key)) return;
+    seen.add(key);
+    if (normaliseJid(k.ownedBy) !== me) return;
+    const live = !k.expired && !k.raidComplete && Date.now() < (k.expiresAt || 0);
+    if (!live && !opts.includeDead) return;
+    k.expired = true; k.used = true; k.raidComplete = true; k.burnedAt = Date.now(); k.burnedBy = opts.by || 'system';
+    if (db?.gateKeys?.[key]) Object.assign(db.gateKeys[key], { expired: true, used: true, raidComplete: true, burnedAt: k.burnedAt, burnedBy: k.burnedBy });
+    if (activeKeys[key]) delete activeKeys[key];
+    // Free the dungeon GC this key was holding.
+    if (k.dungeonChatId) {
+      const gc = dungeonGCs[k.dungeonChatId];
+      if (gc && gc.activeKeyId === key) gc.activeKeyId = null;
+      if (db?.dungeonGCs?.[k.dungeonChatId]?.activeKeyId === key) db.dungeonGCs[k.dungeonChatId].activeKeyId = null;
+    }
+    // Drop the gate record so a burned key can never resurrect a raid.
+    try { if (k.gateId && db?.activeGates) delete db.activeGates[k.gateId]; } catch (e) {}
+    burned.push({ key, rank: k.gateRank, gateId: k.gateId });
+  };
+  for (const [key, k] of Object.entries(activeKeys)) consider(key, k);
+  for (const [key, k] of Object.entries(db?.gateKeys || {})) consider(key, k);
+  return burned;
+}
+
 function getKey(key, db = null) {
   if (!key) return null;
   const upper = String(key).toUpperCase().trim();
@@ -388,6 +421,7 @@ module.exports = {
   checkExpiredKeys,
   recycleOldKeys,
   getKey,
+  burnKeysOf,
   formatStability,
   normaliseJid,
   findGuild,

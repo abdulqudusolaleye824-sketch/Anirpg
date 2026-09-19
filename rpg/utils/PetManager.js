@@ -218,13 +218,22 @@ class PetManager {
   }
 
   // ── FEED PET ──────────────────────────────────────────────
-  feedPet(playerId, petInstanceId, foodName) {
+  feedPet(playerId, petInstanceId, foodName, playerRow = null) {
     const pd = this.getPlayerData(playerId);
     const pet = pd.pets.find(p => p.instanceId === petInstanceId);
     if (!pet) return { success: false, message: '❌ Pet not found!' };
-    const foodKey = foodName.toLowerCase().replace(' ', '_');
-    const food = PET_FOOD[foodKey] || Object.values(PET_FOOD).find(f => f.name.toLowerCase() === foodName.toLowerCase());
+    const PDB = require('./PetDatabase');
+    const food = PDB.resolvePetFood(foodName);
     if (!food) return { success: false, message: `❌ Unknown food: ${foodName}\nSee /pet foods` };
+    // Push #71: food comes OUT of the hunter's inventory (shop → inv → pet).
+    // Before this, feeding was free and inventory food was dead weight.
+    if (playerRow) {
+      PDB.normalisePetFood(playerRow);
+      if (!PDB.consumePetFood(playerRow, food.id, 1)) {
+        const have = PDB.petFoodCount(playerRow, food.id);
+        return { success: false, message: `❌ You have no *${food.name}* in your inventory (${have}).\n🛍️ Buy some: /shop pet  ·  🍖 See yours: /food` };
+      }
+    }
 
     const isPreferred = Array.isArray(food.types) && food.types.includes((pet.type || '').toLowerCase());
     const bondingGain = isPreferred ? food.bondingBonus * 2 : food.bondingBonus;

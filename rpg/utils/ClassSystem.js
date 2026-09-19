@@ -222,9 +222,71 @@ function formatQualityStars(quality) {
 }
 
 // ── Roll a class awakening ───────────────────────────────────────────────────
+// Push #71: the divine tier (Senku) is OWNER-EXCLUSIVE — but ALL_CLASSES is
+// built from every class file, divine included, so the random roll could
+// (and did) hand Senku to a regular player. Roll only from non-divine classes.
+function isExclusiveClass(name) {
+  const d = _CLASS_DATA[name];
+  return !!(d && (d.rarity === 'divine' || d.ownerOnly === true)) || name === 'Senku';
+}
+function rollableClasses() {
+  return ALL_CLASSES.filter(n => !isExclusiveClass(n));
+}
 function rollClassAwakening() {
-  const idx = Math.floor(Math.random() * ALL_CLASSES.length);
-  return ALL_CLASSES[idx];
+  const pool = rollableClasses();
+  const idx = Math.floor(Math.random() * pool.length);
+  return pool[idx];
+}
+
+// Push #71: /recon — strip a class (and its quality-scaled bonuses/skills)
+// and re-roll a fresh one. Used to take Senku off a player who rolled it.
+function stripClassFromPlayer(player) {
+  if (!player) return false;
+  const base = player.classBase || (typeof player.class === 'string' ? player.class : player.class?.name);
+  const data = base ? _CLASS_DATA[base] : null;
+  const quality = player.classQuality || 100;
+  if (data && player.stats) {
+    for (const [stat, max] of Object.entries(data.maxBonuses || {})) {
+      const bonus = applyQuality(max, quality);
+      if (stat === 'hp' || stat === 'maxHp') {
+        player.stats.maxHp = Math.max(50, (player.stats.maxHp || 100) - bonus);
+        player.stats.hp = Math.min(player.stats.hp || 0, player.stats.maxHp);
+      } else if (stat === 'maxEnergy') {
+        player.stats.maxEnergy = Math.max(50, (player.stats.maxEnergy || 100) - bonus);
+        player.stats.energy = Math.min(player.stats.energy || 0, player.stats.maxEnergy);
+      } else if (player.stats[stat] !== undefined) {
+        player.stats[stat] = Math.max(0, (player.stats[stat] || 0) - bonus);
+      }
+    }
+  }
+  player.class = null;
+  delete player.classBase;
+  delete player.classSkills;
+  delete player.classQuality;
+  delete player.monsterVariant;
+  delete player.evolvedClass;
+  if (player.skills) { player.skills.active = []; player.skills.locked = []; }
+  player.availableSkills = [];
+  player.skillCooldowns = {};
+  return true;
+}
+
+function reconClass(player, opts = {}) {
+  if (!player) return { success: false, error: 'No player.' };
+  const oldName = player.classBase || (typeof player.class === 'string' ? player.class : player.class?.name) || null;
+  stripClassFromPlayer(player);
+  let pool = rollableClasses();
+  if (oldName) pool = pool.filter(n => n !== oldName);
+  if (opts.exclude) pool = pool.filter(n => !opts.exclude.includes(n));
+  if (!pool.length) pool = rollableClasses();
+  const className = pool[Math.floor(Math.random() * pool.length)];
+  applyClassToPlayer(player, className);
+  player.class = player.class || className; // Monster branch sets variant name
+  player.classBase = player.classBase || className;
+  player.classAssignedAt = Date.now();
+  player.classReconAt = Date.now();
+  try { require('./SkillCatalog').resetPlayerSkills(player); } catch (e) {}
+  return { success: true, oldName, className, quality: player.classQuality };
 }
 
 // ── Roll a monster variant ───────────────────────────────────────────────────
@@ -438,7 +500,7 @@ module.exports = {
 
   // Core functions
   hardcodedClassFor,
-  rollClassAwakening,
+  rollClassAwakening, rollableClasses, isExclusiveClass, stripClassFromPlayer, reconClass,
   rollMonsterVariant,
   applyClassToPlayer,
   checkClassAwakening,

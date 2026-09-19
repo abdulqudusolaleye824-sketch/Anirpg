@@ -1551,6 +1551,7 @@ function enhanceArtifact(player, artifactName) {
   // Deduct cost
   player.gold -= cost.gold;
   player.manaCrystals -= cost.crystals;
+  try { require('./TransactionLog').logSpend(player, 'artifact', cost.gold, cost.crystals); } catch (e) {}
   
   if (roll < successRate) {
     // Success!

@@ -182,7 +182,7 @@ Pets hatch from eggs found in dungeons (after level 3).
 Egg types: Common 🥚 (65%), Fire 🔥🥚 (25%), Shadow 🌑🥚 (8%), Ancient ✨🥚 (rare)
 • Roles: Attack (boost damage), Support (heal/buff), Scavenger (extra loot)
 • /pet to view; /catch during a dungeon to try catching wild pets (up to 3 attempts per use)
-• Gate pets: after clearing a gate a wild pet may appear — catch it with /caught <token> before it flees (60s; each attempt costs Nexus + Mana Stones)
+• Gate pets: after clearing a gate a wild pet may appear — catch it with /catch before it flees (60s; each attempt costs Nexus + Mana Stones)
 
 --- AURA SYSTEM & TIERS ---
 Aura is earned from kills, wins and notable deeds. Your Aura tier titles:

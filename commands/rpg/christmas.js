@@ -294,6 +294,7 @@ ${boss.weakness === player.class.name ? '✨ *CLASS ADVANTAGE!* +50% DMG!\n━�
 
       // Deduct cost from sender
       player.gold -= giftCost;
+      try { require('../../rpg/utils/TransactionLog').logSpend(player, 'gift', giftCost, 0, 'Christmas'); } catch (e) {}
 
       // Give rewards to recipient
       recipient.gold = (recipient.gold || 0) + rewards.gold;

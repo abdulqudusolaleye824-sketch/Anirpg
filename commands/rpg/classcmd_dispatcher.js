@@ -252,6 +252,22 @@ async function defaultHandler(sock, msg, player, skill, db, saveDatabase, getDat
     }
   }
 
+  // Push #71: catalog heal skills carry `type:'heal'` + `healingPct` (not
+  // effect.type) — so every class's recovery move heals here too.
+  let _catHeal = 0;
+  try {
+    const SC = require('../../rpg/utils/SkillCatalog');
+    const r = SC.resolveSkill(player, skill.name, { silent: true });
+    const entry = r && r.ok ? (r.entry || r.skill) : null;
+    if (entry && (entry.type === 'heal' || entry.category === 'heal') && !(skill.effect && skill.effect.type === 'heal')) _catHeal = Number(entry.healingPct) || 20;
+  } catch (e) {}
+  if (_catHeal > 0) {
+    const maxHp = player.stats.maxHp || 100;
+    const before = player.stats.hp || 0;
+    player.stats.hp = Math.min(maxHp, before + Math.floor(maxHp * _catHeal / 100));
+    resultText += `\n💚 +${(player.stats.hp - before).toLocaleString()} HP restored (${_catHeal}%)!`;
+  }
+
   if (skill.effect && skill.effect.type === 'heal') {
     const healPct = skill.effect.healPercent || 0.20;
     const maxHp = player.stats.maxHp || 100;
