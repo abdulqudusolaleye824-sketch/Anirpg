@@ -308,6 +308,27 @@ function wipeGate(gate, key, keyData, chatId, db) {
   ];
 }
 
+// Push #82: one hunter, one raid. Scans every live gate for a raid that is
+// still recruiting/active and already lists this sender (JID-tolerant).
+function findOtherRaid(sender, gate) {
+  const sNum = GKM.normaliseJid(sender);
+  let all = {};
+  try { all = GateManager.activeGates || {}; } catch (e) {}
+  for (const g of Object.values(all)) {
+    if (!g || g === gate || (gate && g.id === gate.id)) continue;
+    const r = g.raid;
+    if (!r || !Array.isArray(r.members) || r.status === 'done') continue;
+    if (r.status !== 'recruiting' && r.status !== 'active') continue;
+    const hit = r.members.find(x => x.id === sender || (sNum && GKM.normaliseJid(x.id) === sNum));
+    if (hit && (hit.hp === undefined || hit.hp > 0)) return g;
+  }
+  return null;
+}
+function otherRaidError(g) {
+  const code = g.code || g.keyCode || g.id || '?';
+  return `🚫 *You are already in another raid!*\n\n🚪 Gate: *${g.rank || '?'}-Rank* (${code})\nFinish it, die in it, or wait for it to end before joining a new one.`;
+}
+
 function ensureMember(gate, sender, db) {
   const player = db.users?.[sender];
   const raid = gate.raid;
@@ -334,6 +355,7 @@ function ensureMember(gate, sender, db) {
 // ── ENTRY ───────────────────────────────────────────────────────
 function enter(sender, name, key, keyData, gate, db) {
   const raid = raidOf(gate, key, keyData);
+  { const other = findOtherRaid(sender, gate); if (other) return { ok: false, error: otherRaidError(other) }; }
   // Push #30: single-use keys — fresh entry on a consumed key is refused.
   // (Members re-running enter on their own live raid pass straight through.)
   const _alreadyIn = (raid.members || []).some(m =>
@@ -384,6 +406,7 @@ function join(sender, name, gate, db) {
   if (!raid) return { ok: false, error: 'No gate raid in progress.' };
   if (raid.status !== 'recruiting') return { ok: false, error: 'The raid has already started.' };
   if (raid.members.length >= MAX_PARTY) return { ok: false, error: `Party is full! (${MAX_PARTY} max)` };
+  { const other = findOtherRaid(sender, gate); if (other) return { ok: false, error: otherRaidError(other) }; }
 
   ensureMember(gate, sender, db);
   return { ok: true, raid };
@@ -832,6 +855,7 @@ module.exports = {
   relationOf,
   raidOf,
   ensureMember,
+  findOtherRaid,
   enter,
   join,
   ready,

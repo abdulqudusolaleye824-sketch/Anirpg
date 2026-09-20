@@ -4,6 +4,7 @@
 // Commands:
 //   /affiliate hire @user 60|40   — Party leader hires an affiliate with negotiated loot split
 //   /affiliate grant @user 60|40  — Guildmaster/Vice grants official affiliate status
+//   /affiliate strip @user        — Guildmaster/Vice revokes granted affiliate
 //   /affiliate accept             — Accept pending hire or grant offer
 //   /affiliate reject             — Reject pending offer
 //   /affiliate list               — List affiliates for your guild or your affiliate status
@@ -219,6 +220,52 @@ module.exports = {
     // ═══════════════════════════════════════════════════════════════
     // /affiliate accept
     // ═══════════════════════════════════════════════════════════════
+    // ═══════════════════════════════════════════════════════════════
+    // /affiliate strip @user  (Push #82) — GM/Vice revokes a granted affiliate
+    // ═══════════════════════════════════════════════════════════════
+    if (sub === 'strip' || sub === 'revoke' || sub === 'remove') {
+      const guildName = player.guild;
+      if (!guildName) {
+        return sock.sendMessage(chatId, { text: '❌ You must belong to a guild to strip affiliate status.' }, { quoted: msg });
+      }
+      if (!CM.isGuildMasterOrVice(db, guildName, sender)) {
+        return sock.sendMessage(chatId, { text: '❌ Only the Guildmaster or Vice Guildmaster can strip affiliate status.' }, { quoted: msg });
+      }
+      const targetJid = getTargetJid();
+      if (!targetJid) {
+        return sock.sendMessage(chatId, { text: '❌ Tag or reply to the affiliate. Usage: /affiliate strip @user' }, { quoted: msg });
+      }
+      const tNum = normaliseJid(targetJid);
+      db.affiliates = db.affiliates || {};
+      const hitKey = Object.keys(db.affiliates).find(k => {
+        const a = db.affiliates[k];
+        return a && a.guildName === guildName && (a.jid === targetJid || normaliseJid(a.jid) === tNum);
+      });
+      if (!hitKey) {
+        // Also clear a still-pending grant offer, if any
+        if (db.affiliateOffers?.[targetJid]?.type === 'grant' && db.affiliateOffers[targetJid].guildName === guildName) {
+          delete db.affiliateOffers[targetJid]; saveDatabase();
+          return sock.sendMessage(chatId, { text: `🗑️ Pending affiliate offer to @${targetJid.split('@')[0]} withdrawn.`, mentions: [targetJid] }, { quoted: msg });
+        }
+        return sock.sendMessage(chatId, { text: '❌ That hunter is not a granted affiliate of your guild.' }, { quoted: msg });
+      }
+      const gone = db.affiliates[hitKey];
+      delete db.affiliates[hitKey];
+      saveDatabase();
+      const tName = db.users?.[gone.jid]?.name || targetJid.split('@')[0];
+      return sock.sendMessage(chatId, {
+        text: [
+          ...(pro ? [UI.PRO_BAR, `🪓 *AFFILIATE STRIPPED* 💎`, UI.PRO_BAR] : [`🪓 *AFFILIATE STRIPPED*`, UI.FREE_BAR]),
+          `👤 Hunter: *${tName}* (@${targetJid.split('@')[0]})`,
+          `🏰 Guild: *${guildName}*`,
+          `📊 Former split: ${gone.guildPct || 60}% / ${gone.affiliatePct || 40}%`,
+          FRAME,
+          `❌ They are no longer an official affiliate of *${guildName}*.`,
+        ].join('\n'),
+        mentions: [targetJid],
+      }, { quoted: msg });
+    }
+
     if (sub === 'accept') {
       const offer = db.affiliateOffers[sender];
       if (!offer) {
@@ -343,6 +390,7 @@ module.exports = {
       lines.push(`📌 *COMMANDS:*`);
       lines.push(`/affiliate hire @user 60|40  — Hire affiliate for party`);
       lines.push(`/affiliate grant @user 60|40 — Guildmaster/Vice grant affiliate`);
+      lines.push(`/affiliate strip @user       — Guildmaster/Vice revoke affiliate`);
       lines.push(`/affiliate accept            — Accept pending offer`);
       lines.push(`/affiliate reject            — Reject pending offer`);
       lines.push(FRAME, ...(pro ? [UI.PRO_MINI, `💎 *PRO DEAL* — ${guildAffs.length} affiliates`] : [UI.upsell()]));

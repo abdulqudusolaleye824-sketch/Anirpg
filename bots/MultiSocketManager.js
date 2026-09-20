@@ -1187,7 +1187,17 @@ function getAnySocket() {
   return botSockets[keys[0]];
 }
 
+// Push #82: the full boot options (rpgCommandHandler, config, …) as index.js
+// passes them. Bots started later via /link or the heartbeat used to get ONLY
+// { pairingMode, forceRelink } → `options.rpgCommandHandler` was undefined →
+// every command was silently skipped while AI chat still answered. That was
+// the "mikasa/seraph chat but ignore /commands" bug.
+let _bootOptionsFactory = null;
+function setBootOptionsFactory(fn) { _bootOptionsFactory = typeof fn === 'function' ? fn : null; }
 async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, options = {}) {
+  if (!(options && options.rpgCommandHandler) && _bootOptionsFactory) {
+    try { options = { ...(_bootOptionsFactory(personalityKey) || {}), ...(options || {}) }; } catch (e) { console.error('bootOptionsFactory error:', e.message); }
+  }
   // Remember how this key boots so the heartbeat can resurrect it.
   // Pairing intent is stripped: resurrection must never re-trigger pairing.
   try {
@@ -2406,6 +2416,7 @@ module.exports = {
   getHostSocket,
   getHostKey,
   shouldHandleDMCommand,
+  setBootOptionsFactory,
   isChatAddressed,
   isChatbotMuted,
   _inChatWindow,

@@ -1,5 +1,13 @@
 # AniRPG — Patch Drop (features + bug fixes + UI restyle)
 
+## Push #83 — v1.0.86 (2026-09-20) — LINKED BOTS OBEY COMMANDS + RAID/GUILD/FIND FIXES
+
+- **Bots linked via /link (or resurrected by heartbeat) ignored every command but still chatted** — they were started without `rpgCommandHandler`. `setBootOptionsFactory` now gives every socket the same boot options (`buildBotOptions` in index.js).
+- **One hunter, one raid**: `GateRaid.findOtherRaid` blocks `/party join` and `/gateraid enter` while you are alive in another recruiting/active raid.
+- `/guild demote @user` → back to Member (GM demotes anyone; Vice demotes Officers only; GM can't be demoted).
+- `/affiliate strip @user` (aliases revoke/remove) — GM/Vice revoke a granted affiliate (also withdraws a pending grant offer).
+- `/find` now numbers and counts from the SAME serial list as `/inventory` (Sovereign Steel ×20 shows ×20; `#88` == `/inv 88`; gear shows `/equip <#>`).
+
 ## Push #82 — v1.0.85 (2026-09-20) — BOOT CONTROL
 
 - `BOT_BOOT_KEYS=hinata,mikasa` (.env) boots exactly those bots (empty folder → QR). `BOT_NO_AUTH_RESTORE=1` disables session restore and purges `db.authBackups` + `auth-backups/` — fixes corrupt Bad-MAC sessions resurrecting from Mongo after a wipe.

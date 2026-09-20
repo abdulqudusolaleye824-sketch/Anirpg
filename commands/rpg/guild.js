@@ -1174,6 +1174,56 @@ ${FRAME}\n`;
     }
 
     // ═══════════════════════════════════════════════════════════════════
+    // DEMOTE (Push #82) — /guild demote @user  → back to Member
+    // GM can demote anyone (Vice/Officer); Vice can demote Officers only.
+    // ═══════════════════════════════════════════════════════════════════
+    if (action === 'demote') {
+      if (!playerGuild) {
+        return sock.sendMessage(chatId, { text: '❌ You are not in a guild!' }, { quoted: msg });
+      }
+      const _rankOf = (id) => playerGuild.members?.find(m => (typeof m === 'object' ? m.id : m) === id)?.rank || (playerGuild.leader === id ? 'Leader' : 'Member');
+      const senderRank = _rankOf(sender);
+      const isLeader = playerGuild.leader === sender || senderRank === 'Leader' || senderRank === 'Guild Master';
+      const isVice   = senderRank === 'Vice' || senderRank === 'Vice GM';
+      if (!isLeader && !isVice) {
+        return sock.sendMessage(chatId, { text: '❌ Only the Guild Master or Vice GM can demote guild members!' }, { quoted: msg });
+      }
+      const targetId = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid?.[0] ||
+                       msg.message?.extendedTextMessage?.contextInfo?.participant;
+      if (!targetId) {
+        return sock.sendMessage(chatId, { text: '❌ Tag or reply to the member you want to demote!\nUsage: /guild demote @user' }, { quoted: msg });
+      }
+      if (targetId === sender) {
+        return sock.sendMessage(chatId, { text: '❌ You cannot demote yourself.' }, { quoted: msg });
+      }
+      if (targetId === playerGuild.leader) {
+        return sock.sendMessage(chatId, { text: '❌ The Guild Master cannot be demoted.' }, { quoted: msg });
+      }
+      const memberObj = playerGuild.members?.find(m => (typeof m === 'object' ? m.id : m) === targetId);
+      if (!memberObj) {
+        return sock.sendMessage(chatId, { text: '❌ That hunter is not a member of your guild!' }, { quoted: msg });
+      }
+      const oldRank = (typeof memberObj === 'object' && memberObj.rank) || 'Member';
+      if (oldRank === 'Member') {
+        return sock.sendMessage(chatId, { text: '❌ That hunter is already a regular Member.' }, { quoted: msg });
+      }
+      if (!isLeader && (oldRank === 'Vice' || oldRank === 'Vice GM')) {
+        return sock.sendMessage(chatId, { text: '❌ Only the Guild Master can demote a Vice Guildmaster!' }, { quoted: msg });
+      }
+      if (typeof memberObj === 'object') {
+        memberObj.rank = 'Member';
+      } else {
+        const idx = playerGuild.members.indexOf(memberObj);
+        playerGuild.members[idx] = { id: targetId, rank: 'Member', joinedAt: Date.now() };
+      }
+      saveDatabase();
+      return sock.sendMessage(chatId, {
+        text: `${FRAME}\n📉 *GUILD DEMOTION*\n${FRAME}\n🏰 Guild: *${playerGuild.name}*\n👤 Hunter: *@${targetId.split('@')[0]}*\n⭐ ${oldRank} → *Member*\n${FRAME}`,
+        mentions: [targetId]
+      }, { quoted: msg });
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
     // LEAVE GUILD
     // ═══════════════════════════════════════════════════════════════════
     if (action === 'kick' || action === 'remove') {

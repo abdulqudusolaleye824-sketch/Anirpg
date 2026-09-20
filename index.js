@@ -1349,16 +1349,23 @@ setInterval(() => {
 }, 30 * 60 * 1000);
 
 // ── Bot scheduler: every bot handles RPG commands + AI chat ─────────
-function startBotScheduler(personalityKey) {
-  // Each bot's connectBot call passes an `onGroupJoin` callback that
-  // knows the bot's personalityKey, so the join handler can filter out
-  // non-active bots (preventing multiple welcome messages).
-  MultiSocketManager.connectBot(personalityKey, AUTH_DIR, getDatabase, saveDatabase, {
+// Push #82: one place builds a bot's boot options, so bots started later via
+// /link (DM) or the heartbeat get the SAME command handler as bots booted here.
+function buildBotOptions(personalityKey) {
+  return {
     rpgCommandHandler,
     onGroupJoin: async (sock, chatId, participants, action) => {
       await onGroupJoin(sock, personalityKey, chatId, participants, action);
     },
-  }).then(sock => {
+  };
+}
+try { MultiSocketManager.setBootOptionsFactory(buildBotOptions); } catch (e) {}
+
+function startBotScheduler(personalityKey) {
+  // Each bot's connectBot call passes an `onGroupJoin` callback that
+  // knows the bot's personalityKey, so the join handler can filter out
+  // non-active bots (preventing multiple welcome messages).
+  MultiSocketManager.connectBot(personalityKey, AUTH_DIR, getDatabase, saveDatabase, buildBotOptions(personalityKey)).then(sock => {
     // Per-bot init: regen system (any bot that connects, runs it)
     try {
       RegenManager.initAllPlayers(getDatabase, saveDatabase, sock);

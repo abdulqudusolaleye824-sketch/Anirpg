@@ -47,59 +47,43 @@ module.exports = {
 
     const results = [];
 
-    // Search gear
-    gearItems.forEach((item, idx) => {
-      if ((item.name||'').toLowerCase().includes(query) ||
-          (item.rarity||'').toLowerCase().includes(query) ||
-          (item.slot||'').toLowerCase().includes(query) ||
-          'gear'.includes(query)) {
+    // Search gear + weapons — numbered by /inv serial (Push #82) so the
+    // command shown ("/equip 12") really targets that item.
+    let serialsG = [];
+    try { serialsG = require('./inventory')._serialList(player); } catch (e) { serialsG = []; }
+    serialsG.forEach((e, ix) => {
+      if (e.kind !== 'gear' && e.kind !== 'weapon') return;
+      const item = e.ref || e;
+      if ((e.name||'').toLowerCase().includes(query) ||
+          (e.rarity||'').toLowerCase().includes(query) ||
+          (e.slot||'').toLowerCase().includes(query) ||
+          (e.kind === 'weapon' ? 'weapon gear' : 'gear armor').includes(query)) {
         results.push({
-          section: 'Gear', pos: idx + 1,
-          rarity: item.rarity, name: item.name,
-          detail: '[' + (item.slot||'?') + '] 🔧' + (item.durability||0) + '/' + (item.maxDurability||0),
-          cmd: '/gear equip ' + (idx+1)
+          section: e.kind === 'weapon' ? 'Weapons' : 'Gear', pos: ix + 1,
+          rarity: e.rarity, name: e.name, ref: item,
+          detail: '[' + (e.slot||'?') + '] 🔧' + (item.durability||0) + '/' + (item.maxDurability||0),
+          cmd: '/equip ' + (ix+1)
         });
       }
     });
 
-    // Stack and search consumables
-    const consStacked = {};
-    allCons.forEach((item, i) => {
-      const k = item.name;
-      if (!consStacked[k]) consStacked[k] = { ...item, count: 0, idx: i };
-      consStacked[k].count++;
-    });
-    const consList = Object.values(consStacked).sort((a,b)=>(rarityOrder[a.rarity]||6)-(rarityOrder[b.rarity]||6));
-    consList.forEach((item, idx) => {
-      if ((item.name||'').toLowerCase().includes(query) ||
-          (item.rarity||'').toLowerCase().includes(query) ||
-          (item.type||'').toLowerCase().includes(query) ||
-          'potion consumable'.includes(query)) {
+    // Push #82: Items/Pet Food are numbered from the SAME serial list /inv
+    // uses (newest-first, materials counted), so "#88" here == "/inv 88" and
+    // the ×count matches exactly what /inventory shows.
+    let serials = [];
+    try { serials = require('./inventory')._serialList(player); } catch (e) { serials = []; }
+    serials.forEach((e, ix) => {
+      if (e.kind === 'gear' || e.kind === 'weapon') return; // gear handled above
+      const nm = (e.name || '').toLowerCase();
+      const rr = (e.rarity || '').toLowerCase();
+      const isFood = e.kind === 'petfood';
+      const kw = isFood ? 'food pet' : (e.kind === 'card' ? 'card' : 'potion consumable material item');
+      if (nm.includes(query) || rr.includes(query) || kw.includes(query)) {
         results.push({
-          section: 'Items', pos: idx + 1,
-          rarity: item.rarity, name: item.name,
-          detail: '×' + item.count,
-          cmd: '/equip use ' + (idx+1)
-        });
-      }
-    });
-
-    // Stack and search pet food
-    const foodStacked = {};
-    petFoodItems.forEach(item => {
-      if (!foodStacked[item.name]) foodStacked[item.name] = { ...item, count: 0 };
-      foodStacked[item.name].count++;
-    });
-    const foodList = Object.values(foodStacked).sort((a,b)=>(rarityOrder[a.rarity]||6)-(rarityOrder[b.rarity]||6));
-    foodList.forEach((item, idx) => {
-      if ((item.name||'').toLowerCase().includes(query) ||
-          (item.rarity||'').toLowerCase().includes(query) ||
-          'food pet'.includes(query)) {
-        results.push({
-          section: 'Pet Food', pos: idx + 1,
-          rarity: item.rarity, name: item.name,
-          detail: '×' + item.count,
-          cmd: '/pet feed <petname> ' + item.name
+          section: isFood ? 'Pet Food' : 'Items', pos: ix + 1,
+          rarity: e.rarity, name: e.name, ref: e.ref,
+          detail: '×' + (e.count || 1),
+          cmd: isFood ? ('/pet feed <petname> ' + e.name) : ('/equip use ' + (ix + 1)),
         });
       }
     });
