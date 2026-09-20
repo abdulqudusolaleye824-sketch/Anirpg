@@ -114,9 +114,13 @@ function _spamCheck(chatId, sender, text, isGroup, msgId) {
   return res;
 }
 function _spamCheckInner(chatId, sender, text, isGroup, now) {
-  const st = _spamSender.get(sender) || { last: 0, lastText: '', lastSame: 0, warnedAt: 0 };
+  const st = _spamSender.get(sender) || { last: 0, lastText: '', lastSame: 0, warnedAt: 0, strikes: 0, mutedUntil: 0 };
   const t = String(text || '').trim().toLowerCase();
   let block = false;
+  // Push #78: escalating penalty. A spammer who keeps hammering gets muted for
+  // 15s after 5 blocked commands, 60s after 12 — blocked messages COUNT, so
+  // "one free command every 1.2s forever" is no longer possible.
+  if (st.mutedUntil > now) { block = true; }
   if (now - st.last < 1200) block = true;
   if (t && t === st.lastText && now - st.lastSame < 4000) block = true;
   if (isGroup) {
@@ -124,7 +128,12 @@ function _spamCheckInner(chatId, sender, text, isGroup, now) {
     if (arr.length >= 10) block = true; else arr.push(now);
     _spamChat.set(chatId, arr);
   }
-  if (!block) { st.last = now; if (t !== st.lastText) { st.lastText = t; } st.lastSame = now; }
+  if (!block) { st.last = now; if (t !== st.lastText) { st.lastText = t; } st.lastSame = now; if (now - st.lastBlockAt > 30000) st.strikes = 0; }
+  else {
+    st.strikes = (st.strikes || 0) + 1; st.lastBlockAt = now;
+    if (st.strikes >= 12) st.mutedUntil = now + 60000;
+    else if (st.strikes >= 5) st.mutedUntil = Math.max(st.mutedUntil || 0, now + 15000);
+  }
   const warn = block && (now - st.warnedAt > 30000);
   if (warn) st.warnedAt = now;
   _spamSender.set(sender, st);
@@ -1616,9 +1625,43 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
     }
   });
 
-  sock.ev.on('messages.upsert', async ({ messages, type }) => {
+  // Push #78: INBOUND DISPATCH — the real "bot is silent" fix.
+  // (1) Only messages[0] of each upsert was processed; WhatsApp batches several
+  //     messages per upsert under load / after reconnect → the rest were lost.
+  // (2) The command ran INSIDE the event callback; Baileys delivers upserts
+  //     one after another, so one slow command (multi-part combat, paced
+  //     sends) blocked every other chat's messages behind it. Under spam the
+  //     backlog grew past MAX_MSG_AGE and got dropped → "silent to commands
+  //     while spawns still arrive".
+  // Now: every message is handled; each chat has its own serial queue (order
+  // kept per chat), chats run in parallel, and a command is cut off after
+  // CMD_TIMEOUT_MS so a hung one can never wedge the queue.
+  const CMD_TIMEOUT_MS = Number(process.env.CMD_TIMEOUT_MS || 90 * 1000);
+  const _chatQueues = new Map(); // chatId -> Promise tail
+  let _inflightCmds = 0;
+  const _enqueueInbound = (msg) => {
+    const cid = String(msg?.key?.remoteJid || 'x');
+    const prev = _chatQueues.get(cid) || Promise.resolve();
+    const run = prev.then(async () => {
+      _inflightCmds++;
+      let timer;
+      try {
+        await Promise.race([
+          _handleInbound(msg),
+          new Promise((_, rej) => { timer = setTimeout(() => rej(new Error(`inbound handler timed out after ${CMD_TIMEOUT_MS / 1000}s`)), CMD_TIMEOUT_MS); }),
+        ]);
+      } catch (e) {
+        console.error(`❌ [${displayName}] inbound error (${cid.split('@')[0]}):`, e && e.message);
+      } finally { clearTimeout(timer); _inflightCmds--; }
+    });
+    _chatQueues.set(cid, run);
+    run.finally(() => { if (_chatQueues.get(cid) === run) _chatQueues.delete(cid); }).catch(() => {});
+  };
+  sock.ev.on('messages.upsert', ({ messages, type }) => {
     if (type !== 'notify') return;
-    const msg = messages[0];
+    for (const m of (messages || [])) { if (m) _enqueueInbound(m); }
+  });
+  const _handleInbound = async (msg) => {
     // ── Group membership stubs (welcome/goodbye fallback) ──
     // Joins/leaves arrive here as stub messages even when the
     // group-participants.update event doesn't fire. Single-sender: the
@@ -1741,7 +1784,21 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
     // Push #55: the "active bot" is now whoever can ACTUALLY reply, not
     // whoever the mapping happens to name. See resolveResponderKey.
     const rawActiveKey = isGroup ? PersonalityManager.getActiveBot(chatId) : null;
-    const responderKey = isGroup ? resolveResponderKey(chatId, true) : personalityKey;
+    let responderKey = isGroup ? resolveResponderKey(chatId, true) : personalityKey;
+    // Push #78: a socket that RECEIVED a group message is, by definition, in
+    // that group and online. If the resolver picked a bot that is not present
+    // here (fresh boot before markPresent filled in, or nobody present at all),
+    // the lowest-key PRESENT usable socket answers instead — never silence.
+    if (isGroup && isCommand) {
+      try {
+        let present = (PersonalityManager.getPresentBots(chatId) || []).filter(isBotUsable);
+        if (!present.includes(personalityKey) && isBotUsable(personalityKey)) present.push(personalityKey);
+        if (!responderKey || !present.includes(responderKey)) {
+          const pick = (rawActiveKey && present.includes(rawActiveKey)) ? rawActiveKey : present.sort()[0];
+          if (pick) responderKey = pick;
+        }
+      } catch (e) {}
+    }
     const isOnlineActive = !!responderKey;
     const activeKey = responderKey;
     // Push #24: /stop means SILENCE (bootstrap commands still handled below so the group can be reactivated).
@@ -2123,7 +2180,7 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
       console.error(`❌ [${displayName}] AI error:`, err.message);
     }
     try { await sock.sendPresenceUpdate('paused', chatId); } catch(e) {}
-  });
+  };
 
   return sock;
 }
@@ -2304,6 +2361,7 @@ function getActiveSocket(chatId) {
 }
 
 module.exports = {
+  _pace,
   connectBot,
   reconnectPolicy,
   RECONNECT_MAX_MS,

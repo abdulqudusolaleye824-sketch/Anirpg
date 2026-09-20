@@ -172,7 +172,25 @@ async function _relayChunk(sock, chatId, content, quoted, group) {
   if (quoted) genOpts.quoted = quoted;
   const waMsg = _genWA(chatId, content, genOpts);
   waMsg.message = _patchMd(waMsg.message);
-  await sock.relayMessage(chatId, waMsg.message, { messageId: waMsg.key.id, additionalNodes: nodes });
+  // Push #78: relayMessage bypassed the sendMessage wrapper → no pacing, no
+  // rate-overlimit backoff, no empty guard. Under spam that is exactly where
+  // the blank bubbles came from (a rate-limited interactive relays as an
+  // empty frame). Pace it like every other send and back off on overlimit.
+  const _bodyTxt = String((content.interactiveMessage && content.interactiveMessage.body && content.interactiveMessage.body.text) || '').replace(/[\u200b-\u200f\u2060-\u206f\ufeff]/g, '').trim();
+  if (!_bodyTxt && !(content.interactiveMessage && content.interactiveMessage.header && content.interactiveMessage.header.imageMessage)) throw new Error('refusing to relay an empty interactive message');
+  let MSMp = null; try { MSMp = require('../bots/MultiSocketManager'); } catch (e) {}
+  const _key = (() => { try { const all = MSMp && MSMp.getAllSockets ? MSMp.getAllSockets() : {}; for (const [k, s] of Object.entries(all)) if (s === sock) return k; } catch (e) {} return 'sock'; })();
+  const _delays = [2000, 4000, 8000, 16000];
+  for (let i = 0; ; i++) {
+    try {
+      if (MSMp && typeof MSMp._pace === 'function') { try { await MSMp._pace(_key, chatId); } catch (e) {} }
+      await sock.relayMessage(chatId, waMsg.message, { messageId: waMsg.key.id, additionalNodes: nodes });
+      break;
+    } catch (e) {
+      if (/rate-overlimit|overlimit|429/i.test(String(e && e.message || e)) && i < _delays.length) { await new Promise((r) => setTimeout(r, _delays[i])); continue; }
+      throw e;
+    }
+  }
   // relayMessage bypasses the sendMessage wrapper — record the id here so
   // our own interactive echoes never reach the AI/handler path (batch-17).
   try {

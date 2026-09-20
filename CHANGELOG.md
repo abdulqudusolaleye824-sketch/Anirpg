@@ -1,5 +1,12 @@
 # AniRPG — Patch Drop (features + bug fixes + UI restyle)
 
+## Push #78 — v1.0.81 (2026-09-20) — SILENT-BOT + SPAM ROOT CAUSE
+
+- **Inbound dispatch rewritten**: every message in an upsert batch is handled (only `messages[0]` was — batches under load lost the rest); each chat has its own serial queue, chats run in parallel, and a command is cut off after 90s. One slow/hung command can no longer wedge every other chat behind it (the real "silent to commands while spawns still arrive" cause).
+- **Group responder**: the socket that received a group command is present+online by definition — if the resolver picked an absent bot, the lowest present usable bot answers. No more silent groups on fresh boots.
+- **Buttons/interactive relay** now goes through pacing + rate-overlimit backoff + empty guard (relayMessage bypassed all three → blank bubbles under spam).
+- **Spam limiter escalates**: blocked commands count as strikes → 15s mute after 5, 60s after 12.
+
 ## Push #77 — v1.0.80 (2026-09-20) — GUILD LOGOS + GROUP GUARD
 
 - `/guild icon` now works like `/seticon`: reply to an image (or caption an image) → guild LOGO (1 Seticon Card). Logo rendered on `/guild` info and on `/guildwar` board when the guild holds #1. Emoji badge still supported.
