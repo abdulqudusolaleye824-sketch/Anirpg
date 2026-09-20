@@ -1,5 +1,12 @@
 # AniRPG — Patch Drop (features + bug fixes + UI restyle)
 
+## Push #81 — v1.0.84 (2026-09-20) — OPS ENDPOINTS (no SSH, no commands needed)
+
+- `GET /version` — VERSION + process uptime/boot time/pid/memory.
+- `GET /api/logs?key=<link password>[&n=200]` — last 400 console lines.
+- `GET /api/trace?key=…` — per-bot: connected, ws state, messages received / commands / handled, drop reasons, last events.
+- `GET /api/restart?key=…` — graceful shutdown; the container restarts the process.
+
 ## Push #80 — v1.0.83 (2026-09-20) — GATE SEVERITY = MONSTER STATS + INBOUND TRACE
 
 - Gate severity is now the number that actually scales monsters: at launch (party AND solo — solo was never calibrated) the party's total power vs the rank's expected power sets severity 70–160%; every monster's HP/ATK/DEF/SPD and the boss scale from base stats; the % + label shown on every gate/party/raid screen is that applied severity with the "party power vs expected" reason. Labels: Mild <85, Standard 85–99, Hard 100–119, Severe 120–139, NIGHTMARE 140+.

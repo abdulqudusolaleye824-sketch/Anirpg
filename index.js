@@ -17,6 +17,28 @@ const Announcer = require('./rpg/utils/Announcer');
 const PersonalityManager  = require('./bots/PersonalityManager');
 const AIHandler           = require('./bots/AIHandler');
 const MultiSocketManager  = require('./bots/MultiSocketManager');
+// Push #81: console ring buffer — last 400 lines readable at /api/logs so the
+// box can be diagnosed from a phone browser without SSH.
+const _logRing = [];
+const _BOOT_AT = Date.now();
+for (const lvl of ['log', 'error', 'warn']) {
+  const orig = console[lvl].bind(console);
+  console[lvl] = (...a) => {
+    try {
+      const line = a.map((x) => (typeof x === 'string' ? x : (x && x.stack) ? x.stack : (() => { try { return JSON.stringify(x); } catch (e) { return String(x); } })())).join(' ');
+      _logRing.push(`${new Date().toISOString().slice(11, 19)} ${lvl === 'log' ? ' ' : lvl === 'warn' ? 'W' : 'E'} ${line.slice(0, 600)}`);
+      if (_logRing.length > 400) _logRing.shift();
+    } catch (e) {}
+    orig(...a);
+  };
+}
+const _OPS_PASSWORD = String(process.env.LINK_PASSWORD || process.env.BOT_LINK_PASSWORD || 'astra2026');
+function _opsAuthed(req) {
+  try {
+    const u = new URL(req.url || '/', 'http://localhost');
+    return (u.searchParams.get('key') || req.headers['x-ops-key'] || '') === _OPS_PASSWORD;
+  } catch (e) { return false; }
+}
 const { recordCommand }   = require('./bots/CCTVManager');
 const GateKeyManager      = require('./rpg/dungeons/GateKeyManager');
 const SerfManager         = require('./rpg/utils/SerfManager');
@@ -995,6 +1017,43 @@ http.createServer(async (req, res) => {
     } catch (e) {
       res.writeHead(500, { 'Content-Type': 'application/json' });
       return res.end(JSON.stringify({ ok: false, error: e.message }));
+    }
+  }
+
+  // ── Push #81: OPS endpoints (password = link password, ?key=…) ─────────
+  // /api/logs        → last 400 console lines (text)
+  // /api/trace       → per-bot inbound trace (received / handled / drop reasons)
+  // /api/restart     → graceful shutdown → docker restarts the container
+  // /version         → VERSION file + process uptime
+  if (req.method === 'GET' && _path === '/version') {
+    let v = 'unknown'; try { v = fs.readFileSync(path.join(__dirname, 'VERSION'), 'utf-8').trim(); } catch (e) { try { v = require('./package.json').version; } catch (e2) {} }
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    return res.end(JSON.stringify({ version: v, uptimeSec: Math.round(process.uptime()), bootedAt: new Date(_BOOT_AT).toISOString(), pid: process.pid, node: process.version, memMB: Math.round(process.memoryUsage().rss / 1048576) }));
+  }
+  if (_path === '/api/logs' || _path === '/api/trace' || _path === '/api/restart') {
+    if (!_opsAuthed(req)) { res.writeHead(401, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify({ error: 'unauthorized — add ?key=<link password>' })); }
+    if (_path === '/api/logs') {
+      let n = 400; try { n = Math.min(400, Math.max(20, parseInt(new URL(req.url, 'http://localhost').searchParams.get('n') || '400', 10) || 400)); } catch (e) {}
+      res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
+      return res.end(`# pid ${process.pid} up ${Math.round(process.uptime())}s booted ${new Date(_BOOT_AT).toISOString()}\n` + _logRing.slice(-n).join('\n'));
+    }
+    if (_path === '/api/trace') {
+      let tr = {}; try { tr = MultiSocketManager.getInboundTrace ? MultiSocketManager.getInboundTrace() : {}; } catch (e) {}
+      const socks = MultiSocketManager.getAllSockets() || {};
+      const bots = {};
+      for (const k of new Set([...Object.keys(socks), ...Object.keys(tr)])) {
+        const sck = socks[k];
+        bots[k] = { connected: !!(sck && sck.user && sck.user.id), ws: (() => { try { return sck && sck.ws ? sck.ws.readyState : null; } catch (e) { return null; } })(), ...(tr[k] || {}) };
+      }
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({ uptimeSec: Math.round(process.uptime()), bots }, null, 2));
+    }
+    if (_path === '/api/restart') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: true, note: 'graceful shutdown in 1s — container restarts automatically' }));
+      console.log('🔁 /api/restart requested via HTTP');
+      setTimeout(() => gracefulShutdown('HTTP restart'), 1000);
+      return;
     }
   }
 
