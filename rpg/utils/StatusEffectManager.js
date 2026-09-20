@@ -34,6 +34,15 @@ class StatusEffectManager {
     const className = getClassName(entity);
     const { resisted } = checkEffectResistance(className, key);
     if (resisted) return false;
+    // Push #76: store gear immunity / resistance / turn reduction (skip if the
+    // caller already ran it — UnifiedCombat.tryApplyEffect passes _armoryChecked).
+    if (!entity._armoryChecked) {
+      try {
+        const sd = require('./ArmoryStore').statusDefense(entity, key);
+        if (sd.blocked) { entity._lastStatusBlock = sd.reason; return false; }
+        if (sd.turnReduce) duration = Math.max(1, (duration || def.duration) - sd.turnReduce);
+      } catch (e) {}
+    }
     entity.statusEffects = entity.statusEffects || [];
     const existing = entity.statusEffects.find(e => e.type === key);
     if (existing) { existing.duration = Math.max(existing.duration, duration || def.duration); return true; }

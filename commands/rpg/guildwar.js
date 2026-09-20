@@ -117,7 +117,7 @@ module.exports = {
     const topLines = allGuilds.slice(0, 10).map((g, i) => {
       const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : '🛡️';
       const gm = db.users?.[g.leader]?.name || g.leader.split('@')[0];
-      return `${medal} *${i+1}. ${g.name}* (GM: ${gm})\n   📊 Weekly GP: *${(g.weeklyGP || 0).toLocaleString()} GP*`;
+      return `${medal} *${i+1}. ${g.icon ? g.icon + ' ' : ''}${g.name}*${i === 0 && g.iconRef ? ' 🖼️' : ''} (GM: ${gm})\n   📊 Weekly GP: *${(g.weeklyGP || 0).toLocaleString()} GP*`;
     });
 
     const myRank = myGuild ? allGuilds.findIndex(g => g === myGuild) + 1 : 0;
@@ -147,6 +147,15 @@ module.exports = {
       tip: 'PvP wins feed your guild GP',
     });
 
+    // Push #77: the #1 guild's logo heads the board.
+    try {
+      const top = allGuilds[0];
+      if (top && top.iconRef) {
+        const BlobStore = require('../../rpg/utils/BlobStore');
+        const logo = await BlobStore.get(top.iconRef);
+        if (logo && logo.length) return sock.sendMessage(chatId, { image: logo, caption: text }, { quoted: msg });
+      }
+    } catch (e) {}
     return sock.sendMessage(chatId, { text }, { quoted: msg });
   }
 };

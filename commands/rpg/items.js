@@ -18,6 +18,8 @@ function getTypeEmoji(type, item = null) {
   // Push #56: guild-shop purchases arrive as sealed boxes — show them as boxes,
   // not as a mystery 💊 consumable, so /items and /equip use read the same.
   if (item && item.isSealedPackage) return '📦';
+  if (item && item.emoji) return item.emoji; // Push #76: store/spawn items carry their own glyph
+  try { const IE = require('../../rpg/utils/ItemEmoji'); const t = IE.tag(item || { type }); if (t && t !== '📦') return t; } catch (e) {}
   const emojiMap = {
     'Weapon':'⚔️','Armor':'🛡️','Accessory':'💍','Potion':'🧪',
     'Material':'🧱','Consumable':'💊','Catalyst':'⚗️','Buff':'✨','PetFood':'🐾'
@@ -93,7 +95,7 @@ function buildList(player, opts = {}) {
   }
 
   // Usables only: no gear, no pet food (unless the caller asked for gear)
-  const isGearish = (i) => !!i.isGear || (i.type || '').toLowerCase() === 'gear';
+  const isGearish = (i) => !!i.isGear || !!i.isWeapon || (i.type || '').toLowerCase() === 'gear';
   const equippable = allItems.filter(item =>
     (includeGear || !isGearish(item)) &&
     !item.isPetFood &&

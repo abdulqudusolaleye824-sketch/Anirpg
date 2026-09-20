@@ -27,8 +27,9 @@ function collectBuckets(player) {
   const legacyGear = [...(inv.weapons || []), ...(inv.armor || []), ...(inv.accessories || [])]
     .map(g => ({ ...g, isGear: true, type: 'gear', slot: g.slot || (g.type === 'armor' ? 'chestplate' : 'vambrace'), rarity: g.rarity || 'rare' }));
   const gearItems    = [...items.filter(i => i.isGear || i.type === 'gear'), ...legacyGear];
+  const weaponItems  = items.filter(i => i.isWeapon);
   const legacyMats   = (inv.materials || []).map(m => (typeof m === 'string' ? { name: m, type: 'material', rarity: 'common' } : { ...m, type: 'material', rarity: m.rarity || 'common' }));
-  const consumables  = [...items.filter(i => !i.isGear && i.type !== 'gear' && !i.isPetFood && i.type !== 'PetFood'), ...legacyMats];
+  const consumables  = [...items.filter(i => !i.isGear && i.type !== 'gear' && !i.isWeapon && !i.isPetFood && i.type !== 'PetFood'), ...legacyMats];
   // Push #71: pet food lives in ONE id-keyed bucket (inventory.petFood).
   let petFoodItems = [];
   try {
@@ -39,7 +40,7 @@ function collectBuckets(player) {
       for (let k = 0; k < (n | 0); k++) petFoodItems.push({ id, name: f ? f.name : id, type: 'PetFood', isPetFood: true, rarity: (f && f.cost >= 3000) ? 'rare' : (f && f.cost >= 1200) ? 'uncommon' : 'common', emoji: f?.emoji });
     }
   } catch (e) { petFoodItems = items.filter(i => i.isPetFood || i.type === 'PetFood'); }
-  return { gearItems, consumables, petFoodItems };
+  return { gearItems, weaponItems, consumables, petFoodItems };
 }
 
 // ── Unified serial list: EVERYTHING, numbered, newest first ───────
@@ -47,9 +48,13 @@ function collectBuckets(player) {
 // kind: gear (individual) | stack (consumables/materials/petfood) | potion
 function serialList(player) {
   const inv = player.inventory || {};
-  const { gearItems, consumables, petFoodItems } = collectBuckets(player);
+  const { gearItems, weaponItems, consumables, petFoodItems } = collectBuckets(player);
   const entries = [];
 
+  // Push #76: store weapons are individual items too (equip → player.weapon).
+  for (const w of weaponItems) {
+    entries.push({ kind: 'weapon', name: w.name, rarity: w.rarity || 'common', slot: 'weapon', count: 1, acquiredAt: w.acquiredAt || 0, ref: w });
+  }
   for (const g of gearItems) {
     entries.push({
       kind: 'gear', name: g.name, rarity: g.rarity || 'common', slot: g.slot || '?',
@@ -141,8 +146,18 @@ module.exports = {
       let detail = pro ? `${UI.PRO_BAR}\n${re} *${entry.name}* 💎\n${UI.PRO_BAR}\n` : `${re} *${entry.name}*\n${UI.FREE_BAR}\n`;
       detail += `🏷️ Rarity: *${rarName}*\n`;
       if (entry.count > 1) detail += `📦 Owned: *×${entry.count}*\n`;
-      if (entry.kind === 'gear') {
+      if (entry.kind === 'weapon') {
+        const A = require('../../rpg/utils/ArmoryStore');
+        detail += `🔹 Type: *${item.weaponType || 'Weapon'}* (${item.rank || '?'}-rank)\n`;
+        detail += `🔧 Durability: *${item.durability ?? '?'}/${item.maxDurability ?? '?'}*\n`;
+        detail += `\n📊 *STATS*\n  ${A.statLine(item)}\n`;
+        if (item.lore) detail += `\n📖 *LORE*\n_${item.lore}_\n`;
+        const isEq = player.weapon && player.weapon.id === item.id;
+        detail += `\n${isEq ? '✅ *EQUIPPED*' : '⭕ Not equipped'}\n`;
+        if (!isEq) detail += `💡 /equip ${slotArg} to wield it · /equip gift ${slotArg} @player to transfer\n`;
+      } else if (entry.kind === 'gear') {
         if (entry.slot) detail += `🔹 Slot: *${entry.slot}*\n`;
+        if (item.rank) detail += `🏅 Rank: *${item.rank}*\n`;
         detail += `🔧 Durability: *${item.durability || '?'}/${item.maxDurability || item.durability || '?'}*\n`;
 
         // Stats
@@ -172,6 +187,7 @@ module.exports = {
         if (item.stats?.special) {
           detail += `\n⚡ *SPECIAL EFFECT*\n  ${item.stats.special}\n`;
         }
+        if (item.special && item.special.desc) detail += `\n⚡ *SPECIAL EFFECT*\n  ${item.special.desc}\n`;
 
         // Equipped check
         const equippedSlot = entry.slot ? player.equippedGear?.[entry.slot] : null;
@@ -216,30 +232,46 @@ module.exports = {
 
     // ── /inv (default) — unified numbered list, newest first ────
     if (sub !== 'info' && sub !== 'dashboard') {
-      const MAX_SHOW = 40;
+      // Push #76: PAGES (20 per page) with buttons. `/inv p2` or `/inv page 2`.
+      const PER = 20;
+      const pages = Math.max(1, Math.ceil(serials.length / PER));
+      let page = 1;
+      const pm = sub.match(/^p(?:age)?(\d+)$/); if (pm) page = parseInt(pm[1], 10);
+      if (sub === 'page' || sub === 'p') page = parseInt(args[1], 10) || 1;
+      page = Math.min(pages, Math.max(1, page));
+      const start = (page - 1) * PER;
       let simple = pro
         ? `${UI.PRO_BAR}\n🎒 *INVENTORY* — ${player.name} 💎\n${UI.PRO_BAR}\n`
         : `🎒 *INVENTORY* — ${player.name}\n${UI.FREE_BAR}\n`;
-      simple += `\n🆕 *ALL ITEMS — newest first* (${serials.length})\n`;
+      simple += `\n🆕 *ALL ITEMS — newest first* (${serials.length}) · page ${page}/${pages}\n`;
       if (serials.length === 0) {
-        simple += `  _Empty — clear dungeons to find loot!_\n`;
+        simple += `  _Empty — visit /store or clear dungeons for loot!_\n`;
       } else {
-        serials.slice(0, MAX_SHOW).forEach((e, i) => {
-          const eq = e.kind === 'gear' && player.equippedGear?.[e.slot]?.name === e.name ? ' ✅' : '';
+        serials.slice(start, start + PER).forEach((e, k) => {
+          const i = start + k;
+          let eq = '';
+          if (e.kind === 'gear' && player.equippedGear?.[e.slot]?.name === e.name) eq = ' ✅';
+          if (e.kind === 'weapon' && player.weapon && player.weapon.id === e.ref?.id) eq = ' ✅';
           const cnt = e.count > 1 ? ` ×${e.count}` : '';
-          const slot = e.kind === 'gear' ? ` [${e.slot || '?'}]` : '';
-          const dur = e.kind === 'gear' && e.ref ? ` 🔧${e.ref.durability ?? '?'}/${e.ref.maxDurability ?? e.ref.durability ?? '?'}` : '';
-          const emo = e.kind === 'card' ? `${rarityEmoji[e.rarity] || '⚪'}🃏` : IE.tag(e.ref || e);
-          simple += `  *${i + 1}.* ${emo} ${e.name}${slot}${cnt}${dur}${eq}\n`;
+          const slot = e.kind === 'gear' ? ` [${e.slot || '?'}]` : e.kind === 'weapon' ? ` [${e.ref?.weaponType || 'weapon'}]` : '';
+          const dur = (e.kind === 'gear' || e.kind === 'weapon') && e.ref && e.ref.maxDurability != null ? ` 🔧${e.ref.durability ?? '?'}/${e.ref.maxDurability}` : '';
+          const rk = e.ref && e.ref.rank ? ` ${e.ref.rank}` : '';
+          const emo = e.kind === 'card' ? `${rarityEmoji[e.rarity] || '⚪'}🃏` : e.kind === 'weapon' ? `${rarityEmoji[e.rarity] || '⚪'}${e.ref?.emoji || '🗡️'}` : IE.tag(e.ref || e);
+          simple += `  *${i + 1}.* ${emo}${rk} ${e.name}${slot}${cnt}${dur}${eq}\n`;
         });
-        if (serials.length > MAX_SHOW) simple += `  _...and ${serials.length - MAX_SHOW} more_\n`;
       }
       simple += `\n${FRAME}\n`;
-      simple += `📌 /inv <#> — item detail\n`;
-      simple += `📌 /inv info — currencies, passes & full dashboard\n`;
-      simple += `📌 /equip <#> — equip gear by serial\n`;
-      simple += `📌 /items · /gear — subcategory views\n`;
+      simple += `📌 /inv <#> — detail · /equip <#> — equip/use · /equip gift <#> @p\n`;
+      simple += `📌 /inv info — currencies & dashboard · /store — armory\n`;
       simple += pro ? FRAME : `${FRAME}\n${UI.upsell()}`;
+      let Buttons = null; try { Buttons = require('../../utils/buttons'); } catch (e) {}
+      if (Buttons?.sendButtons && pages > 1) {
+        const btns = [];
+        if (page > 1) btns.push([`⬅️ Page ${page - 1}`, `/inv p${page - 1}`]);
+        if (page < pages) btns.push([`Page ${page + 1} ➡️`, `/inv p${page + 1}`]);
+        btns.push([`📊 Dashboard`, `/inv info`]);
+        try { return await Buttons.sendButtons(sock, chatId, { text: simple, footer: `Page ${page}/${pages}`, buttons: Buttons.quickReplies(btns) }, msg); } catch (e) {}
+      }
       return sock.sendMessage(chatId, { text: simple }, { quoted: msg });
     }
 

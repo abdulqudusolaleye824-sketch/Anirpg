@@ -192,7 +192,8 @@ class EffectParser {
     for (const line of buffLines) {
       const lLine = line.toLowerCase();
       // ATK buff
-      const atkM = line.match(/\+(\d+)%\s+(?:all\s+stats?|atk|attack)/i);
+      // Push #76: also accept "ATK +50%" / "DEF +50% for 3 turns" (class-file phrasing)
+      const atkM = line.match(/\+(\d+)%\s+(?:all\s+stats?|atk|attack)/i) || line.match(/\b(?:atk|attack|all\s+stats?)\s*\+(\d+)%/i);
       if (atkM) {
         const dur = (line.match(/(?:(\d+)\s+turn)/i)||[])[1] || 3;
         // avoid adding duplicate
@@ -201,7 +202,7 @@ class EffectParser {
         }
       }
       // DEF buff — only "+" not "-"
-      const defM = line.match(/\+(\d+)%\s+(?:all\s+stats?|def(?:ense)?)/i);
+      const defM = line.match(/\+(\d+)%\s+(?:all\s+stats?|def(?:ense)?)/i) || line.match(/\b(?:def(?:ense)?|all\s+stats?)\s*\+(\d+)%/i);
       if (defM) {
         const dur = (line.match(/(\d+)\s+turn/i)||[])[1] || 3;
         if (!effects.buffs.find(b => b.stat === 'def' && b.amount === parseInt(defM[1]))) {
@@ -209,7 +210,7 @@ class EffectParser {
         }
       }
       // SPD buff
-      const spdM = line.match(/\+(\d+)%\s+(?:spd|speed)/i);
+      const spdM = line.match(/\+(\d+)%\s+(?:spd|speed)/i) || line.match(/\b(?:spd|speed)\s*\+(\d+)%/i);
       if (spdM) {
         if (!effects.buffs.find(b => b.stat === 'speed')) {
           const dur = (line.match(/(\d+)\s+turn/i)||[])[1] || 3;
@@ -237,13 +238,19 @@ class EffectParser {
     // Self-penalties like "-20% DEF" in Rampage/Berserk should NOT reduce enemy stats
     const atkDebuff = text.match(/[-−](\d+)%\s+enemy\s+(?:atk|attack)/i)
                    || text.match(/[-−](\d+)%\s+target\s+(?:atk|attack)/i)
-                   || text.match(/target takes \+(\d+)%\s+damage/i);
+                   || text.match(/(?:enemy|target)\s+(?:atk|attack)\s*[-−](\d+)%/i);
     if (atkDebuff) {
       effects.debuffs.push({ stat: 'atk', amount: parseInt(atkDebuff[1]), duration: 3 });
     }
+    // Push #76: "Target takes 30% more damage for 3 turns" / "target takes +30% damage"
+    const takenDebuff = text.match(/target takes\s+\+?(\d+)%\s+(?:more\s+)?damage(?:[^\n]*?(\d+)\s+turn)?/i);
+    if (takenDebuff) {
+      effects.debuffs.push({ stat: 'damageTaken', amount: parseInt(takenDebuff[1]), duration: parseInt(takenDebuff[2] || 3) });
+    }
 
     const defDebuff = text.match(/[-−](\d+)%\s+enemy\s+(?:def|defense|armor)/i)
-                   || text.match(/[-−](\d+)%\s+target\s+(?:def|defense|armor)/i);
+                   || text.match(/[-−](\d+)%\s+target\s+(?:def|defense|armor)/i)
+                   || text.match(/(?:enemy|target)\s+(?:def|defense|armor)\s*[-−](\d+)%/i);
     if (defDebuff) {
       effects.debuffs.push({ stat: 'def', amount: parseInt(defDebuff[1]), duration: 3 });
     }

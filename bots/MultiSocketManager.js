@@ -1513,6 +1513,15 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
       }
     } else if (connection === 'open') {
       try { _notifyLinkSubscribers(personalityKey, `✅ *${displayName}* is linked and online!`); } catch (e) {}
+      // Push #77: leave every group that was not added via /joingc or /setgroup.
+      setTimeout(() => {
+        try {
+          if (botSockets[personalityKey] !== sock) return;
+          require('../rpg/utils/GroupGuard').sweep(sock, getDatabase(), personalityKey)
+            .then((r) => { if (r && r.left && r.left.length) console.log(`[GroupGuard] ${personalityKey} left ${r.left.length} untracked group(s)`); })
+            .catch(() => {});
+        } catch (e) {}
+      }, 20000);
       reconnectAttempts[personalityKey] = 0; // Reset reconnect count on successful connection!
       _loggedOut.delete(personalityKey);
       _logout401s[personalityKey] = 0;        // a clean connect clears the 401 streak
@@ -1578,6 +1587,18 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
 
   sock.ev.on('group-participants.update', async ({ id: chatId, participants, action }) => {
     if (action !== 'add' && action !== 'remove') return;
+    // Push #77: if THIS bot was just added to an untracked group, leave.
+    if (action === 'add') {
+      try {
+        const me = String(sock?.user?.id || '').split(':')[0].split('@')[0];
+        const meLid = String(sock?.user?.lid || '').split(':')[0].split('@')[0];
+        const addedMe = (participants || []).some((p) => { const b = String(typeof p === 'string' ? p : (p && (p.id || p.jid)) || '').split(':')[0].split('@')[0]; return b && (b === me || (meLid && b === meLid)); });
+        if (addedMe) {
+          const GG = require('../rpg/utils/GroupGuard');
+          if (!GG.isAllowed(getDatabase(), chatId)) { setTimeout(() => GG.leaveIfUntracked(sock, getDatabase(), chatId, 'added').catch(() => {}), 3000); return; }
+        }
+      } catch (e) {}
+    }
 
     if (_bootstrapDispatcher(personalityKey, chatId)) {
       try {

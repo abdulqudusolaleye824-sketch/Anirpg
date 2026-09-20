@@ -252,6 +252,17 @@ async function defaultHandler(sock, msg, player, skill, db, saveDatabase, getDat
     }
   }
 
+  // Push #76: stat buffs (self) / debuffs (target) from the skill text are applied for real.
+  try {
+    const UC76 = require('../../rpg/utils/UnifiedCombat');
+    const SC76 = require('../../rpg/utils/SkillCatalog');
+    const r76 = SC76.resolveSkill(player, skill.name, { silent: true });
+    const e76 = (r76 && r76.ok ? (r76.entry || r76.skill) : null) || skill;
+    const tgt76 = player.dungeon?.currentBattle?.monster || { name: 'Target', tempBuffs: {} };
+    const notes76 = UC76.applyMoveBuffs({ name: skill.name, buffs: e76.buffs || [], debuffs: player.dungeon?.currentBattle?.monster ? (e76.debuffs || []) : [], selfDebuffs: e76.selfDebuffs || [] }, player, tgt76);
+    if (notes76.length) resultText += `\n${notes76.join('\n')}`;
+  } catch (e) {}
+
   // Push #71: catalog heal skills carry `type:'heal'` + `healingPct` (not
   // effect.type) — so every class's recovery move heals here too.
   let _catHeal = 0;

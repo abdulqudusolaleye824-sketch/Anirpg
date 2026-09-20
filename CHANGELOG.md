@@ -1,5 +1,23 @@
 # AniRPG — Patch Drop (features + bug fixes + UI restyle)
 
+## Push #77 — v1.0.80 (2026-09-20) — GUILD LOGOS + GROUP GUARD
+
+- `/guild icon` now works like `/seticon`: reply to an image (or caption an image) → guild LOGO (1 Seticon Card). Logo rendered on `/guild` info and on `/guildwar` board when the guild holds #1. Emoji badge still supported.
+- **GroupGuard**: every bot leaves any group NOT added via `/joingc` or `/setgroup` (sweep on connect + instantly when added). Escape hatches: `db.groupGuardAllow[gid]`, `db.groupGuardDisabled`.
+- `/joingc --silent <link>` — joins & tracks but hidden from `/gclist`.
+- `/help` updated (store, inv/equip serials, guild icon, joingc/gclist, group guard).
+
+## Push #76 — v1.0.79 (2026-09-20) — THE ARMORY
+
+- **NEW `/store`** (aliases /armory): 24 pre-crafted weapons + gear per day (4 per rank E→S), rotates 00:00 WAT. `/store <rank>`, `/store info <#>`, `/store buy <#>` with buttons. Prices follow the ladder (E 50–100k … S 1M–10M 💠 + 400k–2M 💎) and scale with the actual stat roll.
+- Weapons: E/D/C 50–150 ATK no status; B ≤250 + 1 status (12–20%); A ≤550 + 1 status (35–55%); S ≤2000 + 2–3 statuses. Gear: DEF/HP by rank, boots always SPD; B/A resist a status (+ every status −1 turn); S IMMUNE to 2–3 statuses. All have lore, durability scaled to level, **break at 0** (weapon on hit, gear when hit).
+- **Weapons/gear removed everywhere else**: /shop weapons, dungeon loot, artifact spawns (now materials + Mending Stone 20%). Store is the only source.
+- `/inv N` == `/equip N` == `/equip use N` == `/equip gift N @p` — one serial. Inventory paged 20/page with prev/next buttons, rank + emojis on every line; /items shows item emojis.
+- **Skills fixed**: stat buffs (Fortress Stance DEF+50%…), target debuffs (Hunter's Mark +40% dmg taken), multiple statuses per skill now actually apply in PvP and dungeons and tick down each turn. Parser accepts "DEF +50% for 3 turns" / "target takes 30% more damage". Every skill description now has real lore + a Mechanics line.
+- Mending Stone: spawns again, one use = **100% durability on everything** (weapon, equipped gear, bag).
+- Revive Token 3,000 → **20,000** (bundles repriced). `/attacks` prices now use the same ladder as the store (A/S cost Nexus + Mana Stones).
+- Store gear immunity/resist also honoured by StatusEffectManager (dungeon skill path).
+
 ## Push #75 — Silence + spam hotfix
 
 1. **Outbound pacing.** Every send is serialised per chat (≥650ms gap) and capped per socket (8/s). Bursts become a queue instead of a WhatsApp rate-limit hit — the rate-limit is what made bots "silent to commands while spawns still arrive" and produced empty bubbles. Rate-limit retries now go up to 30s and text is not dropped.

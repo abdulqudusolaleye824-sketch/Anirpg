@@ -312,12 +312,20 @@ module.exports = {
           `📊 *STATS* — 🏰 Raids *${UI.num(playerGuild.totalRaids)}* · ⚔️ Wars *${warsF}* · 🏆 Won *${warsW}*`,
           ``,
           `📌 /guild upgrade · /guild shop · /guild members · /guild list`,
-          `✏️ /guild bio · /guild rename · /guild icon (leader)`,
+          `✏️ /guild bio · /guild rename · /guild icon (reply to image, leader)`,
         ],
         proLines: [`💎 *PRO WAR ROOM*`, `  🏆 Win rate *${winRate}%* · 💠 ${UI.num(Math.floor((playerGuild.treasury || 0) / Math.max(1, playerGuild.members.length)))}/member in vault`],
         tip: '/guild war to fight for glory',
       });
 
+      // Push #77: guild logo rendered with the info card.
+      try {
+        if (playerGuild.iconRef) {
+          const BlobStore = require('../../rpg/utils/BlobStore');
+          const _logo = await BlobStore.get(playerGuild.iconRef);
+          if (_logo && _logo.length) return sock.sendMessage(chatId, { image: _logo, caption: info }, { quoted: msg });
+        }
+      } catch (e) {}
       return sock.sendMessage(chatId, { text: info }, { quoted: msg });
     }
 
@@ -427,20 +435,52 @@ module.exports = {
       if (playerGuild.leader !== sender) {
         return sock.sendMessage(chatId, { text: '❌ Only the guild leader can set the guild icon!' }, { quoted: msg });
       }
+      // Push #77: works exactly like /seticon — reply to an image (or send an
+      // image with the command as caption) and it becomes the guild LOGO,
+      // rendered on /guild and on the #1 spot of /guildwar. A plain emoji
+      // still works as a text badge.
+      const _curImg = msg.message?.imageMessage;
+      const _quoted = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage;
+      const _qImg = _quoted?.imageMessage;
+      let _imgTarget = null;
+      if (_curImg) _imgTarget = { key: msg.key, message: msg.message };
+      else if (_qImg) _imgTarget = { key: { remoteJid: chatId, id: msg.message.extendedTextMessage.contextInfo.stanzaId, participant: msg.message.extendedTextMessage.contextInfo.participant }, message: _quoted };
       const icon = args.slice(1).join(' ').trim();
-      if (!icon) {
+      if (!icon && !_imgTarget) {
         return sock.sendMessage(chatId, {
-          text: `🖼️ *Usage:* /guild icon <emoji>\n\nCosts 1 🖼️ Seticon Card (you have ${player.cards?.seticon || 0}).\n🛍️ Get one: /prostore buy seticon (500 PC)`,
+          text: `🖼️ *Usage:* reply to an image with */guild icon* (or send an image with /guild icon as caption)\nAlso: /guild icon <emoji> for a text badge.\n\nCosts 1 🖼️ Seticon Card (you have ${player.cards?.seticon || 0}).\n🛍️ Get one: /prostore buy seticon (500 PC)`,
         }, { quoted: msg });
       }
-      if ([...icon].length > 4) {
-        return sock.sendMessage(chatId, { text: '❌ Keep the icon short — one emoji (max 4 characters).' }, { quoted: msg });
+      if (!_imgTarget && [...icon].length > 4) {
+        return sock.sendMessage(chatId, { text: '❌ Keep the icon short — one emoji (max 4 characters), or reply to an image.' }, { quoted: msg });
       }
       if (!player.cards) player.cards = {};
       if ((player.cards.seticon || 0) < 1) {
         return sock.sendMessage(chatId, {
           text: `❌ *No Seticon Card!*\n\nSetting your guild icon costs 1 🖼️ Seticon Card.\n\n🛍️ Get one: /prostore buy seticon (500 PC)`,
         }, { quoted: msg });
+      }
+      if (_imgTarget) {
+        let dl = null;
+        try { ({ downloadMediaMessage: dl } = require('@whiskeysockets/baileys')); } catch (e) { dl = null; }
+        if (!dl) return sock.sendMessage(chatId, { text: '❌ Media download module not available.' }, { quoted: msg });
+        try {
+          const buf = await dl(_imgTarget, 'buffer', {});
+          if (!buf || !buf.length) return sock.sendMessage(chatId, { text: '❌ Could not download the image.' }, { quoted: msg });
+          if (buf.length > 2 * 1024 * 1024) return sock.sendMessage(chatId, { text: '❌ Image too large (max 2 MB).' }, { quoted: msg });
+          const BlobStore = require('../../rpg/utils/BlobStore');
+          const oldRef = playerGuild.iconRef;
+          const ref = BlobStore.putSync('guild', String(playerGuild.id || playerGuild.name).replace(/[^A-Za-z0-9_-]/g, '_'), buf);
+          if (!ref) return sock.sendMessage(chatId, { text: '❌ Could not store the image. Try again.' }, { quoted: msg });
+          playerGuild.iconRef = ref;
+          if (oldRef && oldRef !== ref) BlobStore.drop(oldRef).catch(() => {});
+          player.cards.seticon -= 1;
+          saveDatabase();
+          return sock.sendMessage(chatId, { image: buf, caption: `✅ *Guild logo set!*\n\n🏰 *${playerGuild.name}*\nShown on /guild and on the /guildwar board when you hold #1.\n\n🖼️ 1 Seticon Card used (${player.cards.seticon} left)` }, { quoted: msg });
+        } catch (err) {
+          console.error('[guild icon] download error:', err.message);
+          return sock.sendMessage(chatId, { text: '❌ Failed to set logo. The media may have expired.' }, { quoted: msg });
+        }
       }
       player.cards.seticon -= 1;
       playerGuild.icon = icon;

@@ -34,7 +34,7 @@ const CONSUMABLES = [
   {id:1,name:'Lower Health Potion',emoji:'🩹',desc:'Restores 10% HP',cost:800,key:'lowerHealthPotions'},
   {id:2,name:'Medium Health Potion',emoji:'🧪',desc:'Restores 25% HP',cost:5000,key:'mediumHealthPotions'},
   {id:3,name:'Higher Health Potion',emoji:'🍷',desc:'Restores 50% HP',cost:7000,key:'higherHealthPotions'},
-  {id:5,name:'Revive Token',emoji:'🎫',desc:'Auto-revive once in dungeon',cost:3000,key:'reviveTokens'},
+  {id:5,name:'Revive Token',emoji:'🎫',desc:'Auto-revive once in dungeon',cost:20000,key:'reviveTokens'},
   {id:6,name:'Luck Potion',emoji:'🍀',desc:'+25% catch rate & casino odds',cost:2000,key:'luckPotion'},
   {id:7,name:'XP Booster',emoji:'✨',desc:'+50% XP for 3 battles',cost:5000,key:'xpBooster'},
   {id:8,name:'Nexus Multiplier',emoji:'💰',desc:'Next 3 wins give 2x gold',cost:8000,key:'goldMult'},
@@ -54,8 +54,8 @@ const CRYSTAL_ITEMS = [
 ];
 
 const BUNDLES = [
-  {id:1,name:'Starter Pack',emoji:'🎁',desc:'5 HP Pots + 5 Energy Pots + 1 Revive Token',cost:5000},
-  {id:2,name:'Dungeon Kit',emoji:'⚔️',desc:'10 HP Pots + 5 Revive Tokens + 1 XP Booster',cost:18000},
+  {id:1,name:'Starter Pack',emoji:'🎁',desc:'5 HP Pots + 5 Energy Pots + 1 Revive Token',cost:24000},
+  {id:2,name:'Dungeon Kit',emoji:'⚔️',desc:'10 HP Pots + 5 Revive Tokens + 1 XP Booster',cost:115000},
   {id:3,name:'PvP Bundle',emoji:'🏆',desc:'Elixir of Might + Shield Scroll + 2 Luck Potions',cost:20000},
   {id:4,name:'Mana Stone Bundle',emoji:'💎',desc:'200 Mana Stones + 3 Summon Tickets',cost:150000},
   {id:5,name:'Mega Pack',emoji:'👑',desc:'20 HP Pots + 10 Revives + 5 XP Boosters + 500 Mana Stones',cost:60000},
@@ -96,7 +96,7 @@ module.exports = {
           ``,
           `📂 *CATEGORIES*`,
           `🧪 /shop potions — Consumables (Nexus)`,
-          `⚔️ /shop weapons — Class weapons (Nexus)`,
+          `🏪 /store — Weapons & gear (daily Armory)`,
           `🥋 /shop attacks — Attack Patterns (Nexus/MS)`,
           `🎁 /shop bundles — Value packs (Nexus)`,
           `📜 /shop scrolls — Recipe scrolls (Mana Stones)`,
@@ -243,7 +243,11 @@ ${FRAME}`
       return sock.sendMessage(chatId, { text: txt }, { quoted: msg });
     }
 
-    if (action==='weapons') {
+    if (action==='weapons' || action==='weapon') {
+      // Push #76: weapons and gear are sold ONLY in the Armory.
+      return sock.sendMessage(chatId,{text:`🏪 Weapons & gear moved to *THE ARMORY* — daily rotating stock with real stats, on-hit effects and lore.\n\n👉 */store*`},{quoted:msg});
+    }
+    if (false) {
       const cn=typeof player.class==='string'?player.class:(player.class?.name || 'Awaiting');
       const cw=weaponUpgrades[cn]||[];
       if(!cw.length) return sock.sendMessage(chatId,{text:`❌ No weapons for *${cn}*!`},{quoted:msg});

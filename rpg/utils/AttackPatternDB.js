@@ -196,17 +196,26 @@ function generateAttack(num) {
     effect = { type: effKey, duration, chance, ...EFFECTS[effKey] };
   }
 
-  // Unique price per attack — 2-3x more expensive than old, with per-attack variation
-  // Base is rank cost, variation 0.85–1.35 ensures uniqueness
-  const priceVar = 0.85 + (seededRand(seed + 20, 51) / 100); // 0.85–1.35
-  const baseNexus  = Math.floor(cfg.nexus * priceVar);
-  // Push #50: the stone price is taken from the rank band (deterministic per
-  // attack id, so a pattern always costs the same) instead of base×3 — which put
-  // A-rank at ~11k and S-rank at ~22k, far below the ~50k–70k / 100k–200k the
-  // economy needs at those tiers.
-  const band = cfg.shopStones || [0, 0];
-  const span = Math.max(0, band[1] - band[0]);
-  const shopStones = span > 0 ? band[0] + seededRand(seed + 21, span + 1) : 0;
+  // Push #76: attack prices follow the SAME ladder as /store items — a Nexus
+  // band per rank, scaled by how strong the roll is (dmgMult / effect / cooldown),
+  // and A/S ALSO cost Mana Stones. Deterministic per attack id.
+  const STORE_BAND = {
+    E: { nexus: [50000, 100000],     stones: [0, 0] },
+    D: { nexus: [100000, 150000],    stones: [0, 0] },
+    C: { nexus: [200000, 350000],    stones: [0, 0] },
+    B: { nexus: [350000, 500000],    stones: [0, 0] },
+    A: { nexus: [500000, 1000000],   stones: [150000, 350000] },
+    S: { nexus: [1000000, 10000000], stones: [400000, 2000000] },
+  };
+  const sb = STORE_BAND[rank] || STORE_BAND.E;
+  // quality 0..1 = where this roll sits inside the rank (damage + effect + accuracy)
+  let quality = Math.max(0, Math.min(1, (dmgMult / cfg.dmgMult - 0.85) / 0.4));
+  if (effect) quality = Math.min(1, quality * 0.7 + 0.3 + (effect.chance || 0) / 400);
+  quality = Math.max(0, Math.min(1, quality * 0.85 + (seededRand(seed + 20, 16) / 100)));
+  const lerp = (a, b) => Math.round((a + (b - a) * quality) / 1000) * 1000;
+  const shopNexus  = lerp(sb.nexus[0], sb.nexus[1]);
+  const shopStones = sb.stones[1] > 0 ? lerp(sb.stones[0], sb.stones[1]) : 0;
+  const baseNexus  = Math.max(1, Math.floor(shopNexus / 3));
   const baseStones = shopStones > 0 ? Math.max(1, Math.floor(shopStones / 3)) : 0;
 
   // Cooldown — more effective = longer, up to 10 min for S
@@ -236,7 +245,7 @@ function generateAttack(num) {
     cost: {
       nexus:  baseNexus,
       stones: baseStones,
-      shopNexus:  baseNexus * 3,
+      shopNexus,
       shopStones,
     },
     noMana: true,

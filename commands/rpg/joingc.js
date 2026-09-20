@@ -34,7 +34,7 @@ module.exports = {
   name: 'joingc',
   aliases: [],
   description: 'Join a WhatsApp group via invite link and track it (mod DM command)',
-  usage: '/joingc <WhatsApp group link>',
+  usage: '/joingc [--silent] <WhatsApp group link>',
 
   async execute(sock, msg, args, getDatabase, saveDatabase, sender) {
     const chatId = msg.key?.remoteJid;
@@ -47,12 +47,14 @@ module.exports = {
       return sock.sendMessage(chatId, { text: '❌ Use this command in my DM, not in a group.' }, { quoted: msg });
     }
 
-    const raw = (args[0] || '').trim();
+    // Push #77: /joingc --silent <link> — join & track, but hide from /gclist.
+    const silent = args.some((a) => /^--?silent$/i.test(String(a || '')));
+    const raw = (args.find((a) => /chat\.whatsapp\.com/i.test(String(a || ''))) || args.filter((a) => !/^--?silent$/i.test(String(a || '')))[0] || '').trim();
     const m = raw.match(/chat\.whatsapp\.com\/([A-Za-z0-9]+)/);
     const code = m ? m[1] : null;
     if (!code) {
       return sock.sendMessage(chatId, {
-        text: '❌ Send a valid WhatsApp group invite link.\n\nUsage: /joingc <WhatsApp group link>\nExample: /joingc https://chat.whatsapp.com/AbCdEfGhIjK',
+        text: '❌ Send a valid WhatsApp group invite link.\n\nUsage: /joingc <WhatsApp group link>\n       /joingc --silent <link> (hidden from /gclist)\nExample: /joingc https://chat.whatsapp.com/AbCdEfGhIjK',
       }, { quoted: msg });
     }
 
@@ -115,12 +117,13 @@ module.exports = {
       botKey: resolveBotKey(sock),
       joinedAt: Date.now(),
       joinedBy: bare(sender),
+      silent,
     };
     saveDatabase();
 
     return sock.sendMessage(chatId, {
       text: [
-        `✅ *Joined & tracked as GC #${serial}*`,
+        `✅ *Joined & tracked as GC #${serial}*${silent ? ' 🤫 _(silent — hidden from /gclist)_' : ''}`,
         ``,
         `🏷️ ${subject || 'Unknown group'}`,
         `🆔 ${groupId}`,

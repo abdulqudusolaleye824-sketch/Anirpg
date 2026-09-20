@@ -311,9 +311,11 @@ class DungeonManager {
       const rank = dungeon.rank || 'F';
       const roll = Math.random();
       const loot = [];
-      if (roll < 0.4) {
-        const gear = GearSystem.generateGear(rank, 'uncommon', 1);
-        if (gear) { gear.from = dungeon.name; loot.push(gear); }
+      // Push #76: gear is store-only. Former gear roll → Mending Stone (15%) / materials.
+      if (roll < 0.15) {
+        loot.push({ name: 'Mending Stone', type: 'material', rarity: 'rare', isMendingStone: true, desc: 'Restores ALL equipment durability to 100%.' });
+      } else if (roll < 0.4) {
+        loot.push({ name: 'Iron Ore', type: 'QuestItem', rarity: 'common', isQuestItem: true });
       } else if (roll < 0.7) {
         loot.push({ name: 'Health Potion', type: 'Potion', rarity: 'common' });
         if (Math.random() < 0.5) loot.push({ name: 'Energy Potion', type: 'Potion', rarity: 'common' });

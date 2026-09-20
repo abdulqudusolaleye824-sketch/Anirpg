@@ -512,11 +512,9 @@ async function resolveTurn(sock, chatId, p1, p2, db, saveDatabase) {
         player.stats.hp = Math.min(player.stats.maxHp || 100, before + amt);
         if (player.stats.hp > before) healNote = ` Restored ${player.stats.hp - before} HP.`;
       }
-      for (const bf of (entry.buffs || [])) {
-        if (!player.tempBuffs) player.tempBuffs = {};
-        player.tempBuffs[`${entry.name}:${bf.stat}`] = { stat: bf.stat, amount: bf.amount, duration: bf.duration || 2 };
-      }
+      // Push #76: buffs/debuffs/statuses ride on the move; UnifiedCombat.playTurn applies them.
       return {
+        buffs: entry.buffs || [], debuffs: entry.debuffs || [], statuses: entry.statuses || [],
         id: 0,
         rank: pct >= 3 ? 'S' : pct >= 2.4 ? 'A' : pct >= 1.8 ? 'B' : pct >= 1.2 ? 'C' : 'D',
         name: entry.name,

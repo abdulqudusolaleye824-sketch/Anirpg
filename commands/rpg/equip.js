@@ -25,10 +25,63 @@ module.exports = {
       }, { quoted: msg });
     }
 
+    // ── Push #76: ONE numbering. `/equip 40`, `/equip use 40` and
+    // `/equip gift 40 @p` all mean entry #40 of /inv. Weapons equip into the
+    // weapon hand, gear into its slot, usables are routed to the usable
+    // handler by name (so potions / stones still work through the same #).
+    let _invSerial = null;
+    if (/^\d+$/.test(subCmd)) _invSerial = parseInt(subCmd, 10);
+    else if ((subCmd === 'use' || subCmd === 'gift') && /^\d+$/.test(String(args[1] || ''))) _invSerial = parseInt(args[1], 10);
+    if (_invSerial != null) {
+      try { require('../../rpg/utils/RewardInventory').repairGearSlots(player); } catch (e) {}
+      try { require('../../rpg/utils/RewardInventory').migrateLegacy(player); } catch (e) {}
+      let serials = [];
+      try { serials = require('./inventory')._serialList(player); } catch (e) { serials = []; }
+      const entry = serials[_invSerial - 1];
+      if (!entry) {
+        return sock.sendMessage(chatId, { text: `❌ No item at /inv #${_invSerial}. You have ${serials.length} entr${serials.length === 1 ? 'y' : 'ies'} — see /inv.` }, { quoted: msg });
+      }
+      // gift: translate the /inv serial into the /items index the gift code uses
+      if (subCmd === 'gift') {
+        try {
+          const il = require('./items')._buildList(player, { includeGear: true });
+          let ix = -1;
+          if (entry.ref && entry.ref.id) ix = il.findIndex(e => e.id === entry.ref.id);
+          if (ix < 0) ix = il.findIndex(e => e.name === entry.name);
+          if (ix >= 0) args[1] = String(ix + 1);
+        } catch (e) {}
+        // fall through to the gift block below
+      } else if (entry.kind === 'weapon' && entry.ref) {
+        const Armory = require('../../rpg/utils/ArmoryStore');
+        const r = Armory.equipWeapon(player, entry.ref);
+        if (!r.ok) return sock.sendMessage(chatId, { text: `❌ ${r.error}` }, { quoted: msg });
+        saveDatabase();
+        const w = player.weapon;
+        return sock.sendMessage(chatId, { text: [
+          pro ? `${UI.PRO_BAR}\n⚔️ *WEAPON EQUIPPED!* 💎\n${UI.PRO_BAR}` : `⚔️ *WEAPON EQUIPPED!*\n${UI.FREE_BAR}`,
+          ``, `${w.emoji || '🗡️'} *${w.name}* (${w.rank}-rank ${w.weaponType || ''})`, Armory.statLine(w),
+          `🔧 Durability ${w.durability}/${w.maxDurability}`, `📖 _${w.lore || ''}_`,
+          r.old ? `\n↩️ ${r.old.name} went back to your bag.` : '',
+          ``, `💡 On-hit effects trigger automatically in battle. −1 durability per landed hit; it breaks at 0 (🛠️ Mending Stone restores).`,
+        ].filter(x => x !== null).join('\n') }, { quoted: msg });
+      } else if (entry.kind === 'gear' && entry.ref) {
+        args[0] = String(_invSerial); // existing gear path below handles it
+      } else if (subCmd === 'use' || entry.kind === 'stack' || entry.kind === 'potion' || entry.kind === 'petfood') {
+        // Usable → map to the /items index and let the use-handler run.
+        try {
+          const il = require('./items')._buildList(player);
+          const ix = il.findIndex(e => e.name === entry.name);
+          if (ix >= 0) { args[0] = 'use'; args[1] = String(ix + 1); }
+          else return sock.sendMessage(chatId, { text: `❌ *${entry.name}* can't be used from here.` }, { quoted: msg });
+        } catch (e) {}
+      }
+    }
+    const subCmd2 = args[0]?.toLowerCase();
+
     // ── /equip <#> — equip gear by /inv serial ─────────────
     // Serials match /inv numbering EXACTLY (shared unified list).
-    if (/^\d+$/.test(subCmd)) {
-      const serial = parseInt(subCmd);
+    if (/^\d+$/.test(subCmd2)) {
+      const serial = parseInt(subCmd2);
       try { require('../../rpg/utils/RewardInventory').repairGearSlots(player); } catch (e) {}
       try { require('../../rpg/utils/RewardInventory').migrateLegacy(player); } catch (e) {}
       let serials = [];
@@ -85,7 +138,7 @@ module.exports = {
 
 
     // ── /equip use [#] ─────────────────────────────────────────
-    if (subCmd === 'use') {
+    if (subCmd2 === 'use') {
       const itemNum = parseInt(args[1]);
       if (!itemNum || isNaN(itemNum)) {
         return sock.sendMessage(chatId, {
@@ -197,6 +250,18 @@ module.exports = {
         return sock.sendMessage(chatId, { text: `🃏 *${itemName}* ×${selectedStack.count || 1}\n\n💡 Spend it with ${_hint48}. You CAN gift it: /equip gift ${itemNum} @player` }, { quoted: msg });
       }
 
+      // ── Mending Stone (Push #76) — immediate full repair ──
+      if (/mending/i.test(String(itemName || '')) || selectedStack.isMendingStone) {
+        const items = player.inventory?.items || [];
+        const mi = items.findIndex(i => i.isMendingStone || /mending/i.test(String(i.name || '')));
+        if (mi !== -1) items.splice(mi, 1);
+        else if ((player.inventory?.mendingStones || 0) > 0) player.inventory.mendingStones--;
+        else return sock.sendMessage(chatId, { text: '❌ No Mending Stone found.' }, { quoted: msg });
+        let n = 0; try { n = require('../../rpg/utils/ArmoryStore').mendAll(player); } catch (e) {}
+        saveDatabase();
+        return sock.sendMessage(chatId, { text: `🛠️ *Mending Stone used!*\n\n✨ ${n} item${n === 1 ? '' : 's'} restored to *100% durability* — weapon, equipped gear and everything in your bag.` }, { quoted: msg });
+      }
+
       // ── Revive Token ──
       if (itemName === 'Revive Token') {
         return sock.sendMessage(chatId, {
@@ -245,6 +310,9 @@ module.exports = {
       }
 
       const item = allItems[idx];
+      if (item.isWeapon || item.isGear || item.fromStore) {
+        return sock.sendMessage(chatId, { text: `❌ *${item.name}* is equipment — equip it with */equip <inv #>* (see /inv), it is never absorbed.` }, { quoted: msg });
+      }
 
       // Batch-48: crafting materials are NEVER equipped/absorbed — /craft only.
       if (['material', 'crafting', 'craft', 'ingredient', 'reagent'].includes((item.type || '').toLowerCase())) {
@@ -374,7 +442,9 @@ module.exports = {
         }, { quoted: msg });
       }
       const selectedName = sorted[itemNum - 1].name;
-      const idx = allItems.findIndex(i => i.name === selectedName);
+      const selId = sorted[itemNum - 1].id;
+      let idx = selId ? allItems.findIndex(i => i.id === selId) : -1;
+      if (idx === -1) idx = allItems.findIndex(i => i.name === selectedName);
       if (idx === -1) return sock.sendMessage(chatId, { text: `❌ Item not found!` }, { quoted: msg });
 
       // PRO epic-and-up gifts need an explicit confirmation (batch-22).

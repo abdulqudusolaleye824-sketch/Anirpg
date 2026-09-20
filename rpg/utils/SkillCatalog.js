@@ -334,6 +334,18 @@ function normalise(className, raw, index) {
     : (type === 'heal' || type === 'buff') ? (statedPct || 40)
     : (statedPct || 100 + index * 6);
 
+  // Push #76: every description ends with a plain-language mechanics summary
+  // (multiplier, buffs, debuffs, statuses, heal, cost) so a player knows
+  // exactly what the skill does before spending energy on it.
+  const _mech = [];
+  if (!isPassive && damagePct > 0 && type !== 'heal' && type !== 'buff') _mech.push(`${damagePct}% ATK`);
+  for (const b of (parsed.buffs || [])) _mech.push(`self ${String(b.stat).toUpperCase()} +${b.amount}% for ${b.duration || 2} turns`);
+  for (const d of (parsed.debuffs || [])) _mech.push(d.stat === 'damageTaken' ? `target takes +${d.amount}% damage for ${d.duration || 3} turns` : `target ${String(d.stat).toUpperCase()} -${d.amount}% for ${d.duration || 3} turns`);
+  for (const st of statuses) _mech.push(`${st.chance}% to inflict ${st.type.toUpperCase()} (${st.duration}t)`);
+  if (selfHeal) _mech.push(`heals ${Math.round(selfHeal.percent)}% max HP`);
+  if (!isPassive) _mech.push(`${energyCost} energy`);
+  if (_mech.length && !/Mechanics:/.test(desc)) desc = `${desc.replace(/\s+$/, '')}${/[.!?]$/.test(desc) ? '' : '.'} Mechanics: ${_mech.join(' · ')}.`;
+
   return {
     name, className, index,
     type: isPassive ? 'passive' : type,
@@ -348,6 +360,7 @@ function normalise(className, raw, index) {
     healingPct: Math.round(Number(selfHeal && selfHeal.percent) || 0) || (type === 'heal' ? 20 + index : 0),
     buffs: parsed.buffs || [],
     debuffs: parsed.debuffs || [],
+    selfDebuffs: parsed.selfDebuffs || [],
     statuses,
     unlocksAtLevel: Math.min(100, (index + 1) * UNLOCK_STEP),
     level: 1,
@@ -387,7 +400,13 @@ function buildRoster(className) {
         const fill = (t) => String(t || '').replace(/{p\/(\d+)}/g, (_, d) => String(Math.floor(pot / parseInt(d, 10)))).replace(/{p}/g, String(pot));
         raws.unshift({
           name: s.name, type: s.type, maxPotency: pot, fromClassFile: true,
-          description: s.desc ? `Class signature technique — ${fill(s.desc)}` : undefined,
+          // Push #76: real lore, not a stub — class lore + what the move does.
+          description: s.desc ? `${s.name} is a signature ${className} technique${cls.lore ? ` — "${String(cls.lore).replace(/\.$/, '')}"` : ''}. ${
+            s.type === 'passive' ? 'It is always active, costs nothing and never needs to be cast.'
+            : s.type === 'buff' ? 'Cast it before the exchange to tilt the fight in your favour.'
+            : s.type === 'heal' ? 'A recovery technique that trades a moment of exposure for staying power.'
+            : s.type === 'debuff' ? 'It cripples the target before the real blow lands.'
+            : 'A committed strike that rewards good timing.'} In play: ${fill(s.desc)}.` : undefined,
           effect: s.desc ? `• ${fill(s.desc)}` : undefined,
           energyCost: s.type === 'passive' ? 0 : 25,
           cooldown: s.type === 'passive' ? 0 : 2,

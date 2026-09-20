@@ -61,25 +61,12 @@ module.exports = {
         player.inventory.mendingStones--;
       }
 
-      // Restore durability on equipped gear & inventory gear
-      const slots = ['weapon', 'armor', 'helmet', 'accessory', 'boots', 'ring'];
+      // Push #76: ONE call restores everything — weapon in hand, all equipped
+      // gear, and every store item in the bag — to 100% immediately.
       let repairedCount = 0;
-
-      for (const slot of slots) {
-        for (const gearMap of [player.equipped, player.gear, player.equippedGear]) {
-          if (gearMap && gearMap[slot]) {
-            const g = gearMap[slot];
-            g.durability = g.maxDurability || 100;
-            repairedCount++;
-          }
-        }
-      }
-
-      for (const item of (player.inventory?.items || [])) {
-        if (item.isGear || item.type === 'gear' || item.maxDurability) {
-          item.durability = item.maxDurability || 100;
-          repairedCount++;
-        }
+      try { repairedCount = require('../../rpg/utils/ArmoryStore').mendAll(player); } catch (e) {}
+      for (const gearMap of [player.equipped, player.gear]) {
+        for (const g of Object.values(gearMap || {})) { if (g && g.maxDurability && g.durability < g.maxDurability) { g.durability = g.maxDurability; repairedCount++; } }
       }
 
       saveDatabase();

@@ -115,14 +115,22 @@ async function spawnArtifact(sock, chatId, db, saveDatabase, forcedArtifact) {
     artifact = forcedArtifact;
   } else {
     // Weights for global daily: Common 55% | Rare 30% | Epic 15% (no legendary/mythic for daily)
-    const roll = Math.random() * 100;
-    let pool;
-    if (roll < 55)       pool = SPAWN_ARTIFACTS.filter(a => a.rarity === 'common');
-    else if (roll < 85)  pool = SPAWN_ARTIFACTS.filter(a => a.rarity === 'rare');
-    else                 pool = SPAWN_ARTIFACTS.filter(a => a.rarity === 'epic');
-    // Filter to only include items up to epic (safety)
-    if (!pool.length) pool = SPAWN_ARTIFACTS.filter(a => ['common','rare','epic'].includes(a.rarity));
-    artifact = pool[Math.floor(Math.random() * pool.length)];
+    // Push #76: weapons/armor/rings/tomes come ONLY from /store now. Spawns
+    // are materials + the Mending Stone (which now really spawns: 20%).
+    const NON_EQUIP = (a) => !['weapon', 'armor', 'ring', 'tome'].includes(String(a.type || '').toLowerCase());
+    const mending = SPAWN_ARTIFACTS.find(a => a.isMendingStone || a.name === 'Mending Stone');
+    if (mending && Math.random() < 0.20) {
+      artifact = mending;
+    } else {
+      const roll = Math.random() * 100;
+      let pool;
+      if (roll < 55)       pool = SPAWN_ARTIFACTS.filter(a => NON_EQUIP(a) && a.rarity === 'common');
+      else if (roll < 85)  pool = SPAWN_ARTIFACTS.filter(a => NON_EQUIP(a) && a.rarity === 'rare');
+      else                 pool = SPAWN_ARTIFACTS.filter(a => NON_EQUIP(a) && a.rarity === 'epic');
+      if (!pool.length) pool = SPAWN_ARTIFACTS.filter(a => NON_EQUIP(a) && ['common','rare','epic'].includes(a.rarity));
+      if (!pool.length) pool = SPAWN_ARTIFACTS.filter(NON_EQUIP);
+      artifact = pool[Math.floor(Math.random() * pool.length)];
+    }
   }
   // Mark global spawn time after picking (before announcement to avoid race)
   if (!forcedArtifact) {

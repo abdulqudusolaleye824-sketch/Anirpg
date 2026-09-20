@@ -48,6 +48,48 @@ function formatCd(ms) {
   return `${sec}s`;
 }
 
+// Push #76: sum of live temp buffs (%) for a stat. Negative = debuff.
+function tempBuffPct(entity, stat) {
+  let t = 0;
+  try {
+    for (const v of Object.values(entity.tempBuffs || {})) {
+      if (!v || (v.duration || 0) <= 0) continue;
+      if (v.stat === stat) t += Number(v.amount) || 0;
+      else if (stat === 'atk' && v.bonus != null && !v.stat && false) t += 0;
+    }
+    const tb = entity.tempBuffs || {};
+    if (stat === 'atk' && tb.atk && tb.atk.duration > 0 && tb.atk.bonus != null && !tb.atk.stat) t += (Number(tb.atk.bonus) || 0) * 100;
+    if (stat === 'def' && tb.def && tb.def.duration > 0 && tb.def.bonus != null && !tb.def.stat) t += (Number(tb.def.bonus) || 0) * 100;
+  } catch (e) {}
+  return Math.max(-90, Math.min(300, t));
+}
+// Apply a skill's parsed buffs (to caster) and debuffs (to target). Returns notes.
+function applyMoveBuffs(move, attacker, defender) {
+  const notes = [];
+  const tag = move.name || 'skill';
+  for (const bf of (move.buffs || [])) {
+    if (!bf || !bf.stat) continue;
+    if (!attacker.tempBuffs) attacker.tempBuffs = {};
+    attacker.tempBuffs[`${tag}:${bf.stat}`] = { stat: bf.stat, amount: Math.abs(Number(bf.amount) || 0), duration: Math.max(1, Number(bf.duration) || 2) + 1 };
+    notes.push(`⬆️ ${attacker.name || 'Caster'} ${String(bf.stat).toUpperCase()} +${Math.abs(Number(bf.amount) || 0)}% (${bf.duration || 2}t)`);
+  }
+  for (const db of (move.debuffs || [])) {
+    if (!db || !db.stat) continue;
+    if (!defender.tempBuffs) defender.tempBuffs = {};
+    const amt = Number(db.amount) || 0;
+    // damageTaken debuff means the target takes MORE damage → positive amount
+    const signed = db.stat === 'damageTaken' ? Math.abs(amt) : -Math.abs(amt);
+    defender.tempBuffs[`${tag}:${db.stat}`] = { stat: db.stat, amount: signed, duration: Math.max(1, Number(db.duration) || 3) + 1 };
+    notes.push(`⬇️ ${defender.name || 'Target'} ${db.stat === 'damageTaken' ? 'takes' : String(db.stat).toUpperCase()} ${db.stat === 'damageTaken' ? `+${Math.abs(amt)}% damage` : `-${Math.abs(amt)}%`} (${db.duration || 3}t)`);
+  }
+  for (const sd of (move.selfDebuffs || [])) {
+    if (!sd || !sd.stat) continue;
+    if (!attacker.tempBuffs) attacker.tempBuffs = {};
+    attacker.tempBuffs[`${tag}:self:${sd.stat}`] = { stat: sd.stat, amount: sd.stat === 'damageTaken' ? Math.abs(Number(sd.amount) || 0) : -Math.abs(Number(sd.amount) || 0), duration: Math.max(1, Number(sd.duration) || 2) + 1 };
+  }
+  return notes;
+}
+
 // Unified damage calculation — uses Atk/Def/Speed/Crit/Accuracy + status
 function calcMoveDamage(attacker, defender, move) {
   // move can be attack pattern or skill-like object
@@ -109,8 +151,13 @@ function calcMoveDamage(attacker, defender, move) {
   // Push #74: class passives (quality-scaled) are real stat multipliers.
   const _passAtk = 1 + ((_pmA && _pmA.atk) || 0) / 100;
   const _passDef = 1 + ((_pmD && _pmD.def) || 0) / 100;
-  const effectiveAtk = atkBase * atkMult * _passAtk;
-  const effectiveDef = (defBase * _passDef) / Math.max(0.1, defMult);
+  // Push #76: skill stat buffs/debuffs (Fortress Stance DEF+50%, Hunter's Mark,
+  // War Cry ATK+…) live in tempBuffs and now really change the numbers.
+  const _tbAtk = 1 + tempBuffPct(attacker, 'atk') / 100;
+  const _tbDef = 1 + tempBuffPct(defender, 'def') / 100;
+  const _tbTaken = 1 + tempBuffPct(defender, 'damageTaken') / 100;
+  const effectiveAtk = atkBase * atkMult * _passAtk * Math.max(0.1, _tbAtk);
+  const effectiveDef = (defBase * _passDef * Math.max(0, _tbDef)) / Math.max(0.1, defMult);
 
   // Status multipliers — single-sourced from StatusEffectManager (weakness
   // -75% ATK, fear -50% all stats, stun -50% speed, curse/enfeeble DEF cuts).
@@ -128,7 +175,7 @@ function calcMoveDamage(attacker, defender, move) {
   const finalDef = effectiveDef * statusDefMult;
 
   // Base formula: (ATK - DEF/2) * dmgMult with minimum
-  let raw = (finalAtk - finalDef * 0.5) * dmgMult;
+  let raw = (finalAtk - finalDef * 0.5) * dmgMult * Math.max(0.1, _tbTaken);
   raw = Math.max(5, raw);
   // Move capability: max pre-variance, pre-crit potential. The effectiveness
   // tier compares dealt damage against this (very effective ≥ 80%).
@@ -217,6 +264,13 @@ function tryApplyEffect(attack, attacker, defender) {
   if (!attack.effect) return null;
   const chance = attack.effect.chance || 50;
   if (Math.random() * 100 > chance) return null;
+  // Push #76: store gear defence — S immunity, B/A resist roll, −1 turn.
+  let _turnCut = 0;
+  try {
+    const sd = require('./ArmoryStore').statusDefense(defender, attack.effect.type);
+    if (sd.blocked) { defender._lastStatusBlock = sd.reason; return null; }
+    _turnCut = sd.turnReduce || 0;
+  } catch (e) {}
   // Apply to defender
   if (!defender.statusEffects) defender.statusEffects = [];
   // Check existing — refresh
@@ -231,6 +285,7 @@ function tryApplyEffect(attack, attacker, defender) {
   let _dur = Math.max(2, Number(attack.effect.duration) || 2);
   // Push #74: POISON is a real DoT — never shorter than 4 turns.
   if (String(attack.effect.type || '').toLowerCase() === 'poison') _dur = Math.max(4, _dur);
+  if (_turnCut) _dur = Math.max(1, _dur - _turnCut);
   const eff = { type: attack.effect.type, duration: _dur, sourceAttack: attack.id };
   defender.statusEffects.push(eff);
   return eff;
@@ -238,8 +293,16 @@ function tryApplyEffect(attack, attacker, defender) {
 
 // Tick status effects: reduce duration by 1, apply DoT, return log lines
 function tickStatuses(entity) {
-  if (!entity.statusEffects || entity.statusEffects.length === 0) return [];
   const logs = [];
+  // Push #76: temp stat buffs/debuffs count down with the turn too.
+  try {
+    for (const [k, v] of Object.entries(entity.tempBuffs || {})) {
+      if (!v) { delete entity.tempBuffs[k]; continue; }
+      v.duration = (v.duration || 0) - 1;
+      if (v.duration <= 0) { delete entity.tempBuffs[k]; if (v.stat) logs.push(`✨ ${String(v.stat).toUpperCase()} ${(v.amount || 0) >= 0 ? 'buff' : 'debuff'} wore off`); }
+    }
+  } catch (e) {}
+  if (!entity.statusEffects || entity.statusEffects.length === 0) return logs;
   const toRemove = [];
   for (let i = 0; i < entity.statusEffects.length; i++) {
     const e = entity.statusEffects[i];
@@ -396,11 +459,24 @@ async function playTurn(sock, chatId, o) {
   const mentions = o.mentions || [];
   const gap = o.gapMs != null ? o.gapMs : 500;
 
+  // Push #76: self-buffs land BEFORE the strike (Fortress Stance protects this
+  // turn; War Cry powers this hit). Debuffs land only if the hit connects.
+  let _buffNotes = [];
+  try { if ((move.buffs || []).length || (move.selfDebuffs || []).length) _buffNotes = applyMoveBuffs({ ...move, debuffs: [] }, attacker, defender); } catch (e) {}
   const result = o.result || calcMoveDamage(attacker, defender, move);
   let statusApplied = null;
   if (!result.missed && (result.damage || 0) > 0) {
     if (defender.stats) defender.stats.hp = Math.max(0, (defender.stats.hp || 0) - result.damage);
     try { statusApplied = tryApplyEffect(move, attacker, defender); } catch (e) { statusApplied = null; }
+    // Push #76: skills can carry SEVERAL statuses (move.statuses) — roll each.
+    try {
+      for (const st of (move.statuses || []).slice(move.effect ? 1 : 0)) {
+        if (!st || !st.type) continue;
+        const got = tryApplyEffect({ id: 'skill', effect: { type: st.type, chance: st.chance ?? 60, duration: st.duration || 2 } }, attacker, defender);
+        if (got && !statusApplied) statusApplied = got;
+      }
+      if ((move.debuffs || []).length) _buffNotes = _buffNotes.concat(applyMoveBuffs({ ...move, buffs: [], selfDebuffs: [] }, attacker, defender));
+    } catch (e) {}
     // Push #74: absorbed weapon on-hit statuses (crafted venom blades …)
     try {
       for (const [type, w] of Object.entries(attacker.weaponEffects || {})) {
@@ -408,6 +484,19 @@ async function playTurn(sock, chatId, o) {
         const got = tryApplyEffect({ id: 'weapon', effect: { type, chance: 100, duration: w.duration || 4 } }, attacker, defender);
         if (got && !statusApplied) statusApplied = got;
       }
+    } catch (e) {}
+    // Push #76: STORE weapon on-hit effects (B one/low, A one/high, S 2–3).
+    try {
+      const Armory = require('./ArmoryStore');
+      for (const fx of Armory.weaponEffects(attacker)) {
+        if (!fx || Math.random() * 100 > (fx.chance || 0)) continue;
+        const got = tryApplyEffect({ id: 'storeweapon', effect: { type: fx.type, chance: 100, duration: fx.duration || 4 } }, attacker, defender);
+        if (got && !statusApplied) statusApplied = got;
+      }
+      // Durability: weapon wears on a landed hit, defender's gear wears on being hit.
+      const bw = Armory.wearWeapon(attacker);
+      if (bw) o._broke = (o._broke || []).concat([`💥 ${attacker.name || 'Attacker'}'s *${bw.name}* shattered!`]);
+      for (const bg of Armory.wearGear(defender)) o._broke = (o._broke || []).concat([`💥 ${defender.name || 'Defender'}'s *${bg.name}* broke apart!`]);
     } catch (e) {}
   }
   const tier = effectivenessTier(result, !!statusApplied);
@@ -438,7 +527,9 @@ async function playTurn(sock, chatId, o) {
   else dBar = BarSystem.getHPBar(defender.stats?.hp || 0, defender.stats?.maxHp || 100, isPro(defender));
   const t5 = `❤️ ${atkName}: ${aBar}\n❤️ ${defName}: ${dBar}`;
 
-  const texts = [t1, t2, t3, t4, t5];
+  const _blk = defender._lastStatusBlock ? `🛡️ ${defender._lastStatusBlock}.` : null; defender._lastStatusBlock = null;
+  const _extra4 = [].concat(_buffNotes || [], (o._broke && o._broke.length) ? o._broke : []);
+  const texts = [t1, t2, _blk ? `${t3}\n${_blk}` : t3, _extra4.length ? `${t4}\n${_extra4.join('\n')}` : t4, t5];
   for (let i = 0; i < texts.length; i++) {
     await sock.sendMessage(chatId, { text: texts[i], ...(mentions.length ? { mentions } : {}) });
     if (i < texts.length - 1 && gap > 0) await new Promise((r) => setTimeout(r, gap));
@@ -447,6 +538,7 @@ async function playTurn(sock, chatId, o) {
 }
 
 module.exports = {
+  tempBuffPct, applyMoveBuffs,
   dodgeChance, weakenTakenMult,
   isPro,
   getCooldownMs,

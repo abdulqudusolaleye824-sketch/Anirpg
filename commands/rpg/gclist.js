@@ -38,7 +38,7 @@ module.exports = {
 
     const joined = db.botJoinedGCs || {};
     const list = Object.values(joined)
-      .filter((e) => e && e.groupId && !mainIds.has(e.groupId))
+      .filter((e) => e && e.groupId && !mainIds.has(e.groupId) && !e.silent) // Push #77: --silent GCs hidden
       .sort((a, b) => (a.serial || 0) - (b.serial || 0));
 
     if (list.length === 0) {

@@ -287,11 +287,7 @@ module.exports = {
       }
 
       const sample = DB.getAttacksInRange(cfg.range[0], Math.min(cfg.range[0] + 9, cfg.range[1]));
-      const costInfo = rankArg === 'S'
-        ? `Nexus + Mana Stones`
-        : cfg.nexus > 0 && cfg.stones > 0 ? `Nexus or Mana Stones`
-        : cfg.nexus > 0 ? `Nexus only`
-        : `Mana Stones only`;
+      const costInfo = (rankArg === 'S' || rankArg === 'A') ? `💠 Nexus + 💎 Mana Stones (same ladder as /store)` : `💠 Nexus (same ladder as /store)`;
 
       return sock.sendMessage(chatId, {
         text: [
@@ -323,10 +319,8 @@ module.exports = {
         const owned = ap.owned.includes(atk.id);
         const stock = atk.inStock ? '' : ' *(Sold Out)*';
         const ownedMark = owned ? ' ✅' : '';
-        const costStr = atk.rank === 'S'
-          ? `${atk.cost.shopNexus.toLocaleString()}N + ${atk.cost.shopStones.toLocaleString()}MS`
-          : atk.cost.shopNexus > 0 && atk.cost.shopStones > 0
-          ? `${atk.cost.shopNexus.toLocaleString()}N or ${atk.cost.shopStones.toLocaleString()}MS`
+        const costStr = atk.cost.shopNexus > 0 && atk.cost.shopStones > 0
+          ? `${atk.cost.shopNexus.toLocaleString()} 💠 + ${atk.cost.shopStones.toLocaleString()} 💎`
           : atk.cost.shopNexus > 0
           ? `${atk.cost.shopNexus.toLocaleString()} Nexus`
           : `${atk.cost.shopStones.toLocaleString()} MS`;
