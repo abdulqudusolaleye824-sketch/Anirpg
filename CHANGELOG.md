@@ -1,5 +1,10 @@
 # AniRPG — Patch Drop (features + bug fixes + UI restyle)
 
+## Push #79 — v1.0.82 (2026-09-20) — HOTFIX: spam limiter too strict + GroupGuard left the community
+
+- **Silent bots root cause #2**: the #75 limiter blocked the SAME command within 4s and (after #78) every block counted as a strike → normal players got muted, and since all 3 sockets evaluate each GC message the "same command" rule tripped constantly. Now: same command only within 2s, only real rapid-fire (<1.2s) counts as a strike, mute 15s after 8 strikes.
+- **GroupGuard is community-aware and OPT-IN**: it did not know about WhatsApp communities, so it left the Astra community + announcement group while staying in sub-groups. Community shells are never auto-left; sub-groups of a community containing any allowed GC are kept. Auto-sweep on connect is OFF unless `/gcsweep auto on`; `/gcsweep` previews, `/gcsweep confirm` leaves.
+
 ## Push #78 — v1.0.81 (2026-09-20) — SILENT-BOT + SPAM ROOT CAUSE
 
 - **Inbound dispatch rewritten**: every message in an upsert batch is handled (only `messages[0]` was — batches under load lost the rest); each chat has its own serial queue, chats run in parallel, and a command is cut off after 90s. One slow/hung command can no longer wedge every other chat behind it (the real "silent to commands while spawns still arrive" cause).

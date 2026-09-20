@@ -121,18 +121,21 @@ function _spamCheckInner(chatId, sender, text, isGroup, now) {
   // 15s after 5 blocked commands, 60s after 12 — blocked messages COUNT, so
   // "one free command every 1.2s forever" is no longer possible.
   if (st.mutedUntil > now) { block = true; }
-  if (now - st.last < 1200) block = true;
-  if (t && t === st.lastText && now - st.lastSame < 4000) block = true;
+  const rapid = now - st.last < 1200;
+  if (rapid) block = true;
+  // Push #79: same command again within 2s only (4s was blocking normal
+  // repeat use like /inv → /inv 3s later, and every block became a strike).
+  if (t && t === st.lastText && now - st.lastSame < 2000) block = true;
   if (isGroup) {
     const arr = (_spamChat.get(chatId) || []).filter(x => now - x < 5000);
     if (arr.length >= 10) block = true; else arr.push(now);
     _spamChat.set(chatId, arr);
   }
   if (!block) { st.last = now; if (t !== st.lastText) { st.lastText = t; } st.lastSame = now; if (now - st.lastBlockAt > 30000) st.strikes = 0; }
-  else {
+  else if (rapid) {
+    // Only true rapid-fire counts as a strike (never a same-command repeat).
     st.strikes = (st.strikes || 0) + 1; st.lastBlockAt = now;
-    if (st.strikes >= 12) st.mutedUntil = now + 60000;
-    else if (st.strikes >= 5) st.mutedUntil = Math.max(st.mutedUntil || 0, now + 15000);
+    if (st.strikes >= 8) st.mutedUntil = now + 15000;
   }
   const warn = block && (now - st.warnedAt > 30000);
   if (warn) st.warnedAt = now;
@@ -1522,10 +1525,12 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
       }
     } else if (connection === 'open') {
       try { _notifyLinkSubscribers(personalityKey, `✅ *${displayName}* is linked and online!`); } catch (e) {}
-      // Push #77: leave every group that was not added via /joingc or /setgroup.
+      // Push #77/#79: auto-sweep of untracked groups is OPT-IN (db.groupGuardAuto).
+      // Owner runs /gcsweep to preview + leave strays.
       setTimeout(() => {
         try {
           if (botSockets[personalityKey] !== sock) return;
+          if (!getDatabase().groupGuardAuto) return;
           require('../rpg/utils/GroupGuard').sweep(sock, getDatabase(), personalityKey)
             .then((r) => { if (r && r.left && r.left.length) console.log(`[GroupGuard] ${personalityKey} left ${r.left.length} untracked group(s)`); })
             .catch(() => {});

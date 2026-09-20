@@ -216,7 +216,7 @@ module.exports = {
       ``,
       `👑 *ADMIN & MODERATION:*`,
       `  /kick, /promote, /demote, /mute, /unmute, /ban, /unban, /tagall, /chatbot, /killspawn, /reset, /spawnstatus, /restart`,
-      `  /joingc [--silent] <link> · /leavegc <#> · /gclist (mod DM) — bots auto-leave any group not added via /joingc or /setgroup`,
+      `  /joingc [--silent] <link> · /leavegc <#> · /gclist (mod DM) — /gcsweep [confirm] (owner) — leave groups not added via /joingc or /setgroup (communities of allowed GCs are kept)`,
       ``,
       `🤖 *SYSTEM & CONFIG:*`,
       `  /setgroup, /allowgc, /setserf, /approveserf, /renew, /ssub, /bots, /start, /switch, /aimode, /restart`,

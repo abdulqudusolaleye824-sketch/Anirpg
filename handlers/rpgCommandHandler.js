@@ -364,7 +364,7 @@ module.exports = async (sock, msg, messageText, config, getDatabase, saveDatabas
     'help', 'menu', 'reset', 'start', 'switch', 'stop', 'stopbot',
     'bots', 'hi', 'setainame', 'promotedm', 'demotedm', 'profaq', 'botstats', 'clearactivebots',
     'announce', 'globalannounce', 'broadcast', 'tagall',
-    'joingc', 'leavegc', 'gclist'
+    'joingc', 'leavegc', 'gclist', 'gcsweep', 'groupguard'
   ]);
 
   const isDM = !chatId.endsWith('@g.us');
