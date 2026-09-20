@@ -112,6 +112,49 @@ function forceSettle(db, saveDatabase, label) {
   return summary;
 }
 
+/**
+ * Push #74d: revert a settlement — removes the victory cards it granted, the
+ * MVP Nexus + title, and restores the GP totals it wiped. Targets the most
+ * recent history entry (or a given weekKey). Idempotent: an entry is only
+ * reverted once.
+ */
+function undoSettle(db, saveDatabase, weekKey) {
+  if (!db || !db.guildWarWeekly || !Array.isArray(db.guildWarWeekly.history)) return { ok: false, error: 'no history' };
+  const hist = db.guildWarWeekly.history;
+  const entry = weekKey ? hist.find(h => h.weekKey === weekKey && !h.reverted) : [...hist].reverse().find(h => !h.reverted);
+  if (!entry) return { ok: false, error: 'nothing to revert' };
+  const out = { ok: true, weekKey: entry.weekKey, cardsRemoved: 0, guilds: [], mvp: null };
+  const pairs = [['first', 'gvc_gold'], ['second', 'gvc_silver'], ['third', 'gvc_bronze']];
+  for (const [slot, card] of pairs) {
+    const rec = entry[slot];
+    if (!rec) continue;
+    const guild = Object.values(db.guilds || {}).find(g => g.name === rec.name);
+    if (!guild || !Array.isArray(guild.members)) continue;
+    let removed = 0;
+    for (const m of guild.members) {
+      const u = findPlayer(db, typeof m === 'object' ? m.id : m);
+      const c = u && u.inventory && u.inventory.cards;
+      if (c && c[card] > 0) { c[card] -= 1; if (!c[card]) delete c[card]; removed++; }
+    }
+    guild.weeklyGP = (guild.weeklyGP || 0) + Number(rec.gp || 0);
+    out.cardsRemoved += removed;
+    out.guilds.push({ name: guild.name, card, removed, gpRestored: Number(rec.gp || 0) });
+  }
+  if (entry.mvp && entry.mvp.jid) {
+    const u = findPlayer(db, entry.mvp.jid) || (db.users || {})[entry.mvp.jid];
+    if (u) {
+      u.gold = Math.max(0, (u.gold || 0) - 20000);
+      const otherWins = hist.some(h => h !== entry && !h.reverted && h.mvp && h.mvp.jid === entry.mvp.jid);
+      if (!otherWins && Array.isArray(u.titles)) u.titles = u.titles.filter(t => t !== 'Weekly Guild War MVP');
+      u.weeklyGP = (u.weeklyGP || 0) + Number(entry.mvp.gp || 0);
+      out.mvp = { name: entry.mvp.name, nexusRemoved: 20000, titleRemoved: !otherWins, gpRestored: Number(entry.mvp.gp || 0) };
+    }
+  }
+  entry.reverted = Date.now();
+  if (saveDatabase) saveDatabase();
+  return out;
+}
+
 function buildResultsCard(summary, db) {
   if (!summary) return null;
   const { first, second, third, mvp } = summary;
@@ -303,7 +346,7 @@ function addGP(db, playerId, points, saveDatabase) {
 }
 
 module.exports = {
-  forceSettle,
+  forceSettle, undoSettle,
   buildResultsCard,
   findPlayer,
   getWeekKey,

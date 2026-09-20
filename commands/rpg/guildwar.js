@@ -29,16 +29,44 @@ module.exports = {
 
     const sub = (args[0] || 'board').toLowerCase();
 
-    // ── /guildwar settle — OWNER: pay out the current standings NOW (Push #74c)
-    // Grants the week the scheduler skipped: GVC cards to the podium guilds,
-    // MVP Nexus + title, then wipes weekly GP and starts a fresh cycle.
+    // ── /guildwar settle [confirm] — OWNER (Push #74c/d)
+    // Preview first; `confirm` actually pays out the CURRENT standings and
+    // starts a fresh cycle. Note the scheduler already settles automatically
+    // when the week flips — check /guildwar history before forcing one.
     if (sub === 'settle' || sub === 'grant' || sub === 'payout') {
       let ok = false;
       try { ok = require('../../utils/permissions').isBotOwner(db, sender); } catch (e) {}
       if (!ok) return sock.sendMessage(chatId, { text: '🔒 Owner only.' }, { quoted: msg });
+      const standings = Object.values(db.guilds || {}).filter(g => (g.weeklyGP || 0) > 0).sort((a, b) => (b.weeklyGP || 0) - (a.weeklyGP || 0));
+      if ((args[1] || '').toLowerCase() !== 'confirm') {
+        const last = (db.guildWarWeekly?.history || []).slice(-1)[0];
+        return sock.sendMessage(chatId, { text: [
+          `⚠️ *SETTLE PREVIEW* — this would pay out the CURRENT board:`,
+          ...(standings.slice(0, 3).map((g, i) => `${['🥇','🥈','🥉'][i]} ${g.name} — ${(g.weeklyGP||0).toLocaleString()} GP`) || []),
+          standings.length ? '' : '_(no GP on the board — nothing would be paid)_',
+          last ? `📜 Last settlement: *${last.weekKey}* (${new Date(last.resolvedAt).toISOString().slice(0,16)}Z) → 🥇 ${last.first?.name || 'none'}${last.reverted ? ' — REVERTED' : ''}` : '📜 No previous settlement.',
+          ``,
+          `Run */guildwar settle confirm* to pay out, or */guildwar undo* to revert the last one.`,
+        ].join('\n') }, { quoted: msg });
+      }
       const summary = WeeklyGuildWar.forceSettle(db, saveDatabase);
       const card = summary ? WeeklyGuildWar.buildResultsCard(summary, db) : null;
       return sock.sendMessage(chatId, { text: card || '⚠️ Nothing to settle — no guild has GP this cycle.' }, { quoted: msg });
+    }
+
+    // ── /guildwar undo [weekKey] — OWNER: revert the last settlement (Push #74d)
+    if (sub === 'undo' || sub === 'revert') {
+      let ok = false;
+      try { ok = require('../../utils/permissions').isBotOwner(db, sender); } catch (e) {}
+      if (!ok) return sock.sendMessage(chatId, { text: '🔒 Owner only.' }, { quoted: msg });
+      const r = WeeklyGuildWar.undoSettle(db, saveDatabase, args[1] || null);
+      if (!r.ok) return sock.sendMessage(chatId, { text: `⚠️ Could not revert: ${r.error}` }, { quoted: msg });
+      return sock.sendMessage(chatId, { text: [
+        `↩️ *SETTLEMENT REVERTED* — ${r.weekKey}`,
+        ...r.guilds.map(g => `• ${g.name}: ${g.removed} × ${g.card.replace('gvc_','').toUpperCase()} card removed · ${g.gpRestored.toLocaleString()} GP restored`),
+        r.mvp ? `• MVP ${r.mvp.name}: −20,000 Nexus${r.mvp.titleRemoved ? ' · title removed' : ''} · ${r.mvp.gpRestored.toLocaleString()} GP restored` : '',
+        `🎫 Total cards removed: *${r.cardsRemoved}*`,
+      ].filter(Boolean).join('\n') }, { quoted: msg });
     }
 
     // ── /guildwar history ──────────────────────────────────────────

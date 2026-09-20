@@ -29,6 +29,8 @@
 22. **Weekly Guild War never flipped.** The week key was ISO (Monday-based) while the cycle is Sun→Sat WAT, so the war ran a day late and cards were never paid on Sunday. Key now flips exactly Sat 23:59 WAT. New owner command **`/guildwar settle`** pays out the current standings immediately (GVC cards + MVP) and starts a fresh week — use it once to grant the skipped week.
 23. **Pairing "Couldn't log in" after a good scan.** The bot's `_loggedOut` flag from the unlink was still set, so when WhatsApp sent 515 (restart-required, the normal post-scan step) the reconnect was refused. `/link` now clears the flag; 515 always reconnects.
 
+24. **`/guildwar settle` now previews first** and needs `confirm`; new **`/guildwar undo`** reverts the last settlement exactly (cards removed from the members who got them, MVP −20k Nexus + title, GP restored to the board). (#74d)
+
 ## Push #73 — rate-overlimit backoff, /version, profaq price, rules 16–17 (2026-09-19)
 
 1. **`rate-overlimit` no longer surfaces as a command error.** WhatsApp throttles OUR sends; the handler now backs off and retries (1.5s → 3s → 6s → 12s) instead of failing the command instantly, and if a throttle still slips through it is swallowed rather than shown as "❌ An error occurred… Error: rate-overlimit" (the game state had already advanced).
