@@ -836,6 +836,13 @@ async function startAstraLink(personalityKey, authDir, getDatabase, saveDatabase
   }
   _startInflight.add(personalityKey);
   try { setTimeout(() => _startInflight.delete(personalityKey), 10000).unref(); } catch (e) { _startInflight.delete(personalityKey); }
+  // Push #74c: a fresh pairing CLEARS the logged-out flag. It was left set from
+  // the unlink, so when the phone accepted the scan and WhatsApp sent 515
+  // (restart required) the reconnect was refused ("never auto-reconnect a
+  // logged-out key") — the phone waited, gave up, "Couldn't log in".
+  _loggedOut.delete(personalityKey);
+  _logout401s[personalityKey] = 0;
+  reconnectAttempts[personalityKey] = 0;
 
   const botAuthDir = path.join(authDir, personalityKey);
   try {
@@ -1374,6 +1381,7 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
           ? { ...options, pairingMode: null, pairingPhone: null }
           : options;
 
+        if (restartRequired) { _loggedOut.delete(personalityKey); _logout401s[personalityKey] = 0; }
         _scheduleReconnect(personalityKey, backoffMs, `close code ${code || 'unknown'}`);
       } else {
         // Push #50: a 401 alone is NOT proof of a real unlink. It is also what

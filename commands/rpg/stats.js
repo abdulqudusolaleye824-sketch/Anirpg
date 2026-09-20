@@ -205,12 +205,23 @@ module.exports = {
     }
 
     // ── Class Skills ──────────────────────────────────────────
-    const classSkills = player.classSkills || [];
-    if (classSkills.length > 0) {
-      msg2 += `\n${FRAME}\n🎭 *CLASS SKILLS* (${className})`;
-      classSkills.forEach((s, i) => {
-        msg2 += `\n  ${i+1}. *${s.name}* — ${s.desc}`;
+    // Push #74c: the class kit is shown as a LADDER (unlocked vs locked-at-Lv),
+    // not as a second usable skill set — combat only reads SKILLS below.
+    let classSkills = player.classSkills || [];
+    let _ladder = null;
+    try {
+      const SCs = require('../../rpg/utils/SkillCatalog');
+      const roster = SCs.getRoster(player);
+      if (roster.length) _ladder = roster.filter(e => e.fromClassFile).map(e => ({ ...e, open: SCs.isUnlockedFor(player, e) }));
+    } catch (e) {}
+    if (_ladder && _ladder.length) {
+      msg2 += `\n${FRAME}\n🎭 *CLASS KIT* (${className}) — ${_ladder.filter(e => e.open).length}/${_ladder.length} unlocked`;
+      _ladder.forEach((s, i) => {
+        msg2 += s.open ? `\n  ✅ *${s.name}*` : `\n  🔒 ${s.name} _(Lv.${s.unlocksAtLevel})_`;
       });
+    } else if (classSkills.length > 0) {
+      msg2 += `\n${FRAME}\n🎭 *CLASS SKILLS* (${className})`;
+      classSkills.forEach((s, i) => { msg2 += `\n  ${i+1}. *${s.name}* — ${s.desc}`; });
     }
 
     // ── Active skills ─────────────────────────────────────────

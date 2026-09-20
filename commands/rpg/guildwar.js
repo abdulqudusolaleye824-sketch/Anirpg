@@ -29,6 +29,18 @@ module.exports = {
 
     const sub = (args[0] || 'board').toLowerCase();
 
+    // ── /guildwar settle — OWNER: pay out the current standings NOW (Push #74c)
+    // Grants the week the scheduler skipped: GVC cards to the podium guilds,
+    // MVP Nexus + title, then wipes weekly GP and starts a fresh cycle.
+    if (sub === 'settle' || sub === 'grant' || sub === 'payout') {
+      let ok = false;
+      try { ok = require('../../utils/permissions').isBotOwner(db, sender); } catch (e) {}
+      if (!ok) return sock.sendMessage(chatId, { text: '🔒 Owner only.' }, { quoted: msg });
+      const summary = WeeklyGuildWar.forceSettle(db, saveDatabase);
+      const card = summary ? WeeklyGuildWar.buildResultsCard(summary, db) : null;
+      return sock.sendMessage(chatId, { text: card || '⚠️ Nothing to settle — no guild has GP this cycle.' }, { quoted: msg });
+    }
+
     // ── /guildwar history ──────────────────────────────────────────
     if (sub === 'history' || sub === 'past') {
       const history = db.guildWarWeekly?.history || [];

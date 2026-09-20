@@ -64,6 +64,9 @@ function migratePlayer(player) {
     if (p && p.class && typeof p.class === 'object') p.class = p.class.name || _clsName;
     // Push #74: class stat bonuses are guaranteed on every hunter (idempotent).
     try { require('./ClassPower').ensureClassBonuses(p); } catch (e) {}
+    // Push #74c: skills follow the ladder on every command (revokes the
+    // classSkills leak that unlocked the whole kit at Lv.1).
+    try { if (p && p.class && p.stats) require('./SkillCatalog').syncPlayerSkills(p); } catch (e) {}
     return p;
   };
   if (typeof player.class === 'string') {

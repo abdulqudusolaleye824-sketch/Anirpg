@@ -320,7 +320,8 @@ function applyClassToPlayer(player, className) {
   const _applied74 = {};
   for (const [stat, max] of Object.entries(data.maxBonuses || {})) {
     const bonus = applyQuality(max, quality);
-    { const _k = stat === 'hp' ? 'maxHp' : stat; _applied74[_k] = (_applied74[_k] || 0) + bonus; }
+    { const _k = stat === 'hp' ? 'maxHp' : stat; _applied74[_k] = (_applied74[_k] || 0) + bonus;
+      if (player.baseStats && typeof player.baseStats === 'object') { const _bk = _k === 'maxHp' ? 'hp' : _k; player.baseStats[_bk] = (player.baseStats[_bk] || 0) + bonus; } }
     if (stat === 'hp' || stat === 'maxHp') {
       player.stats.maxHp = (player.stats.maxHp || 100) + bonus;
       player.stats.hp    = Math.min(player.stats.hp || 100, player.stats.maxHp);
@@ -333,7 +334,7 @@ function applyClassToPlayer(player, className) {
     }
   }
 
-  player.classBonusApplied = { cls: className, quality, bonuses: _applied74, at: Date.now() };
+  player.classBonusApplied = { cls: className, quality, bonuses: _applied74, at: Date.now(), base: true };
   player.classPowerV74 = true;
 
   // Assign class skills scaled by quality

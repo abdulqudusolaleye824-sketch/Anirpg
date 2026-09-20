@@ -337,7 +337,7 @@ function normalise(className, raw, index) {
   return {
     name, className, index,
     type: isPassive ? 'passive' : type,
-    isPassive,
+    isPassive, fromClassFile: !!raw.fromClassFile,
     description: desc,
     effect,
     animation: raw.animation || `⚡ ${name}!\n💥 The technique lands!`,
@@ -386,7 +386,7 @@ function buildRoster(className) {
         const pot = Number(s.maxPotency) || 0;
         const fill = (t) => String(t || '').replace(/{p\/(\d+)}/g, (_, d) => String(Math.floor(pot / parseInt(d, 10)))).replace(/{p}/g, String(pot));
         raws.unshift({
-          name: s.name, type: s.type, maxPotency: pot,
+          name: s.name, type: s.type, maxPotency: pot, fromClassFile: true,
           description: s.desc ? `Class signature technique — ${fill(s.desc)}` : undefined,
           effect: s.desc ? `• ${fill(s.desc)}` : undefined,
           energyCost: s.type === 'passive' ? 0 : 25,
@@ -497,6 +497,10 @@ function toPlayerSkill(player, entry) {
 function isUnlockedFor(player, entry) {
   const lvl = Number(player?.level || 1);
   if (lvl >= (entry.unlocksAtLevel || 99)) return true;
+  // Push #74c: class-file signature skills are level-gated ONLY — they were
+  // never part of the old schedule, so an override for one can only have come
+  // from the classSkills leak.
+  if (entry.fromClassFile) return false;
   return !!(player?.skills?.unlockedOverrides || []).includes(entry.name);
 }
 
@@ -535,11 +539,24 @@ function syncPlayerSkills(player) {
   // skills they earned under the old schedule. Owners of the old privileged
   // "everything unlocked" grants are normalised by /fixskills, which clears
   // these overrides explicitly.
-  for (const arr of [player.skills.active, player.availableSkills, player.classSkills]) {
+  // Push #74c: player.classSkills is the class's FULL kit (display data written
+  // at awakening) — it was being fed in here as "already owned", which
+  // unlocked every class-file skill at Lv.1 and gave hunters two overlapping
+  // skill sets. Only genuinely owned arrays seed overrides now, and any
+  // override that came from a class-file entry is revoked unless the level
+  // requirement is really met.
+  {
+    const classFileNames = new Set(roster.filter(e => e.fromClassFile).map(e => e.name));
+    const before = player.skills.unlockedOverrides.length;
+    player.skills.unlockedOverrides = player.skills.unlockedOverrides.filter(n => !classFileNames.has(n));
+    if (player.skills.unlockedOverrides.length !== before) changed = true;
+  }
+  const _cfNames = new Set(roster.filter(e => e.fromClassFile).map(e => e.name));
+  for (const arr of [player.skills.active, player.availableSkills]) {
     if (!Array.isArray(arr)) continue;
     for (const s of arr) {
       const n = String(s?.name || '').trim();
-      if (n && !player.skills.unlockedOverrides.includes(n)) {
+      if (n && !_cfNames.has(n) && !player.skills.unlockedOverrides.includes(n)) {
         player.skills.unlockedOverrides.push(n);
         changed = true;
       }
@@ -609,6 +626,13 @@ function syncPlayerSkills(player) {
   }
   while (player.skills.active.length > maxSlots) {
     player.availableSkills.unshift(player.skills.active.pop());
+    changed = true;
+  }
+
+  // Push #74c: keep the bar full — unlocked skills that landed in the library
+  // only because the bar was momentarily full move up when a slot frees.
+  while (player.skills.active.length < maxSlots && player.availableSkills.length) {
+    player.skills.active.push(player.availableSkills.shift());
     changed = true;
   }
 

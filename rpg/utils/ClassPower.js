@@ -66,10 +66,24 @@ function classBonuses(player) {
   return out;
 }
 
+// baseStats mirror: StatAllocationSystem.applyAllocationsToStats() (run by
+// /stats, /upgrade, /equip) recomputes stats.X = baseStats.X + allocations —
+// a bonus that lives only in `stats` is wiped the next time it runs. So every
+// class bonus is applied to BOTH.
+const _BASE_KEY = { maxHp: 'hp' };
+function _baseAdj(player, stat, v) {
+  if (!player.baseStats || typeof player.baseStats !== 'object') return;
+  const k = _BASE_KEY[stat] || stat;
+  player.baseStats[k] = Math.max(0, (player.baseStats[k] || 0) + v);
+}
+function _reapplyAlloc(player) {
+  try { if (player.statAllocations) require('./StatAllocationSystem').applyAllocationsToStats(player); } catch (e) {}
+}
 function _remove(player, applied) {
   if (!player.stats || !applied) return;
   for (const [stat, v] of Object.entries(applied)) {
     if (!v) continue;
+    _baseAdj(player, stat, -v);
     if (stat === 'maxHp') {
       player.stats.maxHp = Math.max(50, (player.stats.maxHp || 100) - v);
       player.stats.hp = Math.min(player.stats.hp || 0, player.stats.maxHp);
@@ -85,6 +99,7 @@ function _add(player, bonuses) {
   if (!player.stats || !bonuses) return;
   for (const [stat, v] of Object.entries(bonuses)) {
     if (!v) continue;
+    _baseAdj(player, stat, v);
     if (stat === 'maxHp') {
       player.stats.maxHp = (player.stats.maxHp || 100) + v;
       player.stats.hp = Math.min((player.stats.hp || 0) + v, player.stats.maxHp);
@@ -117,11 +132,20 @@ function ensureClassBonuses(player) {
   // to strip, apply now, record as real.
   if (rec && rec.legacy) {
     _add(player, want);
-    player.classBonusApplied = { cls, quality: q, bonuses: want, at: Date.now() };
+    player.classBonusApplied = { cls, quality: q, bonuses: want, at: Date.now(), base: true };
     player.classPowerV74 = true;
     return { changed: true, bonuses: want };
   }
   if (rec && rec.cls === cls && rec.quality === q && JSON.stringify(rec.bonuses || {}) === JSON.stringify(want || {})) {
+    if (!rec.base) {
+      // Push #74c: record from a build that only touched `stats`; mirror into
+      // baseStats now and let the allocation recompute restore any stat that
+      // applyAllocationsToStats had already overwritten.
+      for (const [stat, v] of Object.entries(want)) if (v) _baseAdj(player, stat, v);
+      rec.base = true;
+      _reapplyAlloc(player);
+      return { changed: true, bonuses: want };
+    }
     return { changed: false, bonuses: want };
   }
   // Push #74b: legacy hunters (awakened before this module) are NOT skipped
@@ -131,7 +155,7 @@ function ensureClassBonuses(player) {
   // than staying permanently short. Applied exactly once; idempotent after.
   if (rec && rec.bonuses) _remove(player, rec.bonuses);
   _add(player, want);
-  player.classBonusApplied = { cls, quality: q, bonuses: want, at: Date.now() };
+  player.classBonusApplied = { cls, quality: q, bonuses: want, at: Date.now(), base: true };
   player.classPowerV74 = true;
   return { changed: true, bonuses: want };
 }

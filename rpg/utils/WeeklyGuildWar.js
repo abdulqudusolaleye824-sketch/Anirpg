@@ -5,13 +5,21 @@
 
 'use strict';
 
+// Push #74c: the cycle is Sunday 00:00 → Saturday 23:59 WAT (UTC+1), so the
+// key MUST flip at that moment. The old ISO-week key (Monday-based) flipped a
+// full day late — the war "should have ended" all Sunday while the board still
+// showed last week's GP and no cards were paid.
+const WAT_OFFSET_MS = 60 * 60 * 1000;
+function _watParts(ms) {
+  const d = new Date(ms + WAT_OFFSET_MS); // shift so UTC getters read WAT
+  return { y: d.getUTCFullYear(), m: d.getUTCMonth(), day: d.getUTCDate(), dow: d.getUTCDay(), t: d.getTime() };
+}
 function getWeekKey(date = new Date()) {
-  const d = new Date(date);
-  d.setHours(0, 0, 0, 0);
-  d.setDate(d.getDate() + 4 - (d.getDay() || 7));
-  const yearStart = new Date(d.getFullYear(), 0, 1);
-  const weekNo = Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
-  return `${d.getFullYear()}-W${String(weekNo).padStart(2, '0')}`;
+  const ms = date instanceof Date ? date.getTime() : Number(date) || Date.now();
+  const w = _watParts(ms);
+  const sunday = new Date(Date.UTC(w.y, w.m, w.day - w.dow)); // WAT-midnight Sunday of this cycle
+  const y = sunday.getUTCFullYear(), mo = String(sunday.getUTCMonth() + 1).padStart(2, '0'), da = String(sunday.getUTCDate()).padStart(2, '0');
+  return `${y}-S${mo}${da}`;
 }
 
 function normaliseJid(jid) {
@@ -51,20 +59,15 @@ function findGuildForPlayer(db, playerId) {
 }
 
 function getTimeRemainingInWeek() {
-  const now = new Date();
-  const day = now.getDay(); // 0 = Sun, 6 = Sat
-  const satEnd = new Date(now);
-  
-  const daysUntilSat = (6 - day + 7) % 7;
-  satEnd.setDate(now.getDate() + daysUntilSat);
-  satEnd.setHours(23, 59, 59, 999);
-
-  const diffMs = Math.max(0, satEnd - now);
+  const nowMs = Date.now();
+  const w = _watParts(nowMs);
+  // Saturday 23:59:59.999 WAT of this cycle, as a real UTC instant.
+  const satEndMs = Date.UTC(w.y, w.m, w.day - w.dow + 6, 23, 59, 59, 999) - WAT_OFFSET_MS;
+  const diffMs = Math.max(0, satEndMs - nowMs);
   const days = Math.floor(diffMs / 86400000);
   const hours = Math.floor((diffMs % 86400000) / 3600000);
   const mins = Math.floor((diffMs % 3600000) / 60000);
-
-  return { days, hours, mins, diffMs, satEnd };
+  return { days, hours, mins, diffMs, satEnd: new Date(satEndMs) };
 }
 
 function checkWeeklyReset(db, saveDatabase) {
@@ -94,6 +97,21 @@ function checkWeeklyReset(db, saveDatabase) {
  * in total silence — and nothing announced them, so from the guilds' side
  * Weekly Guild War "had no victory card". Pure function, so it is testable.
  */
+/**
+ * Push #74c: owner escape hatch — settle the CURRENT standings right now as if
+ * the week had ended (pays GVC cards + MVP, wipes weekly GP, starts a fresh
+ * cycle). Used to grant a week the scheduler skipped.
+ */
+function forceSettle(db, saveDatabase, label) {
+  if (!db) return null;
+  if (!db.guildWarWeekly) db.guildWarWeekly = { currentWeek: getWeekKey(), history: [] };
+  const key = label || `${db.guildWarWeekly.currentWeek || getWeekKey()}-manual`;
+  const summary = resolveWeeklyWar(db, key, saveDatabase);
+  db.guildWarWeekly.currentWeek = getWeekKey();
+  if (saveDatabase) saveDatabase();
+  return summary;
+}
+
 function buildResultsCard(summary, db) {
   if (!summary) return null;
   const { first, second, third, mvp } = summary;
@@ -285,6 +303,7 @@ function addGP(db, playerId, points, saveDatabase) {
 }
 
 module.exports = {
+  forceSettle,
   buildResultsCard,
   findPlayer,
   getWeekKey,
