@@ -32,7 +32,7 @@ function strengthLine(gate) {
     const GM = require('../../rpg/dungeons/GateManager');
     const pct = gate?.strengthPct;
     if (!pct) return null;
-    return `💪 Strength: *${GM.strengthText(gate.rank, pct)}*`;
+    return `💪 Strength: *${GM.strengthText(gate.rank, pct, gate)}*`;
   } catch (e) { return null; }
 }
 

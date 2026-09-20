@@ -360,6 +360,9 @@ function enter(sender, name, key, keyData, gate, db) {
     ensureMember(gate, sender, db);
     gate.raiders = gate.raiders || [];
     if (!gate.raiders.includes(sender)) gate.raiders.push(sender);
+    // Push #80: solo raids are calibrated too (they never were → monsters
+    // ignored the hunter's strength and the severity label was a stale roll).
+    try { calibrateToParty(gate, raid, db); } catch (e) { console.error('calibrateToParty(solo):', e.message); }
     return { ok: true, mode: 'solo', raid, rel };
   }
 
@@ -464,19 +467,30 @@ function calibrateToParty(gate, raid, db) {
   severity = Math.max(0.70, Math.min(1.60, severity));
   severity = severity * (1 - luck / 100);
   severity = Math.round(severity * 100) / 100;
+  // Push #80: scale from the monster's BASE stats (kept on first calibration)
+  // so the severity is exact, and speed scales too — a Severe gate is faster.
   for (const mon of gate.monsters || []) {
     if (!mon || mon.defeated) continue;
-    mon.maxHp = Math.max(5, Math.floor((mon.maxHp || mon.hp || 10) * severity));
+    if (!mon._base) mon._base = { hp: mon.maxHp || mon.hp || 10, atk: mon.atk || 5, def: mon.def || 0, speed: mon.speed || 10 };
+    mon.maxHp = Math.max(5, Math.floor(mon._base.hp * severity));
     mon.hp = mon.maxHp;
-    mon.atk = Math.max(1, Math.floor((mon.atk || 5) * severity));
-    mon.def = Math.floor((mon.def || 0) * severity);
+    mon.atk = Math.max(1, Math.floor(mon._base.atk * severity));
+    mon.def = Math.floor(mon._base.def * severity);
+    mon.speed = Math.max(1, Math.round(mon._base.speed * (0.8 + severity * 0.2)));
   }
   if (gate.boss && !gate.boss.defeated) {
-    gate.boss.maxHp = Math.max(50, Math.floor((gate.boss.maxHp || gate.boss.hp || 400) * severity));
+    if (!gate.boss._base) gate.boss._base = { hp: gate.boss.maxHp || gate.boss.hp || 400, atk: gate.boss.atk || 0 };
+    gate.boss.maxHp = Math.max(50, Math.floor(gate.boss._base.hp * severity));
     gate.boss.hp = gate.boss.maxHp;
+    if (gate.boss._base.atk) gate.boss.atk = Math.max(1, Math.floor(gate.boss._base.atk * severity));
   }
   const label = severity >= 1.4 ? '☠️ NIGHTMARE' : severity >= 1.2 ? '🔴 Severe' : severity >= 1.0 ? '🟠 Hard' : severity >= 0.85 ? '🟡 Standard' : '🟢 Mild';
   gate.calibrated = { severity, label, partyPower: Math.floor(total), expected: Math.floor(expected), luck, members: n, at: Date.now() };
+  // The strength shown everywhere IS the applied severity from now on.
+  gate.preRollStrengthPct = gate.preRollStrengthPct || gate.strengthPct || null;
+  gate.strengthPct = Math.round(severity * 100);
+  gate.strengthLabel = label;
+  gate.severityNote = `party power ${Math.floor(total).toLocaleString()} vs expected ${Math.floor(expected).toLocaleString()} (${n} hunter${n === 1 ? '' : 's'})${luck ? ` · 🍀 luck −${luck}%` : ''}`;
   return gate.calibrated;
 }
 

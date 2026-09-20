@@ -105,6 +105,7 @@ async function _pace(key, jid) {
 // ignored quietly (one notice per sender per 30s).
 const _spamSender = new Map(); // sender -> { last, lastText, lastSame, warnedAt }
 const _spamChat   = new Map(); // chatId -> [ts...]
+const _inboundTrace = {}; // Push #80: per-socket inbound trace
 const _spamSeen = new Map(); // msgId -> result (all sockets see the same GC message once each)
 function _spamCheck(chatId, sender, text, isGroup, msgId) {
   const now = Date.now();
@@ -1644,7 +1645,11 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
   const CMD_TIMEOUT_MS = Number(process.env.CMD_TIMEOUT_MS || 90 * 1000);
   const _chatQueues = new Map(); // chatId -> Promise tail
   let _inflightCmds = 0;
+  // Push #80: inbound trace — /botstats shows where the last messages went.
+  const _trace = (_inboundTrace[personalityKey] = _inboundTrace[personalityKey] || { received: 0, commands: 0, handled: 0, drops: {}, last: [] });
+  const _dropped = (why, msg) => { _trace.drops[why] = (_trace.drops[why] || 0) + 1; _trace.last.push(`${new Date().toISOString().slice(11, 19)} ${String(msg?.key?.remoteJid || '').split('@')[0].slice(-6)} ✗ ${why}`); if (_trace.last.length > 12) _trace.last.shift(); };
   const _enqueueInbound = (msg) => {
+    _trace.received++;
     const cid = String(msg?.key?.remoteJid || 'x');
     const prev = _chatQueues.get(cid) || Promise.resolve();
     const run = prev.then(async () => {
@@ -1687,9 +1692,9 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
         }
       } catch (e) {}
     }
-    if (!msg.message || msg.key.fromMe) return;
+    if (!msg.message || msg.key.fromMe) { if (msg.message) _dropped('fromMe', msg); return; }
     // Own-send echo (a SIBLING bot's message arriving back): never process.
-    if (msg.key?.id && _wasSentByUs(msg.key.id)) return;
+    if (msg.key?.id && _wasSentByUs(msg.key.id)) { _dropped('ownEcho', msg); return; }
     // Push #74: STALE BACKLOG GUARD. After a reconnect WhatsApp replays the
     // offline queue as fresh 'notify' upserts — the bot then re-answered
     // commands sent HOURS ago, slowly, while ignoring new ones. Anything older
@@ -1702,7 +1707,7 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
       const ts = tsNum > 1e12 ? tsNum : tsNum * 1000;
       // Only trust plausible stamps (after 2024) — never drop on a bad clock.
       if (ts > 1.7e12 && (Date.now() - ts > MAX_MSG_AGE_MS || ts < _ignoreBeforeTs)) {
-        _staleDropped++;
+        _staleDropped++; _dropped(`stale(${Math.round((Date.now() - ts) / 60000)}m)`, msg);
         if (_staleDropped % 25 === 1) console.log(`🕰️ [${personalityKey}] dropped stale message(s) from backlog (${Math.round((Date.now() - ts) / 60000)} min old, total ${_staleDropped})`);
         return;
       }
@@ -2042,10 +2047,12 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
 
     // ── RPG Command handling ──────────────────────────────────────────
     if (isCommand && options.rpgCommandHandler) {
+      _trace.commands++;
       // Push #75: spam limiter — only the socket that would answer evaluates it.
       try {
         const sc = _spamCheck(chatId, sender, messageText, isGroup, msg.key?.id);
         if (sc.block) {
+          _dropped('spam', msg);
           if (sc.warn && (!isGroup || isActive)) {
             try { await sock.sendMessage(chatId, { text: '🐢 Slow down — one command at a time.' }, { quoted: msg }); } catch (e) {}
           }
@@ -2061,7 +2068,9 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
         // DM Handling: the receiving socket answers its own DMs.
         shouldHandle = shouldHandleDMCommand();
       }
+      if (!shouldHandle) _dropped(isGroup ? `notActive(active=${activeKey || 'none'},present=${(() => { try { return (PersonalityManager.getPresentBots(chatId) || []).join('+') || 'none'; } catch (e) { return '?'; } })()})` : 'dmNotHandled', msg);
       if (shouldHandle) {
+        _trace.handled++; _trace.last.push(`${new Date().toISOString().slice(11, 19)} ${String(chatId).split('@')[0].slice(-6)} ✓ ${commandName}`); if (_trace.last.length > 12) _trace.last.shift();
         try {
           await options.rpgCommandHandler(sock, msg, messageText, config, getDatabase, saveDatabase);
         } catch (e) {
@@ -2367,6 +2376,7 @@ function getActiveSocket(chatId) {
 
 module.exports = {
   _pace,
+  getInboundTrace: () => _inboundTrace,
   connectBot,
   reconnectPolicy,
   RECONNECT_MAX_MS,

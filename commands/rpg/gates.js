@@ -234,7 +234,7 @@ const gate = {
       const keyDmText = [
         ...(pro ? [UI.PRO_BAR, `🔑 *YOUR GATE KEY* 💎`, UI.PRO_BAR] : [`🔑 *YOUR GATE KEY*`, UI.FREE_BAR]),
         `${rd.emoji} Gate: *${rd.label}*`,
-        ...(gateObj.strengthPct ? [`💪 Strength: *${require('../../rpg/dungeons/GateManager').strengthText(gateObj.rank, gateObj.strengthPct)}*`] : []),
+        ...(gateObj.strengthPct ? [`💪 Strength: *${require('../../rpg/dungeons/GateManager').strengthText(gateObj.rank, gateObj.strengthPct, gateObj)}*`] : []),
         `🆔 Gate ID: \`${gateId}\``,
         ``,
         `🔑 *Key: \`${result.key}\`*`,
@@ -262,7 +262,7 @@ const gate = {
         text: [
           ...(pro ? [UI.PRO_BAR, `🔑 *GATE PURCHASED!* 💎`, UI.PRO_BAR] : [`🔑 *GATE PURCHASED!*`, UI.FREE_BAR]),
           `${rd.emoji} Gate: *${rd.label}* [${gateId}]`,
-          ...(gateObj.strengthPct ? [`💪 Strength: *${require('../../rpg/dungeons/GateManager').strengthText(gateObj.rank, gateObj.strengthPct)}*`] : []),
+          ...(gateObj.strengthPct ? [`💪 Strength: *${require('../../rpg/dungeons/GateManager').strengthText(gateObj.rank, gateObj.strengthPct, gateObj)}*`] : []),
           `💠 Paid from: ${paidFrom}`,
           `⏳ Gate stable for: *${stability}*`,
           ``,

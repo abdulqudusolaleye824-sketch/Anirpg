@@ -167,6 +167,18 @@ ${(proB ? UI.PRO_MINI : UI.FREE_MINI)}
 📬 Subscribers: ${totalSubs}
 ${(proB ? UI.PRO_BAR : UI.FREE_BAR)}`;
 
+    // Push #80: inbound trace — where did the last messages go, per bot?
+    try {
+      const MSM = require('../../bots/MultiSocketManager');
+      const tr = MSM.getInboundTrace ? MSM.getInboundTrace() : {};
+      const L = ['', '📡 *INBOUND TRACE (since boot)*'];
+      for (const [k, t] of Object.entries(tr)) {
+        const drops = Object.entries(t.drops || {}).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([w, n]) => `${w}×${n}`).join(', ') || 'none';
+        L.push(`*${k}*: recv ${t.received} · cmds ${t.commands} · handled ${t.handled}`, `  drops: ${drops}`);
+        for (const l of (t.last || []).slice(-6)) L.push(`  ${l}`);
+      }
+      out += '\n' + L.join('\n');
+    } catch (e) {}
     await sock.sendMessage(chatId, { text: out }, { quoted: msg });
   }
 };

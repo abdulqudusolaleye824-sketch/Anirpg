@@ -22,14 +22,20 @@ function rollGateStrength() {
   return Math.max(60, Math.min(100, Math.round(60 + r * 40)));
 }
 function strengthLabel(pct) {
-  if (pct >= 95) return '☠️ MAXIMUM';
-  if (pct >= 85) return '🔴 Severe';
-  if (pct >= 75) return '🟠 Hard';
-  if (pct >= 65) return '🟡 Standard';
+  if (pct >= 140) return '☠️ NIGHTMARE';
+  if (pct >= 120) return '🔴 Severe';
+  if (pct >= 100) return '🟠 Hard';
+  if (pct >= 85) return '🟡 Standard';
+  if (pct >= 65) return '🟢 Mild';
   return '🟢 Mild';
 }
-function strengthText(rank, pct) {
-  return `${rank} rank gate ${pct}% — ${strengthLabel(pct)}${pct >= 100 ? ` (strongest possible ${rank}-rank gate)` : ''}`;
+// Push #80: before a raid starts the % is the spawn roll (60–100). Once the
+// party enters, it becomes the SEVERITY actually applied to monster stats
+// (70–160%), so what the card says is what the monsters hit like.
+function strengthText(rank, pct, gate = null) {
+  const cal = gate && gate.calibrated;
+  if (cal) return `${rank} rank gate ${pct}% — ${cal.label} · monsters ×${cal.severity} HP/ATK/DEF (${gate.severityNote || 'calibrated to party'})`;
+  return `${rank} rank gate ${pct}% — ${strengthLabel(pct)}${pct >= 100 ? ` (strongest possible ${rank}-rank gate)` : ''} · final severity set by party strength at launch`;
 }
 // Shared by spawnGate() and GateRaid.reconstruct(): same monsters everywhere.
 function buildGateMonsters(rank, floors, strengthPct = 100) {
@@ -349,7 +355,7 @@ GateManager.formatGateAnnouncement = function(gate) {
     ``,
     `🔑 Gate ID: *${gate.id}*`,
     `${rd.emoji} Rank: *${rd.label}*`,
-    gate.strengthPct ? `💪 Strength: *${strengthText(gate.rank, gate.strengthPct)}*` : null,
+    gate.strengthPct ? `💪 Strength: *${strengthText(gate.rank, gate.strengthPct, gate)}*` : null,
     `💰 Guild Purchase: *${priceTxt}*`,
     `⏰ Breaks in: *${timeLeft} minutes*`,
     ``,

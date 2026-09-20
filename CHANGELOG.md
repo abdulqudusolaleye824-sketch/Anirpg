@@ -1,5 +1,10 @@
 # AniRPG — Patch Drop (features + bug fixes + UI restyle)
 
+## Push #80 — v1.0.83 (2026-09-20) — GATE SEVERITY = MONSTER STATS + INBOUND TRACE
+
+- Gate severity is now the number that actually scales monsters: at launch (party AND solo — solo was never calibrated) the party's total power vs the rank's expected power sets severity 70–160%; every monster's HP/ATK/DEF/SPD and the boss scale from base stats; the % + label shown on every gate/party/raid screen is that applied severity with the "party power vs expected" reason. Labels: Mild <85, Standard 85–99, Hard 100–119, Severe 120–139, NIGHTMARE 140+.
+- `/botstats` now prints an INBOUND TRACE per bot: messages received, commands seen, handled, and the top drop reasons (fromMe / ownEcho / stale / spam / notActive(active=…,present=…)) with the last 6 events — to pin down "silent bot" reports from the phone.
+
 ## Push #79 — v1.0.82 (2026-09-20) — HOTFIX: spam limiter too strict + GroupGuard left the community
 
 - **Silent bots root cause #2**: the #75 limiter blocked the SAME command within 4s and (after #78) every block counted as a strike → normal players got muted, and since all 3 sockets evaluate each GC message the "same command" rule tripped constantly. Now: same command only within 2s, only real rapid-fire (<1.2s) counts as a strike, mute 15s after 8 strikes.

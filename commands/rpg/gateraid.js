@@ -172,7 +172,7 @@ module.exports = {
           `${FRAME}`,
           ...(pro ? [`${rd.emoji} *${solo ? 'SOLO' : 'PARTY'} RAID — RECRUITING* 💎`, UI.PRO_BAR] : [`${rd.emoji} *${solo ? 'SOLO' : 'PARTY'} RAID — RECRUITING*`, UI.FREE_BAR]),
           `${rd.label} [${gate.id}]`,
-          ...(gate.strengthPct ? [`💪 Strength: *${require('../../rpg/dungeons/GateManager').strengthText(gate.rank, gate.strengthPct)}*`] : []),
+          ...(gate.strengthPct ? [`💪 Strength: *${require('../../rpg/dungeons/GateManager').strengthText(gate.rank, gate.strengthPct, gate)}*`] : []),
           ``,
           isOpenKey
             ? `🔓 *Affiliate key* — open to everyone, no guild required.`
@@ -232,7 +232,7 @@ module.exports = {
         text: [
           ...(pro ? [UI.PRO_BAR, `${rd.emoji} *RAID STARTED!* 💎`, UI.PRO_BAR] : [`${rd.emoji} *RAID STARTED!*`, UI.FREE_BAR]),
           `${rd.label} [${gate.id}]`,
-          ...(gate.strengthPct ? [`💪 Strength: *${require('../../rpg/dungeons/GateManager').strengthText(gate.rank, gate.strengthPct)}*`] : []),
+          ...(gate.strengthPct ? [`💪 Strength: *${require('../../rpg/dungeons/GateManager').strengthText(gate.rank, gate.strengthPct, gate)}*`] : []),
           ...(gate.calibrated ? [`🎯 Severity: *${gate.calibrated.label}* ×${gate.calibrated.severity} — tuned to your party's power (${gate.calibrated.partyPower.toLocaleString()})${gate.calibrated.luck ? ` · 🍀 luck −${gate.calibrated.luck}%` : ''}`] : []),
           `🗺️ Floor 1/${gate.totalFloors}`,
           ``,
