@@ -63,7 +63,74 @@ const pairingSessions = {};
 // Push #64 — /link <bot> (owner DM). Throttle: one deliberate pairing start per
 // personality per 30s, so a double-tap can't burn QR refs back-to-back.
 const _linkKickAt = {};
-const MAX_MSG_AGE_MS = Number(process.env.MAX_MSG_AGE_MS || 90 * 1000);
+const MAX_MSG_AGE_MS = Number(process.env.MAX_MSG_AGE_MS || 5 * 60 * 1000);
+
+// ── Push #75: OUTBOUND PACING ────────────────────────────────────────────────
+// WhatsApp rate-limits a number that bursts; a rate-limited send used to be
+// retried then DROPPED, which is the "bot is silent to commands while spawns
+// still arrive" symptom (and the empty bubbles). Sends are now serialised per
+// chat with a minimum gap, plus a global per-socket cap, so a burst becomes a
+// queue instead of a limit hit.
+const SEND_GAP_PER_CHAT_MS = Number(process.env.SEND_GAP_PER_CHAT_MS || 650);
+const SEND_GLOBAL_PER_SEC  = Number(process.env.SEND_GLOBAL_PER_SEC || 8);
+const _chatSendChain = new Map();   // `${key}|${jid}` -> Promise chain tail
+const _chatLastSend  = new Map();   // `${key}|${jid}` -> ts
+const _sockSendStamps = {};         // key -> [ts...] last second
+async function _pace(key, jid) {
+  const ck = `${key}|${jid}`;
+  const prev = _chatSendChain.get(ck) || Promise.resolve();
+  let release;
+  const mine = new Promise(r => { release = r; });
+  _chatSendChain.set(ck, prev.then(() => mine));
+  await prev;
+  try {
+    const gap = SEND_GAP_PER_CHAT_MS - (Date.now() - (_chatLastSend.get(ck) || 0));
+    if (gap > 0) await new Promise(r => setTimeout(r, gap));
+    for (;;) {
+      const now = Date.now();
+      const arr = (_sockSendStamps[key] = (_sockSendStamps[key] || []).filter(t => now - t < 1000));
+      if (arr.length < SEND_GLOBAL_PER_SEC) { arr.push(now); break; }
+      await new Promise(r => setTimeout(r, 1000 - (now - arr[0]) + 5));
+    }
+    _chatLastSend.set(ck, Date.now());
+  } finally {
+    setTimeout(() => { release(); if (_chatSendChain.get(ck) === mine) _chatSendChain.delete(ck); }, 0);
+  }
+}
+
+// ── Push #75: INBOUND SPAM LIMITER ───────────────────────────────────────────
+// One user hammering commands (or several in a GC) is what pushes the number
+// into the rate limit in the first place. Per sender: 1 command / 1.2s and the
+// SAME command not more than once / 4s. Per group: 10 commands / 5s. Excess is
+// ignored quietly (one notice per sender per 30s).
+const _spamSender = new Map(); // sender -> { last, lastText, lastSame, warnedAt }
+const _spamChat   = new Map(); // chatId -> [ts...]
+const _spamSeen = new Map(); // msgId -> result (all sockets see the same GC message once each)
+function _spamCheck(chatId, sender, text, isGroup, msgId) {
+  const now = Date.now();
+  if (msgId && _spamSeen.has(msgId)) return _spamSeen.get(msgId);
+  const res = _spamCheckInner(chatId, sender, text, isGroup, now);
+  if (msgId) { _spamSeen.set(msgId, res); if (_spamSeen.size > 4000) { const k = _spamSeen.keys().next().value; _spamSeen.delete(k); } }
+  return res;
+}
+function _spamCheckInner(chatId, sender, text, isGroup, now) {
+  const st = _spamSender.get(sender) || { last: 0, lastText: '', lastSame: 0, warnedAt: 0 };
+  const t = String(text || '').trim().toLowerCase();
+  let block = false;
+  if (now - st.last < 1200) block = true;
+  if (t && t === st.lastText && now - st.lastSame < 4000) block = true;
+  if (isGroup) {
+    const arr = (_spamChat.get(chatId) || []).filter(x => now - x < 5000);
+    if (arr.length >= 10) block = true; else arr.push(now);
+    _spamChat.set(chatId, arr);
+  }
+  if (!block) { st.last = now; if (t !== st.lastText) { st.lastText = t; } st.lastSame = now; }
+  const warn = block && (now - st.warnedAt > 30000);
+  if (warn) st.warnedAt = now;
+  _spamSender.set(sender, st);
+  if (_spamSender.size > 5000) { for (const [k, v] of _spamSender) { if (now - v.last > 600000) _spamSender.delete(k); } }
+  return { block, warn };
+}
 let _staleDropped = 0;
 // Push #74: /link from a DM — password gate + QR delivered INTO the DM.
 // _linkPending[senderJid] = { targetKey, sockKey, at } while we wait for the password.
@@ -1234,9 +1301,10 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
       // send in the bot: back off and retry (1.5s → 3s → 6s → 12s); if it still
       // will not go, resolve SILENTLY — nothing about it ever reaches a chat.
       const _isRate = (e) => /rate-overlimit|overlimit|429/i.test(String(e && e.message || e || ''));
-      const _delays = [1500, 3000, 6000, 12000];
+      const _delays = [2000, 4000, 8000, 16000, 30000];
       for (let _i = 0; ; _i++) {
         try {
+          try { await _pace(personalityKey, jid); } catch (e) {}
           _res = await _rawSend(jid, content, options);
           try { markSendResult(personalityKey, true); } catch (e) {}
           break;
@@ -1559,8 +1627,12 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
     // than MAX_MSG_AGE_MS is dropped on the floor (never a command, never AI).
     try {
       const tsRaw = msg.messageTimestamp;
-      const ts = Number(typeof tsRaw === 'object' && tsRaw !== null ? (tsRaw.low ?? tsRaw.toNumber?.() ?? 0) : tsRaw) * 1000;
-      if (ts > 0 && (Date.now() - ts > MAX_MSG_AGE_MS || ts < _ignoreBeforeTs)) {
+      let tsNum = 0;
+      if (tsRaw && typeof tsRaw === 'object') tsNum = typeof tsRaw.toNumber === 'function' ? tsRaw.toNumber() : Number(tsRaw.low || 0);
+      else tsNum = Number(tsRaw) || 0;
+      const ts = tsNum > 1e12 ? tsNum : tsNum * 1000;
+      // Only trust plausible stamps (after 2024) — never drop on a bad clock.
+      if (ts > 1.7e12 && (Date.now() - ts > MAX_MSG_AGE_MS || ts < _ignoreBeforeTs)) {
         _staleDropped++;
         if (_staleDropped % 25 === 1) console.log(`🕰️ [${personalityKey}] dropped stale message(s) from backlog (${Math.round((Date.now() - ts) / 60000)} min old, total ${_staleDropped})`);
         return;
@@ -1887,6 +1959,16 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
 
     // ── RPG Command handling ──────────────────────────────────────────
     if (isCommand && options.rpgCommandHandler) {
+      // Push #75: spam limiter — only the socket that would answer evaluates it.
+      try {
+        const sc = _spamCheck(chatId, sender, messageText, isGroup, msg.key?.id);
+        if (sc.block) {
+          if (sc.warn && (!isGroup || isActive)) {
+            try { await sock.sendMessage(chatId, { text: '🐢 Slow down — one command at a time.' }, { quoted: msg }); } catch (e) {}
+          }
+          return;
+        }
+      } catch (e) {}
       let shouldHandle = false;
       if (isGroup) {
         // Targeted /switch + /start are handled by the mentioned bot ONLY —

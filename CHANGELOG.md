@@ -1,5 +1,11 @@
 # AniRPG — Patch Drop (features + bug fixes + UI restyle)
 
+## Push #75 — Silence + spam hotfix
+
+1. **Outbound pacing.** Every send is serialised per chat (≥650ms gap) and capped per socket (8/s). Bursts become a queue instead of a WhatsApp rate-limit hit — the rate-limit is what made bots "silent to commands while spawns still arrive" and produced empty bubbles. Rate-limit retries now go up to 30s and text is not dropped.
+2. **Inbound spam limiter.** Per sender: 1 command / 1.2s, same command ≤ once / 4s; per group 10 commands / 5s. Excess is ignored quietly (one "🐢 slow down" notice per 30s).
+3. **Stale-message guard hardened**: 5-minute window, proper Long timestamp handling, never drops on an implausible clock.
+
 ## Push #74 — class power for real, dodge, poison/fear/weaken, party-calibrated gates, +300 monsters, pet mating & eggs, /link by password, multi-bot fixes (2026-09-19)
 
 1. **Class stats are now REALLY applied.** Every awakened hunter carries their class's stat bonuses scaled by quality % (`rpg/utils/ClassPower.js`, idempotent, recorded in `classBonusApplied`). Skill passives ("+15% ATK", "Below 30% HP: ATK +60%", "+25% crit", "reduces damage taken 20%") are live multipliers in every combat path (gate raids, PvP, /battle), also quality-scaled.
