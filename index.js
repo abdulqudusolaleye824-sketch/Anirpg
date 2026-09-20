@@ -1600,10 +1600,36 @@ async function startup() {
     if (process.env['BOT_' + key.toUpperCase()]) linkedKeys.push(key);
   }
 
+  // Push #82: BOT_BOOT_KEYS=hinata,mikasa forces the exact boot list (no
+  // creds.json needed — an empty folder boots to a QR). BOT_NO_AUTH_RESTORE=1
+  // disables the backup restore below AND purges db.authBackups, so a wiped,
+  // corrupt (Bad MAC) session can never resurrect itself from Mongo.
+  const _forcedBoot = String(process.env.BOT_BOOT_KEYS || '').split(/[,\s]+/).map((k) => k.trim().toLowerCase()).filter((k) => k && ALL_PERSONALITY_KEYS.includes(k));
+  const _noRestore = /^(1|true|yes)$/i.test(String(process.env.BOT_NO_AUTH_RESTORE || ''));
+  if (_noRestore) {
+    try {
+      const dbNR = getDatabase();
+      if (dbNR && dbNR.authBackups) { delete dbNR.authBackups; saveDatabase(); console.log('🧹 BOT_NO_AUTH_RESTORE: purged db.authBackups'); }
+      const bdir = path.join(AUTH_DIR, '..', 'auth-backups');
+      if (fs.existsSync(bdir)) { fs.rmSync(bdir, { recursive: true, force: true }); console.log('🧹 BOT_NO_AUTH_RESTORE: removed auth-backups/'); }
+    } catch (e) { console.error('BOT_NO_AUTH_RESTORE purge error:', e.message); }
+  }
+  if (_forcedBoot.length) {
+    for (const k of _forcedBoot) { try { fs.mkdirSync(path.join(AUTH_DIR, k), { recursive: true }); } catch (e) {} }
+    console.log(`🤖 BOT_BOOT_KEYS set — booting exactly: ${_forcedBoot.join(', ')}`);
+    for (const key of _forcedBoot) {
+      startBotScheduler(key);
+      await new Promise(r => setTimeout(r, 1500));
+    }
+    console.log('✅ All bots startup initiated (forced list)');
+    return;
+  }
+
   // ── RESTORE PERSISTED AUTH ──────────────────────────────────────
   // If auth files are gone, restore each backed-up personality from the
   // disk backups (current scheme) or legacy DB backups, before checking disk.
   try {
+    if (_noRestore) throw new Error('BOT_NO_AUTH_RESTORE set — skipping auth restore');
     const dbTmp = getDatabase();
     const diskBackups = {};
     try {

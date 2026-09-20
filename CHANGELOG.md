@@ -1,5 +1,9 @@
 # AniRPG — Patch Drop (features + bug fixes + UI restyle)
 
+## Push #82 — v1.0.85 (2026-09-20) — BOOT CONTROL
+
+- `BOT_BOOT_KEYS=hinata,mikasa` (.env) boots exactly those bots (empty folder → QR). `BOT_NO_AUTH_RESTORE=1` disables session restore and purges `db.authBackups` + `auth-backups/` — fixes corrupt Bad-MAC sessions resurrecting from Mongo after a wipe.
+
 ## Push #81 — v1.0.84 (2026-09-20) — OPS ENDPOINTS (no SSH, no commands needed)
 
 - `GET /version` — VERSION + process uptime/boot time/pid/memory.
