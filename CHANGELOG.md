@@ -1,5 +1,15 @@
 # AniRPG — Patch Drop (features + bug fixes + UI restyle)
 
+## Push #86 — v1.0.89 (2026-09-21) — SILENT BOTS: ROOT CAUSE + DEAF-SOCKET DETECTOR
+
+Live trace showed three different "connected but silent" modes at once: hinata/mikasa `received:0` (every inbound "Bad MAC"), seraph `received:659 handled:0` (all inbound arriving 20–35 min late → stale-dropped), killua fine.
+
+- **Root cause of Bad MAC never healing:** `retryRequestDelayMs: 3000` is awaited *inside* Baileys' retry mutex. One failed decrypt blocked every other retry receipt for 3s; under a storm the queue never drained and Baileys' own per-contact session recreation (needs retry #2) never ran. Now `250ms` (library default), `enableAutoSessionRecreation` + `enableRecentMessageCache` explicit.
+- **Push #85 storm watchdog removed** — it bulk-purged *all* Signal sessions of the "quietest" bot on a global error count, which throws away good sessions and can hit the wrong bot.
+- **Deaf-socket detector:** a connected bot with no fresh (≤5 min old) inbound for 4 min *while another bot is hearing* is recycled (socket only — creds kept, never a re-scan). Lagging sockets (only stale replay) count as deaf. One recycle per scan, 4-min cooldown per bot. After 3 recycles with no recovery → Signal session files purged as last resort (creds still intact).
+- libsignal `SessionEntry` dumps / "Closing session" noise silenced; decrypt failures summarised 1 line per 100.
+- `/restart health` now shows 🙉 *deaf — last heard N min ago* vs ✅ *replying (heard Ns ago)*.
+
 ## Push #85 — v1.0.88 (2026-09-21) — MEND · PET PERMADEATH · COMBAT FAIRNESS · BOT UPTIME
 
 - `/mend <inv#>` — one Mending Stone fixes ONE weapon/gear piece to 100% (equipped items included). `/mend` lists durability; `/mend all` = old whole-bag repair.

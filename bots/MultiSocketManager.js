@@ -410,6 +410,8 @@ function botHealthReport() {
     online: !!botSockets[k]?.user?.id,
     usable: isBotUsable(k),
     wsOpen: _wsReady(k),
+    lastInboundAgoSec: _lastInboundAt[k] ? Math.round((Date.now() - _lastInboundAt[k]) / 1000) : null,
+    deafRecycles: _deafRecycles[k] || 0,
     sendFails: _sendHealth[k]?.fail || 0,
     lastErr: _sendHealth[k]?.lastErr || null,
     lastOkAt: _sendHealth[k]?.lastOkAt || 0,
@@ -447,34 +449,42 @@ function startStallSweeper(ctx) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// Push #85 — BAD MAC WATCHDOG
-// Symptom (seen live 09-20/21): a bot shows "connected", sends fine, but
-// libsignal logs "Session error: Bad MAC" / "Failed to decrypt message with
-// any known session" for EVERY inbound → received stays 0 → bot is silent.
-// The creds are fine; the per-contact Signal session files are corrupt.
-// Fix = drop the session-*.json / sender-key-*.json files (NOT creds.json)
-// and reconnect; WhatsApp re-establishes fresh sessions automatically.
+// Push #86 — DEAF-SOCKET DETECTOR (replaces the Push #85 storm watchdog)
+// Three distinct silent-bot modes were observed live on 09-21:
+//   A) received:0 forever  — every inbound fails "Bad MAC"; sends still work.
+//   B) received:659, handled:0 — inbound arrives but 20–35 min LATE and the
+//      stale guard drops it all (socket alive, replay queue never catches up).
+//   C) socket "open" but the server stopped delivering (no inbound at all,
+//      no decrypt errors either).
+// One rule covers all three: a connected bot that has produced NO fresh
+// (< MAX_MSG_AGE_MS old) inbound for DEAF_AFTER_MS, while some OTHER bot has,
+// is deaf. Recycle ONLY that socket (creds kept — never a re-scan). Signal
+// sessions are NOT bulk-purged: Baileys rebuilds a bad per-contact session
+// itself via retry receipts once retryRequestDelayMs stops starving it.
+// After 3 recycles in a row with no recovery, purge session files as a last
+// resort (still no re-scan).
 // ═══════════════════════════════════════════════════════════════
-const BADMAC_WINDOW_MS = 60 * 1000;
-const BADMAC_STORM = Number(process.env.BADMAC_STORM || 25);
-const BADMAC_QUIET_MS = Number(process.env.BADMAC_QUIET_MS || 3 * 60 * 1000);
+const DEAF_AFTER_MS = Number(process.env.BOT_DEAF_AFTER_MS || 4 * 60 * 1000);
+const DEAF_SCAN_MS = 30 * 1000;
 let _badMacHits = [];
-const _lastInboundAt = {};      // key -> ts of last successfully decrypted inbound
-const _badMacHealAt = {};       // key -> ts of last heal (rate limit)
-const _badMacHeals = {};        // key -> count
-(function _hookBadMac() {
+const _lastInboundAt = {};      // key -> ts of last FRESH inbound (decrypted, not stale)
+const _lastOpenAt = {};         // key -> ts the current socket opened
+const _lastStaleAt = {};        // key -> ts of last stale-dropped inbound (lagging socket)
+const _deafRecycles = {};       // key -> consecutive recycles without recovery
+const _deafHealAt = {};         // key -> ts of last recycle
+function noteFreshInbound(key) { _lastInboundAt[key] = Date.now(); _deafRecycles[key] = 0; }
+(function _hookLibsignalNoise() {
   try {
     const origErr = console.error.bind(console);
     console.error = (...args) => {
       try {
         const first = String(args[0] || '') + ' ' + String(args[1] || '');
-        if (/Bad MAC|Failed to decrypt message with any known session/i.test(first)) {
+        if (/Bad MAC|Failed to decrypt message with any known session|No matching sessions found|No session record/i.test(first)) {
           const now = Date.now();
           _badMacHits.push(now);
           if (_badMacHits.length > 500) _badMacHits = _badMacHits.slice(-300);
-          // Do not spam the log with 40 stack traces a second — one line per 50.
-          if (_badMacHits.length % 50 !== 1) return;
-          return origErr(`🔐 libsignal decrypt failure ×${_badMacHits.length} (Bad MAC) — watchdog armed`);
+          if (_badMacHits.length % 100 !== 1) return;
+          return origErr(`🔐 libsignal decrypt failures ×${_badMacHits.length} (Bad MAC) — per-contact sessions rebuilding via retry receipts`);
         }
       } catch (e) {}
       return origErr(...args);
@@ -483,10 +493,17 @@ const _badMacHeals = {};        // key -> count
     console.log = (...args) => {
       try {
         const first = String(args[0] || '');
-        if (/^(Closing session|Removing old closed session|Session error)/.test(first) || (first === 'SessionEntry' )) return; // libsignal SessionEntry dumps
-        if (/Failed to decrypt message with any known session/i.test(first)) { _badMacHits.push(Date.now()); return; }
+        if (/^(Closing session|Removing old closed session|Session error|SessionEntry)/.test(first)) return;
       } catch (e) {}
       return origLog(...args);
+    };
+    const origWarn = console.warn.bind(console);
+    console.warn = (...args) => {
+      try {
+        const first = String(args[0] || '');
+        if (/^(Closing open session in favor of incoming prekey bundle|Decrypted message with closed session)/.test(first)) return;
+      } catch (e) {}
+      return origWarn(...args);
     };
   } catch (e) {}
 })();
@@ -500,46 +517,55 @@ function _purgeSignalSessions(authDir, key) {
   } catch (e) {}
   return n;
 }
-function healBadMac(key, why) {
+function recycleDeafSocket(key, why) {
   const bp = _bootParams[key];
   if (!bp) return false;
   const now = Date.now();
-  if (now - (_badMacHealAt[key] || 0) < 5 * 60 * 1000) return false; // at most once / 5 min per bot
-  _badMacHealAt[key] = now;
-  _badMacHeals[key] = (_badMacHeals[key] || 0) + 1;
+  if (now - (_deafHealAt[key] || 0) < DEAF_AFTER_MS) return false;
+  _deafHealAt[key] = now;
+  _deafRecycles[key] = (_deafRecycles[key] || 0) + 1;
+  const n = _deafRecycles[key];
   const s = botSockets[key];
-  console.warn(`🩹 AstraLink [${key}] Bad MAC heal #${_badMacHeals[key]} (${why}) — purging corrupt Signal sessions and reconnecting (creds kept, no re-scan).`);
+  console.warn(`🩹 AstraLink [${key}] deaf socket #${n} (${why}) — recycling connection (creds kept, no re-scan)`);
   try { s?.ev?.removeAllListeners?.(); } catch (e) {}
-  try { s?.end?.(new Error('bad-mac-heal')); } catch (e) {}
+  try { s?.end?.(new Error('deaf-socket recycle')); } catch (e) {}
   try { delete botSockets[key]; } catch (e) {}
-  const n = _purgeSignalSessions(bp.authDir, key);
-  console.warn(`🧹 AstraLink [${key}] removed ${n} session/sender-key file(s)`);
+  if (n >= 3) {
+    const purged = _purgeSignalSessions(bp.authDir, key);
+    console.warn(`🧹 AstraLink [${key}] still deaf after ${n - 1} recycles — purged ${purged} Signal session file(s) as last resort (creds intact)`);
+    _deafRecycles[key] = 0;
+  }
   try { backupAuthToDisk(key, bp.authDir, { force: true }); } catch (e) {}
-  _badMacHits = [];
-  _scheduleReconnect(key, 1500, 'bad-mac heal');
+  _scheduleReconnect(key, 1500, 'deaf socket recycled');
   return true;
 }
+// Back-compat name used by index.js / restart.js exports.
+function healBadMac(key, why) { return recycleDeafSocket(key, why || 'manual'); }
 setInterval(() => {
   try {
     const now = Date.now();
-    _badMacHits = _badMacHits.filter(t => now - t < BADMAC_WINDOW_MS);
-    if (_badMacHits.length < BADMAC_STORM) return;
-    // A storm is on. Blame the connected bots that have received NOTHING
-    // recently (their inbound is what's failing). Heal the quietest first.
-    const suspects = Object.keys(botSockets)
-      .filter(k => botSockets[k]?.user?.id && !_loggedOut.has(k))
-      .filter(k => now - (_lastInboundAt[k] || (_sendHealth[k]?.firstSeenAt || 0)) > BADMAC_QUIET_MS)
-      .sort((a, b) => (_lastInboundAt[a] || 0) - (_lastInboundAt[b] || 0));
-    if (!suspects.length) return;
-    healBadMac(suspects[0], `${_badMacHits.length} decrypt failures/min, no inbound for ${Math.round((now - (_lastInboundAt[suspects[0]] || 0)) / 60000)} min`);
-  } catch (e) { console.error('badmac watchdog error:', e.message); }
-}, 30 * 1000).unref?.();
+    _badMacHits = _badMacHits.filter(t => now - t < 60 * 1000);
+    const live = Object.keys(botSockets).filter(k => botSockets[k]?.user?.id && !_loggedOut.has(k));
+    if (live.length < 2) return; // nothing to compare against — a quiet night is not deafness
+    const anyoneHearing = live.some(k => now - (_lastInboundAt[k] || 0) < DEAF_AFTER_MS);
+    if (!anyoneHearing) return; // whole fleet quiet → probably just no traffic
+    for (const k of live) {
+      const since = Math.max(_lastInboundAt[k] || 0, _lastOpenAt[k] || 0);
+      if (now - since < DEAF_AFTER_MS) continue;
+      const mins = Math.round((now - since) / 60000);
+      const lagging = now - (_lastStaleAt[k] || 0) < DEAF_AFTER_MS;
+      recycleDeafSocket(k, `${lagging ? 'only stale/late inbound' : 'no fresh inbound'} for ${mins} min while others hear (${_badMacHits.length} decrypt failures/min)`);
+      break; // one per scan — never recycle the whole fleet at once
+    }
+  } catch (e) { console.error('deaf-socket detector error:', e.message); }
+}, DEAF_SCAN_MS).unref?.();
 
 // Push #74: /restart hooks — drop everything queued before the restart and
 // reset per-group takeover state so groups answer through their own bot.
 let _ignoreBeforeTs = 0;
 function markRestart() {
   _ignoreBeforeTs = Date.now();
+  try { for (const k of Object.keys(_deafRecycles)) _deafRecycles[k] = 0; for (const k of Object.keys(_deafHealAt)) _deafHealAt[k] = 0; } catch (e) {}
   try { _takeoverAt.clear(); } catch (e) {}
   for (const k of Object.keys(_sendHealth)) delete _sendHealth[k];
   return _ignoreBeforeTs;
@@ -1338,8 +1364,15 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
     keepAliveIntervalMs: 15_000,      // 15s WebSocket keep-alive ping for stability
     connectTimeoutMs: 60_000,         // 60s handshake timeout
     defaultQueryTimeoutMs: 60_000,    // 60s query timeout for stanzas
-    retryRequestDelayMs: 3_000,       // Auto retry failed stanzas after 3s
+    // Push #86: retryRequestDelayMs is awaited INSIDE Baileys' retry mutex, so
+    // 3000ms meant one failed decrypt blocked all other retry receipts for 3s.
+    // In a busy group under a Bad-MAC storm the queue never drained and the
+    // automatic Signal-session recreation (which needs retry #2+) never ran →
+    // hinata/mikasa stayed deaf with received:0 while sends still worked.
+    retryRequestDelayMs: 250,         // Baileys default
     maxMsgRetryCount: 5,              // Retry stanzas up to 5 times
+    enableAutoSessionRecreation: true, // rebuild the per-contact session on retry #2 (explicit)
+    enableRecentMessageCache: true,    // required for the retry manager above
     getMessage: async () => ({ conversation: '' }),
     // Identity patch — plain text/media sends need no wrapping; interactive
     // sends are built + MD-patched explicitly inside utils/buttons.
@@ -1676,7 +1709,7 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
         code: pairingSessions[personalityKey]?.code || null,
       };
       persistLinkedBot(getDatabase, saveDatabase, personalityKey, sock, pairingPhone);
-      _lastInboundAt[personalityKey] = _lastInboundAt[personalityKey] || Date.now(); // Push #85: grace period starts now
+      _lastOpenAt[personalityKey] = Date.now(); // Push #86: deaf detector grace period starts now
       try { backupAuthToDisk(personalityKey, authDir, { force: true }); } catch {}
       console.log(`✅ AstraLink [${displayName}] connection VERIFIED & ACTIVE! (JID: ${jid})`);
 
@@ -1750,7 +1783,6 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
   const _dropped = (why, msg) => { _trace.drops[why] = (_trace.drops[why] || 0) + 1; _trace.last.push(`${new Date().toISOString().slice(11, 19)} ${String(msg?.key?.remoteJid || '').split('@')[0].slice(-6)} ✗ ${why}`); if (_trace.last.length > 12) _trace.last.shift(); };
   const _enqueueInbound = (msg) => {
     _trace.received++;
-    _lastInboundAt[personalityKey] = Date.now();
     const cid = String(msg?.key?.remoteJid || 'x');
     const prev = _chatQueues.get(cid) || Promise.resolve();
     const run = prev.then(async () => {
@@ -1810,9 +1842,15 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
       if (ts > 1.7e12 && (Date.now() - ts > MAX_MSG_AGE_MS || ts < _ignoreBeforeTs)) {
         _staleDropped++; _dropped(`stale(${Math.round((Date.now() - ts) / 60000)}m)`, msg);
         if (_staleDropped % 25 === 1) console.log(`🕰️ [${personalityKey}] dropped stale message(s) from backlog (${Math.round((Date.now() - ts) / 60000)} min old, total ${_staleDropped})`);
+        // Push #86: a socket that only ever delivers stale traffic is LAGGING
+        // (server replay queue never catches up) — the deaf detector treats
+        // it exactly like silence, because to players it is silence.
+        _lastStaleAt[personalityKey] = Date.now();
         return;
       }
     } catch (e) {}
+
+    noteFreshInbound(personalityKey); // Push #86: a decrypted, non-stale message = this socket hears
 
     // Unwrap Baileys message containers (ephemeralMessage, viewOnceMessage, documentWithCaptionMessage, editedMessage, etc.)
     const realMessage = unwrapMessage(msg);

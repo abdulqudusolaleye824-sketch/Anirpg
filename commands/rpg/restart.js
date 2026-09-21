@@ -62,9 +62,14 @@ function healthFooter() {
   try {
     const rep = MultiSocketManager.botHealthReport?.() || [];
     if (!rep.length) return '';
-    return `\n\n📶 *BOT HEALTH*\n` + rep.map(r =>
-      `  ${r.usable ? '✅' : r.online ? '⚠️' : '🔴'} *${r.key}* — ${r.usable ? 'replying' : r.online ? 'connected but not sending' : 'offline'}${r.sendFails ? ` (${r.sendFails} send fail${r.sendFails > 1 ? 's' : ''}${r.lastErr ? `: ${r.lastErr}` : ''})` : ''}`
-    ).join('\n');
+    return `\n\n📶 *BOT HEALTH*\n` + rep.map(r => {
+      // Push #86: "hearing" = fresh inbound in the last 4 min. A bot that is
+      // connected but deaf is the silent-bot bug — say so instead of ✅.
+      const deaf = r.online && r.usable && r.lastInboundAgoSec != null && r.lastInboundAgoSec > 240;
+      const icon = !r.online ? '🔴' : !r.usable ? '⚠️' : deaf ? '🙉' : '✅';
+      const state = !r.online ? 'offline' : !r.usable ? 'connected but not sending' : deaf ? `deaf — last heard ${Math.round(r.lastInboundAgoSec / 60)} min ago (auto-recycling)` : r.lastInboundAgoSec == null ? 'connected, nothing heard yet' : `replying (heard ${r.lastInboundAgoSec}s ago)`;
+      return `  ${icon} *${r.key}* — ${state}${r.sendFails ? ` (${r.sendFails} send fail${r.sendFails > 1 ? 's' : ''}${r.lastErr ? `: ${r.lastErr}` : ''})` : ''}`;
+    }).join('\n');
   } catch (e) { return ''; }
 }
 
