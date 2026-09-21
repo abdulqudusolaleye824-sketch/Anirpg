@@ -243,7 +243,17 @@ module.exports = {
       if (sub === 'mate' || sub === 'breed') {
         const PB = require('../../rpg/utils/PetBreeding');
         const a1 = (args[1] || '').toLowerCase();
-        if (a1 === 'accept') { const r = PB.accept(sender); return sock.sendMessage(chatId, { text: r.message }, { quoted: msg }); }
+        // Push #84: multi-message mating session (5 scenes → egg reveal).
+        const _playMating = async (r) => {
+          if (!r.success || !r.male || !r.female) return sock.sendMessage(chatId, { text: r.message }, { quoted: msg });
+          const scenes = PB.courtshipScenes(r.male, r.female, r);
+          for (const sc of scenes) {
+            try { await sock.sendMessage(chatId, { text: sc }); } catch (e) {}
+            await new Promise(res => setTimeout(res, 1800));
+          }
+          return sock.sendMessage(chatId, { text: r.message }, { quoted: msg });
+        };
+        if (a1 === 'accept') { const r = PB.accept(sender); return _playMating(r); }
         if (a1 === 'decline' || a1 === 'reject') { const r = PB.decline(sender); return sock.sendMessage(chatId, { text: r.message }, { quoted: msg }); }
         const ctx = msg.message?.extendedTextMessage?.contextInfo || {};
         const other = ctx.mentionedJid?.[0] || ctx.participant || null;
@@ -271,7 +281,7 @@ module.exports = {
         if (!p1 || !p2) return sock.sendMessage(chatId, { text: '❌ Usage: /pet mate <#> <#> — see /pet list' }, { quoted: msg });
         const male = PB.genderOf(p1) === 'male' ? p1 : p2; const female = male === p1 ? p2 : p1;
         const r = PB.breed(sender, male, sender, female);
-        return sock.sendMessage(chatId, { text: r.message }, { quoted: msg });
+        return _playMating(r);
       }
       if (sub === 'give' || sub === 'gift' || sub === 'transfer') {
         const PB = require('../../rpg/utils/PetBreeding');

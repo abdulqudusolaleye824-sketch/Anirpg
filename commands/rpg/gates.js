@@ -38,6 +38,8 @@ const gate = {
     const pro = UI.isPro(player);
     const FRAME = pro ? UI.PRO_BAR : UI.FREE_BAR;
 
+    // Push #84: /gate(s) is READ-ONLY — it never spawns/opens a gate. Spawning
+    // is done solely by handlers/gateSpawner on its timer.
     GateManager.checkGateBreaks(chatId, sock);
 
     const sub = (args[0] || 'list').toLowerCase();
@@ -114,8 +116,8 @@ const gate = {
           text: [
             ...(pro ? [UI.PRO_BAR, `「System」 *NO ACTIVE GATES* 💎`, UI.PRO_BAR] : [`「System」 *NO ACTIVE GATES*`, UI.FREE_BAR]),
             ``,
-            `No dimensional rifts detected in this area.`,
-            `Gates spawn periodically. Stay alert, hunter.`,
+            `❌ There is *no active gate* in this GC right now.`,
+            `Gates spawn on their own schedule — /gates only checks, it never opens one.`,
             ...(pro ? [FRAME] : [FRAME, UI.upsell()]),
           ].join('\n'),
         }, { quoted: msg });

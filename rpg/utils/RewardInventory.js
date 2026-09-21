@@ -121,39 +121,80 @@ function migrateLegacy(player) {
   return n;
 }
 
-// Count a material by exact name across items + legacy bucket.
+// Push #84: material detection rewritten — crafting used to see "have 0"
+// for materials the player clearly owned. Now matches by NORMALISED name
+// (case/space/punctuation-insensitive) across EVERY place a material can
+// live, and no longer requires type === 'material' (store/pass/craft
+// grants used 'Material', 'ingredient', or no type at all):
+//   • inventory.items (any non-gear, non-weapon, non-consumable entry)
+//   • inventory.materials (legacy list)
+//   • player.materials {name: count}  (artifact spawns / old drops)
+const _GEARISH = new Set(['weapon','armor','armour','gear','helmet','chest','chestplate','legs','boots','gloves','ring','amulet','accessory','shield','artifact','potion','consumable','food','petfood','pet_food','scroll','card','egg','pet']);
+function _normName(n) { return String(n || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim(); }
+function _isMaterialish(it) {
+  if (!it || typeof it !== 'object') return true; // bare string entries in legacy list
+  if (it.isGear || it.isWeapon || it.slot) return false;
+  const t = String(it.type || it.kind || '').toLowerCase();
+  if (!t) return true;
+  if (t === 'material' || t === 'materials' || t === 'ingredient' || t === 'resource' || t === 'ore' || t === 'essence') return true;
+  return !_GEARISH.has(t);
+}
 function countMaterial(player, name) {
   if (!player || !name) return 0;
+  const want = _normName(name);
+  if (!want) return 0;
   let n = 0;
   for (const it of (player.inventory?.items || [])) {
-    if (it && String(it.type || '').toLowerCase() === 'material' && it.name === name) n++;
+    if (it && _isMaterialish(it) && _normName(it.name) === want) n += Math.max(1, Number(it.count || it.qty || it.quantity || 1) || 1);
   }
   for (const m of (player.inventory?.materials || [])) {
     const nm = (m && typeof m === 'object') ? m.name : m;
-    if (nm === name) n++;
+    if (_normName(nm) === want) n += (m && typeof m === 'object') ? Math.max(1, Number(m.count || m.qty || 1) || 1) : 1;
+  }
+  for (const [k, v] of Object.entries(player.materials || {})) {
+    if (_normName(k) === want && Number(v) > 0) n += Math.floor(Number(v));
   }
   return n;
 }
 
-// Atomically consume qty of a material (items first, then legacy).
-// Returns true only if the full qty was consumed.
+// Atomically consume qty of a material (items first, then legacy list, then
+// player.materials counters). Returns true only if the full qty was consumed.
 function consumeMaterial(player, name, qty) {
   if (!player || !name || !(qty > 0)) return false;
   if (countMaterial(player, name) < qty) return false;
+  const want = _normName(name);
   let remaining = qty;
   const inv = player.inventory || {};
   if (Array.isArray(inv.items)) {
-    inv.items = inv.items.filter(it => {
-      if (remaining > 0 && it && String(it.type || '').toLowerCase() === 'material' && it.name === name) { remaining--; return false; }
-      return true;
-    });
+    const keep = [];
+    for (const it of inv.items) {
+      if (remaining > 0 && it && _isMaterialish(it) && _normName(it.name) === want) {
+        const c = Math.max(1, Number(it.count || it.qty || it.quantity || 1) || 1);
+        if (c <= remaining) { remaining -= c; continue; }
+        // partial stack
+        const left = c - remaining; remaining = 0;
+        if (it.count != null) it.count = left; else if (it.qty != null) it.qty = left; else it.quantity = left;
+      }
+      keep.push(it);
+    }
+    inv.items = keep;
   }
   if (remaining > 0 && Array.isArray(inv.materials)) {
     inv.materials = inv.materials.filter(m => {
       const nm = (m && typeof m === 'object') ? m.name : m;
-      if (remaining > 0 && nm === name) { remaining--; return false; }
+      if (remaining > 0 && _normName(nm) === want) { remaining--; return false; }
       return true;
     });
+  }
+  if (remaining > 0 && player.materials) {
+    for (const k of Object.keys(player.materials)) {
+      if (remaining <= 0) break;
+      if (_normName(k) !== want) continue;
+      const have = Math.floor(Number(player.materials[k]) || 0);
+      const take = Math.min(have, remaining);
+      player.materials[k] = have - take; remaining -= take;
+      if (player.materials[k] <= 0) delete player.materials[k];
+    }
   }
   return remaining === 0;
 }

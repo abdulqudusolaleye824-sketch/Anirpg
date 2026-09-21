@@ -79,7 +79,16 @@ function getBPTierRewards(t) {
   if (hasPC) str += ` | 💼 *+200 PC Return!*`;
   if (item) str += ` | 🎁 *${item.name}*`;
 
-  return { str, item, pc, gold: goldAmt, stones: stoneAmt };
+  // Push #84: premium (locked) tiers 1–15 grant Upgrade Points
+  const up = (LOCKED_TIERS.includes(t) && t <= 15) ? 2 : 0;
+  if (up) str += ` | ✨ *+${up} UP*`;
+  return { str, item, pc, up, gold: goldAmt, stones: stoneAmt };
+}
+function giveUP(player, amt) {
+  if (!amt) return 0;
+  try { const SAS = require('../../rpg/utils/StatAllocationSystem'); if (SAS.initializeStatAllocations) SAS.initializeStatAllocations(player); } catch (e) {}
+  player.upgradePoints = (player.upgradePoints || 0) + amt;
+  return amt;
 }
 
 const RI = require('../../rpg/utils/RewardInventory');
@@ -199,6 +208,7 @@ module.exports = {
 
           let str = `Tier ${t}: +${r.gold.toLocaleString()} 💠 | +${r.stones} 💎`;
           if (r.pc > 0) str += ` | 💼 +200 PC Return!`;
+          if (r.up) str += ` | ✨ +${giveUP(player, r.up)} UP`;
           if (r.item) str += ` | 🎁 *${r.item.name}*`;
           gained.push(str);
         }
@@ -260,6 +270,7 @@ module.exports = {
       if (r.item) addItemToInventory(player, r.item);
 
       let str = `Tier ${targetLvl}: +${r.gold.toLocaleString()} 💠 Nexus | +${r.stones} 💎 Mana Stones`;
+      if (r.up) str += ` | ✨ +${giveUP(player, r.up)} UP`;
       if (r.pc > 0) str += ` | 💼 +200 PC Return!`;
       if (r.item) str += ` | 🎁 *${r.item.name}*`;
       gained.push(str);

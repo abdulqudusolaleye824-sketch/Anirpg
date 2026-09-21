@@ -1,5 +1,16 @@
 # AniRPG — Patch Drop (features + bug fixes + UI restyle)
 
+## Push #84 — v1.0.87 (2026-09-20) — WEAPONS · GUARD · PASS UP · CRAFT FIX
+
+- `/class weapons [class]` — class weapon progression (Lv.1→50) moved here; ✅/🔒 for your own class.
+- Astra Pass **Premium tiers 1–15: +2 UP each**; **Premium tier 50: 🏆 legendary "Season N Astra Champion"** (season-based, +40 ATK/+30 DEF/+25 SPD/+250 HP/+5% crit). `/bp` premium tiers 1–15: +2 UP.
+- **Crafting inventory detection fixed** — `RewardInventory.countMaterial/consumeMaterial` now match case/punctuation-insensitively across `inventory.items` (any type), legacy `inventory.materials`, and `player.materials` counters, honouring stack counts. Scroll read shows real "have" numbers.
+- `/gates` is read-only: reports the active gate or "no active gate"; never spawns.
+- New `/weapons` · `/weapon equip <#|name>` · `/weapon unequip` · `/weapon info` — durability bars; unequip falls back to class weapon; broken weapons can't be equipped.
+- Pro `/daily`: 80% chance 🛠️ Mending Stone (not guaranteed).
+- New `/guard [@teammate]` in party raids — next monster/boss hit aimed at the teammate is redirected to you and resolved against **your** DEF/HP (no mitigation); if you can't tank it, you fall. 3-min TTL, `/guard off`.
+- `/pet mate`: 5-scene courtship sequence (approach → dance → bond → nest → egg reveal) before the result.
+
 ## Push #83 — v1.0.86 (2026-09-20) — LINKED BOTS OBEY COMMANDS + RAID/GUILD/FIND FIXES
 
 - **Bots linked via /link (or resurrected by heartbeat) ignored every command but still chatted** — they were started without `rpgCommandHandler`. `setBootOptionsFactory` now gives every socket the same boot options (`buildBotOptions` in index.js).

@@ -140,13 +140,13 @@ function attemptCraft(player, itemName, key, db) {
 }
 
 function checkMaterials(player, recipe) {
-  const playerMaterials = {};
-  for (const mat of (player.inventory?.materials || []))
-    playerMaterials[mat.name] = (playerMaterials[mat.name] || 0) + 1;
+  // Push #84: same detector crafting uses (items + legacy + counters).
+  try { RI.migrateLegacy(player); } catch (e) {}
   const mats = recipe?.materials || {};
-  return Object.entries(mats).map(([mat, qty]) => ({
-    mat, need: qty, have: playerMaterials[mat] || 0, ok: (playerMaterials[mat] || 0) >= qty,
-  }));
+  return Object.entries(mats).map(([mat, qty]) => {
+    const have = RI.countMaterial(player, mat);
+    return { mat, need: qty, have, ok: have >= qty };
+  });
 }
 
 function formatScrollRead(scroll, player = null) {
@@ -168,6 +168,7 @@ function formatScrollRead(scroll, player = null) {
   } catch (e) {}
   const matLines = Object.entries(recipe.materials || {}).map(([mat, qty]) => {
     const s = _src[mat];
+    if (player) { try { RI.migrateLegacy(player); } catch (e) {} }
     const have = player ? RI.countMaterial(player, mat) : null;
     const tail = s ? (mat.endsWith('Mana Essence') ? `  _(any ${s.rank}-rank gate monster)_` : `  _(${s.rank}-gate: ${s.from.join(', ')})_`) : '';
     return `  • ${mat} ×${qty}${have !== null ? ` (have ${have})` : ''}${tail}`;

@@ -306,7 +306,31 @@ const TITLES = {
 };
 
 // ── Check and award all earned titles to a player. Returns newly earned titles.
+// Push #84: season-based legendary title from Astra Pass Premium tier 50.
+// "Season 1 Astra Champion", "Season 2 Astra Champion", … registered on demand
+// so titles from past seasons keep resolving for players who own them.
+function ensureSeasonChampionTitle(n) {
+  const num = Math.max(1, parseInt(n, 10) || 1);
+  const id = `Season ${num} Astra Champion`;
+  if (!TITLES[id]) {
+    TITLES[id] = {
+      display: `🏆 Season ${num} Astra Champion`, rarity: 'legendary',
+      desc: `Conquered every tier of the Season ${num} Astra Pass`,
+      boost: { atk: 40, def: 30, speed: 25, maxHp: 250, critChance: 5 },
+      boostDesc: '+40 ATK, +30 DEF, +25 SPD, +250 HP, +5% crit',
+      seasonal: num,
+    };
+  }
+  return id;
+}
+// Re-register owned season titles on lookup (survives restarts).
+function _hydrateSeasonTitle(id) {
+  const m = /^Season (\d+) Astra Champion$/.exec(String(id || ''));
+  if (m) ensureSeasonChampionTitle(m[1]);
+}
+
 function checkAndAwardTitles(player) {
+  try { (player && player.titles || []).forEach(_hydrateSeasonTitle); _hydrateSeasonTitle(player && player.equippedTitle); } catch (e) {}
   if (!Array.isArray(player.titles)) player.titles = [];
   const newTitles = [];
   for (const [id, def] of Object.entries(TITLES)) {
@@ -324,6 +348,7 @@ function checkAndAwardTitles(player) {
 
 // ── Get the stat boost for the equipped title ────────────────
 function getEquippedBoost(player) {
+  try { _hydrateSeasonTitle(player && player.equippedTitle); } catch (e) {}
   const equipped = player.equippedTitle;
   if (!equipped || !TITLES[equipped]) return {};
   return TITLES[equipped].boost || {};
@@ -331,6 +356,7 @@ function getEquippedBoost(player) {
 
 // ── Get display string for name + title ─────────────────────
 function getTitleDisplay(player) {
+  try { _hydrateSeasonTitle(player && player.equippedTitle); } catch (e) {}
   const equipped = player.equippedTitle;
   if (!equipped || !TITLES[equipped]) return '';
   return TITLES[equipped].display;
@@ -358,6 +384,7 @@ function getShopPrice(titleId) {
 }
 
 module.exports = {
+  ensureSeasonChampionTitle,
   TITLES,
   RARITIES,
   checkAndAwardTitles,

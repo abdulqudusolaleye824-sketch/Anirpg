@@ -140,8 +140,35 @@ function getTierDisplay(t) {
 
   let premStr = `+${premNexus.toLocaleString()} 💠 | +${premStones} 💎`;
   if (premItem) premStr += ` | 🎁 *${premItem.name}*`;
+  if (premUpFor(t)) premStr += ` | ✨ +${premUpFor(t)} UP`;
+  if (t === TOTAL_TIERS) premStr += ` | 🏆 *Season Astra Champion* title`;
 
   return { freeStr, premStr, freeItem, premItem, freeNexus, freeStones, premNexus, premStones };
+}
+
+// Push #84: Premium tiers 1–15 grant Upgrade Points (2 UP each); Premium
+// tier 50 grants the season-based legendary title "Season N Astra Champion".
+const PREM_UP_TIERS = 15, PREM_UP_PER_TIER = 2;
+function premUpFor(t) { return (t >= 1 && t <= PREM_UP_TIERS) ? PREM_UP_PER_TIER : 0; }
+function currentSeasonNumber(db) {
+  const start = (db && db.seasonStart) || Date.now();
+  return Math.max(1, Math.floor((Date.now() - start) / (SEASON_DAYS * 86400000)) + 1);
+}
+function grantChampionTitle(player, db) {
+  try {
+    const TS = require('../../rpg/utils/TitleSystem');
+    const n = currentSeasonNumber(db);
+    const id = TS.ensureSeasonChampionTitle(n);
+    player.titles = player.titles || [];
+    if (!player.titles.includes(id)) { player.titles.push(id); return id; }
+  } catch (e) { console.error('champion title:', e.message); }
+  return null;
+}
+function giveUP(player, amt) {
+  if (!amt) return 0;
+  try { const SAS = require('../../rpg/utils/StatAllocationSystem'); if (SAS.initializeStatAllocations) SAS.initializeStatAllocations(player); } catch (e) {}
+  player.upgradePoints = (player.upgradePoints || 0) + amt;
+  return amt;
 }
 
 const RI = require('../../rpg/utils/RewardInventory');
@@ -248,6 +275,8 @@ module.exports = {
               addItemToInventory(player, tInfo.premItem);
               str += ` | 🎁 *${tInfo.premItem.name}*`;
             }
+            if (premUpFor(t)) str += ` | ✨ +${giveUP(player, premUpFor(t))} UP`;
+            if (t === TOTAL_TIERS) { const tid = grantChampionTitle(player, db); if (tid) str += ` | 🏆 *${tid}* title unlocked!`; }
             rewardsGained.push(str);
             count++;
           }
@@ -299,6 +328,8 @@ module.exports = {
           addItemToInventory(player, tInfo.premItem);
           str += ` | 🎁 *${tInfo.premItem.name}*`;
         }
+        if (premUpFor(tier)) str += ` | ✨ +${giveUP(player, premUpFor(tier))} UP`;
+        if (tier === TOTAL_TIERS) { const tid = grantChampionTitle(player, db); if (tid) str += ` | 🏆 *${tid}* title unlocked!`; }
         gained.push(str);
       }
 

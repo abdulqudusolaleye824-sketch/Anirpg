@@ -146,7 +146,7 @@ function breed(maleOwner, male, femaleOwner, female) {
   male.hunger = Math.min(100, (male.hunger ?? 0) + 15); female.hunger = Math.min(100, (female.hunger ?? 0) + 20);
   PetManager.save();
   return {
-    success: true, egg, mixed, childId,
+    success: true, egg, mixed, childId, male, female,
     message: [
       `💞 *MATING SUCCESSFUL!*`,
       `${male.emoji} ${male.nickname || male.name} ♂️  ×  ${female.emoji} ${female.nickname || female.name} ♀️`,
@@ -176,6 +176,44 @@ function accept(femaleOwner) {
   if (!male || !female) return { success: false, message: '❌ One of the pets is no longer available.' };
   return breed(p.from, male, femaleOwner, female);
 }
+// Push #84: multi-message courtship sequence (wholesome, group-safe).
+function courtshipScenes(male, female, r) {
+  const mn = `${male.emoji} *${male.nickname || male.name}* ♂️`;
+  const fn = `${female.emoji} *${female.nickname || female.name}* ♀️`;
+  const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
+  const approach = pick([
+    `${mn} puffs up and struts over to ${fn}, tail high, showing off its best side.`,
+    `${mn} circles ${fn} slowly, trying very hard to look impressive.`,
+    `${mn} brings ${fn} a shiny pebble it found. It's the thought that counts.`,
+  ]);
+  const dance = pick([
+    `💃 A courtship dance! ${mn} hops, spins, and nearly trips. ${fn} pretends not to be impressed… then joins in.`,
+    `🎶 ${mn} sings a wobbly little mating song. ${fn} tilts its head, considers, and chirps back.`,
+    `🌸 ${mn} does the ancient ritual dance. ${fn} watches, then does it better.`,
+  ]);
+  const bond = pick([
+    `💕 The two press foreheads together. Hearts float up. The bond is sealed.`,
+    `💕 ${fn} nuzzles ${mn}. A soft glow surrounds the pair — the mating bond forms.`,
+    `💕 They curl up together, tails entwined, purring in perfect sync.`,
+  ]);
+  const nest = pick([
+    `🪺 ${fn} gathers leaves, feathers and one of your socks to build a nest. ${mn} guards the entrance, very serious.`,
+    `🪺 A nest takes shape in the corner of the den. ${mn} keeps bringing snacks. ${fn} keeps eating them.`,
+    `🪺 ${fn} settles into a cosy nest. ${mn} paces outside like a nervous father.`,
+  ]);
+  return [
+    `💞 *A MATING SESSION BEGINS…*
+
+${approach}`,
+    dance,
+    bond,
+    nest,
+    `✨ *Something is happening…* ${fn} shivers, the nest glows, and—
+
+${r.egg.emoji} *AN EGG!*`,
+  ];
+}
+
 function decline(femaleOwner) { const had = proposals.delete(femaleOwner); return { success: had, message: had ? '💔 Proposal declined.' : '❌ No pending proposal.' }; }
 
 /** Transfer a pet to another player. */
@@ -226,4 +264,5 @@ function eggInfo(egg, idx) {
   return lines.join('\n');
 }
 
-module.exports = { genderOf, genderIcon, familyOf, ensureGenders, findPet, compatibility, breed, propose, accept, decline, givePet, giveEgg, eggInfo, PET_MIX, CROSS_OK, BREED_COOLDOWN_MS, MIN_LEVEL };
+module.exports = {
+  courtshipScenes, genderOf, genderIcon, familyOf, ensureGenders, findPet, compatibility, breed, propose, accept, decline, givePet, giveEgg, eggInfo, PET_MIX, CROSS_OK, BREED_COOLDOWN_MS, MIN_LEVEL };

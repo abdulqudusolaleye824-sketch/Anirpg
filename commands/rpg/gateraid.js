@@ -633,8 +633,19 @@ module.exports = {
       try { _monCanAct = require('../../rpg/utils/UnifiedCombat').canAct({ statusEffects: target.statusEffects || [] }); } catch(e){}
       let _gDefGR = 0;
       try { _gDefGR = require('../../rpg/utils/GearSystem').getEquippedBonuses(player).def || 0; } catch (e) {}
-      const def = (player.stats?.def || 5) + (player.weapon?.defense || 0) + _gDefGR + (PetCombat.defBonus(sender) || 0);
-      const dmg = _monCanAct.canAct ? GR.monsterDamage(target, def, player) : 0;
+      // Push #84: /guard — a teammate intercepts this hit; damage is recomputed
+      // against the GUARDIAN's own defence and applied to the guardian.
+      let _guardHit = null;
+      if (_monCanAct.canAct) { try { _guardHit = GR.takeGuard(gate, sender, db); } catch (e) { _guardHit = null; } }
+      const _victim = _guardHit ? _guardHit.guardian : player;
+      const _victimJid = _guardHit ? _guardHit.guardianJid : sender;
+      let _gDefV = _gDefGR;
+      if (_guardHit) { try { _gDefV = require('../../rpg/utils/GearSystem').getEquippedBonuses(_victim).def || 0; } catch (e) { _gDefV = 0; } }
+      const def = (_victim.stats?.def || 5) + (_victim.weapon?.defense || 0) + _gDefV + (PetCombat.defBonus(_victimJid) || 0);
+      const dmg = _monCanAct.canAct ? GR.monsterDamage(target, def, _victim) : 0;
+      if (_guardHit) {
+        await sock.sendMessage(chatId, { text: `🛡️ *GUARD!* *${_guardHit.guardianName}* steps in front of *${player.name}* and takes the blow!` });
+      }
 
       // Push #71: status chance per move (was a flat 100% — every counter
       // stunned/burned/feared the hunter, which made recovery pointless).
@@ -662,14 +673,41 @@ module.exports = {
         const _skillBare = monsterSkill.name.replace(/^[^\s]+\s/, '');
         const monAtk = { name: target.name, stats: { hp: target.hp, maxHp: target.maxHp }, statusEffects: target.statusEffects || [] };
         await UCgFlow.playTurn(sock, chatId, {
-          attacker: monAtk, defender: player,
+          attacker: monAtk, defender: _victim,
           move: { name: monsterSkill.name, description: `A ferocious ${_skillBare} technique.`, cooldownMs: 0, effect: { type: monsterSkill.effect, chance: (monsterSkill.chance || 35), duration: 2 } }, // Push #71: no more 100% status
           result: { damage: dmg, crit: false, missed: dmg <= 0, dodged: dmg <= 0 },
           tag: `💢 *MONSTER COUNTER-ATTACK*`, gapMs: 600,
         });
       }
 
-      if (player.stats.hp <= 0) {
+      if (_guardHit) {
+        // Sync raid member HP + resolve the guardian's death exactly like a normal death.
+        try { const gm = _guardHit.member; gm.hp = _victim.stats.hp; } catch (e) {}
+        if (_victim.stats.hp <= 0) {
+          _victim.stats.hp = 1;
+          _victim.stats_history = _victim.stats_history || {};
+          _victim.stats_history.gateDeaths = (_victim.stats_history.gateDeaths || 0) + 1;
+          const loss = Math.floor((_victim.manaCrystals || 0) * 0.15);
+          _victim.manaCrystals = Math.max(0, (_victim.manaCrystals || 0) - loss);
+          const _gN = GR.GKM.normaliseJid(_victimJid);
+          const _gGone = (id) => id !== _victimJid && (!_gN || GR.GKM.normaliseJid(id) !== _gN);
+          if (gate.raid) gate.raid.members = gate.raid.members.filter(m => _gGone(m.id));
+          gate.raiders = (gate.raiders || []).filter(_gGone);
+          await sock.sendMessage(chatId, { text: [
+            `💀 *${_guardHit.guardianName} FELL PROTECTING ${String(player.name || '').toUpperCase()}!*`,
+            `The blow was too strong to withstand. Lost ${loss.toLocaleString()} 💎 · fled with 1 HP.`,
+            `🛡️ *${player.name}* was untouched.`,
+          ].join('\n') });
+          if (gate.raid && gate.raid.members.length === 0) {
+            await sock.sendMessage(chatId, { text: GR.wipeGate(gate, key, keyData, chatId, db).join('\n') });
+          } else { try { GR.saveGateState(db, gate); } catch (e) {} }
+        } else {
+          await sock.sendMessage(chatId, { text: `🛡️ *${_guardHit.guardianName}* held the line! ❤️ ${_victim.stats.hp}/${_victim.stats.maxHp}` });
+        }
+        saveDatabase();
+      }
+
+      if (!_guardHit && player.stats.hp <= 0) {
         const deathLines = [];
         const PetManager = require('../../rpg/utils/PetManager');
         const sac = PetManager.checkPetSacrifice(sender, player);
@@ -895,13 +933,19 @@ module.exports = {
       } else {
         let _gDefGR2 = 0;
         try { _gDefGR2 = require('../../rpg/utils/GearSystem').getEquippedBonuses(player).def || 0; } catch (e) {}
-        const def = (player.stats?.def || 5) + (player.weapon?.defense || 0) + _gDefGR2;
+        // Push #84: /guard intercept (boss) — resolved against the guardian's stats.
+        let _bGuard = null; try { _bGuard = GR.takeGuard(gate, sender, db); } catch (e) { _bGuard = null; }
+        const _bVictim = _bGuard ? _bGuard.guardian : player;
+        const _bVictimJid = _bGuard ? _bGuard.guardianJid : sender;
+        if (_bGuard) { try { _gDefGR2 = require('../../rpg/utils/GearSystem').getEquippedBonuses(_bVictim).def || 0; } catch (e) { _gDefGR2 = 0; } }
+        const def = (_bVictim.stats?.def || 5) + (_bVictim.weapon?.defense || 0) + _gDefGR2;
         const bossAtk = Math.floor(GATE_RANKS[gate.rank].monsterRange[1] * 0.20);
         // Push #74: boss hits go through the same dodge/passive/weaken maths.
-        const dmg = GR.monsterDamage({ atk: bossAtk, speed: 14, statusEffects: boss.statusEffects || [] }, def, player);
+        const dmg = GR.monsterDamage({ atk: bossAtk, speed: 14, statusEffects: boss.statusEffects || [] }, def, _bVictim);
+        if (_bGuard) await sock.sendMessage(chatId, { text: `🛡️ *GUARD!* *${_bGuard.guardianName}* steps in front of *${player.name}* and takes the boss's blow!` });
         const bossAtkW = { name: boss.name, stats: { hp: boss.hp, maxHp: boss.maxHp }, statusEffects: [] };
         await UCgBoss.playTurn(sock, chatId, {
-          attacker: bossAtkW, defender: player,
+          attacker: bossAtkW, defender: _bVictim,
           move: { name: 'Retaliation', description: 'The boss lashes out with overwhelming force.', cooldownMs: 0 },
           result: { damage: dmg, crit: false, missed: dmg <= 0, dodged: dmg <= 0 },
           tag: `💢 *BOSS COUNTER*`, gapMs: 600,
@@ -911,7 +955,26 @@ module.exports = {
         if (heal > 0) lines.push(`💚 Lifesteal: +${heal} HP`);
         lines.push(`❤️ Your HP: *${player.stats.hp}/${player.stats.maxHp}*`);
 
-        if (player.stats.hp <= 0) {
+        if (_bGuard) {
+          try { _bGuard.member.hp = _bVictim.stats.hp; } catch (e) {}
+          if (_bVictim.stats.hp <= 0) {
+            _bVictim.stats.hp = 1;
+            _bVictim.stats_history = _bVictim.stats_history || {};
+            _bVictim.stats_history.gateDeaths = (_bVictim.stats_history.gateDeaths || 0) + 1;
+            const gl = Math.floor((_bVictim.manaCrystals || 0) * 0.15);
+            _bVictim.manaCrystals = Math.max(0, (_bVictim.manaCrystals || 0) - gl);
+            const _gN = GR.GKM.normaliseJid(_bVictimJid);
+            const _gGone = (id) => id !== _bVictimJid && (!_gN || GR.GKM.normaliseJid(id) !== _gN);
+            if (gate.raid) gate.raid.members = gate.raid.members.filter(m => _gGone(m.id));
+            gate.raiders = (gate.raiders || []).filter(_gGone);
+            lines.push(``, `💀 *${_bGuard.guardianName} FELL PROTECTING ${String(player.name || '').toUpperCase()}!*`, `Too strong to withstand. Lost ${gl.toLocaleString()} 💎 · fled with 1 HP.`);
+            if (gate.raid && gate.raid.members.length === 0) lines.push(...GR.wipeGate(gate, key, keyData, chatId, db));
+          } else {
+            lines.push(`🛡️ *${_bGuard.guardianName}* held the line! ❤️ ${_bVictim.stats.hp}/${_bVictim.stats.maxHp}`);
+          }
+        }
+
+        if (!_bGuard && player.stats.hp <= 0) {
           const PetManager = require('../../rpg/utils/PetManager');
           const sac = PetManager.checkPetSacrifice(sender, player);
           if (sac && sac.sacrificed) {

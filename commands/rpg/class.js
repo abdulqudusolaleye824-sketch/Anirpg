@@ -23,6 +23,34 @@ module.exports = {
 
     const firstArg = (args[0] || '').toLowerCase().trim();
 
+    // ── /class weapons [class] (Push #84) — class weapon progression ─────────
+    if (firstArg === 'weapons' || firstArg === 'weapon' || firstArg === 'wpn') {
+      const PM = require('../../rpg/player/PlayerManager');
+      const defs = PM.classDefinitions || {};
+      const q = args.slice(1).join(' ').trim().toLowerCase();
+      const ownCls = viewer ? (typeof viewer.class === 'string' ? viewer.class : viewer.class?.name) : null;
+      let names = Object.keys(defs);
+      if (q) names = names.filter(n => n.toLowerCase() === q || n.toLowerCase().includes(q));
+      else if (ownCls && defs[ownCls]) names = [ownCls];
+      if (!names.length) return sock.sendMessage(chatId, { text: `❌ No class matching *${q}*. Try /class list.` }, { quoted: msg });
+      const blocks = names.slice(0, 6).map(n => {
+        const d = defs[n];
+        const lw = [{ level: 1, ...d.weapon }, ...(d.levelWeapons || [])];
+        const cur = viewer && ownCls === n ? (viewer.level || 1) : null;
+        return [
+          `${(CLASS_DATA[n] || {}).emoji || '🎭'} *${n}*`,
+          ...lw.map(w => `  ${cur != null && cur >= w.level ? '✅' : '🔒'} Lv.${w.level}: *${w.name}* (+${w.bonus} ATK)`),
+        ].join('\n');
+      });
+      return sock.sendMessage(chatId, { text: [
+        ...(pro ? [UI.PRO_BAR, `🗡️ *CLASS WEAPONS* 💎`, UI.PRO_BAR] : [`🗡️ *CLASS WEAPONS*`, UI.FREE_BAR]),
+        ``, ...blocks.join('\n\n').split('\n'), ``, FRAME,
+        `💡 Class weapons auto-upgrade as you level. Store weapons (/store, /weapons) replace them when equipped.`,
+        `📋 /class weapons <class> to view another class · /class list for all classes`,
+        ...(pro ? [] : [UI.upsell()]),
+      ].join('\n') }, { quoted: msg });
+    }
+
     // ── LIST ALL CLASSES (/class list) ──────────────────────────────────────
     if (firstArg === 'list' || firstArg === 'all') {
       const classList = ALL_CLASSES.map(clsName => {

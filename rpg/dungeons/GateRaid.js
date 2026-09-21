@@ -329,6 +329,52 @@ function otherRaidError(g) {
   return `🚫 *You are already in another raid!*\n\n🚪 Gate: *${g.rank || '?'}-Rank* (${code})\nFinish it, die in it, or wait for it to end before joining a new one.`;
 }
 
+// ── Push #84: /guard ─────────────────────────────────────────────
+// A living party member can declare a guard for a teammate. The NEXT
+// monster/boss hit aimed at that teammate is redirected to the guardian and
+// resolved normally against the GUARDIAN's stats — no damage reduction, no
+// mitigation. If the guardian can't survive it, the guardian dies.
+const GUARD_TTL_MS = 3 * 60 * 1000;
+function setGuard(gate, guardianJid, targetJid) {
+  const raid = gate && gate.raid;
+  if (!raid) return { ok: false, error: 'No raid in progress here.' };
+  if (raid.status !== 'active') return { ok: false, error: 'The raid has not started yet.' };
+  const same = (a, b) => a === b || GKM.normaliseJid(a) === GKM.normaliseJid(b);
+  const g = raid.members.find(m => same(m.id, guardianJid));
+  if (!g) return { ok: false, error: 'You are not in this raid.' };
+  if ((g.hp ?? 1) <= 0) return { ok: false, error: 'You are down — you cannot guard anyone.' };
+  let target = null;
+  if (targetJid) {
+    target = raid.members.find(m => same(m.id, targetJid));
+    if (!target) return { ok: false, error: 'That hunter is not in this raid.' };
+    if (same(target.id, g.id)) return { ok: false, error: 'You cannot guard yourself.' };
+  }
+  raid.guards = raid.guards || {};
+  // one active guard per guardian; clear any previous one
+  for (const k of Object.keys(raid.guards)) if (same(raid.guards[k].by, g.id)) delete raid.guards[k];
+  const key = target ? GKM.normaliseJid(target.id) : '*';
+  raid.guards[key] = { by: g.id, byName: g.name, target: target ? target.id : null, at: Date.now(), expiresAt: Date.now() + GUARD_TTL_MS };
+  return { ok: true, guardian: g, target };
+}
+// Returns { guardianJid, guardianName } if someone is guarding `victimJid`
+// right now (specific guard wins over wildcard). Consumes the guard.
+function takeGuard(gate, victimJid, db) {
+  const raid = gate && gate.raid;
+  if (!raid || !raid.guards) return null;
+  const now = Date.now();
+  const vk = GKM.normaliseJid(victimJid);
+  for (const k of Object.keys(raid.guards)) if ((raid.guards[k].expiresAt || 0) < now) delete raid.guards[k];
+  const pick = raid.guards[vk] || raid.guards['*'];
+  if (!pick) return null;
+  if (GKM.normaliseJid(pick.by) === vk) return null; // never redirect onto yourself
+  const guardian = db && db.users && (db.users[pick.by] || Object.values(db.users).find(u => u && u.jid && GKM.normaliseJid(u.jid) === GKM.normaliseJid(pick.by)));
+  const gm = raid.members.find(m => GKM.normaliseJid(m.id) === GKM.normaliseJid(pick.by));
+  if (!guardian || !gm || (guardian.stats?.hp ?? 0) <= 0) { for (const k of Object.keys(raid.guards)) if (raid.guards[k] === pick) delete raid.guards[k]; return null; }
+  // consume
+  for (const k of Object.keys(raid.guards)) if (raid.guards[k] === pick) delete raid.guards[k];
+  return { guardianJid: pick.by, guardianName: gm.name || guardian.name, guardian, member: gm };
+}
+
 function ensureMember(gate, sender, db) {
   const player = db.users?.[sender];
   const raid = gate.raid;
@@ -856,6 +902,8 @@ module.exports = {
   raidOf,
   ensureMember,
   findOtherRaid,
+  setGuard,
+  takeGuard,
   enter,
   join,
   ready,
