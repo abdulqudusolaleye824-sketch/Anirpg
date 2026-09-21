@@ -160,7 +160,8 @@ function applyPassiveRegen(player, db) {
   // ── HP ──────────────────────────────────────────────────────
   const hpSec = Math.min(MAX_CATCHUP_SEC, Math.floor((now - player.lastRegenTime) / 1000));
   if (hpSec >= 1) {
-    const maxHp = player.stats.maxHp || 100;
+    let maxHp = player.stats.maxHp || 100;
+    try { maxHp = require('./GearSystem').effectiveMaxHp(player); } catch (e) {} // Push #85: gear/title HP fills too
     if ((player.stats.hp || 0) < maxHp) {
       player.stats.hp = Math.min(maxHp, (player.stats.hp || 0) + hpSec * getRegenRate(rank));
     }

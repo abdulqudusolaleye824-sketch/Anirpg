@@ -202,7 +202,7 @@ module.exports = {
       try { MultiSocketManager.clearSendHealth?.(pKey); } catch (e) {}
       await sendAck(chatId, `🔄 *Restarting 1 bot:* ${displayName} (\`${pKey}\`)…`, msg, sock);
 
-      const completionText = `✨ *Successfully restarted ${displayName}!* 🤖⚡\n\n🔖 Build: \`${sha}\`${healthFooter()}\n📌 Code updates deploy via GitHub push — /restart refreshes connections only.`;
+      const completionText = `✨ *Successfully restarted ${displayName}!* 🤖⚡\n\n🔖 Build: \`${sha}\`${healthFooter()}`;
 
       // Persisted BEFORE the restart: if anything dies mid-flight, the
       // connection-verified handler delivers this notice on next boot.
@@ -254,7 +254,7 @@ module.exports = {
     try { MultiSocketManager.clearSendHealth?.(); } catch (e) {}
 
     const shaAll = buildSha();
-    const completionText = `✨ *Successfully restarted ${count} bot(s)!* 🚀⚡\n\nAll ${count} linked bot sockets are back online and ready.\n🔖 Build: \`${shaAll}\`${healthFooter()}\n📌 Code updates deploy via GitHub push — /restart refreshes connections only.`;
+    const completionText = `✨ *Successfully restarted ${count} bot(s)!* 🚀⚡\n\nAll ${count} linked bot sockets are back online and ready.\n🔖 Build: \`${shaAll}\`${healthFooter()}`;
 
     // Save pending notice to DB in case PM2 process restart interrupts socket
     db.pendingRestartNotice = { chatId, text: completionText };

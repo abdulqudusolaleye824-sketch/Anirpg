@@ -133,8 +133,12 @@ function calcMoveDamage(attacker, defender, move) {
     _wpnAtk = attacker.weapon?.attack || attacker.weapon?.bonus || 0;
     _wpnDef = defender.weapon?.defense || 0;
   } catch (e) {}
-  const atkBase = (attacker.stats?.atk || attacker.stats?.attack || 50) + _gearAtk + _wpnAtk;
-  const defBase = (defender.stats?.def || defender.stats?.defense || 20) + _gearDef + _wpnDef;
+  // Push #85: title boosts + Last Gift (pet death buff) are real stats too.
+  let _tA = 0, _tD = 0, _gA = 1, _gD = 1;
+  try { const TS = require('./TitleSystem'); _tA = TS.getEquippedBoost(attacker).atk || 0; _tD = TS.getEquippedBoost(defender).def || 0; } catch (e) {}
+  try { const PM = require('./PetManager'); _gA = PM.lastGiftMultiplier(attacker) || 1; _gD = PM.lastGiftMultiplier(defender) || 1; } catch (e) {}
+  const atkBase = ((attacker.stats?.atk || attacker.stats?.attack || 50) + _gearAtk + _wpnAtk + _tA) * _gA;
+  const defBase = ((defender.stats?.def || defender.stats?.defense || 20) + _gearDef + _wpnDef + _tD) * _gD;
 
   // Multipliers from attack pattern
   const atkMult = move.atkMult || 1;

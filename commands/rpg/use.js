@@ -13,6 +13,8 @@
 // ═══════════════════════════════════════════════════════════════
 
 'use strict';
+// Push #85: HP ceiling incl. gear/title
+const _effMax = (p) => { try { return require('../../rpg/utils/GearSystem').effectiveMaxHp(p); } catch (e) { return (p && p.stats && p.stats.maxHp) || 100; } };
 
 const { checkInBattle } = require('../../rpg/utils/RegenManager');
 
@@ -297,13 +299,13 @@ ${FRAME}`;
       // ── STANDARD HEAL OUTSIDE PVP ─────────────────────────────
       if (player.stats.hp >= player.stats.maxHp) {
         return sock.sendMessage(chatId, {
-          text: `❌ Your HP is already full!\n\n❤️ HP: ${player.stats.hp}/${player.stats.maxHp}`
+          text: `❌ Your HP is already full!\n\n❤️ HP: ${player.stats.hp}/${_effMax(player)}`
         }, { quoted: msg });
       }
 
       const healAmount = Math.floor(player.stats.maxHp * pct);
       const oldHp = player.stats.hp;
-      player.stats.hp = Math.min(player.stats.maxHp, player.stats.hp + healAmount);
+      player.stats.hp = Math.min(_effMax(player), player.stats.hp + healAmount);
       const actualHeal = player.stats.hp - oldHp;
 
       // Deduct item
@@ -430,7 +432,7 @@ ${FRAME}`;
       }
 
       const restoreHp = Math.floor(player.stats.maxHp * 0.5);
-      player.stats.hp = Math.min(player.stats.maxHp, restoreHp);
+      player.stats.hp = Math.min(_effMax(player), restoreHp);
       player.inventory.reviveTokens--;
       saveDatabase();
 

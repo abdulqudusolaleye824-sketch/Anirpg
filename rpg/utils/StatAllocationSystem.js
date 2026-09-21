@@ -193,9 +193,9 @@ function applyAllocationsToStats(player) {
     
     if (statName === 'hp') {
       player.stats.maxHp = (player.baseStats.hp || 100) + bonus;
-      if (player.stats.hp > player.stats.maxHp) {
-        player.stats.hp = player.stats.maxHp;
-      }
+      let _cap = player.stats.maxHp;
+      try { _cap = require('./GearSystem').effectiveMaxHp(player); } catch (e) {}
+      if (player.stats.hp > _cap) player.stats.hp = _cap;
     } else if (statName === 'energy') {
       const baseEnergy = player.baseStats.maxEnergy || player.stats.maxEnergy || 100;
       player.stats.maxEnergy = baseEnergy + bonus;

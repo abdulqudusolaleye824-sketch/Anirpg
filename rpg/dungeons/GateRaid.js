@@ -27,7 +27,8 @@ function playerDamage(player, skillName = null, target = null) {
   let _pm74 = { atk: 0, crit: 0, skillDmg: 0 };
   try { _pm74 = require('../utils/ClassPower').passiveMultipliers(player); } catch (e) {}
   // Push #74: class passives (+X% ATK, quality-scaled) apply to every raid hit.
-  const atk = Math.floor(((player.stats?.atk || 10) + _gearAtkGR + (player.weapon?.attack || player.weapon?.bonus || 0)) * (1 + (_pm74.atk || 0) / 100));
+  let _gift = 1; try { _gift = require('../utils/PetManager').lastGiftMultiplier(player) || 1; } catch (e) {}
+  const atk = Math.floor(((player.stats?.atk || 10) + _gearAtkGR + (player.weapon?.attack || player.weapon?.bonus || 0)) * (1 + (_pm74.atk || 0) / 100) * _gift);
   const magicPower = player.stats?.magicPower || 0;
   if (skillName) {
     // SkillCatalog: name / prefix / number, equipped OR library, and it tells
@@ -103,8 +104,15 @@ function monsterDamage(monster, def, player = null) {
       const mon = { stats: { speed: monster.speed || 10, atk: monster.atk || 10 }, statusEffects: monster.statusEffects || [] };
       const held = (player.statusEffects || []).some(e => ['stun', 'freeze', 'paralyze'].includes(String(e.type || '').toLowerCase()));
       if (!held && Math.random() * 100 < UC.dodgeChance(mon, player, pm)) return 0;
-      let raw = Math.max(3, (monster.atk || 10) - Math.floor(((def || 5) * (1 + (pm.def || 0) / 100)) * 0.5));
+      // Push #85: defence soaks at most 60% of the hit and a landed hit is
+      // never below 4% of the hunter's max HP — high-DEF hunters used to
+      // take a flat 3 from everything.
+      const mAtk = (monster.atk || 10);
+      const soak = Math.min(mAtk * 0.6, Math.floor(((def || 5) * (1 + (pm.def || 0) / 100)) * 0.5));
+      const floorDmg = Math.max(3, Math.floor((player.stats?.maxHp || 100) * 0.04));
+      let raw = Math.max(floorDmg, mAtk - soak);
       raw = raw * (0.8 + Math.random() * 0.4) * UC.weakenTakenMult(player) * (1 + (pm.dmgTaken || 0) / 100);
+      try { raw = raw / (require('../utils/PetManager').lastGiftMultiplier(player) || 1); } catch (e) {}
       return Math.max(0, Math.floor(raw));
     } catch (e) {}
   }
@@ -514,27 +522,58 @@ function partyLuck(raid, db) {
   }
   return Math.min(15, luck);
 }
+// Push #85: a hunter's REAL total stats (base + gear + weapon + title + pet
+// + Last Gift), exactly what /stats displays. Used for calibration instead of
+// the abstract "power" score, which under-counted gear and made monsters weak.
+function totalStatsOf(u, jid) {
+  const st = u.stats || {};
+  let g = { hp: 0, atk: 0, def: 0, speed: 0 };
+  try { g = require('../utils/GearSystem').getEquippedBonuses(u) || g; } catch (e) {}
+  let tb = {};
+  try { tb = require('../utils/TitleSystem').getEquippedBoost(u) || {}; } catch (e) {}
+  let pm = { atk: 0 };
+  try { pm = require('../utils/ClassPower').passiveMultipliers(u) || pm; } catch (e) {}
+  let petA = 0, petD = 0;
+  try { const PC = require('../utils/PetCombat'); petA = PC.atkBonus(jid || u.jid) || 0; petD = PC.defBonus(jid || u.jid) || 0; } catch (e) {}
+  let gift = 1;
+  try { gift = require('../utils/PetManager').lastGiftMultiplier(u) || 1; } catch (e) {}
+  const atk = Math.floor(((st.atk || 10) + (g.atk || 0) + (u.weapon?.attack || u.weapon?.bonus || 0) + (tb.atk || 0) + petA) * (1 + (pm.atk || 0) / 100) * gift);
+  const def = Math.floor(((st.def || 5) + (g.def || 0) + (u.weapon?.defense || 0) + (tb.def || 0) + petD) * gift);
+  const maxHp = Math.floor(((st.maxHp || 100) + (g.hp || 0) + (tb.maxHp || 0) + (u.weapon?.hp || 0)) * gift);
+  const speed = Math.floor(((st.speed || 10) + (g.speed || 0) + (tb.speed || 0)) * gift);
+  return { atk, def, maxHp, speed, hp: Math.min(st.hp || maxHp, maxHp) };
+}
+
 function calibrateToParty(gate, raid, db) {
   if (!gate || !raid || !Array.isArray(raid.members) || !raid.members.length) return null;
   if (gate.calibrated) return gate.calibrated;
-  let SLC = null;
-  try { SLC = require('../utils/SoloLevelingCore'); } catch (e) {}
-  let total = 0, n = 0;
+  // Party totals from REAL stats.
+  let sumAtk = 0, sumDef = 0, sumHp = 0, n = 0;
   for (const m of raid.members) {
     const u = db && db.users ? db.users[m.id] : null;
     if (!u) continue;
     n++;
-    let p = 0;
-    try { p = SLC && SLC.calculatePlayerPower ? SLC.calculatePlayerPower(u) : 0; } catch (e) {}
-    total += p;
+    const ts = totalStatsOf(u, m.id);
+    sumAtk += ts.atk; sumDef += ts.def; sumHp += ts.maxHp;
   }
   if (!n) return null;
-  const expected = (RANK_EXPECTED_POWER[gate.rank] || 1500) * n;
-  const ratio = expected > 0 ? total / expected : 1;
+  const avgAtk = sumAtk / n, avgDef = sumDef / n, avgHp = sumHp / n;
+  const rd = GATE_RANKS[gate.rank] || GATE_RANKS.E;
+  const [lo, hi] = rd.monsterRange || [15, 45];
+  const rankAtk = (lo + hi) / 2;                      // what the rank table assumes a monster hits for
+  // Stat-based ratio: how far ABOVE the rank's baseline the party is, on
+  // offence (atk vs rank atk) and toughness (hp+def vs rank atk).
+  const offRatio = avgAtk / Math.max(1, rankAtk * 2.5);
+  const toughRatio = (avgHp / 8 + avgDef * 2) / Math.max(1, rankAtk * 2.5);
+  const ratio = Math.max(offRatio, toughRatio) * Math.sqrt(n); // more hunters → tougher gate
   const luck = partyLuck(raid, db);
-  let severity = 0.55 + ratio * 0.55;
-  severity = Math.max(0.70, Math.min(1.60, severity));
+  // Push #85: monsters are calibrated to hunters' REAL totals. Floor 0.90,
+  // ceiling 3.50 — strong parties now meet monsters that actually hurt.
+  let severity = 0.60 + ratio * 0.65;
+  severity = Math.max(0.90, Math.min(3.50, severity));
   severity = severity * (1 - luck / 100);
+  const total = Math.round(sumAtk + sumDef + sumHp / 10); // for the label/expected fields
+  const expected = Math.round((rankAtk * 2.5) * n);
   severity = Math.round(severity * 100) / 100;
   // Push #80: scale from the monster's BASE stats (kept on first calibration)
   // so the severity is exact, and speed scales too — a Severe gate is faster.
@@ -553,13 +592,13 @@ function calibrateToParty(gate, raid, db) {
     gate.boss.hp = gate.boss.maxHp;
     if (gate.boss._base.atk) gate.boss.atk = Math.max(1, Math.floor(gate.boss._base.atk * severity));
   }
-  const label = severity >= 1.4 ? '☠️ NIGHTMARE' : severity >= 1.2 ? '🔴 Severe' : severity >= 1.0 ? '🟠 Hard' : severity >= 0.85 ? '🟡 Standard' : '🟢 Mild';
+  const label = severity >= 2.5 ? '☠️ NIGHTMARE' : severity >= 1.8 ? '🔴 Severe' : severity >= 1.3 ? '🟠 Hard' : severity >= 1.0 ? '🟡 Standard' : '🟢 Mild';
   gate.calibrated = { severity, label, partyPower: Math.floor(total), expected: Math.floor(expected), luck, members: n, at: Date.now() };
   // The strength shown everywhere IS the applied severity from now on.
   gate.preRollStrengthPct = gate.preRollStrengthPct || gate.strengthPct || null;
   gate.strengthPct = Math.round(severity * 100);
   gate.strengthLabel = label;
-  gate.severityNote = `party power ${Math.floor(total).toLocaleString()} vs expected ${Math.floor(expected).toLocaleString()} (${n} hunter${n === 1 ? '' : 's'})${luck ? ` · 🍀 luck −${luck}%` : ''}`;
+  gate.severityNote = `party total stats ${Math.floor(total).toLocaleString()} vs rank baseline ${Math.floor(expected).toLocaleString()} (${n} hunter${n === 1 ? '' : 's'})${luck ? ` · 🍀 luck −${luck}%` : ''}`;
   return gate.calibrated;
 }
 
@@ -892,7 +931,7 @@ function spawnWildPet(gate) {
 }
 
 module.exports = {
-  calibrateToParty, partyLuck, RANK_EXPECTED_POWER,
+  calibrateToParty, partyLuck, RANK_EXPECTED_POWER, totalStatsOf,
   MAX_PARTY,
   playerDamage,
   monsterDamage,

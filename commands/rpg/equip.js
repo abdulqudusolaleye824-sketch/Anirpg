@@ -1,3 +1,5 @@
+// Push #85: HP ceiling incl. gear/title
+const _effMax = (p) => { try { return require('../../rpg/utils/GearSystem').effectiveMaxHp(p); } catch (e) { return (p && p.stats && p.stats.maxHp) || 100; } };
 module.exports = {
   name: 'equip',
   description: 'Equip, use, or gift items from your inventory',
@@ -203,11 +205,11 @@ module.exports = {
       if (itemName === 'Health Potion') {
         if ((inv.healthPotions || 0) < 1) return sock.sendMessage(chatId, { text: `❌ No Health Potions!` }, { quoted: msg });
         const heal = Math.floor(player.stats.maxHp * 0.5);
-        player.stats.hp = Math.min(player.stats.maxHp, player.stats.hp + heal);
+        player.stats.hp = Math.min(_effMax(player), player.stats.hp + heal);
         player.inventory.healthPotions = (inv.healthPotions || 0) - 1;
         saveDatabase();
         return sock.sendMessage(chatId, {
-          text: `🧪 *Health Potion* used!\n\n💚 Restored ${heal} HP!\n❤️ HP: ${player.stats.hp}/${player.stats.maxHp}`
+          text: `🧪 *Health Potion* used!\n\n💚 Restored ${heal} HP!\n❤️ HP: ${player.stats.hp}/${_effMax(player)}`
         }, { quoted: msg });
       }
 
@@ -230,11 +232,11 @@ module.exports = {
         if ((inv[tKey] || 0) < 1) return sock.sendMessage(chatId, { text: `❌ No ${itemName}s!` }, { quoted: msg });
         const pct = itemName === 'Medium Health Potion' ? 0.25 : 0.5;
         const heal = Math.floor(player.stats.maxHp * pct);
-        player.stats.hp = Math.min(player.stats.maxHp, player.stats.hp + heal);
+        player.stats.hp = Math.min(_effMax(player), player.stats.hp + heal);
         player.inventory[tKey] = (inv[tKey] || 0) - 1;
         saveDatabase();
         return sock.sendMessage(chatId, {
-          text: `🧪 *${itemName}* used!\n\n💚 Restored ${heal} HP!\n❤️ HP: ${player.stats.hp}/${player.stats.maxHp}`
+          text: `🧪 *${itemName}* used!\n\n💚 Restored ${heal} HP!\n❤️ HP: ${player.stats.hp}/${_effMax(player)}`
         }, { quoted: msg });
       }
 
@@ -259,7 +261,7 @@ module.exports = {
         else return sock.sendMessage(chatId, { text: '❌ No Mending Stone found.' }, { quoted: msg });
         let n = 0; try { n = require('../../rpg/utils/ArmoryStore').mendAll(player); } catch (e) {}
         saveDatabase();
-        return sock.sendMessage(chatId, { text: `🛠️ *Mending Stone used!*\n\n✨ ${n} item${n === 1 ? '' : 's'} restored to *100% durability* — weapon, equipped gear and everything in your bag.` }, { quoted: msg });
+        return sock.sendMessage(chatId, { text: `🛠️ *Mending Stone used!*\n\n✨ ${n} item${n === 1 ? '' : 's'} restored to *100% durability* — weapon, equipped gear and everything in your bag.\n💡 To fix ONE item with one stone: /mend <inv#>` }, { quoted: msg });
       }
 
       // ── Revive Token ──
@@ -541,7 +543,7 @@ function applyItemBonus(player, item) {
     changes.push(`⚔️ ATK +${atkGiven}`, `🛡️ DEF +${defGiven}`);
   } else if (type === 'potion') {
     const heal = Math.max(1, Math.floor((player.stats.maxHp || 100) * 0.5));
-    player.stats.hp = Math.min(player.stats.maxHp, (player.stats.hp || 0) + heal);
+    player.stats.hp = Math.min(_effMax(player), (player.stats.hp || 0) + heal);
     changes.push(`❤️ HP +${heal}`);
   } else {
     // Unknown gear type — treat as generic ATK boost so the item is never wasted

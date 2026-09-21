@@ -582,6 +582,20 @@ module.exports = {
         const UCd2 = require('../../rpg/utils/UnifiedCombat');
         let finalDmg, isCrit, _dungeonUnified;
         const _cdChk = UCd2.isOnCooldown(player, atk.id);
+        // Push #85: a move on cooldown is REFUSED — no turn is spent and the
+        // monster does not get a free counter (it used to "skip" the turn
+        // and still let the monster hit you).
+        if (!_dngStunSkip && _cdChk.onCd) {
+          return sock.sendMessage(chatId, { text: `⏳ *${atk.name || ('Attack #' + atk.id)}* is still on cooldown — ${UCd2.formatCd(_cdChk.remaining)} left.\nPick another equipped attack (/attacks) — your turn was NOT used.` }, { quoted: msg });
+        }
+        // Push #85: one move at a time — block re-entry while the previous
+        // multi-message flow is still resolving.
+        player._dngBusyUntil = player._dngBusyUntil || 0;
+        if (player._dngBusyUntil > Date.now()) {
+          return sock.sendMessage(chatId, { text: `⏳ *Your last move is still resolving!* Wait for the turn to finish before attacking again.` }, { quoted: msg });
+        }
+        player._dngBusyUntil = Date.now() + 20000;
+        try { // Push #85: released in finally
         if (_dngStunSkip || _cdChk.onCd) {
           finalDmg = 0; isCrit = false; _dungeonUnified = { missed:false, crit:false, effective:'skipped' };
           try { UCd2.tickStatuses(player); } catch(e){}
@@ -752,8 +766,15 @@ module.exports = {
         });
         saveDatabase();
         return sock.sendMessage(chatId, { sections }, { quoted: msg });
+        } finally { player._dngBusyUntil = 0; }
       }
       // ── End pattern block — fall through to regular attack ────
+      // Push #85: plain /dungeon attack is one synchronous turn, but a spam
+      // burst still queues several turns back-to-back. Short debounce.
+      if ((player._dngBusyUntil || 0) > Date.now()) {
+        return sock.sendMessage(chatId, { text: `⏳ *Your last move is still resolving!* Wait for the turn to finish before attacking again.` }, { quoted: msg });
+      }
+      player._dngBusyUntil = Date.now() + 2500;
       // ── SOLO ATTACK ───────────────────────────────────────
       if (db.soloDungeons && db.soloDungeons[sender]) {
         const sd = db.soloDungeons[sender];
@@ -808,6 +829,7 @@ module.exports = {
           if (_st?.damage) { monster.stats.hp = Math.max(0, (monster.stats.hp || 0) - _st.damage); log += _st.line + '\n'; }
           const _ph = PetCombat.healPlayer(sender, player);
           if (_ph.healed > 0) log += `💚 *${_ph.petName}* mended *${_ph.healed}* HP\n`;
+          try { const _lg = require('../../rpg/utils/PetManager').tickLastGift(player); if (_lg && _lg.healed > 0) log += `✨ *Last Gift* (${_lg.from}): +${_lg.healed} HP · ${_lg.turnsLeft} turns left\n`; } catch (e) {}
           if ((monster.stats.hp || 0) <= 0) {
             const _pr = PetCombat.rewardPet(sender, { won: true, exp: 25 + (monster.level || 1) * 5 });
             if (_pr) log += _pr.join('\n') + '\n';
@@ -979,6 +1001,7 @@ module.exports = {
           if (_st?.damage) { monster.stats.hp = Math.max(0, (monster.stats.hp || 0) - _st.damage); log += _st.line + '\n'; }
           const _ph = PetCombat.healPlayer(sender, player);
           if (_ph.healed > 0) log += `💚 *${_ph.petName}* mended *${_ph.healed}* HP\n`;
+          try { const _lg = require('../../rpg/utils/PetManager').tickLastGift(player); if (_lg && _lg.healed > 0) log += `✨ *Last Gift* (${_lg.from}): +${_lg.healed} HP · ${_lg.turnsLeft} turns left\n`; } catch (e) {}
           if ((monster.stats.hp || 0) <= 0) {
             const _pr = PetCombat.rewardPet(sender, { won: true, exp: 25 + (monster.level || 1) * 5 });
             if (_pr) log += _pr.join('\n') + '\n';

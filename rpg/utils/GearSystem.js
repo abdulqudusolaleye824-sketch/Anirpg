@@ -213,7 +213,21 @@ function getEffectiveStats(player) {
   };
 }
 
+// Push #85: the HP ceiling a hunter can actually fill — base + gear + title
+// (+ Last Gift). Regen/heals used to cap at stats.maxHp while /stats showed
+// maxHp+gear, so "900/1200" never filled. One function, used everywhere.
+function effectiveMaxHp(player) {
+  if (!player || !player.stats) return 100;
+  let g = 0, t = 0, w = 0, gift = 1;
+  try { g = getEquippedBonuses(player).hp || 0; } catch (e) {}
+  try { t = require('./TitleSystem').getEquippedBoost(player).maxHp || 0; } catch (e) {}
+  try { w = player.weapon?.hp || 0; } catch (e) {}
+  try { gift = require('./PetManager').lastGiftMultiplier(player) || 1; } catch (e) {}
+  return Math.max(1, Math.floor(((player.stats.maxHp || 100) + g + t + w) * gift));
+}
+
 module.exports = {
+  effectiveMaxHp,
   GEAR_SLOTS, SLOT_INFO, RARITY_CONFIG,
   generateGear, generateGearForSlot,
   getEquippedBonuses, getEffectiveStats, tickDurability,

@@ -491,9 +491,8 @@ module.exports = {
           } else {
             const cd = UCg.isOnCooldown(player, patternId);
             if (cd.onCd) {
-              result = { damage:0, blocked:true, reason:`attack failed — still on cooldown ${UCg.formatCd(cd.remaining)} remaining (0 dmg, status -1)` };
-              try { UCg.tickStatuses(player); } catch(e){}
-              // status -1 already
+              // Push #85: refused — no turn spent, no monster counter.
+              result = { damage:0, blocked:true, reason:`*${atk.name || ('Attack #' + patternId)}* is still on cooldown — ${UCg.formatCd(cd.remaining)} left. Pick another equipped attack; your turn was NOT used.` };
             } else {
               // Unified calc: treat monster as defender
               const fakeMonster = { stats:{ hp: target.hp, maxHp: target.maxHp, atk: target.atk, def: target.def||5, speed: 30 }, statusEffects: (target.statusEffects = target.statusEffects || []) };
@@ -680,6 +679,7 @@ module.exports = {
         });
       }
 
+      try { const _lg = require('../../rpg/utils/PetManager').tickLastGift(player); if (_lg && _lg.healed > 0) await sock.sendMessage(chatId, { text: `✨ *Last Gift* (${_lg.from}): +${_lg.healed} HP regen · ${_lg.turnsLeft} turn${_lg.turnsLeft === 1 ? '' : 's'} left` }); } catch (e) {}
       if (_guardHit) {
         // Sync raid member HP + resolve the guardian's death exactly like a normal death.
         try { const gm = _guardHit.member; gm.hp = _victim.stats.hp; } catch (e) {}
@@ -953,6 +953,7 @@ module.exports = {
         const heal = GR.lifeSteal(player, result.damage);
         if (heal > 0) player.stats.hp = Math.min(player.stats.maxHp, player.stats.hp + heal);
         if (heal > 0) lines.push(`💚 Lifesteal: +${heal} HP`);
+        try { const _lg = require('../../rpg/utils/PetManager').tickLastGift(player); if (_lg && _lg.healed > 0) lines.push(`✨ *Last Gift* (${_lg.from}): +${_lg.healed} HP · ${_lg.turnsLeft} turns left`); } catch (e) {}
         lines.push(`❤️ Your HP: *${player.stats.hp}/${player.stats.maxHp}*`);
 
         if (_bGuard) {

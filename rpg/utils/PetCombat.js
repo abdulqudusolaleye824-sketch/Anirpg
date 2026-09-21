@@ -66,6 +66,7 @@ function supportHeal(playerId, player) {
   return safe(() => {
     const pb = battleBonus(playerId);
     if (!pb || !pb.canUseAbility) return 0;
+    if (!pb.isSupport) return 0; // Push #85: only SUPPORT pets heal — never attack/scavenger pets
     const maxHp = Math.max(1, player?.stats?.maxHp || 100);
     // Support pets heal off their own heal power; keep the bonus meaningful
     // at high levels by letting it scale with the player's max HP too.
@@ -80,7 +81,8 @@ function supportHeal(playerId, player) {
 function healPlayer(playerId, player) {
   const amount = supportHeal(playerId, player);
   if (amount <= 0 || !player?.stats) return { healed: 0, hp: player?.stats?.hp || 0 };
-  const maxHp = Math.max(1, player.stats.maxHp || 100);
+  let maxHp = Math.max(1, player.stats.maxHp || 100);
+  try { maxHp = require('./GearSystem').effectiveMaxHp(player); } catch (e) {}
   const before = Math.max(0, player.stats.hp || 0);
   if (before >= maxHp) return { healed: 0, hp: before };
   player.stats.hp = Math.min(maxHp, before + amount);
@@ -110,7 +112,7 @@ function learnedAbility(pet) {
 function abilityStrike(playerId, target, opts = {}) {
   return safe(() => {
     const pb = battleBonus(playerId);
-    if (!pb || !pb.isAttack || !pb.canUseAbility) return null;
+    if (!pb || !pb.isAttack || pb.isSupport || !pb.canUseAbility) return null; // Push #85: support pets never strike
     const chance = Number.isFinite(opts.chance) ? opts.chance : ABILITY_CHANCE;
     if (Math.random() > chance) return null;
     const pet = pb.pet;

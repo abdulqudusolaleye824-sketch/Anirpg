@@ -446,6 +446,95 @@ function startStallSweeper(ctx) {
   try { _stallSweeper.unref?.(); } catch (e) {}
 }
 
+// ═══════════════════════════════════════════════════════════════
+// Push #85 — BAD MAC WATCHDOG
+// Symptom (seen live 09-20/21): a bot shows "connected", sends fine, but
+// libsignal logs "Session error: Bad MAC" / "Failed to decrypt message with
+// any known session" for EVERY inbound → received stays 0 → bot is silent.
+// The creds are fine; the per-contact Signal session files are corrupt.
+// Fix = drop the session-*.json / sender-key-*.json files (NOT creds.json)
+// and reconnect; WhatsApp re-establishes fresh sessions automatically.
+// ═══════════════════════════════════════════════════════════════
+const BADMAC_WINDOW_MS = 60 * 1000;
+const BADMAC_STORM = Number(process.env.BADMAC_STORM || 25);
+const BADMAC_QUIET_MS = Number(process.env.BADMAC_QUIET_MS || 3 * 60 * 1000);
+let _badMacHits = [];
+const _lastInboundAt = {};      // key -> ts of last successfully decrypted inbound
+const _badMacHealAt = {};       // key -> ts of last heal (rate limit)
+const _badMacHeals = {};        // key -> count
+(function _hookBadMac() {
+  try {
+    const origErr = console.error.bind(console);
+    console.error = (...args) => {
+      try {
+        const first = String(args[0] || '') + ' ' + String(args[1] || '');
+        if (/Bad MAC|Failed to decrypt message with any known session/i.test(first)) {
+          const now = Date.now();
+          _badMacHits.push(now);
+          if (_badMacHits.length > 500) _badMacHits = _badMacHits.slice(-300);
+          // Do not spam the log with 40 stack traces a second — one line per 50.
+          if (_badMacHits.length % 50 !== 1) return;
+          return origErr(`🔐 libsignal decrypt failure ×${_badMacHits.length} (Bad MAC) — watchdog armed`);
+        }
+      } catch (e) {}
+      return origErr(...args);
+    };
+    const origLog = console.log.bind(console);
+    console.log = (...args) => {
+      try {
+        const first = String(args[0] || '');
+        if (/^(Closing session|Removing old closed session|Session error)/.test(first) || (first === 'SessionEntry' )) return; // libsignal SessionEntry dumps
+        if (/Failed to decrypt message with any known session/i.test(first)) { _badMacHits.push(Date.now()); return; }
+      } catch (e) {}
+      return origLog(...args);
+    };
+  } catch (e) {}
+})();
+function _purgeSignalSessions(authDir, key) {
+  const dir = path.join(authDir, key);
+  let n = 0;
+  try {
+    for (const f of fs.readdirSync(dir)) {
+      if (/^(session|sender-key|sender-key-memory)-.*\.json$/.test(f)) { try { fs.rmSync(path.join(dir, f), { force: true }); n++; } catch (e) {} }
+    }
+  } catch (e) {}
+  return n;
+}
+function healBadMac(key, why) {
+  const bp = _bootParams[key];
+  if (!bp) return false;
+  const now = Date.now();
+  if (now - (_badMacHealAt[key] || 0) < 5 * 60 * 1000) return false; // at most once / 5 min per bot
+  _badMacHealAt[key] = now;
+  _badMacHeals[key] = (_badMacHeals[key] || 0) + 1;
+  const s = botSockets[key];
+  console.warn(`🩹 AstraLink [${key}] Bad MAC heal #${_badMacHeals[key]} (${why}) — purging corrupt Signal sessions and reconnecting (creds kept, no re-scan).`);
+  try { s?.ev?.removeAllListeners?.(); } catch (e) {}
+  try { s?.end?.(new Error('bad-mac-heal')); } catch (e) {}
+  try { delete botSockets[key]; } catch (e) {}
+  const n = _purgeSignalSessions(bp.authDir, key);
+  console.warn(`🧹 AstraLink [${key}] removed ${n} session/sender-key file(s)`);
+  try { backupAuthToDisk(key, bp.authDir, { force: true }); } catch (e) {}
+  _badMacHits = [];
+  _scheduleReconnect(key, 1500, 'bad-mac heal');
+  return true;
+}
+setInterval(() => {
+  try {
+    const now = Date.now();
+    _badMacHits = _badMacHits.filter(t => now - t < BADMAC_WINDOW_MS);
+    if (_badMacHits.length < BADMAC_STORM) return;
+    // A storm is on. Blame the connected bots that have received NOTHING
+    // recently (their inbound is what's failing). Heal the quietest first.
+    const suspects = Object.keys(botSockets)
+      .filter(k => botSockets[k]?.user?.id && !_loggedOut.has(k))
+      .filter(k => now - (_lastInboundAt[k] || (_sendHealth[k]?.firstSeenAt || 0)) > BADMAC_QUIET_MS)
+      .sort((a, b) => (_lastInboundAt[a] || 0) - (_lastInboundAt[b] || 0));
+    if (!suspects.length) return;
+    healBadMac(suspects[0], `${_badMacHits.length} decrypt failures/min, no inbound for ${Math.round((now - (_lastInboundAt[suspects[0]] || 0)) / 60000)} min`);
+  } catch (e) { console.error('badmac watchdog error:', e.message); }
+}, 30 * 1000).unref?.();
+
 // Push #74: /restart hooks — drop everything queued before the restart and
 // reset per-group takeover state so groups answer through their own bot.
 let _ignoreBeforeTs = 0;
@@ -1587,6 +1676,7 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
         code: pairingSessions[personalityKey]?.code || null,
       };
       persistLinkedBot(getDatabase, saveDatabase, personalityKey, sock, pairingPhone);
+      _lastInboundAt[personalityKey] = _lastInboundAt[personalityKey] || Date.now(); // Push #85: grace period starts now
       try { backupAuthToDisk(personalityKey, authDir, { force: true }); } catch {}
       console.log(`✅ AstraLink [${displayName}] connection VERIFIED & ACTIVE! (JID: ${jid})`);
 
@@ -1660,6 +1750,7 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
   const _dropped = (why, msg) => { _trace.drops[why] = (_trace.drops[why] || 0) + 1; _trace.last.push(`${new Date().toISOString().slice(11, 19)} ${String(msg?.key?.remoteJid || '').split('@')[0].slice(-6)} ✗ ${why}`); if (_trace.last.length > 12) _trace.last.shift(); };
   const _enqueueInbound = (msg) => {
     _trace.received++;
+    _lastInboundAt[personalityKey] = Date.now();
     const cid = String(msg?.key?.remoteJid || 'x');
     const prev = _chatQueues.get(cid) || Promise.resolve();
     const run = prev.then(async () => {
@@ -2417,6 +2508,7 @@ module.exports = {
   getHostKey,
   shouldHandleDMCommand,
   setBootOptionsFactory,
+  healBadMac,
   isChatAddressed,
   isChatbotMuted,
   _inChatWindow,

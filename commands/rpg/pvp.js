@@ -280,6 +280,7 @@ module.exports = {
 
       player.pvpBattle = null;
       if (opp) opp.pvpBattle = null;
+      try { const RM = require('../../rpg/utils/RegenManager'); RM.endCombat(player); if (opp) RM.endCombat(opp); } catch (e) {}
 
       saveDatabase();
 
@@ -909,9 +910,11 @@ function handlePvpVictory(sock, chatId, winner, loser, wId, lId, db, saveDatabas
     if (_ref) { saveDatabase(); try { const _pr = sock.sendMessage(chatId, { text: `🔗 *REFERRAL REWARD!*\n\n*${_ref.recruitName}* hit Lv.3!\n💠 @${_ref.referrerId.split('@')[0]} earned *10,000 Nexus*!`, mentions: [_ref.referrerId] }); if (_pr && _pr.catch) _pr.catch(() => {}); } catch (_e) {} }
   } catch (e) {}
 
-  // Reset battle state
+  // Reset battle state — Push #85: start the post-combat regen lock so the
+  // fight's HP loss sticks (no instant catch-up refill).
   winner.pvpBattle = null;
   loser.pvpBattle = null;
+  try { const RM = require('../../rpg/utils/RegenManager'); RM.endCombat(winner); RM.endCombat(loser); } catch (e) {}
 
   saveDatabase();
 

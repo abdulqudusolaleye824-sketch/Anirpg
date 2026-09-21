@@ -290,21 +290,60 @@ class PetManager {
     const pet = this.getActivePet(playerId);
     if (!pet || pet.isFainted || (pet.bonding || 0) < 80 || (pet.hunger || 0) >= 80) return null;
 
-    pet.isFainted = true;
-    pet.faintedAt = Date.now();
-    pet.happiness = Math.max(0, (pet.happiness || 0) - 30);
+    // Push #85: a pet that dies in battle is GONE for good. It is removed
+    // from the roster, the active slot is cleared (a new pet is NOT auto-
+    // promoted — /pet active <#> must be used), and the hunter receives a
+    // temporary "Last Gift" buff: +level% to all stats + HP regen for
+    // `level` turns (a Lv.10 pet → +10% all stats for 10 turns).
+    const pd = this.getPlayerData(playerId);
+    const lvl = Math.max(1, Math.min(50, Number(pet.level || 1)));
+    pd.pets = (pd.pets || []).filter(p => p.instanceId !== pet.instanceId);
+    if (pd.activePet === pet.instanceId) pd.activePet = null;
+    pd.graveyard = pd.graveyard || [];
+    pd.graveyard.push({ name: pet.nickname || pet.name, species: pet.name, emoji: pet.emoji, level: pet.level, diedAt: Date.now() });
+    if (pd.graveyard.length > 20) pd.graveyard.shift();
     this.save();
 
     const restoredHp = Math.max(1, Math.floor((player.stats?.maxHp || 100) * 0.25));
     player.stats.hp = restoredHp;
+    player.petLastGift = { pct: lvl, turns: lvl, regenPct: Math.max(1, Math.round(lvl / 2)), from: pet.nickname || pet.name, at: Date.now() };
 
     return {
       sacrificed: true,
+      died: true,
       petName: pet.nickname || pet.name,
       petEmoji: pet.emoji || '🐾',
       restoredHp,
-      message: `🛡️ *PET SACRIFICE!* Your loyal pet ${pet.emoji || '🐾'} *${pet.nickname || pet.name}* leaped in front of you and took the fatal strike! You survive with ${restoredHp}/${player.stats.maxHp} HP!`
+      buff: player.petLastGift,
+      message: [
+        `🛡️ *PET SACRIFICE!* ${pet.emoji || '🐾'} *${pet.nickname || pet.name}* leaped in front of you and took the fatal strike…`,
+        `💀 *${pet.nickname || pet.name} has died.* It will not return.`,
+        `❤️ You survive with ${restoredHp}/${player.stats.maxHp} HP.`,
+        `✨ *LAST GIFT:* +${lvl}% all stats & ${Math.max(1, Math.round(lvl / 2))}% HP regen per turn for *${lvl} turns*.`,
+        `🐾 No active pet now — use */pet active <#>* to choose a new companion.`,
+      ].join('\n'),
     };
+  }
+
+  // Push #85: Last Gift buff helpers — every combat engine can ask.
+  lastGiftMultiplier(player) {
+    const b = player && player.petLastGift;
+    if (!b || !(b.turns > 0)) return 1;
+    return 1 + (Number(b.pct) || 0) / 100;
+  }
+  tickLastGift(player) {
+    const b = player && player.petLastGift;
+    if (!b || !(b.turns > 0)) { if (player && player.petLastGift) delete player.petLastGift; return null; }
+    let maxHp = Math.max(1, player.stats?.maxHp || 100);
+    try { maxHp = require('./GearSystem').effectiveMaxHp(player); } catch (e) {}
+    const heal = Math.floor(maxHp * (Number(b.regenPct) || 0) / 100);
+    const before = player.stats.hp || 0;
+    if (before <= 0) return null; // dead hunters don't regen — buff waits
+    player.stats.hp = Math.min(maxHp, before + heal);
+    b.turns -= 1;
+    const out = { healed: player.stats.hp - before, turnsLeft: b.turns, pct: b.pct, from: b.from };
+    if (b.turns <= 0) delete player.petLastGift;
+    return out;
   }
 
   // ── BATTLE BONUSES ────────────────────────────────────────

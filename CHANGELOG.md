@@ -1,5 +1,20 @@
 # AniRPG — Patch Drop (features + bug fixes + UI restyle)
 
+## Push #85 — v1.0.88 (2026-09-21) — MEND · PET PERMADEATH · COMBAT FAIRNESS · BOT UPTIME
+
+- `/mend <inv#>` — one Mending Stone fixes ONE weapon/gear piece to 100% (equipped items included). `/mend` lists durability; `/mend all` = old whole-bag repair.
+- `/inv` now lists your **equipped** weapon and gear too (✅), numbered like everything else.
+- **Pet permadeath**: a pet that dies in battle is gone (graveyard, cap 20). No pet is auto-promoted — `/pet active <#>`. Its **Last Gift**: +level% to all stats + HP regen for `level` turns (dungeon, gate raid, PvP).
+- Pet roles enforced: only SUPPORT pets heal; support pets never strike.
+- Gear/title HP counts as real max HP everywhere (regen cap, potions, revive, stat allocation, pet heals). Title ATK/DEF and Last Gift now apply in PvP/unified combat too.
+- Gate monsters scale to your **total** stats (base + gear + weapon + title + buffs), clamp 0.90–3.50×. DEF soaks ≤60% of a hit; a landed hit is ≥4% max HP.
+- PvP: winner/loser no longer get a free full-HP catch-up regen at battle end.
+- Cooldown/blocked attacks no longer spend your turn or give the monster a free hit (dungeon + gate raid).
+- Dungeon turn lock: one move at a time; no double-turn spam.
+- `/restart` messages no longer mention GitHub.
+- After `/restart hard`, EVERY registered bot session on disk boots (BOT_BOOT_KEYS is now a minimum, not a ceiling).
+- **Bad MAC watchdog**: bots that are "connected" but decrypt nothing get their corrupt Signal session files purged (creds kept, no re-scan) and auto-reconnect. libsignal stack-trace spam is collapsed to one line per 50.
+
 ## Push #84 — v1.0.87 (2026-09-20) — WEAPONS · GUARD · PASS UP · CRAFT FIX
 
 - `/class weapons [class]` — class weapon progression (Lv.1→50) moved here; ✅/🔒 for your own class.

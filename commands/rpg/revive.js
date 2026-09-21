@@ -40,7 +40,7 @@ You don't have any revive tokens!
 
     // Use revive token
     player.inventory.reviveTokens--;
-    player.stats.hp = player.stats.maxHp;
+    try { player.stats.hp = require('../../rpg/utils/GearSystem').effectiveMaxHp(player); } catch (e) { player.stats.hp = player.stats.maxHp; }
     player.stats.energy = player.stats.maxEnergy;
     
     // Clear all negative status effects

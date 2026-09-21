@@ -51,6 +51,16 @@ function serialList(player) {
   const { gearItems, weaponItems, consumables, petFoodItems } = collectBuckets(player);
   const entries = [];
 
+  // Push #85: EQUIPPED weapon + gear show in the bag too (marked ✅), so the
+  // player sees every piece they own and can /mend <n> it by number.
+  if (player.weapon && (player.weapon.id || player.weapon.maxDurability != null)) {
+    const w = player.weapon;
+    entries.push({ kind: 'weapon', name: w.name, rarity: w.rarity || 'common', slot: 'weapon', count: 1, acquiredAt: w.acquiredAt || 0, ref: w, equipped: true });
+  }
+  for (const [slot, g] of Object.entries(player.equippedGear || {})) {
+    if (!g) continue;
+    entries.push({ kind: 'gear', name: g.name, rarity: g.rarity || 'common', slot: g.slot || slot, count: 1, acquiredAt: g.acquiredAt || g.droppedAt || 0, ref: g, equipped: true });
+  }
   // Push #76: store weapons are individual items too (equip → player.weapon).
   for (const w of weaponItems) {
     entries.push({ kind: 'weapon', name: w.name, rarity: w.rarity || 'common', slot: 'weapon', count: 1, acquiredAt: w.acquiredAt || 0, ref: w });
@@ -152,7 +162,7 @@ module.exports = {
         detail += `🔧 Durability: *${item.durability ?? '?'}/${item.maxDurability ?? '?'}*\n`;
         detail += `\n📊 *STATS*\n  ${A.statLine(item)}\n`;
         if (item.lore) detail += `\n📖 *LORE*\n_${item.lore}_\n`;
-        const isEq = player.weapon && player.weapon.id === item.id;
+        const isEq = entry.equipped || (player.weapon && player.weapon.id === item.id);
         detail += `\n${isEq ? '✅ *EQUIPPED*' : '⭕ Not equipped'}\n`;
         if (!isEq) detail += `💡 /equip ${slotArg} to wield it · /equip gift ${slotArg} @player to transfer\n`;
       } else if (entry.kind === 'gear') {
@@ -191,7 +201,7 @@ module.exports = {
 
         // Equipped check
         const equippedSlot = entry.slot ? player.equippedGear?.[entry.slot] : null;
-        const isEquipped   = equippedSlot && equippedSlot.name === entry.name;
+        const isEquipped   = !!entry.equipped || (equippedSlot && equippedSlot === entry.ref);
         detail += `\n${isEquipped ? '✅ *EQUIPPED*' : '⭕ Not equipped'}\n`;
         if (!isEquipped) detail += `💡 /equip ${slotArg} to equip this item\n`;
       } else if (entry.kind === 'card') {
@@ -250,8 +260,7 @@ module.exports = {
         serials.slice(start, start + PER).forEach((e, k) => {
           const i = start + k;
           let eq = '';
-          if (e.kind === 'gear' && player.equippedGear?.[e.slot]?.name === e.name) eq = ' ✅';
-          if (e.kind === 'weapon' && player.weapon && player.weapon.id === e.ref?.id) eq = ' ✅';
+          if (e.equipped) eq = ' ✅';
           const cnt = e.count > 1 ? ` ×${e.count}` : '';
           const slot = e.kind === 'gear' ? ` [${e.slot || '?'}]` : e.kind === 'weapon' ? ` [${e.ref?.weaponType || 'weapon'}]` : '';
           const dur = (e.kind === 'gear' || e.kind === 'weapon') && e.ref && e.ref.maxDurability != null ? ` 🔧${e.ref.durability ?? '?'}/${e.ref.maxDurability}` : '';

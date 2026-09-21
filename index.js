@@ -1623,7 +1623,20 @@ async function startup() {
   }
   if (_forcedBoot.length) {
     for (const k of _forcedBoot) { try { fs.mkdirSync(path.join(AUTH_DIR, k), { recursive: true }); } catch (e) {} }
-    console.log(`🤖 BOT_BOOT_KEYS set — booting exactly: ${_forcedBoot.join(', ')}`);
+    // Push #85: BOT_BOOT_KEYS is the MINIMUM, not the ceiling. Any bot that was
+    // linked later via /link has a registered creds.json on disk — it must come
+    // back after /restart hard too, otherwise "all 20 bots" silently shrinks to
+    // the env list every reboot.
+    for (const key of ALL_PERSONALITY_KEYS) {
+      if (_forcedBoot.includes(key)) continue;
+      try {
+        const cf = path.join(AUTH_DIR, key, 'creds.json');
+        if (!fs.existsSync(cf)) continue;
+        const c = JSON.parse(fs.readFileSync(cf, 'utf8'));
+        if (c && (c.registered || c.me?.id)) _forcedBoot.push(key);
+      } catch (e) {}
+    }
+    console.log(`🤖 BOT_BOOT_KEYS set — booting: ${_forcedBoot.join(', ')} (env list + every registered session on disk)`);
     for (const key of _forcedBoot) {
       startBotScheduler(key);
       await new Promise(r => setTimeout(r, 1500));
