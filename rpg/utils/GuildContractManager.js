@@ -435,41 +435,30 @@ function _requestMasterApproval(db, guild, guildId, bare, c, saveDatabase, now =
   let sent = false;
   try {
     const MSM = require('../../bots/MultiSocketManager');
-    const anySock = typeof MSM.getAnySocket === 'function' ? MSM.getAnySocket() : null;
-    const content = {
-      list: {
-        title: 'Weekly wage approval',
-        text,
-        buttonText: 'Decide',
-        footerText: `Wages • ${guild.name || guildId}`,
-        sections: [{
-          title: 'Decision',
-          rows: [
-            { rowId: `/wageyes ${guildId} ${bare}`, title: `✅ Pay ${(c.weeklyNexus || 0).toLocaleString()} N + ${(c.weeklyMana || 0).toLocaleString()} M`, description: ap.memberName },
-            { rowId: `/wageno ${guildId} ${bare}`, title: '❌ Skip this week', description: 'No wage paid for the week' },
-          ],
-        }],
-      },
-    };
-    if (MSM.safeSendDM) {
+    // Push #87: legacy `list:` messages no longer render on Baileys 7 — use the
+    // native quick-reply buttons (utils/buttons) on the master's serf socket,
+    // with the typed commands in the body as a guaranteed fallback.
+    let Buttons = null; try { Buttons = require('../../utils/buttons'); } catch (e) {}
+    let SerfDM = null; try { SerfDM = require('./SerfDM'); } catch (e) {}
+    let dmSock = null;
+    try { const sr = SerfDM && SerfDM.getSerfSocket ? SerfDM.getSerfSocket(db, master.jid) : null; if (sr && sr.ok && sr.serfSock) dmSock = sr.serfSock; } catch (e) {}
+    if (!dmSock && typeof MSM.getAnySocket === 'function') dmSock = MSM.getAnySocket();
+    const yesCmd = `/wageyes ${guildId} ${bare}`;
+    const noCmd = `/wageno ${guildId} ${bare}`;
+    const body = text + `\n\n✅ Pay: *${yesCmd}*\n❌ Skip: *${noCmd}*`;
+    if (dmSock && Buttons && Buttons.sendButtons) {
       sent = true;
-      Promise.resolve(MSM.safeSendDM(anySock, master.jid, content, { db }))
-        .then((r) => {
-          if (r && r.dropped) {
-            try {
-              const cc = (db.guildContracts?.[guildId] || {})[bare];
-              const a = _approvals(db)[guildId]?.[bare];
-              if (cc && cc.active && a && a.status === 'pending' && Date.now() >= cc.nextPayAt) {
-                const res = payOneWeek(db, guild, bare, cc, Date.now());
-                a.status = 'resolved'; a.resolvedAt = Date.now(); a.resolution = 'auto_paid';
-                a.autoReason = `dm-dropped (${r.reason || 'unknown'})`;
-                if (res.paid) _notifyMemberPay(db, res.user, res.nexus, res.mana, 'Auto-approved — your master could not be reached by DM.');
-              }
-              if (saveDatabase) saveDatabase();
-            } catch (e) { console.error('[SALARY] auto-pay after DM drop failed:', e.message); }
-          }
-        })
-        .catch(() => {});
+      Promise.resolve(Buttons.sendButtons(dmSock, master.jid, {
+        text: body,
+        footer: `Wages • ${guild.name || guildId}`,
+        buttons: Buttons.quickReplies([
+          [`✅ Pay ${(c.weeklyNexus || 0).toLocaleString()} N`, yesCmd],
+          ['❌ Skip this week', noCmd],
+        ]),
+      })).catch((e) => { console.error('[SALARY] approval buttons failed, plain DM:', e.message); try { dmSock.sendMessage(master.jid, { text: body }); } catch (_) {} });
+    } else if (dmSock) {
+      sent = true;
+      Promise.resolve(dmSock.sendMessage(master.jid, { text: body })).catch(() => {});
     }
   } catch (e) { console.error('[SALARY] master approval DM error:', e.message); }
   if (!sent) {
@@ -514,8 +503,19 @@ function processWeeklyPay(db, guildRef, saveDatabase) {
 
       // 2) PRO GUILDMASTER — money only moves on the master's ✅ (or 24h timeout).
       if (approvePath) {
-        const ap = getApproval(db, guildId, bare);
-        if (!ap || ap.status === 'pending') {
+        let ap = getApproval(db, guildId, bare);
+        // Push #87: a request already answered for an EARLIER pay week is stale
+        // — clear it so this week gets its own ask (prevents the old
+        // resolved-ap `continue` infinite loop).
+        if (ap && ap.status === 'resolved' && (ap.dueAt || 0) < c.nextPayAt) {
+          delete _approvals(db)[guildId][bare]; ap = null;
+        }
+        if (ap && ap.status === 'pending') {
+          // Already asked — do NOT re-ask (that reset askedAt every 6h and
+          // the 24h auto-pay never fired). Fall to the timeout check below.
+          break;
+        }
+        if (!ap) {
           _requestMasterApproval(db, guild, guildId, bare, c, saveDatabase, now);
           // If the request resolved synchronously (no master / DM dropped)
           // the week already advanced — fall through to the next iteration.
@@ -537,6 +537,10 @@ function processWeeklyPay(db, guildRef, saveDatabase) {
           skipWeek(db, guild, bare, c, 'skipped_denied', 'Guild master skipped this week', now);
           ap.status = 'resolved'; ap.resolvedAt = now; ap.resolution = 'skipped';
           _notifyMemberSkip(db, user, 'Your guild master skipped this week.');
+        } else {
+          // Unknown / resolved-but-not-advanced state — never spin forever.
+          delete _approvals(db)[guildId][bare];
+          break;
         }
         continue;
       }

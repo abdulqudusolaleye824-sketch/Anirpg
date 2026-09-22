@@ -1593,7 +1593,17 @@ async function startup() {
     } catch(e) {
       console.error('Guild contract payout error:', e.message);
     }
-  }, 6 * 60 * 60 * 1000); // every 6h — idempotent, catches up elapsed weeks
+  }, 60 * 60 * 1000); // Push #87: hourly (was 6h) — idempotent, catches up elapsed weeks
+  // Push #87: also run once shortly after boot so a restart never delays payday.
+  setTimeout(() => {
+    try {
+      const CM = require('./rpg/utils/GuildContractManager');
+      const db = getDatabase();
+      let any = false;
+      for (const guildId of Object.keys(db.guilds || {})) { if (CM.processWeeklyPay(db, guildId, null).length) any = true; }
+      if (any) saveDatabase();
+    } catch (e) { console.error('Guild contract boot payout error:', e.message); }
+  }, 90 * 1000);
 
   // ── Spawn ALL configured bots in parallel ─────────────────────
   // No "primary" or "secondary" — every bot is equal. We boot every bot that

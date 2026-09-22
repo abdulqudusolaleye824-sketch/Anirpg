@@ -1087,7 +1087,10 @@ ${FRAME}\n`;
       const RANK_EMOJI = { 'Guild Master': '👑', 'Leader': '👑', 'Vice': '⭐', 'Vice GM': '⭐', 'Vice Guild Master': '⭐', 'Officer': '⭐' };
       const rows = [...byId.values()].map((m) => {
         const u = db.users?.[m.id];
-        const guildRank = m.guildRank || (String(playerGuild.leader).split(':')[0] === String(m.id).split(':')[0] ? 'Guild Master' : 'Member');
+        const _isRealLeader = String(playerGuild.leader || '').split(':')[0].split('@')[0] === String(m.id).split(':')[0].split('@')[0];
+        let guildRank = m.guildRank || (_isRealLeader ? 'Guild Master' : 'Member');
+        if (!_isRealLeader && (guildRank === 'Guild Master' || guildRank === 'Leader')) guildRank = 'Member'; // Push #87: stale GM rank after /guild assign
+        if (_isRealLeader) guildRank = 'Guild Master';
         const emoji = RANK_EMOJI[guildRank] || (String(guildRank).toLowerCase().includes('member') ? '👤' : '🎖️');
         return {
           ...m, u, guildRank, emoji,
@@ -1217,6 +1220,17 @@ ${FRAME}\n`;
         if (oIdx === -1) playerGuild.members.push({ id: oldLeader, rank: 'Member', joinedAt: Date.now() });
         else if (typeof playerGuild.members[oIdx] === 'object') playerGuild.members[oIdx].rank = 'Member';
         else playerGuild.members[oIdx] = { id: oldLeader, rank: 'Member', joinedAt: Date.now() };
+      }
+      // memberData mirror (roster reads ranks from here too)
+      if (Array.isArray(playerGuild.memberData)) {
+        const _b = (x) => String(x || '').split(':')[0].split('@')[0];
+        let hasNew = false;
+        for (const md of playerGuild.memberData) {
+          if (!md || typeof md !== 'object') continue;
+          if (_b(md.id) === _b(targetId)) { md.rank = 'Guild Master'; hasNew = true; }
+          else if (oldLeader && _b(md.id) === _b(oldLeader)) md.rank = 'Member';
+        }
+        if (!hasNew) playerGuild.memberData.push({ id: targetId, name: db.users[targetId]?.name || 'Unknown', rank: 'Guild Master', joinedAt: Date.now() });
       }
       // Mirror on player records if such fields exist
       try {

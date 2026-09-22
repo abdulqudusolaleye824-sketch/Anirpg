@@ -10,7 +10,9 @@
 - **AstraPass currency scales with tier** (BP untouched): Free 1,000→25,500 💠 / 50→295 💎; Premium 3,000→76,500 💠 / 150→885 💎.
 - **`/mods`**: co-owner hidden from the list (both identities); receives a silent mention tag only.
 - **`/switch`** is now strictly bot owner/mod (Pro players & group admins no longer pass).
-- **`/guild assign @user`**: transfer Guild Master; old GM becomes an ordinary Member (can be re-promoted).
+- **`/guild assign @user`**: transfer Guild Master; old GM becomes an ordinary Member (can be re-promoted). Roster (`/guild members`) never shows a stale 👑 for the old GM (memberData mirrored + only the real leader renders as GM).
+- **Salary auto-pay fixed**: pro-GM approval was re-asked every 6h (askedAt reset → 24h auto-pay never fired) and a resolved approval could spin the loop. Now: ask once, 24h → auto-pay, next week asks again. Payroll runs hourly + 90s after boot.
+- **Pro GM wage buttons**: legacy `list` message replaced with native quick-reply buttons on the GM's serf socket, typed `/wageyes`/`/wageno` commands in the body as fallback.
 - **`/catch` in raids**: ONE roll per `/catch`; each wild pet has **3 attempts shared by all raid players**. First success owns it; 3 fails → it flees.
 - **`/contract`**: ended (completed/defaulted/inactive) contracts no longer shown as the current contract.
 
