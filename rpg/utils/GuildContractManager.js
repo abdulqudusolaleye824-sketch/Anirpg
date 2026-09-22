@@ -341,7 +341,8 @@ function payOneWeek(db, guild, bare, c, now = Date.now()) {
     try {
       const u = findUserInDb(db, bare);
       const short = `Need *${reqNexus.toLocaleString()} 💠* + *${reqMana.toLocaleString()} 💎*, treasury has *${(guild.treasury || 0).toLocaleString()} 💠* + *${(guild.manaTreasury || 0).toLocaleString()} 💎*.`;
-      if (u?.id) _dmPlayer(db, u.id, [`🚨 *WAGE DEFAULTED — ${guild.name || ''}*`, ``, `Your guild treasury could not cover this week's wage.`, short, ``, `Your contract has ended. Ask your Guild Master to refill the treasury and re-hire you with */guild hire*.`].join('\n'));
+      const uJid = (u && u.id) || `${String(bare).replace(/[^0-9]/g, '')}@s.whatsapp.net`;
+      _dmPlayer(db, uJid, [`🚨 *WAGE DEFAULTED — ${guild.name || ''}*`, ``, `Your guild treasury could not cover this week's wage.`, short, ``, `Your contract has ended. Ask your Guild Master to refill the treasury and re-hire you with */guild hire*.`].join('\n'));
       const m = getGuildMaster(db, guild);
       if (m?.jid) _dmPlayer(db, m.jid, [`🚨 *GUILD TREASURY SHORT — ${guild.name || ''}*`, ``, `Could not pay *${u?.name || bare}*'s weekly wage.`, short, ``, `The contract has defaulted. Deposit into the treasury and re-hire with */guild hire @${bare} <nexus> <mana> <weeks>*.`].join('\n'));
     } catch (e) {}
@@ -389,7 +390,14 @@ function _dmPlayer(db, jid, text) {
   } catch (e) { return Promise.resolve({ dropped: true, reason: e.message }); }
 }
 
+function _userJid(db, user) {
+  if (!user) return null;
+  if (user.id) return user.id;
+  try { for (const [k, v] of Object.entries(db.users || {})) if (v === user) return k; } catch (e) {}
+  return null;
+}
 function _notifyMemberPay(db, user, nexus, mana, note) {
+  user = user && { ...user, id: _userJid(db, user) };
   if (!user?.id) return;
   const lines = [`💰 *WEEKLY WAGE PAID!*`];
   if (nexus != null) lines.push(``, `+${Number(nexus).toLocaleString()} 💠 Nexus`, `+${Number(mana || 0).toLocaleString()} 💎 Mana Stones`);
@@ -399,6 +407,7 @@ function _notifyMemberPay(db, user, nexus, mana, note) {
 }
 
 function _notifyMemberSkip(db, user, note) {
+  user = user && { ...user, id: _userJid(db, user) };
   if (!user?.id) return;
   _dmPlayer(db, user.id, [`⚠️ *WEEKLY WAGE SKIPPED*`, ``, note || 'This week was skipped.', ``, `Check */wages* for your full pay status.`].join('\n'));
 }
