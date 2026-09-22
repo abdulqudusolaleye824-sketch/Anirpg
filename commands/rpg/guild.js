@@ -1214,33 +1214,36 @@ ${FRAME}\n`;
       playerGuild.leader = targetId;
       if (typeof playerGuild.members[tIdx] === 'object') playerGuild.members[tIdx].rank = 'Leader';
       else playerGuild.members[tIdx] = { id: targetId, rank: 'Leader', joinedAt: Date.now() };
-      // Old GM → ordinary Member (ensure he is in the roster)
+      // Old GM is KICKED from the guild (user rule): must be re-hired via
+      // /guild hire to come back. Any contract of theirs is dropped (no
+      // severance — this is a handover, not a firing).
+      const _bare = (x) => String(x || '').split(':')[0].split('@')[0];
       if (oldLeader) {
-        const oIdx = (playerGuild.members || []).findIndex(m => _mIdOf(m) === oldLeader);
-        if (oIdx === -1) playerGuild.members.push({ id: oldLeader, rank: 'Member', joinedAt: Date.now() });
-        else if (typeof playerGuild.members[oIdx] === 'object') playerGuild.members[oIdx].rank = 'Member';
-        else playerGuild.members[oIdx] = { id: oldLeader, rank: 'Member', joinedAt: Date.now() };
+        playerGuild.members = (playerGuild.members || []).filter(m => _bare(_mIdOf(m)) !== _bare(oldLeader));
+        if (Array.isArray(playerGuild.memberData)) playerGuild.memberData = playerGuild.memberData.filter(m => _bare(m && (m.id || m.jid) || m) !== _bare(oldLeader));
+        if (Array.isArray(playerGuild.officers)) playerGuild.officers = playerGuild.officers.filter(m => _bare(typeof m === 'object' ? m.id : m) !== _bare(oldLeader));
+        try {
+          const gid = playerGuild.id || playerGuild.name;
+          const recs = db.guildContracts?.[gid];
+          if (recs) delete recs[_bare(oldLeader)];
+          if (db.salaryApprovals?.[gid]) delete db.salaryApprovals[gid][_bare(oldLeader)];
+        } catch (e) {}
+        const oldU = db.users?.[oldLeader];
+        if (oldU) { oldU.guild = null; oldU.guildRank = null; }
       }
-      // memberData mirror (roster reads ranks from here too)
+      // memberData mirror for the new GM (roster reads ranks from here too)
       if (Array.isArray(playerGuild.memberData)) {
-        const _b = (x) => String(x || '').split(':')[0].split('@')[0];
         let hasNew = false;
         for (const md of playerGuild.memberData) {
-          if (!md || typeof md !== 'object') continue;
-          if (_b(md.id) === _b(targetId)) { md.rank = 'Guild Master'; hasNew = true; }
-          else if (oldLeader && _b(md.id) === _b(oldLeader)) md.rank = 'Member';
+          if (md && typeof md === 'object' && _bare(md.id) === _bare(targetId)) { md.rank = 'Guild Master'; hasNew = true; }
         }
         if (!hasNew) playerGuild.memberData.push({ id: targetId, name: db.users[targetId]?.name || 'Unknown', rank: 'Guild Master', joinedAt: Date.now() });
       }
-      // Mirror on player records if such fields exist
-      try {
-        if (db.users[targetId]) db.users[targetId].guildRank = 'Leader';
-        if (oldLeader && db.users[oldLeader]) db.users[oldLeader].guildRank = 'Member';
-      } catch (e) {}
+      try { if (db.users[targetId]) db.users[targetId].guildRank = 'Leader'; } catch (e) {}
       saveDatabase();
       const mentions = [targetId]; if (oldLeader) mentions.push(oldLeader);
       return sock.sendMessage(chatId, {
-        text: `${FRAME}\n👑 *GUILD MASTER ASSIGNED!*\n${FRAME}\n🏰 Guild: *${playerGuild.name}*\n👑 New Guild Master: *@${targetId.split('@')[0]}*${oldLeader ? `\n👤 @${oldLeader.split('@')[0]} is now a regular Member` : ''}\n${FRAME}`,
+        text: `${FRAME}\n👑 *GUILD MASTER ASSIGNED!*\n${FRAME}\n🏰 Guild: *${playerGuild.name}*\n👑 New Guild Master: *@${targetId.split('@')[0]}*${oldLeader ? `\n🚪 @${oldLeader.split('@')[0]} has left the guild — use */guild hire* to bring them back` : ''}\n${FRAME}`,
         mentions,
       }, { quoted: msg });
     }

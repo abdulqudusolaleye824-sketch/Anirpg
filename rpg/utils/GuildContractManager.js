@@ -337,6 +337,14 @@ function payOneWeek(db, guild, bare, c, now = Date.now()) {
     c.defaultedAt = now;
     c.defaultReason = `Insufficient guild treasury (Need: ${reqNexus} Nexus, ${reqMana} Mana Stones; Have: ${guild.treasury || 0} Nexus, ${guild.manaTreasury || 0} Mana Stones)`;
     _recordWeek(c, { status: 'defaulted', reason: c.defaultReason });
+    // Push #87: tell BOTH the member and the guild master the treasury fell short.
+    try {
+      const u = findUserInDb(db, bare);
+      const short = `Need *${reqNexus.toLocaleString()} 💠* + *${reqMana.toLocaleString()} 💎*, treasury has *${(guild.treasury || 0).toLocaleString()} 💠* + *${(guild.manaTreasury || 0).toLocaleString()} 💎*.`;
+      if (u?.id) _dmPlayer(db, u.id, [`🚨 *WAGE DEFAULTED — ${guild.name || ''}*`, ``, `Your guild treasury could not cover this week's wage.`, short, ``, `Your contract has ended. Ask your Guild Master to refill the treasury and re-hire you with */guild hire*.`].join('\n'));
+      const m = getGuildMaster(db, guild);
+      if (m?.jid) _dmPlayer(db, m.jid, [`🚨 *GUILD TREASURY SHORT — ${guild.name || ''}*`, ``, `Could not pay *${u?.name || bare}*'s weekly wage.`, short, ``, `The contract has defaulted. Deposit into the treasury and re-hire with */guild hire @${bare} <nexus> <mana> <weeks>*.`].join('\n'));
+    } catch (e) {}
     return { paid: false, defaulted: true };
   }
 
