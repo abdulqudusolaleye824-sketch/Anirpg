@@ -620,8 +620,17 @@ async function resolveTurn(sock, chatId, p1, p2, db, saveDatabase) {
     if (m2.id) { try { require('../../rpg/utils/QuestDispatcher').trackAndNotify(p2, 'pattern', 1, sock, id2, chatId); } catch(e){} }
   }
 
-  const p1Spd = ((p1.stats?.speed || 50) + (PetCombat.spdBonus(id1) || 0)) * (m1?.speedMult || 1);
-  const p2Spd = ((p2.stats?.speed || 50) + (PetCombat.spdBonus(id2) || 0)) * (m2?.speedMult || 1);
+  // Push #87: turn order uses EFFECTIVE speed (base + gear + weapon + title +
+  // pet), same as the pre-fight card. Base-only compare let a slower hunter
+  // move first; lock-in order never matters — both moves resolve here.
+  const _effSpd = (p) => {
+    let g = 0, t = 0;
+    try { g = require('../../rpg/utils/GearSystem').getEquippedBonuses(p).speed || 0; } catch (e) {}
+    try { t = require('../../rpg/utils/TitleSystem').getEquippedBoost(p).speed || 0; } catch (e) {}
+    return (p.stats?.speed || 50) + g + (p.weapon?.speed || 0) + t;
+  };
+  const p1Spd = (_effSpd(p1) + (PetCombat.spdBonus(id1) || 0)) * (m1?.speedMult || 1);
+  const p2Spd = (_effSpd(p2) + (PetCombat.spdBonus(id2) || 0)) * (m2?.speedMult || 1);
   const p1First = p1Spd > p2Spd || (p1Spd === p2Spd && Math.random() < 0.5);
   const order = p1First ? [{p:p1,opp:p2,move:m1,res:res1,name:name1,oppName:name2,skipped:p1Skipped,skipMsg:skipMsg1},
                            {p:p2,opp:p1,move:m2,res:res2,name:name2,oppName:name1,skipped:p2Skipped,skipMsg:skipMsg2}]

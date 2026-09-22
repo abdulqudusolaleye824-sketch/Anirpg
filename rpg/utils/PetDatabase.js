@@ -375,6 +375,104 @@ const PET_DATABASE = {
     ],
     catchRate: 0, habitat: [], vulnerable: true,
   },
+
+  // ── Push #87: evolved forms that were referenced but never defined ──
+  metal_slime: {
+    id: 'metal_slime', name: 'Metal Slime', emoji: '⚙️🟢', rarity: 'uncommon', role: 'attack', type: 'basic',
+    description: 'Hardened slime with an iron shell. Hits like a hammer.',
+    baseStats: { hp: 500, atk: 60, def: 70, spd: 25 },
+    growthRates: { hp: 35, atk: 13, def: 14, spd: 3 },
+    abilities: [
+      { level: 1, name: 'Iron Bash', desc: 'Deals 55 damage', damage: 55, type: 'physical' },
+      { level: 5, name: 'Shell Spin', desc: 'Deals 35 dmg x2', damage: 35, type: 'physical', hits: 2 },
+      { level: 10, name: 'Meteor Drop', desc: 'Deals 95 damage', damage: 95, type: 'physical' },
+    ],
+    catchRate: 0, habitat: [],
+  },
+  alpha_shadow_wolf: {
+    id: 'alpha_shadow_wolf', name: 'Alpha Shadow Wolf', emoji: '🐺👑', rarity: 'rare', role: 'attack', type: 'dark',
+    description: 'Leader of the shadow pack. Strikes from the dark before you blink.',
+    baseStats: { hp: 650, atk: 110, def: 45, spd: 120 },
+    growthRates: { hp: 45, atk: 22, def: 8, spd: 12 },
+    abilities: [
+      { level: 1, name: 'Alpha Fang', desc: 'Deals 80 dark damage', damage: 80, type: 'dark' },
+      { level: 5, name: 'Pack Hunt', desc: 'Deals 45 dmg x3', damage: 45, type: 'dark', hits: 3 },
+      { level: 10, name: 'Eclipse Howl', desc: 'Deals 150 damage', damage: 150, type: 'dark' },
+    ],
+    catchRate: 0, habitat: [],
+  },
+  storm_dragon: {
+    id: 'storm_dragon', name: 'Storm Dragon', emoji: '⚡🐲', rarity: 'epic', role: 'attack', type: 'lightning',
+    description: 'A fully grown drake wreathed in thunder.',
+    baseStats: { hp: 900, atk: 160, def: 70, spd: 130 },
+    growthRates: { hp: 60, atk: 28, def: 12, spd: 12 },
+    abilities: [
+      { level: 1, name: 'Thunder Claw', desc: 'Deals 110 lightning damage', damage: 110, type: 'lightning' },
+      { level: 5, name: 'Chain Lightning', desc: 'Deals 60 dmg x3', damage: 60, type: 'lightning', hits: 3 },
+      { level: 10, name: 'Tempest Breath', desc: 'Deals 220 damage', damage: 220, type: 'lightning' },
+    ],
+    catchRate: 0, habitat: [],
+  },
+  bloom_guardian: {
+    id: 'bloom_guardian', name: 'Bloom Guardian', emoji: '🌸', rarity: 'rare', role: 'support', type: 'nature',
+    description: 'A sprite in full bloom. Its petals mend any wound.',
+    baseStats: { hp: 420, atk: 15, def: 35, spd: 65, healPower: 70 },
+    growthRates: { hp: 32, atk: 2, def: 8, spd: 5, healPower: 14 },
+    abilities: [
+      { level: 1, name: 'Petal Mend', desc: 'Heals 70 HP', damage: 0, type: 'heal', heal: 70 },
+      { level: 5, name: 'Pollen Veil', desc: 'Heals 60 HP and cleanses poison', damage: 0, type: 'heal', heal: 60, cleanse: true },
+      { level: 10, name: 'Full Bloom', desc: 'Heals 160 HP', damage: 0, type: 'heal', heal: 160 },
+    ],
+    catchRate: 0, habitat: [],
+  },
+  storm_sylph: {
+    id: 'storm_sylph', name: 'Storm Sylph', emoji: '🌪️', rarity: 'rare', role: 'support', type: 'wind',
+    description: 'A fairy of the gale. Faster than thought, kinder than rain.',
+    baseStats: { hp: 380, atk: 20, def: 25, spd: 140, healPower: 45 },
+    growthRates: { hp: 25, atk: 3, def: 5, spd: 14, healPower: 9 },
+    abilities: [
+      { level: 1, name: 'Gale Kiss', desc: 'Heals 45 HP', damage: 0, type: 'heal', heal: 45 },
+      { level: 5, name: 'Tailwind', desc: 'Heals 40 HP and boosts speed', damage: 0, type: 'heal', heal: 40, spdBoost: 15 },
+      { level: 10, name: 'Cyclone Blessing', desc: 'Heals 120 HP', damage: 0, type: 'heal', heal: 120 },
+    ],
+    catchRate: 0, habitat: [],
+  },
+  divine_phoenix: {
+    id: 'divine_phoenix', name: 'Divine Phoenix', emoji: '🌟🦅', rarity: 'legendary', role: 'support', type: 'holy',
+    description: 'Reborn in starlight. Death itself hesitates before it.',
+    baseStats: { hp: 800, atk: 45, def: 70, spd: 100, healPower: 140 },
+    growthRates: { hp: 55, atk: 5, def: 14, spd: 8, healPower: 22 },
+    abilities: [
+      { level: 1, name: 'Star Flame', desc: 'Heals 140 HP', damage: 0, type: 'heal', heal: 140 },
+      { level: 5, name: 'Rebirth', desc: 'Heals 120 HP and revives once per fight', damage: 0, type: 'heal', heal: 120, revive: true },
+      { level: 10, name: 'Divine Aurora', desc: 'Heals 300 HP', damage: 0, type: 'heal', heal: 300 },
+    ],
+    catchRate: 0, habitat: [],
+  },
+  void_dragon_bat: {
+    id: 'void_dragon_bat', name: 'Void Dragon Bat', emoji: '🦇🐉', rarity: 'rare', role: 'scavenger', type: 'void',
+    description: 'A bat that swallowed a shard of the void. Loot flows toward it.',
+    baseStats: { hp: 320, atk: 30, def: 20, spd: 150, scavengeRate: 0.40 },
+    growthRates: { hp: 22, atk: 4, def: 3, spd: 14, scavengeRate: 0.045 },
+    abilities: [
+      { level: 1, name: 'Void Sense', desc: '+30% Nexus after every fight', damage: 0, type: 'scavenge', goldBonus: 0.30 },
+      { level: 5, name: 'Rift Dive', desc: 'Find rare materials', damage: 0, type: 'scavenge', materialFind: true, rareFind: true },
+      { level: 10, name: 'Abyss Hoard', desc: '+50% Nexus + rare item chance', damage: 0, type: 'scavenge', goldBonus: 0.50, itemChance: 0.25 },
+    ],
+    catchRate: 0, habitat: [], vulnerable: true,
+  },
+  crystal_golem: {
+    id: 'crystal_golem', name: 'Mana Stone Golem', emoji: '💎🪨', rarity: 'rare', role: 'scavenger', type: 'earth',
+    description: 'A golem grown from raw mana stone. Slow, sturdy, and rich.',
+    baseStats: { hp: 550, atk: 35, def: 90, spd: 20, scavengeRate: 0.30 },
+    growthRates: { hp: 40, atk: 4, def: 16, spd: 2, scavengeRate: 0.035 },
+    abilities: [
+      { level: 1, name: 'Stone Sense', desc: '+20% Mana Stones after every fight', damage: 0, type: 'scavenge', manaBonus: 0.20 },
+      { level: 5, name: 'Crystal Dig', desc: 'Find mana stones and ores', damage: 0, type: 'scavenge', materialFind: true, manaFind: true },
+      { level: 10, name: 'Gem Hoard', desc: '+40% Nexus & Mana + rare item chance', damage: 0, type: 'scavenge', goldBonus: 0.40, manaBonus: 0.40, itemChance: 0.20 },
+    ],
+    catchRate: 0, habitat: [], vulnerable: true,
+  },
 };
 
 // ── PET FOOD DATABASE ─────────────────────────────────────────

@@ -15,6 +15,8 @@
 - **Salary auto-pay fixed**: pro-GM approval was re-asked every 6h (askedAt reset → 24h auto-pay never fired) and a resolved approval could spin the loop. Now: ask once, 24h → auto-pay, next week asks again. Payroll runs hourly + 90s after boot.
 - **Pro GM wage buttons**: legacy `list` message replaced with native quick-reply buttons on the GM's serf socket, typed `/wageyes`/`/wageno` commands in the body as fallback.
 - **`/catch` in raids**: ONE roll per `/catch`; each wild pet has **3 attempts shared by all raid players**. First success owns it; 3 fails → it flees.
+- **Pet evolution fixed** ("Evolution data missing"): 8 evolved forms were referenced but never defined — added Metal Slime, Alpha Shadow Wolf, Storm Dragon, Bloom Guardian, Storm Sylph, Divine Phoenix, Void Dragon Bat, Mana Stone Golem.
+- **PvP turn order** now uses effective speed (base + gear + weapon + title + pet). Lock-in order never decides who moves first.
 - **`/contract`**: ended (completed/defaulted/inactive) contracts no longer shown as the current contract.
 
 ## Push #86 — v1.0.89 (2026-09-21) — SILENT BOTS: ROOT CAUSE + DEAF-SOCKET DETECTOR
