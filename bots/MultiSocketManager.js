@@ -1748,6 +1748,11 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
       } catch (e) {}
     }
 
+    // Push #87: Pro GC — remove non-eligible joiners (dispatcher bot only).
+    if (action === 'add' && _bootstrapDispatcher(personalityKey, chatId)) {
+      try { await require('../rpg/utils/ProGC').onParticipantsAdded(sock, getDatabase(), chatId, participants); } catch (e) {}
+    }
+
     if (_bootstrapDispatcher(personalityKey, chatId)) {
       try {
         const { handleParticipantUpdate } = require('../rpg/utils/GroupNoticeManager');

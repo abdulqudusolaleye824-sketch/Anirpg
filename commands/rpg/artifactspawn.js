@@ -55,7 +55,7 @@ const SPAWN_ARTIFACTS = [
   { name: 'Crown of the Void King', emoji: '👑', rarity: 'mythic',    type: 'ring',   bonus: { atk: 200, def: 100, hp: 1000 }, desc: 'The crown of a conquered dimension. Its weight is crushing. Its power is absolute.' },
   { name: 'Soul Stone',             emoji: '🌀', rarity: 'mythic',    type: 'tome',   bonus: { atk: 180, crit: 50, hp: 500 }, desc: 'Contains a trapped god. Its power cannot be measured.' },
   // ── MENDING STONE (durability restore) ───────────────────
-  { name: 'Mending Stone',          emoji: '🛠️', rarity: 'rare',     type: 'material', bonus: {}, desc: 'Restores durability of your equipped gear. Use /inventory to apply.', isMendingStone: true },
+  { name: 'Mending Stone',          emoji: '🛠️', rarity: 'epic',     type: 'material', bonus: {}, desc: 'Restores durability of your equipped gear. Use /inventory to apply.', isMendingStone: true },
   // ── RANDOM MATERIALS (claimable) ─────────────────────────
   { name: 'Wood',                   emoji: '🪵', rarity: 'common',   type: 'material', bonus: {}, desc: 'Basic crafting material.' },
   { name: 'Stone',                  emoji: '🪨', rarity: 'common',   type: 'material', bonus: {}, desc: 'Sturdy stone for crafting.' },

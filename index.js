@@ -1388,6 +1388,8 @@ function startBotScheduler(personalityKey) {
     } catch (e) {
       console.error('❌ GateSpawner bootstrap error:', e.message);
     }
+    // Push #87: Pro GC 5h epic spawn loop (idempotent per chat).
+    try { require('./rpg/utils/ProGC').bootAll(sock, getDatabase, saveDatabase); } catch (e) { console.error('❌ ProGC bootstrap error:', e.message); }
   }).catch(err => {
     console.error(`❌ Failed to start bot [${personalityKey}]:`, err.message);
   });

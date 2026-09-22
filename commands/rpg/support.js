@@ -63,7 +63,7 @@ module.exports = {
     // Get all --main tagged groups excluding mods GC.
     // Display = the ACTUAL registered GC name (entry.groupName), NEVER the
     // type tag — this fixes "Support" rendering as "Arise" and vice versa.
-    const allMain = AstralGroups.getAll(db).filter(g => g.isMain && g.type !== 'mods');
+    const allMain = AstralGroups.getAll(db).filter(g => g.isMain && g.type !== 'mods' && g.type !== 'pro'); // Push #87: Pro GC is never advertised
 
     const groupLinesText = [];
     const buttonGroups = [];

@@ -145,6 +145,31 @@ function tickDurability(player) {
   return broken;
 }
 
+// Push #87: UNEQUIPPED gear & weapons passively self-mend while resting in
+// the inventory — +1 durability per hour (Pro: per 30 min). Silent; lazy
+// (computed from elapsed time on every command), so no timers needed.
+function regenUnequippedDurability(player, now = Date.now()) {
+  if (!player) return 0;
+  const items = player.inventory && Array.isArray(player.inventory.items) ? player.inventory.items : [];
+  if (!items.length) { player._durRegenAt = now; return 0; }
+  const isPro = !!((player.isPro || player.proStatus) && player.proExpiresAt && player.proExpiresAt > now);
+  const stepMs = (isPro ? 30 : 60) * 60 * 1000;
+  const last = player._durRegenAt || now;
+  const steps = Math.floor((now - last) / stepMs);
+  if (steps <= 0) { if (!player._durRegenAt) player._durRegenAt = now; return 0; }
+  let healed = 0;
+  for (const it of items) {
+    if (!it || typeof it !== 'object') continue;
+    const max = it.maxDurability;
+    if (max == null || it.durability == null || it.durability >= max) continue;
+    const before = it.durability;
+    it.durability = Math.min(max, it.durability + steps);
+    healed += it.durability - before;
+  }
+  player._durRegenAt = last + steps * stepMs;
+  return healed;
+}
+
 // Equip a gear piece — old piece despawns (not returned to inventory)
 function equipGear(player, gearItem) {
   if (!player.equippedGear) player.equippedGear = {};
@@ -227,6 +252,7 @@ function effectiveMaxHp(player) {
 }
 
 module.exports = {
+  regenUnequippedDurability,
   effectiveMaxHp,
   GEAR_SLOTS, SLOT_INFO, RARITY_CONFIG,
   generateGear, generateGearForSlot,

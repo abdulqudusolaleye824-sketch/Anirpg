@@ -61,10 +61,26 @@ module.exports = {
     if (chatId.endsWith('@g.us') && !GR.GKM.isDungeonGC(chatId)) {
       const allGCs = GR.GKM.getAllDungeonGCs();
       const gcList = Object.values(allGCs);
-      if (gcList.length > 0) {
-        return sock.sendMessage(chatId, {
-          text: `❌ *Gate raids must be started in a dungeon GC.*\n\nUse this command in your dungeon group instead.\nGroup ID: \`${gcList[0].chatId}\``,
-        }, { quoted: msg });
+      // Push #87: point players at EVERY --main dungeon GC with a real invite
+      // link (never a raw group id). Falls back to the registry's stored link,
+      // then to a live invite code fetch.
+      let dungeonLinks = [];
+      try {
+        const _AG = require('../../rpg/utils/AstralGroups');
+        const mains = _AG.getAll(db).filter(g => g && g.isMain && (g.type === 'dungeon' || (Array.isArray(g.features) && g.features.includes('dungeon'))));
+        for (const g of mains) {
+          let link = g.inviteLink || null;
+          if (!link && typeof sock.groupInviteCode === 'function') {
+            try { const c = await sock.groupInviteCode(g.groupId); if (c) { link = `https://chat.whatsapp.com/${c}`; if (db.astralGroups?.[g.groupId]) db.astralGroups[g.groupId].inviteLink = link; } } catch (e) {}
+          }
+          if (link) dungeonLinks.push(`🏰 *${g.groupName || 'Dungeon GC'}*\n${link}`);
+        }
+      } catch (e) {}
+      if (dungeonLinks.length > 0 || gcList.length > 0) {
+        const body = dungeonLinks.length
+          ? `❌ *Gate raids must be started in a dungeon GC.*\n\nJoin one of the official dungeon groups:\n\n${dungeonLinks.join('\n\n')}`
+          : `❌ *Gate raids must be started in a dungeon GC.*\n\nUse this command in your dungeon group instead.`;
+        return sock.sendMessage(chatId, { text: body }, { quoted: msg });
       }
       return sock.sendMessage(chatId, {
         text: `❌ No dungeon GC registered.\nAsk the owner: */setdungeon*`,

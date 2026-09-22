@@ -37,7 +37,7 @@ module.exports = {
     if (!sub || sub === 'show' || sub === 'list' || sub === 'status') {
       const groups = AstralGroups.getAll(db) || [];
       let txt = `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🌐 *✦ 𝐀𝐬𝐭𝐫𝐚™ COMMUNITY GROUPS*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🎮 *Server:* ✦ 𝐀𝐬𝐭𝐫𝐚™\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
-      const ordered = ['pvp', 'casino', 'games', 'dungeon', 'guild', 'support'];
+      const ordered = ['pvp', 'casino', 'games', 'dungeon', 'guild', 'support', 'pro'];
       const shown = groups.filter((g, i, a) => g && g.groupId && a.findIndex((x) => x && x.groupId === g.groupId) === i);
       if (shown.length === 0) {
         txt += `⚠️ No groups registered yet.\n`;
@@ -127,6 +127,14 @@ module.exports = {
 
     // Push #25: --main groups get ALL online bots immediately.
     let joinLines = '';
+    if (result.status === 'main' && AstralGroups.get(type) === 'pro') {
+      // Push #87: Pro GC — arm the 5h epic spawn loop + enable gate spawns here.
+      try {
+        if (!db.gateSpawns) db.gateSpawns = {};
+        if (db.gateSpawns[chatId] === undefined) db.gateSpawns[chatId] = true;
+        require('../../rpg/utils/ProGC').startScheduler(sock, chatId, getDatabase, saveDatabase);
+      } catch (e) { console.error('[ProGC] arm failed:', e.message); }
+    }
     if (result.status === 'main') {
       try {
         const MainJoin = require('../../rpg/utils/MainJoin');

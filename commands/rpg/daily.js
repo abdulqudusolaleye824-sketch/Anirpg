@@ -166,7 +166,7 @@ module.exports = {
     let _proMend = false;
     if (isProDaily && Math.random() < 0.80) {
       try {
-        require('../../rpg/utils/RewardInventory').grantItem(player, { name: 'Mending Stone', type: 'material', rarity: 'rare', emoji: '🛠️', isMendingStone: true, desc: 'Restores all durability to 100%. Use /equip use <#>.' }, 'daily');
+        require('../../rpg/utils/RewardInventory').grantItem(player, { name: 'Mending Stone', type: 'material', rarity: 'epic', emoji: '🛠️', isMendingStone: true, desc: 'Restores all durability to 100%. Use /equip use <#>.' }, 'daily');
         _proMend = true;
       } catch (e) {}
     }

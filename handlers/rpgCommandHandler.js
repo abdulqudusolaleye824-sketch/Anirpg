@@ -713,6 +713,15 @@ module.exports = async (sock, msg, messageText, config, getDatabase, saveDatabas
     );
   }
 
+  // Push #87: Pro GC — members-only commands + /rob ban.
+  if (chatId.endsWith('@g.us') && !isPrivilegedUser) {
+    try {
+      const ProGC = require('../rpg/utils/ProGC');
+      const blockTxt = ProGC.commandBlock(db, chatId, sender, resolvedCommand) || ProGC.commandBlock(db, chatId, sender, commandName);
+      if (blockTxt) return sock.sendMessage(chatId, { text: blockTxt, mentions: [sender] }, { quoted: msg });
+    } catch (e) {}
+  }
+
   const PersonalityManager = require('../bots/PersonalityManager');
   let activeKey = chatId.endsWith('@g.us') ? PersonalityManager.getActiveBot(chatId) : null;
 
@@ -911,6 +920,7 @@ module.exports = async (sock, msg, messageText, config, getDatabase, saveDatabas
       // Batch-39: owner auto-Pro scrapped — strip any leftover lifetime stamp.
       try { if (Perms.stripAutoPro(db, sender)) saveDatabase(); } catch(e) {}
       if (db.users?.[sender]) {
+        try { require('../rpg/utils/GearSystem').regenUnequippedDurability(db.users[sender]); } catch (e) {} // Push #87: silent rest-mending
         try {
           const { ensureTodayQuests } = require('../rpg/utils/QuestDispatcher');
           ensureTodayQuests(db.users[sender]);

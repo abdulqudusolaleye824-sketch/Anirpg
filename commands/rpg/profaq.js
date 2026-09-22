@@ -14,7 +14,8 @@ module.exports = {
   async execute(sock, msg, args, getDatabase, saveDatabase, sender) {
     const chatId = msg.key.remoteJid;
     const UI = require('../../rpg/utils/UI');
-    const pro = UI.isPro(getDatabase()?.users?.[sender] || {});
+    const db = getDatabase() || {};
+    const pro = UI.isPro(db.users?.[sender] || {});
     const FRAME = pro ? UI.PRO_BAR : UI.FREE_BAR;
 
     const faqText = [
@@ -46,6 +47,8 @@ module.exports = {
         `9. 🤖 *RPG Intent Manager Access* — Allows AI-driven RPG command execution.`,
         `10. 🛠️ *Emergency Serf Switch* — Allowed to change Serf assistants in emergencies.`,
         `11. ❤️ *Access to Pro Battle UI*`,
+        `12. 💎 *PRO LOUNGE GC ACCESS* — a members-only group (PRO or Battle Pass Premium): *epic item spawns every 5 hours* (Mending Stones included), *B/A/S-rank gates only*, and /rob is banned inside.${(() => { try { const l = require('../../rpg/utils/ProGC').primaryLink(db); return l ? `\n    🔗 ${l}` : ''; } catch (e) { return ''; } })()}`,
+        `13. 🛠️ *Faster Rest-Mending* — unequipped gear/weapons self-repair +1 durability every *30 min* (free: 60 min).`,
         ``,
         FRAME,
         `🛍️ Use */prostore* to purchase Pro subscription cards!`,

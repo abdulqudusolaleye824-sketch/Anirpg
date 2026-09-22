@@ -288,7 +288,17 @@ class GateSpawner {
     const players = Object.values(db.users || {}).filter(p => p.lastActive && Date.now() - p.lastActive < 86400000);
     const avgLevel = players.length > 0 ? Math.floor(players.reduce((s,p) => s + (p.level||0), 0) / players.length) : 1;
 
-    const gate = GateManager.spawnGate(chatId, levelToRank(avgLevel));
+    let gate = GateManager.spawnGate(chatId, levelToRank(avgLevel));
+    // Push #87: Pro GC never gets E/D/C gates — reroll as B/A/S.
+    try {
+      const ProGC = require('../rpg/utils/ProGC');
+      if (ProGC.isProGC(db, chatId) && ['E', 'D', 'C'].includes(gate.rank)) {
+        const forced = ProGC.rollPremiumRank();
+        const _orig = GateManager.rollGateRank;
+        GateManager.rollGateRank = () => forced;
+        try { gate = GateManager.spawnGate(chatId, forced); } finally { GateManager.rollGateRank = _orig; }
+      }
+    } catch (e) {}
     // Batch-50: spawned gates lived only in memory — a restart wiped
     // unbought gates. Persist immediately (same bucket raids use).
     try {
