@@ -198,10 +198,15 @@ function calcMoveDamage(attacker, defender, move) {
   const defSpd = ((defender.stats?.speed || 50) + _gearSpdD) * (defMods.speedMod || 1);
   if (atkSpd > defSpd) critChance += 0.02;
 
-  critChance += ((attacker.stats?.critChance || 0) + ((_pmA && _pmA.crit) || 0)) / 100;
+  // Push #87: gear crit (vambrace etc.) + title crit were collected but never applied.
+  let _gCrit = 0, _gCritDmg = 0, _tCrit = 0;
+  try { const gb = require('./GearSystem').getEquippedBonuses(attacker) || {}; _gCrit = gb.crit || 0; _gCritDmg = gb.critDmg || 0; } catch (e) {}
+  try { _tCrit = require('./TitleSystem').getEquippedBoost(attacker).crit || 0; } catch (e) {}
+  critChance += ((attacker.stats?.critChance || 0) + ((_pmA && _pmA.crit) || 0) + _gCrit + _tCrit) / 100;
   const isCrit = Math.random() < Math.min(0.75, critChance);
   if (isCrit) {
-    raw = Math.floor(raw * critMult);
+    // Push #87: ring critDmg adds on top of the move's crit multiplier (+X% → +X/100).
+    raw = Math.floor(raw * (critMult + _gCritDmg / 100));
   }
   // Push #74: WEAKEN on the defender → takes more damage; passive damage reduction.
   try {

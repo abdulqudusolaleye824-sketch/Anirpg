@@ -4,6 +4,7 @@
 // 8 dungeon types, all with unique themes/monsters.
 
 const DungeonManager    = require('../../rpg/dungeons/DungeonManager');
+const _effMax = (pl) => { try { return require('../../rpg/utils/GearSystem').effectiveMaxHp(pl); } catch (e) { return (pl && pl.stats && pl.stats.maxHp) || 100; } }; // Push #87: gear/title HP is real HP
 const BP = require('../../rpg/utils/BattlePass');
 let TitleSystem; try { TitleSystem = require('../../rpg/utils/TitleSystem'); } catch(e) {}
 let DC; try { DC = require('../../rpg/utils/DailyChallenges'); } catch(e) {}
@@ -819,7 +820,7 @@ module.exports = {
         const lsPctSolo = (player.statAllocations?.lifesteal || 0) * 0.5 / 100;
         if (lsPctSolo > 0) {
           const healLS = Math.floor(playerDmg * lsPctSolo);
-          if (healLS > 0) { player.stats.hp = Math.min(player.stats.maxHp, player.stats.hp + healLS); log += `💚 Lifesteal: +${healLS} HP\n`; }
+          if (healLS > 0) { player.stats.hp = Math.min(_effMax(player), player.stats.hp + healLS); log += `💚 Lifesteal: +${healLS} HP\n`; }
 
         // Push #55: the pet fights this round too — attack pets land their own
         // ability, support pets mend, and a clear pays the scavenger + pet XP.
@@ -992,7 +993,7 @@ module.exports = {
       const lsPct = (player.statAllocations?.lifesteal || 0) * 0.5 / 100;
       if (lsPct > 0) {
         const heal = Math.floor(dmg * lsPct);
-        if (heal > 0) { player.stats.hp = Math.min(player.stats.maxHp, player.stats.hp + heal); log += `💚 Lifesteal: +${heal} HP\n`; }
+        if (heal > 0) { player.stats.hp = Math.min(_effMax(player), player.stats.hp + heal); log += `💚 Lifesteal: +${heal} HP\n`; }
         // Push #55: the pet fights this round too — attack pets land their own
         // ability, support pets mend, and a clear pays the scavenger + pet XP.
         try {
@@ -1234,7 +1235,7 @@ module.exports = {
           if (potions <= 0) return sock.sendMessage(chatId, { text: '❌ No Health Potions!\nBuy some: /shop buy 1 5' }, { quoted: msg });
           player.inventory.healthPotions--;
           const heal = Math.floor(player.stats.maxHp * 0.5);
-          player.stats.hp = Math.min(player.stats.maxHp, player.stats.hp + heal);
+          player.stats.hp = Math.min(_effMax(player), player.stats.hp + heal);
           saveDatabase();
           return sock.sendMessage(chatId, { text: `🩹 Healed *+${heal} HP*!\n❤️ ${player.stats.hp}/${player.stats.maxHp}\n🩹 Potions left: ${player.inventory.healthPotions}` }, { quoted: msg });
         }
@@ -1264,7 +1265,7 @@ module.exports = {
         if (!party.sharedItems.healthPotionsUsed) party.sharedItems.healthPotionsUsed = 0;
         party.sharedItems.healthPotionsUsed++;
         const heal = Math.floor(player.stats.maxHp * 0.5);
-        player.stats.hp = Math.min(player.stats.maxHp, player.stats.hp + heal);
+        player.stats.hp = Math.min(_effMax(player), player.stats.hp + heal);
         saveDatabase();
         return sock.sendMessage(chatId, { text: `🩹 *${player.name}* healed *+${heal} HP*!\n❤️ ${player.stats.hp}/${player.stats.maxHp}\n🩹 Potions used: ${party.sharedItems.healthPotionsUsed}/5` }, { quoted: msg });
       }

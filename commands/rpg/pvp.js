@@ -15,6 +15,7 @@
 'use strict';
 
 const DB = require('../../rpg/utils/AttackPatternDB');
+const _effMax = (pl) => { try { return require('../../rpg/utils/GearSystem').effectiveMaxHp(pl); } catch (e) { return (pl && pl.stats && pl.stats.maxHp) || 100; } }; // Push #87: gear/title HP is real HP
 const Buttons = (()=>{ try { return require('../../utils/buttons'); } catch(e){ return null; } })();
 
 function bare(jid) {
@@ -510,7 +511,7 @@ async function resolveTurn(sock, chatId, p1, p2, db, saveDatabase) {
       if ((entry.type === 'heal' || (entry.healingPct || 0) > 0) && player.stats) {
         const amt = Math.floor((player.stats.maxHp || 100) * ((entry.healingPct || 20) / 100));
         const before = player.stats.hp || 0;
-        player.stats.hp = Math.min(player.stats.maxHp || 100, before + amt);
+        player.stats.hp = Math.min(_effMax(player), before + amt);
         if (player.stats.hp > before) healNote = ` Restored ${player.stats.hp - before} HP.`;
       }
       // Push #76: buffs/debuffs/statuses ride on the move; UnifiedCombat.playTurn applies them.
@@ -842,6 +843,16 @@ function handlePvpVictory(sock, chatId, winner, loser, wId, lId, db, saveDatabas
   loser.pvpLosses = (loser.pvpLosses || 0) + 1;
   winner.pvpStreak = (winner.pvpStreak || 0) + 1;
   loser.pvpStreak = 0;
+  // Push #87: weekly challenges were never told about PvP → 0/5 forever.
+  try {
+    const WK = require('./weekly');
+    WK.trackWeeklyProgress(winner, 'pvp_win', 1);
+    // streak challenge = current run length (a loss resets it to 0 below)
+    const wc = WK.getPlayerWeekly(winner);
+    for (const c of WK.getThisWeeksChallenges()) if (c.type === 'pvp_streak' && !wc.claimed.includes(c.id)) wc.progress[c.id] = Math.min(c.target, Math.max(wc.progress[c.id] || 0, winner.pvpStreak));
+    const lc = WK.getPlayerWeekly(loser);
+    for (const c of WK.getThisWeeksChallenges()) if (c.type === 'pvp_streak' && !lc.claimed.includes(c.id) && (lc.progress[c.id] || 0) < c.target) lc.progress[c.id] = 0;
+  } catch (e) {}
 
   // WINNER-TAKES economy: the ONLY thing deducted from the loser is 10-15
   // aura (plus the win/loss record and ELO ladder moving). No GP, no Nexus,

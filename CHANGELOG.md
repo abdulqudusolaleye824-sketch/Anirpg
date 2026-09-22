@@ -1,5 +1,19 @@
 # AniRPG — Patch Drop (features + bug fixes + UI restyle)
 
+## Push #87 — v1.0.90 (2026-09-22) — WEEKLY TRACKING, RAID HP/CRIT FIX, SEARCH CARDS, SHARED CATCH
+
+- **Weekly challenges now actually track**: `pvp_win`, `pvp_streak`, `dungeon_clear`, `boss_kill` hooked (pvp.js, SilentXP.js, gateraid.js). Previously only casino/send/daily/summon progressed.
+- **Class/gear/title HP applied in raids & dungeons** (Kelvin-chan 729 vs 470 bug): every heal-clamp / HP display in gateraid.js, dungeon.js, pvp.js, ClassPower.js, GateRaid.js roster, party.js now uses `GearSystem.effectiveMaxHp`. Fixes hex soul-drain "resetting" HP to base max.
+- **Crit fixed**: gear `crit`/`critDmg` and title `crit` now feed UnifiedCombat and GateRaid damage; `/stats` breakdown includes title crit.
+- **`/search`** returns a cover image + summary card (Wikipedia → DDG instant answer), 1–3 links in footer instead of a link dump. Alias `/wiki`.
+- **Scrapped 2x EXP & Nexus potions**: XP Booster and Nexus Multiplier removed from `/shop` and bundles (replaced with Luck Potions); existing stock is inert.
+- **AstraPass currency scales with tier** (BP untouched): Free 1,000→25,500 💠 / 50→295 💎; Premium 3,000→76,500 💠 / 150→885 💎.
+- **`/mods`**: co-owner hidden from the list (both identities); receives a silent mention tag only.
+- **`/switch`** is now strictly bot owner/mod (Pro players & group admins no longer pass).
+- **`/guild assign @user`**: transfer Guild Master; old GM becomes an ordinary Member (can be re-promoted).
+- **`/catch` in raids**: ONE roll per `/catch`; each wild pet has **3 attempts shared by all raid players**. First success owns it; 3 fails → it flees.
+- **`/contract`**: ended (completed/defaulted/inactive) contracts no longer shown as the current contract.
+
 ## Push #86 — v1.0.89 (2026-09-21) — SILENT BOTS: ROOT CAUSE + DEAF-SOCKET DETECTOR
 
 Live trace showed three different "connected but silent" modes at once: hinata/mikasa `received:0` (every inbound "Bad MAC"), seraph `received:659 handled:0` (all inbound arriving 20–35 min late → stale-dropped), killua fine.

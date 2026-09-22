@@ -5,7 +5,8 @@
 // - 60 second catch window when a wild pet spawns
 // - Costs Nexus + Mana Stones scaled by pet rarity
 // - Cost deducted regardless of success or failure
-// - Rolls up to 3 attempts per /catch execution
+// - Push #87: ONE roll per /catch. Each wild pet has 3 attempts SHARED by every
+//   player in the raid/dungeon. First success owns the pet; 3 fails = it flees.
 // ═══════════════════════════════════════════════════════════════
 
 'use strict';
@@ -71,7 +72,7 @@ module.exports = {
 
     // Check Gate Raid wild pet in db.wildPets
     if (!petId && Array.isArray(db.wildPets)) {
-      db.wildPets = db.wildPets.filter(w => w.expiresAt > now && (!w.caughtBy || !w.caughtBy.includes(sender)));
+      db.wildPets = db.wildPets.filter(w => w.expiresAt > now && !(w.caughtBy && w.caughtBy.length) && (w.attemptsUsed || 0) < 3);
       wildRecord = db.wildPets.find(w => w.forJids && w.forJids.some(j => bare(j) === sBare));
       if (wildRecord) {
         petId = wildRecord.petId;
@@ -138,21 +139,18 @@ module.exports = {
 
     const finalRate = Math.min(95, baseRate + luckBonus);
 
-    // Roll 3 catch attempts in 60s
-    let rolls = [];
-    let success = false;
-
-    for (let attempt = 1; attempt <= 3; attempt++) {
-      const roll = Math.floor(Math.random() * 100) + 1;
-      const pass = isGuaranteed || roll <= finalRate;
-      if (pass) {
-        rolls.push(`🎯 *Roll ${attempt}:* 🎉 *SUCCESS!* (${roll} ≤ ${finalRate}%)`);
-        success = true;
-        break;
-      } else {
-        rolls.push(`🎯 *Roll ${attempt}:* 💨 Broke free! (${roll} > ${finalRate}%)`);
-      }
-    }
+    // Push #87: shared attempt pool — 3 attempts per wild pet across ALL players.
+    const pool = wildRecord || (isDungeonPet ? party.dungeon : null) || {};
+    pool.attemptsUsed = (pool.attemptsUsed || 0) + 1;
+    pool.attemptLog = pool.attemptLog || [];
+    const attemptNo = pool.attemptsUsed;
+    const roll = Math.floor(Math.random() * 100) + 1;
+    const success = isGuaranteed || roll <= finalRate;
+    const who = player.name || sBare;
+    pool.attemptLog.push(`🎯 *Attempt ${attemptNo}/3* — ${who}: ${success ? `🎉 *SUCCESS!* (${roll} ≤ ${finalRate}%)` : `💨 Broke free! (${roll} > ${finalRate}%)`}`);
+    const rolls = pool.attemptLog.slice();
+    const attemptsLeft = Math.max(0, 3 - attemptNo);
+    const fled = !success && attemptsLeft === 0;
 
     let resultMsg = '';
 
@@ -162,6 +160,7 @@ module.exports = {
       // Clean up wild pet
       if (isDungeonPet && party?.dungeon) {
         party.dungeon.pendingPet = null;
+        party.dungeon.attemptsUsed = 0; party.dungeon.attemptLog = [];
       }
       if (wildRecord) {
         wildRecord.caughtBy = wildRecord.caughtBy || [];
@@ -187,7 +186,7 @@ module.exports = {
         `💸 Cost Paid: ${cost.gold.toLocaleString()} 💠 + ${cost.crystals.toLocaleString()} 💎`,
         luckBonus > 0 ? `🍀 Luck Potion used (+25% catch rate)` : ``,
         ``,
-        `📋 *CATCH ROLL BREAKDOWN (60s Window):*`,
+        `📋 *CATCH LOG:*`,
         ...rolls,
         ``,
         `📌 Use */pet list* to view your active pets!`,
@@ -195,11 +194,23 @@ module.exports = {
         ...(pro ? [UI.PRO_MINI, `💎 *PRO CATCH* — ${petTemplate.name} · ${rarity.toUpperCase()}`] : [UI.upsell()]),
       ].filter(l => l !== '').join('\n');
     } else {
-      // Failed all 3 rolls
-      if (isDungeonPet && party?.dungeon) {
+      if (fled && isDungeonPet && party?.dungeon) {
         party.dungeon.pendingPet = null;
+        party.dungeon.attemptsUsed = 0; party.dungeon.attemptLog = [];
       }
       saveDatabase();
+      if (!fled) {
+        return sock.sendMessage(chatId, { text: [
+          ...(pro ? [UI.PRO_BAR, `💨 *BROKE FREE!* 💎`, UI.PRO_BAR] : [`💨 *BROKE FREE!*`, UI.FREE_BAR]),
+          `${petTemplate.emoji} *${petTemplate.name}* slipped out of the net!`,
+          `💸 Cost Paid: ${cost.gold.toLocaleString()} 💠 + ${cost.crystals.toLocaleString()} 💎`,
+          ``,
+          ...rolls,
+          ``,
+          `🪤 *${attemptsLeft} shared attempt${attemptsLeft === 1 ? '' : 's'} left* — anyone in the raid can */catch* before it flees!`,
+          FRAME,
+        ].join('\n') }, { quoted: msg });
+      }
 
       resultMsg = [
         ...(pro ? [UI.PRO_BAR, `💨 *WILD PET ESCAPED!* 💎`, UI.PRO_BAR] : [`💨 *WILD PET ESCAPED!*`, UI.FREE_BAR]),
@@ -209,7 +220,7 @@ module.exports = {
         `💸 Cost Paid: ${cost.gold.toLocaleString()} 💠 + ${cost.crystals.toLocaleString()} 💎 (attempt cost)`,
         luckBonus > 0 ? `🍀 Luck Potion consumed` : ``,
         ``,
-        `📋 *CATCH ROLL BREAKDOWN (3 Attempts):*`,
+        `📋 *CATCH LOG (3 shared attempts used):*`,
         ...rolls,
         ``,
         `🏃 The wild pet escaped into the shadows. Better luck next time!`,

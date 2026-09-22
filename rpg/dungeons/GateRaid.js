@@ -22,8 +22,10 @@ const MAX_PARTY = 10;
 
 // ── Combat math (shared with the command for consistent damage) ──
 function playerDamage(player, skillName = null, target = null) {
-  let _gearAtkGR = 0;
-  try { _gearAtkGR = require('../utils/GearSystem').getEquippedBonuses(player).atk || 0; } catch (e) {}
+  let _gearAtkGR = 0, _gearCritGR = 0, _gearCritDmgGR = 0, _titleCritGR = 0, _titleAtkGR = 0;
+  try { const gb = require('../utils/GearSystem').getEquippedBonuses(player) || {}; _gearAtkGR = gb.atk || 0; _gearCritGR = gb.crit || 0; _gearCritDmgGR = gb.critDmg || 0; } catch (e) {}
+  try { const tb = require('../utils/TitleSystem').getEquippedBoost(player) || {}; _titleCritGR = tb.crit || 0; _titleAtkGR = tb.atk || 0; } catch (e) {}
+  _gearAtkGR += _titleAtkGR; // Push #87: title ATK counts in raids too
   let _pm74 = { atk: 0, crit: 0, skillDmg: 0 };
   try { _pm74 = require('../utils/ClassPower').passiveMultipliers(player); } catch (e) {}
   // Push #74: class passives (+X% ATK, quality-scaled) apply to every raid hit.
@@ -54,8 +56,8 @@ function playerDamage(player, skillName = null, target = null) {
     let dmg = SC.computeDamage(player, entry || skill, { includeMagic: magicPower > 0, crit: false, target, notes: synergyNotes });
     if (_pm74.atk || _pm74.skillDmg) dmg = Math.max(1, Math.floor(dmg * (1 + ((_pm74.atk || 0) + (_pm74.skillDmg || 0)) / 100)));
     if (target) { try { dmg = Math.max(1, Math.floor(dmg * require('../utils/UnifiedCombat').weakenTakenMult(target))); } catch (e) {} }
-    const isCrit = Math.random() < ((player.stats?.critChance || 2) + (_pm74.crit || 0)) / 100;
-    if (isCrit) dmg = Math.floor(dmg * (player.stats?.critDamage || 150) / 100);
+    const isCrit = Math.random() < ((player.stats?.critChance || 2) + (_pm74.crit || 0) + _gearCritGR + _titleCritGR) / 100;
+    if (isCrit) dmg = Math.floor(dmg * ((player.stats?.critDamage || 150) + _gearCritDmgGR) / 100);
 
     player.stats.energy = Math.max(0, (player.stats.energy || 0) - cost);
     SC.setCooldown(player, entry || skill);
@@ -86,7 +88,7 @@ function playerDamage(player, skillName = null, target = null) {
   }
   let dmg = Math.max(5, atk * (0.85 + Math.random() * 0.30));
   if (target) { try { dmg = Math.max(1, dmg * require('../utils/UnifiedCombat').weakenTakenMult(target)); } catch (e) {} }
-  const isCrit = Math.random() < ((player.stats?.critChance || 2) + (_pm74.crit || 0)) / 100;
+  const isCrit = Math.random() < ((player.stats?.critChance || 2) + (_pm74.crit || 0) + _gearCritGR + _titleCritGR) / 100;
   if (isCrit) dmg = Math.floor(dmg * (player.stats?.critDamage || 150) / 100);
   let synergyNotes = [];
   if (target) { try { const syn = require('../utils/StatusSynergy').bonusFor({ name: 'strike', description: 'basic strike' }, target); if (syn.mult !== 1) { dmg *= syn.mult; synergyNotes = syn.notes; } } catch (e) {} }
@@ -395,7 +397,7 @@ function ensureMember(gate, sender, db) {
     m = {
       id: sender,
       name: (player && player.name) || sender.split('@')[0],
-      maxHp: (player?.stats?.maxHp || 100),
+      maxHp: (() => { try { return require('../utils/GearSystem').effectiveMaxHp(player); } catch (e) { return player?.stats?.maxHp || 100; } })(), // Push #87: gear HP shows in the raid roster
       hp: (player?.stats?.hp ?? (player?.stats?.maxHp || 100)),
       energy: (player?.stats?.energy ?? (player?.stats?.maxEnergy || 100)),
       maxEnergy: (player?.stats?.maxEnergy || 100),
@@ -805,6 +807,7 @@ function clearGate(gate, key, keyData, db, saveDatabase) {
       spawnedAt: Date.now(),
       expiresAt: Date.now() + 60 * 1000,
       caughtBy: null,
+      attemptsUsed: 0, attemptLog: [], // Push #87: 3 shared /catch attempts
       forJids: raiders.map(m => m.id),
     });
     wildPet.token = wildToken;

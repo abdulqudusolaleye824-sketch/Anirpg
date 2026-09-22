@@ -517,51 +517,79 @@ const math = {
   },
 };
 
+// ── Push #87: /search = cover image + info card, not a pile of links ────────
+// 1) Wikipedia search → REST summary (title, description, extract, thumbnail)
+// 2) DuckDuckGo instant answer (abstract + image) as fallback
+// 3) At most 2 "read more" links in the footer.
+function _wikiJson(url) { return fetchJson(url); }
+async function wikiCard(query) {
+  try {
+    const sr = await _wikiJson('https://en.wikipedia.org/w/api.php?action=query&list=search&format=json&srlimit=1&srsearch=' + encodeURIComponent(query));
+    const hit = sr?.query?.search?.[0];
+    if (!hit) return null;
+    const sum = await _wikiJson('https://en.wikipedia.org/api/rest_v1/page/summary/' + encodeURIComponent(hit.title.replace(/ /g, '_')));
+    if (!sum || !sum.extract) return null;
+    return {
+      title: sum.title || hit.title,
+      desc: sum.description || '',
+      extract: String(sum.extract).slice(0, 900),
+      image: sum.originalimage?.source || sum.thumbnail?.source || null,
+      url: sum.content_urls?.desktop?.page || ('https://en.wikipedia.org/wiki/' + encodeURIComponent(hit.title.replace(/ /g, '_'))),
+      source: 'Wikipedia',
+    };
+  } catch (e) { return null; }
+}
+async function ddgCard(query) {
+  try {
+    const d = await _wikiJson('https://api.duckduckgo.com/?format=json&no_html=1&skip_disambig=1&q=' + encodeURIComponent(query));
+    if (!d || !d.AbstractText) return null;
+    return { title: d.Heading || query, desc: '', extract: String(d.AbstractText).slice(0, 900), image: d.Image ? ('https://duckduckgo.com' + d.Image) : null, url: d.AbstractURL || null, source: d.AbstractSource || 'DuckDuckGo' };
+  } catch (e) { return null; }
+}
+
 const search = {
   name: 'search',
-  aliases: ['google', 'query', 'web'],
-  description: 'Search the web for real-time information',
-  usage: '/search <question>',
+  aliases: ['google', 'query', 'web', 'wiki'],
+  description: 'Search the web — cover image + summary',
+  usage: '/search <topic>',
   category: 'utility',
 
   async execute(sock, msg, args, getDatabase, saveDatabase, sender) {
     const chatId = msg.key.remoteJid;
-
     if (args.length === 0) {
-      return sock.sendMessage(chatId, {
-        text: '❌ Usage: /search <question>\nExample: /search latest Solo Leveling anime news',
-      }, { quoted: msg });
+      return sock.sendMessage(chatId, { text: '❌ Usage: /search <topic>\nExample: /search sword art online' }, { quoted: msg });
     }
-
     const question = args.join(' ');
-    const apiKey = process.env.TAVILY_API_KEY;
-
-    await sock.sendMessage(chatId, {
-      text: `🔍 *Searching...*\n"${question}"`,
-    }, { quoted: msg });
-
     try {
+      const card = (await wikiCard(question)) || (await ddgCard(question));
+      if (card) {
+        let caption = `🔎 *${card.title}*` + (card.desc ? `\n_${card.desc}_` : '') + `\n\n${card.extract}`;
+        // Up to 2 extra links (official / fandom) from DDG html, best effort.
+        let extra = [];
+        try { extra = (await duckSearch(question)).filter(r => r.url && !/wikipedia\.org/i.test(r.url)).slice(0, 2); } catch (e) {}
+        caption += `\n\n📖 ${card.url || ''}`;
+        for (const r of extra) caption += `\n🔗 ${r.url}`;
+        caption += `\n\n_via ${card.source}_`;
+        if (card.image) {
+          try {
+            const img = await fetchBuffer(card.image);
+            if (img.buffer && img.buffer.length > 1000 && img.buffer.length < 4.5 * 1024 * 1024) {
+              return sock.sendMessage(chatId, { image: img.buffer, caption }, { quoted: msg });
+            }
+          } catch (e) {}
+        }
+        return sock.sendMessage(chatId, { text: caption }, { quoted: msg });
+      }
+      // Nothing structured — last resort: a few links.
       let body = '';
-      let source = '';
       const google = await googleSearch(question);
-      if (google) { body = google; source = 'Google'; }
-      if (!body) {
-        const ddg = await duckSearch(question);
-        if (ddg.length) { body = ddg.map(r => `🔗 *${r.title}*\n${r.url}`).join('\n\n'); source = 'DuckDuckGo'; }
-      }
-      if (!body && apiKey) {
-        try { body = await tavilySearch(question, apiKey); source = 'Tavily'; }
-        catch (e) { console.error('⚠ Tavily failed:', e.message); }
-      }
-      if (!body) { body = await freeWebSearch(question) || 'No results found — try rephrasing.'; source = 'Wikipedia'; }
-      return sock.sendMessage(chatId, {
-        text: `🔍 *${question}*${source ? `\n\n*via ${source}*` : ''}\n\n${body}`,
-      }, { quoted: msg });
+      if (google) body = google;
+      if (!body) { const ddg = await duckSearch(question); if (ddg.length) body = ddg.slice(0, 4).map(r => `🔗 *${r.title}*\n${r.url}`).join('\n\n'); }
+      if (!body) body = await freeWebSearch(question) || 'No results found — try rephrasing.';
+      return sock.sendMessage(chatId, { text: `🔍 *${question}*\n\n${body}` }, { quoted: msg });
     } catch (err) {
       console.error('❌ Search error:', err.message);
-      return sock.sendMessage(chatId, {
-        text: '❌ Search failed. Try again.',
-      }, { quoted: msg });
+      return sock.sendMessage(chatId, { text: '❌ Search failed. Try again.' }, { quoted: msg });
     }
   },
 };

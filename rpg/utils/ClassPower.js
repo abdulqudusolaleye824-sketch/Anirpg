@@ -86,7 +86,7 @@ function _remove(player, applied) {
     _baseAdj(player, stat, -v);
     if (stat === 'maxHp') {
       player.stats.maxHp = Math.max(50, (player.stats.maxHp || 100) - v);
-      player.stats.hp = Math.min(player.stats.hp || 0, player.stats.maxHp);
+      player.stats.hp = Math.min(player.stats.hp || 0, (() => { try { return require('./GearSystem').effectiveMaxHp(player); } catch (e) { return player.stats.maxHp; } })());
     } else if (stat === 'maxEnergy') {
       player.stats.maxEnergy = Math.max(50, (player.stats.maxEnergy || 100) - v);
       player.stats.energy = Math.min(player.stats.energy || 0, player.stats.maxEnergy);
@@ -102,7 +102,7 @@ function _add(player, bonuses) {
     _baseAdj(player, stat, v);
     if (stat === 'maxHp') {
       player.stats.maxHp = (player.stats.maxHp || 100) + v;
-      player.stats.hp = Math.min((player.stats.hp || 0) + v, player.stats.maxHp);
+      player.stats.hp = Math.min((player.stats.hp || 0) + v, (() => { try { return require('./GearSystem').effectiveMaxHp(player); } catch (e) { return player.stats.maxHp; } })());
     } else if (stat === 'maxEnergy') {
       player.stats.maxEnergy = (player.stats.maxEnergy || 100) + v;
       player.stats.energy = Math.min((player.stats.energy || 0) + v, player.stats.maxEnergy);

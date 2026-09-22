@@ -95,7 +95,7 @@ module.exports = {
     const totalDef  = (player.stats.def   || 0) + (gear.def  || 0) + (titleBonus.def||0) + (consBonus.def||0);
     const totalHp   = (player.stats.maxHp || 100) + (gear.hp || 0) + (titleBonus.maxHp||0) + (consBonus.maxHp||0);
     const totalSpd  = (player.stats.speed || 0) + (gear.speed || 0) + (titleBonus.speed||0) + (consBonus.speed||0);
-    const totalCrit = (player.stats.critChance || 0) + (gear.crit || 0);
+    const totalCrit = (player.stats.critChance || 0) + (gear.crit || 0) + (titleBonus.crit || 0); // Push #87: title crit shown too
 
     const breakdown = (base, bonus) => bonus > 0 ? ` _(${base} + ${bonus})_` : '';
 
@@ -158,7 +158,7 @@ module.exports = {
     msg2 += `\n🛡️  DEF:   *${totalDef}*${breakdown(player.stats.def, (gear.def||0)+(titleBonus.def||0)+(consBonus.def||0))}`;
     msg2 += `\n${player.energyColor || '💙'} ${player.energyType || 'Energy'}: *${player.stats.energy || 0}/${player.stats.maxEnergy || 100}*`;
     if (totalSpd > 0)  msg2 += `\n💨 SPD:   *${totalSpd}*${breakdown(player.stats.speed, (gear.speed||0)+(titleBonus.speed||0)+(consBonus.speed||0))}`;
-    if (totalCrit > 0) msg2 += `\n💥 CRIT:  *${totalCrit}%*${breakdown(player.stats.critChance||0, gear.crit||0)}`;
+    if (totalCrit > 0) msg2 += `\n💥 CRIT:  *${totalCrit}%*${breakdown(player.stats.critChance||0, (gear.crit||0) + (titleBonus.crit||0))}`;
     if ((player.stats.critDamage||0) > 0) msg2 += `\n🔥 CRIT DMG: *${player.stats.critDamage}%*`;
     if ((player.stats.lifesteal||0) > 0)  msg2 += `\n💚 LIFESTEAL: *${player.stats.lifesteal}%*`;
     if ((player.stats.magicPower||0) > 0) msg2 += `\n✨ MAGIC PWR: *${player.stats.magicPower}*`;

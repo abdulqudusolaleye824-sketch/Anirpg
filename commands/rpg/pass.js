@@ -127,10 +127,14 @@ const PASS_ITEMS = {
 };
 
 function getTierDisplay(t) {
-  const freeNexus = 1000;
-  const freeStones = 120;
-  const premNexus = 3000;
-  const premStones = 360;
+  // Push #87: currency scales upward with tier (both tracks).
+  // Free:    tier 1 = 1,000 💠 / 50 💎  → tier 50 = 25,500 💠 / 295 💎
+  // Premium: tier 1 = 3,000 💠 / 150 💎 → tier 50 = 76,500 💠 / 885 💎
+  const tt = Math.max(1, Math.min(TOTAL_TIERS, Number(t) || 1));
+  const freeNexus = 1000 + (tt - 1) * 500;
+  const freeStones = 50 + (tt - 1) * 5;
+  const premNexus = 3000 + (tt - 1) * 1500;
+  const premStones = 150 + (tt - 1) * 15;
 
   const freeItem = PASS_ITEMS.free[t] || null;
   const premItem = PASS_ITEMS.premium[t] || null;

@@ -338,10 +338,10 @@ module.exports = {
       if (raid.status === 'active') {
         const _liveHp = (m) => {
           const u = db.users?.[m.id];
-          if (u?.stats) return { hp: u.stats.hp ?? m.hp, max: u.stats.maxHp ?? m.maxHp };
+          if (u?.stats) return { hp: u.stats.hp ?? m.hp, max: (() => { try { return require('../../rpg/utils/GearSystem').effectiveMaxHp(u); } catch (e) { return u.stats.maxHp ?? m.maxHp; } })() };
           const n = GKM.normaliseJid(m.id);
           const hit = n ? Object.values(db.users || {}).find(x => GKM.normaliseJid(x.id || x.jid || '') === n) : null;
-          if (hit?.stats) return { hp: hit.stats.hp ?? m.hp, max: hit.stats.maxHp ?? m.maxHp };
+          if (hit?.stats) return { hp: hit.stats.hp ?? m.hp, max: (() => { try { return require('../../rpg/utils/GearSystem').effectiveMaxHp(hit); } catch (e) { return hit.stats.maxHp ?? m.maxHp; } })() };
           return { hp: m.hp, max: m.maxHp };
         };
         const floor = gate.currentFloor || 1;

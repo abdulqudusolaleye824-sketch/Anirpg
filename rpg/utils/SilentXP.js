@@ -97,6 +97,8 @@ const XP_RANGES = {
  */
 function awardXP(player, action = 'command', saveDatabase, sock, chatId, extraMult = 1) {
   if (!player) return { leveledUp: false, levelsGained: 0 };
+  // Push #87: every full dungeon clear (solo or party, any path) counts for /weekly.
+  if (action === 'dungeon_complete') { try { require('../../commands/rpg/weekly').trackWeeklyProgress(player, 'dungeon_clear', 1); } catch (e) {} }
 
   const range    = XP_RANGES[action] || XP_RANGES.command;
   const rankMult = RANK_XP_MULT[player.awakenRank || 'E'] || 1.0;

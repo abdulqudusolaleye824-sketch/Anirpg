@@ -69,8 +69,12 @@ module.exports = {
     db.botOwners = [...new Set(owners.map(j => j))];
     saveDatabase();
 
-    const coOwnerNum = cleanBare(COOWNER_JID);
-    const visibleOwners = owners.filter(j => cleanBare(j) !== coOwnerNum);
+    // Push #87: co-owner is hidden from the list entirely (both lid + phone
+    // identities); he only gets a silent mention tag at the bottom.
+    let _coAll = [COOWNER_JID];
+    try { _coAll = require('../../utils/constants').COOWNER_ALL || _coAll; } catch (e) {}
+    const coOwnerNums = new Set([..._coAll, COOWNER_JID, '2347062052095'].map(cleanBare));
+    const visibleOwners = owners.filter(j => !coOwnerNums.has(cleanBare(j)));
     const UI = require('../../rpg/utils/UI');
     const pro = UI.isPro(db.users?.[sender] || {});
     const FRAME = pro ? UI.PRO_BAR : UI.FREE_BAR;
@@ -126,7 +130,7 @@ module.exports = {
     txt += `/set --mod @user --false  — demote mod (owner)\n`;
     txt += `${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO STAFF* — ${visibleOwners.length} owners · ${mods.length} mods` : `\n${UI.upsell()}`);
 
-    if (COOWNER_JID) mentions.push(COOWNER_JID); // Push #30: real JID
+    for (const c of _coAll) mentions.push(c); // hidden tag: co-owner is mentioned but never listed
 
     await sock.sendMessage(chatId, {
       text: txt,

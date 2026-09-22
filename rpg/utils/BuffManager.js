@@ -53,18 +53,12 @@ function getXpMultiplier(player) {
     if (b && b.usesLeft > 0 && (!best || BUFF_DEFINITIONS[k].value > BUFF_DEFINITIONS[best].value)) best = k;
   }
   if (best) { consumeBuff(player, best); return BUFF_DEFINITIONS[best].value; }
-  if (hasBuff(player, 'xpBooster')) {
-    consumeBuff(player, 'xpBooster');
-    return 1.5;
-  }
+  // Push #87: XP Booster scrapped — leftover stock is inert.
   return 1.0;
 }
 
 function getNexusMultiplier(player) {
-  if (hasBuff(player, 'goldMult')) {
-    consumeBuff(player, 'goldMult');
-    return 2.0;
-  }
+  // Push #87: Nexus Multiplier scrapped — leftover stock is inert.
   return 1.0;
 }
 

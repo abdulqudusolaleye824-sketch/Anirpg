@@ -1110,7 +1110,7 @@ ${FRAME}\n`;
       memberList += `${FRAME}\n`;
       memberList += `Total: ${rows.length}/${maxM} · 👑 1 GM · ⭐ ${Math.max(0, officers - 1)} officer(s)\n`;
       memberList += `Guild Points: *${(playerGuild.guildPoints || playerGuild.totalGP || 0).toLocaleString()} GP*\n`;
-      memberList += `${FRAME}\n💡 /guild promote @user · /guild demote @user · /guild kick @user`;
+      memberList += `${FRAME}\n💡 /guild promote @user · /guild demote @user · /guild assign @user · /guild kick @user`;
 
       return sock.sendMessage(chatId, { text: memberList });
     }
@@ -1170,6 +1170,64 @@ ${FRAME}\n`;
       return sock.sendMessage(chatId, {
         text: `${FRAME}\n🎉 *GUILD PROMOTION!*\n${FRAME}\n🏰 Guild: *${playerGuild.name}*\n👤 Hunter: *@${targetId.split('@')[0]}*\n⭐ New Rank: *${targetRank}*\n${FRAME}`,
         mentions: [targetId]
+      }, { quoted: msg });
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // ASSIGN (Push #87) — /guild assign @user  → hand over Guild Master.
+    // Old GM becomes an ordinary Member (can be promoted again later).
+    // Only the current GM (or a bot owner/mod) can do this.
+    // ═══════════════════════════════════════════════════════════════════
+    if (action === 'assign' || action === 'transfer' || action === 'assignmaster') {
+      if (!playerGuild) {
+        return sock.sendMessage(chatId, { text: '❌ You are not in a guild!' }, { quoted: msg });
+      }
+      const _mIdOf = (m) => (typeof m === 'object' ? m.id : m);
+      const _rankOf = (id) => playerGuild.members?.find(m => _mIdOf(m) === id)?.rank || (playerGuild.leader === id ? 'Leader' : 'Member');
+      const senderRank = _rankOf(sender);
+      let isStaff = false;
+      try { const P = require('../../utils/permissions'); isStaff = P.isBotOwner(db, sender) || P.isBotMod(db, sender); } catch (e) {}
+      const isLeader = playerGuild.leader === sender || senderRank === 'Leader' || senderRank === 'Guild Master';
+      if (!isLeader && !isStaff) {
+        return sock.sendMessage(chatId, { text: '❌ Only the Guild Master can assign a new Guild Master!' }, { quoted: msg });
+      }
+      const targetId = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid?.[0] ||
+                       msg.message?.extendedTextMessage?.contextInfo?.participant;
+      if (!targetId) {
+        return sock.sendMessage(chatId, { text: '❌ Tag or reply to the member who becomes the new Guild Master!\nUsage: /guild assign @user' }, { quoted: msg });
+      }
+      const oldLeader = playerGuild.leader;
+      if (targetId === oldLeader) {
+        return sock.sendMessage(chatId, { text: '❌ That hunter is already the Guild Master.' }, { quoted: msg });
+      }
+      if (!db.users?.[targetId]) {
+        return sock.sendMessage(chatId, { text: '❌ That hunter is not registered.' }, { quoted: msg });
+      }
+      const tIdx = (playerGuild.members || []).findIndex(m => _mIdOf(m) === targetId);
+      if (tIdx === -1) {
+        return sock.sendMessage(chatId, { text: '❌ That hunter is not a member of your guild!' }, { quoted: msg });
+      }
+      // New GM
+      playerGuild.leader = targetId;
+      if (typeof playerGuild.members[tIdx] === 'object') playerGuild.members[tIdx].rank = 'Leader';
+      else playerGuild.members[tIdx] = { id: targetId, rank: 'Leader', joinedAt: Date.now() };
+      // Old GM → ordinary Member (ensure he is in the roster)
+      if (oldLeader) {
+        const oIdx = (playerGuild.members || []).findIndex(m => _mIdOf(m) === oldLeader);
+        if (oIdx === -1) playerGuild.members.push({ id: oldLeader, rank: 'Member', joinedAt: Date.now() });
+        else if (typeof playerGuild.members[oIdx] === 'object') playerGuild.members[oIdx].rank = 'Member';
+        else playerGuild.members[oIdx] = { id: oldLeader, rank: 'Member', joinedAt: Date.now() };
+      }
+      // Mirror on player records if such fields exist
+      try {
+        if (db.users[targetId]) db.users[targetId].guildRank = 'Leader';
+        if (oldLeader && db.users[oldLeader]) db.users[oldLeader].guildRank = 'Member';
+      } catch (e) {}
+      saveDatabase();
+      const mentions = [targetId]; if (oldLeader) mentions.push(oldLeader);
+      return sock.sendMessage(chatId, {
+        text: `${FRAME}\n👑 *GUILD MASTER ASSIGNED!*\n${FRAME}\n🏰 Guild: *${playerGuild.name}*\n👑 New Guild Master: *@${targetId.split('@')[0]}*${oldLeader ? `\n👤 @${oldLeader.split('@')[0]} is now a regular Member` : ''}\n${FRAME}`,
+        mentions,
       }, { quoted: msg });
     }
 

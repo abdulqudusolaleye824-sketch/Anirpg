@@ -83,7 +83,10 @@ module.exports = {
     }
 
     const guildId = guild.id || guildRef;
-    const contract = CM.getContract(db, guildId, targetId);
+    let contract = CM.getContract(db, guildId, targetId);
+    // Push #87: an ended contract (completed / defaulted / inactive) is history,
+    // not a live contract — show "no active hire contract" instead of the stale card.
+    if (contract && (!contract.active || contract.completedAt || contract.defaultedAt)) contract = null;
 
     if (!contract) {
       const who = isOwn ? 'You have' : `*${targetPlayer.name}* has`;

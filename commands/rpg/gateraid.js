@@ -14,6 +14,7 @@
 'use strict';
 
 const GR = require('../../rpg/dungeons/GateRaid');
+const _effMax = (pl) => { try { return require('../../rpg/utils/GearSystem').effectiveMaxHp(pl); } catch (e) { return (pl && pl.stats && pl.stats.maxHp) || 100; } }; // Push #87: gear/title HP is real HP
 const PetCombat = require('../../rpg/utils/PetCombat');
 const { GateManager, GATE_RANKS } = require('../../rpg/dungeons/GateManager');
 const { AuraSystem } = require('../../rpg/utils/AuraSystem');
@@ -283,9 +284,9 @@ module.exports = {
 
       const pct = tierUsed === 'lower' ? 0.10 : tierUsed === 'medium' ? 0.25 : 0.50;
       const tierName = tierUsed === 'lower' ? 'Lower HP Potion' : tierUsed === 'medium' ? 'Medium HP Potion' : 'Higher HP Potion';
-      const healAmount = Math.floor((player.stats?.maxHp || 100) * pct);
+      const healAmount = Math.floor(_effMax(player) * pct);
       const oldHp = player.stats.hp || 0;
-      player.stats.hp = Math.min(player.stats.maxHp, oldHp + healAmount);
+      player.stats.hp = Math.min(_effMax(player), oldHp + healAmount);
       const actualHeal = player.stats.hp - oldHp;
 
       if (tierUsed === 'lower') {
@@ -305,7 +306,7 @@ module.exports = {
       try { GR.saveGateState(db, gate); } catch (e) {}
       saveDatabase();
       return sock.sendMessage(chatId, {
-        text: `🩹 *${player.name}* used ${tierName}!\n💚 Restored +${actualHeal} HP (${player.stats.hp}/${player.stats.maxHp})\n🎒 Party Potions Used: ${gate.potionsUsed}/5`
+        text: `🩹 *${player.name}* used ${tierName}!\n💚 Restored +${actualHeal} HP (${player.stats.hp}/${_effMax(player)})\n🎒 Party Potions Used: ${gate.potionsUsed}/5`
       }, { quoted: msg });
     }
 
@@ -325,7 +326,7 @@ module.exports = {
 
       gate.revivesUsed = 1;
       player.inventory.reviveTokens--;
-      player.stats.hp = Math.floor((player.stats?.maxHp || 100) * 0.5);
+      player.stats.hp = Math.floor(_effMax(player) * 0.5);
 
       // Push #29: JID-tolerant re-add (self-heals stored id on format flips).
       {
@@ -348,7 +349,7 @@ module.exports = {
       try { GR.saveGateState(db, gate); } catch (e) {}
       saveDatabase();
       return sock.sendMessage(chatId, {
-        text: `💫 *REVIVE USED!* *${player.name}* was revived with ${player.stats.hp}/${player.stats.maxHp} HP!\n⚠️ Party Revive Cap Reached (1/1 used).`
+        text: `💫 *REVIVE USED!* *${player.name}* was revived with ${player.stats.hp}/${_effMax(player)} HP!\n⚠️ Party Revive Cap Reached (1/1 used).`
       }, { quoted: msg });
     }
 
@@ -553,7 +554,7 @@ module.exports = {
       });
       target.hp = Math.max(0, monWrap.stats.hp);
       // Push #71: recovery skills report the HP they actually restored.
-      if (result.healed > 0) await sock.sendMessage(chatId, { text: `💚 *${result.skillUsed?.name || 'Recovery'}* restored *${result.healed}* HP → ${player.stats.hp}/${player.stats.maxHp}` });
+      if (result.healed > 0) await sock.sendMessage(chatId, { text: `💚 *${result.skillUsed?.name || 'Recovery'}* restored *${result.healed}* HP → ${player.stats.hp}/${_effMax(player)}` });
       if ((result.synergyNotes || []).length) await sock.sendMessage(chatId, { text: `⚡ *SYNERGY* ${result.synergyNotes.join(' · ')}` });
       if (pro) await sock.sendMessage(chatId, { text: `💎 *PRO FOCUS* — your raid damage: ${UI.num(gate.damageDealt[sender])}` });
 
@@ -593,7 +594,7 @@ module.exports = {
         try { const BR=require('../../rpg/utils/BattleRewards'); const w=BR.giveBattleWinRewards(player, db, 'gate', player.level, sock, chatId); killLines.push(``, `💀 *${target.name}* defeated!`, BR.formatRewards(w)); } catch(e){ awardXP(player, 'gate_complete', saveDatabase, sock, chatId); killLines.push(``, `💀 *${target.name}* defeated!`); }
 
         const heal = GR.lifeSteal(player, result.damage);
-        if (heal > 0) { player.stats.hp = Math.min(player.stats.maxHp, (player.stats.hp || 0) + heal); killLines.push(`💚 Lifesteal: +${heal} HP`); }
+        if (heal > 0) { player.stats.hp = Math.min(_effMax(player), (player.stats.hp || 0) + heal); killLines.push(`💚 Lifesteal: +${heal} HP`); }
 
         const dropLines = GR.monsterKilledBy(gate, target, sender, db);
         if (dropLines.length) killLines.push(...dropLines);
@@ -664,7 +665,7 @@ module.exports = {
           ...(pro ? [UI.PRO_BAR, `🧊 *MONSTER HELD* 💎`, UI.PRO_BAR] : [`🧊 *MONSTER HELD*`, UI.FREE_BAR]),
           `${_fzEmo} *${target.name}* is ${_fzWord} and cannot move!`,
           `💥 Took *0* damage`,
-          `❤️ Your HP: *${player.stats.hp}/${player.stats.maxHp}*`,
+          `❤️ Your HP: *${player.stats.hp}/${_effMax(player)}*`,
         ].join('\n') }, { quoted: msg });
       } else {
         // Same 5-message flow as the player's strike (damage math unchanged;
@@ -702,7 +703,7 @@ module.exports = {
             await sock.sendMessage(chatId, { text: GR.wipeGate(gate, key, keyData, chatId, db).join('\n') });
           } else { try { GR.saveGateState(db, gate); } catch (e) {} }
         } else {
-          await sock.sendMessage(chatId, { text: `🛡️ *${_guardHit.guardianName}* held the line! ❤️ ${_victim.stats.hp}/${_victim.stats.maxHp}` });
+          await sock.sendMessage(chatId, { text: `🛡️ *${_guardHit.guardianName}* held the line! ❤️ ${_victim.stats.hp}/${_effMax(_victim)}` });
         }
         saveDatabase();
       }
@@ -766,7 +767,7 @@ module.exports = {
       // produced (ability strike) gets shown instead of vanishing.
       try {
         const _ph = PetCombat.healPlayer(sender, player);
-        if (_ph.healed > 0) msg3Lines.push(`💚 *${_ph.petName || 'Pet'}* mended *${_ph.healed}* HP → ${_ph.hp}/${player.stats.maxHp}`);
+        if (_ph.healed > 0) msg3Lines.push(`💚 *${_ph.petName || 'Pet'}* mended *${_ph.healed}* HP → ${_ph.hp}/${_effMax(player)}`);
       } catch (e) {}
       if (_petLines.length && target.hp > 0) msg3Lines.push(..._petLines);
       try { GR.saveGateState(db, gate); } catch (e) {}
@@ -794,6 +795,12 @@ module.exports = {
           QD.trackAndNotify(player, 'boss', 1, sock, sender, chatId);
           QD.trackAndNotify(player, 'clear', 1, sock, sender, chatId);
         } catch(e){}
+        // Push #87: /weekly "Defeat 3 World Bosses" — every raid member who hit the boss gets credit.
+        try {
+          const WK = require('./weekly');
+          const hitters = new Set([sender, ...Object.keys(gate.damageDealt || {})]);
+          for (const jid of hitters) { const u = db.users[jid]; if (u) WK.trackWeeklyProgress(u, 'boss_kill', 1); }
+        } catch (e) {}
         // Gate clear: +15 GP to the killer's guild (weekly + lifetime + quest)
         try { require('../../rpg/utils/GuildPointsSystem').addGuildGP(db, sender, 15, 'Gate clear (' + (gate.rank || '?') + '-Rank)', { quest: true, sock, jid: sender, chatId }); } catch(e){}
 
@@ -832,7 +839,7 @@ module.exports = {
         if (loot.wildPet && loot.wildPet.token) {
         out.push(``, `🐾 *WILD PET APPEARED!*`);
         out.push(`${loot.wildPet.emoji} *${loot.wildPet.name}* [${loot.wildPet.rarity.toUpperCase()}]`);
-        out.push(`🪤 */catch* — hurry, it flees in 60s!`);
+        out.push(`🪤 */catch* — 3 shared attempts for the whole raid, first success keeps it! Flees in 60s.`);
         }
 
         // Push #55: scavenger pets pay out on the clear, and every raider's
@@ -919,13 +926,13 @@ module.exports = {
       boss.hp = Math.max(0, bossWrap.stats.hp);
 
       const lines = [];
-      if (result.healed > 0) lines.push(`💚 *${result.skillUsed?.name || 'Recovery'}* restored *${result.healed}* HP → ${player.stats.hp}/${player.stats.maxHp}`);
+      if (result.healed > 0) lines.push(`💚 *${result.skillUsed?.name || 'Recovery'}* restored *${result.healed}* HP → ${player.stats.hp}/${_effMax(player)}`);
       if ((result.synergyNotes || []).length) lines.push(`⚡ *SYNERGY* ${result.synergyNotes.join(' · ')}`);
       // Push #55: the boss round reports what the pet did too.
       try { if (result.petLine) lines.push(result.petLine); } catch (e) {}
       try {
         const _bh = PetCombat.healPlayer(sender, player);
-        if (_bh.healed > 0) lines.push(`💚 *${_bh.petName}* mended *${_bh.healed}* HP → ${_bh.hp}/${player.stats.maxHp}`);
+        if (_bh.healed > 0) lines.push(`💚 *${_bh.petName}* mended *${_bh.healed}* HP → ${_bh.hp}/${_effMax(player)}`);
       } catch (e) {}
 
       if (boss.hp <= 0) {
@@ -951,10 +958,10 @@ module.exports = {
           tag: `💢 *BOSS COUNTER*`, gapMs: 600,
         });
         const heal = GR.lifeSteal(player, result.damage);
-        if (heal > 0) player.stats.hp = Math.min(player.stats.maxHp, player.stats.hp + heal);
+        if (heal > 0) player.stats.hp = Math.min(_effMax(player), player.stats.hp + heal);
         if (heal > 0) lines.push(`💚 Lifesteal: +${heal} HP`);
         try { const _lg = require('../../rpg/utils/PetManager').tickLastGift(player); if (_lg && _lg.healed > 0) lines.push(`✨ *Last Gift* (${_lg.from}): +${_lg.healed} HP · ${_lg.turnsLeft} turns left`); } catch (e) {}
-        lines.push(`❤️ Your HP: *${player.stats.hp}/${player.stats.maxHp}*`);
+        lines.push(`❤️ Your HP: *${player.stats.hp}/${_effMax(player)}*`);
 
         if (_bGuard) {
           try { _bGuard.member.hp = _bVictim.stats.hp; } catch (e) {}
@@ -971,7 +978,7 @@ module.exports = {
             lines.push(``, `💀 *${_bGuard.guardianName} FELL PROTECTING ${String(player.name || '').toUpperCase()}!*`, `Too strong to withstand. Lost ${gl.toLocaleString()} 💎 · fled with 1 HP.`);
             if (gate.raid && gate.raid.members.length === 0) lines.push(...GR.wipeGate(gate, key, keyData, chatId, db));
           } else {
-            lines.push(`🛡️ *${_bGuard.guardianName}* held the line! ❤️ ${_bVictim.stats.hp}/${_bVictim.stats.maxHp}`);
+            lines.push(`🛡️ *${_bGuard.guardianName}* held the line! ❤️ ${_bVictim.stats.hp}/${_effMax(_bVictim)}`);
           }
         }
 

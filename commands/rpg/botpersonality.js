@@ -14,6 +14,16 @@ function normaliseJid(jid) {
   return jid.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
 }
 
+// Push #87: /switch is STRICTLY bot owner / bot mod. Pro + group admin no longer count.
+function isStaff(db, sender) {
+  const sNum = normaliseJid(sender);
+  try {
+    const Perms = require('../../utils/permissions');
+    if (Perms.isBotOwner(db, sender) || Perms.isBotMod(db, sender)) return true;
+  } catch (e) {}
+  return (db.botMods || []).some(a => normaliseJid(a) === sNum) || (db.botOwners || []).some(a => normaliseJid(a) === sNum);
+}
+
 async function isModLevel(sock, sender, chatId, db) {
   const sNum = normaliseJid(sender);
 
@@ -137,15 +147,15 @@ const start = {
 // ── /switch <botname> ────────────────────────────────────────────────────────
 const switchBot = {
   name: 'switch',
-  description: 'Switch the active bot in this group (Mods / Admins / Pro only)',
+  description: 'Switch the active bot in this group (Bot Mods only)',
 
   async execute(sock, msg, args, getDatabase, saveDatabase, sender) {
     const chatId = msg.key.remoteJid;
     const db = getDatabase();
 
-    if (!(await isModLevel(sock, sender, chatId, db))) {
+    if (!isStaff(db, sender)) {
       return sock.sendMessage(chatId, {
-        text: '❌ Only bot owners, bot mods, Pro players, or group admins can use /switch.',
+        text: '❌ /switch is a bot-mod command. Only bot owners and bot mods can switch bots.',
       }, { quoted: msg });
     }
 
