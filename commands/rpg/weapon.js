@@ -44,11 +44,12 @@ function render(player) {
   lines.push(``, `🎒 *IN BAG* (${bag.length})`);
   if (!bag.length) lines.push(`  _No spare weapons — buy some in /store_`);
   bag.forEach((b, i) => {
-    lines.push(`  ${i + 1}. ${b.emoji || '🗡️'} *${b.name}* (${b.rank || '?'}-rank) ⚔️ +${b.attack || b.bonus || 0}  🔧 ${b.durability ?? '?'}/${b.maxDurability ?? '?'}`);
+    lines.push(`  ${i + 1}. ${b.emoji || '🗡️'} *${b.name}* (${b.rank || '?'}-rank) ⚔️ +${b.attack || b.bonus || 0}  🔧 ${b.durability ?? '?'}/${b.maxDurability ?? '?'}${i === 0 ? '  ← 🔁 mending' : ''}`);
   });
   lines.push(``, FRAME,
     `💡 /weapon equip <#|name> · /weapon unequip · /weapon info`,
     `🔧 −1 durability per landed hit · breaks at 0 · 🛠️ Mending Stone = 100%`,
+    `🔁 Bag slot #1 self-mends +1/${pro ? '30 min' : 'hour'} · /swap <#a> <#b> to reorder`,
     ...(pro ? [] : [UI.upsell()]));
   return lines.join('\n');
 }

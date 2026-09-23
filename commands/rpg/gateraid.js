@@ -378,7 +378,9 @@ module.exports = {
       if (floorMonsters.length > 0) return sock.sendMessage(chatId, { text: `❌ Clear all monsters on Floor ${floor} first!` }, { quoted: msg });
       if (floor >= gate.totalFloors) return sock.sendMessage(chatId, { text: `⚠️ Final floor. Engage the boss with /party boss` }, { quoted: msg });
       gate.currentFloor++;
+      try { GR.applyMonsterScaling(gate); } catch (e) {} // Push #88: deeper floor → stronger monsters
       const next = (gate.monsters || []).filter(mm => mm.floor === gate.currentFloor && !mm.defeated);
+      const _fm = Math.round((GR.floorMultiplier(gate, gate.currentFloor) - 1) * 100);
       try {
         const QD = require('../../rpg/utils/QuestDispatcher');
         QD.trackAndNotify(player, 'floor', gate.currentFloor, sock, sender, chatId);
@@ -390,6 +392,7 @@ module.exports = {
         text: [
           ...(pro ? [UI.PRO_BAR, `➡️ *FLOOR ${gate.currentFloor}* 💎`, UI.PRO_BAR] : [`➡️ *FLOOR ${gate.currentFloor}*`, UI.FREE_BAR]),
           `「System」 Entering Floor ${gate.currentFloor} of ${gate.totalFloors}...`,
+          ...(_fm > 0 ? [`📈 Monsters here are *+${_fm}%* stronger than Floor 1.`] : []),
           ``,
           `👾 *${next.length} monsters*:`,
           ...next.slice(0, 6).map(mm => `  💀 ${mm.name} — HP ${mm.hp}`),
@@ -436,7 +439,7 @@ module.exports = {
           target = gate.boss;
           // The generic monster flow below needs atk/def on the target; the
           // boss carries the same numbers the /party boss branch used.
-          if (typeof target.atk !== 'number') target.atk = Math.floor((GATE_RANKS[gate.rank]?.monsterRange?.[1] || 600) * 0.20);
+          if (typeof target.atk !== 'number' || target.atk <= 0) target.atk = Math.floor((GATE_RANKS[gate.rank]?.monsterRange?.[1] || 600) * 0.20 * ((gate.calibrated && gate.calibrated.severity) || 1) * 1.25);
           if (typeof target.def !== 'number') target.def  = Math.floor((gate.rankData?.monsterRange?.[1] || 600) * 0.05);
           if (!Array.isArray(target.statusEffects)) target.statusEffects = [];
         } else if (floor >= gate.totalFloors) {
@@ -444,6 +447,49 @@ module.exports = {
         } else {
           return sock.sendMessage(chatId, { text: `✅ Floor ${floor} cleared!\nAdvance: /party advance` }, { quoted: msg });
         }
+      }
+      // Push #88: SUPPORT CAST — a heal/buff skill targets a TEAMMATE (or self)
+      // and does NOT spend the turn: no monster counter-attack. High-rank
+      // monsters remember the healer (aggro) for the next few counters.
+      if (action === 'skill' && skillArg) {
+        try {
+          const _mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
+          const _rawName = String(skillArg).replace(/@\S+/g, '').trim();
+          const SCx = require('../../rpg/utils/SkillCatalog');
+          const _pre = SCx.resolveSkill(player, _rawName, { allowLibrary: true });
+          const _e = _pre.ok ? (_pre.entry || _pre.skill) : null;
+          const _t = _e ? String(_e.type || '').toLowerCase() : '';
+          const _isSupport = !!_e && (_t === 'heal' || _t === 'buff');
+          if (_isSupport) {
+            let tgtJid = sender, tgt = player;
+            if (_mentioned.length) {
+              const mj = _mentioned[0];
+              const mN = GR.GKM.normaliseJid(mj);
+              const inParty = (gate.raid?.members || []).find(m => GR.GKM.normaliseJid(m.id) === mN);
+              if (!inParty) { GR.releaseCombatLock(gate.id); return sock.sendMessage(chatId, { text: `❌ That hunter is not in this raid party.` }, { quoted: msg }); }
+              tgt = db.users[mj] || db.users[inParty.id] || Object.values(db.users || {}).find(u => u && u.jid && GR.GKM.normaliseJid(u.jid) === mN);
+              if (!tgt) { GR.releaseCombatLock(gate.id); return sock.sendMessage(chatId, { text: `❌ Could not find that hunter's profile.` }, { quoted: msg }); }
+              tgtJid = inParty.id;
+              if ((tgt.stats?.hp ?? 0) <= 0 && !/rebirth|revive|resurrect/i.test(`${_e.name} ${_e.effect || ''}`)) { GR.releaseCombatLock(gate.id); return sock.sendMessage(chatId, { text: `💀 *${inParty.name || tgt.name}* is down — only a revive skill can help them.` }, { quoted: msg }); }
+            }
+            const _sc = GR.supportCast(player, sender, tgt, tgtJid, _rawName, gate, db);
+            GR.releaseCombatLock(gate.id);
+            if (!_sc.ok) return sock.sendMessage(chatId, { text: `❌ ${_sc.error}` }, { quoted: msg });
+            const _self = tgtJid === sender && !_sc.party;
+            try { GR.saveGateState(db, gate); } catch (e) {}
+            saveDatabase();
+            try { require('../../rpg/utils/QuestDispatcher').trackAndNotify(player, 'heal', 1, sock, sender, chatId); } catch (e) {}
+            return sock.sendMessage(chatId, { text: [
+              ...(pro ? [UI.PRO_BAR, `${_sc.isHeal ? '💚' : '✨'} *SUPPORT — ${_sc.skill.name}* 💎`, UI.PRO_BAR] : [`${_sc.isHeal ? '💚' : '✨'} *SUPPORT — ${_sc.skill.name}*`, UI.FREE_BAR]),
+              `🙌 *${player.name}* ${_sc.isHeal ? 'heals' : 'buffs'} ${_sc.party ? 'the *whole party*' : _self ? 'themself' : `*${tgt.name}*`}!`,
+              ..._sc.lines,
+              ``,
+              `🕊️ Support casts don't use your turn — the monster does not counter.`,
+              ...(['B','A','S'].includes(String(gate.rank).toUpperCase()) ? [`⚠️ High-rank monsters now have their eye on the healer...`] : []),
+              ...(pro ? [] : [FRAME, UI.upsell()]),
+            ].join('\n'), mentions: _self ? [] : [tgtJid] }, { quoted: msg });
+          }
+        } catch (e) { console.error('[gateraid] support cast:', e.message); }
       }
       // Check for attack pattern id in skillArg when action is attack (from /attack <id> routed via attacks.js)
       let patternId = null;
@@ -556,10 +602,10 @@ module.exports = {
       } else if (result.skillUsed) {
         const _sk = result.skillUsed;
         const _skFx = (_sk.effect && typeof _sk.effect === 'object' && _sk.effect.type) ? _sk.effect : null;
-        _gmMove = { name: _sk.name, description: _sk.description || 'A class skill unleashed in the heat of battle.', cooldownMs: (_sk.cooldown || 3) * 1000, effect: _skFx };
+        _gmMove = { name: _sk.name, description: _sk.description || 'A class skill unleashed in the heat of battle.', cooldownMs: (_sk.cooldown || 3) * 1000, effect: _skFx, isSkill: true, statuses: result.statuses || [], buffs: result.buffs || [] };
         _gmResult = { damage: result.damage, crit: !!result.isCrit, missed: false };
       } else {
-        _gmMove = UCgFlow.basicStrike();
+        _gmMove = { ...UCgFlow.basicStrike(), statuses: result.statuses || [] };
         _gmResult = { damage: result.damage, crit: !!result.isCrit, missed: false };
       }
       const atkTitle = atkPattern ? `🥋 *ATTACK PATTERN #${atkPattern.id} — ${atkPattern.name}* [${atkPattern.rank}]` : `⚔️ *PLAYER ATTACK*`;
@@ -602,6 +648,7 @@ module.exports = {
         // The 5 strike messages are already live — rewards go in their own message.
         const killLines = [];
         target.defeated = true;
+        player._runKills = (player._runKills || 0) + 1; // Push #88: Devourer 'Hunger' stacks
         gate.monstersKilled = (gate.monstersKilled || 0) + 1;
         if (!player.stats_history) player.stats_history = {};
         player.stats_history.monstersKilled = (player.stats_history.monstersKilled || 0) + 1;
@@ -652,14 +699,20 @@ module.exports = {
       // Push #84: /guard — a teammate intercepts this hit; damage is recomputed
       // against the GUARDIAN's own defence and applied to the guardian.
       let _guardHit = null;
-      if (_monCanAct.canAct) { try { _guardHit = GR.takeGuard(gate, sender, db); } catch (e) { _guardHit = null; } }
+      // Push #88: high-rank monsters / bosses may swing at the HEALER instead.
+      let _aggro = null;
+      if (_monCanAct.canAct) { try { _aggro = GR.pickAggroTarget(gate, sender, db, !!_fightingBoss); } catch (e) { _aggro = null; } }
+      if (_aggro) _guardHit = { guardian: _aggro.player, guardianJid: _aggro.jid, guardianName: _aggro.name, member: _aggro.member, aggro: true };
+      if (_monCanAct.canAct && !_guardHit) { try { _guardHit = GR.takeGuard(gate, sender, db); } catch (e) { _guardHit = null; } }
       const _victim = _guardHit ? _guardHit.guardian : player;
       const _victimJid = _guardHit ? _guardHit.guardianJid : sender;
       let _gDefV = _gDefGR;
       if (_guardHit) { try { _gDefV = require('../../rpg/utils/GearSystem').getEquippedBonuses(_victim).def || 0; } catch (e) { _gDefV = 0; } }
       const def = (_victim.stats?.def || 5) + (_victim.weapon?.defense || 0) + _gDefV + (PetCombat.defBonus(_victimJid) || 0);
       const dmg = _monCanAct.canAct ? GR.monsterDamage(target, def, _victim) : 0;
-      if (_guardHit) {
+      if (_guardHit && _guardHit.aggro) {
+        await sock.sendMessage(chatId, { text: `🎯 *AGGRO!* *${target.name}* ignores *${player.name}* and lunges at the healer *${_guardHit.guardianName}*!` });
+      } else if (_guardHit) {
         await sock.sendMessage(chatId, { text: `🛡️ *GUARD!* *${_guardHit.guardianName}* steps in front of *${player.name}* and takes the blow!` });
       }
 
@@ -694,6 +747,8 @@ module.exports = {
           result: { damage: dmg, crit: false, missed: dmg <= 0, dodged: dmg <= 0 },
           tag: `💢 *MONSTER COUNTER-ATTACK*`, gapMs: 600,
         });
+        // Push #88: passives that trigger on being hit (reflect / survive-lethal / regen).
+        try { const _pl = GR.afterMonsterHit(_victim, target, dmg); if (_pl.length) await sock.sendMessage(chatId, { text: _pl.join('\n') }); } catch (e) {}
       }
 
       try { const _lg = require('../../rpg/utils/PetManager').tickLastGift(player); if (_lg && _lg.healed > 0) await sock.sendMessage(chatId, { text: `✨ *Last Gift* (${_lg.from}): +${_lg.healed} HP regen · ${_lg.turnsLeft} turn${_lg.turnsLeft === 1 ? '' : 's'} left` }); } catch (e) {}
@@ -711,7 +766,7 @@ module.exports = {
           if (gate.raid) gate.raid.members = gate.raid.members.filter(m => _gGone(m.id));
           gate.raiders = (gate.raiders || []).filter(_gGone);
           await sock.sendMessage(chatId, { text: [
-            `💀 *${_guardHit.guardianName} FELL PROTECTING ${String(player.name || '').toUpperCase()}!*`,
+            _guardHit.aggro ? `💀 *${_guardHit.guardianName} WAS CUT DOWN BY THE MONSTER'S AGGRO!*` : `💀 *${_guardHit.guardianName} FELL PROTECTING ${String(player.name || '').toUpperCase()}!*`,
             `The blow was too strong to withstand. Lost ${loss.toLocaleString()} 💎 · fled with 1 HP.`,
             `🛡️ *${player.name}* was untouched.`,
           ].join('\n') });
@@ -738,16 +793,8 @@ module.exports = {
           const loss = Math.floor((player.manaCrystals || 0) * 0.15);
           player.manaCrystals = Math.max(0, (player.manaCrystals || 0) - loss);
 
-          const retNexus = Math.floor((gate.accumulatedTreasure?.nexus || 0) * 0.50);
-          const retCrystals = Math.floor((gate.accumulatedTreasure?.crystals || 0) * 0.50);
-          if (retNexus > 0 || retCrystals > 0) {
-            player.gold = (player.gold || 0) + retNexus;
-            if (retNexus > 0) {
-              try { require('../../rpg/utils/QuestDispatcher').trackAndNotify(player, 'goldEarn', retNexus, sock, sender, chatId); } catch(e){}
-            }
-            player.manaCrystals = (player.manaCrystals || 0) + retCrystals;
-            deathLines.push(``, `💰 *50% PARTY TREASURE SALVAGED:* +${retNexus.toLocaleString()} 💠 Nexus | +${retCrystals.toLocaleString()} 💎 Mana Stones`);
-          }
+          // Push #88: a single death pays NOTHING out — the party treasure
+          // stays banked. Only a full WIPE salvages 50% (to the guild treasury).
 
           deathLines.push(``, `💀 *YOU FELL IN THE GATE!*`, `Lost ${loss.toLocaleString()} 💎`, `You fled with 1 HP.`);
           // Push #29: JID-tolerant removal + wipe check (never re-persist a
@@ -957,15 +1004,19 @@ module.exports = {
         let _gDefGR2 = 0;
         try { _gDefGR2 = require('../../rpg/utils/GearSystem').getEquippedBonuses(player).def || 0; } catch (e) {}
         // Push #84: /guard intercept (boss) — resolved against the guardian's stats.
-        let _bGuard = null; try { _bGuard = GR.takeGuard(gate, sender, db); } catch (e) { _bGuard = null; }
+        let _bGuard = null;
+        try { const _ag = GR.pickAggroTarget(gate, sender, db, true); if (_ag) _bGuard = { guardian: _ag.player, guardianJid: _ag.jid, guardianName: _ag.name, aggro: true }; } catch (e) {}
+        if (!_bGuard) { try { _bGuard = GR.takeGuard(gate, sender, db); } catch (e) { _bGuard = null; } }
         const _bVictim = _bGuard ? _bGuard.guardian : player;
         const _bVictimJid = _bGuard ? _bGuard.guardianJid : sender;
         if (_bGuard) { try { _gDefGR2 = require('../../rpg/utils/GearSystem').getEquippedBonuses(_bVictim).def || 0; } catch (e) { _gDefGR2 = 0; } }
         const def = (_bVictim.stats?.def || 5) + (_bVictim.weapon?.defense || 0) + _gDefGR2;
-        const bossAtk = Math.floor(GATE_RANKS[gate.rank].monsterRange[1] * 0.20);
+        // Push #88: the boss hits with its CALIBRATED atk (severity × floor), not a flat rank constant.
+        const bossAtk = (typeof boss.atk === 'number' && boss.atk > 0) ? boss.atk : Math.floor(GATE_RANKS[gate.rank].monsterRange[1] * 0.20 * ((gate.calibrated && gate.calibrated.severity) || 1));
         // Push #74: boss hits go through the same dodge/passive/weaken maths.
         const dmg = GR.monsterDamage({ atk: bossAtk, speed: 14, statusEffects: boss.statusEffects || [] }, def, _bVictim);
-        if (_bGuard) await sock.sendMessage(chatId, { text: `🛡️ *GUARD!* *${_bGuard.guardianName}* steps in front of *${player.name}* and takes the boss's blow!` });
+        if (_bGuard && _bGuard.aggro) await sock.sendMessage(chatId, { text: `🎯 *AGGRO!* *${boss.name}* turns on the healer *${_bGuard.guardianName}*!` });
+        else if (_bGuard) await sock.sendMessage(chatId, { text: `🛡️ *GUARD!* *${_bGuard.guardianName}* steps in front of *${player.name}* and takes the boss's blow!` });
         const bossAtkW = { name: boss.name, stats: { hp: boss.hp, maxHp: boss.maxHp }, statusEffects: [] };
         await UCgBoss.playTurn(sock, chatId, {
           attacker: bossAtkW, defender: _bVictim,
@@ -973,6 +1024,7 @@ module.exports = {
           result: { damage: dmg, crit: false, missed: dmg <= 0, dodged: dmg <= 0 },
           tag: `💢 *BOSS COUNTER*`, gapMs: 600,
         });
+        try { const _pl = GR.afterMonsterHit(_bVictim, boss, dmg); if (_pl.length) lines.push(..._pl); } catch (e) {}
         const heal = GR.lifeSteal(player, result.damage);
         if (heal > 0) player.stats.hp = Math.min(_effMax(player), player.stats.hp + heal);
         if (heal > 0) lines.push(`💚 Lifesteal: +${heal} HP`);

@@ -60,7 +60,7 @@ module.exports = {
 
     const ctx = msg.message?.extendedTextMessage?.contextInfo;
     const CS0 = require('../../rpg/utils/ClassSystem');
-    const SNAP_KEYS = ['class', 'classBase', 'classQuality', 'classSkills', 'monsterVariant', 'classBonusApplied', 'classPowerV74', 'classAssignedAt', 'classReconAt', 'stats', 'baseStats', 'skills', 'equippedSkills', 'skillLoadout', 'skillLevels'];
+    const SNAP_KEYS = ['class', 'classBase', 'classQuality', 'classSkills', 'monsterVariant', 'classBonusApplied', 'classPowerV74', 'classAssignedAt', 'classReconAt', 'stats', 'baseStats', 'skills', 'equippedSkills', 'skillLoadout', 'skillLevels', 'weapon', 'equippedWeapon', 'passives'];
     const snapshot = (pl) => { const o = {}; for (const k of SNAP_KEYS) if (pl[k] !== undefined) o[k] = JSON.parse(JSON.stringify(pl[k])); return o; };
     const restore = (pl, snap) => { for (const k of SNAP_KEYS) { if (snap[k] !== undefined) pl[k] = JSON.parse(JSON.stringify(snap[k])); else delete pl[k]; } };
 

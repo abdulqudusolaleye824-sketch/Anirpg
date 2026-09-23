@@ -30,7 +30,11 @@ function playerDamage(player, skillName = null, target = null) {
   try { _pm74 = require('../utils/ClassPower').passiveMultipliers(player); } catch (e) {}
   // Push #74: class passives (+X% ATK, quality-scaled) apply to every raid hit.
   let _gift = 1; try { _gift = require('../utils/PetManager').lastGiftMultiplier(player) || 1; } catch (e) {}
-  const atk = Math.floor(((player.stats?.atk || 10) + _gearAtkGR + (player.weapon?.attack || player.weapon?.bonus || 0)) * (1 + (_pm74.atk || 0) / 100) * _gift);
+  // Push #88: live temp buffs (War Cry / Spirit Link "+X% ATK") multiply the
+  // raid strike too — they only reached PvP/pattern maths before. Kill stacks
+  // (Devourer) add flat ATK.
+  let _tbAtk = 0; try { _tbAtk = require('../utils/UnifiedCombat').tempBuffPct(player, 'atk'); } catch (e) {}
+  const atk = Math.floor(((player.stats?.atk || 10) + _gearAtkGR + (player.weapon?.attack || player.weapon?.bonus || 0) + (_pm74.atkFlat || 0)) * (1 + (_pm74.atk || 0) / 100) * (1 + Math.max(-90, _tbAtk) / 100) * _gift);
   const magicPower = player.stats?.magicPower || 0;
   if (skillName) {
     // SkillCatalog: name / prefix / number, equipped OR library, and it tells
@@ -53,8 +57,11 @@ function playerDamage(player, skillName = null, target = null) {
     // old flat `skill.damage || 20` — that flat number is why a Lv.90 skill
     // landed like a base attack on the boss.
     const synergyNotes = [];
-    let dmg = SC.computeDamage(player, entry || skill, { includeMagic: magicPower > 0, crit: false, target, notes: synergyNotes });
-    if (_pm74.atk || _pm74.skillDmg) dmg = Math.max(1, Math.floor(dmg * (1 + ((_pm74.atk || 0) + (_pm74.skillDmg || 0)) / 100)));
+    // Push #88: skills scale from the FULL effective ATK (gear + weapon + buffs
+    // + passives), not bare stats.atk — a "+100% ATK" buff now doubles the hit.
+    let dmg = SC.computeDamage({ ...player, stats: { ...(player.stats || {}), atk } }, entry || skill, { includeMagic: magicPower > 0, crit: false, target, notes: synergyNotes });
+    if (_pm74.skillDmg) dmg = Math.max(1, Math.floor(dmg * (1 + (_pm74.skillDmg || 0) / 100)));
+    if (target && typeof target.def === 'number' && target.def > 0) dmg = Math.max(1, dmg - Math.floor(target.def * 0.35 * (1 - Math.min(0.6, (_pm74.armorPen || 0) / 100))));
     if (target) { try { dmg = Math.max(1, Math.floor(dmg * require('../utils/UnifiedCombat').weakenTakenMult(target))); } catch (e) {} }
     const isCrit = Math.random() < ((player.stats?.critChance || 2) + (_pm74.crit || 0) + _gearCritGR + _titleCritGR) / 100;
     if (isCrit) dmg = Math.floor(dmg * ((player.stats?.critDamage || 150) + _gearCritDmgGR) / 100);
@@ -79,7 +86,7 @@ function playerDamage(player, skillName = null, target = null) {
     }
     return {
       damage: dmg, isCrit, skillUsed: skill,
-      statuses: (entry && entry.statuses) || skill.statuses || [],
+      statuses: [ ...((entry && entry.statuses) || skill.statuses || []), ...((_pm74.onHit || [])) ],
       healingPct: _healPct,
       healed,
       synergyNotes,
@@ -87,12 +94,17 @@ function playerDamage(player, skillName = null, target = null) {
     };
   }
   let dmg = Math.max(5, atk * (0.85 + Math.random() * 0.30));
+  if (target && typeof target.def === 'number' && target.def > 0) dmg = Math.max(5, dmg - Math.floor(target.def * 0.35 * (1 - Math.min(0.6, (_pm74.armorPen || 0) / 100))));
   if (target) { try { dmg = Math.max(1, dmg * require('../utils/UnifiedCombat').weakenTakenMult(target)); } catch (e) {} }
   const isCrit = Math.random() < ((player.stats?.critChance || 2) + (_pm74.crit || 0) + _gearCritGR + _titleCritGR) / 100;
   if (isCrit) dmg = Math.floor(dmg * (player.stats?.critDamage || 150) / 100);
   let synergyNotes = [];
   if (target) { try { const syn = require('../utils/StatusSynergy').bonusFor({ name: 'strike', description: 'basic strike' }, target); if (syn.mult !== 1) { dmg *= syn.mult; synergyNotes = syn.notes; } } catch (e) {} }
-  return { damage: Math.floor(dmg), isCrit, synergyNotes };
+  // Push #88: SpellBlade "free spell" proc + BloodKnight on-hit bleed on basic strikes.
+  let procNote = null;
+  if (_pm74.procDmg > 0 && Math.random() * 100 < _pm74.procDmg) { const extra = Math.floor(dmg * 0.5); dmg += extra; procNote = `✨ Arcane proc +${extra}`; }
+  if (procNote) synergyNotes = [...synergyNotes, procNote];
+  return { damage: Math.floor(dmg), isCrit, synergyNotes, statuses: (_pm74.onHit || []) };
 }
 
 function monsterDamage(monster, def, player = null) {
@@ -122,8 +134,32 @@ function monsterDamage(monster, def, player = null) {
   return Math.floor(raw * (0.8 + Math.random() * 0.4));
 }
 
+// Push #88: after a monster hit lands on `player` — reflect, survive-lethal,
+// per-turn regen. Returns lines. Call AFTER the damage was applied.
+function afterMonsterHit(player, monster, dmg) {
+  const lines = [];
+  let pm = null; try { pm = require('../utils/ClassPower').passiveMultipliers(player); } catch (e) { return lines; }
+  if (!pm) return lines;
+  if (pm.surviveLethal && (player.stats?.hp ?? 1) <= 0 && (!player._lethalUsedAt || Date.now() - player._lethalUsedAt > 2 * 3600e3)) {
+    player.stats.hp = 1; player._lethalUsedAt = Date.now();
+    lines.push(`🛡️ *Unbreakable!* ${player.name} refuses to fall — survives at 1 HP (once per fight).`);
+  }
+  if (pm.reflect > 0 && dmg > 0 && monster && typeof monster.hp === 'number') {
+    const r = Math.max(1, Math.floor(dmg * pm.reflect / 100));
+    monster.hp = Math.max(0, monster.hp - r);
+    lines.push(`↩️ *Counterguard* reflects ${r} damage back!`);
+  }
+  if (pm.regenFlat > 0 && (player.stats?.hp ?? 0) > 0) {
+    let max = player.stats.maxHp || 100; try { max = require('../utils/GearSystem').effectiveMaxHp(player); } catch (e) {}
+    const before = player.stats.hp; player.stats.hp = Math.min(max, before + pm.regenFlat);
+    if (player.stats.hp > before) lines.push(`🌿 Passive regen +${player.stats.hp - before} HP`);
+  }
+  return lines;
+}
+
 function lifeSteal(player, dmg) {
-  const ls = (player.stats?.lifesteal || 0) / 100;
+  let pls = 0; try { pls = require('../utils/ClassPower').passiveMultipliers(player).lifesteal || 0; } catch (e) {}
+  const ls = ((player.stats?.lifesteal || 0) + pls) / 100;
   return ls > 0 ? Math.floor(dmg * ls) : 0;
 }
 
@@ -291,6 +327,25 @@ function releaseCombatLock(gateId) {
 // Push #30: the key stays consumed (single-use) — no retry on the same key.
 // The party regroups with a fresh key; the GC itself is usable immediately.
 function wipeGate(gate, key, keyData, chatId, db) {
+  // Push #88: a WIPE salvages HALF of the accumulated floor treasure — and it
+  // goes to the owning GUILD's treasury, never to any single hunter. (A single
+  // death used to pay 50% to the fallen hunter; that is gone.)
+  let salvage = null;
+  try {
+    const tr = gate.accumulatedTreasure || { nexus: 0, crystals: 0 };
+    const half = { nexus: Math.floor((tr.nexus || 0) * 0.5), crystals: Math.floor((tr.crystals || 0) * 0.5) };
+    if ((half.nexus > 0 || half.crystals > 0) && !gate._wipeSalvaged) {
+      const guild = keyData?.guildName ? GKM.findGuild(db, keyData.guildName) : null;
+      if (guild) {
+        guild.totalRaids = (guild.totalRaids || 0) + 1; // Push #88: a wipe is still a raid attempted
+        guild.raidsWiped = (guild.raidsWiped || 0) + 1;
+        guild.treasury = (guild.treasury || 0) + half.nexus;
+        guild.manaTreasury = (guild.manaTreasury || 0) + half.crystals;
+        salvage = { ...half, dest: guild.name || keyData.guildName };
+      }
+      gate._wipeSalvaged = true;
+    }
+  } catch (e) {}
   try {
     if (gate.raid) { gate.raid.status = 'wiped'; gate.raid.clearedAt = Date.now(); }
     if (db?.activeGates) delete db.activeGates[gate.id];
@@ -314,6 +369,7 @@ function wipeGate(gate, key, keyData, chatId, db) {
     ``,
     `💀 *ALL HUNTERS WIPED!*`,
     `🚪 The gate collapses and the dungeon closes...`,
+    ...(salvage ? [`🏰 *50% TREASURE SALVAGED → ${salvage.dest} Treasury:* +${salvage.nexus.toLocaleString()} 💠 | +${salvage.crystals.toLocaleString()} 💎`] : []),
     `✅ This dungeon GC is usable again — grab a fresh key for the next run!`,
   ];
 }
@@ -543,65 +599,196 @@ function totalStatsOf(u, jid) {
   const def = Math.floor(((st.def || 5) + (g.def || 0) + (u.weapon?.defense || 0) + (tb.def || 0) + petD) * gift);
   const maxHp = Math.floor(((st.maxHp || 100) + (g.hp || 0) + (tb.maxHp || 0) + (u.weapon?.hp || 0)) * gift);
   const speed = Math.floor(((st.speed || 10) + (g.speed || 0) + (tb.speed || 0)) * gift);
-  return { atk, def, maxHp, speed, hp: Math.min(st.hp || maxHp, maxHp) };
+  return { atk, def: Math.floor(def * (1 + (pm.def || 0) / 100)), maxHp, speed: Math.floor(speed * (1 + (pm.speed || 0) / 100)), hp: Math.min(st.hp || maxHp, maxHp), level: Number(u.level) || 1 };
 }
 
 function calibrateToParty(gate, raid, db) {
   if (!gate || !raid || !Array.isArray(raid.members) || !raid.members.length) return null;
   if (gate.calibrated) return gate.calibrated;
-  // Party totals from REAL stats.
-  let sumAtk = 0, sumDef = 0, sumHp = 0, n = 0;
+  // Push #88: monsters are calibrated to the party's TOTAL accumulated stats
+  // (ATK + DEF + HP + SPD across every hunter, with gear/titles/pets/passives)
+  // AND the hunters' levels — not just a "power" figure. Severity runs up to
+  // 10× the rank's base monster so a maxed party still meets a real threat,
+  // while a fresh party at the right rank sees ~1×. Every floor is stronger
+  // than the last (see floorMultiplier).
+  let sumAtk = 0, sumDef = 0, sumHp = 0, sumSpd = 0, sumLvl = 0, n = 0;
   for (const m of raid.members) {
     const u = db && db.users ? db.users[m.id] : null;
     if (!u) continue;
     n++;
     const ts = totalStatsOf(u, m.id);
-    sumAtk += ts.atk; sumDef += ts.def; sumHp += ts.maxHp;
+    sumAtk += ts.atk; sumDef += ts.def; sumHp += ts.maxHp; sumSpd += ts.speed; sumLvl += ts.level;
   }
   if (!n) return null;
-  const avgAtk = sumAtk / n, avgDef = sumDef / n, avgHp = sumHp / n;
   const rd = GATE_RANKS[gate.rank] || GATE_RANKS.E;
   const [lo, hi] = rd.monsterRange || [15, 45];
   const rankAtk = (lo + hi) / 2;                      // what the rank table assumes a monster hits for
-  // Stat-based ratio: how far ABOVE the rank's baseline the party is, on
-  // offence (atk vs rank atk) and toughness (hp+def vs rank atk).
-  const offRatio = avgAtk / Math.max(1, rankAtk * 2.5);
-  const toughRatio = (avgHp / 8 + avgDef * 2) / Math.max(1, rankAtk * 2.5);
-  const ratio = Math.max(offRatio, toughRatio) * Math.sqrt(n); // more hunters → tougher gate
+  // Expected TOTAL for a party that "belongs" at this rank: each hunter ≈
+  // 2.5× rank ATK offence, 6× rank ATK worth of DEF+HP/8, 20 speed, and the
+  // rank's typical level.
+  const rankLevel = { E: 8, D: 18, C: 30, B: 45, A: 65, S: 85 }[gate.rank] || 8;
+  const expectedPer = rankAtk * 2.5 + rankAtk * 6 + 20;
+  const total = sumAtk + sumDef + sumHp / 8 + sumSpd;
+  const statRatio = total / Math.max(1, expectedPer * n);
+  const avgLvl = sumLvl / n;
+  const lvlRatio = avgLvl / rankLevel;
+  // Blend: stats carry most of the weight, level keeps high-rank hunters honest
+  // even if they walk in under-geared. sqrt(n): more hunters → tougher gate.
+  const ratio = (statRatio * 0.7 + lvlRatio * 0.3) * Math.sqrt(n);
   const luck = partyLuck(raid, db);
-  // Push #85: monsters are calibrated to hunters' REAL totals. Floor 0.90,
-  // ceiling 3.50 — strong parties now meet monsters that actually hurt.
-  let severity = 0.60 + ratio * 0.65;
-  severity = Math.max(0.90, Math.min(3.50, severity));
+  let severity = 0.55 + ratio * 0.75;
+  severity = Math.max(1.0, Math.min(10.0, severity));
   severity = severity * (1 - luck / 100);
-  const total = Math.round(sumAtk + sumDef + sumHp / 10); // for the label/expected fields
-  const expected = Math.round((rankAtk * 2.5) * n);
   severity = Math.round(severity * 100) / 100;
-  // Push #80: scale from the monster's BASE stats (kept on first calibration)
-  // so the severity is exact, and speed scales too — a Severe gate is faster.
-  for (const mon of gate.monsters || []) {
-    if (!mon || mon.defeated) continue;
-    if (!mon._base) mon._base = { hp: mon.maxHp || mon.hp || 10, atk: mon.atk || 5, def: mon.def || 0, speed: mon.speed || 10 };
-    mon.maxHp = Math.max(5, Math.floor(mon._base.hp * severity));
-    mon.hp = mon.maxHp;
-    mon.atk = Math.max(1, Math.floor(mon._base.atk * severity));
-    mon.def = Math.floor(mon._base.def * severity);
-    mon.speed = Math.max(1, Math.round(mon._base.speed * (0.8 + severity * 0.2)));
-  }
-  if (gate.boss && !gate.boss.defeated) {
-    if (!gate.boss._base) gate.boss._base = { hp: gate.boss.maxHp || gate.boss.hp || 400, atk: gate.boss.atk || 0 };
-    gate.boss.maxHp = Math.max(50, Math.floor(gate.boss._base.hp * severity));
-    gate.boss.hp = gate.boss.maxHp;
-    if (gate.boss._base.atk) gate.boss.atk = Math.max(1, Math.floor(gate.boss._base.atk * severity));
-  }
-  const label = severity >= 2.5 ? '☠️ NIGHTMARE' : severity >= 1.8 ? '🔴 Severe' : severity >= 1.3 ? '🟠 Hard' : severity >= 1.0 ? '🟡 Standard' : '🟢 Mild';
-  gate.calibrated = { severity, label, partyPower: Math.floor(total), expected: Math.floor(expected), luck, members: n, at: Date.now() };
+  const expected = Math.round(expectedPer * n);
+  gate.calibrated = { severity, label: null, partyPower: Math.floor(total), expected, luck, members: n, avgLevel: Math.round(avgLvl), at: Date.now() };
+  applyMonsterScaling(gate);
+  const label = severityLabel(severity);
+  gate.calibrated.label = label;
   // The strength shown everywhere IS the applied severity from now on.
   gate.preRollStrengthPct = gate.preRollStrengthPct || gate.strengthPct || null;
   gate.strengthPct = Math.round(severity * 100);
   gate.strengthLabel = label;
-  gate.severityNote = `party total stats ${Math.floor(total).toLocaleString()} vs rank baseline ${Math.floor(expected).toLocaleString()} (${n} hunter${n === 1 ? '' : 's'})${luck ? ` · 🍀 luck −${luck}%` : ''}`;
+  gate.severityNote = `party total stats ${Math.floor(total).toLocaleString()} · avg Lv.${Math.round(avgLvl)} vs rank baseline ${expected.toLocaleString()} (${n} hunter${n === 1 ? '' : 's'})${luck ? ` · 🍀 luck −${luck}%` : ''}`;
   return gate.calibrated;
+}
+
+function severityLabel(severity) {
+  return severity >= 7 ? '💀 CATACLYSM' : severity >= 4.5 ? '☠️ NIGHTMARE' : severity >= 2.5 ? '🔴 Severe' : severity >= 1.6 ? '🟠 Hard' : severity >= 1.15 ? '🟡 Standard' : '🟢 Mild';
+}
+
+// Push #88: every floor is stronger than the one before — +18% per floor on
+// top of the party severity, boss floor gets the full stack plus 25%.
+function floorMultiplier(gate, floor) {
+  const f = Math.max(1, Number(floor) || 1);
+  return 1 + (f - 1) * 0.18;
+}
+
+// Scale every live monster + the boss from their BASE stats using severity ×
+// floor multiplier. Idempotent — safe to call on every calibrate/advance.
+function applyMonsterScaling(gate) {
+  const severity = (gate.calibrated && gate.calibrated.severity) || 1;
+  for (const mon of gate.monsters || []) {
+    if (!mon || mon.defeated) continue;
+    if (!mon._base) mon._base = { hp: mon.maxHp || mon.hp || 10, atk: mon.atk || 5, def: mon.def || 0, speed: mon.speed || 10 };
+    const mult = severity * floorMultiplier(gate, mon.floor);
+    const wasFull = !(typeof mon.hp === 'number' && typeof mon.maxHp === 'number' && mon.hp < mon.maxHp);
+    const hpPct = wasFull ? 1 : Math.max(0, mon.hp / Math.max(1, mon.maxHp));
+    mon.maxHp = Math.max(5, Math.floor(mon._base.hp * mult));
+    mon.hp = Math.max(1, Math.floor(mon.maxHp * hpPct));
+    mon.atk = Math.max(1, Math.floor(mon._base.atk * mult));
+    mon.def = Math.floor(mon._base.def * mult * 0.8);
+    mon.speed = Math.max(1, Math.round(mon._base.speed * (0.8 + Math.min(severity, 6) * 0.2)));
+  }
+  if (gate.boss && !gate.boss.defeated) {
+    if (!gate.boss._base) {
+      const _rd = GATE_RANKS[gate.rank] || GATE_RANKS.E;
+      const _baseAtk = gate.boss.atk || Math.floor(((_rd.monsterRange || [15, 45])[1]) * 0.20);
+      gate.boss._base = { hp: gate.boss.maxHp || gate.boss.hp || 400, atk: _baseAtk, def: gate.boss.def || Math.floor(_baseAtk * 0.25) };
+    }
+    const mult = severity * floorMultiplier(gate, gate.totalFloors) * 1.25;
+    const wasFull = !(typeof gate.boss.hp === 'number' && typeof gate.boss.maxHp === 'number' && gate.boss.hp < gate.boss.maxHp);
+    const hpPct = wasFull ? 1 : Math.max(0, gate.boss.hp / Math.max(1, gate.boss.maxHp));
+    gate.boss.maxHp = Math.max(50, Math.floor(gate.boss._base.hp * mult));
+    gate.boss.hp = Math.max(1, Math.floor(gate.boss.maxHp * hpPct));
+    if (gate.boss._base.atk) gate.boss.atk = Math.max(1, Math.floor(gate.boss._base.atk * mult));
+    gate.boss.def = Math.floor((gate.boss._base.def || 0) * mult * 0.8);
+  }
+}
+
+// ── Push #88: HEALER AGGRO ─────────────────────────────────────────
+// After a hunter casts a heal/buff on a teammate, high-rank monsters (B+ and
+// every boss) remember them and may retarget their counter-attack onto the
+// healer instead of the attacker. Aggro lasts 3 monster turns.
+function markHealerAggro(gate, healerJid, healerName) {
+  if (!gate || !gate.raid) return;
+  gate.raid.healerAggro = { jid: healerJid, name: healerName, turns: 3, at: Date.now() };
+}
+function pickAggroTarget(gate, attackerJid, db, isBoss) {
+  const raid = gate && gate.raid;
+  const ag = raid && raid.healerAggro;
+  if (!ag || (ag.turns || 0) <= 0) return null;
+  const rankHigh = ['B', 'A', 'S', 'SS', 'DISASTER'].includes(String(gate.rank || '').toUpperCase());
+  if (!rankHigh && !isBoss) return null;
+  if (GKM.normaliseJid(ag.jid) === GKM.normaliseJid(attackerJid)) { ag.turns -= 1; return null; } // healer struck — normal counter
+  const chance = isBoss ? 70 : 55;
+  ag.turns -= 1;
+  if (ag.turns <= 0) delete raid.healerAggro;
+  if (Math.random() * 100 > chance) return null;
+  const healer = db && db.users && (db.users[ag.jid] || Object.values(db.users).find(u => u && u.jid && GKM.normaliseJid(u.jid) === GKM.normaliseJid(ag.jid)));
+  const gm = raid.members.find(m => GKM.normaliseJid(m.id) === GKM.normaliseJid(ag.jid));
+  if (!healer || !gm || (healer.stats?.hp ?? 0) <= 0) { delete raid.healerAggro; return null; }
+  return { jid: ag.jid, name: gm.name || healer.name || ag.name, player: healer, member: gm };
+}
+
+// ── Push #88: SUPPORT CAST (heal / buff a teammate) — no turn spent ──────
+// Resolves a heal- or buff-type skill from `caster` onto `target` (a party
+// member, may be the caster). Returns { ok, lines, healed, error }.
+function supportCast(caster, casterJid, target, targetJid, skillName, gate, db) {
+  const SC = require('../utils/SkillCatalog');
+  const res = SC.resolveSkill(caster, skillName, { allowLibrary: true });
+  if (!res.ok) return { ok: false, error: res.error };
+  const skill = res.skill, entry = res.entry || skill;
+  const type = String(entry.type || skill.type || '').toLowerCase();
+  const isHeal = type === 'heal' || Number(entry.healingPct) > 0;
+  const isBuff = type === 'buff' || (entry.buffs || []).length > 0;
+  if (!isHeal && !isBuff) return { ok: false, error: `*${skill.name}* is not a heal or buff — cast it on the monster with /skill ${skill.name}.`, notSupport: true };
+  const cd = SC.onCooldown(caster, entry);
+  if (!cd.ready) return { ok: false, error: `*${skill.name}* is on cooldown! (${Math.ceil(cd.msLeft / 1000)}s)` };
+  const cost = SC.effectiveCost(entry);
+  if ((caster.stats?.energy || 0) < cost) return { ok: false, error: `Not enough energy for *${skill.name}*! Need ${cost}.` };
+  caster.stats.energy = Math.max(0, (caster.stats.energy || 0) - cost);
+  SC.setCooldown(caster, entry);
+  let healPower = 1;
+  try { const CP = require('../utils/ClassPower'); healPower = 1 + ((CP.passiveMultipliers(caster).healPower || 0) / 100); } catch (e) {}
+  const lines = [];
+  const text = `${entry.effect || ''} ${entry.description || ''} ${skill.desc || ''}`.toLowerCase();
+  const party = /\b(all|entire|every|party|allies|team)\b/.test(text);
+  const targets = [];
+  if (party && gate && gate.raid && gate.raid.members) {
+    // Every living party member (including the caster).
+    for (const m of gate.raid.members) {
+      const u = db && db.users ? (db.users[m.id] || Object.values(db.users).find(x => x && x.jid && GKM.normaliseJid(x.jid) === GKM.normaliseJid(m.id))) : null;
+      if (u && (u.stats?.hp ?? 0) > 0) targets.push({ u, name: m.name || u.name });
+    }
+  }
+  if (!targets.length) targets.push({ u: target, name: target.name });
+  let healedTotal = 0;
+  const effMax = (pl) => { try { return require('../utils/GearSystem').effectiveMaxHp(pl); } catch (e) { return (pl.stats && pl.stats.maxHp) || 100; } };
+  for (const t of targets) {
+    const u = t.u;
+    if (isHeal) {
+      let pct = Number(entry.healingPct) || 20;
+      let recvBoost = 1;
+      try { const CP = require('../utils/ClassPower'); recvBoost = 1 + ((CP.passiveMultipliers(u).healReceived || 0) / 100); } catch (e) {}
+      const max = effMax(u);
+      const before = u.stats.hp || 0;
+      const amt = Math.max(1, Math.floor(max * pct / 100 * healPower * recvBoost));
+      u.stats.hp = Math.min(max, before + amt);
+      const got = u.stats.hp - before;
+      healedTotal += got;
+      lines.push(`💚 *${t.name}* +${got} HP → ${u.stats.hp}/${max}`);
+      // energy component ("and X% max energy")
+      const em = text.match(/(\d+)%\s*(?:max\s*)?energy/);
+      if (em && u.stats.maxEnergy) { const e = Math.floor(u.stats.maxEnergy * parseInt(em[1], 10) / 100); u.stats.energy = Math.min(u.stats.maxEnergy, (u.stats.energy || 0) + e); lines.push(`⚡ *${t.name}* +${e} energy`); }
+      if (/remov|clear|cleanse|purif/.test(text) && Array.isArray(u.statusEffects) && u.statusEffects.length) { const n = u.statusEffects.length; u.statusEffects = []; lines.push(`✨ *${t.name}* cleansed (${n} effect${n === 1 ? '' : 's'})`); }
+    }
+    if (isBuff) {
+      const UC = require('../utils/UnifiedCombat');
+      const buffs = (entry.buffs || []).length ? entry.buffs : [];
+      if (buffs.length) {
+        const notes = UC.applyMoveBuffs({ name: skill.name, buffs, debuffs: [], selfDebuffs: [] }, u, u);
+        for (const b of buffs) lines.push(`⬆️ *${t.name}* ${String(b.stat).toUpperCase()} +${Math.abs(Number(b.amount) || 0)}% (${b.duration || 2}t)`);
+        void notes;
+      }
+      const sh = text.match(/shield[^.]*?(\d+)%/);
+      if (sh) { const max = effMax(u); const amt = Math.floor(max * parseInt(sh[1], 10) / 100 * healPower); u.tempBuffs = u.tempBuffs || {}; u.tempBuffs.shield = { amount: amt, duration: 4 }; lines.push(`🛡️ *${t.name}* shielded for ${amt} HP`); }
+      const es = text.match(/restores?\s+(\d+)%\s*(?:of\s+their\s+)?(?:max\s*)?energy/);
+      if (es && u.stats.maxEnergy) { const e = Math.floor(u.stats.maxEnergy * parseInt(es[1], 10) / 100); u.stats.energy = Math.min(u.stats.maxEnergy, (u.stats.energy || 0) + e); lines.push(`⚡ *${t.name}* +${e} energy`); }
+    }
+  }
+  if (gate) markHealerAggro(gate, casterJid, caster.name);
+  return { ok: true, skill, lines, healed: healedTotal, party: targets.length > 1, isHeal, isBuff };
 }
 
 // ── Status ──────────────────────────────────────────────────────
@@ -773,6 +960,12 @@ function clearGate(gate, key, keyData, db, saveDatabase) {
   if (guild) {
     guild.treasury = (guild.treasury || 0) + guildNexus;
     guild.manaTreasury = (guild.manaTreasury || 0) + guildCrystals;
+    // Push #88: guild raid counters were never incremented → /guild info showed 0 forever.
+    guild.totalRaids = (guild.totalRaids || 0) + 1;
+    guild.raidsCleared = (guild.raidsCleared || 0) + 1;
+    guild.lastRaidClearedAt = Date.now();
+    guild.raidsByRank = guild.raidsByRank || {};
+    guild.raidsByRank[gate.rank || '?'] = (guild.raidsByRank[gate.rank || '?'] || 0) + 1;
     dest = guild.name || 'Guild';
     destinationText = `🏰 *${dest}* Treasury`;
   } else {
@@ -938,6 +1131,7 @@ module.exports = {
   MAX_PARTY,
   playerDamage,
   monsterDamage,
+  afterMonsterHit,
   lifeSteal,
   resolveCode,
   relationOf,
@@ -958,6 +1152,7 @@ module.exports = {
   tryCombatLock,
   releaseCombatLock,
   wipeGate,
+  applyMonsterScaling, floorMultiplier, severityLabel, markHealerAggro, pickAggroTarget, supportCast,
   GKM,
   GateManager,
   GATE_RANKS,

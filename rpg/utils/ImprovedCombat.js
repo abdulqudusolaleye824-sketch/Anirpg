@@ -152,6 +152,12 @@ class ImprovedCombat {
       }
     }
 
+    // Push #88: tempBuffs (from buff skills / supportCast) are real ATK too.
+    try {
+      const _tb = require('./UnifiedCombat').tempBuffPct ? require('./UnifiedCombat').tempBuffPct(attacker, 'atk') : 0;
+      if (_tb) effectiveAtk = Math.floor(effectiveAtk * (1 + _tb / 100));
+    } catch (e) {}
+
     const baseAtk = effectiveAtk + weaponBonus;
     const mult = parsedEffects.damageMultiplier || 1.0;
 
@@ -163,6 +169,13 @@ class ImprovedCombat {
     const skillLevelMult = 1 + (skillLevel - 1) * 0.08; // +8% per level
     const pctMult = (entry && entry.damagePct) ? (entry.damagePct / 100) : mult;
     const skillFlatDmg = (entry && entry.flatDamage) || skill.damage || 0;
+    // Push #88: a BUFF skill (e.g. "+100% ATK") is not a wasted turn any more —
+    // it strikes at its catalog damagePct AND applies the buff (same as the
+    // gate/PvP paths). Pure heals stay support-only.
+    if (!parsedEffects.damage && entry && String(entry.type || '').toLowerCase() === 'buff' && (entry.damagePct || 0) > 0) {
+      parsedEffects.damage = true;
+      parsedEffects.damageMultiplier = entry.damagePct / 100;
+    }
     let baseDamage = parsedEffects.damage
       ? Math.floor((baseAtk * pctMult + skillFlatDmg) * skillLevelMult)
       : 0;

@@ -211,6 +211,14 @@ function resolveWeeklyWar(db, weekKey, saveDatabase) {
     third: activeGuilds[2] || null
   };
 
+  // Push #88: war counters — every guild that scored fought; the top guild won.
+  for (const g of activeGuilds) { g.totalWars = (g.totalWars || 0) + 1; }
+  if (winners.first) { winners.first.wins = (winners.first.wins || 0) + 1; }
+  for (const g of activeGuilds) { g.podiums = g.podiums || { first: 0, second: 0, third: 0 }; }
+  if (winners.first) winners.first.podiums.first++;
+  if (winners.second) winners.second.podiums.second++;
+  if (winners.third) winners.third.podiums.third++;
+
   // 1. Award 1st Place (Gold Victory Card)
   const awarded = {};
   if (winners.first) {

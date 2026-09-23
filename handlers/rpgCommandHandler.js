@@ -920,7 +920,7 @@ module.exports = async (sock, msg, messageText, config, getDatabase, saveDatabas
       // Batch-39: owner auto-Pro scrapped — strip any leftover lifetime stamp.
       try { if (Perms.stripAutoPro(db, sender)) saveDatabase(); } catch(e) {}
       if (db.users?.[sender]) {
-        try { require('../rpg/utils/GearSystem').regenUnequippedDurability(db.users[sender]); } catch (e) {} // Push #87: silent rest-mending
+        try { if (require('../rpg/utils/GearSystem').regenUnequippedDurability(db.users[sender]) > 0) saveDatabase(); } catch (e) {} // Push #87/#88: silent rest-mending (slot #1 only)
         try {
           const { ensureTodayQuests } = require('../rpg/utils/QuestDispatcher');
           ensureTodayQuests(db.users[sender]);

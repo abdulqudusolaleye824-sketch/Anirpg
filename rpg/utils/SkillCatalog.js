@@ -331,7 +331,8 @@ function normalise(className, raw, index) {
   // otherwise ramp by index so late skills are meaningfully stronger.
   const statedPct = parsed.damageMultiplier ? Math.round(parsed.damageMultiplier * 100) : 0;
   const damagePct = isPassive ? 0
-    : (type === 'heal' || type === 'buff') ? (statedPct || 40)
+    : type === 'heal' ? (statedPct || 40)
+    : type === 'buff' ? (statedPct || 100) // Push #88: a buff skill still lands a full-strength strike, then the buff doubles what follows
     : (statedPct || 100 + index * 6);
 
   // Push #76: every description ends with a plain-language mechanics summary

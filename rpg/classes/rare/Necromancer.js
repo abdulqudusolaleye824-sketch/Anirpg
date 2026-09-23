@@ -15,5 +15,6 @@ module.exports = {
       { name: 'Corpse Explosion', type: 'damage',  maxPotency: 280, desc: 'Destroys a corpse for {p}% Magic Power AoE damage' },
       { name: 'Soul Drain',       type: 'damage',  maxPotency: 150, desc: 'Drains {p}% target HP, restores half to you' },
       { name: 'Bone Wall',        type: 'buff',    maxPotency: 60,  desc: 'Summons barrier absorbing {p}% of incoming damage' },
+      { name: 'Grave Chill',     type: 'passive', maxPotency: 20,  desc: 'Lifesteal +{p}%. Damage taken -10%' },
     ],
 };

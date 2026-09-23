@@ -15,5 +15,6 @@ module.exports = {
       { name: 'Phase Shift',   type: 'buff',    maxPotency: 80,  desc: 'Phases through attacks for 1 turn, counters for {p}% ATK' },
       { name: 'Soul Rend',     type: 'damage',  maxPotency: 300, desc: 'Bypasses all DEF: deals {p}% ATK directly to HP' },
       { name: 'Phantom Mark',  type: 'passive', maxPotency: 20,  desc: 'After entering phase, next attack ignores {p}% DEF' },
+      { name: 'Wraith Venom',    type: 'damage',  maxPotency: 160, desc: '{p}% ATK. Inflict poison for 3 turns' },
     ],
 };

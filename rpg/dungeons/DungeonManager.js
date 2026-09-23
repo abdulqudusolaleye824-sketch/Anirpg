@@ -164,11 +164,35 @@ function _getRankByFloor(floor) {
   return 'C';
 }
 
-function scaleMonsterForFloor(baseMonster, playerLevel, floor) {
-  // Gentler scaling — monsters should be beatable at the required level
-  const floorMult  = 1 + (floor - 1) * 0.10;  // was 0.18
-  const levelMult  = 1 + (playerLevel - 1) * 0.03;  // was 0.05
-  const combined   = floorMult * levelMult;
+// Push #88: dungeon monsters are calibrated to the PARTY'S TOTAL STATS +
+// hunter levels (gear, titles, pets, passives included) — up to 10× the base
+// monster, so the tower is a real threat at every rank. Every floor climbs.
+function partySeverity(members) {
+  const list = (Array.isArray(members) ? members : [members]).filter(Boolean);
+  if (!list.length) return 1;
+  let total = 0, lvl = 0;
+  for (const u of list) {
+    let ts = null;
+    try { ts = require('./GateRaid').totalStatsOf(u, u.jid || u.id); } catch (e) {}
+    if (!ts) { const st = u.stats || {}; ts = { atk: st.atk || 10, def: st.def || 5, maxHp: st.maxHp || 100, speed: st.speed || 10, level: u.level || 1 }; }
+    total += ts.atk + ts.def + ts.maxHp / 8 + ts.speed;
+    lvl += Number(u.level) || 1;
+  }
+  const n = list.length;
+  const avgLvl = lvl / n;
+  // A "baseline" hunter for this content: ~ (60 + 4×level) ATK-equivalent total
+  const expectedPer = 260 + avgLvl * 14;
+  const statRatio = total / Math.max(1, expectedPer * n);
+  const lvlRatio = avgLvl / 20;
+  const ratio = (statRatio * 0.7 + lvlRatio * 0.3) * Math.sqrt(n);
+  let sev = 0.55 + ratio * 0.75;
+  return Math.round(Math.max(1.0, Math.min(10.0, sev)) * 100) / 100;
+}
+
+function scaleMonsterForFloor(baseMonster, playerLevel, floor, severity = 1) {
+  const floorMult  = 1 + (floor - 1) * 0.15;  // Push #88: steeper climb per floor
+  const levelMult  = 1 + (playerLevel - 1) * 0.03;
+  const combined   = floorMult * levelMult * Math.max(1, Number(severity) || 1);
   return {
     name: baseMonster.name,
     emoji: baseMonster.emoji,
@@ -188,13 +212,15 @@ function scaleMonsterForFloor(baseMonster, playerLevel, floor) {
   };
 }
 
-function scaleBossForFloor(bossDef, playerLevel, floor) {
-  const levelMult  = 1 + (playerLevel - 1) * 0.03;  // was 0.04
+function scaleBossForFloor(bossDef, playerLevel, floor, severity = 1) {
+  const levelMult  = 1 + (playerLevel - 1) * 0.03;
   const isFinal    = floor === 20;
-  const finalMult  = isFinal ? 1.8 : 1;  // was 2.5
-  const hp  = Math.floor(bossDef.baseHp  * levelMult * finalMult * 0.45);  // 45% of original
-  const atk = Math.floor(bossDef.baseAtk * levelMult * finalMult * 0.45);
-  const def = Math.floor(bossDef.baseDef * levelMult * finalMult * 0.45);
+  const finalMult  = isFinal ? 1.8 : 1;
+  const floorMult  = 1 + (floor - 1) * 0.08; // Push #88: later bosses hit harder
+  const sev = Math.max(1, Number(severity) || 1);
+  const hp  = Math.floor(bossDef.baseHp  * levelMult * finalMult * floorMult * sev * 0.45);
+  const atk = Math.floor(bossDef.baseAtk * levelMult * finalMult * floorMult * sev * 0.45);
+  const def = Math.floor(bossDef.baseDef * levelMult * finalMult * floorMult * sev * 0.45);
   return {
     name: bossDef.name,
     emoji: bossDef.emoji,
@@ -240,22 +266,32 @@ class DungeonManager {
   static getAllTypes() { return Object.values(DUNGEON_TYPES); }
   static isBossFloor(floor) { return floor % 5 === 0; }
 
-  static getFloorMonster(dungeonTypeId, floor, playerLevel) {
+  // Push #88: `members` (array of player objects, or one player) drives the
+  // severity — pass it from every caller so the tower scales to the party.
+  static getFloorMonster(dungeonTypeId, floor, playerLevel, members = null) {
     const dtype = DUNGEON_TYPES[dungeonTypeId];
     if (!dtype) return null;
     const pool = dtype.monsters;
     const idx  = Math.min(Math.floor((floor - 1) / 4), pool.length - 1);
     const vari = floor % pool.length;
-    return scaleMonsterForFloor(pool[(idx + vari) % pool.length], playerLevel, floor);
+    const sev = members ? partySeverity(members) : 1;
+    const m = scaleMonsterForFloor(pool[(idx + vari) % pool.length], playerLevel, floor, sev);
+    m.severity = sev;
+    return m;
   }
 
-  static getFloorBoss(dungeonTypeId, floor, playerLevel) {
+  static getFloorBoss(dungeonTypeId, floor, playerLevel, members = null) {
     const dtype = DUNGEON_TYPES[dungeonTypeId];
     if (!dtype) return null;
     const bossDef = dtype.floorBosses[floor];
     if (!bossDef) return null;
-    return scaleBossForFloor(bossDef, playerLevel, floor);
+    const sev = members ? partySeverity(members) : 1;
+    const b = scaleBossForFloor(bossDef, playerLevel, floor, sev);
+    b.severity = sev;
+    return b;
   }
+
+  static partySeverity(members) { return partySeverity(members); }
 
   static getFloorRewards(floor, playerLevel, isBoss) {
     return calculateFloorRewards(floor, playerLevel, isBoss);

@@ -309,7 +309,7 @@ module.exports = {
           `🛍️ Guild Shop: *${shopL > 0 ? `Lv.${shopL} (${disc}% OFF)` : 'Locked'}*`,
           `💠 Treasury: *${UI.num(playerGuild.treasury)}* Nexus · 💎 *${UI.num(playerGuild.manaTreasury)}* Mana Stones`,
           ``,
-          `📊 *STATS* — 🏰 Raids *${UI.num(playerGuild.totalRaids)}* · ⚔️ Wars *${warsF}* · 🏆 Won *${warsW}*`,
+          `📊 *STATS* — 🏰 Raids *${UI.num(playerGuild.totalRaids || 0)}* (✅ ${UI.num(playerGuild.raidsCleared || 0)} cleared · 💀 ${UI.num(playerGuild.raidsWiped || 0)} wiped) · ⚔️ Wars *${warsF}* · 🏆 Won *${warsW}*`,
           ``,
           `📌 /guild upgrade · /guild shop · /guild members · /guild list`,
           `✏️ /guild bio · /guild rename · /guild icon (reply to image, leader)`,

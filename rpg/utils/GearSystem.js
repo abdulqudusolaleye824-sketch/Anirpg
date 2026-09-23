@@ -145,25 +145,35 @@ function tickDurability(player) {
   return broken;
 }
 
-// Push #87: UNEQUIPPED gear & weapons passively self-mend while resting in
-// the inventory — +1 durability per hour (Pro: per 30 min). Silent; lazy
-// (computed from elapsed time on every command), so no timers needed.
+// Push #87/#88: passive self-mending while resting in the bag — +1 durability
+// per hour (Pro: per 30 min). Push #88: ONLY the item in slot #1 of the
+// weapons bag (and slot #1 of the gear bag) mends — use /swap to choose which.
+// Lazy (elapsed-time) so it needs no timers; index.js also ticks it every
+// 10 min for everyone so it restores even for hunters who go quiet.
+function mendingSlots(player) {
+  const items = player && player.inventory && Array.isArray(player.inventory.items) ? player.inventory.items : [];
+  const w = items.find(i => i && i.isWeapon) || null;
+  const g = items.find(i => i && (i.isGear || i.type === 'gear') && !i.isWeapon) || null;
+  return { weapon: w, gear: g };
+}
 function regenUnequippedDurability(player, now = Date.now()) {
   if (!player) return 0;
   const items = player.inventory && Array.isArray(player.inventory.items) ? player.inventory.items : [];
   if (!items.length) { player._durRegenAt = now; return 0; }
   const isPro = !!((player.isPro || player.proStatus) && player.proExpiresAt && player.proExpiresAt > now);
   const stepMs = (isPro ? 30 : 60) * 60 * 1000;
-  const last = player._durRegenAt || now;
+  let last = Number(player._durRegenAt) || 0;
+  if (!last || last > now) { player._durRegenAt = now; return 0; }
   const steps = Math.floor((now - last) / stepMs);
-  if (steps <= 0) { if (!player._durRegenAt) player._durRegenAt = now; return 0; }
+  if (steps <= 0) return 0;
   let healed = 0;
-  for (const it of items) {
+  const slots = mendingSlots(player);
+  for (const it of [slots.weapon, slots.gear]) {
     if (!it || typeof it !== 'object') continue;
-    const max = it.maxDurability;
-    if (max == null || it.durability == null || it.durability >= max) continue;
-    const before = it.durability;
-    it.durability = Math.min(max, it.durability + steps);
+    const max = Number(it.maxDurability);
+    if (!max || it.durability == null || it.durability >= max) continue;
+    const before = Number(it.durability) || 0;
+    it.durability = Math.min(max, before + steps);
     healed += it.durability - before;
   }
   player._durRegenAt = last + steps * stepMs;
@@ -253,6 +263,7 @@ function effectiveMaxHp(player) {
 
 module.exports = {
   regenUnequippedDurability,
+  mendingSlots,
   effectiveMaxHp,
   GEAR_SLOTS, SLOT_INFO, RARITY_CONFIG,
   generateGear, generateGearForSlot,

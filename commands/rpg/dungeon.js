@@ -73,7 +73,23 @@ function getDialogue(name) {
 }
 
 // ─── MONSTER AI ────────────────────────────────────────────────
-function executeMonsterAI(monster, player) {
+function executeMonsterAI(monster, player, ctx = null) {
+  // Push #88: healer aggro — a boss / high-severity monster may swing at the
+  // party's healer instead (ctx = { dungeon, db }).
+  let aggroNote = '';
+  try {
+    const ag = ctx && ctx.dungeon && ctx.dungeon.healerAggro;
+    if (ag && ag.turns > 0 && ctx.db && ag.id && ag.id !== player.jid && ag.id !== ctx.senderJid) {
+      ag.turns -= 1;
+      const strong = monster.isBoss || (monster.severity || 1) >= 2;
+      const healer = ctx.db.users && ctx.db.users[ag.id];
+      if (strong && healer && (healer.stats?.hp ?? 0) > 0 && Math.random() < (monster.isBoss ? 0.7 : 0.5)) {
+        const out = executeMonsterAI(monster, healer, null);
+        return `\n🎯 *AGGRO!* ${monster.name} ignores you and lunges at the healer *${healer.name}*!` + out;
+      }
+      if (ag.turns <= 0) delete ctx.dungeon.healerAggro;
+    }
+  } catch (e) {}
   const mPro = UI.isPro(player);
   const FRAME = mPro ? UI.PRO_BAR : UI.FREE_BAR;
   const useSkill = Math.random() < 0.75 && monster.abilities?.length > 0;
@@ -93,12 +109,21 @@ function executeMonsterAI(monster, player) {
     return `\n${FRAME}\n🔄 ${monster.name.toUpperCase()}'S TURN${mPro ? ' 💎' : ''}\n${FRAME}\n${monster.emoji} ${monster.name} ${ability ? 'uses *' + ability + '*!' : 'attacks!'}\n💬 "${line}"\n💨 *DODGED!* You were too fast!\n❤️ Your HP: ${player.stats.hp}/${player.stats.maxHp}\n${FRAME}`;
   }
 
-  const finalDmg = Math.max(8, baseDmg - defReduc);
+  let finalDmg = Math.max(8, baseDmg - defReduc);
+  // Push #88: class passives — damage taken reduction, survive-lethal, regen, reflect.
+  let _pm = null; try { _pm = require('../../rpg/utils/ClassPower').passiveMultipliers(player); } catch (e) {}
+  if (_pm && _pm.dmgTaken) finalDmg = Math.max(1, Math.floor(finalDmg * (1 + _pm.dmgTaken / 100)));
   player.stats.hp = Math.max(0, player.stats.hp - finalDmg);
+  let passiveLines = '';
+  if (_pm) {
+    if (_pm.surviveLethal && player.stats.hp <= 0 && (!player._lethalUsedAt || Date.now() - player._lethalUsedAt > 2 * 3600e3)) { player.stats.hp = 1; player._lethalUsedAt = Date.now(); passiveLines += `\n🛡️ *Unbreakable!* You refuse to fall — 1 HP.`; }
+    if (_pm.reflect > 0 && monster.stats) { const r = Math.max(1, Math.floor(finalDmg * _pm.reflect / 100)); monster.stats.hp = Math.max(0, monster.stats.hp - r); passiveLines += `\n↩️ Counterguard reflects ${r} damage!`; }
+    if (_pm.regenFlat > 0 && player.stats.hp > 0) { const b = player.stats.hp; player.stats.hp = Math.min(player.stats.maxHp, b + _pm.regenFlat); if (player.stats.hp > b) passiveLines += `\n🌿 Passive regen +${player.stats.hp - b} HP`; }
+  }
 
   let msg = `\n${FRAME}\n🔄 ${monster.name.toUpperCase()}'S TURN${mPro ? ' 💎' : ''}\n${FRAME}\n`;
   msg += `${monster.emoji} ${monster.name} ${ability ? 'uses *' + ability + '*!' : 'attacks!'}\n💬 "${line}"\n${FRAME}\n`;
-  msg += `💥 You take *${finalDmg}* damage!\n❤️ Your HP: ${Math.max(0, player.stats.hp)}/${player.stats.maxHp}\n${FRAME}`;
+  msg += `💥 You take *${finalDmg}* damage!${passiveLines}\n❤️ Your HP: ${Math.max(0, player.stats.hp)}/${player.stats.maxHp}\n${FRAME}`;
   return msg;
 }
 
@@ -353,7 +378,7 @@ module.exports = {
         startTime:       Date.now(),
         floorsCleared:   [],
         awaitingAdvance: false,
-        currentMonster:  DungeonManager.getFloorMonster(selected.id, 1, avgLevel),
+        currentMonster:  DungeonManager.getFloorMonster(selected.id, 1, avgLevel, members),
       };
       party._avgLevel = avgLevel;
 
@@ -426,8 +451,8 @@ module.exports = {
 
         const isBoss = nextFloor % 5 === 0;
         const monster = isBoss
-          ? DungeonManager.getFloorBoss(sd.dungeonTypeId, nextFloor, player.level)
-          : DungeonManager.getFloorMonster(sd.dungeonTypeId, nextFloor, player.level);
+          ? DungeonManager.getFloorBoss(sd.dungeonTypeId, nextFloor, player.level, [player])
+          : DungeonManager.getFloorMonster(sd.dungeonTypeId, nextFloor, player.level, [player]);
 
         // Scale down for solo
         monster.stats.hp = Math.floor(monster.stats.hp * 0.5);
@@ -470,8 +495,8 @@ module.exports = {
       const avgLevel = party._avgLevel || Math.floor(members.reduce((s,m) => s + m.level, 0) / members.length);
       const isBoss   = DungeonManager.isBossFloor(nextFloor);
       const monster  = isBoss
-        ? DungeonManager.getFloorBoss(dungeon.typeId, nextFloor, avgLevel)
-        : DungeonManager.getFloorMonster(dungeon.typeId, nextFloor, avgLevel);
+        ? DungeonManager.getFloorBoss(dungeon.typeId, nextFloor, avgLevel, members)
+        : DungeonManager.getFloorMonster(dungeon.typeId, nextFloor, avgLevel, members);
 
       dungeon.currentFloor    = nextFloor;
       dungeon.currentMonster  = monster;
@@ -725,7 +750,7 @@ module.exports = {
         }
 
         // ── Monster counter-attack ─────────────────────────
-        sections.push({ text: executeMonsterAI(monster, player) });
+        sections.push({ text: executeMonsterAI(monster, player, { dungeon: dunPty || dunSd, db, senderJid: sender }) });
 
         if (player.stats.hp <= 0) {
           player.stats.hp = 1;
@@ -1046,7 +1071,7 @@ module.exports = {
         return handleMonsterDefeat(sock, chatId, party, monster, dungeon, db, saveDatabase, msg, sender, log);
       }
 
-      log += executeMonsterAI(monster, player);
+      log += executeMonsterAI(monster, player, { dungeon, db, senderJid: sender });
 
       const mfx = StatusEffectManager.processTurnEffects(monster);
       if (mfx.messages.length) log += '\n' + mfx.messages.join('\n') + '\n';
@@ -1186,11 +1211,49 @@ module.exports = {
       if (!party || party.status !== 'active') return sock.sendMessage(chatId, { text: '❌ No active dungeon!' }, { quoted: msg });
       if (party.dungeon.awaitingAdvance) return sock.sendMessage(chatId, { text: '✅ Floor cleared! /dungeon advance or /dungeon leave' }, { quoted: msg });
 
-      const skillName = args.slice(1).join(' ').toLowerCase();
+      const skillName = args.slice(1).join(' ').replace(/@\S+/g, '').trim().toLowerCase();
       if (!skillName) return sock.sendMessage(chatId, { text: '❌ Usage: /<classcmd> [skill]' }, { quoted: msg });
 
       const dungeon = party.dungeon;
       const monster = dungeon.currentMonster;
+
+      // Push #88: SUPPORT CAST in the tower — heal/buff a teammate (or self)
+      // without spending the turn; the monster does not counter.
+      try {
+        const SCd = require('../../rpg/utils/SkillCatalog');
+        const _pre = SCd.resolveSkill(player, skillName, { allowLibrary: true });
+        const _e = _pre.ok ? (_pre.entry || _pre.skill) : null;
+        const _t = _e ? String(_e.type || '').toLowerCase() : '';
+        if (_e && (_t === 'heal' || _t === 'buff')) {
+          const _mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
+          let tgtJid = sender, tgt = player;
+          if (_mentioned.length) {
+            const mj = _mentioned[0];
+            const num = (j) => String(j || '').split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
+            const inParty = (party.members || []).find(m => num(m.id) === num(mj) || m.id === mj);
+            if (!inParty) return sock.sendMessage(chatId, { text: `❌ That hunter is not in your dungeon party.` }, { quoted: msg });
+            tgt = db.users[inParty.id] || db.users[mj];
+            if (!tgt) return sock.sendMessage(chatId, { text: `❌ Could not find that hunter's profile.` }, { quoted: msg });
+            tgtJid = inParty.id;
+          }
+          const GRs = require('../../rpg/dungeons/GateRaid');
+          const fakeGate = { raid: { members: (party.members || []).map(m => ({ id: m.id, name: db.users[m.id]?.name || m.name })) }, rank: dungeon.rank || 'E' };
+          const _sc = GRs.supportCast(player, sender, tgt, tgtJid, skillName, fakeGate, db);
+          if (!_sc.ok) return sock.sendMessage(chatId, { text: `❌ ${_sc.error}` }, { quoted: msg });
+          // healer aggro in the tower: monster remembers the healer for 3 turns
+          dungeon.healerAggro = { id: sender, name: player.name, turns: 3 };
+          saveDatabase();
+          const _self = tgtJid === sender && !_sc.party;
+          return sock.sendMessage(chatId, { text: [
+            `${_sc.isHeal ? '💚' : '✨'} *SUPPORT — ${_sc.skill.name}*`,
+            `🙌 *${player.name}* ${_sc.isHeal ? 'heals' : 'buffs'} ${_sc.party ? 'the *whole party*' : _self ? 'themself' : `*${tgt.name}*`}!`,
+            ..._sc.lines,
+            ``,
+            `🕊️ Support casts don't use your turn — the monster does not counter.`,
+          ].join('\n'), mentions: _self ? [] : [tgtJid] }, { quoted: msg });
+        }
+      } catch (e) { console.error('[dungeon] support cast:', e.message); }
+
       const fx      = StatusEffectManager.processTurnEffects(player);
       let log = '';
       if (fx.messages.length) log += fx.messages.join('\n') + '\n\n';
@@ -1217,7 +1280,7 @@ module.exports = {
         return handleMonsterDefeat(sock, chatId, party, monster, dungeon, db, saveDatabase, msg, sender, log);
       }
 
-      log += executeMonsterAI(monster, player);
+      log += executeMonsterAI(monster, player, { dungeon, db, senderJid: sender });
       if (player.stats.hp <= 0) return handlePlayerDeath(sock, chatId, party, dungeon, db, saveDatabase, msg, sender, log);
 
       saveDatabase();

@@ -637,8 +637,10 @@ function skillReady(player, skill) {
   return { ok: true };
 }
 function setSkillCooldown(player, skill) {
+  // Push #88: same key scheme as SkillCatalog.onCooldown (lowercase) so the gate actually enforces.
+  try { return require('../../rpg/utils/SkillCatalog').setCooldown(player, skill); } catch (e) {}
   if (!player.skillCooldowns) player.skillCooldowns = {};
-  player.skillCooldowns[skill.name] = Date.now() + ((skill.cooldown || 0) * 1000);
+  player.skillCooldowns[String(skill.name || '').toLowerCase()] = Date.now() + ((skill.cooldown || 0) * 1000);
 }
 
 // Battle types: 'dungeon_solo', 'dungeon_party', 'boss', 'pvp', 'guild_raid'

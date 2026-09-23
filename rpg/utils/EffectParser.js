@@ -193,7 +193,8 @@ class EffectParser {
       const lLine = line.toLowerCase();
       // ATK buff
       // Push #76: also accept "ATK +50%" / "DEF +50% for 3 turns" (class-file phrasing)
-      const atkM = line.match(/\+(\d+)%\s+(?:all\s+stats?|atk|attack)/i) || line.match(/\b(?:atk|attack|all\s+stats?)\s*\+(\d+)%/i);
+      // Push #88: also "Boosts/Increases/Raises ATK by 30%" and "Party ATK +20%"
+      const atkM = line.match(/\+(\d+)%\s+(?:all\s+stats?|atk|attack)/i) || line.match(/\b(?:atk|attack|all\s+stats?)\s*\+(\d+)%/i) || line.match(/(?:boosts?|increases?|raises?|gains?)\s+(?:your\s+|party\s+|all\s+)?(?:atk|attack|all\s+stats?)\s+by\s+(\d+)%/i);
       if (atkM) {
         const dur = (line.match(/(?:(\d+)\s+turn)/i)||[])[1] || 3;
         // avoid adding duplicate
@@ -202,7 +203,7 @@ class EffectParser {
         }
       }
       // DEF buff — only "+" not "-"
-      const defM = line.match(/\+(\d+)%\s+(?:all\s+stats?|def(?:ense)?)/i) || line.match(/\b(?:def(?:ense)?|all\s+stats?)\s*\+(\d+)%/i);
+      const defM = line.match(/\+(\d+)%\s+(?:all\s+stats?|def(?:ense)?)/i) || line.match(/\b(?:def(?:ense)?|all\s+stats?)\s*\+(\d+)%/i) || line.match(/(?:boosts?|increases?|raises?|gains?)\s+(?:your\s+|party\s+|all\s+)?(?:def(?:ense)?|all\s+stats?)\s+by\s+(\d+)%/i);
       if (defM) {
         const dur = (line.match(/(\d+)\s+turn/i)||[])[1] || 3;
         if (!effects.buffs.find(b => b.stat === 'def' && b.amount === parseInt(defM[1]))) {
@@ -210,7 +211,7 @@ class EffectParser {
         }
       }
       // SPD buff
-      const spdM = line.match(/\+(\d+)%\s+(?:spd|speed)/i) || line.match(/\b(?:spd|speed)\s*\+(\d+)%/i);
+      const spdM = line.match(/\+(\d+)%\s+(?:spd|speed)/i) || line.match(/\b(?:spd|speed)\s*\+(\d+)%/i) || line.match(/(?:boosts?|increases?|raises?)\s+(?:your\s+|party\s+)?(?:spd|speed)\s+by\s+(\d+)%/i);
       if (spdM) {
         if (!effects.buffs.find(b => b.stat === 'speed')) {
           const dur = (line.match(/(\d+)\s+turn/i)||[])[1] || 3;

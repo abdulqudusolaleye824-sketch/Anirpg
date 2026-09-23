@@ -691,6 +691,25 @@ const classDefinitions = {
     ]
   },
 
+  // Push #88: Monster-class hunters had NO weapon ladder → recon/ensureClassWeapon left them empty-handed.
+  Monster: {
+    rarity: 'monster',
+    energyType: 'Primal',
+    energyColor: '🧬',
+    baseStats: {
+      hp: 120, maxHp: 120, atk: 28, def: 12,
+      energy: 90, maxEnergy: 90, speed: 105,
+    },
+    weapon: { name: 'Primal Claws', bonus: 12 },
+    levelWeapons: [
+      { level: 10, name: 'Razor Talons', bonus: 18 },
+      { level: 20, name: 'Venom Fangs', bonus: 26 },
+      { level: 30, name: 'Bone Crushers', bonus: 34 },
+      { level: 40, name: 'Abyssal Maw', bonus: 42 },
+      { level: 50, name: 'Apex Predator Claws', bonus: 52 },
+    ],
+    skills: { active: [], passive: [] },
+  },
   Senku: {
     rarity: 'divine',
     energyType: 'Science',

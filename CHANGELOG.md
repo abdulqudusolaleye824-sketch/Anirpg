@@ -1,3 +1,18 @@
+## 1.0.91 — Push #88 (2026-09-23)
+- Gate raids: 50% accumulated loot goes to GUILD treasury only on full party wipe (never to a player).
+- /recon now re-provisions weapon ladder + passives for the new class (SNAP_KEYS include weapon/passives for undo).
+- Healers: heal/buff teammates via support cast; teammate heals don't consume the turn; boss / high-severity monsters may retarget the healer afterwards (gates + tower dungeons).
+- Monsters calibrate to total party accumulated stats + hunter level (severity 1–10×), scale per floor; tower DungeonManager.partySeverity.
+- Buffs are real: tempBuffs feed UnifiedCombat, GateRaid.playerDamage and ImprovedCombat; buff skills strike at full damagePct AND apply the buff (no more 0-damage "+100% ATK").
+- EffectParser: "Boosts ATK by 30%" phrasing parsed → Battle Cry etc. now apply.
+- Dispatcher cooldowns use SkillCatalog key (were never enforced).
+- Class provisioning: passives for Shaman/Assassin/Necromancer/Chronomancer; poison/burn skills for Shaman/Warlord/Chronomancer/Phantom; Monster class weapon ladder. All 25 classes: weapon+passive+DoT+20 skills.
+- Durability: passive +1/hour (Pro 30 min) now ONLY mends slot #1 of the weapons bag and slot #1 of the gear bag; global 10-min tick in index.js so it restores even offline (stale-stamp bug fixed). NEW /swap <#a> <#b> (and /swap gear …) to reorder bag slots; /weapons marks the mending slot.
+- Profile: pets count + active pet read from PetManager (always showed 0).
+- Guild info: totalRaids (cleared/wiped) now incremented on gate clear/wipe; totalWars/wins incremented on weekly war resolution.
+- Blank bubble: utils/outgoingGuard inspects every outgoing proto (relayMessage override blocks non-renderable payloads); /api/sends ops log.
+- test_push88: 29/29.
+
 # AniRPG — Patch Drop (features + bug fixes + UI restyle)
 
 ## Push #87 — v1.0.90 (2026-09-22) — WEEKLY TRACKING, RAID HP/CRIT FIX, SEARCH CARDS, SHARED CATCH

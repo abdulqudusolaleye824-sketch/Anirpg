@@ -137,8 +137,9 @@ function calcMoveDamage(attacker, defender, move) {
   let _tA = 0, _tD = 0, _gA = 1, _gD = 1;
   try { const TS = require('./TitleSystem'); _tA = TS.getEquippedBoost(attacker).atk || 0; _tD = TS.getEquippedBoost(defender).def || 0; } catch (e) {}
   try { const PM = require('./PetManager'); _gA = PM.lastGiftMultiplier(attacker) || 1; _gD = PM.lastGiftMultiplier(defender) || 1; } catch (e) {}
-  const atkBase = ((attacker.stats?.atk || attacker.stats?.attack || 50) + _gearAtk + _wpnAtk + _tA) * _gA;
-  const defBase = ((defender.stats?.def || defender.stats?.defense || 20) + _gearDef + _wpnDef + _tD) * _gD;
+  // Push #88: kill-stack flat ATK (Devourer) + armour penetration passives (Ranger/Phantom).
+  const atkBase = ((attacker.stats?.atk || attacker.stats?.attack || 50) + _gearAtk + _wpnAtk + _tA + ((_pmA && _pmA.atkFlat) || 0)) * _gA;
+  const defBase = ((defender.stats?.def || defender.stats?.defense || 20) + _gearDef + _wpnDef + _tD) * _gD * (1 - Math.min(0.6, ((_pmA && _pmA.armorPen) || 0) / 100));
 
   // Multipliers from attack pattern
   const atkMult = move.atkMult || 1;
@@ -175,7 +176,7 @@ function calcMoveDamage(attacker, defender, move) {
   const statusAtkMult = atkMods.atkMod;
   const statusDefMult = defMods.defMod;
 
-  const finalAtk = effectiveAtk * statusAtkMult;
+  const finalAtk = effectiveAtk * statusAtkMult * (move.isSkill && _pmA && _pmA.skillDmg ? 1 + _pmA.skillDmg / 100 : 1);
   const finalDef = effectiveDef * statusDefMult;
 
   // Base formula: (ATK - DEF/2) * dmgMult with minimum

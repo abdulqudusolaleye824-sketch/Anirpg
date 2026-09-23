@@ -296,6 +296,8 @@ async function getWaVersion() {
 // registry is the bulletproof sibling-recognition layer: no JID matching,
 // no LID/PN ambiguity — if we sent it, we ignore it.
 const _sentIds = new Map(); // id -> timestamp
+const { inspectOutgoing, logSend: _logSend, getSendLog } = require('../utils/outgoingGuard'); // Push #88
+
 function _recordSentId(id) {
   if (!id) return;
   try {
@@ -1468,7 +1470,40 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
         }
       }
       try { _recordSentId(_res?.key?.id); } catch (e) {}
+      // Push #88: post-send proto audit — if what Baileys actually built has
+      // no renderable content, say so loudly in the log (the pre-send guard
+      // above should make this impossible; this proves it).
+      try {
+        const c = content || {};
+        const kind = c.text != null ? 'text' : c.image ? 'image' : c.sticker ? 'sticker' : c.audio ? 'audio' : c.video ? 'video' : c.document ? 'document' : c.react ? 'react' : c.delete ? 'delete' : c.edit ? 'edit' : c.poll ? 'poll' : Object.keys(c)[0] || '?';
+        let status = _res && _res.rateDropped ? 'dropped' : 'ok';
+        if (_res && _res.message) { const v = inspectOutgoing(_res.message); if (v && !v.ok) { status = `SENT-BLANK:${v.reason}`; console.error(`⚠️ [${personalityKey}] sent a message with NO renderable content to ${jid} kind=${kind} keys=${v.keys}`); } }
+        _logSend(personalityKey, jid, kind, status, c.text ?? c.caption ?? '');
+      } catch (e) {}
       return _res;
+    };
+  } catch (e) {}
+
+  // ── Push #88: WIRE-LEVEL empty guard + send log ────────────────────
+  // Every send (sendMessage, interactive relays, edits, whatever path) ends
+  // in sock.relayMessage with the final proto. Inspect THAT: unwrap the
+  // containers, find the renderable payload, and refuse anything that would
+  // paint a bubble with no letter/digit in it — or a bubble of a type no
+  // phone can render. Every accepted send is logged to a ring buffer
+  // (/api/sends) so a blank bubble can always be traced to its origin.
+  try {
+    const _rawRelay = sock.relayMessage.bind(sock);
+    sock.relayMessage = async (jid, message, options = {}) => {
+      let verdict = null;
+      try { verdict = inspectOutgoing(message); } catch (e) { verdict = null; }
+      if (verdict && !verdict.ok) {
+        console.error(`🚫 [${personalityKey}] blocked ${verdict.reason} send to ${jid} (${verdict.kind}) keys=${verdict.keys}`);
+        _logSend(personalityKey, jid, verdict.kind, `BLOCKED:${verdict.reason}`, verdict.preview);
+        return { key: { remoteJid: jid, id: null, fromMe: true }, blocked: true, reason: verdict.reason };
+      }
+      const r = await _rawRelay(jid, message, options);
+      try { _logSend(personalityKey, jid, (verdict && verdict.kind) || '?', 'ok', (verdict && verdict.preview) || ''); } catch (e) {}
+      return r;
     };
   } catch (e) {}
 
@@ -2578,6 +2613,7 @@ module.exports = {
   _bootstrapDispatcher,
   _isOwnBotNumber,
   _recordSentId,
+  getSendLog, inspectOutgoing,
   _wasSentByUs,
   _sockets: () => botSockets,
   _pairing: () => pairingSessions,   // introspection/test hook

@@ -15,5 +15,6 @@ module.exports = {
       { name: 'War Cry',     type: 'buff',    maxPotency: 35,  desc: 'Party ATK +{p}% and DEF +15% for 3 turns' },
       { name: 'Cleave',      type: 'damage',  maxPotency: 160, desc: 'Hits all enemies for {p}% ATK' },
       { name: 'Iron Will',   type: 'passive', maxPotency: 30,  desc: 'Cannot be killed below 1 HP for 1 turn per fight' },
+      { name: 'Scorched Earth',  type: 'damage',  maxPotency: 150, desc: '{p}% ATK. Inflict burn for 3 turns' },
     ],
 };

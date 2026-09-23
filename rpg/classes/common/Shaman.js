@@ -15,5 +15,7 @@ module.exports = {
       { name: 'Spirit Link',     type: 'buff',    maxPotency: 20,  desc: 'Party ATK +{p}% for 2 turns' },
       { name: 'Hex',             type: 'debuff',  maxPotency: 35,  desc: 'Target DEF -{p}% for 3 turns' },
       { name: 'Ancestral Wrath', type: 'damage',  maxPotency: 260, desc: 'Deals {p}% of combined ATK + Magic Power' },
+      { name: 'Serpent Venom',   type: 'damage',  maxPotency: 140, desc: '{p}% ATK. Inflict poison for 3 turns' },
+      { name: 'Spirit Ward',     type: 'passive', maxPotency: 15,  desc: 'Damage taken -{p}%. Regenerates 20 HP per turn' },
     ],
 };

@@ -15,5 +15,7 @@ module.exports = {
       { name: 'Time Stop',     type: 'debuff',  maxPotency: 2,   desc: 'Freezes target for {p} turn(s). They cannot act.' },
       { name: 'Rewind',        type: 'heal',    maxPotency: 40,  desc: 'Restores {p}% HP to self and removes 1 debuff' },
       { name: 'Haste',         type: 'buff',    maxPotency: 50,  desc: 'SPD +{p}% for 3 turns, grants second action next turn' },
+      { name: 'Entropy Bolt',    type: 'damage',  maxPotency: 170, desc: '{p}% Magic Power. Inflict burn for 3 turns' },
+      { name: 'Temporal Edge',   type: 'passive', maxPotency: 20,  desc: '+{p}% SPD. +10% crit chance' },
     ],
 };

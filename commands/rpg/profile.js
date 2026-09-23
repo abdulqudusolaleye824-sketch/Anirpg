@@ -40,7 +40,20 @@ function getSkillsCount(player) {
 }
 
 // ── Pets count ────────────────────────────────────────────────────────────────
-function getPetsCount(player) {
+function getPetsCount(player, playerId) {
+  // Push #88: pets live in PetManager (keyed by JID), not on player.pets → count read 0 forever.
+  try {
+    const PetManager = require('../../rpg/utils/PetManager');
+    const ids = [playerId, player && player.jid, player && player.id].filter(Boolean);
+    let best = 0;
+    for (const id of ids) {
+      if (!PetManager.playerPets || !PetManager.playerPets.has(id)) continue;
+      const pd = PetManager.playerPets.get(id) || {};
+      const n = (Array.isArray(pd.pets) ? pd.pets.length : 0) + (Array.isArray(pd.storage) ? pd.storage.length : 0);
+      if (n > best) best = n;
+    }
+    if (best > 0) return best;
+  } catch (e) {}
   if (Array.isArray(player.pets) && player.pets.length > 0) return player.pets.length;
   return player.pet ? 1 : 0;
 }
@@ -75,7 +88,7 @@ function buildCard(player, db, targetId, mentionedId, isOwnProfile) {
     : 'Not assigned';
 
   const skillsTotal = getSkillsCount(player);
-  const petsTotal   = getPetsCount(player);
+  const petsTotal   = getPetsCount(player, targetId);
   const proLabel    = getProLabel(player);
   const isBanned    = !!(player.banned || db.bannedUsers?.[targetId]);
   const Nexus       = (player.gold || 0).toLocaleString();
@@ -83,9 +96,15 @@ function buildCard(player, db, targetId, mentionedId, isOwnProfile) {
   const guildDisplay = player.guild ? `*${player.guild}*` : 'None';
   const employmentStatus = player.guild ? `Employed 💼 *(${player.guild})*` : `Self-Employed 💼`;
 
-  const petDisplay = player.pet
+  let petDisplay = player.pet
     ? `${player.pet.emoji || '🐾'} ${player.pet.name || 'Unnamed'} Lv.${player.pet.level || 1}`
     : 'None';
+  // Push #88: active pet is in PetManager, not player.pet.
+  try {
+    const PetManager = require('../../rpg/utils/PetManager');
+    const ap = PetManager.getActivePet(targetId) || (player.jid ? PetManager.getActivePet(player.jid) : null);
+    if (ap) petDisplay = `${ap.emoji || '🐾'} ${ap.nickname || ap.name || 'Unnamed'} Lv.${ap.level || 1}${ap.isFainted ? ' (fainted)' : ''}`;
+  } catch (e) {}
 
   const skills = player.skills || {};
   const activeSkills = Array.isArray(skills.active) ? skills.active : [];

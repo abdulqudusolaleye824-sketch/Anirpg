@@ -15,5 +15,6 @@ module.exports = {
       { name: 'Death Mark',   type: 'debuff',  maxPotency: 40,  desc: 'Target takes {p}% more damage, stacks 3x' },
       { name: 'Vanish',       type: 'buff',    maxPotency: 100, desc: 'Dodge all attacks for 1 turn' },
       { name: 'Backstab',     type: 'damage',  maxPotency: 350, desc: 'From stealth: {p}% ATK guaranteed crit' },
+      { name: 'Toxic Edge',      type: 'passive', maxPotency: 25,  desc: 'All physical attacks apply poison. +{p}% crit chance' },
     ],
 };

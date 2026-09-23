@@ -312,7 +312,10 @@ function reconClass(player, opts = {}) {
   player.classAssignedAt = Date.now();
   player.classReconAt = Date.now();
   try { require('./SkillCatalog').resetPlayerSkills(player); } catch (e) {}
-  return { success: true, oldName, className, quality: player.classQuality };
+  // Push #88: a recon'd hunter gets the NEW class's weapon ladder + its
+  // passives/skills fully provisioned (the old class weapon used to linger).
+  try { require('./ClassPower').ensureClassWeapon(player, true); } catch (e) {}
+  return { success: true, oldName, className, quality: player.classQuality, weapon: player.weapon };
 }
 
 // ── Roll a monster variant ───────────────────────────────────────────────────
@@ -418,6 +421,7 @@ function tryClassAwaken(player, sock, chatId) {
   player.class           = className;
   player.classBase       = player.classBase || className;
   player.classAssignedAt = Date.now();
+  try { require('./ClassPower').ensureClassWeapon(player, false); } catch (e) {}
   player.classAwakenedAt = Date.now();
 
   // Fire-and-forget aura bonus + announcement (never block XP award).

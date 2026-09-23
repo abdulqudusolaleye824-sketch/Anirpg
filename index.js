@@ -1030,6 +1030,13 @@ http.createServer(async (req, res) => {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     return res.end(JSON.stringify({ version: v, uptimeSec: Math.round(process.uptime()), bootedAt: new Date(_BOOT_AT).toISOString(), pid: process.pid, node: process.version, memMB: Math.round(process.memoryUsage().rss / 1048576) }));
   }
+  if (_path === '/api/sends') {
+    if (!_opsAuthed(req)) { res.writeHead(401, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify({ error: 'unauthorized — add ?key=<link password>' })); }
+    let n = 200, jid = null; try { const u = new URL(req.url, 'http://localhost'); n = parseInt(u.searchParams.get('n') || '200', 10) || 200; jid = u.searchParams.get('jid') || null; } catch (e) {}
+    let rows = []; try { rows = MultiSocketManager.getSendLog ? MultiSocketManager.getSendLog(n, jid) : []; } catch (e) {}
+    res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
+    return res.end(rows.map(r => `${new Date(r.t).toISOString().slice(11, 19)} ${r.bot.padEnd(7)} ${r.status.padEnd(6)} ${r.kind.padEnd(12)} ${r.jid.slice(0, 26).padEnd(26)} ${r.preview.replace(/\n/g, ' ')}`).join('\n') || '(no sends yet)');
+  }
   if (_path === '/api/logs' || _path === '/api/trace' || _path === '/api/restart') {
     if (!_opsAuthed(req)) { res.writeHead(401, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify({ error: 'unauthorized — add ?key=<link password>' })); }
     if (_path === '/api/logs') {
@@ -1169,6 +1176,16 @@ process.on('unhandledRejection', (reason, promise) => {
 
 // Auto-save every 2 minutes
 setInterval(saveDatabase, 2 * 60 * 1000);
+// Push #88: global rest-mending tick — slot #1 of every hunter's weapons/gear bag
+// gains durability even while they are offline (was command-triggered only).
+setInterval(() => {
+  try {
+    const GS = require('./rpg/utils/GearSystem');
+    let healed = 0;
+    for (const u of Object.values(database.users || {})) { try { healed += GS.regenUnequippedDurability(u) || 0; } catch (e) {} }
+    if (healed > 0) saveDatabase();
+  } catch (e) {}
+}, 10 * 60 * 1000).unref?.();
 
 // Daily quest reset — timezone-aware (BOT_TIMEZONE, default Africa/Lagos/WAT)
 const { getWATDayKey, ensureDailyQuests } = require('./rpg/utils/DailyQuestSystem');
