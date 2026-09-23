@@ -161,12 +161,39 @@ async function runOnce(db, saveDatabase, now = Date.now()) {
 }
 
 let _timer = null;
+function msUntilNextWatMidnight(now = Date.now()) {
+  const d = watNow(now);
+  const next = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + 1, 0, 0, 5) - WAT_OFFSET;
+  return Math.max(1000, next - now);
+}
 function start(getDatabase, saveDatabase) {
   if (_timer) return;
   const tick = () => runOnce(getDatabase(), saveDatabase).catch((e) => console.error('[Birthday] tick error:', e.message));
-  _timer = setInterval(tick, 60 * 60 * 1000);
+  // Greetings go out at 00:00 WAT (start of the birthday). A boot-time catch-up
+  // pass covers restarts that happened after midnight (once-per-year dedupe).
+  const arm = () => { _timer = setTimeout(() => { tick(); arm(); }, msUntilNextWatMidnight()); };
+  arm();
   setTimeout(tick, 2 * 60 * 1000);
-  console.log('[Birthday] hourly birthday scheduler armed');
+  console.log(`[Birthday] midnight-WAT scheduler armed (next in ${Math.round(msUntilNextWatMidnight() / 60000)} min)`);
 }
 
-module.exports = { start, runOnce, isBirthdayToday, ageTurning, grantBirthdayPro, greetingText, announcementText, parseDob, _deliver, _announce };
+/** Upcoming-birthday list (soonest first). Each: { jid, name, dob, age(turning), daysUntil }. */
+function upcomingList(db, now = Date.now()) {
+  const today = watNow(now);
+  const tY = today.getUTCFullYear(), tM = today.getUTCMonth(), tD = today.getUTCDate();
+  const todayUtc = Date.UTC(tY, tM, tD);
+  const rows = [];
+  for (const [jid, p] of Object.entries((db && db.users) || {})) {
+    const dob = parseDob(p && p.dateOfBirth);
+    if (!dob || !jid.includes('@')) continue;
+    let next = Date.UTC(tY, dob.month - 1, dob.day);
+    if (next < todayUtc) next = Date.UTC(tY + 1, dob.month - 1, dob.day);
+    const daysUntil = Math.round((next - todayUtc) / DAY_MS);
+    const turning = new Date(next).getUTCFullYear() - dob.year;
+    rows.push({ jid, name: p.name || jid.split('@')[0], dob: p.dateOfBirth, age: turning, daysUntil });
+  }
+  rows.sort((a, b) => a.daysUntil - b.daysUntil || String(a.name).localeCompare(String(b.name)));
+  return rows;
+}
+
+module.exports = { start, runOnce, upcomingList, msUntilNextWatMidnight, isBirthdayToday, ageTurning, grantBirthdayPro, greetingText, announcementText, parseDob, _deliver, _announce };
