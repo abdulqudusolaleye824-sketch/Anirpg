@@ -1607,6 +1607,9 @@ async function startup() {
     } catch (e) { console.error('Guild contract boot payout error:', e.message); }
   }, 90 * 1000);
 
+  // Push #87: birthday greetings + 24h Pro gift (hourly, idempotent per year).
+  try { require('./rpg/utils/BirthdayManager').start(getDatabase, saveDatabase); } catch (e) { console.error('Birthday scheduler error:', e.message); }
+
   // ── Spawn ALL configured bots in parallel ─────────────────────
   // No "primary" or "secondary" — every bot is equal. We boot every bot that
   // is either (a) configured via a BOT_* env var OR (b) already linked through
