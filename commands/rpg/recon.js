@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════════════
-// /recon @player — MOD/OWNER class re-roll (Push #71)
+// /recon @player — OWNER-ONLY class re-roll (Push #71; owner-only since #87)
 //
 // Strips the target's current class (its quality-scaled stat bonuses and
 // skills included) and rolls a fresh NON-EXCLUSIVE class. Built to take the
@@ -45,7 +45,7 @@ function findPlayer(db, args, ctx) {
 module.exports = {
   name: 'recon',
   aliases: ['reclass', 'rerollclass'],
-  description: '🎭 Mods: re-roll a player\'s class (removes exclusive classes like Senku)',
+  description: '🎭 [OWNER] re-roll a player\'s class (removes exclusive classes like Senku)',
   usage: '/recon @player [<Class>|<quality>] · /recon undo @player',
 
   async execute(sock, msg, args, getDatabase, saveDatabase, sender) {
@@ -53,8 +53,9 @@ module.exports = {
     const db = getDatabase();
     const FRAME = UI.FREE_BAR;
 
-    if (!Perms.isBotMod(db, sender)) {
-      return sock.sendMessage(chatId, { text: `❌ *MODS ONLY.*\n${FRAME}\n/recon is a moderation tool.` }, { quoted: msg });
+    // Push #87: OWNER ONLY (like /bleep) — mods can no longer re-roll classes.
+    if (!Perms.isBotOwner(db, sender)) {
+      return sock.sendMessage(chatId, { text: `❌ *BOT OWNER ONLY.*\n${FRAME}\n/recon is an owner tool.` }, { quoted: msg });
     }
 
     const ctx = msg.message?.extendedTextMessage?.contextInfo;
