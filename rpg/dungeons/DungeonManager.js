@@ -312,9 +312,8 @@ class DungeonManager {
       const roll = Math.random();
       const loot = [];
       // Push #76: gear is store-only. Former gear roll → Mending Stone (15%) / materials.
-      if (roll < 0.15) {
-        loot.push({ name: 'Mending Stone', type: 'material', rarity: 'epic', isMendingStone: true, desc: 'Restores ALL equipment durability to 100%.' });
-      } else if (roll < 0.4) {
+      // Push #87: Mending Stone removed from dungeon loot (spawns / daily / Pro GC only).
+      if (roll < 0.4) {
         loot.push({ name: 'Iron Ore', type: 'QuestItem', rarity: 'common', isQuestItem: true });
       } else if (roll < 0.7) {
         loot.push({ name: 'Health Potion', type: 'Potion', rarity: 'common' });

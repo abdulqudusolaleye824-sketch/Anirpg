@@ -205,56 +205,25 @@ async function handleClaim(sock, msg, args, getDatabase, saveDatabase, sender) {
 
   const art = spawn.artifact;
 
-  // ── SAVE TO ARTIFACT INVENTORY ─────────────────────────────
-  // Register artifact in ArtifactSystem so it can be used with /artifact commands
-  try {
-    const ArtifactSystem = require('../../rpg/utils/ArtifactSystem');
-    if (!ArtifactSystem.getArtifact(art.name)) {
-      // Register it dynamically
-      ArtifactSystem.ARTIFACT_DATABASE[art.name] = {
-        name:        art.name,
-        emoji:       art.emoji,
-        rarity:      art.rarity,
-        type:        art.type,
-        description: art.desc,
-        stats:       art.bonus,   // ← must be 'stats' to match ArtifactSystem
-        requirements: {},
-      };
-    }
-  } catch(e) {}
-
-  // Initialize artifact inventory if needed
-  if (!player.artifacts || typeof player.artifacts !== 'object' || Array.isArray(player.artifacts)) {
-    player.artifacts = { inventory: [], equipped: { weapon: null, armor: null, helmet: null, gloves: null, ring: null, amulet: null, tome: null }, enhanced: {} };
-  }
-  if (!player.artifacts.inventory) player.artifacts.inventory = [];
-  if (!player.artifacts.equipped) player.artifacts.equipped = { weapon: null, armor: null, helmet: null, gloves: null, ring: null, amulet: null, tome: null };
-  if (!player.artifacts.enhanced) player.artifacts.enhanced = {};
-
-  // Handle special types: Mending Stone and materials go to inventory/materials
+  // ── Push #87: spawned items go to the REAL inventory, wired to their
+  // category — never to the /artifact relic bucket.
+  //   • Mending Stone → inventory.items (isMendingStone) → /mend, /inv, /equip use
+  //   • materials     → player.materials[name] (crafting) + inventory.items entry
+  //   • anything else → RewardInventory.grantItem (gear shape for wearables)
+  const RI = require('../../rpg/utils/RewardInventory');
+  RI.ensureInventory(player);
+  let whereLine = '';
   if (art.isMendingStone || art.name === 'Mending Stone') {
-    if (!player.inventory) player.inventory = { items: [] };
-    if (!player.inventory.items) player.inventory.items = [];
-    if (!player.inventory.mendingStones) player.inventory.mendingStones = 0;
-    player.inventory.mendingStones += 1;
-    // Also keep as string for visibility in /inventory items
-    if (!player.artifacts) player.artifacts = { inventory: [], equipped: {}, enhanced: {} };
-    if (!player.artifacts.inventory) player.artifacts.inventory = [];
-    player.artifacts.inventory.push(art.name + ' (x'+player.inventory.mendingStones+')');
-    // Allow immediate durability restore via /claim auto-apply if gear damaged
-    try {
-      // No auto apply, just store; player can use /use mending stone later
-    } catch(e){}
-  } else if (art.type === 'material') {
-    if (!player.inventory) player.inventory = { items: [] };
-    if (!player.materials) player.materials = {};
-    const matName = art.name;
-    player.materials[matName] = (player.materials[matName]||0) + 1;
-    // Also add to artifacts inventory string for /inventory display compatibility
-    player.artifacts.inventory.push(art.name);
+    RI.grantItem(player, { name: 'Mending Stone', type: 'material', rarity: 'epic', emoji: '🛠️', isMendingStone: true, desc: 'Restores all durability to 100%. Use /mend.' }, 'spawn');
+    whereLine = '💡 Use */mend* to restore your gear to 100% durability!';
+  } else if (String(art.type || '').toLowerCase() === 'material') {
+    if (!player.materials || typeof player.materials !== 'object') player.materials = {};
+    player.materials[art.name] = (player.materials[art.name] || 0) + 1;
+    RI.grantItem(player, { name: art.name, type: 'material', rarity: art.rarity, emoji: art.emoji, desc: art.desc, isMaterial: true }, 'spawn');
+    whereLine = '💡 Added to your materials — check */inv* and */craft*!';
   } else {
-    // Save artifact name as string (compatible with /artifact commands)
-    player.artifacts.inventory.push(art.name);
+    RI.grantItem(player, { name: art.name, type: art.type, rarity: art.rarity, emoji: art.emoji, desc: art.desc, ...(art.bonus || {}) }, 'spawn');
+    whereLine = '💡 Added to your inventory — check */inv*!';
   }
 
   // Consume luck potion if used
@@ -273,7 +242,7 @@ async function handleClaim(sock, msg, args, getDatabase, saveDatabase, sender) {
   const elapsed = Math.floor((Date.now() - spawn.spawnTime) / 1000);
 
   return sock.sendMessage(chatId, {
-    text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n${style.color} *CLAIMED!*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n👤 *${player.name}* got the artifact!${luckBonus}\n⚡ Reaction time: ${elapsed}s\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n${art.emoji} *${art.name}*\n${style.stars} ${art.rarity.toUpperCase()}\n📊 ${bonusLines}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n💡 Use /artifact equip to put it on!\n━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+    text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n${style.color} *CLAIMED!*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n👤 *${player.name}* got the artifact!${luckBonus}\n⚡ Reaction time: ${elapsed}s\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n${art.emoji} *${art.name}*\n${style.stars} ${art.rarity.toUpperCase()}\n📊 ${bonusLines}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n${whereLine}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
     mentions: [sender]
   }, { quoted: msg });
 }

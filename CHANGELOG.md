@@ -18,7 +18,9 @@
 - **Pet evolution fixed** ("Evolution data missing"): 8 evolved forms were referenced but never defined — added Metal Slime, Alpha Shadow Wolf, Storm Dragon, Bloom Guardian, Storm Sylph, Divine Phoenix, Void Dragon Bat, Mana Stone Golem.
 - **PvP turn order** now uses effective speed (base + gear + weapon + title + pet). Lock-in order never decides who moves first.
 - **Pro GC** (`/setgc pro --main`): members-only group for PRO or Battle Pass Premium hunters (staff always allowed). Non-eligible joiners are DM'd + removed; their commands are refused with the how-to-join card. **Epic item spawn every 5h** (Mending Stone 25% of the roster) on top of the global daily spawn. **B/A/S gates only** (E/D/C rerolled). **/rob banned** inside. Never listed by `/support`. Added to `/profaq`.
-- **Mending Stone is now EPIC** everywhere (spawns, daily, dungeon loot).
+- **Mending Stone is now EPIC** (spawns, daily); **removed from dungeon loot**.
+- **Spawned items go to the real inventory**, wired to their category (Mending Stone → `/mend`; materials → `/craft` + `/inv`) — no longer dumped into the `/artifact` relic bucket.
+- **Pro GC /rob ban applies to staff too** (owner bypass removed for the rob rule; access exemption stays).
 - **Rest-mending**: unequipped gear & weapons in the inventory silently regain +1 durability per hour (Pro: every 30 min).
 - **`/raid` in the wrong GC** now sends invite links for every `--main` dungeon GC instead of a raw group id.
 - **`/contract`**: ended (completed/defaulted/inactive) contracts no longer shown as the current contract.

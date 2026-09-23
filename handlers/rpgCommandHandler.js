@@ -714,7 +714,7 @@ module.exports = async (sock, msg, messageText, config, getDatabase, saveDatabas
   }
 
   // Push #87: Pro GC — members-only commands + /rob ban.
-  if (chatId.endsWith('@g.us') && !isPrivilegedUser) {
+  if (chatId.endsWith('@g.us')) {
     try {
       const ProGC = require('../rpg/utils/ProGC');
       const blockTxt = ProGC.commandBlock(db, chatId, sender, resolvedCommand) || ProGC.commandBlock(db, chatId, sender, commandName);
