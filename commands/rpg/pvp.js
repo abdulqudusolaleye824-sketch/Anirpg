@@ -283,6 +283,23 @@ module.exports = {
       if (opp) opp.pvpBattle = null;
       try { const RM = require('../../rpg/utils/RegenManager'); RM.endCombat(player); if (opp) RM.endCombat(opp); } catch (e) {}
 
+      // Push #87: a surrender IS a win for the opponent — record + weekly tracking
+      // (this path used to skip pvpWins/streak/weekly entirely).
+      if (opp) {
+        opp.pvpWins = (opp.pvpWins || 0) + 1;
+        player.pvpLosses = (player.pvpLosses || 0) + 1;
+        opp.pvpStreak = (opp.pvpStreak || 0) + 1;
+        player.pvpStreak = 0;
+        try {
+          const WK = require('./weekly');
+          WK.trackWeeklyProgress(opp, 'pvp_win', 1);
+          const wc = WK.getPlayerWeekly(opp);
+          for (const c of WK.getThisWeeksChallenges()) if (c.type === 'pvp_streak' && !wc.claimed.includes(c.id)) wc.progress[c.id] = Math.min(c.target, Math.max(wc.progress[c.id] || 0, opp.pvpStreak));
+          const lc = WK.getPlayerWeekly(player);
+          for (const c of WK.getThisWeeksChallenges()) if (c.type === 'pvp_streak' && !lc.claimed.includes(c.id) && (lc.progress[c.id] || 0) < c.target) lc.progress[c.id] = 0;
+        } catch (e) {}
+      }
+
       saveDatabase();
 
       return sock.sendMessage(chatId, {

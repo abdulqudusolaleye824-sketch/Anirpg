@@ -177,7 +177,7 @@ async function _relayChunk(sock, chatId, content, quoted, group) {
   // the blank bubbles came from (a rate-limited interactive relays as an
   // empty frame). Pace it like every other send and back off on overlimit.
   const _bodyTxt = String((content.interactiveMessage && content.interactiveMessage.body && content.interactiveMessage.body.text) || '').replace(/[\u200b-\u200f\u2060-\u206f\ufeff]/g, '').trim();
-  if (!_bodyTxt && !(content.interactiveMessage && content.interactiveMessage.header && content.interactiveMessage.header.imageMessage)) throw new Error('refusing to relay an empty interactive message');
+  if (!/[\p{L}\p{N}]/u.test(_bodyTxt) && !(content.interactiveMessage && content.interactiveMessage.header && content.interactiveMessage.header.imageMessage)) throw new Error('refusing to relay an empty interactive message'); // Push #87: needs ≥1 letter/digit
   let MSMp = null; try { MSMp = require('../bots/MultiSocketManager'); } catch (e) {}
   const _key = (() => { try { const all = MSMp && MSMp.getAllSockets ? MSMp.getAllSockets() : {}; for (const [k, s] of Object.entries(all)) if (s === sock) return k; } catch (e) {} return 'sock'; })();
   const _delays = [2000, 4000, 8000, 16000];

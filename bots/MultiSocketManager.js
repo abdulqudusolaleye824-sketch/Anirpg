@@ -1416,7 +1416,10 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
         }
         // Zero-width/format chars are invisible — strip before the blank check.
         const _vis = (s) => String(s ?? '').replace(/[\u200b-\u200f\u2060-\u206f\ufeff\u061c]/g, '').trim();
-        if (hasEmptyMedia || hollow || (!hasMedia && !functional && !_vis(c.text ?? c.caption ?? c.conversation ?? ''))) {
+        // Push #87: a text-only message must contain at least ONE letter or digit
+        // (any script). Punctuation/emoji/frame-only bubbles are blocked too.
+        const _hasLetter = (s) => /[\p{L}\p{N}]/u.test(_vis(s));
+        if (hasEmptyMedia || hollow || (!hasMedia && !functional && !_hasLetter(c.text ?? c.caption ?? c.conversation ?? ''))) {
           console.error(`🚫 [${personalityKey}] blocked EMPTY send to ${jid} (empty text/caption, no media)`);
           return null;
         }

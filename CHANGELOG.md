@@ -27,6 +27,8 @@
 - **`/recon` is now OWNER-ONLY** (like `/bleep`).
 - **`/recon` customization (owner)**: `/recon @p <Class>|<quality>` pins the class and/or quality (1–100); `/recon @p Mage` keeps current quality, `/recon @p |80` re-rolls class at 80%. **`/recon undo @p`** restores the exact pre-recon class/stats/skills. Invalid input never strips the player.
 - Birthday greetings go out at 00:00 WAT; `/birthday list` (mods → mods GC only) shows every player's birthday + age, soonest first.
+- **Empty-message kill switch**: every outgoing text (and button body) must contain at least one letter or digit — frame/emoji-only or blank bubbles are blocked at the socket wrapper.
+- **`/weekly` tracking fixed**: progress bucket now uses the same week key as the challenge set (players with a non-Lagos timezone lost all progress); surrenders now count as PvP wins/streaks; footer shows *Completed x/3 · Ready to claim*.
 - **`/contract`**: ended (completed/defaulted/inactive) contracts no longer shown as the current contract.
 
 ## Push #86 — v1.0.89 (2026-09-21) — SILENT BOTS: ROOT CAUSE + DEAF-SOCKET DETECTOR

@@ -36,7 +36,10 @@ function getThisWeeksChallenges() {
 }
 
 function getPlayerWeekly(player) {
-  const key = getWeekKey(playerTz(player) || undefined);
+  // Push #87: the challenge SET is seeded by the global (Lagos) week key, so
+  // the player's progress bucket must use the same key — a player timezone
+  // ahead/behind WAT used to get a different key and progress silently vanished.
+  const key = getWeekKey();
   if (!player.weeklyChallenges || player.weeklyChallenges.week !== key) {
     player.weeklyChallenges = { week: key, progress: {}, claimed: [] };
   }
@@ -119,7 +122,7 @@ module.exports = {
     const daysLeft = day === 1 ? 7 : ((8 - day) % 7) || 7;
 
     let txt = pro ? `${UI.PRO_BAR}\n📋 *WEEKLY CHALLENGES* 💎\n${UI.PRO_BAR}\n⏰ Resets in: *${daysLeft} day(s)*\n\n` : `📋 *WEEKLY CHALLENGES*\n${UI.FREE_BAR}\n⏰ Resets in: *${daysLeft} day(s)*\n\n`;
-    let wClaimable = 0;
+    let wClaimable = 0, wDone = 0;
     for (const c of challenges) {
       const prog   = wc.progress[c.id] || 0;
       const done   = prog >= c.target;
@@ -129,9 +132,10 @@ module.exports = {
       txt += `${icon} ${c.emoji} *${c.desc}*\n`;
       txt += `   [${bar}] ${Math.min(prog,c.target)}/${c.target}\n`;
       txt += `   💠 ${c.rewards.gold.toLocaleString()} 💠  💎 ${c.rewards.crystals}${c.rewards.ticket?`  🎟️×${c.rewards.ticket}`:''}\n\n`;
+      if (done) wDone++;
       if (done && !claimd) wClaimable++;
     }
-    txt += `${FRAME}\n/weekly claim — collect completed` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO GRIND* — ${wClaimable} ready to claim` : `\n${UI.upsell()}`);
+    txt += `${FRAME}\n📊 Completed: *${wDone}/${challenges.length}*  ·  🎁 Ready to claim: *${wClaimable}*\n/weekly claim — collect completed` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO GRIND* — ${wClaimable} ready to claim` : `\n${UI.upsell()}`);
     return sock.sendMessage(chatId, { text: txt }, { quoted: msg });
   }
 };
