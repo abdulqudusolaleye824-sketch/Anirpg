@@ -303,6 +303,42 @@ function normalise(className, raw, index) {
     }
   }
 
+  // Push #88b: exact HP percentages from the effect text.
+  const _hpPct = (() => {
+    const out = { heal: null, drain: 0, drainHeal: 0, cost: 0 };
+    for (const raw0 of String(effect || '').split('\n')) {
+      const l = raw0.toLowerCase();
+      if (!/\bhp\b|health/.test(l)) continue;
+      // the % nearest to the word HP ("200% ATK + steals 50% of target max HP" → 50)
+      const all = [...l.matchAll(/(\d{1,3})\s*%/g)]; if (!all.length) continue;
+      const hpAt = l.search(/\bhp\b|health/);
+      let pm = all[0]; for (const m of all) if (Math.abs(m.index - hpAt) < Math.abs(pm.index - hpAt)) pm = m;
+      const pct = Math.min(100, parseInt(pm[1], 10));
+      if (/per turn|\/turn|hot:|over time/.test(l)) continue; // ticking effects handled as statuses
+      if (/shield|absorb/.test(l)) continue;
+      if (/(?:costs?|sacrific\w*|lose|spend|pay|consum\w*)\s+(?:\d+%\s*)?(?:of\s+)?(?:your\s+|own\s+)?(?:max\s+|current\s+)?hp|(\d+)%\s*(?:of\s+)?(?:your\s+)?(?:max\s+)?hp\s+(?:as\s+)?(?:cost|sacrific)/.test(l)) { out.cost = Math.max(out.cost, pct); continue; }
+      const aboutEnemy = /enemy|enemies|target|their|foe|opponent/.test(l);
+      const drainy = /drain|steal|siphon|leech|absorb|takes?|removes?|deals?\s+\d+%\s*(?:of\s+)?(?:max\s+)?hp|-\s*\d+%/.test(l);
+      if (aboutEnemy && drainy && !/if\s+(?:enemy|target)|below|<|under|when\s+(?:enemy|target)/.test(l)) {
+        const d = Math.min(50, pct); // hard cap: no single cast removes >50% of a max-HP pool
+        out.drain = Math.max(out.drain, d);
+        if (/drain|steal|siphon|leech|absorb|as heal|restores?/.test(l)) {
+          const half = /half/.test(l);
+          out.drainHeal = Math.max(out.drainHeal, half ? Math.round(d / 2) : d);
+        }
+        continue;
+      }
+      if (/heal|restor|recover|regenerat|reviv/.test(l) && !/damage dealt|of damage|damage taken/.test(l) && !aboutEnemy) {
+        // Prefer the LIVING-ally heal line over the revive line when both exist.
+        const isRevive = /reviv|ko'd|dead/.test(l);
+        if (out.heal == null || (!isRevive && out._reviveOnly)) { out.heal = pct; out._reviveOnly = isRevive; }
+      }
+    }
+    if (out.drain && out.heal == null && out.drainHeal) { /* drain heals handled by drainHealPct, not healingPct */ }
+    delete out._reviveOnly;
+    return out;
+  })();
+
   const statuses = (parsed.statusEffects || [])
     .map(s => {
       if (!s || !s.type) return null;
@@ -358,7 +394,13 @@ function normalise(className, raw, index) {
     energyCost,
     damagePct,
     flatDamage: Number(raw.damage ?? 0) || 0,
-    healingPct: Math.round(Number(selfHeal && selfHeal.percent) || 0) || (type === 'heal' ? 20 + index : 0),
+    healingPct: _hpPct.heal != null ? _hpPct.heal : _hpPct.drain ? 0 : (Math.round(Number(selfHeal && selfHeal.percent) || 0) || (type === 'heal' ? 20 + index : 0)),
+    // Push #88b: "% of HP" is a CONTRACT. drainPct = % of target max HP taken
+    // (healed back to caster unless drainHeals=false); selfCostPct = % of own
+    // max HP paid to cast. Engines apply exactly these numbers, nothing else.
+    drainPct: _hpPct.drain || 0,
+    drainHealPct: _hpPct.drainHeal || 0,
+    selfCostPct: _hpPct.cost || 0,
     buffs: parsed.buffs || [],
     debuffs: parsed.debuffs || [],
     selfDebuffs: parsed.selfDebuffs || [],
@@ -510,6 +552,7 @@ function toPlayerSkill(player, entry) {
     buffs: entry.buffs,
     debuffs: entry.debuffs,
     healingPct: entry.healingPct,
+    drainPct: entry.drainPct || 0, drainHealPct: entry.drainHealPct || 0, selfCostPct: entry.selfCostPct || 0,
     isPassive: entry.isPassive,
   };
 }
@@ -765,7 +808,40 @@ function resetPlayerSkills(player) {
   return syncPlayerSkills(player);
 }
 
+
+// ── Push #88b: exact %-HP contract applied by every engine ──────────────────
+// Returns { drained, healed, cost, lines[] }. Applies ONLY the stated numbers:
+//   drainPct     → removes that % of TARGET max HP (never below 1 HP)
+//   drainHealPct → caster recovers that % of TARGET max HP (capped at caster max)
+//   selfCostPct  → caster pays that % of OWN max HP (never below 1 HP)
+// healingPct is applied by the engines' existing heal path (unchanged).
+function applyHpPercents(entry, caster, target, effMaxOf) {
+  const out = { drained: 0, healed: 0, cost: 0, lines: [] };
+  if (!entry || !caster || !caster.stats) return out;
+  const maxOf = (u) => { try { return (effMaxOf && effMaxOf(u)) || u.stats.maxHp || 100; } catch (e) { return u.stats.maxHp || 100; } };
+  const cost = Number(entry.selfCostPct) || 0;
+  if (cost > 0) {
+    const cm = maxOf(caster); const pay = Math.floor(cm * cost / 100);
+    const before = caster.stats.hp || 0; caster.stats.hp = Math.max(1, before - pay); out.cost = before - caster.stats.hp;
+    if (out.cost > 0) out.lines.push(`🩸 Paid ${out.cost} HP (${cost}% max HP)`);
+  }
+  const drain = Number(entry.drainPct) || 0;
+  if (drain > 0 && target && target.stats) {
+    const tm = maxOf(target); const take = Math.floor(tm * drain / 100);
+    const before = target.stats.hp || 0; target.stats.hp = Math.max(1, before - take); out.drained = before - target.stats.hp;
+    if (out.drained > 0) out.lines.push(`🧛 Drained ${out.drained} HP (${drain}% of ${target.name || 'target'}'s max HP)`);
+    const dh = Number(entry.drainHealPct) || 0;
+    if (dh > 0) {
+      const cm = maxOf(caster); const give = Math.floor(tm * dh / 100);
+      const b2 = caster.stats.hp || 0; caster.stats.hp = Math.min(cm, b2 + give); out.healed = caster.stats.hp - b2;
+      if (out.healed > 0) out.lines.push(`💚 Recovered ${out.healed} HP`);
+    }
+  }
+  return out;
+}
+
 module.exports = {
+  applyHpPercents,
   SKILLS_PER_CLASS, UNLOCK_STEP, MAX_SKILL_LEVEL, SUPPORTED_STATUS,
   canonicalClassName, buildRoster, getRoster, EXPLICIT,
   isUnlockedFor, syncPlayerSkills, resolveSkill,

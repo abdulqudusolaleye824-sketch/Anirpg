@@ -300,8 +300,15 @@ function _guildFrom(db, guildRef) {
 
 function getGuildMaster(db, guildRef) {
   const guild = _guildFrom(db, guildRef);
-  if (!guild || !guild.leader) return null;
-  return { jid: guild.leader, player: findUserInDb(db, guild.leader) };
+  if (!guild) return null;
+  let leader = guild.leader || null;
+  if (!leader && Array.isArray(guild.memberData)) { const gm = guild.memberData.find(m => /guild master/i.test(m.rank || '')); leader = gm && gm.id; }
+  if (!leader) return null;
+  const player = findUserInDb(db, leader);
+  // Push #88b: DM to the key the player is actually stored under (lid vs phone).
+  let jid = leader;
+  if (player) { const k = _userJid(db, player); if (k) jid = k; }
+  return { jid, player, leaderRaw: leader };
 }
 
 // Pro guild masters confirm each member's wage by DM before money moves.
@@ -343,8 +350,7 @@ function payOneWeek(db, guild, bare, c, now = Date.now()) {
       const short = `Need *${reqNexus.toLocaleString()} 💠* + *${reqMana.toLocaleString()} 💎*, treasury has *${(guild.treasury || 0).toLocaleString()} 💠* + *${(guild.manaTreasury || 0).toLocaleString()} 💎*.`;
       const uJid = (u && u.id) || `${String(bare).replace(/[^0-9]/g, '')}@s.whatsapp.net`;
       _dmPlayer(db, uJid, [`🚨 *WAGE DEFAULTED — ${guild.name || ''}*`, ``, `Your guild treasury could not cover this week's wage.`, short, ``, `Your contract has ended. Ask your Guild Master to refill the treasury and re-hire you with */guild hire*.`].join('\n'));
-      const m = getGuildMaster(db, guild);
-      if (m?.jid) _dmPlayer(db, m.jid, [`🚨 *GUILD TREASURY SHORT — ${guild.name || ''}*`, ``, `Could not pay *${u?.name || bare}*'s weekly wage.`, short, ``, `The contract has defaulted. Deposit into the treasury and re-hire with */guild hire @${bare} <nexus> <mana> <weeks>*.`].join('\n'));
+      _notifyMaster(db, guild, [`🚨 *GUILD TREASURY SHORT — ${guild.name || ''}*`, ``, `Could not pay *${u?.name || bare}*'s weekly wage.`, short, ``, `The contract has defaulted. Deposit into the treasury and re-hire with */guild hire @${bare} <nexus> <mana> <weeks>*.`].join('\n'));
     } catch (e) {}
     return { paid: false, defaulted: true };
   }
@@ -381,13 +387,28 @@ function skipWeek(db, guild, bare, c, status, reason, now = Date.now()) {
 }
 
 // ── DMs (best-effort; the serf iron wall drops DMs to players without a serf) ─
-function _dmPlayer(db, jid, text) {
+function _dmPlayer(db, jid, text, opts = {}) {
   try {
     const MSM = require('../../bots/MultiSocketManager');
-    const anySock = typeof MSM.getAnySocket === 'function' ? MSM.getAnySocket() : null;
+    const pick = () => { try { const all = typeof MSM._sockets === 'function' ? MSM._sockets() : (typeof MSM.getAllSockets === 'function' ? MSM.getAllSockets() : {}); for (const s0 of Object.values(all || {})) { if (s0 && s0.user && s0.user.id) return s0; } } catch (e) {} return typeof MSM.getAnySocket === 'function' ? MSM.getAnySocket() : null; };
+    const anySock = pick();
     if (!MSM.safeSendDM) return Promise.resolve({ dropped: true, reason: 'no-safeSendDM' });
-    return Promise.resolve(MSM.safeSendDM(anySock, jid, { text }, { db })).catch(e => ({ dropped: true, reason: e.message }));
+    const target = String(jid).includes('@') ? jid : `${String(jid).replace(/[^0-9]/g, '')}@s.whatsapp.net`;
+    return Promise.resolve(MSM.safeSendDM(anySock, target, { text }, { db }))
+      .then(async (r) => {
+        // Push #88b: wage notices are money — if the player has no serf (or it is
+        // offline) fall back to ANY live socket rather than silently dropping.
+        if (r && r.dropped && opts.force !== false && anySock && (r.reason === 'no-serf' || r.reason === 'serf-offline')) {
+          try { await anySock.sendMessage(target, { text }); return { forced: true, via: 'any' }; } catch (e) { return { dropped: true, reason: e.message }; }
+        }
+        return r;
+      })
+      .catch(e => ({ dropped: true, reason: e.message }));
   } catch (e) { return Promise.resolve({ dropped: true, reason: e.message }); }
+}
+function _notifyMaster(db, guild, text) {
+  try { const m = getGuildMaster(db, guild); if (m && m.jid) return _dmPlayer(db, m.jid, text); } catch (e) {}
+  return Promise.resolve({ dropped: true, reason: 'no-master' });
 }
 
 function _userJid(db, user) {
@@ -404,6 +425,11 @@ function _notifyMemberPay(db, user, nexus, mana, note) {
   if (note) lines.push(``, `_${note}_`);
   lines.push(``, `Check */wages* for your full pay status.`);
   _dmPlayer(db, user.id, lines.join('\n'));
+}
+
+function _notifyMasterPaid(db, guild, guildId, bare, c, r, note) {
+  const u = r && r.user;
+  _notifyMaster(db, guild, [`💰 *WAGE PAID — ${guild.name || guildId}*`, ``, `👤 *${u?.name || bare}* — week ${c.weeksPaid}/${c.weeks || c.totalWeeks || '?'}`, `−${Number(r.nexus || 0).toLocaleString()} 💠 · −${Number(r.mana || 0).toLocaleString()} 💎 from the treasury`, `🏦 Treasury now: ${Number(guild.treasury || 0).toLocaleString()} 💠 · ${Number(guild.manaTreasury || 0).toLocaleString()} 💎`, ...(note ? [``, `_${note}_`] : [])].join('\n'));
 }
 
 function _notifyMemberSkip(db, user, note) {
@@ -492,7 +518,19 @@ function processWeeklyPay(db, guildRef, saveDatabase) {
   const guild = findGuild(db, guildRef);
   if (!guild) return [];
   const guildId = guild.id || guildRef;
-  const recs = db.guildContracts?.[guildId] || db.guildContracts?.[guild.name] || db.guildContracts?.[guildRef];
+  // Push #88b: merge stray buckets (guild name / old id / '[object Object]')
+  // into the real id BEFORE paying — the hourly timer only looked at one key.
+  try {
+    if (db.guildContracts) {
+      for (const alt of [guild.name, guildRef, '[object Object]']) {
+        if (!alt || alt === guildId || !db.guildContracts[alt]) continue;
+        const home = _contracts(db, guildId);
+        for (const [k, v] of Object.entries(db.guildContracts[alt])) { if (!home[k] || !home[k].active) home[k] = v; }
+        delete db.guildContracts[alt];
+      }
+    }
+  } catch (e) {}
+  const recs = db.guildContracts?.[guildId];
   if (!recs) return [];
 
   const now = Date.now();
@@ -515,6 +553,8 @@ function processWeeklyPay(db, guildRef, saveDatabase) {
         skipWeek(db, guild, bare, c, 'skipped_inactive',
           `Only ${claims}/${MIN_WEEKLY_DAILIES} daily claims this week`, now);
         _notifyMemberSkip(db, user, `You claimed /daily *${claims}/${MIN_WEEKLY_DAILIES}* times this week — claim it at least *${MIN_WEEKLY_DAILIES} times* to earn your wage.`);
+        // Push #88b: the guild master hears about every skipped week too.
+        _notifyMaster(db, guild, [`⚠️ *WAGE SKIPPED — ${guild.name || guildId}*`, ``, `👤 *${user?.name || bare}* — week ${c.weeksPaid}/${c.weeks || c.totalWeeks || '?'}`, `Reason: only *${claims}/${MIN_WEEKLY_DAILIES}* /daily claims this week (inactive).`, `💠 ${(c.weeklyNexus || 0).toLocaleString()} + 💎 ${(c.weeklyMana || 0).toLocaleString()} stayed in the treasury.`, ``, c.active ? `Next pay check: ${new Date(c.nextPayAt).toUTCString().slice(0, 16)}` : `Contract finished.`].join('\n'));
         continue;
       }
 
@@ -549,7 +589,7 @@ function processWeeklyPay(db, guildRef, saveDatabase) {
         if (ap.status === 'approved') {
           const r = payOneWeek(db, guild, bare, c, now);
           ap.status = 'resolved'; ap.resolvedAt = now; ap.resolution = r.paid ? 'paid' : 'defaulted';
-          if (r.paid) { totalNexusPaid += r.nexus; totalManaPaid += r.mana; _notifyMemberPay(db, r.user, r.nexus, r.mana); }
+          if (r.paid) { totalNexusPaid += r.nexus; totalManaPaid += r.mana; _notifyMemberPay(db, r.user, r.nexus, r.mana); _notifyMasterPaid(db, guild, guildId, bare, c, r); }
         } else if (ap.status === 'denied') {
           skipWeek(db, guild, bare, c, 'skipped_denied', 'Guild master skipped this week', now);
           ap.status = 'resolved'; ap.resolvedAt = now; ap.resolution = 'skipped';
@@ -564,7 +604,7 @@ function processWeeklyPay(db, guildRef, saveDatabase) {
 
       // 3) NORMAL GUILD — auto-pay as before.
       const r = payOneWeek(db, guild, bare, c, now);
-      if (r.paid) { totalNexusPaid += r.nexus; totalManaPaid += r.mana; }
+      if (r.paid) { totalNexusPaid += r.nexus; totalManaPaid += r.mana; _notifyMemberPay(db, r.user, r.nexus, r.mana); _notifyMasterPaid(db, guild, guildId, bare, c, r); }
     }
 
     // 24h auto-approve safety net: an unanswered pending approval pays out
@@ -576,7 +616,7 @@ function processWeeklyPay(db, guildRef, saveDatabase) {
         const r = payOneWeek(db, guild, bare, c, now);
         ap.status = 'resolved'; ap.resolvedAt = now; ap.resolution = 'auto_paid';
         ap.autoReason = 'no reply in 24h';
-        if (r.paid) { totalNexusPaid += r.nexus; totalManaPaid += r.mana; _notifyMemberPay(db, r.user, r.nexus, r.mana, 'Auto-approved (no reply in 24h).'); }
+        if (r.paid) { totalNexusPaid += r.nexus; totalManaPaid += r.mana; _notifyMemberPay(db, r.user, r.nexus, r.mana, 'Auto-approved (no reply in 24h).'); _notifyMasterPaid(db, guild, guildId, bare, c, r, 'auto-approved after 24h'); }
       }
     }
 
@@ -591,6 +631,7 @@ function processWeeklyPay(db, guildRef, saveDatabase) {
     }
   }
 
+  if (summaries.length) { try { console.log(`[SALARY] ${guild.name || guildId}: ${summaries.map(x => `${x.bare}:+${x.nexusPaid}💠/+${x.manaPaid}💎${x.active ? '' : ' (ended)'}`).join(', ')}`); } catch (e) {} }
   if (saveDatabase) saveDatabase();
   return summaries;
 }

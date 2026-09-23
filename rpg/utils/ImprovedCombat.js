@@ -214,6 +214,9 @@ class ImprovedCombat {
     );
 
     const finalDamage = effectResult.damage;
+    // Push #88b: exact %-HP drains / self-costs stated in the skill text.
+    let _hpxLines = [];
+    try { const _x = SkillCatalog.applyHpPercents(entry, attacker, defender); _hpxLines = _x.lines || []; } catch (e) {}
 
     // Apply damage to defender
     if (finalDamage > 0) {
@@ -261,6 +264,7 @@ class ImprovedCombat {
     }
 
     message += effectResult.narrative;
+    if (_hpxLines.length) message += _hpxLines.join('\n') + '\n';
     message += `${attacker.energyColor || '💙'} ${costType}: ${attacker.stats.energy}/${attacker.stats.maxEnergy}\n`;
 
     return {

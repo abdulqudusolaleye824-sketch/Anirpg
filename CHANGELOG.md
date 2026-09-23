@@ -1,3 +1,10 @@
+## 1.0.92 — Push #88b (2026-09-23)
+- FIX: every /<classcmd> skill replied "on cooldown (15s)" — dispatcher pre-set the cooldown, then the engine checked it. Dispatcher now only gates; engines set.
+- %-HP contract: skills that heal/drain/cost a % of HP apply EXACTLY the stated % (drains capped at 50% of target max HP, half-heal drains honoured, conditional "<30% HP" lines are not drains). Applied in gate raids, tower dungeons and PvP. Miracle heals 50% (living), Healing Light 25%, Arcane Blast drains 10%, etc.
+- /setgc dungeon: also registers in GateKeyManager (persisted) and any AstralGroups 'dungeon' group is auto-adopted; /setgc reset clears both.
+- Wages: guild master now gets a DM for PAID weeks (with treasury after), SKIPPED weeks (inactive member / reason), treasury short and approval requests; DMs fall back to any live socket when the GM has no serf. Stray contract buckets (guild-name / '[object Object]') merged before paying; hourly sweep logs [SALARY] lines.
+- test_push88: 54/54.
+
 ## 1.0.91 — Push #88 (2026-09-23)
 - Gate raids: 50% accumulated loot goes to GUILD treasury only on full party wipe (never to a player).
 - /recon now re-provisions weapon ladder + passives for the new class (SNAP_KEYS include weapon/passives for undo).

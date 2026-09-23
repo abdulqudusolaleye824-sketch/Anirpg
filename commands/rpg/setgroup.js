@@ -88,6 +88,7 @@ module.exports = {
     // ── /setgroup reset ─────────────────────────────────────────
     if (sub === 'reset') {
       if (db.astralGroups) { delete db.astralGroups[chatId]; }
+      try { const GKM = require('../../rpg/dungeons/GateKeyManager'); if (GKM.isDungeonGC(chatId)) { GKM.removeDungeonGC(chatId); GKM.saveGCsToDb(db); } } catch (e) {}
       saveDatabase();
       return sock.sendMessage(chatId, { text: `✅ This group has been unregistered.` }, { quoted: msg });
     }
@@ -122,6 +123,15 @@ module.exports = {
     const result = AstralGroups.register(db, type, chatId, inviteLink, { main: isMain, groupName: gcName });
     if (!result.success) {
       return sock.sendMessage(chatId, { text: `❌ ${result.reason}` }, { quoted: msg });
+    }
+    // Push #88b: /setgc dungeon never told the gate engine → "This is not a
+    // dungeon GC". Register it in GateKeyManager too (and persist).
+    if (AstralGroups.get(type) === 'dungeon') {
+      try {
+        const GKM = require('../../rpg/dungeons/GateKeyManager');
+        if (!GKM.isDungeonGC(chatId)) GKM.setDungeonGC(chatId, sender);
+        GKM.saveGCsToDb(db);
+      } catch (e) {}
     }
     saveDatabase();
 

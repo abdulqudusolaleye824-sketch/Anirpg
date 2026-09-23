@@ -525,6 +525,12 @@ async function resolveTurn(sock, chatId, p1, p2, db, saveDatabase) {
       // Heal/support skills: apply the restore to the caster now and let the
       // strike land at reduced force (the duel has no separate heal phase).
       let healNote = '';
+      // Push #88b: exact %-HP drains / self-costs stated in the skill text (opponent = other duelist).
+      try {
+        const _opp = player === p1 ? p2 : p1;
+        const _x = SCm.applyHpPercents(entry, player, _opp);
+        if (_x.lines.length) healNote += ' ' + _x.lines.join(' ');
+      } catch (e) {}
       if ((entry.type === 'heal' || (entry.healingPct || 0) > 0) && player.stats) {
         const amt = Math.floor((player.stats.maxHp || 100) * ((entry.healingPct || 20) / 100));
         const before = player.stats.hp || 0;

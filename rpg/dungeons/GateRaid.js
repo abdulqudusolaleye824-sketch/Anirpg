@@ -77,6 +77,8 @@ function playerDamage(player, skillName = null, target = null) {
     let healed = 0;
     // Hybrids (Holy Strike, Dark Feast, Water Wave…) hit AND heal; pure heal
     // moves heal only.
+    let _hpx = { lines: [], drained: 0, healed: 0, cost: 0 };
+    try { _hpx = SC.applyHpPercents(entry || skill, player, target, (u) => { try { return require('../utils/GearSystem').effectiveMaxHp(u); } catch (e) { return u.stats.maxHp; } }); } catch (e) {}
     if (_healPct > 0) {
       const maxHp = player.stats.maxHp || 100;
       const before = player.stats.hp || 0;
@@ -88,7 +90,8 @@ function playerDamage(player, skillName = null, target = null) {
       damage: dmg, isCrit, skillUsed: skill,
       statuses: [ ...((entry && entry.statuses) || skill.statuses || []), ...((_pm74.onHit || [])) ],
       healingPct: _healPct,
-      healed,
+      healed: healed + (_hpx.healed || 0),
+      hpPercentLines: _hpx.lines, drained: _hpx.drained, hpCost: _hpx.cost,
       synergyNotes,
       buffs: (entry && entry.buffs) || [],
     };

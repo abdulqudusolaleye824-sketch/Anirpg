@@ -238,12 +238,24 @@ function removeDungeonGC(chatId) {
   delete dungeonGCs[chatId];
 }
 
+// Push #88b: a group registered via /setgc dungeon (AstralGroups) is a dungeon
+// GC even if nobody ran a gate command there yet — auto-adopt it lazily.
+let _dbRef = null;
+function _adoptFromAstral(chatId) {
+  if (dungeonGCs[chatId] || !_dbRef) return null;
+  try {
+    const AG = require('../utils/AstralGroups');
+    const e = AG.getEntry(_dbRef, chatId);
+    if (e && e.type === 'dungeon') { dungeonGCs[chatId] = { chatId, setBy: 'setgc', setAt: Date.now(), activeKeyId: null }; saveGCsToDb(_dbRef); return dungeonGCs[chatId]; }
+  } catch (e) {}
+  return null;
+}
 function isDungeonGC(chatId) {
-  return !!dungeonGCs[chatId];
+  return !!(dungeonGCs[chatId] || _adoptFromAstral(chatId));
 }
 
 function getDungeonGC(chatId) {
-  return dungeonGCs[chatId] || null;
+  return dungeonGCs[chatId] || _adoptFromAstral(chatId) || null;
 }
 
 function getAllDungeonGCs() {
@@ -259,6 +271,7 @@ function saveGCsToDb(db) {
 }
 
 function loadFromDB(db) {
+  _dbRef = db;
   if (db.dungeonGCs) {
     Object.assign(dungeonGCs, db.dungeonGCs);
   }

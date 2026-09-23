@@ -1604,10 +1604,13 @@ async function startup() {
       const CM = require('./rpg/utils/GuildContractManager');
       const db = getDatabase();
       let any = false;
+      let due = 0;
       for (const guildId of Object.keys(db.guilds || {})) {
         const res = CM.processWeeklyPay(db, guildId, null);
         if (res.length) any = true;
+        try { for (const c of Object.values(db.guildContracts?.[guildId] || {})) if (c && c.active && c.nextPayAt <= Date.now()) due++; } catch (e) {}
       }
+      console.log(`[SALARY] hourly sweep: ${Object.keys(db.guilds || {}).length} guilds, paid=${any}, stillDue=${due}`);
       if (any) saveDatabase();
     } catch(e) {
       console.error('Guild contract payout error:', e.message);

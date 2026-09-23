@@ -107,7 +107,7 @@ ${FRAME}` + (pro ? '' : `\n${UI.upsell()}`)
     if (player.pvpBattle) {
       const _rdy = skillReady(player, skill);
       if (!_rdy.ok) return sock.sendMessage(chatId, { text: `❌ ${_rdy.reason}` }, { quoted: msg });
-      setSkillCooldown(player, skill);
+      // Push #88b: engine sets the cooldown itself — pre-setting here made every routed skill instantly 'on cooldown'.
       const PvpCmd = require('./pvp');
       return PvpCmd.execute(sock, msg, ['skill', skill.name], getDatabase, saveDatabase, sender);
     }
@@ -133,7 +133,7 @@ ${FRAME}` + (pro ? '' : `\n${UI.upsell()}`)
       if (_gkey) {
         const _rdy = skillReady(player, skill);
         if (!_rdy.ok) return sock.sendMessage(chatId, { text: `❌ ${_rdy.reason}` }, { quoted: msg });
-        setSkillCooldown(player, skill);
+        // Push #88b: engine sets the cooldown itself — pre-setting here made every routed skill instantly 'on cooldown'.
         const GateRaidCmd = require('./gateraid');
         return GateRaidCmd.execute(sock, msg, [_gkey, 'skill', skill.name], getDatabase, saveDatabase, sender);
       }
@@ -146,7 +146,7 @@ ${FRAME}` + (pro ? '' : `\n${UI.upsell()}`)
       if (_inSolo || (_pty && _pty.status === 'active')) {
         const _rdy = skillReady(player, skill);
         if (!_rdy.ok) return sock.sendMessage(chatId, { text: `❌ ${_rdy.reason}` }, { quoted: msg });
-        setSkillCooldown(player, skill);
+        // Push #88b: engine sets the cooldown itself — pre-setting here made every routed skill instantly 'on cooldown'.
         const DungeonCmd = require('./dungeon');
         return DungeonCmd.execute(sock, msg, ['classcmd', skill.name], getDatabase, saveDatabase, sender);
       }

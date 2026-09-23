@@ -616,7 +616,8 @@ module.exports = {
       });
       target.hp = Math.max(0, monWrap.stats.hp);
       // Push #71: recovery skills report the HP they actually restored.
-      if (result.healed > 0) await sock.sendMessage(chatId, { text: `💚 *${result.skillUsed?.name || 'Recovery'}* restored *${result.healed}* HP → ${player.stats.hp}/${_effMax(player)}` });
+      if (Array.isArray(result.hpPercentLines) && result.hpPercentLines.length) await sock.sendMessage(chatId, { text: result.hpPercentLines.join('\n') });
+      else if (result.healed > 0) await sock.sendMessage(chatId, { text: `💚 *${result.skillUsed?.name || 'Recovery'}* restored *${result.healed}* HP → ${player.stats.hp}/${_effMax(player)}` });
       if ((result.synergyNotes || []).length) await sock.sendMessage(chatId, { text: `⚡ *SYNERGY* ${result.synergyNotes.join(' · ')}` });
       if (pro) await sock.sendMessage(chatId, { text: `💎 *PRO FOCUS* — your raid damage: ${UI.num(gate.damageDealt[sender])}` });
 
@@ -989,7 +990,8 @@ module.exports = {
       boss.hp = Math.max(0, bossWrap.stats.hp);
 
       const lines = [];
-      if (result.healed > 0) lines.push(`💚 *${result.skillUsed?.name || 'Recovery'}* restored *${result.healed}* HP → ${player.stats.hp}/${_effMax(player)}`);
+      if (Array.isArray(result.hpPercentLines) && result.hpPercentLines.length) lines.push(...result.hpPercentLines);
+      else if (result.healed > 0) lines.push(`💚 *${result.skillUsed?.name || 'Recovery'}* restored *${result.healed}* HP → ${player.stats.hp}/${_effMax(player)}`);
       if ((result.synergyNotes || []).length) lines.push(`⚡ *SYNERGY* ${result.synergyNotes.join(' · ')}`);
       // Push #55: the boss round reports what the pet did too.
       try { if (result.petLine) lines.push(result.petLine); } catch (e) {}
