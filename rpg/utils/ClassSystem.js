@@ -276,12 +276,36 @@ function stripClassFromPlayer(player) {
 function reconClass(player, opts = {}) {
   if (!player) return { success: false, error: 'No player.' };
   const oldName = player.classBase || (typeof player.class === 'string' ? player.class : player.class?.name) || null;
+  // Validate pinned options BEFORE stripping so a typo never leaves a classless player.
+  if (opts.className) {
+    const want = String(opts.className).toLowerCase();
+    const hit = ALL_CLASSES.find(n => n.toLowerCase() === want);
+    if (!hit) return { success: false, error: `Unknown class "${opts.className}". Valid: ${rollableClasses().join(', ')}` };
+    if (isExclusiveClass(hit) && !opts.allowExclusive) return { success: false, error: `${hit} is an exclusive class and cannot be assigned.` };
+  }
+  if (opts.quality != null) {
+    const q = Math.round(Number(opts.quality));
+    if (!(q >= MIN_AWAKEN_QUALITY && q <= MAX_AWAKEN_QUALITY)) return { success: false, error: `Quality must be ${MIN_AWAKEN_QUALITY}-${MAX_AWAKEN_QUALITY}.` };
+  }
   stripClassFromPlayer(player);
   let pool = rollableClasses();
   if (oldName) pool = pool.filter(n => n !== oldName);
   if (opts.exclude) pool = pool.filter(n => !opts.exclude.includes(n));
   if (!pool.length) pool = rollableClasses();
-  const className = pool[Math.floor(Math.random() * pool.length)];
+  // Push #87: mods may pin the class and/or quality (/recon @p <class>|<quality>).
+  let className = pool[Math.floor(Math.random() * pool.length)];
+  if (opts.className) {
+    const want = String(opts.className).toLowerCase();
+    const hit = ALL_CLASSES.find(n => n.toLowerCase() === want);
+    if (!hit) return { success: false, error: `Unknown class "${opts.className}". Valid: ${rollableClasses().join(', ')}` };
+    if (isExclusiveClass(hit) && !opts.allowExclusive) return { success: false, error: `${hit} is an exclusive class and cannot be assigned.` };
+    className = hit;
+  }
+  if (opts.quality != null) {
+    const q = Math.round(Number(opts.quality));
+    if (!(q >= MIN_AWAKEN_QUALITY && q <= MAX_AWAKEN_QUALITY)) return { success: false, error: `Quality must be ${MIN_AWAKEN_QUALITY}-${MAX_AWAKEN_QUALITY}.` };
+    player.classQuality = q; // applyClassToPlayer keeps a pre-set quality
+  }
   applyClassToPlayer(player, className);
   player.class = player.class || className; // Monster branch sets variant name
   player.classBase = player.classBase || className;

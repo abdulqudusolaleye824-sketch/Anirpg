@@ -24,6 +24,8 @@
 - **Rest-mending**: unequipped gear & weapons in the inventory silently regain +1 durability per hour (Pro: every 30 min).
 - **`/raid` in the wrong GC** now sends invite links for every `--main` dungeon GC instead of a raw group id.
 - **Birthdays 🎂**: on a player's registered D.O.B. (WAT day) they receive +24h PRO (extends a running sub) and a ~10-line birthday message via their serf bot; no serf/DM dropped → posted in the `--main` support GC with a mention. Players who were already Pro get a spotlight in the announcements GC (`/setspace`). Hourly, once per year. `/birthday` shows status; owners: `/birthday run|test`.
+- **`/recon` customization (mods)**: `/recon @p <Class>|<quality>` pins the class and/or quality (1–100); `/recon @p Mage` keeps current quality, `/recon @p |80` re-rolls class at 80%. **`/recon undo @p`** restores the exact pre-recon class/stats/skills. Invalid input never strips the player.
+- Birthday greetings go out at 00:00 WAT; `/birthday list` (mods → mods GC only) shows every player's birthday + age, soonest first.
 - **`/contract`**: ended (completed/defaulted/inactive) contracts no longer shown as the current contract.
 
 ## Push #86 — v1.0.89 (2026-09-21) — SILENT BOTS: ROOT CAUSE + DEAF-SOCKET DETECTOR
