@@ -23,6 +23,23 @@ module.exports = {
       let txt = pro ? `${UI.PRO_BAR}\n⚡ *BUFF SYSTEM* 💎\n${UI.PRO_BAR}\n\n` : `⚡ *BUFF SYSTEM*\n${UI.FREE_BAR}\n\n`;
       
       txt += `🟢 *ACTIVE BUFFS:*\n${BuffManager.getActiveBuff_Display(player)}\n\n`;
+      // Push #88c: combat stat boosts from skills (Battle Cry, Dominion…) with turns left.
+      try {
+        const tb = Object.entries(player.tempBuffs || {}).filter(([, v]) => v && (v.duration || 0) > 0 && (v.stat || v.bonus != null || v.amount != null));
+        txt += `⚔️ *COMBAT STAT BOOSTS (from skills):*\n`;
+        if (!tb.length) txt += `  _None active — cast a buff skill in battle (e.g. Battle Cry)._\n\n`;
+        else {
+          for (const [k, v] of tb) {
+            const src = String(k).split(':')[0];
+            const stat = v.stat === 'damageTaken' ? 'DMG TAKEN' : String(v.stat || k).toUpperCase();
+            const amt = v.amount != null ? Number(v.amount) : Math.round((Number(v.bonus) || 0) * 100);
+            const turns = Math.max(0, (v.duration || 0) - 1);
+            if (v.stat === 'shield' || k === 'shield') { txt += `  🛡️ Shield *${v.amount}* HP · ${turns} turn${turns === 1 ? '' : 's'} left\n`; continue; }
+            txt += `  ${amt >= 0 ? '⬆️' : '⬇️'} ${stat} ${amt >= 0 ? '+' : ''}${amt}% · ${turns} turn${turns === 1 ? '' : 's'} left${src && src !== k ? ` _(${src})_` : ''}\n`;
+          }
+          txt += `\n`;
+        }
+      } catch (e) {}
       
       txt += `📦 *AVAILABLE IN INVENTORY:*\n`;
       const buffKeys = ['xpBooster', 'goldMult', 'shieldScroll', 'mightElixir', 'luckPotion', 'gvcGold', 'gvcSilver', 'gvcBronze'];

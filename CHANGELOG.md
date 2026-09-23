@@ -1,3 +1,9 @@
+## 1.0.93 — Push #88c (2026-09-23)
+- Skill typing fix: any skill whose text states no real ATK%/damage but heals, cleanses, shields or buffs is now typed heal/buff (Purify, Dominion, Blood Frenzy, Iron Defense, Aura of Light, Solar Brilliance…). Support skills route to the free support cast in gates + tower dungeons (heal/cleanse/buff self or @teammate, no turn used, monster does not counter). "+60% ATK" is no longer mistaken for a damage multiplier. Monster 'Devour' (160% ATK) corrected to damage.
+- /mend all: ONE stone is shared evenly across every damaged item (10 items → +10% durability each). /mend <#> still = one item to 100%.
+- /buff: new "COMBAT STAT BOOSTS (from skills)" section — each active temp buff with % and turns left.
+- Poison Arrow etc.: verified 60% roll applies in gate + tower paths (not 100% by design; description says 60%).
+
 ## 1.0.92 — Push #88b (2026-09-23)
 - FIX: every /<classcmd> skill replied "on cooldown (15s)" — dispatcher pre-set the cooldown, then the engine checked it. Dispatcher now only gates; engines set.
 - %-HP contract: skills that heal/drain/cost a % of HP apply EXACTLY the stated % (drains capped at 50% of target max HP, half-heal drains honoured, conditional "<30% HP" lines are not drains). Applied in gate raids, tower dungeons and PvP. Miracle heals 50% (living), Healing Light 25%, Arcane Blast drains 10%, etc.

@@ -290,7 +290,27 @@ function wearGear(player) {
   }
   return broken;
 }
-/** Mending Stone: everything equipped + store items in the bag back to 100%. */
+/** Push #88c: /mend all SHARES one stone — 100% of restoration split evenly
+ *  across every damaged item (10 items → each gets +10% of its max durability).
+ *  Returns { count, items:[{name,before,after,max}] }. */
+function mendAllShared(player) {
+  const targets = [];
+  const add = (p) => { if (p && p.maxDurability != null && (p.durability || 0) < p.maxDurability) targets.push(p); };
+  if (player.weapon) add(player.weapon);
+  for (const p of Object.values(player.equippedGear || {})) add(p);
+  for (const p of (player.inventory?.items || [])) if (p && (p.isGear || p.isWeapon)) add(p);
+  if (!targets.length) return { count: 0, items: [] };
+  const share = 100 / targets.length; // % of each item's max durability
+  const items = [];
+  for (const p of targets) {
+    const before = p.durability || 0;
+    const gain = Math.max(1, Math.floor(p.maxDurability * share / 100));
+    p.durability = Math.min(p.maxDurability, before + gain);
+    items.push({ name: p.name, before, after: p.durability, max: p.maxDurability });
+  }
+  return { count: targets.length, sharePct: Math.round(share * 10) / 10, items };
+}
+/** Mending Stone: everything equipped + store items in the bag back to 100%. (legacy; no longer used by /mend all) */
 function mendAll(player) {
   let n = 0;
   const fix = (p) => { if (p && p.maxDurability != null && p.durability < p.maxDurability) { p.durability = p.maxDurability; n++; } };
@@ -355,7 +375,7 @@ function renderDetail(it) {
 module.exports = {
   RANKS, RANK_EMOJI, RANK_RARITY, BANDS, STATUS_EMOJI, STATUSES,
   dayKey, msUntilRotation, getStock, findStock, buy, instantiate, maxDurabilityFor,
-  equipWeapon, unequipWeapon, wearWeapon, wearGear, mendAll,
+  equipWeapon, unequipWeapon, wearWeapon, wearGear, mendAll, mendAllShared,
   statusDefense, weaponEffects, describeGearSpecial,
   renderStock, renderDetail, statLine, priceLine,
 };

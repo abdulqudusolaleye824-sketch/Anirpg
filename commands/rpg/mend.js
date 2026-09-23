@@ -4,7 +4,7 @@
 // durability, picked by its /inv number (equipped items are listed too).
 //   /mend            → show what can be mended + stones owned
 //   /mend 4          → mend /inv entry 4
-//   /mend all        → old behaviour (one stone mends everything you own)
+//   /mend all        → ONE stone shared evenly across all damaged items (Push #88c)
 // ═══════════════════════════════════════════════════════════════
 
 const UI = require('../../rpg/utils/UI');
@@ -57,7 +57,7 @@ module.exports = {
           t += `  *${n}.* ${e.name}${e.equipped ? ' ✅' : ''} 🔧${d}/${m}${flag}\n`;
         }
       }
-      t += `\n💡 /mend <number> — 1 stone restores that item to 100%\n💡 /mend all — 1 stone restores everything`;
+      t += `\n💡 /mend <number> — 1 stone restores that item to 100%\n💡 /mend all — 1 stone SHARED across all damaged items (10 items → +10% each)`;
       return sock.sendMessage(chatId, { text: t }, { quoted: msg });
     }
 
@@ -67,11 +67,14 @@ module.exports = {
 
     // ── mend all ──
     if (arg === 'all') {
-      let n = 0; try { n = require('../../rpg/utils/ArmoryStore').mendAll(player); } catch (e) {}
-      if (n === 0) return sock.sendMessage(chatId, { text: '✨ Everything is already at full durability — stone kept.' }, { quoted: msg });
+      // Push #88c: ONE stone is SHARED — 100% split evenly across every damaged item.
+      let r = { count: 0, items: [] }; try { r = require('../../rpg/utils/ArmoryStore').mendAllShared(player); } catch (e) {}
+      if (r.count === 0) return sock.sendMessage(chatId, { text: '✨ Everything is already at full durability — stone kept.' }, { quoted: msg });
       takeStone(player);
       saveDatabase();
-      return sock.sendMessage(chatId, { text: `🛠️ *Mending Stone used!*\n\n✨ ${n} item${n === 1 ? '' : 's'} restored to *100% durability*.\n🪨 Stones left: *${stones - 1}*` }, { quoted: msg });
+      const rows = r.items.slice(0, 12).map(it => `  • ${it.name}: ${it.before}/${it.max} → *${it.after}/${it.max}*`);
+      if (r.items.length > 12) rows.push(`  …and ${r.items.length - 12} more`);
+      return sock.sendMessage(chatId, { text: `🛠️ *Mending Stone shared!*\n\n1 stone ÷ ${r.count} item${r.count === 1 ? '' : 's'} = *+${r.sharePct}%* durability each\n${rows.join('\n')}\n\n🪨 Stones left: *${stones - 1}*\n💡 /mend <number> — 1 stone = one item to 100%` }, { quoted: msg });
     }
 
     // ── mend one ──

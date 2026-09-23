@@ -1,6 +1,6 @@
 {
   "name": "ani-rpg-bot",
-  "version": "1.0.92",
+  "version": "1.0.93",
   "description": "WhatsApp RPG Bot using Baileys",
   "main": "index.js",
   "scripts": {

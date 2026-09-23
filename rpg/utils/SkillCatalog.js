@@ -220,7 +220,7 @@ const EXPLICIT = {
     { name: 'Pack Tactics',        type: 'passive', effect: '• Passive: +15% ATK while allies fight beside you\n• Passive: +10% accuracy',                             description: 'Predators do not duel. They coordinate.' },
     { name: 'Terrifying Gaze',     type: 'debuff',  effect: '• Deals 80% ATK damage\n• 40% chance to inflict fear for 2 turns',                                       description: 'Prey looks away first. You do not.' },
     { name: 'Rending Bite',        type: 'damage',  effect: '• Deals 180% ATK damage\n• 50% chance to inflict bleed for 4 turns',                                      description: 'Teeth are the oldest weapons and still the rudest.' },
-    { name: 'Devour',              type: 'heal',    effect: '• Deals 160% ATK damage\n• Heal 25% of damage dealt',                                                   description: 'The hunt ends in a meal. That is the entire point of the hunt.' },
+    { name: 'Devour',              type: 'damage',   effect: '• Deals 160% ATK damage\n• Heal 25% of damage dealt',                                                   description: 'The hunt ends in a meal. That is the entire point of the hunt.' },
     { name: 'Chitin Armor',        type: 'buff',    effect: '• +40% DEF for 3 turns\n• Reflects 10% of damage taken',                                                description: 'Your shell is a door that only opens outward.' },
     { name: 'Web Trap',            type: 'debuff',  effect: '• Deals 90% ATK damage\n• Inflicts trueslow for 3 turns\n• 30% chance to silence for 2 turns',            description: 'Patience, then absolutely no escape.' },
     { name: 'Feral Charge',        type: 'damage',  effect: '• Deals 210% ATK damage\n• 30% chance to stun for 1 turn',                                               description: 'Distance is just a countdown you run at full speed.' },
@@ -257,6 +257,7 @@ const EXPLICIT = {
 };
 
 // ── Normalise one raw entry into a catalog skill ─────────────────────────────
+function isPassive0(effect) { return /•\s*passive/i.test(String(effect || '')); }
 function normalise(className, raw, index) {
   const name   = String(raw.name || `Skill ${index + 1}`).trim();
   const effect = ensureParseable(raw.effect || '• Deals 100% ATK damage');
@@ -356,6 +357,20 @@ function normalise(className, raw, index) {
   let type        = String(raw.type || (statuses.length && !parsed.damageMultiplier ? 'debuff' : 'damage')).toLowerCase();
   // Push #71: a healing move with no stated ATK multiplier IS a heal skill.
   if (type === 'damage' && selfHeal && !parsed.damageMultiplier) type = 'heal';
+  // Push #88c: a move whose text never states an ATK%/damage but heals,
+  // cleanses, shields or buffs is SUPPORT — never a strike (Purify, Dominion,
+  // Blood Frenzy, Aura of Light…). "It attacked instead of healing" bug.
+  if (type === 'damage' && !isPassive0(effect)) {
+    const lc = String(effect || '').toLowerCase();
+    const lcD = lc.replace(/(?:damage|dmg)\s+(?:taken|reduction|reduced|less)|(?:reduce|less|-\s*\d+%)[^.\n]*?(?:damage|dmg)|deal\s+\d+%\s+less|heals?\s+\d+%\s+of\s+damage|of\s+damage\s+taken|immune[^\n]*/g, ' ');
+    const statesDamage = /(?<![+\-−])\b\d+\s*%\s*(?:atk|attack|physical|magic|magical|holy|dark|fire|ice|true|aoe|water|blood|shadow|lightning|damage|dmg)|\b(?:deals?|dealing)\b|\bdamage\b|\bdmg\b|\bstrike\b|\bhits?\b|\bslash|\bshot\b|\barrow\b|\bbolt\b|\bblast|\bpierce|\bexecute|\bsmash|\bcrush|\bkill\b(?!\s+restores)|\bnova\b|\bstorm\b|\bbreath\b|\bclaw\b|\bbite\b/.test(lcD);
+    const isSupportText = /\b(heal|heals|restores?|cleanse|purif|remov\w* (?:all |1 |one )?debuff|strips?\b|shield|barrier|\+\d+%\s*(?:atk|def|spd|speed|all stats|crit)|(?:atk|def|spd|speed|all stats)\s*\+\d+%|dodge all|immun|revive|reviv)/.test(lc);
+    if (!statesDamage && isSupportText) {
+      const firstLine = lc.split('\n')[0];
+      const buffFirst = /[+]\d+%|\b(?:atk|def|spd|speed|all stats)\s*\+|dodge all|immun|shield|barrier/.test(firstLine);
+      type = buffFirst ? 'buff' : (/heal|restores?|cleanse|purif|reviv/.test(lc) ? 'heal' : 'buff');
+    }
+  }
   const isPassive = type === 'passive' || /•\s*passive/i.test(effect);
 
   const energyCost = Math.max(0, Number(
