@@ -14,6 +14,6 @@ module.exports = {
     skills: [
       { name: 'Fortress Stance', type: 'buff',    maxPotency: 50,  desc: 'DEF +{p}% for 3 turns' },
       { name: 'Counterguard',    type: 'passive', maxPotency: 30,  desc: 'Reflects {p}% of blocked damage' },
-      { name: 'Last Stand',      type: 'buff',    maxPotency: 80,  desc: 'Below 20% HP: ATK +{p}%' },
+      { name: 'Last Stand',      type: 'buff',    maxPotency: 80,  desc: 'DEF +{p}% for 3 turns (shield stance)' },
     ],
 };

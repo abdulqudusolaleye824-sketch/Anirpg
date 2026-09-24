@@ -88,12 +88,10 @@ function serialList(player) {
   stackInto(petFoodItems, 'petfood');
 
   // Legacy potion counters (no per-unit date — listed after dated items)
-  if ((inv.healthPotions || 0) > 0) entries.push({ kind: 'potion', name: 'Health Potion', rarity: 'common', count: inv.healthPotions, acquiredAt: 0, ref: null });
+  // Push #88e: three separate health-potion tiers (Lower common / Medium rare / Higher EPIC).
+  try { for (const t of require('../../rpg/utils/PotionTiers').listForInventory(player)) entries.push({ kind: 'potion', name: t.name, rarity: t.rarity, count: t.count, acquiredAt: 0, ref: null }); } catch (e) {}
   if ((inv.energyPotions || inv.manaPotions || 0) > 0) entries.push({ kind: 'potion', name: 'Energy Potion', rarity: 'common', count: inv.energyPotions || inv.manaPotions, acquiredAt: 0, ref: null });
   if ((inv.reviveTokens || 0) > 0) entries.push({ kind: 'potion', name: 'Revive Token', rarity: 'uncommon', count: inv.reviveTokens, acquiredAt: 0, ref: null });
-  // Batch-48: shop tier counters were never listed — visible now, with counts.
-  if ((inv.mediumHealthPotions || 0) > 0) entries.push({ kind: 'potion', name: 'Medium Health Potion', rarity: 'uncommon', count: inv.mediumHealthPotions, acquiredAt: 0, ref: null });
-  if ((inv.higherHealthPotions || 0) > 0) entries.push({ kind: 'potion', name: 'Higher Health Potion', rarity: 'rare', count: inv.higherHealthPotions, acquiredAt: 0, ref: null });
   // Materials stored as counters
   const mats = player.materials || {};
   for (const k of Object.keys(mats)) {
@@ -214,9 +212,9 @@ module.exports = {
         const desc = item.desc || item.description || null;
         if (desc) detail += `\n_${desc}_\n`;
         if (entry.kind === 'potion') {
-          if (entry.name === 'Health Potion') detail += `\n💚 Restores 50% HP. Use: /equip use (see /items)\n`;
-          else if (entry.name === 'Medium Health Potion') detail += `\n💚 Restores 25% HP. Use: /equip use (see /items)\n`;
-          else if (entry.name === 'Higher Health Potion') detail += `\n💚 Restores 50% HP. Use: /equip use (see /items)\n`;
+          if (entry.name === 'Lower Health Potion' || entry.name === 'Health Potion') detail += `\n💚 Restores 10% HP. Use: /use hp lower\n`;
+          else if (entry.name === 'Medium Health Potion') detail += `\n💚 Restores 25% HP (rare). Use: /use hp medium\n`;
+          else if (entry.name === 'Higher Health Potion') detail += `\n💚 Restores 50% HP (EPIC). Use: /use hp higher\n`;
           else if (entry.name === 'Energy Potion') detail += `\n⚡ Restores 50% Energy. Use: /equip use (see /items)\n`;
           else if (entry.name === 'Revive Token') detail += `\n💿 Auto-used on death in dungeons.\n`;
         } else {
@@ -314,11 +312,9 @@ module.exports = {
 
     // ── Potions & Consumables ────────────────────────────────────
     const oldPotions = [];
-    if ((inv.healthPotions||0)  > 0) oldPotions.push({ name:'Health Potion',  count:inv.healthPotions,  rarity:'common' });
+    try { for (const t of require('../../rpg/utils/PotionTiers').listForInventory(player)) oldPotions.push({ name:t.name, count:t.count, rarity:t.rarity }); } catch (e) {}
     if ((inv.energyPotions||inv.manaPotions||0) > 0) oldPotions.push({ name:'Energy Potion', count:inv.energyPotions||inv.manaPotions, rarity:'common' });
     if ((inv.reviveTokens||0)   > 0) oldPotions.push({ name:'Revive Token',   count:inv.reviveTokens,   rarity:'uncommon' });
-    if ((inv.mediumHealthPotions||0) > 0) oldPotions.push({ name:'Medium Health Potion', count:inv.mediumHealthPotions, rarity:'uncommon' });
-    if ((inv.higherHealthPotions||0) > 0) oldPotions.push({ name:'Higher Health Potion', count:inv.higherHealthPotions, rarity:'rare' });
 
     message += `💊 *POTIONS & CONSUMABLES*\n`;
     for (const p of oldPotions) {

@@ -1,3 +1,16 @@
+## 1.0.94 — Push #88d/#88e (2026-09-24)
+- Gate raids no longer drop Health Potions or Pet Food; tower dungeon floor/boss loot no longer drops Health Potions (shop-only).
+- Health potions are 3 separate inventory lines: Lower (10%, common) / Medium (25%, rare) / Higher (50%, EPIC). Legacy double-counter collapsed; buy/use keep tiers in sync.
+- Revive Token → 100,000 Nexus (bundles repriced so they no longer undercut it: Starter 105k, Dungeon Kit 500k, Mega Pack 1M).
+- /upgrade reset → flat 200,000 Nexus.
+- One-shot at boot: every player's health potions (each tier), energy potions and each pet-food type capped to 3 units.
+- Healing rules: only the Healer class can heal a teammate or the party. Every other class heals SELF ONLY and pays 2x energy for it (@teammate is refused). Party/AOE heals need a Healer of quality ≥70 and cost the caster HP scaling with heal power (8% + 0.4×heal% of max HP, cap 60%; refused if it would kill). Berserker Last Breath no longer heals the party ("removes all buffs" was matching the party wording).
+- /attacks sell <#> [confirm]: sell a pattern back to the attack shop for 10% of what you paid (90% loss). Purchases now record the paid price.
+- PvP: FROZEN / STUNNED / PARALYZED hunters are auto-skipped at round start (no 20s wait, cannot lock a move); attack patterns on cooldown are refused at lock-in instead of silently skipping the turn; statuses now tick once per fighter per round (double tick was expiring a 2-turn freeze before the frozen player's turn).
+- /skills: duplicate skills are impossible — sync collapses any duplicate across bar + library (highest level kept); equip/swap refuse an already-equipped skill.
+- Knight Last Stand (shield stance) now buffs DEF +80% (was ATK). Healer buffs verified end-to-end (Blessed Shield, Sanctuary Mastery DEF, Solar Brilliance ATK).
+- test_push88: 94/94.
+
 ## 1.0.93 — Push #88c (2026-09-23)
 - Skill typing fix: any skill whose text states no real ATK%/damage but heals, cleanses, shields or buffs is now typed heal/buff (Purify, Dominion, Blood Frenzy, Iron Defense, Aura of Light, Solar Brilliance…). Support skills route to the free support cast in gates + tower dungeons (heal/cleanse/buff self or @teammate, no turn used, monster does not counter). "+60% ATK" is no longer mistaken for a damage multiplier. Monster 'Devour' (160% ATK) corrected to damage.
 - /mend all: ONE stone is shared evenly across every damaged item (10 items → +10% durability each). /mend <#> still = one item to 100%.

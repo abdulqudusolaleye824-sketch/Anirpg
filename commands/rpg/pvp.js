@@ -361,6 +361,26 @@ module.exports = {
         if (!_equipped.includes(_pid)) {
           return sock.sendMessage(chatId, { text: `❌ Attack #${_pid} is not equipped!\nEquip it first: /attacks equip ${_pid}` }, { quoted: msg });
         }
+        // Push #88d: a pattern still on cooldown is REFUSED at lock-in (pick another) —
+        // it used to be accepted and then silently "skipped" at resolution.
+        const _pcd = UC.isOnCooldown(player, _pid);
+        if (_pcd.onCd) {
+          return sock.sendMessage(chatId, { text: `⏳ Attack #${_pid} is still on cooldown — ${UC.formatCd(_pcd.remaining)} left.\nPick another equipped pattern, a /skill, or plain /attack for a basic strike. Your turn is NOT locked.` }, { quoted: msg });
+        }
+      }
+      // Push #88d: a FROZEN / STUNNED / PARALYZED hunter cannot lock a move — the
+      // turn auto-skips (opponent still acts). No energy, no cooldown spent.
+      {
+        const _fxL = UC.canAct(player);
+        if (!_fxL.canAct) {
+          const _lbl = { frozen: '❄️ FROZEN', stunned: '💫 STUNNED', paralyzed: '🔱 PARALYZED', feared: '😱 FEARED' }[_fxL.reason] || '💫 STUNNED';
+          battle.pendingAction = { type: 'attack', arg: null, _skip: true, _cc: _fxL.reason };
+          saveDatabase();
+          await sock.sendMessage(chatId, { text: `${_lbl} — *${player.name}* cannot move this turn! Turn auto-skipped.` }, { quoted: msg });
+          const _oppB = opp.pvpBattle;
+          if (_oppB && _oppB.pendingAction) { try { await resolveTurn(sock, chatId, player, opp, db, saveDatabase, getDatabase); } catch (e) { console.error('[pvp] cc resolve:', e.message); } }
+          return;
+        }
       }
 
       // Skills are validated HERE (at lock-in), spend energy, and respect
@@ -376,7 +396,7 @@ module.exports = {
           return sock.sendMessage(chatId, { text: `❌ ${_res.error}\n\n${player.energyColor || '💙'} Energy: ${player.stats?.energy || 0}/${player.stats?.maxEnergy || 0}` }, { quoted: msg });
         }
         const _entry = _res.entry || _res.skill;
-        const _cost = SCv.effectiveCost(_entry);
+        const _cost = SCv.effectiveCost(_entry, player);
         if ((player.stats?.energy || 0) < _cost) {
           return sock.sendMessage(chatId, { text: `❌ Not enough ${player.energyType || 'energy'} for *${_entry.name}*!\nNeed ${_cost}, you have ${player.stats?.energy || 0}.\n💡 It refills out of battle only (${require('../../rpg/utils/RegenManager').getEnergyRegenRate(player.awakenRank || 'E')}/s at ${player.awakenRank || 'E'}-Rank).` }, { quoted: msg });
         }
@@ -554,7 +574,7 @@ async function resolveTurn(sock, chatId, p1, p2, db, saveDatabase) {
         critMult: 1.5 + Math.min(0.6, pct * 0.1),
         accuracy: 90,
         effect: st0 ? { type: st0.type, chance: st0.chance ?? 60, duration: st0.duration || 2 } : null,
-        energyCost: SCm ? SCm.effectiveCost(entry) : 0,
+        energyCost: SCm ? SCm.effectiveCost(entry, player) : 0,
         cooldownMs: SCm ? SCm.cooldownMs(entry) : 15000,
         cooldownSec: entry.cooldown || 2,
       };
@@ -586,7 +606,7 @@ async function resolveTurn(sock, chatId, p1, p2, db, saveDatabase) {
 
   if (act1 && (act1._skip || act1._timedOut)) {
     p1Skipped = true;
-    skipMsg1 = `⏳ *${name1}'s attack failed — no move locked in 20s. Turn skipped (0 dmg, status -1).`;
+    skipMsg1 = act1._cc ? `${({ frozen: '❄️', stunned: '💫', paralyzed: '🔱', feared: '😱' })[act1._cc] || '💫'} *${name1} is ${String(act1._cc).toUpperCase()} and cannot move!* Turn skipped.` : `⏳ *${name1}'s attack failed — no move locked in 20s. Turn skipped (0 dmg, status -1).`;
     res1 = { damage: 0, missed: false, crit: false, effective: 'skipped', _skipped: true };
   } else if (!_fx1.canAct) {
     p1Skipped = true;
@@ -601,7 +621,7 @@ async function resolveTurn(sock, chatId, p1, p2, db, saveDatabase) {
   }
   if (act2 && (act2._skip || act2._timedOut)) {
     p2Skipped = true;
-    skipMsg2 = `⏳ *${name2}'s attack failed — no move locked in 20s. Turn skipped (0 dmg, status -1).`;
+    skipMsg2 = act2._cc ? `${({ frozen: '❄️', stunned: '💫', paralyzed: '🔱', feared: '😱' })[act2._cc] || '💫'} *${name2} is ${String(act2._cc).toUpperCase()} and cannot move!* Turn skipped.` : `⏳ *${name2}'s attack failed — no move locked in 20s. Turn skipped (0 dmg, status -1).`;
     res2 = { damage: 0, missed: false, crit: false, effective: 'skipped', _skipped: true };
   } else if (!_fx2.canAct) {
     p2Skipped = true;
@@ -678,8 +698,9 @@ async function resolveTurn(sock, chatId, p1, p2, db, saveDatabase) {
         `❤️ ${name2}: ${BarSystemPVP.getHPBar(p2.stats?.hp || 0, p2.stats?.maxHp || 100, UC.isPro(p2))}`,
         `${FRAME}`,
       ].join('\n');
-      UC.tickStatuses(o.p);
-      UC.tickStatuses(o.opp);
+      // Push #88d: tick ONLY the acting fighter (each hunter ticks once per round;
+      // ticking both here made a 2-turn freeze vanish before its owner's turn).
+      { const _st = UC.tickStatuses(o.p); if (_st.length) { segment += `\n${_st.join('\n')}`; } }
     } else {
       // Shared 5-message battle flow (damage + move effect applied inside).
       const _silenced = (o.p === p1 && act1 && act1._silenced) || (o.p === p2 && act2 && act2._silenced);
@@ -705,9 +726,8 @@ async function resolveTurn(sock, chatId, p1, p2, db, saveDatabase) {
         segment += `\n${_petMsg.join('\n')}`;
         try { await sock.sendMessage(chatId, { text: _petMsg.join('\n'), mentions: [id1, id2] }); } catch (e) {}
       }
-      const tickLogs = UC.tickStatuses(o.opp);
       const selfTick = UC.tickStatuses(o.p);
-      const _ticks = [...tickLogs, ...selfTick];
+      const _ticks = [...selfTick];
       if (_ticks.length) {
         const _tickMsg = _ticks.join('\n');
         segment += `\n${_tickMsg}`;
@@ -752,6 +772,19 @@ async function resolveTurn(sock, chatId, p1, p2, db, saveDatabase) {
     p2.pvpBattle.pendingAction = null;
     p2.pvpBattle.turnExpiresAt = Date.now() + 20000;
   }
+  // Push #88d: a hunter who is FROZEN / STUNNED / PARALYZED at the start of the
+  // new round is auto-skipped right now — the opponent is not made to wait 20s
+  // and the crowd-controlled hunter cannot sneak a move in.
+  let _ccNote = '';
+  try {
+    for (const [pl, nm] of [[p1, name1], [p2, name2]]) {
+      const fx = UC.canAct(pl);
+      if (!fx.canAct && pl.pvpBattle) {
+        pl.pvpBattle.pendingAction = { type: 'attack', arg: null, _skip: true, _cc: fx.reason };
+        _ccNote += `${({ frozen: '❄️', stunned: '💫', paralyzed: '🔱' })[fx.reason] || '💫'} *${nm}* is ${String(fx.reason).toUpperCase()} — their turn ${turnNum + 1} is auto-skipped.\n`;
+      }
+    }
+  } catch (e) {}
   saveDatabase();
 
   const isPro1 = UC.isPro(p1);
@@ -791,6 +824,7 @@ async function resolveTurn(sock, chatId, p1, p2, db, saveDatabase) {
     `❤️ ${name2}: ${BarSystemPVP.getHPBar(p2.stats?.hp || 0, p2.stats?.maxHp || 100, isPro2)}${s2 ? `\n  ${s2.split('\n')[0]}` : ''}`,
     statusBlock,
     ``,
+    ...(_ccNote ? [_ccNote.trim()] : []),
     `📌 20s to lock move:`,
     `• /attack or /attack <pattern_id>`,
     `• /skill or /<classcmd>`,
@@ -804,6 +838,10 @@ async function resolveTurn(sock, chatId, p1, p2, db, saveDatabase) {
       await Buttons.sendButtons(sock, chatId, { text: nextMsg, mentions: [id1, id2], buttons: _ffBtns });
     } catch (e) { await UC.slowSend(sock, chatId, { text: nextMsg, mentions: [id1, id2] }); }
   } else await UC.slowSend(sock, chatId, { text: nextMsg, mentions: [id1, id2] });
+  // Push #88d: both hunters crowd-controlled → nobody can lock, resolve the round now.
+  if (p1.pvpBattle?.pendingAction?._cc && p2.pvpBattle?.pendingAction?._cc) {
+    return resolveTurn(sock, chatId, p1, p2, db, saveDatabase);
+  }
   setTimeout(async () => {
     try {
       const cur1 = db.users?.[id1];

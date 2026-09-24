@@ -390,6 +390,8 @@ const loadDatabase = (memDoc = null) => {
       database = JSON.parse(data);
 
       PlayerMigration.migrateAllPlayers(database);
+      // Push #88e: one-shot cap — every player's health potions + pet food → 3 units each.
+      try { const _pc = require('./rpg/utils/PotionTiers').capAllPlayers(database); if (_pc.done && !_pc.already) console.log(`🧪 Potion/pet-food cap (3 each) applied to ${_pc.touched} players`); } catch (e) { console.error('potion cap:', e.message); }
 
       // ── Migrate botAdmins → botMods (one-shot, July 2026) ────────
       if (database.botAdmins) {

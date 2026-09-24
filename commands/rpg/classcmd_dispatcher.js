@@ -216,7 +216,7 @@ async function defaultHandler(sock, msg, player, skill, db, saveDatabase, getDat
   // Deduct energy, set cooldown
   let SCC = null;
   try { SCC = require('../../rpg/utils/SkillCatalog'); } catch (e) {}
-  const realCost = SCC ? SCC.effectiveCost(skill) : energyCost;
+  const realCost = SCC ? SCC.effectiveCost(skill, player) : energyCost;
   player.stats.energy = Math.max(0, (player.stats.energy || 0) - realCost);
   if (SCC) SCC.setCooldown(player, skill);
   else { player.lastSkillUse = player.lastSkillUse || {}; player.lastSkillUse[skill.name] = Date.now(); }
@@ -544,7 +544,7 @@ function showClassSkillMenu(sock, msg, player, className) {
         lns.push(`${i + 1}. *${e.name}* [Lv.${e.unlocksAtLevel}]`);
         lns.push(`   📖 ${e.description}`);
         lns.push(`   ${e.effect.split('\n').join('\n   ')}`);
-        lns.push(`   ${_SC.effectiveCost(mine)} energy · ${_SC.effectiveCooldownTurns(mine)} turn CD · ⚔️ ${e.damagePct || 0}% ATK`);
+        lns.push(`   ${_SC.effectiveCost(mine, player)} energy · ${_SC.effectiveCooldownTurns(mine)} turn CD · ⚔️ ${e.damagePct || 0}% ATK`);
         lns.push('');
       });
       if (passives.length) {
@@ -625,7 +625,7 @@ function normaliseJidShort(jid) {
 function skillReady(player, skill) {
   let SC = null;
   try { SC = require('../../rpg/utils/SkillCatalog'); } catch (e) {}
-  const energyCost = SC ? SC.effectiveCost(skill) : (skill.energyCost || 15);
+  const energyCost = SC ? SC.effectiveCost(skill, player) : (skill.energyCost || 15);
   if ((player.stats.energy || 0) < energyCost) return { ok: false, reason: `Not enough energy! Need ${energyCost}` };
   if (SC) {
     const cd = SC.onCooldown(player, skill);

@@ -224,9 +224,9 @@ function resetAllocations(player) {
     return { success: false, message: '❌ You have no stat allocations to reset!' };
   }
   
-  const resetCost = player.level * 1000;
+  const resetCost = 200000; // Push #88e: flat 200k Nexus
   if ((player.gold || 0) < resetCost) {
-    return { success: false, message: `❌ Not enough Nexus to reset stats!\n\nCost: ${resetCost}g\nYou have: ${player.gold || 0} 💠` };
+    return { success: false, message: `❌ Not enough Nexus to reset stats!\n\nCost: ${resetCost.toLocaleString()} 💠\nYou have: ${player.gold || 0} 💠` };
   }
   
   player.gold -= resetCost;

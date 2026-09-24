@@ -50,7 +50,7 @@ function playerDamage(player, skillName = null, target = null) {
 
     const cd = SC.onCooldown(player, entry || skill);
     if (!cd.ready) return { damage: 0, blocked: true, reason: `*${skill.name}* is on cooldown! (${Math.ceil(cd.msLeft / 1000)}s)` };
-    const cost = entry ? SC.effectiveCost(entry) : (skill.energyCost || 0);
+    const cost = entry ? SC.effectiveCost(entry, player) : (skill.energyCost || 0);
     if ((player.stats?.energy || 0) < cost) return { damage: 0, blocked: true, reason: `Not enough energy for *${skill.name}*! Need ${cost}.` };
 
     // Skills are a multiplier of ATK (plus magic power for casters), not the
@@ -738,15 +738,53 @@ function supportCast(caster, casterJid, target, targetJid, skillName, gate, db) 
   if (!isHeal && !isBuff) return { ok: false, error: `*${skill.name}* is not a heal or buff — cast it on the monster with /skill ${skill.name}.`, notSupport: true };
   const cd = SC.onCooldown(caster, entry);
   if (!cd.ready) return { ok: false, error: `*${skill.name}* is on cooldown! (${Math.ceil(cd.msLeft / 1000)}s)` };
-  const cost = SC.effectiveCost(entry);
-  if ((caster.stats?.energy || 0) < cost) return { ok: false, error: `Not enough energy for *${skill.name}*! Need ${cost}.` };
+  // ── Push #88d: HEALING RULES ─────────────────────────────────────────────
+  //  • Only the HEALER class may heal a TEAMMATE or the PARTY. Every other
+  //    class's heal is SELF-ONLY and costs 2× energy (a big mana commitment).
+  //  • Party-wide heals exist only for HIGH-QUALITY Healers (quality ≥ 70) and
+  //    cost the caster HP: 8% + 0.4% per heal% — the stronger the heal, the
+  //    more of the caster's own life it burns (never below 1 HP).
+  //  • Buff skills keep working on self / @teammate as before.
+  const CPq = (() => { try { return require('../utils/ClassPower'); } catch (e) { return null; } })();
+  const casterBase = CPq && CPq.baseClassName ? String(CPq.baseClassName(caster) || '') : String(caster.classBase || caster.class || '');
+  const isHealerClass = /^healer$/i.test(casterBase);
+  const casterQuality = CPq && CPq.quality ? Number(CPq.quality(caster)) || 0 : Number(caster.classQuality) || 0;
+  const text = `${entry.effect || ''} ${entry.description || ''} ${skill.desc || ''}`.toLowerCase();
+  // "removes ALL buffs" / "all debuffs" is not a party heal — only ally/party wording counts.
+  const textForScope = text.replace(/(?:all|every)\s+(?:your\s+)?(?:de)?buffs?/g, ' ').replace(/all\s+(?:status\s+)?(?:effects|ailments)/g, ' ');
+  const partyWorded = /\b(all\s+(?:allies|party|members|alive\s+allies|ko'd\s+allies)|entire\s+party|every\s+ally|party(?:\s+members)?|allies|team(?:mates)?)\b/.test(textForScope);
+  let cost = SC.effectiveCost(entry, caster);
+  let party = false;
+  if (isHeal) {
+    if (!isHealerClass) {
+      // Non-healers: self only, double energy.
+      if (target && target !== caster && targetJid && casterJid && GKM.normaliseJid(targetJid) !== GKM.normaliseJid(casterJid)) {
+        return { ok: false, error: `Only a *Healer* can heal a teammate. *${skill.name}* can only heal yourself: /skill ${skill.name}` };
+      }
+      target = caster; targetJid = casterJid;
+      cost = cost * 2;
+    } else if (partyWorded) {
+      if (casterQuality < 70) return { ok: false, error: `*${skill.name}* is a party-wide heal — it needs a high-quality Healer (class quality ≥ 70%, yours is ${casterQuality}%). Heal one teammate instead: /skill ${skill.name} @teammate` };
+      party = true;
+    }
+  }
+  if ((caster.stats?.energy || 0) < cost) return { ok: false, error: `Not enough energy for *${skill.name}*! Need ${cost}${!isHealerClass && isHeal ? ' (self-heals cost double for non-Healers)' : ''}.` };
+  // Party heal HP toll — charged before the heal so the caster feels it.
+  let hpToll = 0;
+  if (party) {
+    const hpPct = Number(entry.healingPct) || 20;
+    const tollPct = Math.min(60, 8 + 0.4 * hpPct);
+    const cmax = (() => { try { return require('../utils/GearSystem').effectiveMaxHp(caster); } catch (e) { return caster.stats.maxHp || 100; } })();
+    hpToll = Math.floor(cmax * tollPct / 100);
+    if ((caster.stats.hp || 0) <= hpToll) return { ok: false, error: `*${skill.name}* would cost *${hpToll} HP* (${tollPct.toFixed(0)}% of your max) — you only have ${caster.stats.hp}. Heal yourself first.` };
+    // (deducted AFTER the heal loop — the caster is a party target too, so
+    //  paying first would just be healed back by their own cast.)
+  }
   caster.stats.energy = Math.max(0, (caster.stats.energy || 0) - cost);
   SC.setCooldown(caster, entry);
   let healPower = 1;
   try { const CP = require('../utils/ClassPower'); healPower = 1 + ((CP.passiveMultipliers(caster).healPower || 0) / 100); } catch (e) {}
   const lines = [];
-  const text = `${entry.effect || ''} ${entry.description || ''} ${skill.desc || ''}`.toLowerCase();
-  const party = /\b(all|entire|every|party|allies|team)\b/.test(text);
   const targets = [];
   if (party && gate && gate.raid && gate.raid.members) {
     // Every living party member (including the caster).
@@ -791,7 +829,8 @@ function supportCast(caster, casterJid, target, targetJid, skillName, gate, db) 
     }
   }
   if (gate) markHealerAggro(gate, casterJid, caster.name);
-  return { ok: true, skill, lines, healed: healedTotal, party: targets.length > 1, isHeal, isBuff };
+  if (hpToll > 0) { caster.stats.hp = Math.max(1, (caster.stats.hp || 0) - hpToll); lines.push(`🩸 *${caster.name}* channels ${hpToll} HP into the party heal → ${caster.stats.hp}`); }
+  return { ok: true, skill, lines, healed: healedTotal, party: targets.length > 1, isHeal, isBuff, energyCost: cost, hpToll };
 }
 
 // ── Status ──────────────────────────────────────────────────────
@@ -868,24 +907,7 @@ function monsterKilledBy(gate, monster, sender, db) {
     }
   }
 
-  // 50% chance to drop Pet Food
-  if (Math.random() <= 0.50) {
-    const foodList = [
-      { name: 'Monster Kibble', restore: 30, rarity: 'common' },
-      { name: 'Royal Monster Feed', restore: 100, rarity: 'uncommon' }
-    ];
-    const food = foodList[Math.floor(Math.random() * foodList.length)];
-    // Push #71: one pet-food bucket (id-keyed) — /pet feed consumes from here.
-    try { const PDB = require('../utils/PetDatabase'); const f = PDB.resolvePetFood(food.name); PDB.addPetFood(player, f ? f.id : 'kibble', 1); } catch (e) {}
-    lines.push(`🍖 *PET FOOD DROP → ${player.name}*: *${food.name}*`);
-  }
-
-  // 30% chance to drop a Health Potion
-  if (Math.random() <= 0.30) {
-    player.inventory.lowerHealthPotions = (player.inventory.lowerHealthPotions || 0) + 1;
-    player.inventory.healthPotions = (player.inventory.healthPotions || 0) + 1;
-    lines.push(`🩹 *POTION DROP → ${player.name}*: *Lower Health Potion*`);
-  }
+  // Push #88e: Pet Food and Health Potions are NO LONGER raid drops (shop-only).
 
   return lines;
 }

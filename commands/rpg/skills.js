@@ -193,6 +193,7 @@ module.exports = {
       if (libIdx < 0 || libIdx >= library.length) return sock.sendMessage(chatId, { text: `❌ Invalid library slot! You have ${library.length} skills in library.` }, { quoted: msg });
       const oldSkill = equipped[slotIdx];
       const newSkill = library[libIdx];
+      if (equipped.some((s, i) => i !== slotIdx && String(s.name).toLowerCase() === String(newSkill.name).toLowerCase())) return sock.sendMessage(chatId, { text: `❌ *${newSkill.name}* is already equipped — a skill can only be in your bar once.` }, { quoted: msg });
       equipped[slotIdx] = newSkill;
       library[libIdx] = oldSkill;
       player.skills.active = equipped;
@@ -211,6 +212,7 @@ module.exports = {
       if (equipped.length >= maxSlots) {
         return sock.sendMessage(chatId, { text: `❌ All ${maxSlots} slots full!\nUse /skills swap [slot#] [library#] to swap.\nOr /skills remove [slot#] to unequip one first.` }, { quoted: msg });
       }
+      if (equipped.some(s => String(s.name).toLowerCase() === String(library[libIdx].name).toLowerCase())) return sock.sendMessage(chatId, { text: `❌ *${library[libIdx].name}* is already equipped — a skill can only be in your bar once.` }, { quoted: msg });
       const skill = library.splice(libIdx, 1)[0];
       equipped.push(skill);
       player.skills.active = equipped;

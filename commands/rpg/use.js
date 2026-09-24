@@ -259,8 +259,7 @@ ${FRAME}`;
       if (inBattleInfo?.type === 'pvp') {
         // Deduct potion
         if (chosenTier === 'lower') {
-          if (player.inventory.lowerHealthPotions > 0) player.inventory.lowerHealthPotions--;
-          else if (player.inventory.healthPotions > 0) player.inventory.healthPotions--;
+          require('../../rpg/utils/PotionTiers').consume(player, 'lower', 1);
         } else if (chosenTier === 'medium') {
           player.inventory.mediumHealthPotions--;
         } else if (chosenTier === 'higher') {
@@ -310,8 +309,7 @@ ${FRAME}`;
 
       // Deduct item
       if (chosenTier === 'lower') {
-        if ((player.inventory.lowerHealthPotions || 0) > 0) player.inventory.lowerHealthPotions--;
-        else if ((player.inventory.healthPotions || 0) > 0) player.inventory.healthPotions--;
+        require('../../rpg/utils/PotionTiers').consume(player, 'lower', 1);
       } else if (chosenTier === 'medium') {
         player.inventory.mediumHealthPotions--;
       } else if (chosenTier === 'higher') {

@@ -508,9 +508,16 @@ function levelBonus(skill) {
   return { lv, dmgMult: 1 + (lv - 1) * 0.08, costReduction: (lv - 1) * 3, cdReduction: Math.floor((lv - 1) * 0.5) };
 }
 
-function effectiveCost(skill) {
+function effectiveCost(skill, caster = null) {
   const b = levelBonus(skill);
-  return Math.max(5, (skill.energyCost || 0) - b.costReduction);
+  let c = Math.max(5, (skill.energyCost || 0) - b.costReduction);
+  // Push #88d: heals are a Healer's craft — every other class pays DOUBLE energy.
+  if (caster && String(skill && skill.type || '').toLowerCase() === 'heal') {
+    let base = '';
+    try { base = String(require('./ClassPower').baseClassName(caster) || ''); } catch (e) { base = String(caster.classBase || caster.class || ''); }
+    if (!/^healer$/i.test(base)) c = c * 2;
+  }
+  return c;
 }
 
 function effectiveCooldownTurns(skill) {
@@ -700,6 +707,30 @@ function syncPlayerSkills(player) {
   for (const arr of [player.skills.active, player.availableSkills, player.skills.locked, player.skills.passive]) {
     for (let i = arr.length - 1; i >= 0; i--) {
       if (!rosterNames.has(nameOf(arr[i]))) { arr.splice(i, 1); changed = true; }
+    }
+  }
+  // Push #88e: NO duplicate skills. The same skill can only live once across
+  // the bar + library (kept the highest-level copy, bar copy wins ties).
+  {
+    const seen = new Map();
+    const keyOf = (s) => String((s && s.name) || '').toLowerCase().trim();
+    const all = [...player.skills.active.map((s, i) => ({ s, where: 'active', i })), ...player.availableSkills.map((s, i) => ({ s, where: 'lib', i }))];
+    for (const e of all) {
+      const k = keyOf(e.s); if (!k) continue;
+      const prev = seen.get(k);
+      if (!prev) { seen.set(k, e); continue; }
+      const lvE = Number(e.s.level || 1), lvP = Number(prev.s.level || 1);
+      if (lvE > lvP) { prev.drop = true; seen.set(k, e); } else { e.drop = true; }
+      changed = true;
+    }
+    if (all.some(e => e.drop)) {
+      const keepAct = all.filter(e => e.where === 'active' && !e.drop).map(e => e.s);
+      const keepLib = all.filter(e => e.where === 'lib' && !e.drop).map(e => e.s);
+      // a higher-level library copy replaces a dropped bar copy in place
+      const droppedBar = all.filter(e => e.where === 'active' && e.drop);
+      for (const d of droppedBar) { const winner = seen.get(keyOf(d.s)); if (winner && winner.where === 'lib') { const li = keepLib.indexOf(winner.s); if (li >= 0) { keepLib.splice(li, 1); keepAct.push(winner.s); } } }
+      player.skills.active = keepAct;
+      player.availableSkills = keepLib;
     }
   }
   while (player.skills.active.length > maxSlots) {

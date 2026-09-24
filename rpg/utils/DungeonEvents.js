@@ -57,7 +57,7 @@ const EVENT_TYPES = {
       // Gives each player a free health potion
       players.forEach(p => {
         if (!p.inventory) p.inventory = {};
-        p.inventory.healthPotions = (p.inventory.healthPotions||0) + 1;
+        try { require('./PotionTiers').add(p, 'lower', 1); } catch (e) { p.inventory.healthPotions = (p.inventory.healthPotions||0) + 1; }
       });
       return {
         type:'positive',

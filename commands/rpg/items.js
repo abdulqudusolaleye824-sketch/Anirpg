@@ -81,8 +81,8 @@ function buildList(player, opts = {}) {
   // Batch-48: medium/higher tiers were INVISIBLE everywhere (own counters,
   // never listed) — listed now, with counts. Cards join too so every item
   // is visible AND transferable.
-  for (let i = 0; i < (inv.mediumHealthPotions || 0); i++) synthetic.push({ name: 'Medium Health Potion', type: 'Potion', rarity: 'uncommon', _synthetic: 'mediumHealthPotions' });
-  for (let i = 0; i < (inv.higherHealthPotions || 0); i++) synthetic.push({ name: 'Higher Health Potion', type: 'Potion', rarity: 'rare', _synthetic: 'higherHealthPotions' });
+  for (let i = 0; i < (inv.mediumHealthPotions || 0); i++) synthetic.push({ name: 'Medium Health Potion', type: 'Potion', rarity: 'rare', _synthetic: 'mediumHealthPotions' });
+  for (let i = 0; i < (inv.higherHealthPotions || 0); i++) synthetic.push({ name: 'Higher Health Potion', type: 'Potion', rarity: 'epic', _synthetic: 'higherHealthPotions' });
   const _cards48 = player.cards || {};
   for (let i = 0; i < (_cards48.namechange || 0); i++) synthetic.push({ name: 'Rename Card', type: 'Card', rarity: 'legendary', _synthetic: 'card:namechange' });
   for (let i = 0; i < (_cards48.seticon || 0); i++) synthetic.push({ name: 'Seticon Token', type: 'Card', rarity: 'legendary', _synthetic: 'card:seticon' });

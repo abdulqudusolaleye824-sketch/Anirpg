@@ -141,10 +141,44 @@ function purchaseFromShop(attackId, sender, db, saveDatabase) {
 
   // Purchase
   player.attackPatterns.owned.push(attackId);
+  // Push #88d: remember what was PAID so /attacks sell can refund exactly 10% of it.
+  try {
+    if (!player.attackPatterns.paid) player.attackPatterns.paid = {};
+    player.attackPatterns.paid[attackId] = { nexus: Math.max(0, (_preGold71 || 0) - (player.gold || 0)), stones: Math.max(0, (_preMana71 || 0) - (player.manaCrystals || 0)), at: Date.now() };
+  } catch (e) {}
   shopItem.units -= 1;
   saveDatabase();
 
   return { success: true, attack: atk };
+}
+
+// ── Push #88d: sell a pattern back to the shop for 10% of what was paid ──────
+// (a 90% LOSS — patterns are not an investment). Falls back to 10% of the
+// shop price if the purchase predates price tracking. Equipped patterns are
+// unequipped first. The unit goes back on the shelf if it is in today's shop.
+const SELL_BACK_PCT = 10;
+function sellToShop(attackId, sender, db, saveDatabase) {
+  const player = db.users?.[sender];
+  if (!player) return { success: false, error: 'Not registered.' };
+  const ap = player.attackPatterns || { owned: [], equipped: [] };
+  if (!ap.owned.includes(attackId)) return { success: false, error: `You don't own Attack #${attackId}.` };
+  const atk = generateAttack(attackId);
+  if (!atk) return { success: false, error: 'Unknown attack pattern.' };
+  const paid = (ap.paid || {})[attackId] || null;
+  const baseN = paid ? paid.nexus : (atk.cost.shopNexus || 0);
+  const baseS = paid ? paid.stones : (atk.cost.shopStones || 0);
+  const refundN = Math.floor(baseN * SELL_BACK_PCT / 100);
+  const refundS = Math.floor(baseS * SELL_BACK_PCT / 100);
+  ap.owned = ap.owned.filter(id => id !== attackId);
+  ap.equipped = (ap.equipped || []).filter(id => id !== attackId);
+  if (ap.paid) delete ap.paid[attackId];
+  player.gold = (player.gold || 0) + refundN;
+  player.manaCrystals = (player.manaCrystals || 0) + refundS;
+  if (player.inventory) player.inventory.gold = player.gold;
+  try { require('./TransactionLog').logCredit(player, 'pattern_sell', refundN, refundS, `#${attackId}`); } catch (e) {}
+  try { const shop = ensureShopFresh(db); const it = (shop.items || []).find(i => i.id === attackId); if (it) it.units += 1; } catch (e) {}
+  if (saveDatabase) saveDatabase();
+  return { success: true, attack: atk, refundNexus: refundN, refundStones: refundS, paidNexus: baseN, paidStones: baseS, pct: SELL_BACK_PCT };
 }
 
 // ── Get shop display ──────────────────────────────────────────────────────────
@@ -175,4 +209,4 @@ function getShopStats(db) {
   };
 }
 
-module.exports = { ensureShopFresh, purchaseFromShop, getShopDisplay, getShopStats, SHOP_SIZE };
+module.exports = { ensureShopFresh, purchaseFromShop, sellToShop, SELL_BACK_PCT, getShopDisplay, getShopStats, SHOP_SIZE };

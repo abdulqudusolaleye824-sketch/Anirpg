@@ -34,7 +34,7 @@ const CONSUMABLES = [
   {id:1,name:'Lower Health Potion',emoji:'🩹',desc:'Restores 10% HP',cost:800,key:'lowerHealthPotions'},
   {id:2,name:'Medium Health Potion',emoji:'🧪',desc:'Restores 25% HP',cost:5000,key:'mediumHealthPotions'},
   {id:3,name:'Higher Health Potion',emoji:'🍷',desc:'Restores 50% HP',cost:7000,key:'higherHealthPotions'},
-  {id:5,name:'Revive Token',emoji:'🎫',desc:'Auto-revive once in dungeon',cost:20000,key:'reviveTokens'},
+  {id:5,name:'Revive Token',emoji:'🎫',desc:'Auto-revive once in dungeon',cost:100000,key:'reviveTokens'},
   {id:6,name:'Luck Potion',emoji:'🍀',desc:'+25% catch rate & casino odds',cost:2000,key:'luckPotion'},
   // Push #87: XP Booster (#7) and Nexus Multiplier (#8) SCRAPPED — no more 2x EXP / 2x Nexus potions.
   {id:9,name:'Shield Scroll',emoji:'🛡️',desc:'Absorbs one hit in next fight',cost:4000,key:'shieldScroll'},
@@ -53,11 +53,11 @@ const CRYSTAL_ITEMS = [
 ];
 
 const BUNDLES = [
-  {id:1,name:'Starter Pack',emoji:'🎁',desc:'5 HP Pots + 5 Energy Pots + 1 Revive Token',cost:24000},
-  {id:2,name:'Dungeon Kit',emoji:'⚔️',desc:'10 HP Pots + 5 Revive Tokens + 2 Luck Potions',cost:115000},
+  {id:1,name:'Starter Pack',emoji:'🎁',desc:'5 HP Pots + 5 Energy Pots + 1 Revive Token',cost:105000},
+  {id:2,name:'Dungeon Kit',emoji:'⚔️',desc:'10 HP Pots + 5 Revive Tokens + 2 Luck Potions',cost:500000},
   {id:3,name:'PvP Bundle',emoji:'🏆',desc:'Elixir of Might + Shield Scroll + 2 Luck Potions',cost:20000},
   {id:4,name:'Mana Stone Bundle',emoji:'💎',desc:'200 Mana Stones + 3 Summon Tickets',cost:150000},
-  {id:5,name:'Mega Pack',emoji:'👑',desc:'20 HP Pots + 10 Revives + 5 Luck Potions + 500 Mana Stones',cost:60000},
+  {id:5,name:'Mega Pack',emoji:'👑',desc:'20 HP Pots + 10 Revives + 5 Luck Potions + 500 Mana Stones',cost:1000000},
 ];
 
 module.exports = {
@@ -353,12 +353,11 @@ ${FRAME}`
         updatePlayerNexus(player,-cost,null);
         try { require('../../rpg/utils/TransactionLog').logTransaction(player, { type: 'shop_buy', amount: cost, currency: '💠', note: `${amount}x ${item.name}` }); } catch (e) {};
         if(item.key==='lowerHealthPotions' || item.key==='healthPotions') {
-          player.inventory.lowerHealthPotions = (player.inventory.lowerHealthPotions || 0) + amount;
-          player.inventory.healthPotions = (player.inventory.healthPotions || 0) + amount;
+          require('../../rpg/utils/PotionTiers').add(player, 'lower', amount);
         } else if(item.key==='mediumHealthPotions') {
-          player.inventory.mediumHealthPotions = (player.inventory.mediumHealthPotions || 0) + amount;
+          require('../../rpg/utils/PotionTiers').add(player, 'medium', amount);
         } else if(item.key==='higherHealthPotions') {
-          player.inventory.higherHealthPotions = (player.inventory.higherHealthPotions || 0) + amount;
+          require('../../rpg/utils/PotionTiers').add(player, 'higher', amount);
         } else if(item.key==='energyPotions'){if(player.inventory.energyPotions!==undefined)player.inventory.energyPotions=(player.inventory.energyPotions||0)+amount;else player.inventory.manaPotions=(player.inventory.manaPotions||0)+amount;}
         else if(item.key==='reviveTokens') player.inventory.reviveTokens=(player.inventory.reviveTokens||0)+amount;
         else if(item.key==='luckPotion'){for(let i=0;i<amount;i++)player.inventory.items.push({name:'Luck Potion',type:'Consumable',rarity:'uncommon',isLuckPotion:true});}
@@ -422,11 +421,11 @@ ${FRAME}`
         updatePlayerNexus(player,-bundle.cost,null);
         try { require('../../rpg/utils/TransactionLog').logTransaction(player, { type: 'shop_buy', amount: bundle.cost, currency: '💠', note: `${bundle.name || `bundle`}` }); } catch (e) {};
         let received='';
-        if(bundle.id===1){player.inventory.healthPotions=(player.inventory.healthPotions||0)+5;player.inventory.reviveTokens=(player.inventory.reviveTokens||0)+1;received='🩹 5 HP Potions\n🎫 1 Revive Token';}
-        else if(bundle.id===2){player.inventory.healthPotions=(player.inventory.healthPotions||0)+10;player.inventory.reviveTokens=(player.inventory.reviveTokens||0)+5;for(let i=0;i<2;i++)player.inventory.items.push({name:'Luck Potion',type:'Consumable',isLuckPotion:true});received='🩹 10 HP Potions\n🎫 5 Revive Tokens\n🍀 2 Luck Potions';}
+        if(bundle.id===1){require('../../rpg/utils/PotionTiers').add(player,'lower',5);player.inventory.reviveTokens=(player.inventory.reviveTokens||0)+1;received='🩹 5 HP Potions\n🎫 1 Revive Token';}
+        else if(bundle.id===2){require('../../rpg/utils/PotionTiers').add(player,'lower',10);player.inventory.reviveTokens=(player.inventory.reviveTokens||0)+5;for(let i=0;i<2;i++)player.inventory.items.push({name:'Luck Potion',type:'Consumable',isLuckPotion:true});received='🩹 10 HP Potions\n🎫 5 Revive Tokens\n🍀 2 Luck Potions';}
         else if(bundle.id===3){player.inventory.items.push({name:'Elixir of Might',type:'Consumable',isMightElixir:true,charges:5,atkBonus:20});player.inventory.items.push({name:'Shield Scroll',type:'Consumable',isShieldScroll:true});player.inventory.items.push({name:'Luck Potion',type:'Consumable',isLuckPotion:true});player.inventory.items.push({name:'Luck Potion',type:'Consumable',isLuckPotion:true});received='💪 Elixir of Might\n🛡️ Shield Scroll\n🍀 2 Luck Potions';}
         else if(bundle.id===4){player.manaCrystals=(player.manaCrystals||0)+200;player.summonTickets=(player.summonTickets||0)+3;received='💎 200 Mana Stones\n🎟️ 3 Summon Tickets';}
-        else if(bundle.id===5){player.inventory.healthPotions=(player.inventory.healthPotions||0)+20;player.inventory.reviveTokens=(player.inventory.reviveTokens||0)+10;for(let i=0;i<5;i++)player.inventory.items.push({name:'Luck Potion',type:'Consumable',isLuckPotion:true});player.manaCrystals=(player.manaCrystals||0)+500;received='🩹 20 HP Potions\n🎫 10 Revive Tokens\n🍀 5 Luck Potions\n💎 500 Mana Stones';}
+        else if(bundle.id===5){require('../../rpg/utils/PotionTiers').add(player,'lower',20);player.inventory.reviveTokens=(player.inventory.reviveTokens||0)+10;for(let i=0;i<5;i++)player.inventory.items.push({name:'Luck Potion',type:'Consumable',isLuckPotion:true});player.manaCrystals=(player.manaCrystals||0)+500;received='🩹 20 HP Potions\n🎫 10 Revive Tokens\n🍀 5 Luck Potions\n💎 500 Mana Stones';}
         try { require('../../rpg/utils/QuestDispatcher').trackAndNotify(player, 'shop', 1, sock, sender, chatId); } catch(e){}
         saveDatabase();
         return sock.sendMessage(chatId,{text:`${FRAME}\n${bundle.emoji} *${bundle.name} PURCHASED!*\n${FRAME}\n📦 *You received:*\n${received}\n${FRAME}\n💠 Spent: ${bundle.cost.toLocaleString()} 💠 (+${tax} 💠 tax)\n💠 Nexus left: ${(player.gold||0).toLocaleString()}\n${FRAME}`},{quoted:msg});

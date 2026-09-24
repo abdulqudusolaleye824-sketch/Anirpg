@@ -382,6 +382,35 @@ module.exports = {
       }, { quoted: msg });
     }
 
+    // ── Push #88d: /attacks sell <#> — 10% of what you paid (a 90% loss) ──────
+    if (sub === 'sell') {
+      const num = parseInt(args[1]);
+      if (isNaN(num) || num < 1 || num > 750) return sock.sendMessage(chatId, { text: `❌ Usage: /attacks sell <#>\n\n⚠️ The shop buys back at *${Shop.SELL_BACK_PCT}%* of what you paid — a 90% loss.` }, { quoted: msg });
+      if (!ap.owned.includes(num)) return sock.sendMessage(chatId, { text: `❌ You don't own Attack #${num}. /attacks all` }, { quoted: msg });
+      const confirm = (args[2] || '').toLowerCase() === 'confirm';
+      const peek = DB.generateAttack(num);
+      const paid = (ap.paid || {})[num] || null;
+      const bN = paid ? paid.nexus : (peek?.cost?.shopNexus || 0), bS = paid ? paid.stones : (peek?.cost?.shopStones || 0);
+      if (!confirm) {
+        return sock.sendMessage(chatId, { text: [
+          `🥋 *SELL ATTACK #${num} — ${peek?.name || ''}?*`, FRAME,
+          `You paid: 💠 ${bN.toLocaleString()} · 💎 ${bS.toLocaleString()}`,
+          `Shop offers *${Shop.SELL_BACK_PCT}%*: 💠 ${Math.floor(bN / 10).toLocaleString()} · 💎 ${Math.floor(bS / 10).toLocaleString()}`,
+          `⚠️ That is a *90% loss*. This cannot be undone.`,
+          ``,
+          `Confirm: */attacks sell ${num} confirm*`,
+        ].join('\n') }, { quoted: msg });
+      }
+      const r = Shop.sellToShop(num, sender, db, saveDatabase);
+      if (!r.success) return sock.sendMessage(chatId, { text: `❌ ${r.error}` }, { quoted: msg });
+      return sock.sendMessage(chatId, { text: [
+        ...(pro ? [UI.PRO_BAR, `🥋 *ATTACK SOLD* 💎`, UI.PRO_BAR] : [`🥋 *ATTACK SOLD*`, UI.FREE_BAR]),
+        `${DB.RANK_EMOJI[r.attack.rank] || ''} *#${r.attack.id} — ${r.attack.name}* returned to the shop.`,
+        `↩️ Refund (${r.pct}%): 💠 +${r.refundNexus.toLocaleString()} · 💎 +${r.refundStones.toLocaleString()}`,
+        `💰 Balance: 💠 ${(player.gold || 0).toLocaleString()} · 💎 ${(player.manaCrystals || 0).toLocaleString()}`,
+      ].join('\n') }, { quoted: msg });
+    }
+
     // ── Fallback ──────────────────────────────────────────────────────────────
     return sock.sendMessage(chatId, {
       text: [
@@ -394,6 +423,7 @@ module.exports = {
         `/attacks rank <rank>  — browse by rank`,
         `/attacks shop         — today's shop`,
         `/attacks buy <#>      — purchase`,
+        `/attacks sell <#>     — sell back (10% refund)`,
         FRAME,
         ...(pro ? [UI.PRO_MINI, `💎 *PRO ARSENAL* — ${ap.equipped.length}/${MAX_EQUIPPED} equipped`] : [UI.upsell()]),
       ].join('\n'),

@@ -252,7 +252,7 @@ function calculateFloorRewards(floor, playerLevel, isBoss) {
 }
 
 const BOSS_LOOT = {
-  5:  [{ name: 'Health Potion', type: 'Potion', rarity: 'common' }, { name: 'Energy Potion', type: 'Potion', rarity: 'common' }],
+  5:  [{ name: 'Energy Potion', type: 'Potion', rarity: 'common' }, { name: 'Iron Ore', type: 'QuestItem', rarity: 'common', isQuestItem: true }],
   10: [{ name: 'Revive Token', type: 'Consumable', rarity: 'uncommon' }, { name: 'Luck Potion', type: 'Consumable', rarity: 'uncommon', isLuckPotion: true }],
   15: [{ name: 'Rare Gem', type: 'QuestItem', rarity: 'rare' }, { name: 'Ancient Mana Stone', type: 'QuestItem', rarity: 'rare', isQuestItem: true }],
   20: [{ name: 'Legendary Fragment', type: 'QuestItem', rarity: 'legendary', isQuestItem: true }, { name: 'Revive Token', type: 'Consumable', rarity: 'uncommon' }]
@@ -352,8 +352,9 @@ class DungeonManager {
       if (roll < 0.4) {
         loot.push({ name: 'Iron Ore', type: 'QuestItem', rarity: 'common', isQuestItem: true });
       } else if (roll < 0.7) {
-        loot.push({ name: 'Health Potion', type: 'Potion', rarity: 'common' });
+        // Push #88e: Health Potions removed from dungeon loot (shop-only). Energy potion 50% instead.
         if (Math.random() < 0.5) loot.push({ name: 'Energy Potion', type: 'Potion', rarity: 'common' });
+        else loot.push({ name: 'Iron Ore', type: 'QuestItem', rarity: 'common', isQuestItem: true });
       } else {
         loot.push({ name: 'Iron Ore', type: 'QuestItem', rarity: 'common', isQuestItem: true });
       }

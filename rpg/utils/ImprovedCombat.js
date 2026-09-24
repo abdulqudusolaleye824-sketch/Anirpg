@@ -33,7 +33,7 @@ class ImprovedCombat {
       SkillCatalog.canonicalClassName(attacker) || 'Unknown', skill.name);
 
     // ── Energy cost ───────────────────────────────────────────
-    const energyCost = entry ? SkillCatalog.effectiveCost(entry)
+    const energyCost = entry ? SkillCatalog.effectiveCost(entry, attacker)
       : (skillInfo.dragonCost || skillInfo.manaCost || skillInfo.holyCost ||
          skillInfo.hungerCost  || skillInfo.rageCost || skillInfo.focusCost ||
          skillInfo.energyCost  || skill.energyCost || 20);
