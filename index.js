@@ -170,6 +170,11 @@ async function loadFromMongoDoc() {
 
 let saveTimeout = null;
 let _bootUsers = 0; // Push #31: users present at boot (write-guard baseline)
+// Push #88k: count only REAL players (records with stats) when comparing
+// stores — stub records without stats are dropped by boot normalization, so
+// counting them made Mongo (87 raw) look "fuller" than SQLite (83 real) every
+// boot → needless adoption + divergence alarms + refused Mongo writes.
+function _realUsers(doc) { try { let n = 0; for (const u of Object.values((doc && doc.users) || {})) if (u && u.stats) n++; return n; } catch (e) { return 0; } }
 let _dbReady = false; // Push #88i: NOTHING may write the DB before boot load finished (the 3s season timer saved `{}` over a slow-loading boot)
 let _bootAt = 0;    // Push #31: boot timestamp
 let _lastSnapAt = 0;       // Push #32: last hourly snapshot
@@ -303,7 +308,7 @@ function _doMongoWrite() {
         // Push #31: NEVER let an emptied in-memory DB clobber a fuller mirror.
         // Legit flows never delete all users — 0 users after a non-empty boot
         // means a bad load, and the mirror is the only surviving copy.
-        const _memUsers = Object.keys(database.users || {}).length;
+        const _memUsers = _realUsers(database);
         if (_memUsers === 0 && _bootUsers > 0) {
           console.error(`🛡️ Mongo mirror PROTECTED: refusing to overwrite ${_bootUsers} users with an empty DB. Investigate the load path!`);
           return;
@@ -316,7 +321,7 @@ function _doMongoWrite() {
           try {
             const _rd = await mongoCollection.findOne({ _id: 'main' });
             const _rdDb = _mirrorToDb(_rd); // Push #66: schema or legacy shape
-            _remoteUsers = _rdDb ? Object.keys(_rdDb.users || {}).length : 0;
+            _remoteUsers = _rdDb ? _realUsers(_rdDb) : 0;
           } catch { _remoteUsers = -1; }
           if (_remoteUsers < 0) return; // Atlas unreachable — JSON mirror covers; retry arming on next save
           if (_forceFlag && fs.existsSync(_forceFlag)) {
@@ -1503,7 +1508,7 @@ async function startup() {
   // the fuller-wins invariant is preserved at the new top of the stack: if a
   // backup holds MORE users than SQLite, adopt the backup and RESEED SQLite.
   const sqliteDoc = Storage.load();
-  const _selSu = sqliteDoc ? Object.keys(sqliteDoc.users || {}).length : -1;
+  const _selSu = sqliteDoc ? _realUsers(sqliteDoc) : -1;
   const sqliteAt = (sqliteDoc && sqliteDoc.__savedAt) || 0;
   const mongoAt = (mongoDoc && mongoDoc.__savedAt) || 0;
   const _kb = (d) => { try { return Math.round(Buffer.byteLength(JSON.stringify(d)) / 1024); } catch { return 0; } };
@@ -1511,12 +1516,12 @@ async function startup() {
   // Push #37: load the FULLER side (count wins; timestamp breaks ties). Time
   // alone let a newer-but-emptier JSON beat a fuller Mongo — the 02:00 boot
   // loaded 0 users over Mongo's 4.
-  const _selMu = mongoDoc ? Object.keys(mongoDoc.users || {}).length : -1;
-  const _selJu = jsonDoc ? Object.keys(jsonDoc.users || {}).length : -1;
+  const _selMu = mongoDoc ? _realUsers(mongoDoc) : -1;
+  const _selJu = jsonDoc ? _realUsers(jsonDoc) : -1;
   let _loadedFrom = 'fresh';
   const _mongoWins = mongoDoc && ((_selMu > _selJu) || (_selMu === _selJu && mongoAt >= jsonAt));
   const _backupDoc = _mongoWins ? mongoDoc : jsonDoc;
-  const _backupUsers = _backupDoc ? Object.keys(_backupDoc.users || {}).length : -1;
+  const _backupUsers = _backupDoc ? _realUsers(_backupDoc) : -1;
   if (sqliteDoc) {
     if (_backupDoc && _backupUsers > _selSu) {
       // Divergence: a backup mirror is FULLER than the live store — adopt it.
