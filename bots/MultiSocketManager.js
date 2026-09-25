@@ -296,6 +296,12 @@ async function getWaVersion() {
 // registry is the bulletproof sibling-recognition layer: no JID matching,
 // no LID/PN ambiguity — if we sent it, we ignore it.
 const _sentIds = new Map(); // id -> timestamp
+// Push #88j: AFK durations always shown as h/m/s.
+function _fmtHMS(ms) {
+  const t = Math.max(0, Math.floor(ms / 1000));
+  const h = Math.floor(t / 3600), m = Math.floor((t % 3600) / 60), s = t % 60;
+  return (h > 0 ? `${h}h ` : '') + `${m}m ${s}s`;
+}
 const { inspectOutgoing, logSend: _logSend, getSendLog } = require('../utils/outgoingGuard'); // Push #88
 
 // Push #88h: SENT-MESSAGE STORE — the permanent fix for the blank-bubble storms.
@@ -2178,13 +2184,7 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
         );
         if (!afkEntry) continue;
         const [, afk] = afkEntry;
-        const totalSecs = Math.floor((Date.now() - (afk.since || Date.now())) / 1000);
-        const hrs  = Math.floor(totalSecs / 3600);
-        const mins = Math.floor((totalSecs % 3600) / 60);
-        const secs = totalSecs % 60;
-        let awayStr = '';
-        if (hrs > 0)  awayStr += `${hrs}h `;
-        awayStr += `${mins}m ${secs}s`;
+        const awayStr = _fmtHMS(Date.now() - (afk.since || Date.now()));
         const afkMention = `@${bareNumber}`;
         try {
           await sock.sendMessage(chatId, {
@@ -2201,7 +2201,7 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
     // ── AFK SELF WELCOME-BACK ──────────────────────────────────────────
     if (isGroup && isActive && db.afkUsers && db.afkUsers[sender]) {
       const afk = db.afkUsers[sender];
-      const duration = Math.floor((Date.now() - (afk.since || Date.now())) / 60000);
+      const duration = _fmtHMS(Date.now() - (afk.since || Date.now())); // Push #88j: h/m/s
       const mentionText = `@${sender.split('@')[0]}`;
       delete db.afkUsers[sender];
       try { saveDatabase(); } catch (e) {}
@@ -2209,11 +2209,16 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
         await sock.sendMessage(chatId, {
           text:
             `👋 *Welcome back!* ${mentionText}` + String.fromCharCode(10) +
-            `💤 You were AFK for ${duration} min(s).` + String.fromCharCode(10) +
+            `💤 You were ${afk.auto ? 'auto-AFK' : 'AFK'} for ${duration}.` + String.fromCharCode(10) +
             `📝 Reason: ${afk.reason || 'AFK'}`,
           mentions: [sender],
         }, { quoted: msg });
       } catch (e) { /* best effort */ }
+    }
+
+    // ── Push #88j: last-seen (any group, any bot) — feeds Pro auto-AFK ──
+    if (isGroup && !msg.key.fromMe && sender) {
+      try { if (!db.lastSeen) db.lastSeen = {}; db.lastSeen[sender] = Date.now(); } catch (e) {}
     }
 
     // ── Push #74: /link <bot> from a DM — anyone with the LINK PASSWORD.
@@ -2678,6 +2683,7 @@ module.exports = {
   _bootstrapDispatcher,
   _isOwnBotNumber,
   _recordSentId,
+  _fmtHMS,
   _rememberSentProto,
   _getSentProto,
   getSendLog, inspectOutgoing,

@@ -1,3 +1,9 @@
+## 1.0.97 — Push #88j (2026-09-25)
+- /rob on the Owner or Co-Owner: the thief loses 50% of their TOTAL Nexus (wallet first, then bank account) to them — with a named call-out ("You actually tried to rob Naruto?! lol").
+- AFK: all durations (welcome-back, mention notice, /cooldowns) shown in hours/minutes/seconds.
+- Pro auto-AFK: a Pro player who has sent nothing in any group for 30 minutes silently enters AFK (timer starts at the 30-minute mark, no entry announcement); the usual welcome-back fires when they speak. Auto-AFK never expires on its own.
+- Boot safety (#88i): no DB write is possible before the boot load completes; /api/snapshots + /api/restore.
+
 ## 1.0.96 — Push #88h (2026-09-25)
 - ROOT CAUSE of the blank-bubble storms (dozens of empty Mikasa messages, worst right after /restart): when a phone can't decrypt a message it sends a retry receipt and Baileys asks `getMessage()` for the original to resend — ours returned `{ conversation: '' }`, so every retry receipt shipped an EMPTY message (one blank bubble per retry per device). Baileys' own retry cache only lasts 5 min and is empty after a restart, which is why restarts triggered floods. Fix: a real sent-message store (last 3000 protos / 2h, persisted to auth/sent-protos.json across restarts) backs `getMessage`; unknown ids return nothing so Baileys skips the resend instead of inventing a blank one.
 

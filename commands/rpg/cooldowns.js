@@ -71,8 +71,9 @@ module.exports = {
 
     // ── AFK status ────────────────────────────────────────────
     if (db.afkUsers?.[sender]) {
-      const afkMins = Math.floor((now - db.afkUsers[sender].since) / 60000);
-      lines.push(`💤 *AFK:* Active for ${afkMins}m — auto-clears in ${fmt(Math.max(0,(db.afkUsers[sender].since + 8*60*60*1000) - now))}`);
+      const _t = Math.max(0, Math.floor((now - db.afkUsers[sender].since) / 1000)); const _h = Math.floor(_t/3600), _m = Math.floor((_t%3600)/60), _s = _t%60;
+      const afkStr = (_h ? `${_h}h ` : '') + `${_m}m ${_s}s`;
+      lines.push(db.afkUsers[sender].auto ? `💤 *Auto-AFK:* ${afkStr} — ends when you speak` : `💤 *AFK:* Active for ${afkStr} — auto-clears in ${fmt(Math.max(0,(db.afkUsers[sender].since + 8*60*60*1000) - now))}`);
     }
 
     // ── Bank withdrawal cooldown ──────────────────────────────

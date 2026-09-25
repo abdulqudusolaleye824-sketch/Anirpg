@@ -1396,6 +1396,7 @@ setInterval(() => {
   const AFK_EXPIRE_MS = 8 * 60 * 60 * 1000;
   let expired = 0;
   for (const [userId, afk] of Object.entries(database.afkUsers)) {
+    if (afk && afk.auto) continue; // Push #88j: silent auto-AFK only ends when the player speaks
     if (now - afk.since > AFK_EXPIRE_MS) {
       delete database.afkUsers[userId];
       expired++;
@@ -1406,6 +1407,30 @@ setInterval(() => {
     console.log(`🧹 Auto-cleared ${expired} expired AFK status(es)`);
   }
 }, 30 * 60 * 1000);
+
+// Push #88j: PRO AUTO-AFK — a Pro player who has sent nothing in ANY group
+// for 30 minutes silently enters AFK. No announcement on entry; the timer
+// starts at the 30-minute mark; the normal welcome-back fires when they speak.
+const AUTO_AFK_MS = 30 * 60 * 1000;
+setInterval(() => {
+  try {
+    if (!_dbReady || !database.lastSeen) return;
+    if (!database.afkUsers) database.afkUsers = {};
+    const now = Date.now(); let n = 0;
+    const UIx = require('./rpg/utils/UI');
+    for (const [jid, seen] of Object.entries(database.lastSeen)) {
+      if (!seen || now - seen < AUTO_AFK_MS) continue;
+      if (database.afkUsers[jid]) continue;
+      const pl = database.users?.[jid];
+      if (!pl || !UIx.isPro(pl)) continue;
+      database.afkUsers[jid] = { reason: 'Auto AFK (inactive 30m)', since: seen + AUTO_AFK_MS, auto: true, silent: true };
+      n++;
+    }
+    // Trim stale last-seen entries (>7 days) so the map never grows unbounded.
+    for (const [jid, seen] of Object.entries(database.lastSeen)) if (now - seen > 7 * 86400000) delete database.lastSeen[jid];
+    if (n) { saveDatabase(); console.log(`💤 Auto-AFK: ${n} Pro player(s) went silent-AFK`); }
+  } catch (e) { console.error('auto-afk:', e.message); }
+}, 60 * 1000);
 
 // ── Bot scheduler: every bot handles RPG commands + AI chat ─────────
 // Push #82: one place builds a bot's boot options, so bots started later via

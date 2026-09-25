@@ -39,6 +39,8 @@ function findVictim(db, targetJid, argsText) {
   return null;
 }
 
+function _isProThiefEarly(t) { return !!((t.isPro || t.proStatus) && t.proExpiresAt && t.proExpiresAt > Date.now()); }
+
 module.exports = {
   name: 'rob',
   aliases: [],
@@ -82,6 +84,45 @@ module.exports = {
           text: '❌ You cannot rob yourself! 🤦'
         }, { quoted: msg });
       }
+
+      // ── Push #88j: robbing the Owner or Co-Owner is a death sentence ──
+      // 50% of the thief's TOTAL Nexus (wallet + bank account) goes to them.
+      try {
+        const Perms = require('../../utils/permissions');
+        if (Perms.isBotOwner(db, targetJid)) {
+          const Banking = require('../../rpg/banking/BankingSystem');
+          const wallet = Math.max(0, Math.floor(thief.gold || 0));
+          let bankBal = 0, acct = null, bank = null;
+          try { bank = Banking.getAccountBank(db, sender); acct = bank && bank.accounts.find(a => a.userId === sender); bankBal = Math.max(0, Math.floor(acct?.balance || 0)); } catch (e) {}
+          const total = wallet + bankBal;
+          const loss = Math.floor(total * 0.5);
+          // Take from the wallet first, then the bank account.
+          const fromWallet = Math.min(wallet, loss);
+          const fromBank = Math.min(bankBal, loss - fromWallet);
+          if (fromWallet > 0) updatePlayerNexus(thief, -fromWallet, null);
+          if (fromBank > 0 && acct) { acct.balance -= fromBank; if (bank && typeof bank.totalDeposits === 'number') bank.totalDeposits = Math.max(0, bank.totalDeposits - fromBank); }
+          if (loss > 0) updatePlayerNexus(victim, loss, null);
+          thief.stealCooldown = Date.now() + (_isProThiefEarly(thief) ? 15 : 30) * 60 * 1000;
+          saveDatabase();
+          const vName = victim.name || `@${targetJid.split('@')[0]}`;
+          const lines = [
+            FRAME,
+            `👑 *YOU ACTUALLY TRIED TO ROB ${String(vName).toUpperCase()}?!* 💀`,
+            FRAME,
+            `😂 *@${sender.split('@')[0]}* seriously tried to rob *${vName}*… lol.`,
+            `The Nexus itself turned on you.`,
+            ``,
+            `💸 Lost: *${loss.toLocaleString()}* Nexus 💠 (50% of your total ${total.toLocaleString()})`,
+            fromWallet ? `   • Wallet: -${fromWallet.toLocaleString()}` : null,
+            fromBank ? `   • Bank: -${fromBank.toLocaleString()}` : null,
+            `👑 Paid to: *${vName}*`,
+            `⏰ Next rob: ${_isProThiefEarly(thief) ? 15 : 30} minutes`,
+            FRAME,
+            `_Some people are simply not robbable._`,
+          ].filter(l => l !== null && l !== undefined);
+          return await sock.sendMessage(chatId, { text: lines.join('\n'), mentions: [sender, targetJid] }, { quoted: msg });
+        }
+      } catch (e) { console.error('rob owner-guard:', e.message); }
 
       const _isProThief = !!((thief.isPro || thief.proStatus) && thief.proExpiresAt && thief.proExpiresAt > Date.now());
       const cooldownTime = (_isProThief ? 15 : 30) * 60 * 1000;
