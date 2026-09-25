@@ -298,6 +298,58 @@ async function getWaVersion() {
 const _sentIds = new Map(); // id -> timestamp
 const { inspectOutgoing, logSend: _logSend, getSendLog } = require('../utils/outgoingGuard'); // Push #88
 
+// Push #88h: SENT-MESSAGE STORE — the permanent fix for the blank-bubble storms.
+// When a phone can't decrypt one of our messages (the long-running Baileys
+// "Bad MAC" issue) it sends a retry receipt and Baileys asks getMessage() for
+// the original proto to re-encrypt and resend. getMessage used to return
+// `{ conversation: '' }` — so EVERY retry receipt shipped an EMPTY message,
+// i.e. one blank bubble per retry per device (dozens in a busy group). Now we
+// keep the real proto of everything we sent (last 3000 / 2h) and hand that
+// back; if we no longer have it we return undefined and Baileys skips the
+// resend instead of inventing a blank one.
+const _sentProtos = new Map(); // id -> { t, message }
+const _SENT_PROTO_MAX = 3000, _SENT_PROTO_TTL = 2 * 60 * 60 * 1000;
+function _rememberSentProto(id, message) {
+  if (!id || !message || typeof message !== 'object') return;
+  try {
+    _sentProtos.set(String(id), { t: Date.now(), message });
+    if (_sentProtos.size > _SENT_PROTO_MAX) {
+      const cutoff = Date.now() - _SENT_PROTO_TTL;
+      for (const [k, v] of _sentProtos) { if (v.t < cutoff || _sentProtos.size > _SENT_PROTO_MAX) _sentProtos.delete(k); else break; }
+    }
+  } catch (e) {}
+}
+function _getSentProto(key) {
+  try {
+    const id = key && key.id ? String(key.id) : null;
+    const hit = id && _sentProtos.get(id);
+    if (hit && hit.message) return hit.message;
+    if (id) console.warn(`↩️ retry-receipt for unknown message ${id} (${key.remoteJid || '?'}) — NOT resending (no blank bubble)`);
+  } catch (e) {}
+  return undefined;
+}
+async function _getMessageForRetry(key) { return _getSentProto(key); }
+// Persist the store across /restart + redeploys (retry receipts for messages
+// sent by the PREVIOUS process were the classic post-restart blank storm).
+const _SENT_PROTO_FILE = require('path').join(process.env.DATA_DIR || require('path').join(__dirname, '..'), 'auth', 'sent-protos.json');
+function _saveSentProtos() {
+  try {
+    const cutoff = Date.now() - _SENT_PROTO_TTL; const out = {};
+    for (const [k, v] of _sentProtos) if (v.t >= cutoff) out[k] = v;
+    require('fs').mkdirSync(require('path').dirname(_SENT_PROTO_FILE), { recursive: true });
+    require('fs').writeFileSync(_SENT_PROTO_FILE + '.tmp', JSON.stringify(out)); require('fs').renameSync(_SENT_PROTO_FILE + '.tmp', _SENT_PROTO_FILE);
+  } catch (e) {}
+}
+(function _loadSentProtos() {
+  try {
+    const raw = JSON.parse(require('fs').readFileSync(_SENT_PROTO_FILE, 'utf8')); const cutoff = Date.now() - _SENT_PROTO_TTL; let n = 0;
+    for (const [k, v] of Object.entries(raw || {})) if (v && v.message && v.t >= cutoff) { _sentProtos.set(k, v); n++; }
+    if (n) console.log(`↩️ sent-message store: restored ${n} protos for retry receipts`);
+  } catch (e) {}
+})();
+setInterval(_saveSentProtos, 30 * 1000).unref();
+process.once('SIGTERM', _saveSentProtos); process.once('SIGINT', _saveSentProtos); process.once('beforeExit', _saveSentProtos);
+
 function _recordSentId(id) {
   if (!id) return;
   try {
@@ -1375,7 +1427,7 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
     maxMsgRetryCount: 5,              // Retry stanzas up to 5 times
     enableAutoSessionRecreation: true, // rebuild the per-contact session on retry #2 (explicit)
     enableRecentMessageCache: true,    // required for the retry manager above
-    getMessage: async () => ({ conversation: '' }),
+    getMessage: _getMessageForRetry, // Push #88h: real store — never resend an empty proto
     // Identity patch — plain text/media sends need no wrapping; interactive
     // sends are built + MD-patched explicitly inside utils/buttons.
     patchMessageBeforeSending: (msg) => msg,
@@ -1480,6 +1532,7 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
         }
       }
       try { _recordSentId(_res?.key?.id); } catch (e) {}
+      try { if (_res?.key?.id && _res.message) _rememberSentProto(_res.key.id, _res.message); } catch (e) {}
       // Push #88: post-send proto audit — if what Baileys actually built has
       // no renderable content, say so loudly in the log (the pre-send guard
       // above should make this impossible; this proves it).
@@ -1512,6 +1565,7 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
         return { key: { remoteJid: jid, id: null, fromMe: true }, blocked: true, reason: verdict.reason };
       }
       const r = await _rawRelay(jid, message, options);
+      try { const _id = (options && options.messageId) || (typeof r === 'string' ? r : r?.key?.id || r?.id); if (_id) { _rememberSentProto(_id, message); _recordSentId(_id); } } catch (e) {}
       try { _logSend(personalityKey, jid, (verdict && verdict.kind) || '?', 'ok', (verdict && verdict.preview) || ''); } catch (e) {}
       return r;
     };
@@ -2624,6 +2678,8 @@ module.exports = {
   _bootstrapDispatcher,
   _isOwnBotNumber,
   _recordSentId,
+  _rememberSentProto,
+  _getSentProto,
   getSendLog, inspectOutgoing,
   _wasSentByUs,
   _sockets: () => botSockets,

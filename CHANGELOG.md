@@ -1,3 +1,6 @@
+## 1.0.96 — Push #88h (2026-09-25)
+- ROOT CAUSE of the blank-bubble storms (dozens of empty Mikasa messages, worst right after /restart): when a phone can't decrypt a message it sends a retry receipt and Baileys asks `getMessage()` for the original to resend — ours returned `{ conversation: '' }`, so every retry receipt shipped an EMPTY message (one blank bubble per retry per device). Baileys' own retry cache only lasts 5 min and is empty after a restart, which is why restarts triggered floods. Fix: a real sent-message store (last 3000 protos / 2h, persisted to auth/sent-protos.json across restarts) backs `getMessage`; unknown ids return nothing so Baileys skips the resend instead of inventing a blank one.
+
 ## 1.0.95 — Push #88f (2026-09-25)
 - Raids/dungeons: monster aggro ONLY targets the Healer class and only after an actual heal; stale aggro on non-Healers is discarded.
 - PvP: heal/buff skills are support casts in duels too (heal/buff/cleanse self, NO damage) — same as dungeons. Statuses, temp buffs and pattern/skill cooldowns are cleared when a duel ends (5-turn stuns no longer follow you into the next match; cooldowns reset). PvP can't be started while either player is in a raid/dungeon; raids can't be entered/joined mid-duel.
