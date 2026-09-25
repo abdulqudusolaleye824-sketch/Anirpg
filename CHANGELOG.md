@@ -1,3 +1,8 @@
+## 1.0.98 — Push #88k (2026-09-25)
+- /prostore stones <pc>: PC → Mana Stones packs — 1000→500k, 2000→1M, 3000→1.7M, 4000→3M, 5000→4M (listed in the store menu).
+- /silence @mod [minutes]|[reason] (owner/co-owner only): the mod can only use moderation commands until it expires or /unsilence. Non-mods and owners can't be silenced.
+- /extract @player N|M <amount|all> (owner/co-owner only): pulls Nexus (N) or Mana Stones (M) out of a player's bank account into your wallet.
+
 ## 1.0.97 — Push #88j (2026-09-25)
 - /rob on the Owner or Co-Owner: the thief loses 50% of their TOTAL Nexus (wallet first, then bank account) to them — with a named call-out ("You actually tried to rob Naruto?! lol").
 - AFK: all durations (welcome-back, mention notice, /cooldowns) shown in hours/minutes/seconds.

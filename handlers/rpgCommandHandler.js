@@ -80,6 +80,9 @@ async function sendChunked(sock, chatId, text, options = {}) {
 }
 
 const commands = {};
+// Push #88k: "moderation commands" = anything that gates on mod/owner rights
+// (or is tagged category mod/admin). A /silence'd mod may use ONLY these.
+const MOD_CMDS = new Set(['help', 'menu', 'mods', 'cooldowns', 'ban', 'unban', 'banned', 'mute', 'unmute', 'warn', 'kick', 'hakai']);
 
 const rpgPath = path.join(__dirname, '..', 'commands', 'rpg');
 fs.readdirSync(rpgPath).forEach(file => {
@@ -91,6 +94,11 @@ fs.readdirSync(rpgPath).forEach(file => {
       console.log(`⏭️ Skipped non-command module: ${commandName}`);
       return;
     }
+    try {
+      const _src = fs.readFileSync(path.join(rpgPath, file), 'utf8');
+      const _isMod = /!\s*Perms\.(isBotMod|isBotOwner|canBan|canMute|canUseAdminCommand|canManageMods|canAccessDM)\(/.test(_src) || /category:\s*'(mod|admin)'/.test(_src) || /OWNER ONLY|MODS ONLY|Mods \/ Owners only|mod permissions/i.test(_src);
+      if (_isMod) { MOD_CMDS.add(commandName); if (mod && mod.name) MOD_CMDS.add(String(mod.name).toLowerCase()); if (mod && Array.isArray(mod.aliases)) for (const a of mod.aliases) MOD_CMDS.add(String(a).toLowerCase()); }
+    } catch (e) {}
     if (mod.name && typeof mod.execute === 'function') {
       commands[commandName] = mod;
       if (mod.name.toLowerCase() !== commandName) {
@@ -348,6 +356,15 @@ module.exports = async (sock, msg, messageText, config, getDatabase, saveDatabas
 
   const Perms = require('../utils/permissions');
   const isPrivilegedUser = Perms.isBotOwner(db, sender) || Perms.isBotMod(db, sender);
+
+  // Push #88k: a /silence'd mod may only run moderation commands.
+  try {
+    const _sil = require('../commands/rpg/silence').getSilence(db, sender);
+    if (_sil && !Perms.isBotOwner(db, sender) && !MOD_CMDS.has(commandName) && !MOD_CMDS.has(resolvedCommand)) {
+      const left = _sil.endsAt ? require('../commands/rpg/silence').fmtDur(_sil.endsAt - Date.now()) : 'until an owner lifts it';
+      return sock.sendMessage(chatId, { text: `🤫 *YOU ARE SILENCED*\n━━━━━━━━━━━━━━━━━━━━━━\n📝 Reason: ${_sil.reason || '—'}\n⏳ Remaining: ${left}\n\n_Only moderation commands are available to you right now._` }, { quoted: msg });
+    }
+  } catch (e) {}
 
   // /start is MODS + OWNERS ONLY (group admins and Pro users included in the block).
   if ((commandName === 'start' || resolvedCommand === 'start') && !isPrivilegedUser) {

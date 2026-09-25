@@ -67,8 +67,18 @@ const PASS_PRODUCTS = {
   },
 };
 
+// Push #88k: PC → Mana Stones exchange (fixed tiers; Nexus may follow later).
+const STONE_PACKS = [
+  { pc: 1000, stones: 500000 },
+  { pc: 2000, stones: 1000000 },
+  { pc: 3000, stones: 1700000 },
+  { pc: 4000, stones: 3000000 },
+  { pc: 5000, stones: 4000000 },
+];
+
 module.exports = {
   name: 'prostore',
+  STONE_PACKS,
   aliases: ['proshop', 'buypro'],
   description: '🛍️ Pro Store — Purchase Weekly, Monthly, or Yearly Pro status cards with PC',
 
@@ -118,8 +128,25 @@ module.exports = {
         txt += `   ✨ ${prod.blurb}\n`;
         txt += `   📌 Command: /prostore buy ${pkey}\n\n`;
       }
+      txt += `💎 *MANA STONE PACKS (PC → Stones)*\n`;
+      for (const pk of STONE_PACKS) txt += `   ${pk.pc.toLocaleString()} PC → *${pk.stones.toLocaleString()}* 💎\n`;
+      txt += `   📌 Command: /prostore stones <pc>  (e.g. /prostore stones 3000)\n\n`;
       txt += `${FRAME}\n💡 Use /profaq for Pro perks \u2022 /prosub for your subscriptions`;
       return sock.sendMessage(chatId, { text: txt }, { quoted: msg });
+    }
+
+    // ── /prostore stones <pc> — exchange a PC pack for Mana Stones ──
+    if (sub === 'stones' || sub === 'stone' || sub === 'mana' || sub === 'ms') {
+      const want = parseInt(String(args[1] || '').replace(/[,_]/g, ''), 10);
+      const pack = STONE_PACKS.find(pk => pk.pc === want);
+      if (!pack) return sock.sendMessage(chatId, { text: `❌ Pick a pack: ${STONE_PACKS.map(pk => pk.pc.toLocaleString()).join(' / ')} PC\nExample: /prostore stones 2000` }, { quoted: msg });
+      if ((player.procoin || 0) < pack.pc) return sock.sendMessage(chatId, { text: `❌ Insufficient PC!\nNeed: *${pack.pc.toLocaleString()} PC*\nHave: *${(player.procoin || 0).toLocaleString()} PC*` }, { quoted: msg });
+      player.procoin -= pack.pc;
+      player.manaCrystals = (player.manaCrystals || 0) + pack.stones;
+      try { const TL = require('../../rpg/utils/TransactionLog'); TL.logTransaction(player, { type: 'prostore_buy', amount: pack.pc, currency: 'PC', note: `${pack.stones.toLocaleString()} Mana Stones` }); TL.logTransaction(player, { type: 'prostore_bonus', amount: pack.stones, currency: '💎', note: `PC exchange` }); } catch (e) {}
+      saveDatabase();
+      const text = UI.card(player, { icon: '💎', title: 'MANA STONES PURCHASED!', lines: [`💼 Spent: *${pack.pc.toLocaleString()} PC*`, `💎 Received: *+${pack.stones.toLocaleString()} Mana Stones*`, ``, `💎 Wallet: *${(player.manaCrystals || 0).toLocaleString()}* 💎 · *${(player.procoin || 0).toLocaleString()} PC* left`], tip: '/prostore for more packs' });
+      return sock.sendMessage(chatId, { text }, { quoted: msg });
     }
 
     if (sub === 'buy') {
@@ -297,6 +324,6 @@ module.exports = {
       return sock.sendMessage(chatId, { text }, { quoted: msg });
     }
 
-    return sock.sendMessage(chatId, { text: '❌ Usage: /prostore · /prostore buy [weekly|monthly|yearly|battlepass|namechange|seticon] · /prostore use weekly' }, { quoted: msg });
+    return sock.sendMessage(chatId, { text: '❌ Usage: /prostore · /prostore buy [weekly|monthly|yearly|battlepass|namechange|seticon] · /prostore stones <pc> · /prostore use weekly' }, { quoted: msg });
   }
 };
