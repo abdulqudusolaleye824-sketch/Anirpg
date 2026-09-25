@@ -1187,6 +1187,56 @@ ${FRAME}\n`;
     // Old GM becomes an ordinary Member (can be promoted again later).
     // Only the current GM (or a bot owner/mod) can do this.
     // ═══════════════════════════════════════════════════════════════════
+    // ═══════════════════════════════════════════════════════════════════
+    // Push #88L: /guild force master @player — OWNER/CO-OWNER ONLY.
+    // Forces the tagged player to become Guild Master of HIS OWN guild
+    // (not the caller's). The previous master stays in the guild as a
+    // regular Member. Reflected everywhere: guild.leader, members[].rank,
+    // memberData[].rank, officers, users[].guildRank / users[].guild.
+    // ═══════════════════════════════════════════════════════════════════
+    if (action === 'force' && /^(master|gm|leader)$/i.test(args[1] || '')) {
+      let isOwner = false;
+      try { isOwner = require('../../utils/permissions').isBotOwner(db, sender); } catch (e) {}
+      if (!isOwner) return sock.sendMessage(chatId, { text: '❌ *OWNER ONLY.* /guild force master is an owner / co-owner command.' }, { quoted: msg });
+      const ctx = msg.message?.extendedTextMessage?.contextInfo;
+      let targetId = ctx?.mentionedJid?.[0] || ctx?.participant || null;
+      if (!targetId && args[2]) { const d = args[2].replace(/\D/g, ''); if (d.length >= 8) targetId = `${d}@s.whatsapp.net`; else { const q = args.slice(2).join(' ').toLowerCase(); for (const [k, u] of Object.entries(db.users || {})) if (u?.name && String(u.name).toLowerCase() === q) { targetId = k; break; } } }
+      if (!targetId) return sock.sendMessage(chatId, { text: '❌ Tag/reply to the player.\nUsage: /guild force master @player' }, { quoted: msg });
+      const _bareF = (x) => String(x || '').split(':')[0].split('@')[0];
+      let tKey = db.users?.[targetId] ? targetId : Object.keys(db.users || {}).find(k => _bareF(k) === _bareF(targetId));
+      if (!tKey) return sock.sendMessage(chatId, { text: '❌ That hunter is not registered.' }, { quoted: msg });
+      const tUser = db.users[tKey];
+      const g = _CM71.resolvePlayerGuild(db, tKey, tUser);
+      if (!g) return sock.sendMessage(chatId, { text: `❌ *${tUser.name}* is not in any guild.` }, { quoted: msg });
+      const _idOf = (m) => (m && typeof m === 'object') ? (m.id || m.jid) : m;
+      const oldLeader = g.leader || null;
+      if (oldLeader && _bareF(oldLeader) === _bareF(tKey)) return sock.sendMessage(chatId, { text: `ℹ️ *${tUser.name}* is already the Guild Master of *${g.name}*.` }, { quoted: msg });
+      // New master everywhere.
+      g.leader = tKey;
+      if (!Array.isArray(g.members)) g.members = [];
+      let found = false;
+      g.members = g.members.map(m => { if (_bareF(_idOf(m)) === _bareF(tKey)) { found = true; return (m && typeof m === 'object') ? Object.assign(m, { id: tKey, rank: 'Leader' }) : { id: tKey, rank: 'Leader', joinedAt: Date.now() }; } return m; });
+      if (!found) g.members.push({ id: tKey, rank: 'Leader', joinedAt: Date.now() });
+      if (Array.isArray(g.memberData)) { let has = false; for (const md of g.memberData) if (md && typeof md === 'object' && _bareF(md.id || md.jid) === _bareF(tKey)) { md.rank = 'Guild Master'; has = true; } if (!has) g.memberData.push({ id: tKey, name: tUser.name || 'Unknown', rank: 'Guild Master', joinedAt: Date.now() }); }
+      if (Array.isArray(g.officers)) g.officers = g.officers.filter(m => _bareF(_idOf(m)) !== _bareF(tKey));
+      tUser.guild = g.name; tUser.guildRank = 'Leader';
+      // Old master → regular Member (stays in the guild).
+      let oldKey = null;
+      if (oldLeader) {
+        oldKey = db.users?.[oldLeader] ? oldLeader : Object.keys(db.users || {}).find(k => _bareF(k) === _bareF(oldLeader)) || oldLeader;
+        g.members = g.members.map(m => (_bareF(_idOf(m)) === _bareF(oldLeader)) ? ((m && typeof m === 'object') ? Object.assign(m, { rank: 'Member' }) : { id: oldKey, rank: 'Member', joinedAt: Date.now() }) : m);
+        if (!g.members.some(m => _bareF(_idOf(m)) === _bareF(oldLeader))) g.members.push({ id: oldKey, rank: 'Member', joinedAt: Date.now() });
+        if (Array.isArray(g.memberData)) for (const md of g.memberData) if (md && typeof md === 'object' && _bareF(md.id || md.jid) === _bareF(oldLeader)) md.rank = 'Member';
+        const oldU = db.users?.[oldKey]; if (oldU) { oldU.guildRank = 'Member'; if (!oldU.guild) oldU.guild = g.name; }
+      }
+      saveDatabase();
+      const mentions = [tKey]; if (oldKey && oldKey.includes('@')) mentions.push(oldKey);
+      return sock.sendMessage(chatId, {
+        text: `${FRAME}\n👑 *GUILD MASTER FORCED*\n${FRAME}\n🏰 Guild: *${g.name}*\n👑 New Guild Master: *${tUser.name}* (@${_bareF(tKey)})${oldLeader ? `\n🔻 Previous Master: @${_bareF(oldLeader)} → Member` : ''}\n🛡️ By: @${_bareF(sender)}\n${FRAME}`,
+        mentions: mentions.concat([sender]),
+      }, { quoted: msg });
+    }
+
     if (action === 'assign' || action === 'transfer' || action === 'assignmaster') {
       if (!playerGuild) {
         return sock.sendMessage(chatId, { text: '❌ You are not in a guild!' }, { quoted: msg });

@@ -1,3 +1,7 @@
+## 1.0.99 — Push #88L (2026-09-25)
+- ROOT CAUSE of "players lose data on every redeploy": boot picked the store with the MOST users (count first, time second). Any deletion/reset — or stub records inflating the Mongo mirror — made a STALE mirror "fuller" than the live SQLite store, so each boot rolled everyone back to the mirror's age; the divergence guard then refused to refresh the mirror, so it repeated every boot. New rule: among healthy stores (players > 0 and ≥ 80% of the largest count) the NEWEST save wins; SQLite wins ties; the other stores are reseeded from the chosen truth. Mirror/sync guards now only refuse a gutted memory (0 users or a >25% shrink), so legit deletions no longer freeze the mirror.
+- /guild force master @player (owner/co-owner): forces the tagged player to Guild Master of their own guild; previous master becomes a Member. Reflected in guild.leader, member ranks, memberData, officers and player records.
+
 ## 1.0.98 — Push #88k (2026-09-25)
 - /prostore stones <pc>: PC → Mana Stones packs — 1000→500k, 2000→1M, 3000→1.7M, 4000→3M, 5000→4M (listed in the store menu).
 - /silence @mod [minutes]|[reason] (owner/co-owner only): the mod can only use moderation commands until it expires or /unsilence. Non-mods and owners can't be silenced.

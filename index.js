@@ -328,7 +328,7 @@ function _doMongoWrite() {
             try { fs.unlinkSync(_forceFlag); } catch {}
             console.error(`⚠️ Mongo force-arm consumed: proceeding with ${_memUsers} users over remote ${_remoteUsers}.`);
             _mongoArmed = true;
-          } else if (_remoteUsers > _memUsers) {
+          } else if ((_memUsers === 0 && _remoteUsers > 0) || _remoteUsers > Math.ceil(_memUsers * 1.25)) { // Push #88L: deletions/resets are legit; only a gutted memory is refused
             if (Date.now() - _divergeAlarmAt > 3600 * 1000) { // throttled: no alarm/log spam
               _divergeAlarmAt = Date.now();
               console.error(`🛡️ MONGO DIVERGED: remote has ${_remoteUsers} users, memory has ${_memUsers} — REFUSING to overwrite. Owner alerted.`);
@@ -1142,7 +1142,7 @@ function saveDatabaseSyncNow(reason) {
       if (fs.existsSync(DB_PATH)) {
         const _f = JSON.parse(fs.readFileSync(DB_PATH, 'utf-8'));
         const _fu = Object.keys(_f.users || {}).length;
-        if ((_memSd === 0 && _fu > 0) || (_fu - _memSd >= 2)) {
+        if ((_memSd === 0 && _fu > 0) || _fu > Math.ceil(_memSd * 1.25)) { // Push #88L: only a gutted memory is refused
           console.error(`🛡️ Sync snapshot SKIPPED (${reason}): memory has ${_memSd} users, file has ${_fu} — refusing to shrink the mirror.`);
           return false;
         }
@@ -1513,45 +1513,40 @@ async function startup() {
   const mongoAt = (mongoDoc && mongoDoc.__savedAt) || 0;
   const _kb = (d) => { try { return Math.round(Buffer.byteLength(JSON.stringify(d)) / 1024); } catch { return 0; } };
   const _fmtT = (t) => t ? new Date(t).toISOString() : 'none';
-  // Push #37: load the FULLER side (count wins; timestamp breaks ties). Time
-  // alone let a newer-but-emptier JSON beat a fuller Mongo — the 02:00 boot
-  // loaded 0 users over Mongo's 4.
+  // Push #88L: NEWEST-HEALTHY-WINS. The old rule ("fuller wins, count first")
+  // let a stale Mongo mirror beat the live SQLite store every time a player was
+  // deleted/reset (or stub records inflated the mirror) — each redeploy then
+  // silently rolled EVERY player back to the mirror's age (hours of loss), and
+  // the divergence guard kept the mirror frozen so it happened again next boot.
+  // New rule: among the stores that are HEALTHY (have players and hold at
+  // least 80% of the largest store's real-player count, so an empty/gutted
+  // doc can never win) pick the one with the NEWEST __savedAt. SQLite (the
+  // live store) wins ties.
   const _selMu = mongoDoc ? _realUsers(mongoDoc) : -1;
   const _selJu = jsonDoc ? _realUsers(jsonDoc) : -1;
   let _loadedFrom = 'fresh';
-  const _mongoWins = mongoDoc && ((_selMu > _selJu) || (_selMu === _selJu && mongoAt >= jsonAt));
-  const _backupDoc = _mongoWins ? mongoDoc : jsonDoc;
-  const _backupUsers = _backupDoc ? _realUsers(_backupDoc) : -1;
-  if (sqliteDoc) {
-    if (_backupDoc && _backupUsers > _selSu) {
-      // Divergence: a backup mirror is FULLER than the live store — adopt it.
-      _loadedFrom = _mongoWins ? 'mongo' : 'json';
-      _pendingOwnerAlarms.push(`🛡️ *SQLITE DIVERGED AT BOOT* 🛡️\n\n${_mongoWins ? 'Atlas' : 'JSON'} holds ${_backupUsers} users but the SQLite live store has ${_selSu}. I adopted the fuller backup and reseeded SQLite — your data is safe on both sides.\n\nBoot: ${new Date().toISOString()}`);
-      loadDatabase(_backupDoc); // same normalization as every other path
-      try { Storage.save(database); } catch (e) {}
-      console.log(`✅ Database loaded from ${_mongoWins ? 'MongoDB' : 'JSON'} (fuller than SQLite) — live store reseeded`);
-    } else {
-      _loadedFrom = 'sqlite';
-      loadDatabase(sqliteDoc); // runs the exact same boot normalization as the file path
-      console.log(`✅ Database loaded from SQLite live store (${Object.keys(database.users || {}).length} players)`);
-      console.log(`💾 Persistence: SQLite ${_kb(sqliteDoc)}KB (@${_fmtT(sqliteAt)}) vs Mongo ${_kb(mongoDoc)}KB (@${_fmtT(mongoAt)}) vs JSON ${_kb(jsonDoc)}KB (@${_fmtT(jsonAt)}) → loaded SQLITE`);
-    }
-    if (mongoOk) await saveToMongo(); // keep the off-host mirror current
-  } else if (_mongoWins) {
-    _loadedFrom = 'mongo';
-    database = mongoDoc;
-    console.log(`✅ Database loaded from MongoDB (${Object.keys(database.users || {}).length} players)`);
-    console.log(`💾 Persistence: Mongo ${_kb(mongoDoc)}KB (@${_fmtT(mongoAt)}) vs JSON ${_kb(jsonDoc)}KB (@${_fmtT(jsonAt)}) → loaded MONGO`);
-    try { if (Storage.save(database)) console.log(`🗄️ SQLite live store seeded from MongoDB (${_selMu} players)`); } catch (e) {}
-  } else if (jsonDoc) {
-    _loadedFrom = 'json';
-    loadDatabase(); // re-reads the same file + runs migrations
-    console.log(`💾 Persistence: Mongo ${_kb(mongoDoc)}KB (@${_fmtT(mongoAt)}) vs JSON ${_kb(jsonDoc)}KB (@${_fmtT(jsonAt)}) → loaded JSON`);
-    try { if (Storage.save(database)) console.log(`🗄️ SQLite live store seeded from JSON (${_selJu} players)`); } catch (e) {}
-    if (!mongoDoc && mongoOk) console.log('📦 Migrated existing JSON data to MongoDB!');
-    await saveToMongo(); // heal the mirror with the fresh state
+  const _cands = [
+    { name: 'sqlite', doc: sqliteDoc, users: _selSu, at: sqliteAt, pri: 3 },
+    { name: 'json',   doc: jsonDoc,   users: _selJu, at: jsonAt,   pri: 2 },
+    { name: 'mongo',  doc: mongoDoc,  users: _selMu, at: mongoAt,  pri: 1 },
+  ].filter(c => c.doc && c.users > 0);
+  const _maxUsers = _cands.reduce((m, c) => Math.max(m, c.users), 0);
+  const _healthy = _cands.filter(c => c.users >= Math.ceil(_maxUsers * 0.8));
+  _healthy.sort((a, b) => (b.at - a.at) || (b.pri - a.pri));
+  const _pick = _healthy[0] || null;
+  const _selSummary = `SQLite ${_kb(sqliteDoc)}KB/${_selSu}u (@${_fmtT(sqliteAt)}) vs Mongo ${_kb(mongoDoc)}KB/${_selMu}u (@${_fmtT(mongoAt)}) vs JSON ${_kb(jsonDoc)}KB/${_selJu}u (@${_fmtT(jsonAt)})`;
+  if (_pick) {
+    _loadedFrom = _pick.name;
+    if (_pick.name === 'json') loadDatabase(); else loadDatabase(_pick.doc); // same normalization on every path
+    console.log(`✅ Database loaded from ${_pick.name.toUpperCase()} (${Object.keys(database.users || {}).length} players, saved ${_fmtT(_pick.at)})`);
+    console.log(`💾 Persistence: ${_selSummary} → loaded ${_pick.name.toUpperCase()} (newest healthy)`);
+    const _skipped = _cands.filter(c => c !== _pick && (c.users < Math.ceil(_maxUsers * 0.8)));
+    if (_skipped.length) _pendingOwnerAlarms.push(`🛡️ *BOOT STORE CHECK* 🛡️\n\nLoaded ${_pick.name.toUpperCase()} (${_pick.users} players, saved ${_fmtT(_pick.at)}). Ignored gutted copies: ${_skipped.map(c => `${c.name} ${c.users}u`).join(', ')}. Snapshots kept in snapshots/.\n\nBoot: ${new Date().toISOString()}`);
+    if (_pick.name !== 'sqlite') { try { if (Storage.save(database)) console.log(`🗄️ SQLite live store reseeded from ${_pick.name.toUpperCase()}`); } catch (e) {} }
+    if (_pick.name !== 'json') { try { fs.mkdirSync(path.dirname(DB_PATH), { recursive: true }); fs.writeFileSync(DB_PATH, JSON.stringify(database)); } catch (e) {} }
+    if (mongoOk) { _mongoArmed = true; try { await saveToMongo(); } catch (e) {} } // mirror follows the chosen truth
   } else {
-    console.log('💾 Persistence: no SQLite doc, no Mongo doc, no JSON file → starting FRESH');
+    console.log(`💾 Persistence: ${_selSummary} → no store holds any player → starting FRESH`);
     // Push #31: leave a marker so an empty boot is provable after the fact.
     try {
       fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
