@@ -562,8 +562,9 @@ module.exports = {
               // Unified calc: treat monster as defender
               const fakeMonster = { stats:{ hp: target.hp, maxHp: target.maxHp, atk: target.atk, def: target.def||5, speed: 30 }, statusEffects: (target.statusEffects = target.statusEffects || []) };
               const uni = UCg.calcMoveDamage(player, fakeMonster, atk);
-              if (uni.missed) result = { damage:0, isCrit:false, atkPattern: atk, missed:true };
-              else { result = { damage: uni.damage, isCrit: uni.crit, atkPattern: atk, unified: uni }; UCg.setCooldown(player, patternId, atk); }
+              if (uni.missed) result = { damage:0, isCrit:false, atkPattern: atk, missed:true, dodged: !!uni.dodged };
+              else result = { damage: uni.damage, isCrit: uni.crit, atkPattern: atk, unified: uni };
+              UCg.setCooldown(player, patternId, atk); // Push #88o: a missed/dodged move enters cooldown too
               // Damage + move effect are applied by the shared playTurn flow below.
             }
           }
@@ -599,16 +600,16 @@ module.exports = {
       if (atkPattern) {
         _gmMove = atkPattern;
         _gmResult = result.missed
-          ? { damage: 0, crit: false, missed: true, capability: 1 }
+          ? { damage: 0, crit: false, missed: true, dodged: !!result.dodged, capability: 1 }
           : { damage: result.damage, crit: !!result.isCrit, missed: false, capability: result.unified ? result.unified.capability : undefined };
       } else if (result.skillUsed) {
         const _sk = result.skillUsed;
         const _skFx = (_sk.effect && typeof _sk.effect === 'object' && _sk.effect.type) ? _sk.effect : null;
         _gmMove = { name: _sk.name, description: _sk.description || 'A class skill unleashed in the heat of battle.', cooldownMs: (_sk.cooldown || 3) * 1000, effect: _skFx, isSkill: true, statuses: result.statuses || [], buffs: result.buffs || [] };
-        _gmResult = { damage: result.damage, crit: !!result.isCrit, missed: false };
+        _gmResult = { damage: result.damage, crit: !!result.isCrit, missed: !!result.missed, dodged: !!result.dodged };
       } else {
         _gmMove = { ...UCgFlow.basicStrike(), statuses: result.statuses || [] };
-        _gmResult = { damage: result.damage, crit: !!result.isCrit, missed: false };
+        _gmResult = { damage: result.damage, crit: !!result.isCrit, missed: !!result.missed, dodged: !!result.dodged };
       }
       const atkTitle = atkPattern ? `🥋 *ATTACK PATTERN #${atkPattern.id} — ${atkPattern.name}* [${atkPattern.rank}]` : `⚔️ *PLAYER ATTACK*`;
       const monWrap = { name: target.name, stats: { hp: target.hp, maxHp: target.maxHp }, statusEffects: target.statusEffects };
@@ -747,7 +748,7 @@ module.exports = {
         await UCgFlow.playTurn(sock, chatId, {
           attacker: monAtk, defender: _victim,
           move: { name: monsterSkill.name, description: `A ferocious ${_skillBare} technique.`, cooldownMs: 0, effect: { type: monsterSkill.effect, chance: (monsterSkill.chance || 35), duration: 2 } }, // Push #71: no more 100% status
-          result: { damage: dmg, crit: false, missed: dmg <= 0, dodged: dmg <= 0 },
+          result: { damage: dmg, crit: !!(GR.monsterDamage.last && GR.monsterDamage.last.crit), missed: dmg <= 0, dodged: dmg <= 0 },
           tag: `💢 *MONSTER COUNTER-ATTACK*`, gapMs: 600,
         });
         // Push #88: passives that trigger on being hit (reflect / survive-lethal / regen).
@@ -1025,7 +1026,7 @@ module.exports = {
         await UCgBoss.playTurn(sock, chatId, {
           attacker: bossAtkW, defender: _bVictim,
           move: { name: 'Retaliation', description: 'The boss lashes out with overwhelming force.', cooldownMs: 0 },
-          result: { damage: dmg, crit: false, missed: dmg <= 0, dodged: dmg <= 0 },
+          result: { damage: dmg, crit: !!(GR.monsterDamage.last && GR.monsterDamage.last.crit), missed: dmg <= 0, dodged: dmg <= 0 },
           tag: `💢 *BOSS COUNTER*`, gapMs: 600,
         });
         try { const _pl = GR.afterMonsterHit(_bVictim, boss, dmg); if (_pl.length) lines.push(..._pl); } catch (e) {}

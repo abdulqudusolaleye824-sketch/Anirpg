@@ -58,6 +58,15 @@ class ImprovedCombat {
     SkillCatalog.setCooldown(attacker, entry || skill);
     try { require('./RegenManager').markCombatAction(attacker); } catch (e) {}
 
+    // ── Push #88o: the monster may DODGE a damaging skill (cooldown + energy already spent) ──
+    let _monDodged = false;
+    try {
+      const _isHealEarly = String((entry && entry.type) || skill.type || '').toLowerCase() === 'heal';
+      const GRd = require('../dungeons/GateRaid');
+      const _monView = { rank: monster.rank, speed: monster.stats?.speed || monster.speed || 10, statusEffects: monster.statusEffects || [] };
+      if (!_isHealEarly && GRd.monsterDodges(_monView, attacker, entry || skill)) _monDodged = true;
+    } catch (e) {}
+
     // ── Parse effects from SkillDescriptions effect text ──────
     const parsedEffects = EffectParser.parseSkillEffects(skillInfo.effect);
 
@@ -183,7 +192,7 @@ class ImprovedCombat {
     // ── Crit ──────────────────────────────────────────────────
     const guaranteedCrit = parsedEffects.special.some(s => s.type === 'guaranteedCrit');
     const critChance = 0.15 + ((attacker.stats.critChance || 0) / 100) + ((_artBonus.critChance || 0) / 100);
-    const isCrit = guaranteedCrit || Math.random() < critChance;
+    let isCrit = guaranteedCrit || Math.random() < critChance;
     if (isCrit && baseDamage > 0) {
       const critMult = 1.5 + ((attacker.stats.critDamage || 0) / 100);
       baseDamage = Math.floor(baseDamage * critMult);
@@ -213,11 +222,13 @@ class ImprovedCombat {
       parsedEffects, attacker, defender, baseDamage, StatusEffectManager
     );
 
-    const finalDamage = effectResult.damage;
+    let finalDamage = effectResult.damage;
     // Push #88b: exact %-HP drains / self-costs stated in the skill text.
     let _hpxLines = [];
     try { const _x = SkillCatalog.applyHpPercents(entry, attacker, defender); _hpxLines = _x.lines || []; } catch (e) {}
 
+    // Push #88o: dodged → no damage, no on-hit statuses; cooldown already spent.
+    if (_monDodged) { finalDamage = 0; isCrit = false; try { parsedEffects.statusEffects = []; } catch (e) {} }
     // Apply damage to defender
     if (finalDamage > 0) {
       defender.stats.hp = Math.max(0, defender.stats.hp - finalDamage);
@@ -257,7 +268,9 @@ class ImprovedCombat {
 
     if (isCrit && finalDamage > 0) message += `💥 *CRITICAL HIT!*\n`;
 
-    if (finalDamage > 0) {
+    if (_monDodged) {
+      message += `💨 *DODGED!* ${defender.name || 'The enemy'} slipped clear of *${skill.name}*! (still on cooldown)\n`;
+    } else if (finalDamage > 0) {
       message += `⚔️ Dealt *${finalDamage}* damage to ${defender.name || 'enemy'}!\n`;
     } else if (!parsedEffects.damage) {
       message += `✨ Support skill activated!\n`;
@@ -406,9 +419,11 @@ class ImprovedCombat {
         if (Math.random() * 100 < UC.dodgeChance(mon, player, _pm)) { _dodged = true; monsterDmg = 0; }
         else monsterDmg = Math.max(1, Math.floor(monsterDmg * UC.weakenTakenMult(player) * (1 + (_pm.dmgTaken || 0) / 100)));
       } catch (e) {}
+      let _mCrit = false; // Push #88o: monster crits
+      try { const GRc = require('../dungeons/GateRaid'); if (!_dodged && Math.random() * 100 < GRc.monsterCritChance(monster)) { _mCrit = true; monsterDmg = Math.floor(monsterDmg * 1.5); } } catch (e) {}
       player.stats.hp = Math.max(0, player.stats.hp - monsterDmg);
       narrative += `\n👹 ${monster.name} counter-attacks!\n`;
-      narrative += _dodged ? `💨 *DODGED!* You slipped clear of the attack!\n` : `💢 You took *${monsterDmg}* damage!\n`;
+      narrative += _dodged ? `💨 *DODGED!* You slipped clear of the attack!\n` : `${_mCrit ? '💥 *CRITICAL HIT!* ' : ''}💢 You took *${monsterDmg}* damage!\n`;
       narrative += `❤️ Your HP: ${player.stats.hp}/${player.stats.maxHp}\n`;
     }
 

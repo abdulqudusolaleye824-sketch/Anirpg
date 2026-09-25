@@ -1,3 +1,9 @@
+## 1.0.102 — Push #88o (2026-09-25)
+- Monsters: HP +50% (on top of the ATK +70% / DEF +40%); level/floor scaling intact. Dungeon floors, bosses, gate raids, template monsters.
+- Monsters can CRIT (10% base, +2% per rank above E, +5% bosses, ×1.5) — raids, tower counter-attacks and monster turns show 💥 CRITICAL HIT.
+- Monsters can DODGE hunter strikes (4–25%, speed edge vs the hunter; stunned/frozen monsters never dodge) — basic strikes, class skills and attack patterns in raids and tower.
+- A move that misses or is dodged still enters cooldown (and still costs energy).
+
 ## 1.0.101 — Push #88n (2026-09-25)
 - Commands run in parallel per player: the inbound queue is now keyed per (chat, sender) instead of per chat, so one player's multi-part output no longer makes everyone else wait. Order per player is preserved.
 - Party dungeons: turn lock — if two hunters act at once, one plays and the other is told immediately "X's turn is still playing out". Same player re-entering mid-flow is blocked too. (Gate raids already had this.)

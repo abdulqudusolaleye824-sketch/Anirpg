@@ -190,7 +190,7 @@ function partySeverity(members) {
 }
 
 // Push #88n: global monster buff — ATK +70%, DEF +40% on top of level/floor scaling.
-const MON_ATK_BUFF = 1.7, MON_DEF_BUFF = 1.4;
+const MON_ATK_BUFF = 1.7, MON_DEF_BUFF = 1.4, MON_HP_BUFF = 1.5; // Push #88o: +50% HP
 function scaleMonsterForFloor(baseMonster, playerLevel, floor, severity = 1) {
   const floorMult  = 1 + (floor - 1) * 0.15;  // Push #88: steeper climb per floor
   const levelMult  = 1 + (playerLevel - 1) * 0.03;
@@ -204,8 +204,8 @@ function scaleMonsterForFloor(baseMonster, playerLevel, floor, severity = 1) {
     isElite: false,
     isBoss: false,
     stats: {
-      hp:    Math.floor(baseMonster.baseHp  * combined * 0.5),  // 50% of original
-      maxHp: Math.floor(baseMonster.baseHp  * combined * 0.5),
+      hp:    Math.floor(baseMonster.baseHp  * combined * 0.5 * MON_HP_BUFF),
+      maxHp: Math.floor(baseMonster.baseHp  * combined * 0.5 * MON_HP_BUFF),
       atk:   Math.floor(baseMonster.baseAtk * combined * 0.5 * MON_ATK_BUFF),
       def:   Math.floor(baseMonster.baseDef * combined * 0.5 * MON_DEF_BUFF),
       speed: 80 + floor * 2
@@ -220,7 +220,7 @@ function scaleBossForFloor(bossDef, playerLevel, floor, severity = 1) {
   const finalMult  = isFinal ? 1.8 : 1;
   const floorMult  = 1 + (floor - 1) * 0.08; // Push #88: later bosses hit harder
   const sev = Math.max(1, Number(severity) || 1);
-  const hp  = Math.floor(bossDef.baseHp  * levelMult * finalMult * floorMult * sev * 0.45);
+  const hp  = Math.floor(bossDef.baseHp  * levelMult * finalMult * floorMult * sev * 0.45 * MON_HP_BUFF);
   const atk = Math.floor(bossDef.baseAtk * levelMult * finalMult * floorMult * sev * 0.45 * MON_ATK_BUFF);
   const def = Math.floor(bossDef.baseDef * levelMult * finalMult * floorMult * sev * 0.45 * MON_DEF_BUFF);
   return {

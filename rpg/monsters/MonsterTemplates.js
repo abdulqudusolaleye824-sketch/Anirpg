@@ -194,7 +194,7 @@ function generateMonster(level) {
   // ✅ FIX: Slight buff (1.10 instead of 1.08)
   const scaling = Math.pow(1.10, level - 1);
   
-  const hp = Math.floor(template.baseHp * scaling);
+  const hp = Math.floor(template.baseHp * scaling * 1.5); // Push #88o: +50% HP
   const atk = Math.floor(template.baseAtk * scaling * 1.7); // Push #88n: +70% ATK
   const def = Math.floor(template.baseDef * scaling * 1.4); // Push #88n: +40% DEF
   

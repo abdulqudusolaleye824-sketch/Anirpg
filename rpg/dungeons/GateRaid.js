@@ -69,6 +69,11 @@ function playerDamage(player, skillName = null, target = null) {
     player.stats.energy = Math.max(0, (player.stats.energy || 0) - cost);
     SC.setCooldown(player, entry || skill);
     try { require('../utils/RegenManager').markCombatAction(player); } catch (e) {}
+    // Push #88o: the monster may DODGE a damaging skill — cooldown + energy are
+    // already spent (a dodged/missed move still enters cooldown).
+    if (target && !_isHealSkillEarly(entry, skill) && monsterDodges(target, player, entry || skill)) {
+      return { damage: 0, isCrit: false, dodged: true, missed: true, skillUsed: skill, statuses: [], healingPct: 0, healed: 0, hpPercentLines: [], drained: 0, hpCost: 0, synergyNotes: [], buffs: [] };
+    }
     // Push #71: RECOVERY SKILLS — healingPct was computed here and returned,
     // but no caller ever applied it, so heals in gate raids restored 0 HP.
     // Apply it to the hunter now (heal-type skills deal no damage).
@@ -96,6 +101,7 @@ function playerDamage(player, skillName = null, target = null) {
       buffs: (entry && entry.buffs) || [],
     };
   }
+  if (target && monsterDodges(target, player)) return { damage: 0, isCrit: false, dodged: true, missed: true, synergyNotes: [], statuses: [] }; // Push #88o
   let dmg = Math.max(5, atk * (0.85 + Math.random() * 0.30));
   if (target && typeof target.def === 'number' && target.def > 0) dmg = Math.max(5, dmg - Math.floor(target.def * 0.35 * (1 - Math.min(0.6, (_pm74.armorPen || 0) / 100))));
   if (target) { try { dmg = Math.max(1, dmg * require('../utils/UnifiedCombat').weakenTakenMult(target)); } catch (e) {} }
@@ -110,7 +116,28 @@ function playerDamage(player, skillName = null, target = null) {
   return { damage: Math.floor(dmg), isCrit, synergyNotes, statuses: (_pm74.onHit || []) };
 }
 
+// Push #88o: monsters can CRIT (10% base, +2% per rank step above E, ×1.5)
+// and DODGE hunter strikes (speed edge over the hunter, 4–25%).
+const MON_CRIT_MULT = 1.5;
+function monsterCritChance(monster) {
+  const rankIdx = { E: 0, D: 1, C: 2, B: 3, A: 4, S: 5, SS: 6, SSS: 7 }[String(monster?.rank || 'E').toUpperCase()] || 0;
+  return Math.min(25, 10 + rankIdx * 2 + (monster?.isBoss ? 5 : 0));
+}
+function monsterDodgeChance(monster, player) {
+  const ms = Number(monster?.speed || monster?.stats?.speed || 10);
+  const ps = Number(player?.stats?.speed || 10);
+  return Math.max(4, Math.min(25, 6 + (ms - ps) * 0.25));
+}
+// Roll a monster dodge against a hunter's strike. Frozen/stunned monsters never dodge.
+function monsterDodges(monster, player, move = null) {
+  if (!monster || (move && move.undodgeable)) return false;
+  const held = (monster.statusEffects || []).some(e => ['stun', 'freeze', 'paralyze'].includes(String(e.type || '').toLowerCase()));
+  if (held) return false;
+  return Math.random() * 100 < monsterDodgeChance(monster, player);
+}
+function _isHealSkillEarly(entry, skill) { return String((entry && entry.type) || (skill && skill.type) || '').toLowerCase() === 'heal'; }
 function monsterDamage(monster, def, player = null) {
+  monsterDamage.last = { crit: false, dodged: false };
   // Push #74: the hunter can DODGE (speed vs monster speed + evasion +
   // passives); passives also cut damage taken; WEAKEN on the hunter hurts.
   if (player) {
@@ -120,7 +147,7 @@ function monsterDamage(monster, def, player = null) {
       const pm = CP.passiveMultipliers(player);
       const mon = { stats: { speed: monster.speed || 10, atk: monster.atk || 10 }, statusEffects: monster.statusEffects || [] };
       const held = (player.statusEffects || []).some(e => ['stun', 'freeze', 'paralyze'].includes(String(e.type || '').toLowerCase()));
-      if (!held && Math.random() * 100 < UC.dodgeChance(mon, player, pm)) return 0;
+      if (!held && Math.random() * 100 < UC.dodgeChance(mon, player, pm)) { monsterDamage.last.dodged = true; return 0; }
       // Push #85: defence soaks at most 60% of the hit and a landed hit is
       // never below 4% of the hunter's max HP — high-DEF hunters used to
       // take a flat 3 from everything.
@@ -130,11 +157,13 @@ function monsterDamage(monster, def, player = null) {
       let raw = Math.max(floorDmg, mAtk - soak);
       raw = raw * (0.8 + Math.random() * 0.4) * UC.weakenTakenMult(player) * (1 + (pm.dmgTaken || 0) / 100);
       try { raw = raw / (require('../utils/PetManager').lastGiftMultiplier(player) || 1); } catch (e) {}
+      if (Math.random() * 100 < monsterCritChance(monster)) { raw *= MON_CRIT_MULT; monsterDamage.last.crit = true; }
       return Math.max(0, Math.floor(raw));
     } catch (e) {}
   }
-  const raw = Math.max(3, (monster.atk || 10) - Math.floor((def || 5) * 0.5));
-  return Math.floor(raw * (0.8 + Math.random() * 0.4));
+  let raw = Math.max(3, (monster.atk || 10) - Math.floor((def || 5) * 0.5)) * (0.8 + Math.random() * 0.4);
+  if (Math.random() * 100 < monsterCritChance(monster)) { raw *= MON_CRIT_MULT; monsterDamage.last.crit = true; }
+  return Math.floor(raw);
 }
 
 // Push #88: after a monster hit lands on `player` — reflect, survive-lethal,
@@ -671,7 +700,7 @@ function floorMultiplier(gate, floor) {
 // floor multiplier. Idempotent — safe to call on every calibrate/advance.
 // Push #88n: global monster buff — ATK +70%, DEF +40% — applied on top of the
 // level/floor/severity scaling (which stays exactly as it was).
-const MON_ATK_BUFF = 1.7, MON_DEF_BUFF = 1.4;
+const MON_ATK_BUFF = 1.7, MON_DEF_BUFF = 1.4, MON_HP_BUFF = 1.5; // Push #88o: +50% HP
 function applyMonsterScaling(gate) {
   const severity = (gate.calibrated && gate.calibrated.severity) || 1;
   for (const mon of gate.monsters || []) {
@@ -680,7 +709,7 @@ function applyMonsterScaling(gate) {
     const mult = severity * floorMultiplier(gate, mon.floor);
     const wasFull = !(typeof mon.hp === 'number' && typeof mon.maxHp === 'number' && mon.hp < mon.maxHp);
     const hpPct = wasFull ? 1 : Math.max(0, mon.hp / Math.max(1, mon.maxHp));
-    mon.maxHp = Math.max(5, Math.floor(mon._base.hp * mult));
+    mon.maxHp = Math.max(5, Math.floor(mon._base.hp * mult * MON_HP_BUFF));
     mon.hp = Math.max(1, Math.floor(mon.maxHp * hpPct));
     mon.atk = Math.max(1, Math.floor(mon._base.atk * mult * MON_ATK_BUFF));
     mon.def = Math.floor(mon._base.def * mult * 0.8 * MON_DEF_BUFF);
@@ -695,7 +724,7 @@ function applyMonsterScaling(gate) {
     const mult = severity * floorMultiplier(gate, gate.totalFloors) * 1.25;
     const wasFull = !(typeof gate.boss.hp === 'number' && typeof gate.boss.maxHp === 'number' && gate.boss.hp < gate.boss.maxHp);
     const hpPct = wasFull ? 1 : Math.max(0, gate.boss.hp / Math.max(1, gate.boss.maxHp));
-    gate.boss.maxHp = Math.max(50, Math.floor(gate.boss._base.hp * mult));
+    gate.boss.maxHp = Math.max(50, Math.floor(gate.boss._base.hp * mult * MON_HP_BUFF));
     gate.boss.hp = Math.max(1, Math.floor(gate.boss.maxHp * hpPct));
     if (gate.boss._base.atk) gate.boss.atk = Math.max(1, Math.floor(gate.boss._base.atk * mult * MON_ATK_BUFF));
     gate.boss.def = Math.floor((gate.boss._base.def || 0) * mult * 0.8 * MON_DEF_BUFF);
@@ -1181,6 +1210,7 @@ module.exports = {
   saveGateState,
   spawnWildPet,
   tryCombatLock,
+  monsterCritChance, monsterDodgeChance, monsterDodges,
   releaseCombatLock,
   wipeGate,
   applyMonsterScaling, floorMultiplier, severityLabel, markHealerAggro, pickAggroTarget, supportCast,

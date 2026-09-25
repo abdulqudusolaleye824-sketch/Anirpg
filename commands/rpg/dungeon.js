@@ -112,6 +112,9 @@ function executeMonsterAI(monster, player, ctx = null) {
   }
 
   let finalDmg = Math.max(8, baseDmg - defReduc);
+  // Push #88o: monsters can crit.
+  let _mCrit = false;
+  try { if (Math.random() * 100 < require('../../rpg/dungeons/GateRaid').monsterCritChance(monster)) { _mCrit = true; finalDmg = Math.floor(finalDmg * 1.5); } } catch (e) {}
   // Push #88: class passives — damage taken reduction, survive-lethal, regen, reflect.
   let _pm = null; try { _pm = require('../../rpg/utils/ClassPower').passiveMultipliers(player); } catch (e) {}
   if (_pm && _pm.dmgTaken) finalDmg = Math.max(1, Math.floor(finalDmg * (1 + _pm.dmgTaken / 100)));
@@ -125,7 +128,7 @@ function executeMonsterAI(monster, player, ctx = null) {
 
   let msg = `\n${FRAME}\n🔄 ${monster.name.toUpperCase()}'S TURN${mPro ? ' 💎' : ''}\n${FRAME}\n`;
   msg += `${monster.emoji} ${monster.name} ${ability ? 'uses *' + ability + '*!' : 'attacks!'}\n💬 "${line}"\n${FRAME}\n`;
-  msg += `💥 You take *${finalDmg}* damage!${passiveLines}\n❤️ Your HP: ${Math.max(0, player.stats.hp)}/${player.stats.maxHp}\n${FRAME}`;
+  msg += `${_mCrit ? '💥 *CRITICAL HIT!* ' : ''}💥 You take *${finalDmg}* damage!${passiveLines}\n❤️ Your HP: ${Math.max(0, player.stats.hp)}/${player.stats.maxHp}\n${FRAME}`;
   return msg;
 }
 
