@@ -41,6 +41,7 @@ module.exports = {
 
     const isSelf = bare(targetId) === bare(sender);
     const name = player.name || targetId.split('@')[0];
+    if (!isSelf) { const UIl = require('../../rpg/utils/UI'); if (UIl.lockedFrom(db, { ...player, jid: player.jid || targetId }, sender)) return sock.sendMessage(chatId, { text: UIl.lockedMsg(player) }, { quoted: msg }); }
 
     const viewer = db.users[sender];
     // transactions are newest-first (unshift) — take the first 3 as-is.

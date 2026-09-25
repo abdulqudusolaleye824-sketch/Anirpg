@@ -19,6 +19,9 @@ const MultiSocketManager = require('../../bots/MultiSocketManager');
 // can always see exactly what is live.
 function buildSha() {
   if (process.env.RAILWAY_GIT_COMMIT_SHA) return String(process.env.RAILWAY_GIT_COMMIT_SHA).slice(0, 7);
+  // Push #88g: the docker image has no .git — the deploy writes VERSION ("<sha> (<msg>)").
+  try { const v = require('fs').readFileSync(require('path').join(process.cwd(), 'VERSION'), 'utf8').trim(); const m = v.match(/^([0-9a-f]{7,40})/i); if (m) return m[1].slice(0, 7); if (v) return v.slice(0, 24); } catch (e) {}
+  try { const pv = require('../../package.json').version; if (pv) { try { require('child_process').execSync('git rev-parse --short HEAD', { timeout: 3000, stdio: ['ignore', 'pipe', 'ignore'] }); } catch (e) { return `v${pv}`; } } } catch (e) {}
   try {
     const out = require('child_process').execSync('git rev-parse --short HEAD', { timeout: 5000 }).toString().trim();
     if (out) return out;
@@ -217,7 +220,13 @@ module.exports = {
       try {
         const existingSock = MultiSocketManager.getSocket(pKey);
         if (existingSock) {
+          // Push #88g: full teardown — listeners off, ws closed — and a short
+          // beat so the old socket can't still be flushing while the new one
+          // distributes fresh sender keys (that overlap painted blank bubbles).
+          try { existingSock.ev.removeAllListeners(); } catch (e) {}
           try { existingSock.end(undefined); } catch (e) {}
+          try { existingSock.ws?.close?.(); } catch (e) {}
+          await new Promise(r => setTimeout(r, 1500));
         }
 
         const AUTH_DIR = process.env.AUTH_DIR || path.join(process.cwd(), 'auth');

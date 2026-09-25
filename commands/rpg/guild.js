@@ -937,6 +937,11 @@ ${FRAME}`
             text: `❌ *${item.name}* is sold out for today! (0/5 units remaining)`
           }, { quoted: msg });
         }
+        // Push #88f: ONE unit of each guild-shop item per player per day.
+        item.buyers = item.buyers || {};
+        if (item.buyers[sender]) {
+          return sock.sendMessage(chatId, { text: `❌ You already bought *${item.name}* today — Guild Shop items are limited to *1 unit per player per day*.` }, { quoted: msg });
+        }
 
         const discountedPrice = Math.floor(item.basePrice * (1 - discountPct / 100));
 
@@ -963,6 +968,7 @@ ${FRAME}`
 
         // Decrement stock unit
         item.unitsLeft -= 1;
+        item.buyers[sender] = Date.now();
 
         // Push #56: the purchase is SEALED into an inventory package instead of
         // being half-applied inline. Opening it (/equip use <#>) routes every
@@ -998,7 +1004,7 @@ ${FRAME}`
             ...(item.type === 'pattern' && _pkg.pkg.patternId ? [`⚔️ Attack pattern *#${_pkg.pkg.patternId}* is inside — it lands in */attacks* when you open the box`] : []),
             `🏷️ Guild Discount: *${discountPct}% OFF*`,
             `💰 Paid: *${costDisplay}*`,
-            `📦 Units Left Today: *${item.unitsLeft}/5 units*`,
+            `📦 Units Left Today: *${item.unitsLeft}/5 units* · limit 1 per player`,
             `${FRAME}`,
             `✅ Package added to your inventory — open it to receive the item!`,
             `${FRAME}`,

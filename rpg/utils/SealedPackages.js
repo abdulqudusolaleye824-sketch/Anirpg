@@ -167,9 +167,19 @@ function open(player, entry) {
       const map = { atk: 'atk', def: 'def', hp: 'maxHp', spd: 'speed', crit: 'critChance' };
       const field = map[src.stat] || src.stat;
       if (field) {
-        player.stats[field] = (player.stats[field] || 0) + amt;
+        // Push #88f: PERMANENT means it lives in baseStats — the allocation
+        // recompute (applyAllocationsToStats) rebuilds stats from baseStats,
+        // which used to wipe orb bonuses written straight onto stats.
+        try { require('./StatAllocationSystem').initializeStatAllocations(player); } catch (e) {}
+        if (!player.baseStats) player.baseStats = { hp: player.stats.maxHp || 100, atk: player.stats.atk || 10, def: player.stats.def || 5, magicPower: player.stats.magicPower || 0, speed: player.stats.speed || 100, critChance: player.stats.critChance || 0, critDamage: player.stats.critDamage || 0, lifesteal: player.stats.lifesteal || 0, maxEnergy: player.stats.maxEnergy || 100 };
+        const baseField = src.stat === 'hp' ? 'hp' : field;
+        player.baseStats[baseField] = (Number(player.baseStats[baseField]) || 0) + amt;
+        player.stats[field] = (Number(player.stats[field]) || 0) + amt;
+        player.permBonuses = player.permBonuses || {};
+        player.permBonuses[field] = (player.permBonuses[field] || 0) + amt;
+        try { require('./StatAllocationSystem').applyAllocationsToStats(player); } catch (e) {}
         if (src.stat === 'hp') player.stats.hp = Math.min(player.stats.hp || 0, player.stats.maxHp || 0);
-        lines.push(`📈 Permanent +${amt} ${String(src.stat).toUpperCase()}`);
+        lines.push(`📈 Permanent +${amt} ${String(src.stat).toUpperCase()} (now ${player.stats[field]})`);
       } else lines.push('⚠️ The package contained no usable stat');
       break;
     }

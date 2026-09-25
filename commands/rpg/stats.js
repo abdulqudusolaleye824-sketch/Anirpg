@@ -26,6 +26,7 @@ module.exports = {
     if (mentioned && mentioned !== sender) {
       const other = db.users[mentioned];
       if (!other) return sock.sendMessage(chatId, { text: '❌ That player is not registered!' }, { quoted: msg });
+      if (UI.lockedFrom(db, { ...other, jid: other.jid || mentioned }, sender)) return sock.sendMessage(chatId, { text: UI.lockedMsg(other) }, { quoted: msg });
 
       const getStats = (p) => {
         const g = getEquippedBonuses(p);
@@ -153,7 +154,7 @@ module.exports = {
     msg2 += `\n${powerLabel.emoji} Power: *${powerRating.toLocaleString()}* (${powerLabel.label})`;
 
     msg2 += `\n${FRAME}\n💪 *COMBAT STATS*\n${FRAME}`;
-    msg2 += `\n❤️  HP:    *${player.stats.hp}/${totalHp}*${breakdown(player.stats.maxHp, (gear.hp||0)+(titleBonus.maxHp||0)+(consBonus.maxHp||0))}`;
+    msg2 += `\n❤️  HP:    *${Math.min(player.stats.hp || 0, totalHp)}/${totalHp}*${breakdown(player.stats.maxHp, (gear.hp||0)+(titleBonus.maxHp||0)+(consBonus.maxHp||0))}`;
     msg2 += `\n⚔️  ATK:   *${totalAtk}*${breakdown(player.stats.atk, (gear.atk||0)+weaponBonus+(titleBonus.atk||0)+(consBonus.atk||0))}`;
     msg2 += `\n🛡️  DEF:   *${totalDef}*${breakdown(player.stats.def, (gear.def||0)+(titleBonus.def||0)+(consBonus.def||0))}`;
     msg2 += `\n${player.energyColor || '💙'} ${player.energyType || 'Energy'}: *${player.stats.energy || 0}/${player.stats.maxEnergy || 100}*`;

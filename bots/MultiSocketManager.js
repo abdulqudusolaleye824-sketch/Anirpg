@@ -1452,6 +1452,16 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
       // will not go, resolve SILENTLY — nothing about it ever reaches a chat.
       const _isRate = (e) => /rate-overlimit|overlimit|429/i.test(String(e && e.message || e || ''));
       const _delays = [2000, 4000, 8000, 16000, 30000];
+      // Push #88g: a socket that JUST opened must settle before its first group
+      // send — sender-key distribution right at open is what produced empty
+      // bubbles after /restart. Wait (never drop) until 4s past `open`.
+      try {
+        if (String(jid || '').endsWith('@g.us')) {
+          const _openAt = sock._openAt || 0;
+          const _since = Date.now() - _openAt;
+          if (_openAt && _since < 4000) await new Promise(r => setTimeout(r, 4000 - _since));
+        }
+      } catch (e) {}
       for (let _i = 0; ; _i++) {
         try {
           try { await _pace(personalityKey, jid); } catch (e) {}
@@ -1695,6 +1705,7 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
         } catch (_) {}
       }
     } else if (connection === 'open') {
+      sock._openAt = Date.now(); // Push #88g: settle-window anchor for the first group sends
       try { _notifyLinkSubscribers(personalityKey, `✅ *${displayName}* is linked and online!`); } catch (e) {}
       // Push #77/#79: auto-sweep of untracked groups is OPT-IN (db.groupGuardAuto).
       // Owner runs /gcsweep to preview + leave strays.

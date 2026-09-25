@@ -142,6 +142,8 @@ module.exports = {
       }, { quoted: msg });
     }
 
+    if (isOther && UI.lockedFrom(db, { ...player, jid: player.jid || targetId }, sender)) return sock.sendMessage(chatId, { text: UI.lockedMsg(player) }, { quoted: msg });
+
     // ── Compute ───────────────────────────────────────────────
     const { total: power, parts } = calcPower(player);
     const { cur, next }           = getRank(power);

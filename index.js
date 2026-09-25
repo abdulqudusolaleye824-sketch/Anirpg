@@ -27,7 +27,7 @@ for (const lvl of ['log', 'error', 'warn']) {
     try {
       const line = a.map((x) => (typeof x === 'string' ? x : (x && x.stack) ? x.stack : (() => { try { return JSON.stringify(x); } catch (e) { return String(x); } })())).join(' ');
       _logRing.push(`${new Date().toISOString().slice(11, 19)} ${lvl === 'log' ? ' ' : lvl === 'warn' ? 'W' : 'E'} ${line.slice(0, 600)}`);
-      if (_logRing.length > 400) _logRing.shift();
+      if (_logRing.length > 3000) _logRing.shift();
     } catch (e) {}
     orig(...a);
   };
@@ -381,15 +381,20 @@ const fs_sync = require('fs');
 let database = { users: {}, banlist: {}, dailyQuests: {}, botMods: [], botOwners: [] };
 const loadDatabase = (memDoc = null) => {
   try {
-    if (memDoc) {
-      // Push #65: adopt a doc loaded from the SQLite live store (or a fuller
-      // backup mirror) — it runs the exact same normalization as the file path.
-      database = memDoc;
-    } else if (fs.existsSync(DB_PATH)) {
-      const data = fs.readFileSync(DB_PATH, 'utf-8');
-      database = JSON.parse(data);
+    if (memDoc || fs.existsSync(DB_PATH)) {
+      // Push #88g: the SQLite/Mongo doc path used to SKIP this whole block
+      // (migrations, one-shot caps, orphan cleanup) despite the comment saying
+      // otherwise — now every source runs the exact same boot normalization.
+      if (memDoc) {
+        database = memDoc;
+      } else {
+        const data = fs.readFileSync(DB_PATH, 'utf-8');
+        database = JSON.parse(data);
+      }
+      if (!database.users || typeof database.users !== 'object') database.users = {};
 
       PlayerMigration.migrateAllPlayers(database);
+      try { const _ps = require('./rpg/utils/ProGuard').sweep(database); if (_ps) console.log(`💎 ProGuard: stripped lapsed Pro perks from ${_ps} players`); } catch (e) {}
       // Push #88e: one-shot cap — every player's health potions + pet food → 3 units each.
       try { const _pc = require('./rpg/utils/PotionTiers').capAllPlayers(database); if (_pc.done && !_pc.already) console.log(`🧪 Potion/pet-food cap (3 each) applied to ${_pc.touched} players`); } catch (e) { console.error('potion cap:', e.message); }
 

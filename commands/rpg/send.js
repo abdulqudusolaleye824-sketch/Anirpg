@@ -123,39 +123,11 @@ module.exports = {
       || Object.values(db.users || {}).find((u) => String(u.id || '').split('@')[0] === bareRecipient);
 
     if (!recipient) {
-      let pushName = bareRecipient;
-      try {
-        if (chatId.endsWith('@g.us')) {
-          const meta = await sock.groupMetadata(chatId);
-          const p = meta.participants.find((m) =>
-            String(m.id).split(':')[0].split('@')[0] === bareRecipient
-          );
-          if (p) pushName = p.pushName || bareRecipient;
-        }
-      } catch (_) {}
-
-      if (!db.users) db.users = {};
-      db.users[bareRecipient] = {
-        id: bareRecipient,
-        name: pushName,
-        registeredAt: Date.now(),
-        registrantNote: 'auto-registered via /send',
-        level: 1,
-        xp: 0,
-        awakeRank: 'E',
-        class: null,
-        gold: 0,
-        manaCrystals: 0,
-        inventory: { gold: 0, weapons: [], armor: [], accessories: [], potions: [], artifacts: [], materials: [], keyStones: [], healthPotions: 0, manaPotions: 0, energyPotions: 0, reviveTokens: 0 },
-      };
-      recipient = db.users[bareRecipient];
-      saveDatabase();
-      try {
-        await sock.sendMessage(chatId, {
-          text: `🆕 *${pushName}* wasn't registered, so I created a hunter account for them. Continue!`,
-          mentions: recipientId ? [recipientId] : undefined,
-        }, { quoted: msg });
-      } catch (_) {}
+      // Push #88f: NEVER auto-register a stranger from a transfer — block instead.
+      return sock.sendMessage(chatId, {
+        text: `🚫 *This player isn't registered.*\n\nTransfers only go to registered hunters — ask them to */register* first, then try again.\n💠 Nothing was deducted.`,
+        mentions: recipientId && String(recipientId).includes('@') ? [recipientId] : undefined,
+      }, { quoted: msg });
     }
 
     if (String(recipientId).split(':')[0].split('@')[0] === String(sender).split(':')[0].split('@')[0]) {

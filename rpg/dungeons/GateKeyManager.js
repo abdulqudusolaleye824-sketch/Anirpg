@@ -349,8 +349,15 @@ function burnKeysOf(playerJid, db, opts = {}) {
     if (normaliseJid(k.ownedBy) !== me) return;
     const live = !k.expired && !k.raidComplete && Date.now() < (k.expiresAt || 0);
     if (!live && !opts.includeDead) return;
-    k.expired = true; k.used = true; k.raidComplete = true; k.burnedAt = Date.now(); k.burnedBy = opts.by || 'system';
-    if (db?.gateKeys?.[key]) Object.assign(db.gateKeys[key], { expired: true, used: true, raidComplete: true, burnedAt: k.burnedAt, burnedBy: k.burnedBy });
+    // Push #88g: snapshot what the burn destroys so /burnkey restore can undo it.
+    const snap = {
+      wasUsed: !!k.used, wasExpired: !!k.expired, wasRaidComplete: !!k.raidComplete,
+      remainingMs: Math.max(0, (k.expiresAt || 0) - Date.now()),
+      gate: (k.gateId && db?.activeGates?.[k.gateId]) ? JSON.parse(JSON.stringify(db.activeGates[k.gateId])) : null,
+      dungeonChatId: k.dungeonChatId || null,
+    };
+    k.expired = true; k.used = true; k.raidComplete = true; k.burnedAt = Date.now(); k.burnedBy = opts.by || 'system'; k.burnSnapshot = snap;
+    if (db?.gateKeys?.[key]) Object.assign(db.gateKeys[key], { expired: true, used: true, raidComplete: true, burnedAt: k.burnedAt, burnedBy: k.burnedBy, burnSnapshot: snap });
     if (activeKeys[key]) delete activeKeys[key];
     // Free the dungeon GC this key was holding.
     if (k.dungeonChatId) {
@@ -365,6 +372,49 @@ function burnKeysOf(playerJid, db, opts = {}) {
   for (const [key, k] of Object.entries(activeKeys)) consider(key, k);
   for (const [key, k] of Object.entries(db?.gateKeys || {})) consider(key, k);
   return burned;
+}
+
+// Push #88g: undo a burn. Returns { ok, error?, key?, remainingMs?, rank?, ownedBy? }.
+// Only keys that were burnt (burnedAt set) can be restored; the key comes back
+// live with the stability time it had left (minimum 30 min so it is usable),
+// its gate record is re-created, and its dungeon GC re-held if still free.
+const RESTORE_MIN_MS = 30 * 60 * 1000;
+function restoreKey(code, db, opts = {}) {
+  const upper = String(code || '').toUpperCase().trim();
+  const rec = db?.gateKeys?.[upper] || activeKeys[upper];
+  if (!rec) return { ok: false, error: `No gate key \`${upper}\` on record.` };
+  if (!rec.burnedAt) return { ok: false, error: `Key \`${upper}\` was never burnt — nothing to restore.` };
+  const snap = rec.burnSnapshot || {};
+  if (snap.wasRaidComplete) return { ok: false, error: `Key \`${upper}\` had already completed its raid before it was burnt.` };
+  const remainingMs = Math.max(RESTORE_MIN_MS, snap.remainingMs || 0);
+  const k = rec;
+  k.expired = false; k.used = !!snap.wasUsed && !!snap.dungeonChatId; k.raidComplete = false;
+  k.expiresAt = Date.now() + remainingMs;
+  k.restoredAt = Date.now(); k.restoredBy = opts.by || 'system';
+  delete k.burnedAt; delete k.burnedBy; delete k.burnSnapshot;
+  // Gate record back (raid start needs it).
+  if (snap.gate && k.gateId) { if (!db.activeGates) db.activeGates = {}; if (!db.activeGates[k.gateId]) db.activeGates[k.gateId] = snap.gate; }
+  // Re-hold the dungeon GC if it is still free; otherwise the key waits for /raid start to pick one.
+  if (snap.dungeonChatId) {
+    const gc = dungeonGCs[snap.dungeonChatId]; const dgc = db?.dungeonGCs?.[snap.dungeonChatId];
+    const free = (!gc || !gc.activeKeyId) && (!dgc || !dgc.activeKeyId);
+    if (free) { if (gc) gc.activeKeyId = upper; if (dgc) dgc.activeKeyId = upper; k.dungeonChatId = snap.dungeonChatId; }
+    else { k.dungeonChatId = null; k.used = false; k.raidStarted = false; }
+  }
+  if (!db.gateKeys) db.gateKeys = {};
+  db.gateKeys[upper] = k;
+  activeKeys[upper] = k;
+  return { ok: true, key: upper, remainingMs, rank: k.gateRank, ownedBy: k.ownedBy, gateRestored: !!(snap.gate && k.gateId) };
+}
+
+// Push #88g: burnt keys of a player (most recent first) — for `/burnkey restore @player`.
+function burntKeysOf(playerJid, db) {
+  const me = normaliseJid(playerJid);
+  const out = [];
+  for (const [key, k] of Object.entries(db?.gateKeys || {})) {
+    if (k && k.burnedAt && normaliseJid(k.ownedBy) === me) out.push({ key, rank: k.gateRank, burnedAt: k.burnedAt, raidDone: !!k.burnSnapshot?.wasRaidComplete });
+  }
+  return out.sort((a, b) => b.burnedAt - a.burnedAt);
 }
 
 function getKey(key, db = null) {
@@ -435,6 +485,8 @@ module.exports = {
   recycleOldKeys,
   getKey,
   burnKeysOf,
+  restoreKey,
+  burntKeysOf,
   formatStability,
   normaliseJid,
   findGuild,

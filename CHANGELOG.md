@@ -1,3 +1,20 @@
+## 1.0.95 — Push #88f (2026-09-25)
+- Raids/dungeons: monster aggro ONLY targets the Healer class and only after an actual heal; stale aggro on non-Healers is discarded.
+- PvP: heal/buff skills are support casts in duels too (heal/buff/cleanse self, NO damage) — same as dungeons. Statuses, temp buffs and pattern/skill cooldowns are cleared when a duel ends (5-turn stuns no longer follow you into the next match; cooldowns reset). PvP can't be started while either player is in a raid/dungeon; raids can't be entered/joined mid-duel.
+- Guild Shop: 1 unit of each item per player per day. Stat Orbs (Power Ring etc.) are now truly permanent — written to baseStats so the stat recompute keeps them.
+- Locked profiles (Pro): /stats @, /balance @, /rank @, /transactions @ are private too (owner + staff only). Lock is ignored once Pro lapses.
+- ProGuard: when a Pro sub expires ALL perks are stripped (profile lock, custom reaction emoji, pro flags) — per command and boot sweep.
+- /send to an unregistered number is BLOCKED ("This player isn't registered") — no more auto-registering strangers.
+- /recon carries skill progress: same number of unlocked skills and the same levels positionally (old #1 Lv5 → new #1 Lv5).
+- Spawns: material caches are built from the recipe book (3 distinct materials, weighted by recipe demand; common/rare/epic tiers) — no more Dragon-Scale-only; spawn announcement is ONE message with the ping merged in; daily item spawner uses the same pool.
+- /attacks sell shows ✅ Sell / ❌ Keep confirmation buttons.
+- Fixes: profile "SKILLS (18 total)" now counts owned skills (bar + library) with locked shown separately; HP can never exceed the current effective max (867/811 card).
+- test_push88: 121/121.
+- FIX (root cause): boot normalization (potion/pet-food cap to 3, Pro-lapse sweep, player migrations, orphan cleanup) only ran for the JSON-file DB path — the live SQLite doc path skipped it entirely, so the cap never applied. All DB sources now run the same boot block; the cap applies on this deploy.
+- /restart: old socket is fully torn down (listeners off, ws closed, 1.5s beat) before the new one connects, and a freshly opened socket waits 4s before its first group sends — fixes the empty bubbles seen right after `/restart <bot>`. Build SHA now read from VERSION (was `unknown`).
+- /burnkey restore <KEY> | @player: undo a burn — key returns live with its remaining stability (min 30m), gate record + dungeon GC hold restored. Keys whose raid already completed can't be restored.
+- Ops: /api/logs ring 3000 lines, /api/sends ring 4000 entries (was 400/600 — too short to trace issues after the fact).
+
 ## 1.0.94 — Push #88d/#88e (2026-09-24)
 - Gate raids no longer drop Health Potions or Pet Food; tower dungeon floor/boss loot no longer drops Health Potions (shop-only).
 - Health potions are 3 separate inventory lines: Lower (10%, common) / Medium (25%, rare) / Higher (50%, EPIC). Legacy double-counter collapsed; buy/use keep tiers in sync.

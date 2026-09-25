@@ -39,6 +39,7 @@ module.exports = {
       return sock.sendMessage(chatId, { text: '❌ Usage: /transactions @player (or reply to their message).' }, { quoted: msg });
     }
 
+    if (UI.lockedFrom(db, { ...target, jid: target.jid || targetId }, sender)) return sock.sendMessage(chatId, { text: UI.lockedMsg(target) }, { quoted: msg });
     const { buildHistoryText } = require('../../rpg/utils/TransactionLog');
     const viewer = db.users[sender];
     const pro = UI.isPro(viewer || {});

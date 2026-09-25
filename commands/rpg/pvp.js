@@ -107,6 +107,9 @@ module.exports = {
       if (opp.pvpBattle) {
         return sock.sendMessage(chatId, { text: '❌ That player is already in a battle!' }, { quoted: msg });
       }
+      // Push #88f: no PvP while raiding / in a dungeon (either side).
+      { const _bz = _busyElsewhere(player, db); if (_bz) return sock.sendMessage(chatId, { text: `❌ You are in a *${_bz}* right now — finish it (or leave) before duelling.` }, { quoted: msg });
+        const _bo = _busyElsewhere(opp, db); if (_bo) return sock.sendMessage(chatId, { text: `❌ That player is in a *${_bo}* right now and can't be challenged.` }, { quoted: msg }); }
 
       db.pendingChallenges[targetJid] = { challengerId: sender, chatId, timestamp: Date.now() };
       saveDatabase();
@@ -168,6 +171,7 @@ module.exports = {
         saveDatabase();
         return sock.sendMessage(chatId, { text: '❌ One of the players is already in a battle!' }, { quoted: msg });
       }
+      { const _bz = _busyElsewhere(player, db) || _busyElsewhere(challenger, db); if (_bz) { saveDatabase(); return sock.sendMessage(chatId, { text: `❌ Can't start — one of you is in a *${_bz}* right now.` }, { quoted: msg }); } }
 
       // Initialize battle state
       challenger.pvpBattle = { opponentId: sender, turn: 1, pendingAction: null };
@@ -281,6 +285,7 @@ module.exports = {
 
       player.pvpBattle = null;
       if (opp) opp.pvpBattle = null;
+      _pvpCleanup(player); _pvpCleanup(opp);
       try { const RM = require('../../rpg/utils/RegenManager'); RM.endCombat(player); if (opp) RM.endCombat(opp); } catch (e) {}
 
       // Push #87: a surrender IS a win for the opponent — record + weekly tracking
@@ -551,11 +556,25 @@ async function resolveTurn(sock, chatId, p1, p2, db, saveDatabase) {
         const _x = SCm.applyHpPercents(entry, player, _opp);
         if (_x.lines.length) healNote += ' ' + _x.lines.join(' ');
       } catch (e) {}
-      if ((entry.type === 'heal' || (entry.healingPct || 0) > 0) && player.stats) {
-        const amt = Math.floor((player.stats.maxHp || 100) * ((entry.healingPct || 20) / 100));
-        const before = player.stats.hp || 0;
-        player.stats.hp = Math.min(_effMax(player), before + amt);
-        if (player.stats.hp > before) healNote = ` Restored ${player.stats.hp - before} HP.`;
+      // Push #88f: heal / buff skills are SUPPORT casts in the duel too — they
+      // heal / buff / cleanse the caster and deal NO damage (same as dungeons).
+      const _isSupport = entry.type === 'heal' || entry.type === 'buff' || ((entry.healingPct || 0) > 0 && !(entry.damagePct > 100));
+      if (_isSupport && player.stats) {
+        const _sl = [];
+        if (entry.type === 'heal' || (entry.healingPct || 0) > 0) {
+          const amt = Math.floor(_effMax(player) * ((entry.healingPct || 20) / 100) * (_b.healMult || 1));
+          const before = player.stats.hp || 0;
+          player.stats.hp = Math.min(_effMax(player), before + amt);
+          _sl.push(`💚 *${player.name}* +${player.stats.hp - before} HP → ${player.stats.hp}/${_effMax(player)}`);
+        }
+        const _txt = String(entry.effect || '').toLowerCase();
+        if (/remov|clear|cleanse|purif/.test(_txt) && Array.isArray(player.statusEffects) && player.statusEffects.length) { const n = player.statusEffects.length; player.statusEffects = []; _sl.push(`✨ *${player.name}* cleansed (${n} effect${n === 1 ? '' : 's'})`); }
+        try { for (const n of UC.applyMoveBuffs({ name: entry.name, buffs: entry.buffs || [], debuffs: [], selfDebuffs: entry.selfDebuffs || [] }, player, player)) _sl.push(n); } catch (e) {}
+        const _sh = _txt.match(/shield[^.]*?(\d+)%/);
+        if (_sh) { const amt = Math.floor(_effMax(player) * parseInt(_sh[1], 10) / 100); player.tempBuffs = player.tempBuffs || {}; player.tempBuffs.shield = { amount: amt, duration: 4 }; _sl.push(`🛡️ *${player.name}* shielded for ${amt} HP`); }
+        return { id: 0, name: entry.name, _support: true, _supportLines: _sl, isHeal: entry.type === 'heal' || (entry.healingPct || 0) > 0,
+                 description: entry.description, effectText: entry.effect, dmgMult: 0, buffs: [], debuffs: [], statuses: [],
+                 energyCost: SCm ? SCm.effectiveCost(entry, player) : 0, cooldownMs: SCm ? SCm.cooldownMs(entry) : 15000, cooldownSec: entry.cooldown || 2 };
       }
       // Push #76: buffs/debuffs/statuses ride on the move; UnifiedCombat.playTurn applies them.
       return {
@@ -701,6 +720,20 @@ async function resolveTurn(sock, chatId, p1, p2, db, saveDatabase) {
       // Push #88d: tick ONLY the acting fighter (each hunter ticks once per round;
       // ticking both here made a 2-turn freeze vanish before its owner's turn).
       { const _st = UC.tickStatuses(o.p); if (_st.length) { segment += `\n${_st.join('\n')}`; } }
+    } else if (o.move && o.move._support) {
+      // Push #88f: support cast — no strike, no counter damage; heal/buff lines only.
+      const segHead = (UI.isPro(o.p) || UI.isPro(o.opp)) ? [UI.PRO_BAR, `⚔️ *TURN ${turnNum} — ${o.name}'s Move* 💎`, UI.PRO_BAR] : [`⚔️ *TURN ${turnNum} — ${o.name}'s Move*`, UI.FREE_BAR];
+      segment = [
+        ...segHead,
+        `${o.move.isHeal ? '💚' : '✨'} *SUPPORT — ${o.move.name}*`,
+        `🙌 *${o.name}* ${o.move.isHeal ? 'heals' : 'buffs'} themself!`,
+        ...(o.move._supportLines || []),
+        `${FRAME}`,
+        `❤️ ${name1}: ${BarSystemPVP.getHPBar(p1.stats?.hp || 0, p1.stats?.maxHp || 100, UC.isPro(p1))}`,
+        `❤️ ${name2}: ${BarSystemPVP.getHPBar(p2.stats?.hp || 0, p2.stats?.maxHp || 100, UC.isPro(p2))}`,
+        `${FRAME}`,
+      ].join('\n');
+      { const _st = UC.tickStatuses(o.p); if (_st.length) segment += `\n${_st.join('\n')}`; }
     } else {
       // Shared 5-message battle flow (damage + move effect applied inside).
       const _silenced = (o.p === p1 && act1 && act1._silenced) || (o.p === p2 && act2 && act2._silenced);
@@ -896,6 +929,30 @@ function calcMoveDamage(attacker, defender, act) {
 }
 
 
+
+// Push #88f: a duel's statuses / temp buffs / pattern + skill cooldowns end WITH
+// the duel — nothing carries into the next match (5-turn stuns were persisting).
+function _pvpCleanup(pl) {
+  if (!pl) return;
+  try {
+    pl.statusEffects = [];
+    pl.tempBuffs = {};
+    pl.buffs = [];
+    pl.attackCooldowns = {};
+    if (pl.skills && pl.skills.cooldowns) pl.skills.cooldowns = {};
+    if (pl.skillCooldowns) pl.skillCooldowns = {};
+    if (pl.stats && pl.stats.hp > (pl.stats.maxHp || 0)) pl.stats.hp = pl.stats.maxHp;
+  } catch (e) {}
+}
+
+// Push #88f: raid / dungeon / boss lock — you can't duel while in one.
+function _busyElsewhere(pl, db) {
+  try {
+    const b = require('../../rpg/utils/RegenManager').checkInBattle(pl, db);
+    if (!b || b.type === 'pvp') return null;
+    return { gateraid: 'gate raid', dungeon_solo: 'dungeon', dungeon_party: 'party dungeon', boss: 'boss fight' }[b.type] || 'battle';
+  } catch (e) { return null; }
+}
 function handlePvpVictory(sock, chatId, winner, loser, wId, lId, db, saveDatabase, turns, lastTurnText) {
   const FRAME = pvpFrame(winner, loser);
   const winnerName = getPlayerName(winner, 'Winner');
@@ -995,6 +1052,7 @@ function handlePvpVictory(sock, chatId, winner, loser, wId, lId, db, saveDatabas
   // fight's HP loss sticks (no instant catch-up refill).
   winner.pvpBattle = null;
   loser.pvpBattle = null;
+  _pvpCleanup(winner); _pvpCleanup(loser);
   try { const RM = require('../../rpg/utils/RegenManager'); RM.endCombat(winner); RM.endCombat(loser); } catch (e) {}
 
   saveDatabase();

@@ -122,6 +122,7 @@ module.exports = {
       return sock.sendMessage(chatId, { text: `❌ *${player.name}* is the rightful holder of *${oldName}* — /recon refused.` }, { quoted: msg, mentions: [jid] });
     }
 
+    const _skillSnap = (() => { try { return require('../../rpg/utils/SkillCatalog').snapshotSkillProgress(player); } catch (e) { return null; } })();
     const _prevUndo = player._reconUndo; // keep the last GOOD snapshot if this attempt fails
     player._reconUndo = { at: Date.now(), by: sender, data: snapshot(player) };
     // Class-only pin keeps the player's existing quality (only a random roll or an explicit |q changes it).
@@ -130,7 +131,9 @@ module.exports = {
     if (!res.success) { if (_prevUndo) player._reconUndo = _prevUndo; else delete player._reconUndo; return sock.sendMessage(chatId, { text: `❌ ${res.error}` }, { quoted: msg }); }
 
     // Rebuild derived skill state so /skills and combat read the new class.
-    try { require('../../rpg/utils/SkillCatalog').syncPlayerSkills(player); } catch (e) {}
+    // Push #88f: skill COUNT + LEVELS carry over (old #1 Lv5 → new #1 Lv5).
+    let _carry = null;
+    try { const SCr = require('../../rpg/utils/SkillCatalog'); SCr.syncPlayerSkills(player); if (_skillSnap) _carry = SCr.carrySkillProgress(player, _skillSnap); } catch (e) {}
     saveDatabase();
 
     const data = CS.CLASS_DATA?.[res.className] || {};
@@ -144,6 +147,7 @@ module.exports = {
         `🗑️ Removed: *${oldName}*${CS.isExclusiveClass(oldName) ? ' _(exclusive — not rollable)_' : ''}`,
         `✨ New class: *${data.emoji || '🎭'} ${shown}* (${(data.rarity || 'common').toUpperCase()})`,
         `⭐ Quality: *${res.quality || player.classQuality || 0}%*${pinClass || pinQuality != null ? '  _(custom)_' : ''}`,
+        ...(_carry ? [`📚 Skills carried: *${_carry.count}* unlocked · levels preserved (${_skillSnap.levels.filter(l => l > 1).length} upgraded)`] : []),
         `↩️ Undo: */recon undo @${bare(jid)}*`,
         ``,
         `🛡️ By: @${sender.split('@')[0]}`,

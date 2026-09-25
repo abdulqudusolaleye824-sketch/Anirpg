@@ -414,6 +414,11 @@ module.exports = async (sock, msg, messageText, config, getDatabase, saveDatabas
   if (db?.users?.[sender]) {
     const player = db.users?.[sender];
     applyPassiveRegen(player, db);
+    // Push #88f: lapsed Pro → strip every perk before anything reads them.
+    try { if (require('../rpg/utils/ProGuard').enforce(player).stripped) saveDatabase(); } catch (e) {}
+    // Push #88f: HP can never sit above the CURRENT effective max (a lapsed
+    // pet "Last Gift" / removed gear used to leave 867/811 on the card).
+    try { if (player && player.stats) { const _em = require('../rpg/utils/GearSystem').effectiveMaxHp(player); if ((player.stats.hp || 0) > _em) player.stats.hp = _em; } } catch (e) {}
 
     const isPro = !!((player.isPro || player.proStatus) && player.proExpiresAt && player.proExpiresAt > Date.now());
 

@@ -721,6 +721,8 @@ function pickAggroTarget(gate, attackerJid, db, isBoss) {
   const healer = db && db.users && (db.users[ag.jid] || Object.values(db.users).find(u => u && u.jid && GKM.normaliseJid(u.jid) === GKM.normaliseJid(ag.jid)));
   const gm = raid.members.find(m => GKM.normaliseJid(m.id) === GKM.normaliseJid(ag.jid));
   if (!healer || !gm || (healer.stats?.hp ?? 0) <= 0) { delete raid.healerAggro; return null; }
+  // Push #88f: never aggro a non-Healer (stale entries from older builds).
+  try { const CPa = require('../utils/ClassPower'); if (!/^healer$/i.test(String(CPa.baseClassName(healer) || ''))) { delete raid.healerAggro; return null; } } catch (e) {}
   return { jid: ag.jid, name: gm.name || healer.name || ag.name, player: healer, member: gm };
 }
 
@@ -828,7 +830,8 @@ function supportCast(caster, casterJid, target, targetJid, skillName, gate, db) 
       if (es && u.stats.maxEnergy) { const e = Math.floor(u.stats.maxEnergy * parseInt(es[1], 10) / 100); u.stats.energy = Math.min(u.stats.maxEnergy, (u.stats.energy || 0) + e); lines.push(`⚡ *${t.name}* +${e} energy`); }
     }
   }
-  if (gate) markHealerAggro(gate, casterJid, caster.name);
+  // Push #88f: aggro ONLY for the Healer class and ONLY on an actual heal.
+  if (gate && isHeal && isHealerClass) markHealerAggro(gate, casterJid, caster.name);
   if (hpToll > 0) { caster.stats.hp = Math.max(1, (caster.stats.hp || 0) - hpToll); lines.push(`🩸 *${caster.name}* channels ${hpToll} HP into the party heal → ${caster.stats.hp}`); }
   return { ok: true, skill, lines, healed: healedTotal, party: targets.length > 1, isHeal, isBuff, energyCost: cost, hpToll };
 }

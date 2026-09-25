@@ -886,7 +886,47 @@ function applyHpPercents(entry, caster, target, effMaxOf) {
   return out;
 }
 
+
+// ── Push #88f: /recon carries skill PROGRESS across classes ──────────────────
+// Snapshot the old class's unlocked skills (bar + library, in unlock order)
+// with their levels; after the new class is synced, the new class's unlocked
+// skills receive those levels positionally (old skill #1 Lv5 → new skill #1
+// Lv5). If the new class has fewer unlocked skills at this level than the old
+// one had, the next locked skills are force-unlocked so the COUNT matches too.
+function snapshotSkillProgress(player) {
+  const owned = [...(player?.skills?.active || []), ...(player?.availableSkills || [])].filter(s => s && s.name);
+  owned.sort((a, b) => (Number(a.unlocksAtLevel) || 0) - (Number(b.unlocksAtLevel) || 0));
+  return { count: owned.length, levels: owned.map(s => Math.max(1, Number(s.level) || 1)) };
+}
+function carrySkillProgress(player, snap) {
+  if (!player || !snap) return { applied: 0 };
+  syncPlayerSkills(player);
+  const roster = getRoster(player).filter(e => !e.isPassive);
+  player.skills = player.skills || {}; player.skills.unlockedOverrides = player.skills.unlockedOverrides || [];
+  // top-up count: unlock the next locked (non-class-file) skills until counts match
+  let owned = [...player.skills.active, ...player.availableSkills].length;
+  if (owned < snap.count) {
+    const locked = (player.skills.locked || []).slice().sort((a, b) => (Number(a.unlocksAtLevel) || 0) - (Number(b.unlocksAtLevel) || 0));
+    for (const l of locked) {
+      if (owned >= snap.count) break;
+      const entry = roster.find(e => e.name === l.name);
+      if (!entry || entry.fromClassFile) continue;
+      if (!player.skills.unlockedOverrides.includes(l.name)) player.skills.unlockedOverrides.push(l.name);
+      owned++;
+    }
+    syncPlayerSkills(player);
+  }
+  const now = [...player.skills.active, ...player.availableSkills].filter(s => s && s.name);
+  now.sort((a, b) => (Number(a.unlocksAtLevel) || 0) - (Number(b.unlocksAtLevel) || 0));
+  let applied = 0;
+  for (let i = 0; i < now.length && i < snap.levels.length; i++) {
+    const lv = Math.min(MAX_SKILL_LEVEL || 5, Math.max(1, snap.levels[i]));
+    if (Number(now[i].level || 1) !== lv) { now[i].level = lv; applied++; }
+  }
+  return { applied, count: now.length, wanted: snap.count };
+}
 module.exports = {
+  snapshotSkillProgress, carrySkillProgress,
   applyHpPercents,
   SKILLS_PER_CLASS, UNLOCK_STEP, MAX_SKILL_LEVEL, SUPPORTED_STATUS,
   canonicalClassName, buildRoster, getRoster, EXPLICIT,

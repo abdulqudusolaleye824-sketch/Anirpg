@@ -11,6 +11,22 @@ function isPro(player) {
   return !!((player?.isPro || player?.proStatus) && player.proExpiresAt && player.proExpiresAt > Date.now());
 }
 
+// Push #88f: locked-profile privacy gate shared by /profile, /stats, /balance,
+// /rank, /transactions. A locked profile is a PRO feature — if Pro lapsed the
+// lock is ignored (and stripped by ProGuard). Owner + bot staff always pass.
+function lockedFrom(db, target, viewerJid) {
+  try {
+    if (!target || !target.profileLocked) return false;
+    if (!isPro(target)) return false;
+    const bare = (j) => String(j || '').split('@')[0].split(':')[0];
+    if (target.jid && bare(target.jid) === bare(viewerJid)) return false;
+    const Perms = require('../../utils/permissions');
+    if (Perms.isBotOwner(db, viewerJid) || Perms.isBotMod(db, viewerJid)) return false;
+    return true;
+  } catch (e) { return false; }
+}
+const lockedMsg = (target) => `🔒 *${(target && target.name) || 'This hunter'}'s profile is locked.* Their stats, balance and history are private — only the owner and bot staff can view them.`;
+
 const num = (n) => (Number(n) || 0).toLocaleString('en-US');
 
 const FREE_BAR = '━━━━━━━━━━━━━━━━━━━━━━━━━━━';
@@ -80,4 +96,4 @@ function card(player, o = {}) {
   return out.join('\n');
 }
 
-module.exports = { isPro, num, bar, section, timer, xpForLevel, upsell, card, FREE_BAR, PRO_BAR, FREE_MINI, PRO_MINI };
+module.exports = { isPro, lockedFrom, lockedMsg, num, bar, section, timer, xpForLevel, upsell, card, FREE_BAR, PRO_BAR, FREE_MINI, PRO_MINI };

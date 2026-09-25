@@ -34,9 +34,11 @@ function getProLabel(player) {
 function getSkillsCount(player) {
   const skills = player.skills || {};
   if (Array.isArray(skills)) return skills.length;
+  // Push #88f: "total" = skills the hunter actually HAS (bar + library) — the
+  // locked ladder was being counted, so a Lv.14 Healer read "18 total" with 4 owned.
   const active  = Array.isArray(skills.active)  ? skills.active.length  : 0;
-  const locked  = Array.isArray(skills.locked)  ? skills.locked.length  : 0;
-  return active + locked;
+  const library = Array.isArray(player.availableSkills) ? player.availableSkills.length : 0;
+  return active + library;
 }
 
 // ── Pets count ────────────────────────────────────────────────────────────────
@@ -137,8 +139,9 @@ function buildCard(player, db, targetId, mentionedId, isOwnProfile) {
     `💠 Nexus: *${Nexus}*`,
     `💎 Mana Stones: *${manaStones}*`,
     ``,
-    UI.section(`SKILLS (${skillsTotal} total)`, '⚡', pro),
+    UI.section(`SKILLS (${skillsTotal} unlocked${(Array.isArray(skills.locked) && skills.locked.length) ? ` · ${skills.locked.length} locked` : ''})`, '⚡', pro),
     ...skillLines,
+    ...((Array.isArray(player.availableSkills) && player.availableSkills.length) ? [`  📚 +${player.availableSkills.length} in library — /skills`] : []),
     ``,
     UI.section('HUNTER INFO', '📋', pro),
     player.dateOfBirth ? `📅 D.O.B: *${player.dateOfBirth}*` : null,
@@ -224,7 +227,7 @@ module.exports = {
 
     // ── LOCKED PROFILE: /lockprofile is Pro-only. Only locked profiles go to DM (owner + staff). ──
     // Normal /profile in GC sends to GC. Locked in GC → DM via serf (completely gated).
-    if (player.profileLocked && chatId.endsWith('@g.us')) {
+    if (player.profileLocked && UI.isPro(player) && chatId.endsWith('@g.us')) {
       const Perms = require('../../utils/permissions');
       const isStaffViewer = Perms.isBotOwner(db, sender) || Perms.isBotMod(db, sender);
 

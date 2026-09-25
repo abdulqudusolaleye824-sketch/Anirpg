@@ -117,19 +117,17 @@ async function spawnArtifact(sock, chatId, db, saveDatabase, forcedArtifact) {
     // Weights for global daily: Common 55% | Rare 30% | Epic 15% (no legendary/mythic for daily)
     // Push #76: weapons/armor/rings/tomes come ONLY from /store now. Spawns
     // are materials + the Mending Stone (which now really spawns: 20%).
-    const NON_EQUIP = (a) => !['weapon', 'armor', 'ring', 'tome'].includes(String(a.type || '').toLowerCase());
+    // Push #88f: spawns are RECIPE materials (bundle of 3, weighted by how many
+    // recipes need them) — never just "Dragon Scale". Mending Stone stays 20%.
     const mending = SPAWN_ARTIFACTS.find(a => a.isMendingStone || a.name === 'Mending Stone');
     if (mending && Math.random() < 0.20) {
       artifact = mending;
     } else {
-      const roll = Math.random() * 100;
-      let pool;
-      if (roll < 55)       pool = SPAWN_ARTIFACTS.filter(a => NON_EQUIP(a) && a.rarity === 'common');
-      else if (roll < 85)  pool = SPAWN_ARTIFACTS.filter(a => NON_EQUIP(a) && a.rarity === 'rare');
-      else                 pool = SPAWN_ARTIFACTS.filter(a => NON_EQUIP(a) && a.rarity === 'epic');
-      if (!pool.length) pool = SPAWN_ARTIFACTS.filter(a => NON_EQUIP(a) && ['common','rare','epic'].includes(a.rarity));
-      if (!pool.length) pool = SPAWN_ARTIFACTS.filter(NON_EQUIP);
-      artifact = pool[Math.floor(Math.random() * pool.length)];
+      const MSP = require('../../rpg/utils/MaterialSpawnPool');
+      const tier = MSP.rollTier();
+      const bundle = MSP.rollBundle(tier, 3);
+      artifact = { name: `${tier === 'epic' ? 'Epic' : tier === 'rare' ? 'Rare' : 'Common'} Material Cache`, emoji: '🧰', rarity: tier, type: 'material_bundle', bonus: {}, bundle,
+                   desc: `${bundle.reduce((a, b) => a + b.qty, 0)} crafting materials the forge is asking for.` };
     }
   }
   // Mark global spawn time after picking (before announcement to avoid race)
@@ -157,12 +155,18 @@ async function spawnArtifact(sock, chatId, db, saveDatabase, forcedArtifact) {
     .map(([k, v]) => v > 0 ? `+${v} ${k.toUpperCase()}` : `${v} ${k.toUpperCase()}`)
     .join(' | ');
 
-  const msg = `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n${style.color} ${style.header}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n${flavour}\n\n${artifact.emoji} *${artifact.name}*\n${style.stars} ${artifact.rarity.toUpperCase()}\n\n💭 "${artifact.desc}"\n\n📊 *STATS:*\n${bonusLines}\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n⏰ *Available for 5 minutes!*\n${style.urgency}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+  const contentLines = artifact.bundle
+    ? [`📦 *CONTENTS:*`, require('../../rpg/utils/MaterialSpawnPool').describe(artifact.bundle)]
+    : (bonusLines ? [`📊 *STATS:*`, bonusLines] : []);
+  const msg = [`━━━━━━━━━━━━━━━━━━━━━━━━━━━`, `${style.color} ${style.header}`, `━━━━━━━━━━━━━━━━━━━━━━━━━━━`, ``, flavour, ``,
+    `${artifact.emoji} *${artifact.name}*`, `${style.stars} ${artifact.rarity.toUpperCase()}`, ``, `💭 "${artifact.desc}"`, ``,
+    ...contentLines, ``, `━━━━━━━━━━━━━━━━━━━━━━━━━━━`, `⏰ *Available for 5 minutes!*`, style.urgency, `🎯 Type */claim* to grab it!`, `━━━━━━━━━━━━━━━━━━━━━━━━━━━`].join('\n');
 
-  await sock.sendMessage(chatId, { text: msg });
-
-  // Ping @everyone with artifact alert
-  try { await Announcer.announceArtifactSpawn(sock, chatId, artifact); } catch(e) {}
+  // Push #88f: ONE message — the member ping rides on the spawn itself
+  // (the separate Announcer alert was a second, duplicate message).
+  let _mentions = [];
+  try { const meta = await sock.groupMetadata(chatId); _mentions = (meta.participants || []).map(p => p.id); } catch (e) { _mentions = []; }
+  await sock.sendMessage(chatId, { text: msg, mentions: _mentions });
 
   // Expire after 5 minutes
   setTimeout(() => {
@@ -216,6 +220,9 @@ async function handleClaim(sock, msg, args, getDatabase, saveDatabase, sender) {
   if (art.isMendingStone || art.name === 'Mending Stone') {
     RI.grantItem(player, { name: 'Mending Stone', type: 'material', rarity: 'epic', emoji: '🛠️', isMendingStone: true, desc: 'Restores all durability to 100%. Use /mend.' }, 'spawn');
     whereLine = '💡 Use */mend* to restore your gear to 100% durability!';
+  } else if (art.bundle && Array.isArray(art.bundle)) {
+    require('../../rpg/utils/MaterialSpawnPool').grantBundle(player, art.bundle);
+    whereLine = '💡 Materials added — check */inv* and */craft*!';
   } else if (String(art.type || '').toLowerCase() === 'material') {
     if (!player.materials || typeof player.materials !== 'object') player.materials = {};
     player.materials[art.name] = (player.materials[art.name] || 0) + 1;
@@ -242,7 +249,7 @@ async function handleClaim(sock, msg, args, getDatabase, saveDatabase, sender) {
   const elapsed = Math.floor((Date.now() - spawn.spawnTime) / 1000);
 
   return sock.sendMessage(chatId, {
-    text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n${style.color} *CLAIMED!*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n👤 *${player.name}* got the artifact!${luckBonus}\n⚡ Reaction time: ${elapsed}s\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n${art.emoji} *${art.name}*\n${style.stars} ${art.rarity.toUpperCase()}\n📊 ${bonusLines}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n${whereLine}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+    text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n${style.color} *CLAIMED!*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n👤 *${player.name}* got the ${art.bundle ? 'cache' : 'artifact'}!${luckBonus}\n⚡ Reaction time: ${elapsed}s\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n${art.emoji} *${art.name}*\n${style.stars} ${art.rarity.toUpperCase()}\n${art.bundle ? require('../../rpg/utils/MaterialSpawnPool').describe(art.bundle) : `📊 ${bonusLines}`}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n${whereLine}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
     mentions: [sender]
   }, { quoted: msg });
 }

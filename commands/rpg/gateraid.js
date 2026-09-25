@@ -177,6 +177,7 @@ module.exports = {
 
     // ── ENTER (default) ─────────────────────────────────────────
     if (action === 'enter' || action === 'open' || action === 'start-raid') {
+      if (player.pvpBattle) return sock.sendMessage(chatId, { text: '❌ You are in a PvP duel — finish it (or /forfeit) before raiding.' }, { quoted: msg });
       const res = GR.enter(sender, player.name, key, keyData, gate, db);
       if (!res.ok) return sock.sendMessage(chatId, { text: `❌ ${res.error}` }, { quoted: msg });
       try { GR.saveGateState(db, gate); } catch (e) {}
@@ -214,6 +215,7 @@ module.exports = {
 
     // ── JOIN ────────────────────────────────────────────────────
     if (action === 'join') {
+      if (player.pvpBattle) return sock.sendMessage(chatId, { text: '❌ You are in a PvP duel — finish it (or /forfeit) before raiding.' }, { quoted: msg });
       if (!gate.raid) return sock.sendMessage(chatId, { text: '❌ Start the raid first: /gateraid ' + key }, { quoted: msg });
       const res = GR.join(sender, player.name, gate, db);
       if (!res.ok) return sock.sendMessage(chatId, { text: `❌ ${res.error}` }, { quoted: msg });

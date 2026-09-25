@@ -56,15 +56,17 @@ class DailyItemSpawner {
     // Select random group chat
     const targetChatId = candidateChats[Math.floor(Math.random() * candidateChats.length)];
 
-    // Pick random item (weighted rarity)
-    const rand = Math.random() * 100;
-    let pool;
-    if (rand < 40) pool = SPAWN_ITEMS.filter(i => i.rarity === 'common');
-    else if (rand < 70) pool = SPAWN_ITEMS.filter(i => i.rarity === 'uncommon');
-    else if (rand < 90) pool = SPAWN_ITEMS.filter(i => i.rarity === 'rare');
-    else pool = SPAWN_ITEMS.filter(i => i.rarity === 'epic');
-
-    const item = pool[Math.floor(Math.random() * pool.length)];
+    // Push #88f: recipe-material bundle (Mending Stone 15%) — what /craft needs.
+    let item;
+    if (Math.random() < 0.15) {
+      item = SPAWN_ITEMS[0];
+    } else {
+      const MSP = require('../rpg/utils/MaterialSpawnPool');
+      const tier = MSP.rollTier();
+      const bundle = MSP.rollBundle(tier, 3);
+      item = { name: `${tier === 'epic' ? 'Epic' : tier === 'rare' ? 'Rare' : 'Common'} Material Cache`, rarity: tier, bundle,
+               description: bundle.map(b => `${b.emoji} ${b.name} ×${b.qty}`).join(', ') };
+    }
 
     db.dailyGlobalSpawn.lastSpawnTime = now;
     db.dailyGlobalSpawn.activeSpawn = {
@@ -96,8 +98,8 @@ class DailyItemSpawner {
           `╭━━━━━━━「 📦 DAILY SYSTEM ITEM DROP 」━━━━━━━╮`,
           `A rare supply drop has materialized in this realm!`,
           ``,
-          `📦 Item: **${item.name}** (${emoji} ${item.rarity.toUpperCase()})`,
-          `📖 Description: _${item.description}_`,
+          `📦 Item: *${item.name}* (${emoji} ${item.rarity.toUpperCase()})`,
+          ...(item.bundle ? [`📦 Contents:`, ...item.bundle.map(b => `  ${b.emoji} *${b.name}* ×${b.qty}`)] : [`📖 Description: _${item.description}_`]),
           ``,
           `🛒 CLAIM COMMAND: Type /claim or reply to this message with /claim!`,
           `╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━╯`
@@ -130,6 +132,11 @@ class DailyItemSpawner {
     if (!Array.isArray(player.inventory.items)) player.inventory.items = [];
     if (!Array.isArray(player.inventory.materials)) player.inventory.materials = [];
 
+    if (item.bundle && Array.isArray(item.bundle)) {
+      require('../rpg/utils/MaterialSpawnPool').grantBundle(player, item.bundle);
+      saveDatabase();
+      return item;
+    }
     // Single commit to items (legacy double-push duplicated the /inv display).
     require('../rpg/utils/RewardInventory').grantItem(player, {
       name: item.name,

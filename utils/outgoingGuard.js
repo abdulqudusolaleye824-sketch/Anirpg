@@ -8,7 +8,7 @@
 'use strict';
 
 const _SEND_RING = [];
-const _SEND_RING_MAX = 600;
+const _SEND_RING_MAX = 4000;
 function _logSend(bot, jid, kind, status, preview) {
   _SEND_RING.push({ t: Date.now(), bot, jid: String(jid || ''), kind, status, preview: String(preview || '').slice(0, 60) });
   if (_SEND_RING.length > _SEND_RING_MAX) _SEND_RING.splice(0, _SEND_RING.length - _SEND_RING_MAX);

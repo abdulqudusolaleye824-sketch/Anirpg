@@ -83,7 +83,9 @@ function executeMonsterAI(monster, player, ctx = null) {
       ag.turns -= 1;
       const strong = monster.isBoss || (monster.severity || 1) >= 2;
       const healer = ctx.db.users && ctx.db.users[ag.id];
-      if (strong && healer && (healer.stats?.hp ?? 0) > 0 && Math.random() < (monster.isBoss ? 0.7 : 0.5)) {
+      let _isHealerCls = false; try { _isHealerCls = /^healer$/i.test(String(require('../../rpg/utils/ClassPower').baseClassName(healer) || '')); } catch (e) {}
+      if (!_isHealerCls) { delete ctx.dungeon.healerAggro; }
+      else if (strong && healer && (healer.stats?.hp ?? 0) > 0 && Math.random() < (monster.isBoss ? 0.7 : 0.5)) {
         const out = executeMonsterAI(monster, healer, null);
         return `\n🎯 *AGGRO!* ${monster.name} ignores you and lunges at the healer *${healer.name}*!` + out;
       }
@@ -1241,7 +1243,8 @@ module.exports = {
           const _sc = GRs.supportCast(player, sender, tgt, tgtJid, skillName, fakeGate, db);
           if (!_sc.ok) return sock.sendMessage(chatId, { text: `❌ ${_sc.error}` }, { quoted: msg });
           // healer aggro in the tower: monster remembers the healer for 3 turns
-          dungeon.healerAggro = { id: sender, name: player.name, turns: 3 };
+          // Push #88f: only a Healer-class hunter who actually HEALED draws aggro.
+          { let _hc=false; try { _hc=/^healer$/i.test(String(require('../../rpg/utils/ClassPower').baseClassName(player)||'')); } catch(e){} if (_hc && _sc.isHeal) dungeon.healerAggro = { id: sender, name: player.name, turns: 3 }; }
           saveDatabase();
           const _self = tgtJid === sender && !_sc.party;
           return sock.sendMessage(chatId, { text: [

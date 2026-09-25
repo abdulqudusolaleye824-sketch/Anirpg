@@ -392,14 +392,22 @@ module.exports = {
       const paid = (ap.paid || {})[num] || null;
       const bN = paid ? paid.nexus : (peek?.cost?.shopNexus || 0), bS = paid ? paid.stones : (peek?.cost?.shopStones || 0);
       if (!confirm) {
-        return sock.sendMessage(chatId, { text: [
+        const _sellText = [
           `🥋 *SELL ATTACK #${num} — ${peek?.name || ''}?*`, FRAME,
           `You paid: 💠 ${bN.toLocaleString()} · 💎 ${bS.toLocaleString()}`,
           `Shop offers *${Shop.SELL_BACK_PCT}%*: 💠 ${Math.floor(bN / 10).toLocaleString()} · 💎 ${Math.floor(bS / 10).toLocaleString()}`,
           `⚠️ That is a *90% loss*. This cannot be undone.`,
           ``,
           `Confirm: */attacks sell ${num} confirm*`,
-        ].join('\n') }, { quoted: msg });
+        ].join('\n');
+        // Push #88f: confirmation BUTTONS (falls back to the typed confirm).
+        if (Buttons) {
+          try {
+            const _btns = Buttons.quickReplies([[`✅ Sell #${num} (10%)`, `/attacks sell ${num} confirm`], [`❌ Keep it`, `/attacks info ${num}`]]);
+            return await Buttons.sendButtons(sock, chatId, { text: _sellText, buttons: _btns }, msg);
+          } catch (e) {}
+        }
+        return sock.sendMessage(chatId, { text: _sellText }, { quoted: msg });
       }
       const r = Shop.sellToShop(num, sender, db, saveDatabase);
       if (!r.success) return sock.sendMessage(chatId, { text: `❌ ${r.error}` }, { quoted: msg });
