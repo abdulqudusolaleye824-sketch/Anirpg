@@ -170,6 +170,7 @@ async function loadFromMongoDoc() {
 
 let saveTimeout = null;
 let _bootUsers = 0; // Push #31: users present at boot (write-guard baseline)
+let _dbReady = false; // Push #88i: NOTHING may write the DB before boot load finished (the 3s season timer saved `{}` over a slow-loading boot)
 let _bootAt = 0;    // Push #31: boot timestamp
 let _lastSnapAt = 0;       // Push #32: last hourly snapshot
 let _bootHealth = {};      // Push #32: degraded-boot flags for /api/db-health
@@ -689,6 +690,7 @@ async function _writeJsonBackup() {
 }
 
 const saveDatabase = () => {
+  if (!_dbReady) { console.warn('🛡️ saveDatabase ignored — database not loaded yet'); return; }
   // Push #23: stamp every save so boot can pick the FRESHER mirror.
   try { database.__savedAt = Date.now(); } catch {}
   _saveDirty = true;
@@ -1037,6 +1039,36 @@ http.createServer(async (req, res) => {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     return res.end(JSON.stringify({ version: v, uptimeSec: Math.round(process.uptime()), bootedAt: new Date(_BOOT_AT).toISOString(), pid: process.pid, node: process.version, memMB: Math.round(process.memoryUsage().rss / 1048576) }));
   }
+  // Push #88i: snapshot ladder — list + restore (owner key). /api/snapshots
+  // shows every snapshot with its user count; /api/restore?file=<name> loads
+  // it as the live DB (pre-restore snapshot written first), then reseeds
+  // SQLite/JSON/Mongo.
+  if (_path === '/api/snapshots') {
+    if (!_opsAuthed(req)) { res.writeHead(401); return res.end('unauthorized'); }
+    const out = [];
+    try { const sd = _snapDir(); for (const f of fs.readdirSync(sd).filter(f => f.endsWith('.json')).sort()) { let users = -1, bytes = 0, savedAt = null; try { const st = fs.statSync(path.join(sd, f)); bytes = st.size; if (st.size < 60 * 1024 * 1024) { const d = JSON.parse(fs.readFileSync(path.join(sd, f), 'utf8')); users = Object.keys(d.users || {}).length; savedAt = d.__savedAt ? new Date(d.__savedAt).toISOString() : null; } } catch (e) {} out.push({ file: f, users, bytes, savedAt }); } } catch (e) {}
+    res.writeHead(200, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify({ memUsers: Object.keys(database.users || {}).length, snapshots: out }, null, 1));
+  }
+  if (_path === '/api/restore') {
+    if (!_opsAuthed(req)) { res.writeHead(401); return res.end('unauthorized'); }
+    let file = null; try { file = new URL(req.url, 'http://localhost').searchParams.get('file'); } catch (e) {}
+    if (!file || !/^[\w.-]+\.json$/.test(file)) { res.writeHead(400); return res.end('file=<snapshot name> required'); }
+    try {
+      const fp = path.join(_snapDir(), file);
+      const doc = JSON.parse(fs.readFileSync(fp, 'utf8'));
+      const n = Object.keys(doc.users || {}).length;
+      if (!n) { res.writeHead(400); return res.end(`refusing: ${file} has 0 users`); }
+      try { writeDbSnapshot('prerestore', database); } catch (e) {}
+      loadDatabase(doc);
+      _dbReady = true; _bootUsers = n;
+      try { Storage.save(database); } catch (e) {}
+      try { fs.mkdirSync(path.dirname(DB_PATH), { recursive: true }); fs.writeFileSync(DB_PATH, JSON.stringify(database)); } catch (e) {}
+      try { if (mongoCollection) await saveToMongo(); } catch (e) {}
+      try { writeDbSnapshot('restored', database); } catch (e) {}
+      console.log(`♻️ DATABASE RESTORED from snapshot ${file} (${n} players)`);
+      res.writeHead(200, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify({ ok: true, file, users: Object.keys(database.users || {}).length }));
+    } catch (e) { res.writeHead(500); return res.end(`restore failed: ${e.message}`); }
+  }
   if (_path === '/api/sends') {
     if (!_opsAuthed(req)) { res.writeHead(401, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify({ error: 'unauthorized — add ?key=<link password>' })); }
     let n = 200, jid = null; try { const u = new URL(req.url, 'http://localhost'); n = parseInt(u.searchParams.get('n') || '200', 10) || 200; jid = u.searchParams.get('jid') || null; } catch (e) {}
@@ -1096,6 +1128,7 @@ let _lastUnhandledLog = 0;
 // CANNOT be lost no matter how the process dies next.
 function saveDatabaseSyncNow(reason) {
   try {
+    if (!_dbReady) { console.warn(`🛡️ Sync snapshot SKIPPED (${reason}): database not loaded yet`); return false; }
     // Push #37: an empty/stale second process must never cement over the file
     // (the 02:00 ghost's kill-shot). Fail-open on unreadable files; allow a
     // 1-user race (a legit /hakai seconds before SIGTERM) so deletions stick.
@@ -1347,7 +1380,9 @@ setInterval(() => {
   if (paid > 0) saveDatabase();
 }, 6 * 60 * 60 * 1000);
 
-setTimeout(() => {
+const _seasonTick = setInterval(() => {
+  if (!_dbReady) return; // Push #88i: never before load
+  clearInterval(_seasonTick);
   if (!database.seasonStart) {
     database.seasonStart = Date.now();
     saveDatabase();
@@ -1496,6 +1531,7 @@ async function startup() {
   }
   // Push #31: baseline for the write-path guard below.
   try { _bootUsers = Object.keys(database.users || {}).length; _bootAt = Date.now(); } catch {}
+  _dbReady = true;
   // Push #32: snapshot both mirrors at boot (before anything can mutate them).
   try { if (mongoDoc) writeDbSnapshot('boot-mongo', mongoDoc); } catch {}
   try { if (jsonDoc) writeDbSnapshot('boot-json', jsonDoc); } catch {}
