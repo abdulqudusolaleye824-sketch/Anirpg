@@ -1428,7 +1428,8 @@ setInterval(() => {
       if (database.afkUsers[jid]) continue;
       const pl = database.users?.[jid];
       if (!pl || !UIx.isPro(pl)) continue;
-      database.afkUsers[jid] = { reason: 'Auto AFK (inactive 30m)', since: seen + AUTO_AFK_MS, auto: true, silent: true };
+      // Push #88m: the clock starts at their LAST message (they've already been away 30m), reason = their /afk default or plain AFK.
+      database.afkUsers[jid] = { reason: (pl.afkDefault && String(pl.afkDefault).trim()) || 'AFK', since: seen, auto: true, silent: true };
       n++;
     }
     // Trim stale last-seen entries (>7 days) so the map never grows unbounded.

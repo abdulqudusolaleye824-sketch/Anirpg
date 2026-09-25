@@ -1,3 +1,8 @@
+## 1.0.100 — Push #88m (2026-09-25)
+- Auto-AFK: the timer starts at the player's last message (so it reads 30m+ when broken); reason defaults to "AFK" or the player's own default.
+- /afk default <message> (Pro): sets the message auto-AFK uses. /afk default shows it; /afk default clear removes it.
+- /gtag <message>: hidden tag of every guild member (Guild Master, Vice GMs, Officers). Shows only your text; everyone is notified.
+
 ## 1.0.99 — Push #88L (2026-09-25)
 - ROOT CAUSE of "players lose data on every redeploy": boot picked the store with the MOST users (count first, time second). Any deletion/reset — or stub records inflating the Mongo mirror — made a STALE mirror "fuller" than the live SQLite store, so each boot rolled everyone back to the mirror's age; the divergence guard then refused to refresh the mirror, so it repeated every boot. New rule: among healthy stores (players > 0 and ≥ 80% of the largest count) the NEWEST save wins; SQLite wins ties; the other stores are reseeded from the chosen truth. Mirror/sync guards now only refuse a gutted memory (0 users or a >25% shrink), so legit deletions no longer freeze the mirror.
 - /guild force master @player (owner/co-owner): forces the tagged player to Guild Master of their own guild; previous master becomes a Member. Reflected in guild.leader, member ranks, memberData, officers and player records.
