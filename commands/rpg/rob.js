@@ -95,10 +95,10 @@ module.exports = {
           let bankBal = 0, acct = null, bank = null;
           try { bank = Banking.getAccountBank(db, sender); acct = bank && bank.accounts.find(a => a.userId === sender); bankBal = Math.max(0, Math.floor(acct?.balance || 0)); } catch (e) {}
           const total = wallet + bankBal;
-          const loss = Math.floor(total * 0.5);
-          // Take from the wallet first, then the bank account.
-          const fromWallet = Math.min(wallet, loss);
-          const fromBank = Math.min(bankBal, loss - fromWallet);
+          // Half of the wallet AND half of the bank balance — 50% of ALL wealth.
+          const fromWallet = Math.floor(wallet * 0.5);
+          const fromBank = Math.floor(bankBal * 0.5);
+          const loss = fromWallet + fromBank;
           if (fromWallet > 0) updatePlayerNexus(thief, -fromWallet, null);
           if (fromBank > 0 && acct) { acct.balance -= fromBank; if (bank && typeof bank.totalDeposits === 'number') bank.totalDeposits = Math.max(0, bank.totalDeposits - fromBank); }
           if (loss > 0) updatePlayerNexus(victim, loss, null);
@@ -112,7 +112,7 @@ module.exports = {
             `😂 *@${sender.split('@')[0]}* seriously tried to rob *${vName}*… lol.`,
             `The Nexus itself turned on you.`,
             ``,
-            `💸 Lost: *${loss.toLocaleString()}* Nexus 💠 (50% of your total ${total.toLocaleString()})`,
+            `💸 Lost: *${loss.toLocaleString()}* Nexus 💠 (50% of ALL your wealth: ${total.toLocaleString()})`,
             fromWallet ? `   • Wallet: -${fromWallet.toLocaleString()}` : null,
             fromBank ? `   • Bank: -${fromBank.toLocaleString()}` : null,
             `👑 Paid to: *${vName}*`,
