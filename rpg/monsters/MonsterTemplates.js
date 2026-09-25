@@ -195,8 +195,8 @@ function generateMonster(level) {
   const scaling = Math.pow(1.10, level - 1);
   
   const hp = Math.floor(template.baseHp * scaling);
-  const atk = Math.floor(template.baseAtk * scaling);
-  const def = Math.floor(template.baseDef * scaling);
+  const atk = Math.floor(template.baseAtk * scaling * 1.7); // Push #88n: +70% ATK
+  const def = Math.floor(template.baseDef * scaling * 1.4); // Push #88n: +40% DEF
   
   return {
     name: template.name,

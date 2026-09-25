@@ -669,6 +669,9 @@ function floorMultiplier(gate, floor) {
 
 // Scale every live monster + the boss from their BASE stats using severity ×
 // floor multiplier. Idempotent — safe to call on every calibrate/advance.
+// Push #88n: global monster buff — ATK +70%, DEF +40% — applied on top of the
+// level/floor/severity scaling (which stays exactly as it was).
+const MON_ATK_BUFF = 1.7, MON_DEF_BUFF = 1.4;
 function applyMonsterScaling(gate) {
   const severity = (gate.calibrated && gate.calibrated.severity) || 1;
   for (const mon of gate.monsters || []) {
@@ -679,8 +682,8 @@ function applyMonsterScaling(gate) {
     const hpPct = wasFull ? 1 : Math.max(0, mon.hp / Math.max(1, mon.maxHp));
     mon.maxHp = Math.max(5, Math.floor(mon._base.hp * mult));
     mon.hp = Math.max(1, Math.floor(mon.maxHp * hpPct));
-    mon.atk = Math.max(1, Math.floor(mon._base.atk * mult));
-    mon.def = Math.floor(mon._base.def * mult * 0.8);
+    mon.atk = Math.max(1, Math.floor(mon._base.atk * mult * MON_ATK_BUFF));
+    mon.def = Math.floor(mon._base.def * mult * 0.8 * MON_DEF_BUFF);
     mon.speed = Math.max(1, Math.round(mon._base.speed * (0.8 + Math.min(severity, 6) * 0.2)));
   }
   if (gate.boss && !gate.boss.defeated) {
@@ -694,8 +697,8 @@ function applyMonsterScaling(gate) {
     const hpPct = wasFull ? 1 : Math.max(0, gate.boss.hp / Math.max(1, gate.boss.maxHp));
     gate.boss.maxHp = Math.max(50, Math.floor(gate.boss._base.hp * mult));
     gate.boss.hp = Math.max(1, Math.floor(gate.boss.maxHp * hpPct));
-    if (gate.boss._base.atk) gate.boss.atk = Math.max(1, Math.floor(gate.boss._base.atk * mult));
-    gate.boss.def = Math.floor((gate.boss._base.def || 0) * mult * 0.8);
+    if (gate.boss._base.atk) gate.boss.atk = Math.max(1, Math.floor(gate.boss._base.atk * mult * MON_ATK_BUFF));
+    gate.boss.def = Math.floor((gate.boss._base.def || 0) * mult * 0.8 * MON_DEF_BUFF);
   }
 }
 

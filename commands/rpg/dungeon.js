@@ -154,11 +154,46 @@ function buildAdvancePrompt(dungeon, nextFloor, party) {
 }
 
 // ─── MAIN MODULE ───────────────────────────────────────────────
+// Push #88n: TURN LOCK for party dungeons. Commands now run in parallel per
+// player, so two /attack (or /skill) calls can arrive together. Only one
+// combat flow may play out per party at a time — the second player gets an
+// immediate "their turn is still going" block instead of racing the state.
+const TURN_LOCK_MS = 25 * 1000; // hard cap so a crashed flow can never wedge a party
+const _turnLocks = new Map();   // partyId -> { holder, name, ts }
+const TURN_SUBS = new Set(['attack', 'classcmd', 'item']);
+function tryTurnLock(partyId, holder, name) {
+  const cur = _turnLocks.get(partyId);
+  if (cur && Date.now() - cur.ts < TURN_LOCK_MS) return { ok: false, holder: cur.holder, name: cur.name, self: cur.holder === holder };
+  _turnLocks.set(partyId, { holder, name, ts: Date.now() });
+  return { ok: true };
+}
+function releaseTurnLock(partyId, holder) { const cur = _turnLocks.get(partyId); if (cur && cur.holder === holder) _turnLocks.delete(partyId); }
+
 module.exports = {
   name: 'dungeon',
   description: 'Tower Dungeon System — Party of 2-5, 20 floors, boss every 5 floors',
+  tryTurnLock, releaseTurnLock,
 
   async execute(sock, msg, args, getDatabase, saveDatabase, sender) {
+    const _sub0 = String(args[0] || '').toLowerCase();
+    if (!TURN_SUBS.has(_sub0)) return this._execute(sock, msg, args, getDatabase, saveDatabase, sender);
+    let party = null;
+    try { party = DungeonPartyManager.getPartyByPlayer(sender); } catch (e) {}
+    if (!party || party.status !== 'active' || !party.id) return this._execute(sock, msg, args, getDatabase, saveDatabase, sender); // solo dungeons: no shared turn
+    const _db = getDatabase(); const _me = _db.users?.[sender];
+    const lock = tryTurnLock(party.id, sender, (_me && _me.name) || sender.split('@')[0]);
+    if (!lock.ok) {
+      const cid = msg.key?.remoteJid; if (!cid) return;
+      return sock.sendMessage(cid, {
+        text: lock.self ? `⏳ *Your last move is still resolving!* Wait for it to finish before acting again.` : `⚔️ *${lock.name}'s turn is still playing out!* Wait for their move to finish, then strike.`,
+        mentions: lock.self ? [] : [lock.holder],
+      }, { quoted: msg });
+    }
+    try { return await this._execute(sock, msg, args, getDatabase, saveDatabase, sender); }
+    finally { releaseTurnLock(party.id, sender); }
+  },
+
+  async _execute(sock, msg, args, getDatabase, saveDatabase, sender) {
     const chatId = msg.key?.remoteJid;
     if (!chatId) return;
     const db     = getDatabase();

@@ -189,6 +189,8 @@ function partySeverity(members) {
   return Math.round(Math.max(1.0, Math.min(10.0, sev)) * 100) / 100;
 }
 
+// Push #88n: global monster buff — ATK +70%, DEF +40% on top of level/floor scaling.
+const MON_ATK_BUFF = 1.7, MON_DEF_BUFF = 1.4;
 function scaleMonsterForFloor(baseMonster, playerLevel, floor, severity = 1) {
   const floorMult  = 1 + (floor - 1) * 0.15;  // Push #88: steeper climb per floor
   const levelMult  = 1 + (playerLevel - 1) * 0.03;
@@ -204,8 +206,8 @@ function scaleMonsterForFloor(baseMonster, playerLevel, floor, severity = 1) {
     stats: {
       hp:    Math.floor(baseMonster.baseHp  * combined * 0.5),  // 50% of original
       maxHp: Math.floor(baseMonster.baseHp  * combined * 0.5),
-      atk:   Math.floor(baseMonster.baseAtk * combined * 0.5),
-      def:   Math.floor(baseMonster.baseDef * combined * 0.5),
+      atk:   Math.floor(baseMonster.baseAtk * combined * 0.5 * MON_ATK_BUFF),
+      def:   Math.floor(baseMonster.baseDef * combined * 0.5 * MON_DEF_BUFF),
       speed: 80 + floor * 2
     },
     statusEffects: []
@@ -219,8 +221,8 @@ function scaleBossForFloor(bossDef, playerLevel, floor, severity = 1) {
   const floorMult  = 1 + (floor - 1) * 0.08; // Push #88: later bosses hit harder
   const sev = Math.max(1, Number(severity) || 1);
   const hp  = Math.floor(bossDef.baseHp  * levelMult * finalMult * floorMult * sev * 0.45);
-  const atk = Math.floor(bossDef.baseAtk * levelMult * finalMult * floorMult * sev * 0.45);
-  const def = Math.floor(bossDef.baseDef * levelMult * finalMult * floorMult * sev * 0.45);
+  const atk = Math.floor(bossDef.baseAtk * levelMult * finalMult * floorMult * sev * 0.45 * MON_ATK_BUFF);
+  const def = Math.floor(bossDef.baseDef * levelMult * finalMult * floorMult * sev * 0.45 * MON_DEF_BUFF);
   return {
     name: bossDef.name,
     emoji: bossDef.emoji,
@@ -364,4 +366,4 @@ class DungeonManager {
 }
 
 module.exports = DungeonManager;
-module.exports.DUNGEON_TYPES = DUNGEON_TYPES;
+module.exports.DUNGEON_TYPES = DUNGEON_TYPES;module.exports._scaleMonsterForFloor = scaleMonsterForFloor; // Push #88n: test hook

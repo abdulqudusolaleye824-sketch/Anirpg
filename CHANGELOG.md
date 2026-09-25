@@ -1,3 +1,8 @@
+## 1.0.101 — Push #88n (2026-09-25)
+- Commands run in parallel per player: the inbound queue is now keyed per (chat, sender) instead of per chat, so one player's multi-part output no longer makes everyone else wait. Order per player is preserved.
+- Party dungeons: turn lock — if two hunters act at once, one plays and the other is told immediately "X's turn is still playing out". Same player re-entering mid-flow is blocked too. (Gate raids already had this.)
+- All monsters: ATK +70%, DEF +40% (dungeon floors, dungeon bosses, gate raid monsters + bosses, template monsters). Level/floor/severity scaling untouched.
+
 ## 1.0.100 — Push #88m (2026-09-25)
 - Auto-AFK: the timer starts at the player's last message (so it reads 30m+ when broken); reason defaults to "AFK" or the player's own default.
 - /afk default <message> (Pro): sets the message auto-AFK uses. /afk default shows it; /afk default clear removes it.

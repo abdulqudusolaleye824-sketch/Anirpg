@@ -1898,7 +1898,12 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
   const _enqueueInbound = (msg) => {
     _trace.received++;
     const cid = String(msg?.key?.remoteJid || 'x');
-    const prev = _chatQueues.get(cid) || Promise.resolve();
+    // Push #88n: queue per (chat, sender) — one player's multi-part output no
+    // longer holds every other player in the group hostage. Order is still
+    // kept per player; shared-state commands (dungeon turns) take their own
+    // lock and answer immediately when someone else's turn is playing out.
+    const qkey = cid + '|' + String(msg?.key?.participant || msg?.participant || cid);
+    const prev = _chatQueues.get(qkey) || Promise.resolve();
     const run = prev.then(async () => {
       _inflightCmds++;
       let timer;
@@ -1911,8 +1916,8 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
         console.error(`❌ [${displayName}] inbound error (${cid.split('@')[0]}):`, e && e.message);
       } finally { clearTimeout(timer); _inflightCmds--; }
     });
-    _chatQueues.set(cid, run);
-    run.finally(() => { if (_chatQueues.get(cid) === run) _chatQueues.delete(cid); }).catch(() => {});
+    _chatQueues.set(qkey, run);
+    run.finally(() => { if (_chatQueues.get(qkey) === run) _chatQueues.delete(qkey); }).catch(() => {});
   };
   sock.ev.on('messages.upsert', ({ messages, type }) => {
     if (type !== 'notify') return;
