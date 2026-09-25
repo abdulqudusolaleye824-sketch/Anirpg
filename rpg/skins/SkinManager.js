@@ -184,7 +184,7 @@ function formatSkinInventory(player) {
   const owned    = player.skins.owned;
   const equipped = player.skins.equipped;
 
-  if (owned.length === 0) return '❌ You have no skins yet.\nUse */summon* to pull from the gacha!';
+  if (owned.length === 0) return '❌ You have no skins yet.\nGacha skins return after the rework.';
 
   const grouped = { common:[], uncommon:[], rare:[], epic:[], legendary:[], mythic:[] };
   for (const id of owned) {
@@ -237,8 +237,8 @@ function formatGachaBanner(player) {
     `10x pull:     *${MULTI_PULL_COST}* 🔮 _(10% off)_`,
     ``,
     `*COMMANDS*`,
-    `/summon — Single pull`,
-    `/summon 10 — 10x pull`,
+    `(Gacha pulls are being reworked)`,
+    
     `/skin list — View owned skins`,
     `/skin equip [name] — Equip a skin`,
     `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,

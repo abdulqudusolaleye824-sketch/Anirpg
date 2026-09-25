@@ -398,7 +398,7 @@ module.exports = {
     const summonArts = player.summonArtifacts || [];
     message += `🌟 *SUMMON ARTIFACTS* (${summonArts.length})\n`;
     if (summonArts.length === 0) {
-      message += `  _None — use /summon to pull!_\n`;
+      message += `  _None yet — the gacha is being reworked._\n`;
     } else {
       summonArts.slice(0, 5).forEach((a, i) => {
         const re   = `${rarityEmoji[a.rarity] || '⚪'}🃏`;
@@ -450,7 +450,7 @@ module.exports = {
     }
     message += `\n${FRAME}\n`;
     message += `📌 /inv — all items (newest first)\n`;
-    message += `📌 /gear · /summon · /attacks\n`;
+    message += `📌 /gear · /store · /attacks\n`;
     message += pro ? FRAME : `${FRAME}\n${UI.upsell()}`;
 
     return sock.sendMessage(chatId, { text: message }, { quoted: msg });

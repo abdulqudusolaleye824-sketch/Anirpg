@@ -48,15 +48,15 @@ const CRYSTAL_ITEMS = [
   {id:4,name:'Energy Core',emoji:'⚡',desc:'+10 Max Energy permanently',cost:600,stat:'en',amount:10},
   {id:5,name:'Swift Boots',emoji:'👟',desc:'+8 SPD permanently',cost:700,stat:'spd',amount:8},
   {id:6,name:'Crit Gem',emoji:'💎',desc:'+3% Crit permanently',cost:800,stat:'crit',amount:3},
-  {id:7,name:'Summon Ticket',emoji:'🎟️',desc:'1 summon pull',cost:120,stat:'ticket',amount:1},
-  {id:8,name:'Mana Stone x50',emoji:'🔮',desc:'Buy 50 crystals with gold',cost:0,stat:'mcx50',amount:50,goldCost:40000},
+  {id:7,name:'Summon Ticket',emoji:'🎟️',desc:'1 summon pull',cost:120,stat:'ticket',amount:1,hidden:true}, // Push #88p: gacha parked — not sold
+  {id:8,name:'Mana Stone x50',emoji:'🔮',desc:'Buy 50 Mana Stones with Nexus',cost:0,stat:'mcx50',amount:50,goldCost:40000},
 ];
 
 const BUNDLES = [
   {id:1,name:'Starter Pack',emoji:'🎁',desc:'5 HP Pots + 5 Energy Pots + 1 Revive Token',cost:105000},
   {id:2,name:'Dungeon Kit',emoji:'⚔️',desc:'10 HP Pots + 5 Revive Tokens + 2 Luck Potions',cost:500000},
   {id:3,name:'PvP Bundle',emoji:'🏆',desc:'Elixir of Might + Shield Scroll + 2 Luck Potions',cost:20000},
-  {id:4,name:'Mana Stone Bundle',emoji:'💎',desc:'200 Mana Stones + 3 Summon Tickets',cost:150000},
+  {id:4,name:'Mana Stone Bundle',emoji:'💎',desc:'250 Mana Stones',cost:150000},
   {id:5,name:'Mega Pack',emoji:'👑',desc:'20 HP Pots + 10 Revives + 5 Luck Potions + 500 Mana Stones',cost:1000000},
 ];
 
@@ -134,7 +134,7 @@ module.exports = {
       CONSUMABLES.forEach(item=>{
         const n=item.key==='energyPotions'?`${player.energyType||'Energy'} Potion`:item.name;
         const mark = pro ? ((player.gold||0) >= item.cost ? '✅ ' : '❌ ') : '';
-        txt+=`${mark}*${item.id}.* ${item.emoji} *${n}* — ${item.cost.toLocaleString()}g\n   ${item.desc}\n\n`;
+        txt+=`${mark}*${item.id}.* ${item.emoji} *${n}* — ${item.cost.toLocaleString()} 💠\n   ${item.desc}\n\n`;
       });
       txt+=`${FRAME}\n/shop buy potions [#] [amount]`;
       if (!pro) txt+=`\n${UI.upsell()}`;
@@ -145,7 +145,7 @@ module.exports = {
       let txt = pro
         ? `${UI.PRO_BAR}\n🎁 *BUNDLE DEALS* 💎\n${UI.PRO_BAR}\n💠 Nexus: *${gold}*\n${UI.PRO_BAR}\n`
         : `🎁 *BUNDLE DEALS*\n${UI.FREE_BAR}\n💠 Nexus: *${gold}*\n${UI.FREE_BAR}\n`;
-      BUNDLES.forEach(b=>{const mark=pro?((player.gold||0)>=b.cost?'✅ ':'❌ '):'';txt+=`${mark}*${b.id}.* ${b.emoji} *${b.name}* — ${b.cost.toLocaleString()}g\n   ${b.desc}\n\n`;});
+      BUNDLES.forEach(b=>{const mark=pro?((player.gold||0)>=b.cost?'✅ ':'❌ '):'';txt+=`${mark}*${b.id}.* ${b.emoji} *${b.name}* — ${b.cost.toLocaleString()} 💠\n   ${b.desc}\n\n`;});
       txt+=`${FRAME}\n/shop buy bundles [#]`;
       if (!pro) txt+=`\n${UI.upsell()}`;
       return sock.sendMessage(chatId,{text:txt},{quoted:msg});
@@ -188,7 +188,6 @@ ${FRAME}
 🍀 Luck Potions: *${lp}*
 🛡️ Shield Scrolls: *${ss}*
 💪 Might Elixirs: *${me}*
-🎟️ Summon Tickets: *${player.summonTickets||0}*
 ${FRAME}
 💠 Nexus: *${gold}*  💎 Mana Stones: *${crystals}*
 ${FRAME}`
@@ -386,6 +385,7 @@ ${FRAME}`
           return sock.sendMessage(chatId,{text:`✅ *+${item.amount} Mana Stones!*\n💎 Total: ${player.manaCrystals}`},{quoted:msg});
         }
         if(item.stat==='ticket'){
+          return sock.sendMessage(chatId,{text:'🎟️ Summon Tickets are not on sale right now — the gacha is being reworked. Your existing tickets are kept safe.'},{quoted:msg});
           const val=validatePurchase(player,item.cost,'crystals');
           if(!val.valid) return sock.sendMessage(chatId,{text:val.message},{quoted:msg});
           player.manaCrystals-=item.cost;
@@ -424,7 +424,7 @@ ${FRAME}`
         if(bundle.id===1){require('../../rpg/utils/PotionTiers').add(player,'lower',5);player.inventory.reviveTokens=(player.inventory.reviveTokens||0)+1;received='🩹 5 HP Potions\n🎫 1 Revive Token';}
         else if(bundle.id===2){require('../../rpg/utils/PotionTiers').add(player,'lower',10);player.inventory.reviveTokens=(player.inventory.reviveTokens||0)+5;for(let i=0;i<2;i++)player.inventory.items.push({name:'Luck Potion',type:'Consumable',isLuckPotion:true});received='🩹 10 HP Potions\n🎫 5 Revive Tokens\n🍀 2 Luck Potions';}
         else if(bundle.id===3){player.inventory.items.push({name:'Elixir of Might',type:'Consumable',isMightElixir:true,charges:5,atkBonus:20});player.inventory.items.push({name:'Shield Scroll',type:'Consumable',isShieldScroll:true});player.inventory.items.push({name:'Luck Potion',type:'Consumable',isLuckPotion:true});player.inventory.items.push({name:'Luck Potion',type:'Consumable',isLuckPotion:true});received='💪 Elixir of Might\n🛡️ Shield Scroll\n🍀 2 Luck Potions';}
-        else if(bundle.id===4){player.manaCrystals=(player.manaCrystals||0)+200;player.summonTickets=(player.summonTickets||0)+3;received='💎 200 Mana Stones\n🎟️ 3 Summon Tickets';}
+        else if(bundle.id===4){player.manaCrystals=(player.manaCrystals||0)+250;received='💎 250 Mana Stones';}
         else if(bundle.id===5){require('../../rpg/utils/PotionTiers').add(player,'lower',20);player.inventory.reviveTokens=(player.inventory.reviveTokens||0)+10;for(let i=0;i<5;i++)player.inventory.items.push({name:'Luck Potion',type:'Consumable',isLuckPotion:true});player.manaCrystals=(player.manaCrystals||0)+500;received='🩹 20 HP Potions\n🎫 10 Revive Tokens\n🍀 5 Luck Potions\n💎 500 Mana Stones';}
         try { require('../../rpg/utils/QuestDispatcher').trackAndNotify(player, 'shop', 1, sock, sender, chatId); } catch(e){}
         saveDatabase();

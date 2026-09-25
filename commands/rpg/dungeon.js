@@ -371,7 +371,7 @@ module.exports = {
         for (let i = 0; i < qty; i++) player.inventory.items.push({ name: 'Luck Potion', type: 'Consumable', rarity: 'uncommon', isLuckPotion: true });
       }
       saveDatabase();
-      return sock.sendMessage(chatId, { text: `✅ *${item.name} ×${qty}* purchased!\n💠 Spent: ${cost.toLocaleString()}g\n🏦 Nexus left: ${player.gold.toLocaleString()} 💠` }, { quoted: msg });
+      return sock.sendMessage(chatId, { text: `✅ *${item.name} ×${qty}* purchased!\n💠 Spent: ${cost.toLocaleString()} 💠\n🏦 Nexus left: ${player.gold.toLocaleString()} 💠` }, { quoted: msg });
     }
 
     // ── START ─────────────────────────────────────────────────

@@ -203,7 +203,7 @@ module.exports = {
       `  /party (create/join/ready/raid/advance/boss), /dungeon, /gate (/gates), /pvp, /leaderboard (/top), /coop, /affiliate`,
       ``,
       `🔧 *PROGRESSION & GEAR:*`,
-      `  /store (/armory) — daily weapons & gear (the ONLY source), /inv <#> · /equip <#> · /mend <#> · /equip gift <#> @p, /class, /awaken, /attacks, /summon, /craft, /forge, /enchant, /upgrade, /pet, /artifact, /aura, /constellation, /skin, /title`,
+      `  /store (/armory) — daily weapons & gear (the ONLY source), /inv <#> · /equip <#> · /mend <#> · /equip gift <#> @p, /class, /awaken, /attacks, /craft, /forge, /enchant, /upgrade, /pet, /artifact, /aura, /constellation, /skin, /title`,
       ``,
       `🏰 *GUILD & ECONOMY:*`,
       `  /guild (icon: reply to image with /guild icon), /guildwar (/gw), /market, /trade, /shop, /bank, /casino, /contract, /wages`,

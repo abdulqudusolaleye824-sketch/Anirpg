@@ -22,6 +22,15 @@ module.exports = {
     const FRAME = pro ? UI.PRO_BAR : UI.FREE_BAR;
 
     const action = args[0]?.toLowerCase();
+    // Push #88p: currency aliases + display labels (storage keys stay 'gold' / 'crystals')
+    const RES_LABEL = { gold: '💠 Nexus', crystals: '💎 Mana Stones' };
+    const resLabel = (r) => RES_LABEL[r] || r;
+    const parseResource = (t) => {
+      const k = String(t || '').toLowerCase().replace(/[^a-z]/g, '');
+      if (['gold', 'nexus', 'nx', 'coins', 'coin', 'money'].includes(k)) return 'gold';
+      if (['crystals', 'crystal', 'stones', 'stone', 'mana', 'manastones', 'manastone', 'ms', 'gems', 'gem'].includes(k)) return 'crystals';
+      return null;
+    };
 
     // Initialize pending trades
     if (!db.pendingTrades) {
@@ -41,7 +50,9 @@ ${FRAME}
 📌 COMMANDS
 ${FRAME}
 /trade offer @user [amount] [type]
-  Example: /trade offer @1234567890 100 Nexus
+  Example: /trade offer @user 100 Nexus
+  Example: /trade offer @user 500 Stones
+  (Replying to someone also works)
 
 /trade accept - Accept pending trade
 /trade reject - Reject pending trade
@@ -50,8 +61,8 @@ ${FRAME}
 ${FRAME}
 💠 TRADEABLE RESOURCES
 ${FRAME}
-• Nexus - Currency
-• crystals - Mana Stones
+• Nexus (or: nx, gold)
+• Stones (or: crystals, mana)
 
 ${FRAME}
 📜 TRADING RULES
@@ -60,7 +71,7 @@ ${FRAME}
 ✅ Minimum trade: 50 units
 💠 5% system fee (deducted from sender)
 ⏰ Trades expire after 5 minutes
-${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n` + (_deskIn ? `💎 *PRO DESK* — incoming: ${_deskIn.amount} ${_deskIn.resource}` : _deskOut ? `💎 *PRO DESK* — outgoing: ${_deskOut.amount} ${_deskOut.resource}` : `💎 *PRO DESK* — no pending trades`) : `\n${UI.upsell()}`) 
+${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n` + (_deskIn ? `💎 *PRO DESK* — incoming: ${_deskIn.amount} ${resLabel(_deskIn.resource)}` : _deskOut ? `💎 *PRO DESK* — outgoing: ${_deskOut.amount} ${resLabel(_deskOut.resource)}` : `💎 *PRO DESK* — no pending trades`) : `\n${UI.upsell()}`) 
       }, { quoted: msg });
     }
 
@@ -68,7 +79,13 @@ ${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n` + (_deskIn ? `💎 *PRO DESK* — incomi
     // OFFER - Make a trade offer to another player
     // ═══════════════════════════════════════════════════════════════════
     if (action === 'offer') {
-      const recipientArg = args[1];
+      // Push #88p: accept a real @mention or a reply, and let the amount/type come in either order
+      const _mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid?.[0];
+      const _quotedP = msg.message?.extendedTextMessage?.contextInfo?.participant;
+      const _rest = args.slice(1).filter(a => !/^@/.test(a));
+      const _numTok = _rest.find(a => /^\d+$/.test(a));
+      const _typeTok = _rest.find(a => !/^\d+$/.test(a));
+      const recipientArg = args.slice(1).find(a => /^@/.test(a)) || (_mentioned || _quotedP ? '@' : null);
       
       if (!recipientArg) {
         return sock.sendMessage(chatId, { 
@@ -76,8 +93,8 @@ ${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n` + (_deskIn ? `💎 *PRO DESK* — incomi
         }, { quoted: msg });
       }
 
-      const amount = parseInt(args[2]);
-      const resourceType = args[3]?.toLowerCase();
+      const amount = parseInt(_numTok);
+      const resourceType = parseResource(_typeTok);
 
       if (!amount || amount < 50) {
         return sock.sendMessage(chatId, { 
@@ -85,20 +102,31 @@ ${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n` + (_deskIn ? `💎 *PRO DESK* — incomi
         }, { quoted: msg });
       }
 
-      if (!['gold', 'crystals'].includes(resourceType)) {
+      if (!resourceType) {
         return sock.sendMessage(chatId, { 
-          text: '❌ Invalid resource!\n\nChoose: Nexus or crystals' 
+          text: '❌ Invalid resource!\n\nChoose: *Nexus* or *Stones*\nExample: /trade offer @user 500 stones' 
         }, { quoted: msg });
       }
 
-      // Find recipient
+      // Find recipient: mention / reply first, then @number, then @name
       let recipientId = null;
-      const searchTerm = recipientArg.replace('@', '').replace(/\D/g, '');
-      
-      for (const userId in db.users) {
-        if (userId.includes(searchTerm)) {
-          recipientId = userId;
-          break;
+      const _findUser = (jid) => {
+        if (!jid) return null;
+        if (db.users[jid]) return jid;
+        const bare = String(jid).split(':')[0].split('@')[0];
+        return Object.keys(db.users).find(k => String(k).split(':')[0].split('@')[0] === bare) || null;
+      };
+      recipientId = _findUser(_mentioned) || _findUser(_quotedP);
+      if (!recipientId && recipientArg && recipientArg.length > 1) {
+        const raw = recipientArg.slice(1);
+        if (/^\d+$/.test(raw)) {
+          recipientId = _findUser(raw + '@s.whatsapp.net') || _findUser(raw + '@lid');
+        } else {
+          const norm = (t) => String(t || '').toLowerCase().replace(/[^\p{L}\p{N}_-]/gu, '');
+          const wanted = norm(raw);
+          const m = Object.entries(db.users).find(([, u]) => u && norm(u.name) === wanted)
+            || Object.entries(db.users).find(([, u]) => u && wanted && norm(u.name).startsWith(wanted));
+          if (m) recipientId = m[0];
         }
       }
 
@@ -120,14 +148,15 @@ ${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n` + (_deskIn ? `💎 *PRO DESK* — incomi
 
       let playerResource;
       if (resourceType === 'gold') {
-        playerResource = player.inventory?.gold || player.gold || 0;
+        playerResource = Number(player.gold) || 0;
       } else {
-        playerResource = player.inventory?.manaCrystals || player.manaCrystals || 0;
+        // Push #88p: player.manaCrystals is the single source of truth (matches /balance)
+        playerResource = Number(player.manaCrystals) || 0;
       }
 
       if (playerResource < totalNeeded) {
         return sock.sendMessage(chatId, { 
-          text: `❌ Insufficient ${resourceType}!\n\nYou need: ${totalNeeded} (${amount} + ${fee} fee)\nYou have: ${playerResource}` 
+          text: `❌ Insufficient ${resLabel(resourceType)}!\n\nYou need: ${totalNeeded.toLocaleString()} (${amount.toLocaleString()} + ${fee.toLocaleString()} fee)\nYou have: ${playerResource.toLocaleString()}` 
         }, { quoted: msg });
       }
 
@@ -154,11 +183,11 @@ ${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n` + (_deskIn ? `💎 *PRO DESK* — incomi
         text: `${FRAME}
 ✅ TRADE OFFER SENT!
 ${FRAME}
-📦 Offering: ${amount} ${resourceType}
+📦 Offering: ${amount.toLocaleString()} ${resLabel(resourceType)}
 👤 To: ${db.users[recipientId].name}
-💠 Fee: ${fee} ${resourceType} (5%)
+🧾 Fee: ${fee.toLocaleString()} ${resLabel(resourceType)} (5%)
 ${FRAME}
-📊 Total Cost: ${totalNeeded} ${resourceType}
+📊 Total Cost: ${totalNeeded.toLocaleString()} ${resLabel(resourceType)}
 ⏰ Offer expires in 5 minutes
 ${FRAME}` 
       }, { quoted: msg });
@@ -171,7 +200,7 @@ ${FRAME}`
 🔔 TRADE OFFER RECEIVED!
 ${FRAME}
 👤 From: ${player.name}
-📦 You will receive: ${amount} ${resourceType}
+📦 You will receive: ${amount.toLocaleString()} ${resLabel(resourceType)}
 💠 No cost to you!
 ${FRAME}
 📌 ACTIONS:
@@ -224,9 +253,9 @@ ${FRAME}`
       const totalNeeded = trade.amount + trade.fee;
       let senderResource;
       if (trade.resource === 'gold') {
-        senderResource = senderTrader.inventory?.gold || senderTrader.gold || 0;
+        senderResource = Number(senderTrader.gold) || 0;
       } else {
-        senderResource = senderTrader.inventory?.manaCrystals || senderTrader.manaCrystals || 0;
+        senderResource = Number(senderTrader.manaCrystals) || 0;
       }
 
       if (senderResource < totalNeeded) {
@@ -262,33 +291,21 @@ ${FRAME}`
         
       } else {
         // Mana Stones trade
-        if (senderTrader.inventory) {
-          senderTrader.inventory.manaCrystals = (senderTrader.inventory.manaCrystals || 0) - totalNeeded;
-        } else {
-          senderTrader.manaCrystals = (senderTrader.manaCrystals || 0) - totalNeeded;
-        }
+        // Push #88p FIX: previously wrote inventory.manaCrystals (a dead mirror) whenever an
+        // inventory object existed, so /balance never changed even though the ledger logged it.
+        senderTrader.manaCrystals = (Number(senderTrader.manaCrystals) || 0) - totalNeeded;
+        if (senderTrader.inventory) senderTrader.inventory.manaCrystals = senderTrader.manaCrystals;
+        recipient.manaCrystals = (Number(recipient.manaCrystals) || 0) + trade.amount;
+        if (recipient.inventory) recipient.inventory.manaCrystals = recipient.manaCrystals;
         
-        if (recipient.inventory) {
-          recipient.inventory.manaCrystals = (recipient.inventory.manaCrystals || 0) + trade.amount;
-        } else {
-          recipient.manaCrystals = (recipient.manaCrystals || 0) + trade.amount;
-        }
-        
-        // ✅ Convert crystal fee to Nexus for owner (1 crystal = 2 Nexus)
-        const goldFee = trade.fee * 2;
-        
+        // Push #88p: stone fee stays in Mana Stones and goes to the owner's REAL balance
+        // (previously converted to a dead inventory.gold mirror that no command reads)
         if (!db.users[BOT_OWNER_ID]) {
-          db.users[BOT_OWNER_ID] = {
-            id: BOT_OWNER_ID,
-            name: 'System',
-            inventory: { gold: goldFee, manaCrystals: 0 }
-          };
-        } else {
-          if (!db.users[BOT_OWNER_ID].inventory) {
-            db.users[BOT_OWNER_ID].inventory = { gold: 0, manaCrystals: 0 };
-          }
-          db.users[BOT_OWNER_ID].inventory.gold = (db.users[BOT_OWNER_ID].inventory.gold || 0) + goldFee;
+          db.users[BOT_OWNER_ID] = { id: BOT_OWNER_ID, name: 'System', gold: 0, manaCrystals: 0, inventory: { gold: 0, manaCrystals: 0 } };
         }
+        const _own = db.users[BOT_OWNER_ID];
+        _own.manaCrystals = (Number(_own.manaCrystals) || 0) + trade.fee;
+        if (_own.inventory) _own.inventory.manaCrystals = _own.manaCrystals;
       }
 
       delete db.pendingTrades[sender];
@@ -304,7 +321,7 @@ ${FRAME}`
         text: `${FRAME}
 ✅ TRADE COMPLETED!
 ${FRAME}
-📦 Received: ${trade.amount} ${trade.resource}
+📦 Received: ${trade.amount.toLocaleString()} ${resLabel(trade.resource)}
 💠 No cost to you!
 ${FRAME}
 👤 From: ${senderTrader.name}
@@ -316,8 +333,8 @@ ${FRAME}`
           text: `${FRAME}
 ✅ TRADE COMPLETED!
 ${FRAME}
-📦 Sent: ${trade.amount} ${trade.resource}
-💠 System Fee: ${trade.fee} ${trade.resource} (5%)
+📦 Sent: ${trade.amount.toLocaleString()} ${resLabel(trade.resource)}
+🧾 System Fee: ${trade.fee.toLocaleString()} ${resLabel(trade.resource)} (5%)
 ${FRAME}
 👤 To: ${recipient.name}
 ${FRAME}` 

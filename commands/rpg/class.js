@@ -6,7 +6,7 @@
 
 const { CLASS_DATA, formatClassInfo, getQualityLabel, ALL_CLASSES } = require('../../rpg/utils/ClassSystem');
 const { getClassCmdName } = require('../../rpg/utils/classcmd');
-const { getSkillDescription } = require('../../rpg/utils/SkillDescriptions');
+const { getSkillDescription, describeSkill } = require('../../rpg/utils/SkillDescriptions');
 
 module.exports = {
   name: 'class',
@@ -81,7 +81,7 @@ module.exports = {
       const skills = data.skills || [];
 
       const skillDetails = skills.map((s, i) => {
-        const sd = getSkillDescription(matchedClass, s.name) || {};
+        const sd = describeSkill(matchedClass, s.name) || {};
         const desc = sd.description || s.desc || 'No description.';
         const eff = sd.effect ? `\n     ✨ *Effect:* ${sd.effect.replace(/\n/g, '\n     ')}` : '';
         const cost = sd.energyCost ? ` | ⚡ Cost: ${sd.energyCost}` : '';
@@ -174,9 +174,10 @@ module.exports = {
     }
     const _clsName = SCc ? SCc.canonicalClassName(player) : (typeof player.class === 'object' ? player.class?.name : player.class);
     const skillLines = rawSkills.map((s, i) => {
-      const sd = getSkillDescription(_clsName, s.name) || {};
-      const desc = s.desc || sd.description || 'No description.';
-      const eff = sd.effect ? `\n     ✨ ${sd.effect.replace(/\n/g, '\n     ')}` : '';
+      const sd = describeSkill(_clsName, s.name) || {};
+      const desc = s.description || s.desc || sd.description || 'No description.';
+      const _eff = s.effect || sd.effect;
+      const eff = _eff ? `\n     ✨ ${String(_eff).replace(/\n/g, '\n     ')}` : '';
       return `  ${i+1}. *${s.name}*\n     ${desc}${eff}`;
     });
 

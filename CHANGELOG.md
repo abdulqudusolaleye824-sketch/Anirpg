@@ -1,3 +1,11 @@
+## 1.0.103 — Push #88p (2026-09-26)
+- Class shortcuts: `/cast` (Mage) and `/summon` (Summoner) are now real commands that route into the class skill system (menu, live combat). Other classes get the usual "that's the X class command, yours is /…" redirect.
+- Gacha parked: the multi-banner summon moved to `rpg/legacy/summon_gacha.js` (to be refined later). Summon tickets are no longer sold (shop/guild shop/bundle 4 → 250 stones); existing tickets kept. Summon quests removed from daily/weekly pools (weekly `summon_20` → "Full-clear 6 dungeons"; ticket rewards → +60 stones). Old "/summon to pull" hints updated.
+- Class skill descriptions: new `describeSkill()` — every skill of every class (107 class-file skills, full rosters) now shows its real lore + effect in `/class`, `/class <name>` and `/skills info`; the generic "A powerful combat ability" stub is gone from the guides.
+- Shop: potion/bundle prices show `💠` Nexus instead of a stray "g" (also market, title shop, dungeon shop, weekly reward text). "Buy 50 crystals with gold" → Mana Stones/Nexus wording.
+- Trade FIX: Mana Stone trades were written to a dead `inventory.manaCrystals` mirror, so the ledger said "+200,000 💎" but `/balance` never changed. Trades now move the real `manaCrystals`/`gold` balances (and check funds against them). Stone fees go to the owner's real stone balance.
+- Trade UX: `/trade offer @user 500 nexus|stones` (aliases: nx/gold, crystals/mana/stones), @mention or reply works, amounts formatted, labels say Nexus / Mana Stones.
+
 ## 1.0.102 — Push #88o (2026-09-25)
 - Monsters: HP +50% (on top of the ATK +70% / DEF +40%); level/floor scaling intact. Dungeon floors, bosses, gate raids, template monsters.
 - Monsters can CRIT (10% base, +2% per rank above E, +5% bosses, ×1.5) — raids, tower counter-attacks and monster turns show 💥 CRITICAL HIT.

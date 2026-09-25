@@ -126,7 +126,7 @@ module.exports = {
       }
       if (listing.item.desc || listing.item.description) txt += `💭 ${listing.item.desc || listing.item.description}\n`;
       txt += `\n💠 Price: *${listing.price.toLocaleString()}g*\n`;
-      txt += `📊 Tax (5%): ${tax.toLocaleString()} 💠 | Seller gets: ${sellerGets.toLocaleString()}g\n`;
+      txt += `📊 Tax (5%): ${tax.toLocaleString()} 💠 | Seller gets: ${sellerGets.toLocaleString()} 💠\n`;
       txt += `👤 Seller: ${listing.sellerName}\n`;
       txt += `⏰ Expires: ${timeLeft}h\n`;
       if (pro) {
@@ -195,7 +195,7 @@ module.exports = {
       saveDatabase();
 
       return sock.sendMessage(chatId, {
-        text: `${FRAME}\n✅ *PURCHASE COMPLETE!*\n${FRAME}\n📦 *${listing.item.name}*\n💠 Paid: ${listing.price.toLocaleString()}g\n\n👤 Seller: ${listing.sellerName} received ${sellerGet.toLocaleString()}g\n📊 Market tax: ${tax.toLocaleString()}g\n\n✅ Item added to your inventory!\n${FRAME}`
+        text: `${FRAME}\n✅ *PURCHASE COMPLETE!*\n${FRAME}\n📦 *${listing.item.name}*\n💠 Paid: ${listing.price.toLocaleString()} 💠\n\n👤 Seller: ${listing.sellerName} received ${sellerGet.toLocaleString()} 💠\n📊 Market tax: ${tax.toLocaleString()} 💠\n\n✅ Item added to your inventory!\n${FRAME}`
       }, { quoted: msg });
     }
 
@@ -207,7 +207,7 @@ module.exports = {
         return sock.sendMessage(chatId, { text: `❌ Max ${MAX_LISTINGS_PER_PLAYER} listings at a time!\n/market mine to see yours.` }, { quoted: msg });
       }
       if ((player.gold || 0) < LISTING_FEE) {
-        return sock.sendMessage(chatId, { text: `❌ Listing fee: ${LISTING_FEE}g\nYou have: ${(player.gold||0).toLocaleString()} 💠` }, { quoted: msg });
+        return sock.sendMessage(chatId, { text: `❌ Listing fee: ${LISTING_FEE} 💠\nYou have: ${(player.gold||0).toLocaleString()} 💠` }, { quoted: msg });
       }
 
       // Parse: /market sell [item name] [price]
@@ -264,8 +264,8 @@ module.exports = {
       saveDatabase();
       return sock.sendMessage(chatId, {
         text: pro
-          ? `${UI.PRO_BAR}\n✅ *LISTING CREATED!* 💎\n${UI.PRO_BAR}\n📦 *${item.name}*\n💠 Price: ${price.toLocaleString()}g\n📋 Listing #${id}\n⏰ Expires in 24 hours\n💸 Fee paid: ${LISTING_FEE}g\n${UI.PRO_BAR}`
-          : `✅ *LISTING CREATED!*\n${UI.FREE_BAR}\n📦 *${item.name}*\n💠 Price: ${price.toLocaleString()}g\n📋 Listing #${id}\n⏰ Expires in 24 hours\n💸 Fee paid: ${LISTING_FEE}g\n${UI.FREE_BAR}\n💡 Buyers: /market buy ${id}`
+          ? `${UI.PRO_BAR}\n✅ *LISTING CREATED!* 💎\n${UI.PRO_BAR}\n📦 *${item.name}*\n💠 Price: ${price.toLocaleString()} 💠\n📋 Listing #${id}\n⏰ Expires in 24 hours\n💸 Fee paid: ${LISTING_FEE} 💠\n${UI.PRO_BAR}`
+          : `✅ *LISTING CREATED!*\n${UI.FREE_BAR}\n📦 *${item.name}*\n💠 Price: ${price.toLocaleString()} 💠\n📋 Listing #${id}\n⏰ Expires in 24 hours\n💸 Fee paid: ${LISTING_FEE} 💠\n${UI.FREE_BAR}\n💡 Buyers: /market buy ${id}`
       }, { quoted: msg });
     }
 
@@ -337,7 +337,7 @@ module.exports = {
       const active = Object.values(market.listings).filter(l => l.status === 'active').length;
       const sold   = Object.values(market.listings).filter(l => l.status === 'sold').length;
       return sock.sendMessage(chatId, {
-        text: `${FRAME}\n🏪 *MARKET STATS*\n${FRAME}\n🟢 Active listings: ${active}\n✅ Total sales: ${market.totalSales || sold}\n💸 Listing fee: ${LISTING_FEE}g\n📊 Market tax: ${MARKET_TAX*100}%\n⏰ Listings expire: 24 hours\n${FRAME}`
+        text: `${FRAME}\n🏪 *MARKET STATS*\n${FRAME}\n🟢 Active listings: ${active}\n✅ Total sales: ${market.totalSales || sold}\n💸 Listing fee: ${LISTING_FEE} 💠\n📊 Market tax: ${MARKET_TAX*100}%\n⏰ Listings expire: 24 hours\n${FRAME}`
       }, { quoted: msg });
     }
 

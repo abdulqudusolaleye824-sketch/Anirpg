@@ -49,7 +49,7 @@ module.exports = {
       const price = def.shop.price;
       if ((player.gold || 0) < price.gold) {
         return sock.sendMessage(chatId, {
-          text: `❌ Not enough Nexus!\nNeed: ${price.gold.toLocaleString()}g\nHave: ${(player.gold||0).toLocaleString()} 💠`
+          text: `❌ Not enough Nexus!\nNeed: ${price.gold.toLocaleString()} 💠\nHave: ${(player.gold||0).toLocaleString()} 💠`
         }, { quoted: msg });
       }
       if ((player.manaCrystals || 0) < (price.crystals || 0)) {
@@ -96,7 +96,7 @@ module.exports = {
     }
 
     // ── Default: show shop ───────────────────────────────
-    let txt = (pro ? `${UI.PRO_BAR}\n🛍️ *TITLE SHOP* 💎\n${UI.PRO_BAR}\nYour gold:` : `🛍️ *TITLE SHOP*\n${UI.FREE_BAR}\nYour gold:`)+` ${(player.gold||0).toLocaleString()}g\nYour 💎: ${player.manaCrystals || 0}\n\n`;
+    let txt = (pro ? `${UI.PRO_BAR}\n🛍️ *TITLE SHOP* 💎\n${UI.PRO_BAR}\nYour Nexus:` : `🛍️ *TITLE SHOP*\n${UI.FREE_BAR}\nYour gold:`)+` ${(player.gold||0).toLocaleString()} 💠\nYour 💎: ${player.manaCrystals || 0}\n\n`;
     // Group by rarity
     const byRarity = {};
     for (const [id, def] of Object.entries(TITLES)) {

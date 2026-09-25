@@ -79,11 +79,7 @@ const DAILY_QUEST_POOL = [
   { id: 'dq_petfeed1',    name: 'Caretaker',             desc: 'Feed your pet once',                       type: 'feed',     target: 1,   reward: { gold: 250,   crystals: 3   } },
   { id: 'dq_petfeed5',    name: 'Devoted Owner',         desc: 'Feed your pet 5 times',                    type: 'feed',     target: 5,   reward: { gold: 500,   crystals: 12  } },
 
-  // ── Summon / Gacha (5) ────────────────────────────────────────────────────
-  { id: 'dq_summon1',     name: 'Lucky Pull',            desc: 'Pull 1 summon',                            type: 'summon',   target: 1,   reward: { gold: 300,   crystals: 4   } },
-  { id: 'dq_summon3',     name: 'Gacha Addict',          desc: 'Pull 3 summons',                           type: 'summon',   target: 3,   reward: { gold: 700,   crystals: 15  } },
-  { id: 'dq_summon10',    name: 'Whale',                 desc: 'Pull 10 summons',                          type: 'summon',   target: 10,  reward: { gold: 2200,  crystals: 55  } },
-  { id: 'dq_legendary',   name: 'Star-Blessed',          desc: 'Pull 1 legendary+ item',                   type: 'legendary',target: 1,   reward: { gold: 3500,  crystals: 100 } },
+  // ── Summon / Gacha — pulls parked in Push #88p (gacha rework); daily-claim quest kept ────────────────────────────────────────────────────
   { id: 'dq_daily1',      name: 'Devoted',               desc: 'Claim your /daily reward',                 type: 'daily',    target: 1,   reward: { gold: 300,   crystals: 5  } },
 
   // ── Guild (3) ─────────────────────────────────────────────────────────────

@@ -4,7 +4,7 @@ const { CONSTELLATIONS, DOMAINS, RARITY_EMOJI, getSponsorBonus, favBar } = requi
 module.exports = {
   name: 'constellation',
   aliases: ['cons', 'sponsor', 'incarnation'],
-  description: '🌌 View your constellation sponsorships — pulled from /summon',
+  description: '🌌 View your constellation sponsorships — earned from gacha pulls (gacha being reworked)',
 
   async execute(sock, msg, args, getDatabase, saveDatabase, sender) {
     const chatId = msg.key.remoteJid;
@@ -33,7 +33,7 @@ module.exports = {
       txt += `🟡 *ABSOLUTE / MYTH TIER*\n${cats.legendary.join('\n')}\n\n`;
       txt += `🟣 *HIGHEST TIER*\n${cats.epic.join('\n')}\n\n`;
       txt += `🔵 *ADVANCED TIER*\n${cats.rare.join('\n')}\n\n`;
-      txt += `${FRAME}\n💡 Pull constellations with /summon\n/constellation [name] — view details` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO SPONSOR* — ${Object.keys(sponsored).length}/${Object.keys(CONSTELLATIONS).length} sponsored` : `\n${UI.upsell()}`);
+      txt += `${FRAME}\n💡 Constellation pulls return when the gacha is reworked\n/constellation [name] — view details` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO SPONSOR* — ${Object.keys(sponsored).length}/${Object.keys(CONSTELLATIONS).length} sponsored` : `\n${UI.upsell()}`);
       return sock.sendMessage(chatId, { text: txt }, { quoted: msg });
     }
 
@@ -68,7 +68,7 @@ module.exports = {
         txt += `Current total bonus: `;
         txt += Object.entries(totalBonus).map(([s,v])=>`+${v} ${s.toUpperCase()}`).join(', ')+'\n';
       } else {
-        txt += `\n${FRAME}\n🔒 *NOT YET SPONSORED*\nPull with /summon to earn their sponsorship!\n`;
+        txt += `\n${FRAME}\n🔒 *NOT YET SPONSORED*\nSponsorships return when the gacha is reworked!\n`;
       }
       txt += `${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO SPONSOR* — ${have ? `Fav.${have.favorability}` : 'unsponsored'}` : `\n${UI.upsell()}`);
       return sock.sendMessage(chatId, { text: txt }, { quoted: msg });
@@ -77,7 +77,7 @@ module.exports = {
     // ── /constellation (your roster) ──────────────────────────
     if (!Object.keys(sponsored).length) {
       return sock.sendMessage(chatId, {
-        text: (pro ? `${UI.PRO_BAR}\n🌌 *YOUR SPONSORSHIPS* 💎\n${UI.PRO_BAR}\n\n📭 No constellations yet!` : `🌌 *YOUR SPONSORSHIPS*\n${UI.FREE_BAR}\n\n📭 No constellations yet!`)+`\n\nYou are a lone Incarnation — unsponsored.\nPull constellations from /summon to gain their power!\n\n/constellation all — see all constellations\n${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO SPONSOR* — unsponsored` : `\n${UI.upsell()}`)
+        text: (pro ? `${UI.PRO_BAR}\n🌌 *YOUR SPONSORSHIPS* 💎\n${UI.PRO_BAR}\n\n📭 No constellations yet!` : `🌌 *YOUR SPONSORSHIPS*\n${UI.FREE_BAR}\n\n📭 No constellations yet!`)+`\n\nYou are a lone Incarnation — unsponsored.\nConstellation pulls return when the gacha is reworked!\n\n/constellation all — see all constellations\n${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO SPONSOR* — unsponsored` : `\n${UI.upsell()}`)
       }, { quoted: msg });
     }
 
@@ -103,7 +103,7 @@ module.exports = {
       txt += `   ${favBar(data.favorability)}\n`;
       txt += `   ⚡ ${con.sponsorSkill.name}\n\n`;
     }
-    txt += `${FRAME}\n/constellation [name] — view details\n/constellation all    — all constellations\n/summon               — pull more` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO SPONSOR* — ${Object.keys(sponsored).length} sponsors` : `\n${UI.upsell()}`);
+    txt += `${FRAME}\n/constellation [name] — view details\n/constellation all    — all constellations\n(gacha pulls being reworked)` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO SPONSOR* — ${Object.keys(sponsored).length} sponsors` : `\n${UI.upsell()}`);
     return sock.sendMessage(chatId, { text: txt }, { quoted: msg });
   }
 };

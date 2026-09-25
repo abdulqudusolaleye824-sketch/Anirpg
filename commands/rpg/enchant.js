@@ -36,7 +36,7 @@ module.exports = {
     const curLevel = getEnhanceLevel(player);
 
     if (!player.weapon?.name) {
-      return sock.sendMessage(chatId, { text: '❌ You have no weapon!\nGet one from /shop or /summon' }, { quoted: msg });
+      return sock.sendMessage(chatId, { text: '❌ You have no weapon!\nGet one from /store' }, { quoted: msg });
     }
 
     // ── /enchant (menu) ────────────────────────────────────────

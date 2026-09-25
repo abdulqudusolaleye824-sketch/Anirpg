@@ -59,7 +59,7 @@ module.exports = {
         ``,
         `*COMMANDS*`,
         `/skin list · equip <id> · view <id> · shop`,
-        `/summon — Pull new skins`,
+        `(Gacha skins return after the rework)`,
         (proS ? UI.PRO_BAR : UI.FREE_BAR),
       ].filter(x => x !== null).join('\n');
 
@@ -162,7 +162,7 @@ module.exports = {
             : skin.source === 'shop'
               ? `🏪 Available in shop — */skin buy ${skin.id}*`
               : skin.source === 'gacha'
-                ? `🎰 Obtainable via */summon*`
+                ? `🎰 Gacha skin (gacha being reworked)`
                 : `🏆 Achievement unlock only`,
           (UI.isPro(player) ? UI.PRO_BAR : UI.FREE_BAR),
         ].join('\n'),
@@ -247,7 +247,7 @@ module.exports = {
 
       lines.push(`💡 */skin buy <id>* to purchase`);
       lines.push(`💡 */skin view <id>* to preview`);
-      lines.push(`🎰 */summon* for rare/epic/legendary/mythic skins`);
+      lines.push(`🎰 Gacha skins return after the rework`);
       lines.push((shopPro ? UI.PRO_BAR : UI.FREE_BAR));
 
       return sock.sendMessage(chatId, { text: lines.join('\n') }, { quoted: msg });
@@ -264,7 +264,7 @@ module.exports = {
         `/skin view <id>  — Preview any skin`,
         `/skin buy <id>   — Buy from shop`,
         `/skin shop       — Browse shop`,
-        `/summon          — Pull new skins`,
+        `(Gacha skins return after the rework)`,
         (UI.isPro(player) ? UI.PRO_BAR : UI.FREE_BAR),
       ].join('\n'),
     }, { quoted: msg });

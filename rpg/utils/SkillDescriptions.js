@@ -1795,6 +1795,38 @@ const skillDatabase = {
 // HELPER FUNCTIONS
 // ═══════════════════════════════════════════════════════════════
 
+// Push #88p: PRESENTATION lookup — never returns the generic "A powerful
+// combat ability" stub. Order: curated database → SkillCatalog roster entry
+// (class-file lore with {p} filled) → class file desc → honest fallback.
+function describeSkill(className, skillName) {
+  const _isGeneric = (d) => !d || /A powerful combat ability/.test(d.description || '');
+  const direct = getSkillDescription(className, skillName);
+  if (!_isGeneric(direct)) return direct;
+  try {
+    const SC = require('./SkillCatalog');
+    const classes = className ? [className] : Object.keys(require('./ClassSystem').CLASS_DATA || {});
+    for (const cls of classes) {
+      const roster = SC.buildRoster ? SC.buildRoster(cls) : null;
+      const hit = (roster || []).find(r => String(r.name).toLowerCase() === String(skillName).toLowerCase());
+      if (hit && hit.description) return { className: cls, description: hit.description, effect: hit.effect || '', animation: hit.animation || direct.animation, cooldown: hit.cooldown ?? direct.cooldown, cost: hit.energyCost ?? direct.cost, energyCost: hit.energyCost ?? direct.cost, type: hit.type };
+    }
+  } catch (e) {}
+  try {
+    const CS = require('./ClassSystem');
+    for (const [cls, d] of Object.entries(CS.CLASS_DATA || {})) {
+      if (className && cls !== className) continue;
+      const sk = (d.skills || []).find(x => x && String(x.name).toLowerCase() === String(skillName).toLowerCase());
+      if (sk && sk.desc) {
+        const pot = Number(sk.maxPotency) || 0;
+        const fill = (t) => String(t || '').replace(/{p\/(\d+)}/g, (_, n) => String(Math.floor(pot / parseInt(n, 10)))).replace(/{p}/g, String(pot));
+        const kind = sk.type === 'passive' ? '🌀 Passive — always active' : sk.type === 'buff' ? '🛡️ Buff' : sk.type === 'heal' ? '💚 Recovery' : sk.type === 'debuff' ? '☠️ Debuff' : '⚔️ Attack';
+        return { className: cls, description: `${kind}: ${fill(sk.desc)}`, effect: `• ${fill(sk.desc)}`, animation: direct.animation, cooldown: sk.type === 'passive' ? 0 : 2, cost: sk.type === 'passive' ? 0 : 25, energyCost: sk.type === 'passive' ? 0 : 25, type: sk.type };
+      }
+    }
+  } catch (e) {}
+  return { className: className || 'Unknown', description: `${skillName} — a ${className || 'class'} technique.`, effect: '', animation: direct.animation, cooldown: direct.cooldown, cost: direct.cost, energyCost: direct.cost };
+}
+
 function getSkillDescription(className, skillName) {
   // First check if the class and skill exist
   if (skillDatabase[className] && skillDatabase[className][skillName]) {
@@ -1950,6 +1982,7 @@ function getMonsterSkill(skillName) {
 // ═══════════════════════════════════════════════════════════════
 
 module.exports = {
+  describeSkill,
   skillDatabase,
   getSkillDescription,
   getClassSkills,

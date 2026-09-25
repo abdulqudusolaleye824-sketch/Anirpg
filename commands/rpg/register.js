@@ -194,7 +194,7 @@ function buildWelcomeDM(name, rank) {
     `→ \`/dungeon\` — fight monsters for XP & loot`,
     `→ \`/pvp\`     — challenge other players`,
     `→ \`/shop\`    — buy potions & gear`,
-    `→ \`/summon\`  — gacha pulls for artifacts`,
+    `→ \`/store\`   — daily weapons & gear`,
     ``,
     UI.FREE_BAR,
     `⚓ *PICK YOUR SERF*`,

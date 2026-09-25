@@ -62,7 +62,6 @@ const REGULAR_SHOP_POOL = [
   { id: 'vitality_orb', name: 'Vitality Orb', category: 'Stat Orbs', type: 'stat', currency: 'crystals', basePrice: 600, description: '+20 Max HP permanently', stat: 'hp', amount: 20 },
   { id: 'swift_boots', name: 'Swift Boots', category: 'Stat Orbs', type: 'stat', currency: 'crystals', basePrice: 700, description: '+8 SPD permanently', stat: 'spd', amount: 8 },
   { id: 'crit_gem', name: 'Crit Gem', category: 'Stat Orbs', type: 'stat', currency: 'crystals', basePrice: 800, description: '+3% Crit permanently', stat: 'crit', amount: 3 },
-  { id: 'summon_ticket', name: 'Summon Ticket', category: 'Special', type: 'ticket', currency: 'crystals', basePrice: 120, description: '1 gacha summon pull', amount: 1 },
 
   // Bundles (Nexus)
   { id: 'starter_pack', name: 'Starter Pack', category: 'Bundles', type: 'bundle', currency: 'gold', basePrice: 5000, description: '5 HP Pots + 5 Energy Pots + 1 Revive Token', bundleId: 1 },

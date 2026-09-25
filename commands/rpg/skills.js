@@ -140,7 +140,7 @@ module.exports = {
         skill = [...equipped, ...library].find(s => s.name.toLowerCase().includes(query.toLowerCase()));
       }
       if (!skill) return sock.sendMessage(chatId, { text: `❌ Skill not found!\nUse /skills to see your skills.` }, { quoted: msg });
-      const info = SkillDescriptions.getSkillDescription(className, skill.name);
+      const info = (skill.description && !/A powerful combat ability/.test(skill.description)) ? skill : (SkillDescriptions.describeSkill ? SkillDescriptions.describeSkill(className, skill.name) : SkillDescriptions.getSkillDescription(className, skill.name));
       const bonuses = applySkillLevelBonus(skill);
       const lv = skill.level || 1;
       const max = skill.maxLevel || 5;

@@ -7,11 +7,11 @@ const { weekKey: timeWeekKey, isValidTz } = require('../../rpg/utils/TimeUtil');
 const WEEKLY_POOL = [
   { id:'pvp_5',    type:'pvp_win',        target:5,  desc:'Win 5 PvP battles',           emoji:'⚔️', rewards:{ gold:25000, crystals:50 } },
   { id:'pvp_10',   type:'pvp_win',        target:10, desc:'Win 10 PvP battles',           emoji:'⚔️', rewards:{ gold:60000, crystals:120 } },
-  { id:'dung_3',   type:'dungeon_clear',  target:3,  desc:'Full-clear 3 dungeons',        emoji:'🏰', rewards:{ gold:40000, crystals:80, ticket:1 } },
-  { id:'boss_3',   type:'boss_kill',      target:3,  desc:'Defeat 3 World Bosses',        emoji:'👹', rewards:{ gold:80000, crystals:150, ticket:1 } },
+  { id:'dung_3',   type:'dungeon_clear',  target:3,  desc:'Full-clear 3 dungeons',        emoji:'🏰', rewards:{ gold:40000, crystals:140 } },
+  { id:'boss_3',   type:'boss_kill',      target:3,  desc:'Defeat 3 World Bosses',        emoji:'👹', rewards:{ gold:80000, crystals:210 } },
   { id:'streak_5', type:'daily_streak',   target:5,  desc:'Claim daily 5 days in a row',  emoji:'🔥', rewards:{ gold:30000, crystals:70 } },
-  { id:'summon_20',type:'summon_pull',    target:20, desc:'Do 20 summon pulls',            emoji:'🎲', rewards:{ gold:30000, crystals:0, ticket:1 } },
-  { id:'pvp_s',    type:'pvp_streak',     target:3,  desc:'Win 3 PvP battles in a row',   emoji:'🔥', rewards:{ gold:50000, crystals:100, ticket:1 } },
+  { id:'dung_6',   type:'dungeon_clear',  target:6,  desc:'Full-clear 6 dungeons',        emoji:'🏰', rewards:{ gold:70000, crystals:140 } }, // Push #88p: replaced summon_20 (gacha parked)
+  { id:'pvp_s',    type:'pvp_streak',     target:3,  desc:'Win 3 PvP battles in a row',   emoji:'🔥', rewards:{ gold:50000, crystals:160 } },
   { id:'gold_1m',  type:'earn_gold',      target:1000000, desc:'Earn 1M Nexus this week',  emoji:'💰', rewards:{ gold:100000, crystals:100 } },
 ];
 
@@ -108,7 +108,7 @@ module.exports = {
         try { require('../../rpg/utils/TransactionLog').logTransaction(player, { type: 'weekly_claim', amount: totalCrystals, currency: '💎', note: `weekly challenges` }); } catch (e) {};
       }
       saveDatabase();
-      let rewardMsg = `💠 +${totalNexus.toLocaleString()}g\n💎 +${totalCrystals}`;
+      let rewardMsg = `💠 +${totalNexus.toLocaleString()} 💠\n💎 +${totalCrystals}`;
       if (totalTickets) rewardMsg += `\n🎟️ +${totalTickets} Summon Ticket(s)`;
       return sock.sendMessage(chatId, {
         text: (pro ? `${UI.PRO_BAR}\n🏆 *WEEKLY REWARDS CLAIMED!* 💎\n${UI.PRO_BAR}\n` : `🏆 *WEEKLY REWARDS CLAIMED!*\n${UI.FREE_BAR}\n`) + `✅ ${claimed} challenge(s) claimed!\n\n${rewardMsg}\n${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO GRIND* — ${claimed} claimed this week` : `\n${UI.upsell()}`)
