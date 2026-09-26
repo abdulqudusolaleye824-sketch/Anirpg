@@ -370,9 +370,9 @@ module.exports = {
     const chatId = msg.key?.remoteJid;
     const db     = getDatabase();
     const Mod = require('../../rpg/utils/ModerationUtils');
-    // Owner / co-owner / mods can force spawn (fix co-owner blocked)
-    if (!Mod.canModerate(db, sender)) {
-      return sock.sendMessage(chatId, { text: '❌ This command is for admins only (mods/owners).' }, { quoted: msg });
+    // Push #88s: /spawn is OWNER / CO-OWNER level only.
+    if (!Mod.isOwnerLike(db, sender)) {
+      return sock.sendMessage(chatId, { text: '❌ This command is for the bot owner / co-owner only.' }, { quoted: msg });
     }
 
     const sub = args[0]?.toLowerCase();
@@ -382,9 +382,17 @@ module.exports = {
     // /spawn pet [rarity] → a wild pet only the SPAWNER can /catch (60 s).
     if (sub === 'pet') {
       const { PET_DATABASE } = require('../../rpg/utils/PetDatabase');
-      const want = String(args[1] || '').toLowerCase();
+      const want = args.slice(1).join(' ').trim().toLowerCase();
       let pool = Object.values(PET_DATABASE);
-      if (want) pool = pool.filter(p => String(p.rarity || '').toLowerCase() === want || String(p.name || '').toLowerCase().includes(want) || String(p.id || '').toLowerCase() === want);
+      if (want) {
+        // exact name/id first, then rarity, then partial name
+        const exact = pool.filter(p => String(p.name || '').toLowerCase() === want || String(p.id || '').toLowerCase() === want);
+        if (exact.length) pool = exact;
+        else {
+          const byRarity = pool.filter(p => String(p.rarity || '').toLowerCase() === want);
+          pool = byRarity.length ? byRarity : pool.filter(p => String(p.name || '').toLowerCase().includes(want));
+        }
+      }
       if (!pool.length) return sock.sendMessage(chatId, { text: `❌ No pet matches *${args[1]}*. Try a rarity (common/uncommon/rare/epic/legendary/mythic) or a pet name.` }, { quoted: msg });
       const chosen = pool[Math.floor(Math.random() * pool.length)];
       if (!Array.isArray(db.wildPets)) db.wildPets = [];
@@ -392,7 +400,7 @@ module.exports = {
       db.wildPets = db.wildPets.filter(w => w && w.expiresAt > now && !(w.forJids || []).some(j => String(j).split('@')[0] === String(sender).split('@')[0]));
       db.wildPets.push({ token: `WP-${now}-${Math.floor(Math.random() * 999)}`, petId: chosen.id, name: chosen.name, emoji: chosen.emoji, rarity: chosen.rarity, gate: 'spawn', spawnedAt: now, expiresAt: now + 60 * 1000, caughtBy: null, attemptsUsed: 0, attemptLog: [], forJids: [sender], spawnedBy: sender });
       saveDatabase();
-      return sock.sendMessage(chatId, { text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🐾 *A WILD PET APPEARS!*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n${chosen.emoji} *${chosen.name}* — ${String(chosen.rarity || 'common').toUpperCase()}\n👤 Only *@${String(sender).split('@')[0]}* can catch it.\n⏰ It flees in *60 seconds*!\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🪤 */catch* — costs the usual catch fee`, mentions: [sender] }, { quoted: msg });
+      return sock.sendMessage(chatId, { text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🐾 *A WILD PET APPEARS!*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n${chosen.emoji} *${chosen.name}* — ${String(chosen.rarity || 'common').toUpperCase()}\n👤 Only *@${String(sender).split('@')[0]}* can catch it.\n⏰ It flees in *60 seconds*!\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🪤 */catch* — FREE & guaranteed for the spawner`, mentions: [sender] }, { quoted: msg });
     }
 
     if (sub === 'force' || !sub || ['mending', 'stone', 'potion', 'food', 'petfood', 'materials', 'cache'].includes(sub)) {

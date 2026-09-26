@@ -1,3 +1,6 @@
+## 1.0.106 — Push #88s (2026-09-26)
+- `/spawn` is now owner/co-owner only. `/spawn pet <name|rarity>` picks the exact pet by name; the spawner's `/catch` is free (no Nexus/Mana Stones, no Luck Potion used) and guaranteed.
+
 ## 1.0.105 — Push #88r (2026-09-26)
 - AFK: messages in the announcements GC (`/setspace` group) no longer end AFK or count as activity for auto-AFK.
 

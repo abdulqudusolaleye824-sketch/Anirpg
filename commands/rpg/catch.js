@@ -99,7 +99,9 @@ module.exports = {
     }
 
     const rarity = (petTemplate.rarity || 'common').toLowerCase();
-    const cost = CATCH_COSTS[rarity] || CATCH_COSTS.common;
+    // Push #88s: owner-spawned pets (/spawn pet) are FREE and guaranteed for the spawner.
+    const isOwnerSpawn = !!(wildRecord && wildRecord.gate === 'spawn');
+    const cost = isOwnerSpawn ? { gold: 0, crystals: 0 } : (CATCH_COSTS[rarity] || CATCH_COSTS.common);
     const baseRate = BASE_CATCH_RATES[rarity] || 50;
 
     // Check funds
@@ -127,7 +129,7 @@ module.exports = {
     try { require('../../rpg/utils/TransactionLog').logSpend(player, 'catch_cost', cost.gold, cost.crystals, petTemplate.name); } catch (e) {}
 
     // Luck Potion check
-    const luckIdx = (player.inventory?.items || []).findIndex(i => i.name === 'Luck Potion' || i.isLuckPotion);
+    const luckIdx = isOwnerSpawn ? -1 : (player.inventory?.items || []).findIndex(i => i.name === 'Luck Potion' || i.isLuckPotion);
     const luckBonus = luckIdx !== -1 ? 25 : 0;
     if (luckIdx !== -1) {
       player.inventory.items.splice(luckIdx, 1);
@@ -135,7 +137,7 @@ module.exports = {
 
     // Paladin class gets guaranteed catch
     const playerClass = typeof player.class === 'string' ? player.class : player.class?.name;
-    const isGuaranteed = playerClass === 'Paladin';
+    const isGuaranteed = playerClass === 'Paladin' || isOwnerSpawn;
 
     const finalRate = Math.min(95, baseRate + luckBonus);
 
