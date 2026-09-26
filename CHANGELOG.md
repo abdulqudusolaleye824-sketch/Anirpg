@@ -1,3 +1,6 @@
+## 1.0.105 — Push #88r (2026-09-26)
+- AFK: messages in the announcements GC (`/setspace` group) no longer end AFK or count as activity for auto-AFK.
+
 ## 1.0.104 — Push #88q (2026-09-26)
 - Contracts/wages FIX: contracts are found across a hunter's lid/phone identities (Baileys `participantAlt` pairs are remembered in `db.lidMap`); a Guild Master can now re-offer a member (`/guild hire @member …` → member `/guild accept`) to CHANGE the wage — `/contract` and `/wages` show the current terms (pay history kept). Before, members got "already in a guild" and the first-ever terms stuck.
 - Silent bots: lonely-deaf rule — a connected bot with no fresh inbound for 12 min and no peer to compare against sends a wake nudge (presence + note to its own chat); still deaf at 25 min → socket recycled (creds kept). NOTE: Kira/Seraph/Mikasa/Killua are being refused by WhatsApp with code 403 (account block) — not fixable in code.

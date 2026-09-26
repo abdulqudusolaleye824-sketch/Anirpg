@@ -2249,7 +2249,8 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
     }
 
     // ── AFK SELF WELCOME-BACK ──────────────────────────────────────────
-    if (isGroup && isActive && db.afkUsers && db.afkUsers[sender]) {
+    // Push #88r: speaking in the ANNOUNCEMENTS GC (db.announceGC, set via /setspace) never ends AFK.
+    if (isGroup && isActive && db.afkUsers && db.afkUsers[sender] && chatId !== db.announceGC) {
       const afk = db.afkUsers[sender];
       const duration = _fmtHMS(Date.now() - (afk.since || Date.now())); // Push #88j: h/m/s
       const mentionText = `@${sender.split('@')[0]}`;
@@ -2267,7 +2268,7 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
     }
 
     // ── Push #88j: last-seen (any group, any bot) — feeds Pro auto-AFK ──
-    if (isGroup && !msg.key.fromMe && sender) {
+    if (isGroup && !msg.key.fromMe && sender && chatId !== db.announceGC) { // Push #88r: announcements GC doesn't count as activity
       try { if (!db.lastSeen) db.lastSeen = {}; db.lastSeen[sender] = Date.now(); } catch (e) {}
     }
 
