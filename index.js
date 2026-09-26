@@ -1416,6 +1416,24 @@ setInterval(() => {
 // Push #88j: PRO AUTO-AFK — a Pro player who has sent nothing in ANY group
 // for 30 minutes silently enters AFK. No announcement on entry; the timer
 // starts at the 30-minute mark; the normal welcome-back fires when they speak.
+// Push #88q: S-rank party raids — monsters strike the weakest member after
+// 30 s of nobody attacking (GateRaid.autoStrikeIdleRaids does the maths).
+setInterval(() => {
+  try {
+    if (!_dbReady) return;
+    const GRi = require('./rpg/dungeons/GateRaid');
+    const hits = GRi.autoStrikeIdleRaids(database);
+    if (!hits.length) return;
+    const MSMi = require('./bots/MultiSocketManager');
+    for (const h of hits) {
+      if (!h.chatId) continue;
+      const sk = MSMi.getActiveSocket(h.chatId);
+      if (sk) sk.sendMessage(h.chatId, { text: h.text, mentions: h.mentions || [] }).catch(() => {});
+    }
+    saveDatabase();
+  } catch (e) { console.error('idle-strike tick:', e.message); }
+}, 10 * 1000).unref?.();
+
 const AUTO_AFK_MS = 30 * 60 * 1000;
 setInterval(() => {
   try {

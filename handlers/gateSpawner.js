@@ -299,6 +299,24 @@ class GateSpawner {
         try { gate = GateManager.spawnGate(chatId, forced); } finally { GateManager.rollGateRank = _orig; }
       }
     } catch (e) {}
+    // Push #88q: S-rank gates in PUBLIC groups are rare — at most one every
+    // 3 days across all public GCs (Pro GC keeps its own B/A/S roll).
+    try {
+      const ProGC = require('../rpg/utils/ProGC');
+      const S_GATE_EVERY_MS = 3 * 24 * 60 * 60 * 1000;
+      if (!ProGC.isProGC(db, chatId) && gate.rank === 'S') {
+        const lastS = Number(db.sGateLastAt) || 0;
+        if (Date.now() - lastS < S_GATE_EVERY_MS) {
+          const _orig = GateManager.rollGateRank;
+          const _oldId = gate.id;
+          GateManager.rollGateRank = () => 'A';
+          try { gate = GateManager.spawnGate(chatId, 'A'); } finally { GateManager.rollGateRank = _orig; }
+          try { delete GateManager.activeGates[_oldId]; if (GateManager.gatesByChat[chatId]) GateManager.gatesByChat[chatId] = GateManager.gatesByChat[chatId].filter(id => id !== _oldId); } catch (e) {}
+        } else {
+          db.sGateLastAt = Date.now();
+        }
+      }
+    } catch (e) {}
     // Batch-50: spawned gates lived only in memory — a restart wiped
     // unbought gates. Persist immediately (same bucket raids use).
     try {

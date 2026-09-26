@@ -220,6 +220,16 @@ async function handleClaim(sock, msg, args, getDatabase, saveDatabase, sender) {
   if (art.isMendingStone || art.name === 'Mending Stone') {
     RI.grantItem(player, { name: 'Mending Stone', type: 'material', rarity: 'epic', emoji: '🛠️', isMendingStone: true, desc: 'Restores all durability to 100%. Use /mend.' }, 'spawn');
     whereLine = '💡 Use */mend* to restore your gear to 100% durability!';
+  } else if (art.potionTier) {
+    // Push #88q: health potion spawn (3 tiers, capped like every other source)
+    const PT = require('../../rpg/utils/PotionTiers');
+    PT.add(player, art.potionTier, art.qty || 1);
+    whereLine = `💡 Potion added — check */inv* and */use*!`;
+  } else if (art.petFoodId) {
+    // Push #88q: pet food spawn
+    const PDB = require('../../rpg/utils/PetDatabase');
+    PDB.addPetFood(player, art.petFoodId, art.qty || 1);
+    whereLine = `💡 Pet food added — */pet feed* when your companion is hungry!`;
   } else if (art.bundle && Array.isArray(art.bundle)) {
     require('../../rpg/utils/MaterialSpawnPool').grantBundle(player, art.bundle);
     whereLine = '💡 Materials added — check */inv* and */craft*!';
@@ -241,15 +251,15 @@ async function handleClaim(sock, msg, args, getDatabase, saveDatabase, sender) {
 
   saveDatabase();
 
-  const style     = RARITY_STYLES[art.rarity];
-  const bonusLines = Object.entries(art.bonus)
+  const style     = RARITY_STYLES[art.rarity] || RARITY_STYLES.common;
+  const bonusLines = Object.entries(art.bonus || {})
     .map(([k, v]) => v > 0 ? `+${v} ${k.toUpperCase()}` : `${v} ${k.toUpperCase()}`)
     .join(' | ');
 
   const elapsed = Math.floor((Date.now() - spawn.spawnTime) / 1000);
 
   return sock.sendMessage(chatId, {
-    text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n${style.color} *CLAIMED!*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n👤 *${player.name}* got the ${art.bundle ? 'cache' : 'artifact'}!${luckBonus}\n⚡ Reaction time: ${elapsed}s\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n${art.emoji} *${art.name}*\n${style.stars} ${art.rarity.toUpperCase()}\n${art.bundle ? require('../../rpg/utils/MaterialSpawnPool').describe(art.bundle) : `📊 ${bonusLines}`}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n${whereLine}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+    text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n${style.color} *CLAIMED!*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n👤 *${player.name}* got the ${art.bundle ? 'cache' : 'artifact'}!${luckBonus}\n⚡ Reaction time: ${elapsed}s\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n${art.emoji} *${art.name}*\n${style.stars} ${art.rarity.toUpperCase()}\n${art.bundle ? require('../../rpg/utils/MaterialSpawnPool').describe(art.bundle) : bonusLines ? `📊 ${bonusLines}` : `📦 ${art.desc || ''}`}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n${whereLine}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
     mentions: [sender]
   }, { quoted: msg });
 }
@@ -305,6 +315,43 @@ function startSpawnScheduler(sock, getDatabase, saveDatabase, groupChatIds) {
 }
 
 // ═══════════════════════════════════════════════════════════════
+// Push #88q: DIVERSIFIED SPAWN POOL — shared by the Pro GC 5-hour spawn and
+// the mod /spawn command. Weighted: Mending Stone 20% · Health potion 25%
+// (lower 50 / medium 35 / higher 15) · Pet food 15% · Material cache 30%
+// (dungeon-loot crafting materials) · Epic material 10% (Dragon Scale etc.).
+// Never only Dragon Scales again.
+function pickDiversifiedSpawn(opts = {}) {
+  const roll = Math.random() * 100;
+  const mending = SPAWN_ARTIFACTS.find(a => a.isMendingStone || a.name === 'Mending Stone');
+  if (roll < 20 && mending) return mending;
+  if (roll < 45) {
+    const PT = require('../../rpg/utils/PotionTiers');
+    const r = Math.random(); const tier = r < 0.5 ? 'lower' : r < 0.85 ? 'medium' : 'higher';
+    const t = PT.TIERS ? PT.TIERS.find(x => x.tier === tier) : null;
+    const qty = tier === 'lower' ? 2 : 1;
+    return { name: (t && t.name) || `${tier} Health Potion`, emoji: (t && t.emoji) || '🧪', rarity: (t && t.rarity) || 'common', type: 'potion', potionTier: tier, qty, bonus: {}, desc: `${qty}× restores ${(t && t.pct) || 10}% HP. /use it in battle.` };
+  }
+  if (roll < 60) {
+    const { PET_FOOD } = require('../../rpg/utils/PetDatabase');
+    const ids = Object.keys(PET_FOOD || {});
+    if (ids.length) {
+      const id = ids[Math.floor(Math.random() * ids.length)]; const f = PET_FOOD[id];
+      const rare = (f.hungerRestore || 0) >= 60;
+      return { name: f.name, emoji: f.emoji || '🍖', rarity: rare ? 'rare' : 'common', type: 'petfood', petFoodId: id, qty: rare ? 1 : 2, bonus: {}, desc: `${rare ? 1 : 2}× pet food (+${f.hungerRestore} hunger, +${f.xpBonus} pet XP).` };
+    }
+  }
+  if (roll < 90 || opts.noEpic) {
+    const MSP = require('../../rpg/utils/MaterialSpawnPool');
+    const tier = opts.proGC ? (Math.random() < 0.5 ? 'rare' : 'epic') : MSP.rollTier();
+    const bundle = MSP.rollBundle(tier, 3);
+    return { name: `${tier === 'epic' ? 'Epic' : tier === 'rare' ? 'Rare' : 'Common'} Material Cache`, emoji: '🧰', rarity: tier, type: 'material_bundle', bonus: {}, bundle,
+             desc: `${bundle.reduce((a, b) => a + b.qty, 0)} crafting materials the forge is asking for.` };
+  }
+  const epics = SPAWN_ARTIFACTS.filter(a => a.rarity === 'epic' && String(a.type).toLowerCase() === 'material' && !(a.isMendingStone || a.name === 'Mending Stone'));
+  return epics.length ? epics[Math.floor(Math.random() * epics.length)] : mending;
+}
+
+// ═══════════════════════════════════════════════════════════════
 // COMMAND MODULE (admin force-spawn + /claim)
 // ═══════════════════════════════════════════════════════════════
 module.exports = {
@@ -317,6 +364,7 @@ module.exports = {
   handleClaim,
   startSpawnScheduler,
   SPAWN_ARTIFACTS,
+  pickDiversifiedSpawn,
 
   async execute(sock, msg, args, getDatabase, saveDatabase, sender) {
     const chatId = msg.key?.remoteJid;
@@ -329,8 +377,39 @@ module.exports = {
 
     const sub = args[0]?.toLowerCase();
 
-    if (sub === 'force' || !sub) {
-      await spawnArtifact(sock, chatId, db, saveDatabase);
+    // Push #88q: /spawn → a forced, diversified spawn (mending stones, potions,
+    // pet food, material caches, epic materials) claimable by anyone in the chat.
+    // /spawn pet [rarity] → a wild pet only the SPAWNER can /catch (60 s).
+    if (sub === 'pet') {
+      const { PET_DATABASE } = require('../../rpg/utils/PetDatabase');
+      const want = String(args[1] || '').toLowerCase();
+      let pool = Object.values(PET_DATABASE);
+      if (want) pool = pool.filter(p => String(p.rarity || '').toLowerCase() === want || String(p.name || '').toLowerCase().includes(want) || String(p.id || '').toLowerCase() === want);
+      if (!pool.length) return sock.sendMessage(chatId, { text: `❌ No pet matches *${args[1]}*. Try a rarity (common/uncommon/rare/epic/legendary/mythic) or a pet name.` }, { quoted: msg });
+      const chosen = pool[Math.floor(Math.random() * pool.length)];
+      if (!Array.isArray(db.wildPets)) db.wildPets = [];
+      const now = Date.now();
+      db.wildPets = db.wildPets.filter(w => w && w.expiresAt > now && !(w.forJids || []).some(j => String(j).split('@')[0] === String(sender).split('@')[0]));
+      db.wildPets.push({ token: `WP-${now}-${Math.floor(Math.random() * 999)}`, petId: chosen.id, name: chosen.name, emoji: chosen.emoji, rarity: chosen.rarity, gate: 'spawn', spawnedAt: now, expiresAt: now + 60 * 1000, caughtBy: null, attemptsUsed: 0, attemptLog: [], forJids: [sender], spawnedBy: sender });
+      saveDatabase();
+      return sock.sendMessage(chatId, { text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🐾 *A WILD PET APPEARS!*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n${chosen.emoji} *${chosen.name}* — ${String(chosen.rarity || 'common').toUpperCase()}\n👤 Only *@${String(sender).split('@')[0]}* can catch it.\n⏰ It flees in *60 seconds*!\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🪤 */catch* — costs the usual catch fee`, mentions: [sender] }, { quoted: msg });
+    }
+
+    if (sub === 'force' || !sub || ['mending', 'stone', 'potion', 'food', 'petfood', 'materials', 'cache'].includes(sub)) {
+      if (activeSpawns.has(chatId)) return sock.sendMessage(chatId, { text: '⚠️ There is already an unclaimed spawn here — /claim it first (or /spawn clear).' }, { quoted: msg });
+      let art;
+      if (sub === 'mending' || sub === 'stone') art = SPAWN_ARTIFACTS.find(a => a.isMendingStone);
+      else {
+        for (let i = 0; i < 25 && !art; i++) {
+          const c = pickDiversifiedSpawn({});
+          if (!sub || sub === 'force') { art = c; break; }
+          if (sub === 'potion' && c.potionTier) art = c;
+          if ((sub === 'food' || sub === 'petfood') && c.petFoodId) art = c;
+          if ((sub === 'materials' || sub === 'cache') && c.bundle) art = c;
+        }
+      }
+      if (!art) art = pickDiversifiedSpawn({});
+      await spawnArtifact(sock, chatId, db, saveDatabase, art);
       return;
     }
 

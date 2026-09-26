@@ -495,6 +495,10 @@ function buildRoster(className) {
   if (raws.length > SKILLS_PER_CLASS) raws = raws.slice(0, SKILLS_PER_CLASS);
 
   const roster = raws.map((r, i) => normalise(className, { ...r, unlocksAtLevel: (i + 1) * UNLOCK_STEP }, i));
+  // Push #88q: the Healer is a pure support class — every non-passive Healer
+  // skill is a SUPPORT cast (heal/buff). Two library entries ("World Heal",
+  // "Transcendent Light") were typed `damage` and hit for 100% ATK in PvP.
+  if (className === 'Healer') for (const e of roster) { if (e && e.type !== 'passive' && e.type !== 'heal' && e.type !== 'buff') { e.type = (e.healingPct || 0) > 0 || !(e.buffs || []).length ? 'heal' : 'buff'; if (!(e.healingPct > 0) && e.type === 'heal') e.healingPct = 25; e.damagePct = 0; } }
   _rosterCache.set(className, roster);
   return roster;
 }

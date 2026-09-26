@@ -142,9 +142,9 @@ module.exports = {
         const b = player.classBonusApplied && player.classBonusApplied.bonuses;
         if (b) { const f = CP.formatBonuses(b); if (f) msg2 += `\n   Class bonus: ${f}`; }
         const pm = CP.passiveMultipliers(player);
-        const pl = [];
-        if (pm.atk) pl.push(`ATK +${pm.atk}%`); if (pm.def) pl.push(`DEF +${pm.def}%`); if (pm.crit) pl.push(`CRIT +${pm.crit}%`);
-        if (pm.dodge) pl.push(`DODGE +${pm.dodge}%`); if (pm.speed) pl.push(`SPD +${pm.speed}%`); if (pm.lifesteal) pl.push(`LS +${pm.lifesteal}%`);
+        const pl = []; const _r1 = (v) => Math.round(Number(v) * 10) / 10; // Push #88q: no 15.399999999%
+        if (pm.atk) pl.push(`ATK +${_r1(pm.atk)}%`); if (pm.def) pl.push(`DEF +${_r1(pm.def)}%`); if (pm.crit) pl.push(`CRIT +${_r1(pm.crit)}%`);
+        if (pm.dodge) pl.push(`DODGE +${_r1(pm.dodge)}%`); if (pm.speed) pl.push(`SPD +${_r1(pm.speed)}%`); if (pm.lifesteal) pl.push(`LS +${_r1(pm.lifesteal)}%`);
         if (pl.length) msg2 += `\n   Passives: ${pl.join(' · ')}`;
       } catch (e) {}
     } else {

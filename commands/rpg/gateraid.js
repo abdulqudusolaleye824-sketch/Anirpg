@@ -537,6 +537,26 @@ module.exports = {
       // path (which skips the strike block) can't hit "_petLines is not defined".
       let _petStrike = null, _petLines = [];
       const UCgFlow = require('../../rpg/utils/UnifiedCombat');
+      try { GR.noteRaidTurn(gate, chatId); } catch (e) {} // Push #88q: idle-pressure clock
+      // Push #88q: INITIATIVE — a faster raid monster can strike BEFORE the
+      // hunter's move (hunters no longer always go first). The opening hit is
+      // an extra action at 60% force and never kills outright (leaves 1 HP);
+      // the normal counter-attack below still follows the hunter's strike.
+      try {
+        if (_grCanAct.canAct && target && !target.defeated && (target.hp || 0) > 0 && GR.raidMonsterGoesFirst(target, player)) {
+          let _aDef = (player.stats?.def || 5) + (player.weapon?.defense || 0);
+          try { _aDef += require('../../rpg/utils/GearSystem').getEquippedBonuses(player).def || 0; } catch (e) {}
+          const _aRaw = GR.monsterDamage(target, _aDef, player);
+          const _aDmg = Math.min(Math.max(0, (player.stats.hp || 1) - 1), Math.floor(_aRaw * 0.6));
+          const _aCrit = !!(GR.monsterDamage.last && GR.monsterDamage.last.crit);
+          if (_aRaw > 0) player.stats.hp = Math.max(1, (player.stats.hp || 1) - _aDmg);
+          try { const _rm = (gate.raid?.members || []).find(m => m.id === sender || GR.GKM.normaliseJid(m.id) === GR.GKM.normaliseJid(sender)); if (_rm) _rm.hp = player.stats.hp; } catch (e) {}
+          await sock.sendMessage(chatId, { text: [
+            `⚡ *INITIATIVE!* *${target.name}* (SPD ${target.speed || 10}) is faster than *${player.name}* (SPD ${player.stats?.speed || 10}) and strikes first!`,
+            _aRaw <= 0 ? `💨 *${player.name}* dodged the opening blow!` : `${_aCrit ? '💥 CRITICAL HIT — ' : ''}💢 *${player.name}* takes *${_aDmg}* damage → ❤️ ${player.stats.hp}/${_effMax(player)}`,
+          ].join('\n') });
+        }
+      } catch (e) {}
       if (_grCanAct.canAct) {
       let result;
       let atkPattern = null;
@@ -747,7 +767,7 @@ module.exports = {
         const monAtk = { name: target.name, stats: { hp: target.hp, maxHp: target.maxHp }, statusEffects: target.statusEffects || [] };
         await UCgFlow.playTurn(sock, chatId, {
           attacker: monAtk, defender: _victim,
-          move: { name: monsterSkill.name, description: `A ferocious ${_skillBare} technique.`, cooldownMs: 0, effect: { type: monsterSkill.effect, chance: (monsterSkill.chance || 35), duration: 2 } }, // Push #71: no more 100% status
+          move: { name: monsterSkill.name, description: `A ferocious ${_skillBare} technique.`, cooldownMs: 0, effect: { type: monsterSkill.effect, chance: Math.min(90, (monsterSkill.chance || 35) * GR.RAID_X2), duration: 2 } }, // Push #71: no more 100% status · Push #88q: raid status chance ×2
           result: { damage: dmg, crit: !!(GR.monsterDamage.last && GR.monsterDamage.last.crit), missed: dmg <= 0, dodged: dmg <= 0 },
           tag: `💢 *MONSTER COUNTER-ATTACK*`, gapMs: 600,
         });
@@ -798,7 +818,7 @@ module.exports = {
           player.manaCrystals = Math.max(0, (player.manaCrystals || 0) - loss);
 
           // Push #88: a single death pays NOTHING out — the party treasure
-          // stays banked. Only a full WIPE salvages 50% (to the guild treasury).
+          // stays banked. Only a full WIPE salvages 10% (to the guild treasury).
 
           deathLines.push(``, `💀 *YOU FELL IN THE GATE!*`, `Lost ${loss.toLocaleString()} 💎`, `You fled with 1 HP.`);
           // Push #29: JID-tolerant removal + wipe check (never re-persist a
@@ -1019,7 +1039,7 @@ module.exports = {
         // Push #88: the boss hits with its CALIBRATED atk (severity × floor), not a flat rank constant.
         const bossAtk = (typeof boss.atk === 'number' && boss.atk > 0) ? boss.atk : Math.floor(GATE_RANKS[gate.rank].monsterRange[1] * 0.20 * ((gate.calibrated && gate.calibrated.severity) || 1));
         // Push #74: boss hits go through the same dodge/passive/weaken maths.
-        const dmg = GR.monsterDamage({ atk: bossAtk, speed: 14, statusEffects: boss.statusEffects || [] }, def, _bVictim);
+        const dmg = GR.monsterDamage({ atk: bossAtk, speed: boss.speed || 14, statusEffects: boss.statusEffects || [], _raid: true, isBoss: true, rank: gate.rank }, def, _bVictim);
         if (_bGuard && _bGuard.aggro) await sock.sendMessage(chatId, { text: `🎯 *AGGRO!* *${boss.name}* turns on the healer *${_bGuard.guardianName}*!` });
         else if (_bGuard) await sock.sendMessage(chatId, { text: `🛡️ *GUARD!* *${_bGuard.guardianName}* steps in front of *${player.name}* and takes the boss's blow!` });
         const bossAtkW = { name: boss.name, stats: { hp: boss.hp, maxHp: boss.maxHp }, statusEffects: [] };

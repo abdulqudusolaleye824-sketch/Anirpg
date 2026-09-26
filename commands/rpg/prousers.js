@@ -53,14 +53,20 @@ module.exports = {
         const u = item.user;
         const bareNum = item.bare;
         const name = u.name || 'Hunter';
-        const cleanJid = `${bareNum}@s.whatsapp.net`;
-        mentions.push(cleanJid);
+        // Push #88q: mention the identity the user is actually keyed by (an @lid key
+        // must stay @lid — forcing @s.whatsapp.net produced dead "+1 94592…" tags),
+        // preferring the phone form when the lid↔phone pair is known.
+        const _keyDom = String(item.key).endsWith('@lid') ? '@lid' : '@s.whatsapp.net';
+        const _alt = _keyDom === '@lid' && db.lidMap && db.lidMap[bareNum];
+        const mentionJid = _alt ? `${_alt}@s.whatsapp.net` : `${bareNum}${_keyDom}`;
+        const tagNum = mentionJid.split('@')[0];
+        mentions.push(mentionJid);
 
         const expStr = formatDate(item.expiresAt);
         const emoji = u.customEmoji ? ` ${u.customEmoji}` : '';
         const title = u.equippedTitle ? ` "${u.equippedTitle}"` : '';
 
-        txt += `${index + 1}. 🌟 *${name}*${emoji} (@${bareNum})\n`;
+        txt += `${index + 1}. 🌟 *${name}*${emoji} (@${tagNum})\n`;
         if (title) txt += `   🎖️ Title:${title}\n`;
         txt += `   📊 Level ${u.level || 1} | ${u.awakenRank || 'E'}-Rank\n`;
         txt += `   ⏳ Expires: ${expStr}\n`;

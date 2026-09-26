@@ -204,26 +204,42 @@ module.exports = {
     // ACCEPT / DECLINE HIRE CONTRACT OFFER
     // ═══════════════════════════════════════════════════════════════════
     if (action === 'accept' || (action === 'hire' && args[1]?.toLowerCase() === 'accept')) {
-      const offer = db.pendingGuildHires[sender];
+      // Push #88q: the offer may be filed under the hunter's other identity (lid vs phone)
+      let _offerKey = sender;
+      if (!db.pendingGuildHires[_offerKey]) { const _n = CM.normaliseJid(sender); _offerKey = Object.keys(db.pendingGuildHires).find(k => CM.normaliseJid(k) === _n || CM.findUserInDb(db, CM.normaliseJid(k)) === player) || sender; }
+      const offer = db.pendingGuildHires[_offerKey];
       if (!offer || Date.now() > offer.expiresAt) {
-        delete db.pendingGuildHires[sender];
+        delete db.pendingGuildHires[_offerKey];
         return sock.sendMessage(chatId, { text: '❌ You have no active guild hire offers (or the offer expired).' }, { quoted: msg });
       }
 
       const guild = db.guilds[offer.guildId];
       if (!guild) {
-        delete db.pendingGuildHires[sender];
+        delete db.pendingGuildHires[_offerKey];
         return sock.sendMessage(chatId, { text: '❌ That guild no longer exists.' }, { quoted: msg });
       }
 
+      // Push #88q: a member of THIS guild accepting a new offer = contract renegotiation
+      // (new wage / length). Before, every member got "already in a guild" and the
+      // master had no way to change a wage — /contract kept showing the first terms.
+      if (playerGuild && playerGuild === guild) {
+        const r = CM.hire(db, offer.guildId, offer.gmId, sender, offer.weeklyNexus, offer.weeklyMana, offer.weeks, { replace: true });
+        delete db.pendingGuildHires[_offerKey];
+        if (!r.success) return sock.sendMessage(chatId, { text: `❌ ${r.error}` }, { quoted: msg });
+        saveDatabase();
+        return sock.sendMessage(chatId, {
+          text: `${FRAME}\n📜 *CONTRACT ${r.replaced ? 'UPDATED' : 'SIGNED'}!*\n${FRAME}\n👤 *@${sender.split('@')[0]}* — *${guild.name}*\n\n💠 Weekly Wage: ${offer.weeklyNexus.toLocaleString()} Nexus\n💎 Weekly Mana: ${offer.weeklyMana.toLocaleString()} Mana Stones\n⏳ Duration: ${offer.weeks} week(s)${r.replaced ? `\n\n_Previous terms replaced. First pay of the new contract in 7 days._` : ''}\n${FRAME}`,
+          mentions: [sender]
+        }, { quoted: msg });
+      }
       if (playerGuild) {
-        delete db.pendingGuildHires[sender];
+        delete db.pendingGuildHires[_offerKey];
         return sock.sendMessage(chatId, { text: '❌ You are already in a guild! Leave your current guild first.' }, { quoted: msg });
       }
 
       const maxCap = getMaxMembers(guild);
       if (guild.members.length >= maxCap) {
-        delete db.pendingGuildHires[sender];
+        delete db.pendingGuildHires[_offerKey];
         return sock.sendMessage(chatId, { text: `❌ That guild is full (${guild.members.length}/${maxCap} members).` }, { quoted: msg });
       }
 
@@ -238,8 +254,8 @@ module.exports = {
       player.guildJoinedAt = Date.now();
 
       // Finalize formal contract
-      CM.hire(db, offer.guildId, offer.gmId, sender, offer.weeklyNexus, offer.weeklyMana, offer.weeks);
-      delete db.pendingGuildHires[sender];
+      CM.hire(db, offer.guildId, offer.gmId, sender, offer.weeklyNexus, offer.weeklyMana, offer.weeks, { replace: true });
+      delete db.pendingGuildHires[_offerKey];
 
       // Award Weekly GP to the recruiter (not the recruit)
       const recruiterId = offer.gmId || offer.by || guild.leader;

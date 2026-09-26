@@ -119,6 +119,9 @@ class ProGC {
 
   // ── 5-hour epic spawn ─────────────────────────────────────────
   static _pickEpic() {
+    // Push #88q: diversified — mending stones, potions, pet food, material
+    // caches, epic materials (was: epic non-equipment = only Dragon Scale).
+    try { const AS = require('../../commands/rpg/artifactspawn'); if (AS.pickDiversifiedSpawn) return AS.pickDiversifiedSpawn({ proGC: true }); } catch (e) {}
     const { SPAWN_ARTIFACTS } = require('../../commands/rpg/artifactspawn');
     const mending = SPAWN_ARTIFACTS.find((a) => a.isMendingStone || a.name === 'Mending Stone');
     if (mending && Math.random() < 0.25) return mending;

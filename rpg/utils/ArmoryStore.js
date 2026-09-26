@@ -290,6 +290,46 @@ function wearGear(player) {
   }
   return broken;
 }
+// ── Push #88q: LOW-DURABILITY WARNING + AUTO-MEND (Pro) ─────────────
+// After combat wear: every equipped piece / weapon under LOW_DUR (5) is
+// reported once per drop below the line (Pro hunters). If the Pro hunter has
+// auto-mend on (default ON — `/mend auto off` to disable) and owns a Mending
+// Stone, the piece is restored to 100% on the spot, one stone per piece.
+const LOW_DUR = 5;
+function _isPro(player) { try { return require('./UI').isPro(player); } catch (e) { return !!(player && (player.isPro || player.proStatus)); } }
+function _takeStone(player) {
+  const inv = player.inventory || (player.inventory = {});
+  const items = inv.items || [];
+  const mi = items.findIndex(i => i && (i.isMendingStone || /mending/i.test(String(i.name || ''))));
+  if (mi !== -1) { items.splice(mi, 1); return true; }
+  if ((inv.mendingStones || 0) > 0) { inv.mendingStones--; return true; }
+  return false;
+}
+function _countStones(player) {
+  const inv = (player && player.inventory) || {};
+  return ((inv.items || []).filter(i => i && (i.isMendingStone || /mending/i.test(String(i.name || '')))).length) + (inv.mendingStones || 0);
+}
+function autoMendEnabled(player) { return !!player && _isPro(player) && player.autoMend !== false; }
+function lowDurabilityCheck(player) {
+  const lines = [];
+  if (!player || !player.inventory || !_isPro(player)) return lines;
+  const pieces = [];
+  if (player.weapon && player.weapon.maxDurability != null) pieces.push({ p: player.weapon, what: 'weapon' });
+  for (const [slot, p] of Object.entries(player.equippedGear || {})) if (p && p.maxDurability != null) pieces.push({ p, what: slot });
+  for (const { p } of pieces) {
+    const d = Number(p.durability) || 0;
+    if (d >= LOW_DUR) { if (p._lowWarned) delete p._lowWarned; continue; }
+    if (autoMendEnabled(player) && _takeStone(player)) {
+      p.durability = p.maxDurability; delete p._lowWarned;
+      lines.push(`🛠️ *AUTO-MEND:* *${p.name}* was at ${d}/${p.maxDurability} — restored to 100% (🪨 ${_countStones(player)} stone${_countStones(player) === 1 ? '' : 's'} left)`);
+      continue;
+    }
+    if (p._lowWarned) continue;
+    p._lowWarned = true;
+    lines.push(`⚠️ *LOW DURABILITY:* *${p.name}* is at ${d}/${p.maxDurability}${autoMendEnabled(player) ? ' — no Mending Stone for auto-mend!' : ' — /mend it before it breaks!'}`);
+  }
+  return lines;
+}
 /** Push #88c: /mend all SHARES one stone — 100% of restoration split evenly
  *  across every damaged item (10 items → each gets +10% of its max durability).
  *  Returns { count, items:[{name,before,after,max}] }. */
@@ -373,6 +413,7 @@ function renderDetail(it) {
 }
 
 module.exports = {
+  lowDurabilityCheck, autoMendEnabled, LOW_DUR,
   RANKS, RANK_EMOJI, RANK_RARITY, BANDS, STATUS_EMOJI, STATUSES,
   dayKey, msUntilRotation, getStock, findStock, buy, instantiate, maxDurabilityFor,
   equipWeapon, unequipWeapon, wearWeapon, wearGear, mendAll, mendAllShared,

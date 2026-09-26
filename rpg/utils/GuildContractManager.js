@@ -28,8 +28,12 @@ function findUserInDb(db, bare) {
   const digits = String(bare).replace(/[^0-9]/g, '');
   if (db.users[bare]) return db.users[bare];
   if (db.users[`${digits}@s.whatsapp.net`]) return db.users[`${digits}@s.whatsapp.net`];
+  // Push #88q: lid↔phone pair learned from Baileys (db.lidMap)
+  const alt = db.lidMap && db.lidMap[digits];
+  if (alt) { if (db.users[`${alt}@s.whatsapp.net`]) return db.users[`${alt}@s.whatsapp.net`]; if (db.users[`${alt}@lid`]) return db.users[`${alt}@lid`]; }
   for (const [k, u] of Object.entries(db.users)) {
-    if (k.replace(/[^0-9]/g, '') === digits) return u;
+    const kd = k.replace(/[^0-9]/g, '');
+    if (kd === digits || (alt && kd === alt)) return u;
   }
   return null;
 }
@@ -169,14 +173,35 @@ function _contracts(db, guildId) {
   return db.guildContracts[guildId];
 }
 
+// Push #88q: a contract may have been filed under ANOTHER identity of the same
+// hunter (hired via @lid mention, /contract sent from the phone JID, or vice
+// versa). Resolve every key in the bucket to a user row and match the row.
+function _findContractKeyForUser(db, bucket, playerJid) {
+  const me = normaliseJid(playerJid);
+  if (bucket[me]) return me;
+  const user = findUserInDb(db, me);
+  if (!user) return null;
+  let best = null, bestAt = -1;
+  for (const k of Object.keys(bucket)) {
+    const c = bucket[k]; if (!c) continue;
+    if (findUserInDb(db, k) !== user) continue;
+    const at = c.active && !c.completedAt && !c.defaultedAt ? (c.startAt || 0) + 1e15 : (c.startAt || 0);
+    if (at > bestAt) { best = k; bestAt = at; }
+  }
+  if (best && best !== me) { bucket[me] = bucket[best]; delete bucket[best]; return me; } // re-home under the live key
+  return best;
+}
+
 function getContract(db, guildId, playerJid) {
   const g = findGuild(db, guildId);
   const realId = g?.id || guildId;
-  return _contracts(db, realId)[normaliseJid(playerJid)] || null;
+  const bucket = _contracts(db, realId);
+  const k = _findContractKeyForUser(db, bucket, playerJid);
+  return k ? bucket[k] || null : null;
 }
 
 // Sign a new contract. Returns { success, error?, contract? }
-function hire(db, guildId, operatorJid, targetJid, weeklyNexus, weeklyMana, weeks) {
+function hire(db, guildId, operatorJid, targetJid, weeklyNexus, weeklyMana, weeks, opts = {}) {
   if (!(weeklyNexus >= 0) || !(weeklyMana >= 0) || (weeklyNexus <= 0 && weeklyMana <= 0)) {
     return { success: false, error: 'Weekly wage must include Nexus or Mana Stones.' };
   }
@@ -184,7 +209,10 @@ function hire(db, guildId, operatorJid, targetJid, weeklyNexus, weeklyMana, week
   const g = findGuild(db, guildId);
   const realId = g?.id || guildId;
   const recs = _contracts(db, realId);
-  if (recs[normaliseJid(targetJid)]?.active) {
+  const existingKey = _findContractKeyForUser(db, recs, targetJid);
+  const existing = existingKey ? recs[existingKey] : null;
+  const existingLive = !!(existing && existing.active && !existing.completedAt && !existing.defaultedAt);
+  if (existingLive && !opts.replace) {
     return { success: false, error: 'This hunter already has an active contract.' };
   }
   const now = Date.now();
@@ -199,8 +227,16 @@ function hire(db, guildId, operatorJid, targetJid, weeklyNexus, weeklyMana, week
     active: true,
     hiredBy: operatorJid,
   };
+  // Push #88q: renegotiation keeps the pay history and notes the old terms so
+  // /wages + /contract show the CURRENT wage, not the first one ever signed.
+  if (existing) {
+    if (Array.isArray(existing.payHistory)) contract.payHistory = existing.payHistory;
+    contract.replaced = { weeklyNexus: existing.weeklyNexus, weeklyMana: existing.weeklyMana, weeks: existing.weeks, weeksPaid: existing.weeksPaid || 0, at: now };
+    if (existingKey && existingKey !== normaliseJid(targetJid)) delete recs[existingKey];
+  }
   recs[normaliseJid(targetJid)] = contract;
-  return { success: true, contract };
+  if (db.salaryApprovals?.[realId]) delete db.salaryApprovals[realId][normaliseJid(targetJid)];
+  return { success: true, contract, replaced: existingLive };
 }
 
 // Remaining balance owed across the whole contract (nexus + mana), used for
@@ -709,6 +745,7 @@ function getSalaryStatus(db, playerJid) {
   const realId = guild.id || Object.keys(db.guilds || {}).find(k => db.guilds[k] === guild) || user.guild;
   const me = normaliseJid(playerJid);
   let c = (db.guildContracts?.[realId] || {})[me] || null;
+  if (!c && db.guildContracts?.[realId]) { const k = _findContractKeyForUser(db, db.guildContracts[realId], playerJid); if (k) c = db.guildContracts[realId][k]; }
   if (!c && db.guildContracts) {
     // Contract filed under an old id / the guild's name / '[object Object]' → move it home.
     for (const [bucketId, bucket] of Object.entries(db.guildContracts)) {

@@ -601,14 +601,46 @@ function recycleDeafSocket(key, why) {
 }
 // Back-compat name used by index.js / restart.js exports.
 function healBadMac(key, why) { return recycleDeafSocket(key, why || 'manual'); }
+// Push #88q — LONELY-DEAF rule. The comparison rule above needs ANOTHER bot
+// that hears. Live on 09-26 four numbers sat 403-blocked for 12 h, leaving one
+// or two sockets with nobody to compare against → a deaf survivor stayed deaf
+// for hours ("bots go silent then randomly answer"). Field finding (Baileys
+// #1769 thread): ANY outbound traffic wakes a stuck inbound stream. So, with no
+// peer to compare: after LONELY_NUDGE_MS of silence send a tiny outbound nudge
+// (presence + a note to the bot's own chat); if still nothing LONELY_DEAF_MS
+// later, recycle the socket (creds kept). Bounded: one nudge per silence window.
+const LONELY_NUDGE_MS = Number(process.env.BOT_LONELY_NUDGE_MS || 12 * 60 * 1000);
+const LONELY_DEAF_MS = Number(process.env.BOT_LONELY_DEAF_MS || 25 * 60 * 1000);
+const _lonelyNudgedAt = {};
+async function _nudgeSocket(k, sinceMs) {
+  const s = botSockets[k]; if (!s?.user?.id) return false;
+  const me = String(s.user.id).split(':')[0] + '@s.whatsapp.net';
+  console.warn(`👂 AstraLink [${k}] no fresh inbound for ${Math.round(sinceMs / 60000)} min and no peer to compare — sending a wake nudge`);
+  try { await s.sendPresenceUpdate('available'); } catch (e) {}
+  try { await s.sendMessage(me, { text: `🔄 keepalive ${new Date().toISOString().slice(11, 16)}Z` }); } catch (e) { return false; }
+  return true;
+}
 setInterval(() => {
   try {
     const now = Date.now();
     _badMacHits = _badMacHits.filter(t => now - t < 60 * 1000);
     const live = Object.keys(botSockets).filter(k => botSockets[k]?.user?.id && !_loggedOut.has(k));
-    if (live.length < 2) return; // nothing to compare against — a quiet night is not deafness
     const anyoneHearing = live.some(k => now - (_lastInboundAt[k] || 0) < DEAF_AFTER_MS);
-    if (!anyoneHearing) return; // whole fleet quiet → probably just no traffic
+    if (live.length < 2 || !anyoneHearing) {
+      // Nobody to compare against (or whole fleet quiet): lonely-deaf rule.
+      for (const k of live) {
+        const since = Math.max(_lastInboundAt[k] || 0, _lastOpenAt[k] || 0);
+        const quiet = now - since;
+        if (quiet < LONELY_NUDGE_MS) { _lonelyNudgedAt[k] = 0; continue; }
+        if (!_lonelyNudgedAt[k]) { _lonelyNudgedAt[k] = now; _nudgeSocket(k, quiet).catch(() => {}); continue; }
+        if (quiet >= LONELY_DEAF_MS && now - _lonelyNudgedAt[k] >= LONELY_DEAF_MS - LONELY_NUDGE_MS) {
+          _lonelyNudgedAt[k] = 0;
+          recycleDeafSocket(k, `no fresh inbound for ${Math.round(quiet / 60000)} min, nudge did not wake it (no peer to compare)`);
+          break;
+        }
+      }
+      return;
+    }
     for (const k of live) {
       const since = Math.max(_lastInboundAt[k] || 0, _lastOpenAt[k] || 0);
       if (now - since < DEAF_AFTER_MS) continue;
@@ -2015,6 +2047,19 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
 
     const db = getDatabase();
     const bareSender = String(sender).split('@')[0];
+    // Push #88q: Baileys rc14 hands us the sender's OTHER identity
+    // (key.participantAlt in groups / key.remoteJidAlt in DMs). Remember the
+    // lid↔phone pair so wages/contracts/mentions resolve either form.
+    try {
+      const alt = msg.key?.participantAlt || msg.key?.remoteJidAlt;
+      if (alt && db) {
+        const a = String(rawSender).split(':')[0].split('@')[0], b = String(alt).split(':')[0].split('@')[0];
+        if (a && b && a !== b && /^\d+$/.test(a) && /^\d+$/.test(b)) {
+          if (!db.lidMap || typeof db.lidMap !== 'object') db.lidMap = {};
+          if (db.lidMap[a] !== b || db.lidMap[b] !== a) { db.lidMap[a] = b; db.lidMap[b] = a; }
+        }
+      }
+    } catch (e) {}
 
     const config = readConfigCached();
     const isCommand = messageText.startsWith(config.prefix);

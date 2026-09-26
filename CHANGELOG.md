@@ -1,3 +1,17 @@
+## 1.0.104 — Push #88q (2026-09-26)
+- Contracts/wages FIX: contracts are found across a hunter's lid/phone identities (Baileys `participantAlt` pairs are remembered in `db.lidMap`); a Guild Master can now re-offer a member (`/guild hire @member …` → member `/guild accept`) to CHANGE the wage — `/contract` and `/wages` show the current terms (pay history kept). Before, members got "already in a guild" and the first-ever terms stuck.
+- Silent bots: lonely-deaf rule — a connected bot with no fresh inbound for 12 min and no peer to compare against sends a wake nudge (presence + note to its own chat); still deaf at 25 min → socket recycled (creds kept). NOTE: Kira/Seraph/Mikasa/Killua are being refused by WhatsApp with code 403 (account block) — not fixable in code.
+- Raid monsters ×2: ATK ×3.4 / DEF ×2.8 (2× on top of #88n), crit chance ×2 (cap 50%), crit damage ×3.0, status-effect chance ×2 (cap 90%). Tower/dungeon monsters unchanged.
+- Raid SPEED/INITIATIVE: a faster raid monster can strike before the hunter's move (35% at equal speed, ±1.5%/SPD point, 10–80%); the opening hit is 60% force and never kills outright. Bosses now carry a speed stat.
+- S-rank party raids: 30 s after the last action with no attack, the monster/boss strikes the WEAKEST member (repeats every 30 s of silence; can kill → 15% stones, removed from raid; last member → wipe).
+- Healer: every non-passive Healer skill is a support cast — 0 damage in PvP (World Heal / Transcendent Light were typed `damage`).
+- S-rank gates in public GCs: at most one every 3 days (rerolled to A otherwise). Pro GC unaffected.
+- Pro durability: warning when a piece drops below 5; AUTO-MEND (default ON, `/mend auto off`) repairs it to 100% with a Mending Stone on the spot.
+- Pro GC 5-hour spawn diversified (was effectively Dragon Scale only): Mending Stone 20% · health potions 25% · pet food 15% · material caches 30% · epic material 10%.
+- `/spawn` (mods): forced diversified spawn; `/spawn potion|food|materials|mending`; `/spawn pet [rarity|name]` → wild pet only the spawner can `/catch` (60 s).
+- Pro daily Mending Stone chance 80% → 50%. Party-wipe salvage 50% → 10%.
+- `/prousers` tags fixed (lid identities were forced to phone JIDs → dead "+1 94592…" tags). `/stats` passives rounded (no 15.3999999%).
+
 ## 1.0.103 — Push #88p (2026-09-26)
 - Class shortcuts: `/cast` (Mage) and `/summon` (Summoner) are now real commands that route into the class skill system (menu, live combat). Other classes get the usual "that's the X class command, yours is /…" redirect.
 - Gacha parked: the multi-banner summon moved to `rpg/legacy/summon_gacha.js` (to be refined later). Summon tickets are no longer sold (shop/guild shop/bundle 4 → 250 stones); existing tickets kept. Summon quests removed from daily/weekly pools (weekly `summon_20` → "Full-clear 6 dungeons"; ticket rewards → +60 stones). Old "/summon to pull" hints updated.

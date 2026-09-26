@@ -29,6 +29,16 @@ module.exports = {
   description: 'Use a Mending Stone on one item: /mend <inv#>',
 
   async execute(sock, msg, args, getDatabase, saveDatabase, sender) {
+    // Push #88q: /mend auto [on|off] — Pro auto-mend toggle (default ON)
+    if (String(args[0] || '').toLowerCase() === 'auto') {
+      const db0 = getDatabase(); const p0 = db0.users?.[sender]; const chat0 = msg.key.remoteJid;
+      if (!p0) return sock.sendMessage(chat0, { text: '❌ You are not registered! Use /register.' }, { quoted: msg });
+      if (!UI.isPro(p0)) return sock.sendMessage(chat0, { text: `⚠️ *Auto-mend* is a 🌟 PRO perk — gear under 5 durability is repaired automatically with your Mending Stones.\n${UI.upsell()}` }, { quoted: msg });
+      const v = String(args[1] || '').toLowerCase();
+      if (v === 'on' || v === 'off') { p0.autoMend = v === 'on'; saveDatabase(); }
+      const on = p0.autoMend !== false;
+      return sock.sendMessage(chat0, { text: `${UI.PRO_BAR}\n🛠️ *AUTO-MEND* ${on ? '✅ ON' : '⛔ OFF'} 💎\n${UI.PRO_BAR}\nWhen a weapon or gear piece drops below *5* durability it is restored to 100% using one Mending Stone (🪨 you have ${countStones(p0)}).\nYou are warned when a piece is low and no stone is available.\n\n/mend auto on · /mend auto off` }, { quoted: msg });
+    }
     const chatId = msg.key.remoteJid;
     const db = getDatabase();
     const player = db.users[sender];

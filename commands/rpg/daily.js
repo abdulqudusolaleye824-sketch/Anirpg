@@ -161,10 +161,10 @@ module.exports = {
       }
     } catch (e) {}
 
-    // Push #84: Pro daily — 80% chance of a 🛠️ Mending Stone (not guaranteed;
+    // Push #84: Pro daily — 50% chance (Push #88q, was 80%) of a 🛠️ Mending Stone (not guaranteed;
     // the other 20% leaves room for nothing extra).
     let _proMend = false;
-    if (isProDaily && Math.random() < 0.80) {
+    if (isProDaily && Math.random() < 0.50) {
       try {
         require('../../rpg/utils/RewardInventory').grantItem(player, { name: 'Mending Stone', type: 'material', rarity: 'epic', emoji: '🛠️', isMendingStone: true, desc: 'Restores all durability to 100%. Use /equip use <#>.' }, 'daily');
         _proMend = true;
@@ -195,7 +195,7 @@ module.exports = {
       `💠 +${finalNexus.toLocaleString()} Nexus${seasonNexusMult>1?' ('+seasonNexusMult+'× '+SeasonManager.getActiveEvent()?.emoji+')':''}${isProDaily ? ' (2×)' : ''}`,
       `💎 +${finalCrystals} Mana Stones${isProDaily ? ' (2×)' : ''}`,
       `✨ +${finalXp} XP${seasonXpMult>1?' ('+seasonXpMult+'× '+SeasonManager.getActiveEvent()?.emoji+')':''}${isProDaily ? ' (2×)' : ''}`,
-      ...(_proMend ? [`🛠️ +1 *Mending Stone* — 🌟 PRO drop (80%)`] : (isProDaily ? [`🛠️ No Mending Stone today (80% PRO drop)`] : [])),
+      ...(_proMend ? [`🛠️ +1 *Mending Stone* — 🌟 PRO drop (50%)`] : (isProDaily ? [`🛠️ No Mending Stone today (50% PRO drop)`] : [])),
     ];
 
     if (milestone) {

@@ -507,6 +507,8 @@ async function playTurn(sock, chatId, o) {
       const bw = Armory.wearWeapon(attacker);
       if (bw) o._broke = (o._broke || []).concat([`💥 ${attacker.name || 'Attacker'}'s *${bw.name}* shattered!`]);
       for (const bg of Armory.wearGear(defender)) o._broke = (o._broke || []).concat([`💥 ${defender.name || 'Defender'}'s *${bg.name}* broke apart!`]);
+      // Push #88q: Pro low-durability warning / auto-mend for both sides.
+      try { const _w = [].concat(Armory.lowDurabilityCheck(attacker), Armory.lowDurabilityCheck(defender)); if (_w.length) o._broke = (o._broke || []).concat(_w); } catch (e) {}
     } catch (e) {}
   }
   const tier = effectivenessTier(result, !!statusApplied);

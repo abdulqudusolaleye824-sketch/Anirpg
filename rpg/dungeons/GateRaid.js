@@ -119,9 +119,31 @@ function playerDamage(player, skillName = null, target = null) {
 // Push #88o: monsters can CRIT (10% base, +2% per rank step above E, ×1.5)
 // and DODGE hunter strikes (speed edge over the hunter, 4–25%).
 const MON_CRIT_MULT = 1.5;
+// Push #88q: RAID monsters (gate floors + gate bosses, flagged `_raid`) hit
+// twice as hard on every axis — ATK ×2, DEF ×2, crit chance ×2 (cap 50%),
+// crit damage ×2 (×3.0 instead of ×1.5), status chance ×2 — and roll
+// INITIATIVE against the hunter (see raidInitiative). Tower/dungeon monsters
+// (ImprovedCombat / DungeonManager) are unchanged.
+const RAID_X2 = 2;
+function critMultFor(monster) { return monster && monster._raid ? MON_CRIT_MULT * RAID_X2 : MON_CRIT_MULT; }
 function monsterCritChance(monster) {
   const rankIdx = { E: 0, D: 1, C: 2, B: 3, A: 4, S: 5, SS: 6, SSS: 7 }[String(monster?.rank || 'E').toUpperCase()] || 0;
-  return Math.min(25, 10 + rankIdx * 2 + (monster?.isBoss ? 5 : 0));
+  const base = Math.min(25, 10 + rankIdx * 2 + (monster?.isBoss ? 5 : 0));
+  return monster && monster._raid ? Math.min(50, base * RAID_X2) : base;
+}
+// Push #88q: SPEED / INITIATIVE. Chance (%) that the raid monster acts BEFORE
+// the hunter this turn: 35% at equal speed, ±1.5% per point of speed edge,
+// clamped 10–80. Held (stunned/frozen) monsters never win initiative.
+function raidInitiativeChance(monster, player) {
+  const ms = Number(monster?.speed || monster?.stats?.speed || 10);
+  const ps = Number(player?.stats?.speed || 10);
+  return Math.max(10, Math.min(80, Math.round(35 + (ms - ps) * 1.5)));
+}
+function raidMonsterGoesFirst(monster, player) {
+  if (!monster || !player) return false;
+  const held = (monster.statusEffects || []).some(e => ['stun', 'freeze', 'paralyze'].includes(String(e.type || '').toLowerCase()));
+  if (held) return false;
+  return Math.random() * 100 < raidInitiativeChance(monster, player);
 }
 function monsterDodgeChance(monster, player) {
   const ms = Number(monster?.speed || monster?.stats?.speed || 10);
@@ -157,12 +179,12 @@ function monsterDamage(monster, def, player = null) {
       let raw = Math.max(floorDmg, mAtk - soak);
       raw = raw * (0.8 + Math.random() * 0.4) * UC.weakenTakenMult(player) * (1 + (pm.dmgTaken || 0) / 100);
       try { raw = raw / (require('../utils/PetManager').lastGiftMultiplier(player) || 1); } catch (e) {}
-      if (Math.random() * 100 < monsterCritChance(monster)) { raw *= MON_CRIT_MULT; monsterDamage.last.crit = true; }
+      if (Math.random() * 100 < monsterCritChance(monster)) { raw *= critMultFor(monster); monsterDamage.last.crit = true; }
       return Math.max(0, Math.floor(raw));
     } catch (e) {}
   }
   let raw = Math.max(3, (monster.atk || 10) - Math.floor((def || 5) * 0.5)) * (0.8 + Math.random() * 0.4);
-  if (Math.random() * 100 < monsterCritChance(monster)) { raw *= MON_CRIT_MULT; monsterDamage.last.crit = true; }
+  if (Math.random() * 100 < monsterCritChance(monster)) { raw *= critMultFor(monster); monsterDamage.last.crit = true; }
   return Math.floor(raw);
 }
 
@@ -359,13 +381,13 @@ function releaseCombatLock(gateId) {
 // Push #30: the key stays consumed (single-use) — no retry on the same key.
 // The party regroups with a fresh key; the GC itself is usable immediately.
 function wipeGate(gate, key, keyData, chatId, db) {
-  // Push #88: a WIPE salvages HALF of the accumulated floor treasure — and it
+  // Push #88: a WIPE salvages 10% (Push #88q, was half) of the accumulated floor treasure — and it
   // goes to the owning GUILD's treasury, never to any single hunter. (A single
   // death used to pay 50% to the fallen hunter; that is gone.)
   let salvage = null;
   try {
     const tr = gate.accumulatedTreasure || { nexus: 0, crystals: 0 };
-    const half = { nexus: Math.floor((tr.nexus || 0) * 0.5), crystals: Math.floor((tr.crystals || 0) * 0.5) };
+    const half = { nexus: Math.floor((tr.nexus || 0) * 0.1), crystals: Math.floor((tr.crystals || 0) * 0.1) };
     if ((half.nexus > 0 || half.crystals > 0) && !gate._wipeSalvaged) {
       const guild = keyData?.guildName ? GKM.findGuild(db, keyData.guildName) : null;
       if (guild) {
@@ -401,7 +423,7 @@ function wipeGate(gate, key, keyData, chatId, db) {
     ``,
     `💀 *ALL HUNTERS WIPED!*`,
     `🚪 The gate collapses and the dungeon closes...`,
-    ...(salvage ? [`🏰 *50% TREASURE SALVAGED → ${salvage.dest} Treasury:* +${salvage.nexus.toLocaleString()} 💠 | +${salvage.crystals.toLocaleString()} 💎`] : []),
+    ...(salvage ? [`🏰 *10% TREASURE SALVAGED → ${salvage.dest} Treasury:* +${salvage.nexus.toLocaleString()} 💠 | +${salvage.crystals.toLocaleString()} 💎`] : []),
     `✅ This dungeon GC is usable again — grab a fresh key for the next run!`,
   ];
 }
@@ -515,7 +537,7 @@ function enter(sender, name, key, keyData, gate, db) {
   if (rel === 'outsider') {
     raid.mode = 'solo';
     raid.leader = sender;
-    raid.status = 'active';
+    raid.status = 'active'; raid.lastTurnAt = Date.now(); // Push #88q
     raid.startedAt = Date.now();
     // Single-use: solo raids launch instantly, so the key is consumed here
     try {
@@ -574,7 +596,7 @@ function start(sender, keyData, gate, db) {
   if (raid.members.length === 0) return { ok: false, error: 'The party is empty.' };
   if (!raid.members.every(x => x.ready)) return { ok: false, error: 'All members must run /party ready before you can start.' };
 
-  raid.status = 'active';
+  raid.status = 'active'; raid.lastTurnAt = Date.now(); // Push #88q
   raid.startedAt = Date.now();
   gate.raidStarted = true;
   // Push #74: monster SEVERITY is calibrated to the party, not random.
@@ -700,7 +722,7 @@ function floorMultiplier(gate, floor) {
 // floor multiplier. Idempotent — safe to call on every calibrate/advance.
 // Push #88n: global monster buff — ATK +70%, DEF +40% — applied on top of the
 // level/floor/severity scaling (which stays exactly as it was).
-const MON_ATK_BUFF = 1.7, MON_DEF_BUFF = 1.4, MON_HP_BUFF = 1.5; // Push #88o: +50% HP
+const MON_ATK_BUFF = 1.7 * RAID_X2, MON_DEF_BUFF = 1.4 * RAID_X2, MON_HP_BUFF = 1.5; // Push #88o: +50% HP · Push #88q: raid ATK/DEF ×2 again
 function applyMonsterScaling(gate) {
   const severity = (gate.calibrated && gate.calibrated.severity) || 1;
   for (const mon of gate.monsters || []) {
@@ -714,6 +736,7 @@ function applyMonsterScaling(gate) {
     mon.atk = Math.max(1, Math.floor(mon._base.atk * mult * MON_ATK_BUFF));
     mon.def = Math.floor(mon._base.def * mult * 0.8 * MON_DEF_BUFF);
     mon.speed = Math.max(1, Math.round(mon._base.speed * (0.8 + Math.min(severity, 6) * 0.2)));
+    mon._raid = true; mon.rank = mon.rank || gate.rank; // Push #88q: raid ×2 package + initiative
   }
   if (gate.boss && !gate.boss.defeated) {
     if (!gate.boss._base) {
@@ -728,6 +751,8 @@ function applyMonsterScaling(gate) {
     gate.boss.hp = Math.max(1, Math.floor(gate.boss.maxHp * hpPct));
     if (gate.boss._base.atk) gate.boss.atk = Math.max(1, Math.floor(gate.boss._base.atk * mult * MON_ATK_BUFF));
     gate.boss.def = Math.floor((gate.boss._base.def || 0) * mult * 0.8 * MON_DEF_BUFF);
+    gate.boss._raid = true; gate.boss.isBoss = true; gate.boss.rank = gate.boss.rank || gate.rank;
+    if (!gate.boss.speed) gate.boss.speed = 14 + (({ E: 0, D: 2, C: 4, B: 6, A: 9, S: 12 })[gate.rank] || 0) * 2;
   }
 }
 
@@ -1165,6 +1190,82 @@ function clearGate(gate, key, keyData, db, saveDatabase) {
 // Raid members can be keyed under a different JID domain than db.users
 // (@lid vs @s.whatsapp.net). Matching only on the exact string silently
 // skipped recovery + XP for those hunters.
+// ── Push #88q: S-RANK IDLE PRESSURE ──────────────────────────────
+// In an S-rank PARTY raid the monsters do not wait: if 30 s pass after the
+// last hunter action with nobody attacking, the current monster (or boss)
+// strikes the WEAKEST living member (lowest HP). Repeats every 30 s of
+// idleness. The caller (index.js ticker) sends the returned messages.
+const IDLE_STRIKE_MS = 30 * 1000;
+function noteRaidTurn(gate, chatId) {
+  if (!gate || !gate.raid) return;
+  gate.raid.lastTurnAt = Date.now();
+  if (chatId) gate.raid.chatId = chatId;
+}
+function _currentRaidTarget(gate) {
+  const floor = gate.currentFloor || 1;
+  const alive = (gate.monsters || []).filter(m => m && !m.defeated && (m.hp || 0) > 0 && m.floor === floor);
+  if (alive.length) return alive[0];
+  const bossAlive = gate.boss && !gate.boss.defeated && (gate.boss.hp || 0) > 0;
+  if (floor >= (gate.totalFloors || 1) && bossAlive) return gate.boss;
+  return null;
+}
+function autoStrikeIdleRaids(db, now = Date.now()) {
+  const out = [];
+  const gates = Object.values(GateManager.activeGates || {});
+  for (const gate of gates) {
+    try {
+      const raid = gate && gate.raid;
+      if (!raid || raid.status !== 'active' || gate.cleared) continue;
+      if (String(gate.rank || '').toUpperCase() !== 'S') continue;
+      if (!(raid.mode === 'party' || (raid.members || []).length > 1)) continue;
+      const last = raid.lastTurnAt || raid.startedAt || 0;
+      if (!last || now - last < IDLE_STRIKE_MS) continue;
+      const target = _currentRaidTarget(gate);
+      if (!target) continue;
+      const held = (target.statusEffects || []).some(e => ['stun', 'freeze', 'paralyze'].includes(String(e.type || '').toLowerCase()));
+      raid.lastTurnAt = now; // one strike per idle window, even if held
+      if (held) continue;
+      const living = (raid.members || []).map(m => ({ m, u: findUserByBare(db, m.id) })).filter(x => x.u && (x.u.stats?.hp || 0) > 0);
+      if (!living.length) continue;
+      living.sort((a, b) => (a.u.stats.hp || 0) - (b.u.stats.hp || 0));
+      const { m, u } = living[0];
+      let def = (u.stats?.def || 5) + (u.weapon?.defense || 0);
+      try { def += require('../utils/GearSystem').getEquippedBonuses(u).def || 0; } catch (e) {}
+      const dmg = monsterDamage(target, def, u);
+      const crit = !!(monsterDamage.last && monsterDamage.last.crit);
+      let maxHp = u.stats?.maxHp || 100; try { maxHp = require('../utils/GearSystem').effectiveMaxHp(u); } catch (e) {}
+      const lines = [`⏱️ *NO ONE MOVED FOR 30s — THE GATE STRIKES!*`, `👹 *${target.name}* lunges at the weakest hunter, *${u.name}*!`];
+      if (dmg <= 0) lines.push(`💨 *${u.name}* dodged it!`);
+      else {
+        u.stats.hp = Math.max(0, (u.stats.hp || 0) - dmg);
+        lines.push(`${crit ? '💥 CRITICAL HIT — ' : ''}💢 *${u.name}* takes *${dmg}* damage → ❤️ ${u.stats.hp}/${maxHp}`);
+        try { lines.push(...afterMonsterHit(u, target, dmg)); } catch (e) {}
+        m.hp = u.stats.hp;
+        if (u.stats.hp <= 0) {
+          u.stats.hp = 1;
+          u.stats_history = u.stats_history || {};
+          u.stats_history.gateDeaths = (u.stats_history.gateDeaths || 0) + 1;
+          const loss = Math.floor((u.manaCrystals || 0) * 0.15);
+          u.manaCrystals = Math.max(0, (u.manaCrystals || 0) - loss);
+          const _n = GKM.normaliseJid(m.id);
+          raid.members = raid.members.filter(x => x !== m && (!_n || GKM.normaliseJid(x.id) !== _n));
+          gate.raiders = (gate.raiders || []).filter(id => id !== m.id && (!_n || GKM.normaliseJid(id) !== _n));
+          lines.push(`💀 *${u.name} WAS CUT DOWN!* Lost ${loss.toLocaleString()} 💎 · fled with 1 HP.`);
+          if (raid.members.length === 0) {
+            let key = null, keyData = null;
+            for (const [k, kd] of Object.entries(db.gateKeys || {})) if (kd && kd.gateId === gate.id) { key = k; keyData = kd; break; }
+            lines.push(...wipeGate(gate, key, keyData, raid.chatId || gate.chatId, db));
+          }
+        }
+      }
+      lines.push(`⚔️ Attack now — the gate strikes again in 30 s of silence.`);
+      try { saveGateState(db, gate); } catch (e) {}
+      out.push({ chatId: raid.chatId || gate.chatId, text: lines.join('\n'), mentions: [m.id].filter(Boolean) });
+    } catch (e) { console.error('[GateRaid] idle strike error:', e.message); }
+  }
+  return out;
+}
+
 function findUserByBare(db, jid) {
   if (!db?.users || !jid) return null;
   if (db.users[jid]) return db.users[jid];
@@ -1210,7 +1311,7 @@ module.exports = {
   saveGateState,
   spawnWildPet,
   tryCombatLock,
-  monsterCritChance, monsterDodgeChance, monsterDodges,
+  monsterCritChance, monsterDodgeChance, monsterDodges, critMultFor, noteRaidTurn, autoStrikeIdleRaids, IDLE_STRIKE_MS, raidInitiativeChance, raidMonsterGoesFirst, RAID_X2,
   releaseCombatLock,
   wipeGate,
   applyMonsterScaling, floorMultiplier, severityLabel, markHealerAggro, pickAggroTarget, supportCast,
