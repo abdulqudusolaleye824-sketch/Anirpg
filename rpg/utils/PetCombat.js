@@ -143,8 +143,9 @@ function scavenge(playerId, baseAmount) {
     if (!pb || !pb.isScavenger) return { bonus: 0, foundItem: null };
     const base = Math.max(0, Number(baseAmount) || 0);
     const rate = Number(pb.scavengeBonus || 0.1);
-    const bonus = Math.max(pb.pet.level >= 5 ? 50 : 20, Math.floor(base * rate));
-    const finds = 0.18 + (Number(pb.pet.stats?.scavengeRate || 0.1) || 0.1);
+    // Push #88w: scavenger loot cut by 70% (bonus Nexus AND item-find chance).
+    const bonus = Math.floor(Math.max(pb.pet.level >= 5 ? 50 : 20, Math.floor(base * rate)) * 0.3);
+    const finds = (0.18 + (Number(pb.pet.stats?.scavengeRate || 0.1) || 0.1)) * 0.3;
     return { bonus, foundItem: Math.random() < finds ? true : null, pet: pb.pet };
   }, { bonus: 0, foundItem: null });
 }

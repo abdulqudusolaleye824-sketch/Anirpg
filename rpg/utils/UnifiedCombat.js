@@ -304,6 +304,9 @@ function tryApplyEffect(attack, attacker, defender) {
 // Tick status effects: reduce duration by 1, apply DoT, return log lines
 function tickStatuses(entity) {
   const logs = [];
+  // Push #88w: Monster-class transformations count down per turn (and the
+  // innate random Quarter form may surge) — one tick per combat turn, everywhere.
+  try { if (entity && entity.stats && (entity.transform || entity.classBase || entity.class)) logs.push(...require('./Transformation').tick(entity)); } catch (e) {}
   // Push #76: temp stat buffs/debuffs count down with the turn too.
   try {
     for (const [k, v] of Object.entries(entity.tempBuffs || {})) {

@@ -569,6 +569,8 @@ async function resolveTurn(sock, chatId, p1, p2, db, saveDatabase) {
         }
         const _txt = String(entry.effect || '').toLowerCase();
         if (/remov|clear|cleanse|purif/.test(_txt) && Array.isArray(player.statusEffects) && player.statusEffects.length) { const n = player.statusEffects.length; player.statusEffects = []; _sl.push(`✨ *${player.name}* cleansed (${n} effect${n === 1 ? '' : 's'})`); }
+        // Push #88w: Monster-class transformations (×5/×10/×15 all stats) work in duels too.
+        try { const TF = require('../../rpg/utils/Transformation'); if (TF.isTransformSkill(entry)) { const _tr = TF.cast(player, entry); _sl.push(...(_tr.ok ? _tr.lines : [`❌ ${_tr.error}`])); } } catch (e) {}
         try { for (const n of UC.applyMoveBuffs({ name: entry.name, buffs: entry.buffs || [], debuffs: [], selfDebuffs: entry.selfDebuffs || [] }, player, player)) _sl.push(n); } catch (e) {}
         const _sh = _txt.match(/shield[^.]*?(\d+)%/);
         if (_sh) { const amt = Math.floor(_effMax(player) * parseInt(_sh[1], 10) / 100); player.tempBuffs = player.tempBuffs || {}; player.tempBuffs.shield = { amount: amt, duration: 4 }; _sl.push(`🛡️ *${player.name}* shielded for ${amt} HP`); }

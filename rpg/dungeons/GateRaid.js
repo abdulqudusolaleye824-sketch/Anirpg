@@ -499,6 +499,38 @@ function takeGuard(gate, victimJid, db) {
   return { guardianJid: pick.by, guardianName: gm.name || guardian.name, guardian, member: gm };
 }
 
+// ── Push #88w: FALLEN HUNTERS ─────────────────────────────────────────
+// A hunter cut down in a raid is recorded on the raid; they cannot walk back
+// in through /gateraid <key> (guild affiliation) or /party join — only a
+// Revive Token (/party revive) or a Healer's revive skill brings them back.
+function markFallen(gate, jid) {
+  try {
+    if (!gate || !gate.raid || !jid) return;
+    const n = GKM.normaliseJid(jid) || String(jid);
+    if (!Array.isArray(gate.raid.fallen)) gate.raid.fallen = [];
+    if (!gate.raid.fallen.includes(n)) gate.raid.fallen.push(n);
+  } catch (e) {}
+}
+function isFallen(gate, jid) {
+  try { const n = GKM.normaliseJid(jid) || String(jid); return !!(gate && gate.raid && Array.isArray(gate.raid.fallen) && gate.raid.fallen.includes(n)); } catch (e) { return false; }
+}
+function clearFallen(gate, jid) {
+  try { const n = GKM.normaliseJid(jid) || String(jid); if (gate && gate.raid && Array.isArray(gate.raid.fallen)) gate.raid.fallen = gate.raid.fallen.filter(x => x !== n); } catch (e) {}
+}
+const FALLEN_TEXT = 'You FELL in this raid. Only a Revive Token (/party revive) or a Healer\'s revive can bring you back.';
+// Bring a fallen hunter back into the party (revive token / healer revive).
+function reviveFallen(gate, jid, db, hpPct = 50) {
+  const u = db && db.users ? (db.users[jid] || Object.values(db.users).find(x => x && x.jid && GKM.normaliseJid(x.jid) === GKM.normaliseJid(jid))) : null;
+  if (!u || !u.stats) return null;
+  let max = u.stats.maxHp || 100; try { max = require('../utils/GearSystem').effectiveMaxHp(u); } catch (e) {}
+  u.stats.hp = Math.max(1, Math.floor(max * hpPct / 100));
+  u.statusEffects = [];
+  clearFallen(gate, jid);
+  const m = ensureMember(gate, jid, db);
+  if (m) { m.hp = u.stats.hp; m.ready = true; }
+  gate.raiders = gate.raiders || []; if (!gate.raiders.includes(jid)) gate.raiders.push(jid);
+  return { player: u, member: m, hp: u.stats.hp, max };
+}
 function ensureMember(gate, sender, db) {
   const player = db.users?.[sender];
   const raid = gate.raid;
@@ -558,12 +590,15 @@ function enter(sender, name, key, keyData, gate, db) {
     return { ok: true, mode: 'solo', raid, rel };
   }
 
+  // Push #88w: a fallen hunter cannot re-enter an ACTIVE raid via affiliation.
+  if (raid.status === 'active' && isFallen(gate, sender)) return { ok: false, error: FALLEN_TEXT };
   // member / affiliate → open a party (creator = leader)
   if (!raid.leader || raid.status === 'done') {
     raid.mode = 'party';
     raid.status = 'recruiting';
     raid.leader = sender;
     raid.members = [];
+    raid.fallen = [];
   }
   ensureMember(gate, sender, db);
   gate.raiders = gate.raiders || [];
@@ -574,6 +609,7 @@ function enter(sender, name, key, keyData, gate, db) {
 function join(sender, name, gate, db) {
   const raid = gate.raid;
   if (!raid) return { ok: false, error: 'No gate raid in progress.' };
+  if (isFallen(gate, sender)) return { ok: false, error: FALLEN_TEXT }; // Push #88w
   if (raid.status !== 'recruiting') return { ok: false, error: 'The raid has already started.' };
   if (raid.members.length >= MAX_PARTY) return { ok: false, error: `Party is full! (${MAX_PARTY} max)` };
   { const other = findOtherRaid(sender, gate); if (other) return { ok: false, error: otherRaidError(other) }; }
@@ -879,6 +915,18 @@ function supportCast(caster, casterJid, target, targetJid, skillName, gate, db) 
     }
     if (isBuff) {
       const UC = require('../utils/UnifiedCombat');
+      // Push #88w: Monster-class transformations — self only, ×N all stats for N turns.
+      try {
+        const TF = require('../utils/Transformation');
+        if (TF.isTransformSkill(entry)) {
+          if (u !== caster) { lines.push(`❌ Transformations can only be cast on yourself.`); continue; }
+          const _tr = TF.cast(u, entry);
+          if (!_tr.ok) { caster.stats.energy = Math.min(caster.stats.maxEnergy || 100, (caster.stats.energy || 0) + cost); lines.push(`❌ ${_tr.error}`); continue; }
+          lines.push(..._tr.lines);
+          try { const rm = (gate.raid?.members || []).find(x => x.id === casterJid || GKM.normaliseJid(x.id) === GKM.normaliseJid(casterJid)); if (rm) { rm.hp = u.stats.hp; rm.maxHp = u.stats.maxHp; } } catch (e) {}
+          continue;
+        }
+      } catch (e) {}
       const buffs = (entry.buffs || []).length ? entry.buffs : [];
       if (buffs.length) {
         const notes = UC.applyMoveBuffs({ name: skill.name, buffs, debuffs: [], selfDebuffs: [] }, u, u);
@@ -1215,6 +1263,62 @@ function _currentRaidTarget(gate) {
   if (floor >= (gate.totalFloors || 1) && bossAlive) return gate.boss;
   return null;
 }
+// ── Push #88w: FLOOR REVIVE ───────────────────────────────────────────
+// A cleared floor that nobody advances from within 60 s revives: every
+// monster on it returns at +30% (HP/ATK/DEF/SPD, stacking on each revive),
+// flagged `revived` so kills give NO rewards. The party must re-clear it.
+const FLOOR_REVIVE_MS = 60 * 1000;
+const FLOOR_REVIVE_MULT = 1.3;
+function reviveFloor(gate, floor) {
+  const mons = (gate.monsters || []).filter(m => m && m.floor === floor);
+  for (const m of mons) {
+    m.revived = true;
+    m.revivals = (m.revivals || 0) + 1;
+    m.maxHp = Math.max(1, Math.floor((m.maxHp || m.hp || 1) * FLOOR_REVIVE_MULT));
+    m.hp = m.maxHp;
+    m.atk = Math.max(1, Math.floor((m.atk || 1) * FLOOR_REVIVE_MULT));
+    m.def = Math.max(0, Math.floor((m.def || 0) * FLOOR_REVIVE_MULT));
+    if (m.speed != null) m.speed = Math.max(1, Math.floor((m.speed || 1) * FLOOR_REVIVE_MULT));
+    m.defeated = false;
+    m.statusEffects = [];
+  }
+  return mons;
+}
+function reviveStaleFloors(db, now = Date.now()) {
+  const out = [];
+  for (const gate of Object.values(GateManager.activeGates || {})) {
+    try {
+      const raid = gate && gate.raid;
+      if (!raid || raid.status !== 'active' || gate.cleared || gate.broken) continue;
+      if (!gate.floorClearedAt || now - gate.floorClearedAt < FLOOR_REVIVE_MS) continue;
+      const floor = gate.currentFloor || 1;
+      const alive = (gate.monsters || []).some(m => m && m.floor === floor && !m.defeated && (m.hp || 0) > 0);
+      if (alive) { gate.floorClearedAt = null; continue; }
+      // Final floor: engaging the boss counts as moving on.
+      if (floor >= (gate.totalFloors || 1) && gate.boss && (gate.boss.defeated || (gate.boss.hp || 0) < (gate.boss.maxHp || gate.boss.hp || 0))) { gate.floorClearedAt = null; continue; }
+      const mons = reviveFloor(gate, floor);
+      if (!mons.length) { gate.floorClearedAt = null; continue; }
+      gate.floorClearedAt = null;
+      raid.lastTurnAt = now; // give the party a fresh idle window
+      try { saveGateState(db, gate); } catch (e) {}
+      const pct = Math.round((Math.pow(FLOOR_REVIVE_MULT, mons[0].revivals || 1) - 1) * 100);
+      out.push({
+        chatId: raid.chatId || gate.chatId || null,
+        gateId: gate.id,
+        text: [
+          `☠️ *FLOOR ${floor} REVIVES!* Nobody advanced for 60s...`,
+          `👾 *${mons.length}* monsters return *+${pct}% stronger* — and they give *NO rewards*.`,
+          ...mons.slice(0, 6).map(m => `  💀 ${m.name} — HP ${m.hp}`),
+          mons.length > 6 ? `  ...and ${mons.length - 6} more` : '',
+          ``, `⚔️ /party attack — clear it again, then /party advance *quickly*.`,
+        ].filter(Boolean).join('\n'),
+        mentions: (raid.members || []).map(m => m.id),
+      });
+    } catch (e) { console.error('reviveStaleFloors:', e.message); }
+  }
+  return out;
+}
+
 function autoStrikeIdleRaids(db, now = Date.now(), canStrike = null) {
   const out = [];
   const gates = Object.values(GateManager.activeGates || {});
@@ -1256,6 +1360,7 @@ function autoStrikeIdleRaids(db, now = Date.now(), canStrike = null) {
           u.manaCrystals = Math.max(0, (u.manaCrystals || 0) - loss);
           const _n = GKM.normaliseJid(m.id);
           raid.members = raid.members.filter(x => x !== m && (!_n || GKM.normaliseJid(x.id) !== _n));
+          markFallen(gate, m.id); // Push #88w
           gate.raiders = (gate.raiders || []).filter(id => id !== m.id && (!_n || GKM.normaliseJid(id) !== _n));
           lines.push(`💀 *${u.name} WAS CUT DOWN!* Lost ${loss.toLocaleString()} 💎 · fled with 1 HP.`);
           if (raid.members.length === 0) {
@@ -1318,7 +1423,7 @@ module.exports = {
   saveGateState,
   spawnWildPet,
   tryCombatLock,
-  monsterCritChance, monsterDodgeChance, monsterDodges, critMultFor, noteRaidTurn, autoStrikeIdleRaids, IDLE_STRIKE_MS, IDLE_STRIKE_OTHER_MS, idleStrikeMsFor, raidInitiativeChance, raidMonsterGoesFirst, RAID_X2,
+  markFallen, isFallen, clearFallen, reviveFallen, FALLEN_TEXT, reviveFloor, reviveStaleFloors, FLOOR_REVIVE_MS, FLOOR_REVIVE_MULT, monsterCritChance, monsterDodgeChance, monsterDodges, critMultFor, noteRaidTurn, autoStrikeIdleRaids, IDLE_STRIKE_MS, IDLE_STRIKE_OTHER_MS, idleStrikeMsFor, raidInitiativeChance, raidMonsterGoesFirst, RAID_X2,
   releaseCombatLock,
   wipeGate,
   applyMonsterScaling, floorMultiplier, severityLabel, markHealerAggro, pickAggroTarget, supportCast,

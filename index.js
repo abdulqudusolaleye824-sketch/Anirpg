@@ -1425,6 +1425,8 @@ setInterval(() => {
     const MSMi = require('./bots/MultiSocketManager');
     // Push #88u: never strike from a deaf socket — GateRaid restarts the idle clock instead.
     const hits = GRi.autoStrikeIdleRaids(database, Date.now(), (chatId) => (typeof MSMi.chatHealthy === 'function' ? MSMi.chatHealthy(chatId) : true));
+    // Push #88w: cleared floors nobody advances from within 60 s revive (+30%, no rewards).
+    try { if (typeof GRi.reviveStaleFloors === 'function') hits.push(...GRi.reviveStaleFloors(database, Date.now())); } catch (e) { console.error('floor-revive tick:', e.message); }
     if (!hits.length) return;
     for (const h of hits) {
       if (!h.chatId) continue;
@@ -1434,6 +1436,9 @@ setInterval(() => {
     saveDatabase();
   } catch (e) { console.error('idle-strike tick:', e.message); }
 }, 10 * 1000).unref?.();
+
+// Push #88w: transformation safety sweep — no form outlives 20 minutes.
+setInterval(() => { try { if (_dbReady) { const n = require('./rpg/utils/Transformation').sweep(database); if (n) saveDatabase(); } } catch (e) {} }, 60 * 1000).unref?.();
 
 const AUTO_AFK_MS = 30 * 60 * 1000;
 setInterval(() => {

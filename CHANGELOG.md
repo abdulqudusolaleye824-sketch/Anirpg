@@ -1,3 +1,11 @@
+## 1.0.110 — Push #88w (2026-09-27)
+- Scavenger pets: loot cut by 70% (bonus Nexus and item-find chance).
+- MONSTER TRANSFORMATIONS: the Lv.10/20/30/40/50/60 slots of every Monster variant are now Quarter (×5, 3t), Complete Quarter (×5, 10t), Half (×10, 3t), Complete Half (×10, 10t), Full (×15, 3t), Complete Full (×15, 10t) Transformation — named with the variant ("Half Transformation: Blood Bat"). ALL stats (ATK/DEF/SPD/HP) are multiplied for the duration; works in gate raids, dungeons and PvP. Stronger form upgrades a weaker one; equal/weaker refused. All other Monster skills are unchanged.
+- Innate Monster trait: on any combat turn a Monster-class hunter may surge into a random Quarter Transformation (~8%/turn) — no skill slot, uncontrollable.
+- Safety: a transformation ends after its turns, and never outlives 20 minutes (per-minute sweep).
+- Floor revive: a cleared gate floor nobody advances from within 60 s REVIVES — every monster returns at +30% (stacking on each revive), and revived monsters give NO rewards (no Nexus/EXP, drops, pet XP or treasure). Engaging the boss counts as moving on.
+- Fallen hunters: a hunter cut down in a raid is recorded and cannot re-enter through affiliation or /party join. Only a Revive Token (/party revive [@fallen] or /revive) or a Healer revive skill (@fallen) brings them back (50% HP, re-added to the party). Revive tokens/skills are refused on hunters who have not fallen.
+
 ## 1.0.109 — Push #88v (2026-09-27)
 - Outputs never mention the co-owner: every 'Owner / Co-Owner only' style message now says 'Owner only'. `/mods` hidden co-owner tag restored.
 

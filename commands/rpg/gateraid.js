@@ -331,6 +331,13 @@ module.exports = {
     // ── REVIVE (REVIVE TOKEN) ──────────────────────────────────
     if (action === 'revive') {
       if (raidOver(gate)) return sock.sendMessage(chatId, { text: RAID_OVER_TEXT }, { quoted: msg });
+      // Push #88w: revive tokens work ONLY on hunters who actually fell in this raid
+      // (or a @mentioned fallen teammate). Living hunters heal with potions.
+      const _rvMent = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
+      const _rvTarget = _rvMent.length ? _rvMent[0] : sender;
+      if (!GR.isFallen(gate, _rvTarget)) {
+        return sock.sendMessage(chatId, { text: _rvMent.length ? `❌ That hunter has not fallen in this raid — Revive Tokens only work on the dead.` : `❌ You have not fallen in this raid — Revive Tokens only work on the dead. Use /party heal for HP.` }, { quoted: msg });
+      }
       if ((player.inventory?.reviveTokens || 0) <= 0) {
         return sock.sendMessage(chatId, { text: '❌ You have no Revive Tokens!' }, { quoted: msg });
       }
@@ -342,32 +349,16 @@ module.exports = {
         }, { quoted: msg });
       }
 
+      const _rv = GR.reviveFallen(gate, _rvTarget, db, 50);
+      if (!_rv) return sock.sendMessage(chatId, { text: '❌ Could not find that hunter\'s profile.' }, { quoted: msg });
       gate.revivesUsed = 1;
       player.inventory.reviveTokens--;
-      player.stats.hp = Math.floor(_effMax(player) * 0.5);
-
-      // Push #29: JID-tolerant re-add (self-heals stored id on format flips).
-      {
-        const _sN = GR.GKM.normaliseJid(sender);
-        const _same = (id) => id === sender || (_sN && GR.GKM.normaliseJid(id) === _sN);
-        if (gate.raid) {
-          const _ex = gate.raid.members.find(m => _same(m.id));
-          if (!_ex) {
-            gate.raid.members.push({ id: sender, name: player.name, hp: player.stats.hp, energy: player.stats.energy || 100, ready: true });
-          } else {
-            _ex.id = sender; _ex.hp = player.stats.hp;
-          }
-        }
-        if (!(gate.raiders || []).some(_same)) {
-          gate.raiders = gate.raiders || [];
-          gate.raiders.push(sender);
-        }
-      }
 
       try { GR.saveGateState(db, gate); } catch (e) {}
       saveDatabase();
       return sock.sendMessage(chatId, {
-        text: `💫 *REVIVE USED!* *${player.name}* was revived with ${player.stats.hp}/${_effMax(player)} HP!\n⚠️ Party Revive Cap Reached (1/1 used).`
+        text: `💫 *REVIVE USED!* *${_rv.player.name}* rises again with ${_rv.hp}/${_rv.max} HP and rejoins the party!\n⚠️ Party Revive Cap Reached (1/1 used).`,
+        mentions: [_rvTarget],
       }, { quoted: msg });
     }
 
@@ -380,6 +371,7 @@ module.exports = {
       if (floorMonsters.length > 0) return sock.sendMessage(chatId, { text: `❌ Clear all monsters on Floor ${floor} first!` }, { quoted: msg });
       if (floor >= gate.totalFloors) return sock.sendMessage(chatId, { text: `⚠️ Final floor. Engage the boss with /party boss` }, { quoted: msg });
       gate.currentFloor++;
+      gate.floorClearedAt = null; // Push #88w
       try { GR.applyMonsterScaling(gate); } catch (e) {} // Push #88: deeper floor → stronger monsters
       const next = (gate.monsters || []).filter(mm => mm.floor === gate.currentFloor && !mm.defeated);
       const _fm = Math.round((GR.floorMultiplier(gate, gate.currentFloor) - 1) * 100);
@@ -468,11 +460,25 @@ module.exports = {
               const mj = _mentioned[0];
               const mN = GR.GKM.normaliseJid(mj);
               const inParty = (gate.raid?.members || []).find(m => GR.GKM.normaliseJid(m.id) === mN);
+              const _isReviveSkill = /rebirth|revive|resurrect/i.test(`${_e.name} ${_e.effect || ''}`);
+              // Push #88w: revive skills work ONLY on fallen hunters — and bring them back into the party.
+              if (_isReviveSkill) {
+                if (!GR.isFallen(gate, mj)) { GR.releaseCombatLock(gate.id); return sock.sendMessage(chatId, { text: `❌ That hunter has not fallen — revive skills only work on the dead.` }, { quoted: msg }); }
+                const _cdR = SCx.onCooldown(player, _e); if (!_cdR.ready) { GR.releaseCombatLock(gate.id); return sock.sendMessage(chatId, { text: `❌ *${_e.name}* is on cooldown! (${Math.ceil(_cdR.msLeft / 1000)}s)` }, { quoted: msg }); }
+                const _costR = SCx.effectiveCost(_e, player); if ((player.stats?.energy || 0) < _costR) { GR.releaseCombatLock(gate.id); return sock.sendMessage(chatId, { text: `❌ Not enough energy for *${_e.name}*! Need ${_costR}.` }, { quoted: msg }); }
+                const _pctR = Math.max(10, Math.min(100, Number(_e.healingPct) || 30));
+                const _rvH = GR.reviveFallen(gate, mj, db, _pctR);
+                GR.releaseCombatLock(gate.id);
+                if (!_rvH) return sock.sendMessage(chatId, { text: `❌ Could not find that hunter's profile.` }, { quoted: msg });
+                player.stats.energy = Math.max(0, (player.stats.energy || 0) - _costR); SCx.setCooldown(player, _e);
+                try { GR.saveGateState(db, gate); } catch (e) {} saveDatabase();
+                return sock.sendMessage(chatId, { text: `✨ *${player.name}* casts *${_e.name}* — *${_rvH.player.name}* rises again with ${_rvH.hp}/${_rvH.max} HP and rejoins the party!`, mentions: [mj] }, { quoted: msg });
+              }
               if (!inParty) { GR.releaseCombatLock(gate.id); return sock.sendMessage(chatId, { text: `❌ That hunter is not in this raid party.` }, { quoted: msg }); }
               tgt = db.users[mj] || db.users[inParty.id] || Object.values(db.users || {}).find(u => u && u.jid && GR.GKM.normaliseJid(u.jid) === mN);
               if (!tgt) { GR.releaseCombatLock(gate.id); return sock.sendMessage(chatId, { text: `❌ Could not find that hunter's profile.` }, { quoted: msg }); }
               tgtJid = inParty.id;
-              if ((tgt.stats?.hp ?? 0) <= 0 && !/rebirth|revive|resurrect/i.test(`${_e.name} ${_e.effect || ''}`)) { GR.releaseCombatLock(gate.id); return sock.sendMessage(chatId, { text: `💀 *${inParty.name || tgt.name}* is down — only a revive skill can help them.` }, { quoted: msg }); }
+              if ((tgt.stats?.hp ?? 0) <= 0) { GR.releaseCombatLock(gate.id); return sock.sendMessage(chatId, { text: `💀 *${inParty.name || tgt.name}* is down — only a revive skill can help them.` }, { quoted: msg }); }
             }
             const _sc = GR.supportCast(player, sender, tgt, tgtJid, _rawName, gate, db);
             GR.releaseCombatLock(gate.id);
@@ -680,18 +686,22 @@ module.exports = {
         player.stats_history.monstersKilled = (player.stats_history.monstersKilled || 0) + 1;
         try { require('../../rpg/utils/QuestDispatcher').trackAndNotify(player, 'kill', 1, sock, sender, chatId); } catch(e){}
 
-        try { const BR=require('../../rpg/utils/BattleRewards'); const w=BR.giveBattleWinRewards(player, db, 'gate', player.level, sock, chatId); killLines.push(``, `💀 *${target.name}* defeated!`, BR.formatRewards(w)); try { const _sx = BR.shareRaidExp(gate, sender, db, sock, chatId); if (_sx) killLines.push(_sx); } catch (e) {} } catch(e){ awardXP(player, 'gate_complete', saveDatabase, sock, chatId); killLines.push(``, `💀 *${target.name}* defeated!`); }
+        // Push #88w: REVIVED floor monsters (party idled 60s+ after clearing without
+        // advancing) give NO rewards — no Nexus/EXP, no drops, no pet XP, no treasure.
+        const _revivedKill = !!target.revived;
+        if (_revivedKill) killLines.push(``, `💀 *${target.name}* (revived) defeated — *no rewards*, it was already beaten once.`);
+        else try { const BR=require('../../rpg/utils/BattleRewards'); const w=BR.giveBattleWinRewards(player, db, 'gate', player.level, sock, chatId); killLines.push(``, `💀 *${target.name}* defeated!`, BR.formatRewards(w)); try { const _sx = BR.shareRaidExp(gate, sender, db, sock, chatId); if (_sx) killLines.push(_sx); } catch (e) {} } catch(e){ awardXP(player, 'gate_complete', saveDatabase, sock, chatId); killLines.push(``, `💀 *${target.name}* defeated!`); }
 
         const heal = GR.lifeSteal(player, result.damage);
         if (heal > 0) { player.stats.hp = Math.min(_effMax(player), (player.stats.hp || 0) + heal); killLines.push(`💚 Lifesteal: +${heal} HP`); }
         // Push #88t: support pets heal EVERY combat turn — including the turn the monster dies.
         try { const _kh = PetCombat.healPlayer(sender, player); if (_kh.healed > 0) killLines.push(`💚 *${_kh.petName || 'Pet'}* mended *${_kh.healed}* HP → ${_kh.hp}/${_effMax(player)}`); } catch (e) {}
 
-        const dropLines = GR.monsterKilledBy(gate, target, sender, db);
+        const dropLines = _revivedKill ? [] : GR.monsterKilledBy(gate, target, sender, db);
         if (dropLines.length) killLines.push(...dropLines);
 
         // Push #55: the pet earns XP from the kill (bonding + evolution path)
-        try {
+        if (!_revivedKill) try {
           const _pr = PetCombat.rewardPet(sender, { won: true, exp: 20 + (target.level || 1) * 6 });
           if (_pr) killLines.push(..._pr);
         } catch (e) {}
@@ -699,7 +709,13 @@ module.exports = {
         const remaining = floorMonsters.filter(mm => !mm.defeated).length;
         killLines.push(``, `👾 *${Math.max(0, remaining)}* monsters remaining on Floor ${floor}`);
 
-        if (remaining <= 0) {
+        if (remaining <= 0 && _revivedKill) {
+          // Re-cleared a revived floor: treasure was already banked the first time.
+          gate.floorClearedAt = Date.now();
+          if (floor >= gate.totalFloors) { killLines.push(``, `🏆 *BOSS FLOOR REACHED!*`, `/party boss — Engage the boss!`); }
+          else { killLines.push(``, `✅ *Floor ${floor} re-cleared!* Move on within 60s or it revives again (+30%).`, `/party advance — Floor ${floor + 1}`); }
+        } else if (remaining <= 0) {
+          gate.floorClearedAt = Date.now(); // Push #88w: 60s idle → floor revives
           const fNexus = Math.floor((gate.nexusLoot || 1000) / (gate.totalFloors || 1));
           const fCrystals = Math.floor((gate.crystalLoot || 100) / (gate.totalFloors || 1));
           if (!gate.accumulatedTreasure) gate.accumulatedTreasure = { nexus: 0, crystals: 0 };
@@ -709,7 +725,7 @@ module.exports = {
           killLines.push(``, `💰 *Floor ${floor} Treasure Accumulated:* +${fNexus.toLocaleString()} 💠 Nexus & +${fCrystals.toLocaleString()} 💎 Mana Stones`);
 
           if (floor >= gate.totalFloors) { killLines.push(``, `🏆 *BOSS FLOOR REACHED!*`, `/party boss — Engage the boss!`); }
-          else { killLines.push(``, `✅ *Floor ${floor} CLEARED!*`, `/party advance — Floor ${floor + 1}`); }
+          else { killLines.push(``, `✅ *Floor ${floor} CLEARED!*`, `/party advance — Floor ${floor + 1}`, `⏳ Move on within *60s* — idle floors revive *+30% stronger* with no rewards.`); }
         }
 
         try { GR.saveGateState(db, gate); } catch (e) {}
@@ -799,6 +815,7 @@ module.exports = {
           const _gN = GR.GKM.normaliseJid(_victimJid);
           const _gGone = (id) => id !== _victimJid && (!_gN || GR.GKM.normaliseJid(id) !== _gN);
           if (gate.raid) gate.raid.members = gate.raid.members.filter(m => _gGone(m.id));
+          try { GR.markFallen(gate, _victimJid); } catch (e) {} // Push #88w
           gate.raiders = (gate.raiders || []).filter(_gGone);
           await sock.sendMessage(chatId, { text: [
             _guardHit.aggro ? `💀 *${_guardHit.guardianName} WAS CUT DOWN BY THE MONSTER'S AGGRO!*` : `💀 *${_guardHit.guardianName} FELL PROTECTING ${String(player.name || '').toUpperCase()}!*`,
@@ -838,6 +855,7 @@ module.exports = {
             const _sN = GR.GKM.normaliseJid(sender);
             const _gone = (id) => id !== sender && (!_sN || GR.GKM.normaliseJid(id) !== _sN);
             if (gate.raid) gate.raid.members = gate.raid.members.filter(m => _gone(m.id));
+            try { GR.markFallen(gate, sender); } catch (e) {} // Push #88w
             gate.raiders = (gate.raiders || []).filter(_gone);
           }
           if (gate.raid && gate.raid.members.length === 0) {
@@ -989,6 +1007,7 @@ module.exports = {
       if (floorMonsters.length > 0) return sock.sendMessage(chatId, { text: `❌ Clear all floor ${floor} monsters first!` }, { quoted: msg });
       if (floor < gate.totalFloors) return sock.sendMessage(chatId, { text: `❌ Reach Floor ${gate.totalFloors} before engaging the boss.` }, { quoted: msg });
       if (gate.boss.defeated) return sock.sendMessage(chatId, { text: '✅ Boss already defeated!' }, { quoted: msg });
+      gate.floorClearedAt = null; // Push #88w: engaging the boss = moving on
 
       const boss = gate.boss;
       const result = GR.playerDamage(player, skillArg || null, { statusEffects: (boss.statusEffects = boss.statusEffects || []) });
@@ -1078,6 +1097,7 @@ module.exports = {
             const _gN = GR.GKM.normaliseJid(_bVictimJid);
             const _gGone = (id) => id !== _bVictimJid && (!_gN || GR.GKM.normaliseJid(id) !== _gN);
             if (gate.raid) gate.raid.members = gate.raid.members.filter(m => _gGone(m.id));
+          try { GR.markFallen(gate, _bVictimJid); } catch (e) {} // Push #88w
             gate.raiders = (gate.raiders || []).filter(_gGone);
             lines.push(``, `💀 *${_bGuard.guardianName} FELL PROTECTING ${String(player.name || '').toUpperCase()}!*`, `Too strong to withstand. Lost ${gl.toLocaleString()} 💎 · fled with 1 HP.`);
             if (gate.raid && gate.raid.members.length === 0) lines.push(...GR.wipeGate(gate, key, keyData, chatId, db));
@@ -1103,6 +1123,7 @@ module.exports = {
               const _sN = GR.GKM.normaliseJid(sender);
               const _gone = (id) => id !== sender && (!_sN || GR.GKM.normaliseJid(id) !== _sN);
               if (gate.raid) gate.raid.members = gate.raid.members.filter(m => _gone(m.id));
+            try { GR.markFallen(gate, sender); } catch (e) {} // Push #88w
               gate.raiders = (gate.raiders || []).filter(_gone);
             }
             if (gate.raid && gate.raid.members.length === 0) {

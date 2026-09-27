@@ -430,9 +430,10 @@ function normalise(className, raw, index) {
 // ── Per-class roster (memoised) ──────────────────────────────────────────────
 const _rosterCache = new Map();
 
-function buildRoster(className) {
+function buildRoster(className, variant = null) {
   if (!className) return [];
-  if (_rosterCache.has(className)) return _rosterCache.get(className);
+  const cacheKey = className === 'Monster' && variant ? `Monster|${variant}` : className;
+  if (_rosterCache.has(cacheKey)) return _rosterCache.get(cacheKey);
 
   let raws = [];
   if (EXPLICIT[className]) {
@@ -499,11 +500,32 @@ function buildRoster(className) {
   // skill is a SUPPORT cast (heal/buff). Two library entries ("World Heal",
   // "Transcendent Light") were typed `damage` and hit for 100% ATK in PvP.
   if (className === 'Healer') for (const e of roster) { if (e && e.type !== 'passive' && e.type !== 'heal' && e.type !== 'buff') { e.type = (e.healingPct || 0) > 0 || !(e.buffs || []).length ? 'heal' : 'buff'; if (!(e.healingPct > 0) && e.type === 'heal') e.healingPct = 25; e.damagePct = 0; } }
-  _rosterCache.set(className, roster);
+  // Push #88w: MONSTER TRANSFORMATIONS — the Lv.10/20/30/40/50/60 slots of
+  // the Monster ladder (every variant) are the six transformation forms; all
+  // other slots keep their skills. Names carry the variant ("…: Blood Bat").
+  if (className === 'Monster') {
+    try {
+      const TF = require('./Transformation');
+      for (const raw of TF.rosterEntries(variant)) {
+        const idx = roster.findIndex(e => e && e.unlocksAtLevel === raw.unlocksAtLevel);
+        if (idx < 0) continue;
+        const e = normalise(className, { ...raw }, idx);
+        e.transform = raw.transform; e.type = 'buff'; e.damagePct = 0; e.buffs = []; e.debuffs = []; e.statuses = []; e.healingPct = 0;
+        e.energyCost = raw.energyCost; e.cooldown = raw.cooldown; e.unlocksAtLevel = raw.unlocksAtLevel; e.isPassive = false;
+        e.effect = raw.effect; e.description = raw.description; e.animation = raw.animation; e.name = raw.name;
+        roster[idx] = e;
+      }
+    } catch (e) { /* transformations optional */ }
+  }
+  _rosterCache.set(cacheKey, roster);
   return roster;
 }
 
-function getRoster(player) { return buildRoster(canonicalClassName(player)); }
+function getRoster(player) {
+  const cls = canonicalClassName(player);
+  if (cls === 'Monster') { try { return buildRoster('Monster', require('./Transformation').variantName(player)); } catch (e) {} }
+  return buildRoster(cls);
+}
 
 // Skill level → damage/cost/cooldown modifiers (identical maths to the old
 // /skills so nobody's upgraded skills silently get weaker).

@@ -32,9 +32,33 @@ You don't have any revive tokens!
       }, { quoted: msg });
     }
 
-    if (player.stats.hp >= player.stats.maxHp) {
+    // Push #88w: Revive Tokens are for the DEAD only — a hunter who fell in an
+    // active gate raid (brings them back into the party) or one at 0 HP.
+    let fallenGate = null;
+    try {
+      const GM = require('../../rpg/dungeons/GateManager');
+      const GR = require('../../rpg/dungeons/GateRaid');
+      for (const g of Object.values(GM.GateManager.gates || {})) {
+        if (g && g.raid && g.raid.status === 'active' && GR.isFallen(g, sender)) { fallenGate = g; break; }
+      }
+      if (fallenGate) {
+        if ((fallenGate.revivesUsed || 0) >= 1) {
+          return sock.sendMessage(chatId, { text: `❌ *Gate Raid Revive Cap Reached!*\n\nOnly *1 Revive Token* can be used collectively across the entire party in a Gate Raid.` }, { quoted: msg });
+        }
+        const rv = GR.reviveFallen(fallenGate, sender, db, 50);
+        if (rv) {
+          fallenGate.revivesUsed = 1;
+          player.inventory.reviveTokens--;
+          try { GR.saveGateState(db, fallenGate); } catch (e) {}
+          saveDatabase();
+          return sock.sendMessage(chatId, { text: `💫 *REVIVE USED!* *${player.name}* rises again with ${rv.hp}/${rv.max} HP and rejoins the raid party!\n⚠️ Party Revive Cap Reached (1/1 used).\n🎫 Revive Tokens Left: ${player.inventory.reviveTokens}` }, { quoted: msg });
+        }
+      }
+    } catch (e) {}
+
+    if ((player.stats.hp || 0) > 0) {
       return sock.sendMessage(chatId, { 
-        text: '❌ Your HP is already full!\n\nRevive tokens are only for emergency recovery.' 
+        text: '❌ You are not dead!\n\nRevive Tokens only work on fallen hunters (0 HP, or cut down in a gate raid). Use potions to heal.' 
       }, { quoted: msg });
     }
 
