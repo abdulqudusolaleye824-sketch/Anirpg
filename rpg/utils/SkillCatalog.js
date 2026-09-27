@@ -523,7 +523,7 @@ function buildRoster(className, variant = null) {
 
 function getRoster(player) {
   const cls = canonicalClassName(player);
-  if (cls === 'Monster') { try { return buildRoster('Monster', require('./Transformation').variantName(player)); } catch (e) {} }
+  if (cls === 'Monster') { try { require('./ClassSystem').ensureMonsterVariant(player); } catch (e) {} try { return buildRoster('Monster', require('./Transformation').variantName(player)); } catch (e) {} }
   return buildRoster(cls);
 }
 

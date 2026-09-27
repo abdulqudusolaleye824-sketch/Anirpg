@@ -1,3 +1,9 @@
+## 1.0.112 — Push #88y (2026-09-27)
+- Monsters are ALWAYS a named variant: anyone whose class was the bare word "Monster" gets a variant rolled on sight (class guide, /stats, skill roster, minute sweep). `/class` and `/stats` show "Variant: *Acid Mantis* (Monster)" with the variant's lore, never "Class: Monster".
+- `/class` guide for Monsters lists the full TRANSFORMATIONS ladder (🔓/🔒 per level, ×mult and turns, variant-named), the aftermath, the innate surge (47% BERSERK below Lv.10 / 8% from Lv.10) and the cast example.
+- Monster awakening is corruption-themed ("YOUR MANA IS CORRUPTED", "Corrupted Form") instead of the hunter "mana veins burst open" text; announcement mentions the transformation ladder.
+- Floor revive: /party advance and /party boss stay blocked until every revived monster on the floor is down (verified + tested).
+
 ## 1.0.111 — Push #88x (2026-09-27)
 - Transformation aftermath: when ANY transformation ends (cast or passive) the hunter suffers WEAKEN 10 turns, STUN 2 turns and BLEED 7 turns. Upgrading to a stronger form applies no aftermath.
 - BERSERK: Monster hunters below Lv.10 surge passively with a 47%/turn chance (Lv.10+ keep the 8% controlled surge). A berserk hunter cannot command their body — in gate raids the bot plays their turns automatically every ~12 s (random equipped attack pattern or unlocked damage skill through the real /party flow, teammates locked out during the strike); in PvP and dungeons their chosen move is replaced by the beast's pick. With nothing left to attack the rage burns down one turn per tick.

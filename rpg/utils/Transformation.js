@@ -172,7 +172,10 @@ function berserkPick(player) {
 function sweep(db) {
   let n = 0;
   try {
+    let CS = null; try { CS = require('./ClassSystem'); } catch (e) {}
     for (const u of Object.values((db && db.users) || {})) {
+      // Push #88y: a Monster whose class is still the bare word "Monster" gets its variant.
+      try { if (CS && u && (/^monster$/i.test(String(u.class || '')) )) { CS.ensureMonsterVariant(u); n++; } } catch (e) {}
       if (u && u.transform && Date.now() - (u.transform.startedAt || 0) > MAX_AGE_MS) { end(u, true); n++; }
     }
   } catch (e) {}

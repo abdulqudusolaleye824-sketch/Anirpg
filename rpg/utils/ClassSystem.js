@@ -323,6 +323,23 @@ function rollMonsterVariant() {
   return _MONSTER_VARIANTS[Math.floor(Math.random() * _MONSTER_VARIANTS.length)];
 }
 
+// Push #88y: every Monster MUST be a named variant. Players whose class is the
+// bare word "Monster" (old awakenings / recon) get a variant rolled on sight.
+function ensureMonsterVariant(player) {
+  if (!player) return null;
+  const cls = typeof player.class === 'object' ? (player.class?.name || '') : String(player.class || '');
+  const isMon = /^monster$/i.test(cls) || /^monster$/i.test(String(player.classBase || '')) || !!player.monsterVariant;
+  if (!isMon) return null;
+  let v = player.monsterVariant;
+  if (typeof v === 'string') v = _MONSTER_VARIANTS.find(x => x && x.name === v) || null;
+  if (!v || !v.name) { v = rollMonsterVariant(); }
+  player.monsterVariant = v;
+  player.classBase = 'Monster';
+  if (!/^monster$/i.test(cls) && cls && cls !== v.name && _MONSTER_VARIANTS.some(x => x && x.name === cls)) { player.monsterVariant = _MONSTER_VARIANTS.find(x => x.name === cls); return player.monsterVariant; }
+  player.class = v.name;
+  return v;
+}
+
 // ── Apply a class to a player ───────────────────────────────────────────────
 function applyClassToPlayer(player, className) {
   const data = _CLASS_DATA[className];
@@ -438,24 +455,34 @@ function tryClassAwaken(player, sock, chatId) {
     const stars = formatQualityStars(quality);
     const qLabel = getQualityLabel(quality);
 
-    const msg1 = [
+    const _isMon = baseClass === 'Monster' || !!player.monsterVariant;
+    const msg1 = (_isMon ? [
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+      `☣️ *YOUR MANA IS CORRUPTED!*`,
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+      ``,
+      `*${player.name}*, something goes WRONG. The mana does not flow — it FESTERS.`,
+      `Black veins crawl under your skin. Bones crack and re-knit. Your reflection no longer looks back.`,
+      `You did not awaken as a hunter. You awakened as the *prey*... and the prey is hungry.`,
+      `${player.monsterVariant?.emoji || '👹'} The ${shown} inside you opens its eyes.`,
+    ] : [
       `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
       `🌋 *THE MANA VEINS BURST OPEN!*`,
       `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
       ``,
       `*${player.name}*, a fierce cosmic surge shatters your physical limitations!`,
       `The long grind is complete. The gates of dormant power inside your soul crack open with blinding light!`,
-    ].join('\n');
+    ]).join('\n');
 
     const msg2 = [
       `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
       `🎭 *CLASS REVELATION*`,
       `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
       ``,
-      `✨ Awakened Class: **${data?.emoji || '🎭'} ${shown}**`,
+      _isMon ? `☣️ Corrupted Form: **${player.monsterVariant?.emoji || '👹'} ${shown}** _(Monster variant)_` : `✨ Awakened Class: **${data?.emoji || '🎭'} ${shown}**`,
       `⭐ Quality: *${quality}%* (${qLabel}) ${stars}`,
       ``,
-      `💭 _"${data?.lore || 'A legendary authority wraps around your core.'}"_`,
+      `💭 _"${player.monsterVariant?.lore || data?.lore || 'A legendary authority wraps around your core.'}"_`,
     ].join('\n');
 
     const msg3 = [
@@ -465,6 +492,7 @@ function tryClassAwaken(player, sock, chatId) {
       ``,
       `Your class skills and stat multipliers are now active!`,
       ...(player.classSkills || []).map((s, i) => `  ${i+1}. *${s.name}* — ${s.desc}`),
+      ...(_isMon ? [``, `🧬 *TRANSFORMATIONS* (Lv.10 → 60): Quarter ×5 · Complete Quarter ×5 · Half ×10 · Complete Half ×10 · Full ×15 · Complete Full ×15 — all stats, named after your ${shown} form.`, `😈 Below Lv.10 the beast may take over in battle (47%/turn BERSERK surge). Every form ends in Weaken/Stun/Bleed.`] : []),
       ``,
       `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
       `💡 Use */class* to inspect your full class mastery!`,
@@ -540,6 +568,7 @@ module.exports = {
   hardcodedClassFor,
   rollClassAwakening, rollableClasses, isExclusiveClass, stripClassFromPlayer, reconClass,
   rollMonsterVariant,
+  ensureMonsterVariant,
   applyClassToPlayer,
   checkClassAwakening,
   tryClassAwaken,

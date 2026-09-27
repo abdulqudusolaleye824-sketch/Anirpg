@@ -114,6 +114,7 @@ module.exports = {
     const rankLabel = rankData.label;
 
     // ── Class + quality ───────────────────────────────────────
+    try { require('../../rpg/utils/ClassSystem').ensureMonsterVariant(player); } catch (e) {} // Push #88y
     const className   = player.class?.name || player.class || null;
     const quality     = player.classQuality || 0;
     const qualLabel   = className ? getQualityLabel(quality) : null;
@@ -135,7 +136,7 @@ module.exports = {
     if (className) {
       const { CLASS_DATA } = require('../../rpg/utils/ClassSystem');
       const cData = CLASS_DATA[className];
-      msg2 += `\n${cData?.emoji || '🎭'} Class: *${className}* ${qualLabel || ''}`;
+      msg2 += player.monsterVariant && typeof player.monsterVariant === 'object' ? `\n${player.monsterVariant.emoji || '👹'} Variant: *${className}* _(Monster)_ ${qualLabel || ''}` : `\n${cData?.emoji || '🎭'} Class: *${className}* ${qualLabel || ''}`;
       if (quality > 0) msg2 += `\n   Quality: *${quality}%*`;
       try { // Push #74: show what the class actually adds to the numbers below
         const CP = require('../../rpg/utils/ClassPower');

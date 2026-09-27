@@ -146,6 +146,7 @@ module.exports = {
     }
 
     // ── Has class ─────────────────────────────────────────────────────────────
+    try { require('../../rpg/utils/ClassSystem').ensureMonsterVariant(player); } catch (e) {} // Push #88y: Monsters are always a named variant
     const baseClass = player.classBase || player.class;
     const data      = CLASS_DATA[baseClass] || CLASS_DATA[player.class] || {};
     const quality   = player.classQuality || 0;
@@ -199,12 +200,35 @@ module.exports = {
 
     const exampleSkill = rawSkills[0]?.name || 'skill';
 
+    // Push #88y: Monster guide — variant identity + the full transformation ladder.
+    const _mv = player.monsterVariant && typeof player.monsterVariant === 'object' ? player.monsterVariant : null;
+    const _isMon = _clsName === 'Monster' || !!_mv;
+    const _tfLines = [];
+    if (_isMon) {
+      try {
+        const TF = require('../../rpg/utils/Transformation');
+        const vn = TF.variantName(player);
+        _tfLines.push(``, FRAME, `🧬 *TRANSFORMATIONS* (${vn} form — ×ALL stats, everywhere):`);
+        for (const t of TF.TIERS) {
+          const ok = (player.level || 1) >= t.level;
+          _tfLines.push(`  ${ok ? '🔓' : '🔒'} Lv.${t.level} *${t.name}: ${vn}* — ×${t.mult} for ${t.turns} turns`);
+        }
+        _tfLines.push(`  💔 Aftermath when a form ends: Weaken 10t · Stun 2t · Bleed 7t`);
+        _tfLines.push((player.level || 1) < TF.BERSERK_LEVEL
+          ? `  😈 Innate: ${Math.round(TF.BERSERK_CHANCE * 100)}%/turn BERSERK Quarter surge — the beast fights for you until Lv.${TF.BERSERK_LEVEL}`
+          : `  🧬 Innate: ${Math.round(TF.PASSIVE_CHANCE * 100)}%/turn random Quarter surge (×5, 3 turns)`);
+        _tfLines.push(`  📌 Cast: */${playerCmd} ${TF.TIERS[0].name}*`);
+      } catch (e) {}
+    }
+
     return sock.sendMessage(chatId, {
       text: [
-        ...(pro ? [UI.PRO_BAR, `${data.emoji || '🎭'} *${player.name}'s CLASS GUIDE* 💎`, UI.PRO_BAR] : [`${data.emoji || '🎭'} *${player.name}'s CLASS GUIDE*`, UI.FREE_BAR]),
+        ...(pro ? [UI.PRO_BAR, `${(_mv && _mv.emoji) || data.emoji || '🎭'} *${player.name}'s CLASS GUIDE* 💎`, UI.PRO_BAR] : [`${(_mv && _mv.emoji) || data.emoji || '🎭'} *${player.name}'s CLASS GUIDE*`, UI.FREE_BAR]),
         ``,
-        `🎭 Class: *${typeof player.class === 'object' ? (player.class?.name || 'Unknown') : player.class}*`,
-        `📜 Description: _${data.lore || data.description || 'A unique awakener class.'}_`,
+        _isMon
+          ? `${(_mv && _mv.emoji) || '👹'} Variant: *${_mv ? _mv.name : (typeof player.class === 'object' ? player.class?.name : player.class)}* _(Monster)_`
+          : `🎭 Class: *${typeof player.class === 'object' ? (player.class?.name || 'Unknown') : player.class}*`,
+        `📜 Description: _${(_mv && _mv.lore) || data.lore || data.description || 'A unique awakener class.'}_`,
         ``,
         `✨ Quality: *${quality}%* ${stars}`,
         `   ${qualLabel}`,
@@ -218,6 +242,7 @@ module.exports = {
         FRAME,
         `⚡ *CLASS SKILLS:*`,
         ...skillLines,
+        ..._tfLines,
         ``,
         FRAME,
         `⚔️ *IN-BATTLE SKILL ACTIVATION:*`,
