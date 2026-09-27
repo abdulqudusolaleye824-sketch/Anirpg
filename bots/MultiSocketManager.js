@@ -540,6 +540,7 @@ function noteFreshInbound(key, msg) {
     if (!chat || !id || !chat.endsWith('@g.us')) return;
     if (!_groupHeardAt[key]) _groupHeardAt[key] = {};
     _groupHeardAt[key][chat] = Date.now();
+    _chatInboundAt[chat] = Date.now();
     const mk = chat + '|' + id;
     let e = _msgSeen.get(mk);
     if (!e) { e = { chat, firstAt: Date.now(), from: String(msg.key.participant || '').split('@')[0].split(':')[0], seen: new Set() }; _msgSeen.set(mk, e); }
@@ -556,6 +557,21 @@ const CROSS_MEMBER_MS = 30 * 60 * 1000;
 const _groupHeardAt = {};   // key -> { chatId -> ts }
 const _msgSeen = new Map(); // 'chat|id' -> { chat, firstAt, from, seen:Set<key> }
 const _crossRecycles = {};  // key -> [ts] of fast recycles
+const _chatInboundAt = {};  // chatId -> ts any bot last decrypted a message there
+// Push #88u: "is the bot that speaks for this chat actually HEARING right now?"
+// Timed game actions (idle strikes etc.) must never fire from a deaf socket —
+// players were being hit by a bot that could not see their /attack.
+function chatHealthy(chatId, windowMs = 90 * 1000) {
+  try {
+    const now = Date.now();
+    if (_badMacHits.filter(t => now - t < 60 * 1000).length >= 20) return false; // decrypt storm in progress
+    if (now - (_chatInboundAt[chatId] || 0) < windowMs) return true;             // heard this chat recently
+    const sk = getActiveSocket(chatId); if (!sk) return false;
+    const key = Object.keys(botSockets).find(k => botSockets[k] === sk);
+    if (!key) return false;
+    return now - (_lastInboundAt[key] || 0) < 60 * 1000;                          // heard *something* in the last minute
+  } catch (e) { return false; }
+}
 function _crossCheckDeaf(live, now) {
   const missing = {}; // key -> count
   for (const [mk, e] of _msgSeen) {
@@ -672,6 +688,13 @@ setInterval(() => {
     _badMacHits = _badMacHits.filter(t => now - t < 60 * 1000);
     const live = Object.keys(botSockets).filter(k => botSockets[k]?.user?.id && !_loggedOut.has(k));
     if (live.length >= 2 && _crossCheckDeaf(live, now)) return; // Push #88t: fast path
+    // Push #88u: Bad-MAC STORM (≥40 decrypt failures/min) — the socket that has
+    // heard nothing fresh for 60 s+ is the one drowning; recycle it (2 min gap).
+    if (_badMacHits.length >= 40) {
+      const cand = live.filter(k => now - (_lastInboundAt[k] || 0) > 60 * 1000 && now - (_lastOpenAt[k] || 0) > 90 * 1000)
+        .sort((a, b) => (_lastInboundAt[a] || 0) - (_lastInboundAt[b] || 0))[0];
+      if (cand && recycleDeafSocket(cand, `Bad MAC storm (${_badMacHits.length} decrypt failures/min) and no fresh inbound for ${Math.round((now - (_lastInboundAt[cand] || 0)) / 1000)}s`, 2 * 60 * 1000)) return;
+    }
     const anyoneHearing = live.some(k => now - (_lastInboundAt[k] || 0) < DEAF_AFTER_MS);
     if (live.length < 2 || !anyoneHearing) {
       // Nobody to compare against (or whole fleet quiet): lonely-deaf rule.
@@ -2771,6 +2794,7 @@ module.exports = {
   canSendDM,
   safeSendDM,
   getActiveSocket,
+  chatHealthy,
   // Push #47: defined internally (line ~99) but never exported, so the
   // offline-active-bot failover in handlers/rpgCommandHandler.js called
   // undefined → TypeError → swallowed by its empty catch. Groups stayed silent

@@ -1422,9 +1422,10 @@ setInterval(() => {
   try {
     if (!_dbReady) return;
     const GRi = require('./rpg/dungeons/GateRaid');
-    const hits = GRi.autoStrikeIdleRaids(database);
-    if (!hits.length) return;
     const MSMi = require('./bots/MultiSocketManager');
+    // Push #88u: never strike from a deaf socket — GateRaid restarts the idle clock instead.
+    const hits = GRi.autoStrikeIdleRaids(database, Date.now(), (chatId) => (typeof MSMi.chatHealthy === 'function' ? MSMi.chatHealthy(chatId) : true));
+    if (!hits.length) return;
     for (const h of hits) {
       if (!h.chatId) continue;
       const sk = MSMi.getActiveSocket(h.chatId);

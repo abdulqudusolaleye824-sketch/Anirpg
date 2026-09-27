@@ -1,3 +1,8 @@
+## 1.0.108 — Push #88u (2026-09-27)
+- Idle gate strikes NEVER fire from a deaf bot: before striking, the bot must have decrypted a message in that chat within 90 s (or anything within 60 s, with no Bad-MAC storm). Otherwise the idle clock simply restarts. Strike text shows the real window (30 s S / 45 s others).
+- Bad-MAC storm (≥40 decrypt failures/min): the socket that has heard nothing for 60 s+ is recycled (2 min gap).
+- `/spawn` (bare) now DMs the owner/co-owner the full spawn catalog (potions, pet foods, caches, epic materials, every pet by rarity). Forced random spawn is `/spawn force`.
+
 ## 1.0.107 — Push #88t (2026-09-27)
 - Silent bots: FAST deaf cross-check — every bot in a group must see every group message; a connected bot that misses 2+ messages another bot decrypted (>45 s) is recycled immediately (was up to 4 min of silence; slow rule now 3 min). Max 2 fast recycles / 30 min per bot.
 - Raid initiative FIX: only a genuinely FASTER monster can strike first (0% at equal/lower speed, +4%/SPD point, cap 80%); an initiative strike IS the monster's action for that turn — no second counter-attack (and no double crit).

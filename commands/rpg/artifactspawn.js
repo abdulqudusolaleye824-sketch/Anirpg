@@ -403,14 +403,59 @@ module.exports = {
       return sock.sendMessage(chatId, { text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🐾 *A WILD PET APPEARS!*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n${chosen.emoji} *${chosen.name}* — ${String(chosen.rarity || 'common').toUpperCase()}\n👤 Only *@${String(sender).split('@')[0]}* can catch it.\n⏰ It flees in *60 seconds*!\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🪤 */catch* — FREE & guaranteed for the spawner`, mentions: [sender] }, { quoted: msg });
     }
 
-    if (sub === 'force' || !sub || ['mending', 'stone', 'potion', 'food', 'petfood', 'materials', 'cache'].includes(sub)) {
+    // Push #88u: bare /spawn → the full spawn CATALOG in the owner's DM.
+    if (!sub || sub === 'catalog' || sub === 'list' || sub === 'help') {
+      const lines = [];
+      try {
+        const { TIERS } = require('../../rpg/utils/PotionTiers');
+        const PD = require('../../rpg/utils/PetDatabase');
+        const foods = Object.entries(PD.PET_FOOD || {});
+        const pets = Object.values(PD.PET_DATABASE || {});
+        const byRarity = {};
+        for (const pt of pets) { const r = String(pt.rarity || 'common').toLowerCase(); (byRarity[r] = byRarity[r] || []).push(`${pt.emoji || '🐾'} ${pt.name}`); }
+        const epics = SPAWN_ARTIFACTS.filter(a => a.rarity === 'epic' && String(a.type).toLowerCase() === 'material' && !(a.isMendingStone || a.name === 'Mending Stone'));
+        const F = '━━━━━━━━━━━━━━━━━━━━━━━━━━━';
+        lines.push(F, '📜 *SPAWN CATALOG* (owner / co-owner)', F, '',
+          '*Commands*',
+          '• /spawn force — random diversified spawn (anyone can /claim)',
+          '• /spawn mending — 🪨 Mending Stone',
+          '• /spawn potion — 🧪 health potion (random tier)',
+          '• /spawn food — 🍖 pet food (random)',
+          '• /spawn materials — 🧰 crafting material cache',
+          '• /spawn pet <name|rarity> — wild pet, only YOU can /catch (free, guaranteed, 60 s)',
+          '• /spawn status · /spawn clear', '',
+          `*🧪 Health potions* (${TIERS.length})`, ...TIERS.map(t => `• ${t.emoji} ${t.name} — heals ${t.pct}% (${t.rarity})`), '',
+          `*🍖 Pet food* (${foods.length})`, ...foods.map(([id, f]) => `• ${f.emoji || '🍖'} ${f.name} (\`${id}\`) — +${f.hungerRestore} hunger, +${f.xpBonus} pet XP`), '',
+          `*🧰 Material caches* — Common / Rare / Epic (3 forge materials each)`, '',
+          `*💎 Epic materials* (${epics.length})`, ...epics.map(a => `• ${a.emoji || '✨'} ${a.name}`), '',
+          `*🐾 Pets* (${pets.length}) — /spawn pet <name> or a rarity`);
+        for (const r of ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic']) if (byRarity[r]) lines.push(`_${r.toUpperCase()}_ (${byRarity[r].length}): ${byRarity[r].join(', ')}`);
+        for (const r of Object.keys(byRarity)) if (!['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic'].includes(r)) lines.push(`_${r.toUpperCase()}_ (${byRarity[r].length}): ${byRarity[r].join(', ')}`);
+        lines.push('', F);
+      } catch (e) { lines.push(`⚠️ Catalog error: ${e.message}`); }
+      let dmNum = String(sender).split('@')[0].split(':')[0];
+      if (String(sender).endsWith('@lid')) { try { const ph = db.lidMap && db.lidMap[dmNum]; if (ph) dmNum = String(ph).split('@')[0].split(':')[0]; } catch (e) {} }
+      const dm = `${dmNum}@s.whatsapp.net`;
+      const text = lines.join('\n');
+      // WhatsApp caps long texts — split at ~3500 chars on line boundaries.
+      const chunks = []; let cur = '';
+      for (const ln of text.split('\n')) { if ((cur + '\n' + ln).length > 3500) { chunks.push(cur); cur = ln; } else cur = cur ? cur + '\n' + ln : ln; }
+      if (cur) chunks.push(cur);
+      let sent = true;
+      for (const c of chunks) { try { await sock.sendMessage(dm, { text: c }); } catch (e) { sent = false; break; } }
+      if (String(chatId).endsWith('@g.us')) await sock.sendMessage(chatId, { text: sent ? '📬 Spawn catalog sent to your DM. Use */spawn force* to spawn here.' : '❌ Could not DM you the catalog — message the bot first, then retry.' }, { quoted: msg });
+      else if (!sent) await sock.sendMessage(chatId, { text: '❌ Could not send the catalog.' }, { quoted: msg });
+      return;
+    }
+
+    if (sub === 'force' || sub === 'random' || ['mending', 'stone', 'potion', 'food', 'petfood', 'materials', 'cache'].includes(sub)) {
       if (activeSpawns.has(chatId)) return sock.sendMessage(chatId, { text: '⚠️ There is already an unclaimed spawn here — /claim it first (or /spawn clear).' }, { quoted: msg });
       let art;
       if (sub === 'mending' || sub === 'stone') art = SPAWN_ARTIFACTS.find(a => a.isMendingStone);
       else {
         for (let i = 0; i < 25 && !art; i++) {
           const c = pickDiversifiedSpawn({});
-          if (!sub || sub === 'force') { art = c; break; }
+          if (sub === 'force' || sub === 'random') { art = c; break; }
           if (sub === 'potion' && c.potionTier) art = c;
           if ((sub === 'food' || sub === 'petfood') && c.petFoodId) art = c;
           if ((sub === 'materials' || sub === 'cache') && c.bundle) art = c;

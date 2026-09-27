@@ -1215,7 +1215,7 @@ function _currentRaidTarget(gate) {
   if (floor >= (gate.totalFloors || 1) && bossAlive) return gate.boss;
   return null;
 }
-function autoStrikeIdleRaids(db, now = Date.now()) {
+function autoStrikeIdleRaids(db, now = Date.now(), canStrike = null) {
   const out = [];
   const gates = Object.values(GateManager.activeGates || {});
   for (const gate of gates) {
@@ -1225,6 +1225,8 @@ function autoStrikeIdleRaids(db, now = Date.now()) {
       if (!(raid.mode === 'party' || (raid.members || []).length > 1)) continue;
       const last = raid.lastTurnAt || raid.startedAt || 0;
       if (!last || now - last < idleStrikeMsFor(gate.rank)) continue; // Push #88t: 30 s in S gates, 45 s in every other rank
+      // Push #88u: a bot that cannot HEAR this chat must not strike — restart the clock instead.
+      if (typeof canStrike === 'function' && !canStrike(raid.chatId || gate.chatId)) { raid.lastTurnAt = now; continue; }
       const target = _currentRaidTarget(gate);
       if (!target) continue;
       const held = (target.statusEffects || []).some(e => ['stun', 'freeze', 'paralyze'].includes(String(e.type || '').toLowerCase()));
@@ -1263,7 +1265,7 @@ function autoStrikeIdleRaids(db, now = Date.now()) {
           }
         }
       }
-      lines.push(`⚔️ Attack now — the gate strikes again in 30 s of silence.`);
+      lines.push(`⚔️ Attack now — the gate strikes again in ${Math.round(idleStrikeMsFor(gate.rank) / 1000)} s of silence.`);
       try { saveGateState(db, gate); } catch (e) {}
       out.push({ chatId: raid.chatId || gate.chatId, text: lines.join('\n'), mentions: [m.id].filter(Boolean) });
     } catch (e) { console.error('[GateRaid] idle strike error:', e.message); }
