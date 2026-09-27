@@ -80,7 +80,7 @@ module.exports = {
     const pro = UI.isPro(player);
     const FRAME = pro ? UI.PRO_BAR : UI.FREE_BAR;
 
-    const sub = (args[0] || 'help').toLowerCase();
+    let sub = (args[0] || 'help').toLowerCase();
 
     if (!db.pendingChallenges) db.pendingChallenges = {};
 
@@ -352,6 +352,18 @@ module.exports = {
         return sock.sendMessage(chatId, { text: '❌ Opponent is no longer in battle. Battle ended.' }, { quoted: msg });
       }
 
+      // Push #88x: a BERSERK hunter does not choose — the beast picks the move.
+      let _berserkNote = '';
+      try {
+        const TFp = require('../../rpg/utils/Transformation');
+        if (TFp.isBerserk(player)) {
+          const pk = TFp.berserkPick(player);
+          args = pk.kind === 'skill' ? ['skill', ...String(pk.name).split(' ')] : ['attack', ...(pk.patternId ? [String(pk.patternId)] : [])];
+          sub = args[0];
+          _berserkNote = `😈 *${player.name}* is BERSERK — the beast chose *${pk.kind === 'skill' ? pk.name : (pk.patternId ? 'Attack Pattern #' + pk.patternId : 'a wild strike')}*!`;
+          try { await sock.sendMessage(chatId, { text: _berserkNote }); } catch (e) {}
+        }
+      } catch (e) {}
       // Validate pattern choice: must be owned AND equipped (no free legendaries)
       if (sub === 'attack' && args[1] != null && String(args[1]).trim() !== '') {
         const _pid = parseInt(args[1]);

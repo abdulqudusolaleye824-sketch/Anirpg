@@ -1,3 +1,7 @@
+## 1.0.111 — Push #88x (2026-09-27)
+- Transformation aftermath: when ANY transformation ends (cast or passive) the hunter suffers WEAKEN 10 turns, STUN 2 turns and BLEED 7 turns. Upgrading to a stronger form applies no aftermath.
+- BERSERK: Monster hunters below Lv.10 surge passively with a 47%/turn chance (Lv.10+ keep the 8% controlled surge). A berserk hunter cannot command their body — in gate raids the bot plays their turns automatically every ~12 s (random equipped attack pattern or unlocked damage skill through the real /party flow, teammates locked out during the strike); in PvP and dungeons their chosen move is replaced by the beast's pick. With nothing left to attack the rage burns down one turn per tick.
+
 ## 1.0.110 — Push #88w (2026-09-27)
 - Scavenger pets: loot cut by 70% (bonus Nexus and item-find chance).
 - MONSTER TRANSFORMATIONS: the Lv.10/20/30/40/50/60 slots of every Monster variant are now Quarter (×5, 3t), Complete Quarter (×5, 10t), Half (×10, 3t), Complete Half (×10, 10t), Full (×15, 3t), Complete Full (×15, 10t) Transformation — named with the variant ("Half Transformation: Blood Bat"). ALL stats (ATK/DEF/SPD/HP) are multiplied for the duration; works in gate raids, dungeons and PvP. Stronger form upgrades a weaker one; equal/weaker refused. All other Monster skills are unchanged.

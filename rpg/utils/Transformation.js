@@ -18,7 +18,11 @@ const TIERS = [
   { key: 'full',          level: 50, name: 'Full Transformation',             mult: 15, turns: 3 },
   { key: 'full_full',     level: 60, name: 'Complete Full Transformation',    mult: 15, turns: 10 },
 ];
-const PASSIVE_CHANCE = 0.08;          // per combat turn, when not transformed
+const PASSIVE_CHANCE = 0.08;          // per combat turn, when not transformed (Lv.10+)
+const BERSERK_CHANCE = 0.47;          // per combat turn for Monsters below Lv.10 — they go BERSERK
+const BERSERK_LEVEL = 10;
+// Aftermath when ANY transformation ends: the body pays for it.
+const AFTERMATH = [{ type: 'weaken', duration: 10 }, { type: 'stun', duration: 2 }, { type: 'bleed', duration: 7 }];
 const MAX_AGE_MS = 20 * 60 * 1000;    // safety: no form outlives 20 minutes
 const STATS = ['atk', 'def', 'speed', 'maxHp'];
 
@@ -66,18 +70,31 @@ function apply(player, tier, source = 'cast') {
   }
   const hpBefore = Math.max(0, Number(player.stats.hp) || 0);
   player.stats.hp = Math.min(player.stats.maxHp, Math.floor(hpBefore * mult));
+  const berserk = source === 'passive' && (player.level || 1) < BERSERK_LEVEL;
   player.transform = {
     key: tier.key, name: skillName(tier, player), tierName: tier.name, mult, turnsLeft: tier.turns + 1, // +1: the casting turn's tick
-    variant: variantName(player), startedAt: Date.now(), applied, source,
+    variant: variantName(player), startedAt: Date.now(), applied, source, berserk,
   };
   const lines = [
     `🧬 *${player.name || 'Hunter'}* transforms — *${player.transform.name}*! ${source === 'passive' ? '(innate surge) ' : ''}×${mult} ALL STATS for ${tier.turns} turns`,
+    ...(berserk ? [`😈 *BERSERK!* The beast is in control — *${player.name || 'Hunter'}* attacks on their own and cannot be commanded. Teammates: stand clear during their turns!`] : []),
     `⚔️ ATK ${player.stats.atk} · 🛡️ DEF ${player.stats.def} · 💨 SPD ${player.stats.speed} · ❤️ ${player.stats.hp}/${player.stats.maxHp}`,
   ];
   return { ok: true, lines, transform: player.transform };
 }
 
-function end(player) {
+function applyAftermath(player, extraTurn = 0) {
+  if (!player.statusEffects) player.statusEffects = [];
+  for (const a of AFTERMATH) {
+    const ex = player.statusEffects.find(e => String(e.type || '').toLowerCase() === a.type);
+    const dur = a.duration + extraTurn;
+    if (ex) ex.duration = Math.max(ex.duration || 0, dur); else player.statusEffects.push({ type: a.type, duration: dur, source: 'transformation' });
+  }
+  return `💔 The strain hits — *${player.name || 'Hunter'}* is WEAKENED (10t), STUNNED (2t) and BLEEDING (7t)!`;
+}
+
+// aftermath=true → weaken 10 / stun 2 / bleed 7 (natural end). Upgrades pass false.
+function end(player, aftermath = false, fromTick = false) {
   const t = player && player.transform;
   if (!t) return null;
   const mult = Number(t.mult) || 1;
@@ -91,7 +108,9 @@ function end(player) {
     player.stats.hp = Math.max(hp > 0 ? 1 : 0, Math.min(player.stats.maxHp, Math.ceil(hp / mult)));
   } catch (e) {}
   delete player.transform;
-  return `🧬 *${player.name || 'Hunter'}*'s ${t.tierName || 'transformation'} fades — back to normal form.`;
+  let line = `🧬 *${player.name || 'Hunter'}*'s ${t.tierName || 'transformation'} fades — back to normal form.`;
+  if (aftermath) { try { line += '\n' + applyAftermath(player, fromTick ? 1 : 0); } catch (e) {} } // +1: this same tick counts the statuses down once
+  return line;
 }
 
 // Called once per combat turn for the entity (UnifiedCombat.tickStatuses).
@@ -100,14 +119,16 @@ function tick(player) {
   if (!player || !player.stats) return lines;
   const t = player.transform;
   if (t) {
-    if (Date.now() - (t.startedAt || 0) > MAX_AGE_MS) { const l = end(player); if (l) lines.push(l); return lines; }
+    if (Date.now() - (t.startedAt || 0) > MAX_AGE_MS) { const l = end(player, true, true); if (l) lines.push(l); return lines; }
     t.turnsLeft = (t.turnsLeft || 0) - 1;
-    if (t.turnsLeft <= 0) { const l = end(player); if (l) lines.push(l); }
-    else lines.push(`🧬 ${t.tierName} — ${t.turnsLeft} turn${t.turnsLeft === 1 ? '' : 's'} left`);
+    if (t.turnsLeft <= 0) { const l = end(player, true, true); if (l) lines.push(l); }
+    else lines.push(`🧬 ${t.tierName}${t.berserk ? ' (BERSERK)' : ''} — ${t.turnsLeft} turn${t.turnsLeft === 1 ? '' : 's'} left`);
     return lines;
   }
   // Innate passive: random Quarter Transformation for any Monster-class hunter.
-  if (isMonster(player) && Math.random() < PASSIVE_CHANCE) {
+  // Below Lv.10 it is a 47%/turn BERSERK surge; from Lv.10 an 8%/turn controlled one.
+  const chance = (player.level || 1) < BERSERK_LEVEL ? BERSERK_CHANCE : PASSIVE_CHANCE;
+  if (isMonster(player) && Math.random() < chance) {
     const r = apply(player, TIERS[0], 'passive');
     if (r.ok) lines.push(...r.lines);
   }
@@ -123,12 +144,36 @@ function cast(player, entry) {
   return apply(player, tier, 'cast');
 }
 
+function isBerserk(player) { const t = active(player); return !!(t && t.berserk); }
+const BERSERK_TEXT = '😈 You are BERSERK — the beast controls your body. You cannot command it until the transformation fades.';
+
+// Random move for a berserk hunter: an equipped attack pattern or an unlocked damage skill.
+// Returns { kind:'attack', patternId } | { kind:'skill', name } | { kind:'attack', patternId:null } (basic strike).
+function berserkPick(player) {
+  const opts = [];
+  try { for (const id of (player.attackPatterns?.equipped || [])) if (id) opts.push({ kind: 'attack', patternId: id }); } catch (e) {}
+  try {
+    const SC = require('./SkillCatalog');
+    for (const e of SC.getRoster(player)) {
+      if (!e || e.isPassive || e.transform) continue;
+      if ((e.unlocksAtLevel || 1) > (player.level || 1)) continue;
+      const ty = String(e.type || '').toLowerCase();
+      if (ty !== 'damage' && ty !== 'debuff') continue;
+      if (!SC.onCooldown(player, e).ready) continue;
+      if ((player.stats?.energy || 0) < SC.effectiveCost(e, player)) continue;
+      opts.push({ kind: 'skill', name: e.name });
+    }
+  } catch (e) {}
+  if (!opts.length) return { kind: 'attack', patternId: null };
+  return opts[Math.floor(Math.random() * opts.length)];
+}
+
 // Safety sweep for the whole DB (index.js, every minute).
 function sweep(db) {
   let n = 0;
   try {
     for (const u of Object.values((db && db.users) || {})) {
-      if (u && u.transform && Date.now() - (u.transform.startedAt || 0) > MAX_AGE_MS) { end(u); n++; }
+      if (u && u.transform && Date.now() - (u.transform.startedAt || 0) > MAX_AGE_MS) { end(u, true); n++; }
     }
   } catch (e) {}
   return n;
@@ -146,4 +191,4 @@ function rosterEntries(variant) {
   }));
 }
 
-module.exports = { TIERS, PASSIVE_CHANCE, MAX_AGE_MS, isMonster, variantName, skillName, tierByName, isTransformSkill, active, apply, end, tick, cast, sweep, rosterEntries };
+module.exports = { TIERS, PASSIVE_CHANCE, BERSERK_CHANCE, BERSERK_LEVEL, AFTERMATH, MAX_AGE_MS, isBerserk, BERSERK_TEXT, berserkPick, applyAftermath, isMonster, variantName, skillName, tierByName, isTransformSkill, active, apply, end, tick, cast, sweep, rosterEntries };

@@ -104,7 +104,7 @@ module.exports = {
         const atkDetect = require('./attacks');
         // try to find active gate via GateManager
         const GM = require('../../rpg/dungeons/GateManager');
-        for (const g of Object.values(GM.GateManager.gates || {})) {
+        for (const g of Object.values(GM.GateManager.activeGates || GM.GateManager.gates || {})) {
           if (g.raid && g.raid.status === 'active') {
             const isMember = g.raid.members?.some(m => String(m.id).split('@')[0].replace(/[^0-9]/g,'') === String(sender).split('@')[0].replace(/[^0-9]/g,''));
             if (isMember) { inferred = g.raid.key || g.id; break; }
@@ -164,6 +164,14 @@ module.exports = {
     const resolved = GR.resolveCode(code, db);
     if (!resolved.ok) return sock.sendMessage(chatId, { text: resolved.error }, { quoted: msg });
     const { key, keyData, gate } = resolved;
+    // Push #88x: a BERSERK hunter (sub-Lv.10 Monster in a passive surge) cannot
+    // command their own body — the bot plays their turns (msg._berserkAuto).
+    try {
+      const TFb = require('../../rpg/utils/Transformation');
+      if (!msg._berserkAuto && TFb.isBerserk(player) && !['status', 'info', 'help'].includes(action)) {
+        return sock.sendMessage(chatId, { text: TFb.BERSERK_TEXT }, { quoted: msg });
+      }
+    } catch (e) {}
 
     // Bind the raid to this dungeon GC
     keyData.dungeonChatId = chatId;

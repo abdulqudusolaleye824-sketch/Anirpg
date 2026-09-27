@@ -1437,6 +1437,35 @@ setInterval(() => {
   } catch (e) { console.error('idle-strike tick:', e.message); }
 }, 10 * 1000).unref?.();
 
+// Push #88x: BERSERK hunters (sub-Lv.10 Monsters in a passive surge) play
+// their own raid turns — one random attack pattern / damage skill per tick,
+// through the real /party flow (rewards, kills, counter-attacks, combat lock).
+let _berserkBusy = false;
+setInterval(async () => {
+  if (_berserkBusy) return;
+  _berserkBusy = true;
+  try {
+    if (!_dbReady) return;
+    const GRb = require('./rpg/dungeons/GateRaid');
+    const MSMb = require('./bots/MultiSocketManager');
+    const cmd = require('./commands/rpg/gateraid');
+    for (const h of GRb.berserkHunters(database)) {
+      try {
+        if (!h.chatId) continue;
+        if (typeof MSMb.chatHealthy === 'function' && !MSMb.chatHealthy(h.chatId)) continue;
+        const sk = MSMb.getActiveSocket(h.chatId);
+        if (!sk) continue;
+        if (h.notice) { await sk.sendMessage(h.chatId, { text: h.notice, mentions: [h.jid] }).catch(() => {}); saveDatabase(); continue; }
+        const args = [...(h.key ? [h.key] : []), ...(h.pick.kind === 'skill' ? ['skill', ...String(h.pick.name).split(' ')] : ['attack', ...(h.pick.patternId ? [String(h.pick.patternId)] : [])])];
+        const fake = { key: { remoteJid: h.chatId, participant: h.jid, fromMe: false, id: 'BERSERK-' + Date.now() }, message: { conversation: '/party ' + args.join(' ') }, _berserkAuto: true };
+        await sk.sendMessage(h.chatId, { text: `😈 *${h.name}* is BERSERK — the beast strikes on its own!`, mentions: [h.jid] }).catch(() => {});
+        await cmd.execute(sk, fake, args, () => database, saveDatabase, h.jid);
+      } catch (e) { console.error('berserk turn:', e.message); }
+    }
+  } catch (e) { console.error('berserk tick:', e.message); }
+  finally { _berserkBusy = false; }
+}, 12 * 1000).unref?.();
+
 // Push #88w: transformation safety sweep — no form outlives 20 minutes.
 setInterval(() => { try { if (_dbReady) { const n = require('./rpg/utils/Transformation').sweep(database); if (n) saveDatabase(); } } catch (e) {} }, 60 * 1000).unref?.();
 

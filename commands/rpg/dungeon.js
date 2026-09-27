@@ -605,6 +605,16 @@ module.exports = {
 
     // ── ATTACK ────────────────────────────────────────────────
     if (sub === 'attack') {
+      // Push #88x: a BERSERK hunter does not choose — the beast picks an equipped pattern (or a wild strike).
+      try {
+        const TFd = require('../../rpg/utils/Transformation');
+        if (TFd.isBerserk(player)) {
+          const eq = (player.attackPatterns?.equipped || []).filter(Boolean);
+          const pick = eq.length ? eq[Math.floor(Math.random() * eq.length)] : null;
+          args = pick ? ['attack', String(pick)] : ['attack'];
+          try { await sock.sendMessage(chatId, { text: `😈 *${player.name}* is BERSERK — the beast chose *${pick ? 'Attack Pattern #' + pick : 'a wild strike'}*!` }); } catch (e) {}
+        }
+      } catch (e) {}
       // ── ATTACK PATTERN usage: /dungeon attack <number> ────────
       const patternNum = parseInt(args[1]);
       if (!isNaN(patternNum) && patternNum > 0) {

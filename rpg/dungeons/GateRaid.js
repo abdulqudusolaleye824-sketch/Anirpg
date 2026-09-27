@@ -1319,6 +1319,35 @@ function reviveStaleFloors(db, now = Date.now()) {
   return out;
 }
 
+// ── Push #88x: BERSERK auto-turns ─────────────────────────────────────
+// Every raid member currently in a BERSERK surge gets one automatic move per
+// tick (index.js). Returns { chatId, gateId, jid, name, pick } entries.
+function berserkHunters(db) {
+  const out = [];
+  let TF; try { TF = require('../utils/Transformation'); } catch (e) { return out; }
+  for (const gate of Object.values(GateManager.activeGates || {})) {
+    try {
+      const raid = gate && gate.raid;
+      if (!raid || raid.status !== 'active' || gate.cleared || gate.broken) continue;
+      const hasTarget = !!_currentRaidTarget(gate);
+      for (const m of raid.members || []) {
+        const u = db && db.users ? (db.users[m.id] || Object.values(db.users).find(x => x && x.jid && GKM.normaliseJid(x.jid) === GKM.normaliseJid(m.id))) : null;
+        if (!u || !TF.isBerserk(u)) continue;
+        if ((u.stats?.hp || 0) <= 0) continue;
+        if (!hasTarget) {
+          // Nothing left to maul on this floor: the rage burns down one turn per tick.
+          const lines = TF.tick(u);
+          out.push({ chatId: raid.chatId || gate.chatId || null, gateId: gate.id, jid: m.id, name: u.name || m.name, notice: `😈 *${u.name || m.name}* thrashes at nothing...\n${lines.join('\n')}` });
+          continue;
+        }
+        let key = null; try { for (const [k, kd] of Object.entries((db && db.gateKeys) || {})) if (kd && kd.gateId === gate.id) { key = k; break; } } catch (e) {}
+        out.push({ chatId: raid.chatId || gate.chatId || null, gateId: gate.id, key, jid: m.id, name: u.name || m.name, pick: TF.berserkPick(u) });
+      }
+    } catch (e) {}
+  }
+  return out;
+}
+
 function autoStrikeIdleRaids(db, now = Date.now(), canStrike = null) {
   const out = [];
   const gates = Object.values(GateManager.activeGates || {});
@@ -1423,7 +1452,7 @@ module.exports = {
   saveGateState,
   spawnWildPet,
   tryCombatLock,
-  markFallen, isFallen, clearFallen, reviveFallen, FALLEN_TEXT, reviveFloor, reviveStaleFloors, FLOOR_REVIVE_MS, FLOOR_REVIVE_MULT, monsterCritChance, monsterDodgeChance, monsterDodges, critMultFor, noteRaidTurn, autoStrikeIdleRaids, IDLE_STRIKE_MS, IDLE_STRIKE_OTHER_MS, idleStrikeMsFor, raidInitiativeChance, raidMonsterGoesFirst, RAID_X2,
+  markFallen, isFallen, clearFallen, reviveFallen, FALLEN_TEXT, reviveFloor, reviveStaleFloors, FLOOR_REVIVE_MS, FLOOR_REVIVE_MULT, berserkHunters, monsterCritChance, monsterDodgeChance, monsterDodges, critMultFor, noteRaidTurn, autoStrikeIdleRaids, IDLE_STRIKE_MS, IDLE_STRIKE_OTHER_MS, idleStrikeMsFor, raidInitiativeChance, raidMonsterGoesFirst, RAID_X2,
   releaseCombatLock,
   wipeGate,
   applyMonsterScaling, floorMultiplier, severityLabel, markHealerAggro, pickAggroTarget, supportCast,
