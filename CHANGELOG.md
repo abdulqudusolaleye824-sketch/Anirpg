@@ -1,3 +1,8 @@
+## 1.0.113 — Push #88z (2026-09-27)
+- ELITE SOLDIERS on every boss floor: gate raids (last floor) AND every tower boss floor (5/10/15/20) are guarded by 2 elites before the boss. Elites have exactly 2× the stats (HP/ATK/DEF/SPD) of the monsters on the floor before them — re-pinned after every scaling pass — and use NO skills/abilities (no status effects).
+- Tower boss floors now run a queue: elite → elite → boss; kills pop the next guard instead of opening the floor.
+- All monsters (gates, tower, bosses): DEF +75% and SPEED +75% on top of the existing buffs.
+
 ## 1.0.112 — Push #88y (2026-09-27)
 - Monsters are ALWAYS a named variant: anyone whose class was the bare word "Monster" gets a variant rolled on sight (class guide, /stats, skill roster, minute sweep). `/class` and `/stats` show "Variant: *Acid Mantis* (Monster)" with the variant's lore, never "Class: Monster".
 - `/class` guide for Monsters lists the full TRANSFORMATIONS ladder (🔓/🔒 per level, ×mult and turns, variant-named), the aftermath, the innate surge (47% BERSERK below Lv.10 / 8% from Lv.10) and the cast example.

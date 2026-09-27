@@ -190,7 +190,7 @@ function partySeverity(members) {
 }
 
 // Push #88n: global monster buff — ATK +70%, DEF +40% on top of level/floor scaling.
-const MON_ATK_BUFF = 1.7, MON_DEF_BUFF = 1.4, MON_HP_BUFF = 1.5; // Push #88o: +50% HP
+const MON_ATK_BUFF = 1.7, MON_DEF_BUFF = 1.4 * 1.75, MON_HP_BUFF = 1.5, MON_SPD_BUFF = 1.75; // Push #88o: +50% HP · Push #88z: DEF +75%, SPD +75%
 function scaleMonsterForFloor(baseMonster, playerLevel, floor, severity = 1) {
   const floorMult  = 1 + (floor - 1) * 0.15;  // Push #88: steeper climb per floor
   const levelMult  = 1 + (playerLevel - 1) * 0.03;
@@ -208,7 +208,7 @@ function scaleMonsterForFloor(baseMonster, playerLevel, floor, severity = 1) {
       maxHp: Math.floor(baseMonster.baseHp  * combined * 0.5 * MON_HP_BUFF),
       atk:   Math.floor(baseMonster.baseAtk * combined * 0.5 * MON_ATK_BUFF),
       def:   Math.floor(baseMonster.baseDef * combined * 0.5 * MON_DEF_BUFF),
-      speed: 80 + floor * 2
+      speed: Math.round((80 + floor * 2) * MON_SPD_BUFF)
     },
     statusEffects: []
   };
@@ -233,7 +233,7 @@ function scaleBossForFloor(bossDef, playerLevel, floor, severity = 1) {
     isFinalBoss: isFinal,
     isElite: false,
     abilities: [...bossDef.abilities],
-    stats: { hp, maxHp: hp, atk, def, speed: 100 + floor },
+    stats: { hp, maxHp: hp, atk, def, speed: Math.round((100 + floor) * MON_SPD_BUFF) },
     statusEffects: []
   };
 }
@@ -294,6 +294,24 @@ class DungeonManager {
   }
 
   static partySeverity(members) { return partySeverity(members); }
+
+  // Push #88z: every tower BOSS floor is guarded by 2 ELITE SOLDIERS — exactly
+  // 2× the stats of the floor before it, no abilities (no status effects).
+  static getFloorElites(dungeonTypeId, floor, playerLevel, members = null) {
+    const prev = DungeonManager.getFloorMonster(dungeonTypeId, Math.max(1, floor - 1), playerLevel, members);
+    if (!prev) return [];
+    const out = [];
+    for (let j = 0; j < 2; j++) {
+      const hp = Math.max(5, Math.floor((prev.stats.maxHp || prev.stats.hp) * 2));
+      out.push({
+        name: `Elite ${String(prev.name).replace(/^Elite\s+/i, '')} Soldier`, emoji: prev.emoji, level: (prev.level || 1) + 1, rank: prev.rank,
+        abilities: [], isElite: true, isBoss: false, noStatus: true, severity: prev.severity,
+        stats: { hp, maxHp: hp, atk: Math.max(1, Math.floor(prev.stats.atk * 2)), def: Math.floor(prev.stats.def * 2), speed: Math.max(1, Math.round(prev.stats.speed * 2)) },
+        statusEffects: [],
+      });
+    }
+    return out;
+  }
 
   static getFloorRewards(floor, playerLevel, isBoss) {
     return calculateFloorRewards(floor, playerLevel, isBoss);

@@ -112,7 +112,7 @@ function pickGateTheme(rank, bossPool) {
   const hasTitle = /\b(Lord|King|Queen|Monarch|Avatar|Sovereign|Emperor|Overlord|Chief|Chieftain|Commander|Colossus|Titan|Matriarch|Broodmother|Alpha|Elder|Warden|Lich)\b/i.test(stripped);
   return { theme, boss: { name: hasTitle ? `Apex ${stripped}` : `${stripped} ${FAMILY_TITLES[theme] || 'Lord'}`, baseName: base.name, synthetic: true } };
 }
-const ELITE_MULT = 1.5;
+const ELITE_MULT = 2; // Push #88z: elites = 2× the previous floor's monsters
 function _power(m) { return (m.maxHp || m.hp || 0) + (m.atk || 0) * 3 + (m.def || 0) * 2; }
 // Push #88t: monsters within a floor are fought weakest → strongest.
 function orderFloors(monsters) {
@@ -131,14 +131,14 @@ function buildGateMonsters(rank, floors, strengthPct = 100, bossName = null) {
     const floorBias = (floor - 1) / Math.max(1, floors - 1);            // 0..1
     const tierBias  = (m.tier - 1) / 4;                                   // 0..1
     const roll = Math.random() * 0.5 + floorBias * 0.25 + tierBias * 0.25; // 0..1
-    const baseHp = Math.floor((minHp + roll * (maxHp - minHp)) * scale) * (elite ? ELITE_MULT : 1);
+    const baseHp = Math.floor((minHp + roll * (maxHp - minHp)) * scale);
     const hp = Math.max(5, Math.floor(baseHp * prof.hp));
     return {
       name: elite ? `${/^Elite\b/i.test(m.name) ? '' : 'Elite '}${m.name}${/\bSoldier$/i.test(m.name) ? '' : ' Soldier'}` : m.name, role: m.role, tier: m.tier,
       hp, maxHp: hp,
       atk: Math.max(1, Math.floor(baseHp * prof.atk)),
       def: Math.floor(baseHp * prof.def),
-      speed: Math.round(10 * prof.speed * (elite ? 1.2 : 1)),
+      speed: Math.round(10 * prof.speed),
       skills: m.skills,
       floor, defeated: false,
       family: theme || monsterFamily(m.name) || 'wild',
@@ -148,10 +148,26 @@ function buildGateMonsters(rank, floors, strengthPct = 100, bossName = null) {
   for (let floor = 1; floor <= floors; floor++) {
     for (let j = 0; j < 3; j++) monsters.push(make(pickThemed(pool, strengthPct), floor, false));
   }
-  // Push #88t: the boss floor is guarded by 2 ELITE SOLDIERS (strongest tier of the theme, ×1.5).
+  // Push #88t: the boss floor is guarded by 2 ELITE SOLDIERS.
+  // Push #88z: elites carry exactly 2× the stats of the monsters on the floor
+  // BEFORE the boss floor (average of that floor) and use NO skills — no
+  // status effects, pure stats.
   const topTier = Math.max(...pool.map(m => m.tier || 1));
   const eliteBase = pool.filter(m => (m.tier || 1) >= Math.max(1, topTier - 1));
-  for (let j = 0; j < 2; j++) monsters.push(make(eliteBase[Math.floor(Math.random() * eliteBase.length)] || pool[0], floors, true));
+  const prevFloor = Math.max(1, floors - 1);
+  const prev = monsters.filter(m => m.floor === prevFloor && !m.elite);
+  const avg = (k) => prev.length ? prev.reduce((a, m) => a + (Number(m[k]) || 0), 0) / prev.length : 0;
+  for (let j = 0; j < 2; j++) {
+    const e = make(eliteBase[Math.floor(Math.random() * eliteBase.length)] || pool[0], floors, true);
+    if (prev.length) {
+      e.maxHp = e.hp = Math.max(5, Math.floor(avg('maxHp') * ELITE_MULT));
+      e.atk = Math.max(1, Math.floor(avg('atk') * ELITE_MULT));
+      e.def = Math.floor(avg('def') * ELITE_MULT);
+      e.speed = Math.max(1, Math.round(avg('speed') * ELITE_MULT));
+    }
+    e.skills = []; e.noStatus = true;
+    monsters.push(e);
+  }
   return orderFloors(monsters);
 }
 

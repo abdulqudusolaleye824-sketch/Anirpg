@@ -534,9 +534,17 @@ module.exports = {
       const members  = party.members.map(m => db.users[m.id]).filter(u => u);
       const avgLevel = party._avgLevel || Math.floor(members.reduce((s,m) => s + m.level, 0) / members.length);
       const isBoss   = DungeonManager.isBossFloor(nextFloor);
-      const monster  = isBoss
+      let monster  = isBoss
         ? DungeonManager.getFloorBoss(dungeon.typeId, nextFloor, avgLevel, members)
         : DungeonManager.getFloorMonster(dungeon.typeId, nextFloor, avgLevel, members);
+      // Push #88z: boss floors — 2 ELITE SOLDIERS (2× previous floor, no abilities) stand before the boss.
+      dungeon.floorQueue = [];
+      if (isBoss && monster) {
+        try {
+          const elites = DungeonManager.getFloorElites(dungeon.typeId, nextFloor, avgLevel, members);
+          if (elites.length) { dungeon.floorQueue = [...elites.slice(1), monster]; monster = elites[0]; }
+        } catch (e) {}
+      }
 
       dungeon.currentFloor    = nextFloor;
       dungeon.currentMonster  = monster;
@@ -550,7 +558,9 @@ module.exports = {
       const mBar  = BarSystem.getMonsterHPBar(monster.stats.hp, monster.stats.maxHp);
 
       let txt = pro ? `${UI.PRO_BAR}\n` : `${UI.FREE_BAR}\n`;
-      if (isBoss) {
+      if (isBoss && monster.isElite) {
+        txt += `⚠️ *BOSS FLOOR ${nextFloor}!*${pro ? ' 💎' : ''}\n${FRAME}\n🛡️ Two *ELITE SOLDIERS* guard the boss — 2× the last floor's monsters, no tricks, pure power. Cut them both down to reach it.\n`;
+      } else if (isBoss) {
         txt += `⚠️ *BOSS FLOOR ${nextFloor}!*${pro ? ' 💎' : ''}\n${FRAME}\n💭 ${monster.desc || 'A terrifying guardian blocks your path!'}\n`;
       } else {
         txt += `🔽 *FLOOR ${nextFloor}*${pro ? ' 💎' : ''}\n${FRAME}\n${atmo}\n`;
@@ -782,16 +792,17 @@ module.exports = {
             // Unified battle win rewards (aura/BP/pass/XP)
             try { const BR=require('../../rpg/utils/BattleRewards'); const w=BR.giveBattleWinRewards(player, db, 'dungeon', player.level, sock, chatId); rewardLine = `💠 +${Math.floor(rewards.gold)} 💠  |  💎 +${Math.floor(rewards.crystals || 0)} | ${BR.formatRewards(w).replace(/\n/g,' | ')}`; } catch(e){ rewardLine = `💠 +${Math.floor(rewards.gold)} 💠  |  💎 +${Math.floor(rewards.crystals || 0)}`; }
           } else if (dunPty) {
-            dunPty.awaitingAdvance = true;
+            if (!_dngQueueNext(dunPty)) dunPty.awaitingAdvance = true;
           }
+          const _nq = dunPty && !dunPty.awaitingAdvance && dunPty.currentMonster && dunPty.currentMonster !== monster ? dunPty.currentMonster : null;
           sections.push({
             text: [
               `${FRAME}`,
               `💀 *${monster.name}* defeated!`,
               rewardLine,
               ``,
-              `/dungeon advance — next floor`,
-              `/dungeon leave   — exit with rewards`,
+              ...(_nq ? [`${_nq.isBoss ? '👹' : '🛡️'} *${_nq.name}* steps forward! [Lv.${_nq.level}]${_nq.isBoss ? ' 🔴 BOSS' : ' ⚜️ ELITE'}`, `❤️ ${_nq.stats.hp}/${_nq.stats.maxHp} · ⚔️ ${_nq.stats.atk} · 🛡️ ${_nq.stats.def} · 💨 ${_nq.stats.speed}`, `/dungeon attack — keep fighting`]
+                     : [`/dungeon advance — next floor`, `/dungeon leave   — exit with rewards`]),
               `${FRAME}`,
             ].filter(Boolean).join('\n'),
           });
@@ -1425,6 +1436,20 @@ module.exports = {
 // These were previously referenced but never defined, causing every party
 // attack kill to crash. They are now defined as no-op-safe wrappers that
 // still credit rewards and finish the dungeon.
+// Push #88z: boss floors queue [elite, elite, boss]; pop the next one instead of
+// opening the floor. Returns the new monster or null when the floor is done.
+function _dngQueueNext(dungeon) {
+  try {
+    if (!dungeon || !Array.isArray(dungeon.floorQueue) || !dungeon.floorQueue.length) return null;
+    const next = dungeon.floorQueue.shift();
+    if (!next) return null;
+    dungeon.currentMonster = next;
+    dungeon.turn = 1;
+    dungeon.awaitingAdvance = false;
+    return next;
+  } catch (e) { return null; }
+}
+
 async function handleMonsterDefeat(sock, chatId, party, monster, dungeon, db, saveDatabase, msg, sender, log) {
   try {
     const DungeonManager = require('../../rpg/dungeons/DungeonManager');
@@ -1435,7 +1460,8 @@ async function handleMonsterDefeat(sock, chatId, party, monster, dungeon, db, sa
     const dPro = UI.isPro(player);
     const FRAME = dPro ? UI.PRO_BAR : UI.FREE_BAR;
     dungeon.monstersDefeated = (dungeon.monstersDefeated || 0) + 1;
-    dungeon.awaitingAdvance = true;
+    const _nextQ = _dngQueueNext(dungeon); // Push #88z: elites → boss on boss floors
+    if (!_nextQ) dungeon.awaitingAdvance = true;
     dungeon.totalMonsters   = (dungeon.totalMonsters || 0) + 1;
     dungeon.floorsCleared   = dungeon.floorsCleared || [];
     if (!dungeon.floorsCleared.includes(dungeon.currentFloor)) {
@@ -1475,7 +1501,9 @@ async function handleMonsterDefeat(sock, chatId, party, monster, dungeon, db, sa
     txt += dPro ? `💀 *${monster.name}* has been defeated! 💎\n` : `💀 *${monster.name}* has been defeated!\n`;
     txt += `${FRAME}\n`;
     txt += `📊 Floor ${dungeon.currentFloor}/${dungeon.maxFloors} | Defeated: ${dungeon.monstersDefeated}\n\n`;
-    if (DungeonManager.isBossFloor(dungeon.currentFloor)) {
+    if (_nextQ) {
+      txt += `${_nextQ.isBoss ? '👹' : '🛡️'} *${_nextQ.name}* steps forward! [Lv.${_nextQ.level}]${_nextQ.isBoss ? ' 🔴 BOSS' : ' ⚜️ ELITE'}\n❤️ ${_nextQ.stats.hp}/${_nextQ.stats.maxHp} · ⚔️ ${_nextQ.stats.atk} · 🛡️ ${_nextQ.stats.def} · 💨 ${_nextQ.stats.speed}\n\n`;
+    } else if (DungeonManager.isBossFloor(dungeon.currentFloor)) {
       txt += `👹 *BOSS FLOOR CLEARED!* Bonus rewards earned.\n\n`;
     }
     txt += `👥 *Party:*\n`;
@@ -1484,7 +1512,7 @@ async function handleMonsterDefeat(sock, chatId, party, monster, dungeon, db, sa
       if (!mp) return;
       txt += `${mp.stats.hp > 0 ? '⚔️' : '💀'} *${m.name}* — ${BarSystem.getHPBar(mp.stats.hp, mp.stats.maxHp, require('../../rpg/utils/UnifiedCombat').isPro(mp))} ${mp.stats.hp}/${mp.stats.maxHp}\n`;
     });
-    txt += `\n${FRAME}\n/dungeon advance — next floor\n/dungeon leave   — exit & keep rewards`;
+    txt += _nextQ ? `\n${FRAME}\n/dungeon attack — keep fighting` : `\n${FRAME}\n/dungeon advance — next floor\n/dungeon leave   — exit & keep rewards`;
     txt += dPro ? `\n${UI.PRO_MINI}\n💎 *PRO DELVER* — floor ${dungeon.currentFloor}/${dungeon.maxFloors} · ${dungeon.monstersDefeated} slain` : `\n${UI.upsell()}`;
     await sock.sendMessage(chatId, { text: txt }, { quoted: msg });
   } catch (e) {

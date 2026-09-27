@@ -762,7 +762,7 @@ function floorMultiplier(gate, floor) {
 // floor multiplier. Idempotent — safe to call on every calibrate/advance.
 // Push #88n: global monster buff — ATK +70%, DEF +40% — applied on top of the
 // level/floor/severity scaling (which stays exactly as it was).
-const MON_ATK_BUFF = 1.7 * RAID_X2, MON_DEF_BUFF = 1.4 * RAID_X2, MON_HP_BUFF = 1.5; // Push #88o: +50% HP · Push #88q: raid ATK/DEF ×2 again
+const MON_ATK_BUFF = 1.7 * RAID_X2, MON_DEF_BUFF = 1.4 * RAID_X2 * 1.75, MON_HP_BUFF = 1.5, MON_SPD_BUFF = 1.75; // Push #88o: +50% HP · Push #88q: raid ATK/DEF ×2 again · Push #88z: DEF +75%, SPD +75%
 function applyMonsterScaling(gate) {
   const severity = (gate.calibrated && gate.calibrated.severity) || 1;
   for (const mon of gate.monsters || []) {
@@ -775,9 +775,23 @@ function applyMonsterScaling(gate) {
     mon.hp = Math.max(1, Math.floor(mon.maxHp * hpPct));
     mon.atk = Math.max(1, Math.floor(mon._base.atk * mult * MON_ATK_BUFF));
     mon.def = Math.floor(mon._base.def * mult * 0.8 * MON_DEF_BUFF);
-    mon.speed = Math.max(1, Math.round(mon._base.speed * (0.8 + Math.min(severity, 6) * 0.2)));
+    mon.speed = Math.max(1, Math.round(mon._base.speed * (0.8 + Math.min(severity, 6) * 0.2) * MON_SPD_BUFF));
     mon._raid = true; mon.rank = mon.rank || gate.rank; // Push #88q: raid ×2 package + initiative
   }
+  // Push #88z: elites are ALWAYS exactly 2× the (scaled) monsters of the floor before them.
+  try {
+    const bossFloor = gate.totalFloors || 1;
+    const prev = (gate.monsters || []).filter(m => m && m.floor === Math.max(1, bossFloor - 1) && !m.elite);
+    if (prev.length) {
+      const avg = (k) => prev.reduce((a, m) => a + (Number(m[k]) || 0), 0) / prev.length;
+      for (const e of (gate.monsters || []).filter(m => m && m.elite && !m.defeated && !m.revived)) {
+        const pct = (typeof e.hp === 'number' && typeof e.maxHp === 'number' && e.hp < e.maxHp) ? Math.max(0, e.hp / Math.max(1, e.maxHp)) : 1;
+        e.maxHp = Math.max(5, Math.floor(avg('maxHp') * 2)); e.hp = Math.max(1, Math.floor(e.maxHp * pct));
+        e.atk = Math.max(1, Math.floor(avg('atk') * 2)); e.def = Math.floor(avg('def') * 2); e.speed = Math.max(1, Math.round(avg('speed') * 2));
+        e.skills = []; e.noStatus = true;
+      }
+    }
+  } catch (e) {}
   if (gate.boss && !gate.boss.defeated) {
     if (!gate.boss._base) {
       const _rd = GATE_RANKS[gate.rank] || GATE_RANKS.E;
