@@ -195,7 +195,7 @@ async function handleModFlag(sock, msg, db, saveDatabase, sender, rawArgs) {
   const targetBare = Mod.bare(target);
   if (Mod.bare(cleanTarget) === Mod.bare(OWNER_JID) || Mod.bare(cleanTarget) === Mod.bare(COOWNER_JID)) {
     return sock.sendMessage(chatId, {
-      text: '❌ Owner and Co-Owner cannot be (de)modded — they are above mods.'
+      text: '❌ The Owner cannot be (de)modded — they are above mods.'
     }, { quoted: msg });
   }
 

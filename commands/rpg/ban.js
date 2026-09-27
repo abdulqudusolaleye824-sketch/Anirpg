@@ -63,7 +63,7 @@ module.exports = {
     }
     if (Mod.isProtected(db, targetId)) {
       return sock.sendMessage(chatId, {
-        text: '❌ That user is an *Owner/Co-Owner/Mod* — you cannot ban them.',
+        text: '❌ That user is an *Owner/Mod* — you cannot ban them.',
       }, { quoted: msg });
     }
     if (Mod.isBanned(db, targetId)) {

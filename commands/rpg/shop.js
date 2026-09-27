@@ -199,7 +199,7 @@ ${FRAME}`
       const COOWNER_NUM = COOWNER_JID.split('@')[0];
       const senderNum   = sender.split('@')[0].split(':')[0];
       if (senderNum !== OWNER_NUM && senderNum !== COOWNER_NUM) {
-        return sock.sendMessage(chatId, { text: '❌ Owner/co-owner only command.' }, { quoted: msg });
+        return sock.sendMessage(chatId, { text: '❌ Owner only command.' }, { quoted: msg });
       }
       const users   = Object.values(db.users || {});
       const total   = users.length;

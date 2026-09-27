@@ -42,7 +42,7 @@ module.exports = {
 
     if (!isPrivileged(sender, db)) {
       return sock.sendMessage(chatId, {
-        text: '❌ Only the owner or co-owner can view status reports.',
+        text: '❌ Only the owner can view status reports.',
       }, { quoted: msg });
     }
 

@@ -1,3 +1,6 @@
+## 1.0.109 — Push #88v (2026-09-27)
+- Outputs never mention the co-owner: every 'Owner / Co-Owner only' style message now says 'Owner only'. `/mods` hidden co-owner tag restored.
+
 ## 1.0.108 — Push #88u (2026-09-27)
 - Idle gate strikes NEVER fire from a deaf bot: before striking, the bot must have decrypted a message in that chat within 90 s (or anything within 60 s, with no Bad-MAC storm). Otherwise the idle clock simply restarts. Strike text shows the real window (30 s S / 45 s others).
 - Bad-MAC storm (≥40 decrypt failures/min): the socket that has heard nothing for 60 s+ is recycled (2 min gap).

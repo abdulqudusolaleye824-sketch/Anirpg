@@ -1212,7 +1212,7 @@ ${FRAME}\n`;
     if (action === 'force' && /^(master|gm|leader)$/i.test(args[1] || '')) {
       let isOwner = false;
       try { isOwner = require('../../utils/permissions').isBotOwner(db, sender); } catch (e) {}
-      if (!isOwner) return sock.sendMessage(chatId, { text: '❌ *OWNER ONLY.* /guild force master is an owner / co-owner command.' }, { quoted: msg });
+      if (!isOwner) return sock.sendMessage(chatId, { text: '❌ *OWNER ONLY.* /guild force master is an owner command.' }, { quoted: msg });
       const ctx = msg.message?.extendedTextMessage?.contextInfo;
       let targetId = ctx?.mentionedJid?.[0] || ctx?.participant || null;
       if (!targetId && args[2]) { const d = args[2].replace(/\D/g, ''); if (d.length >= 8) targetId = `${d}@s.whatsapp.net`; else { const q = args.slice(2).join(' ').toLowerCase(); for (const [k, u] of Object.entries(db.users || {})) if (u?.name && String(u.name).toLowerCase() === q) { targetId = k; break; } } }

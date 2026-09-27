@@ -24,7 +24,7 @@ module.exports = {
     const chatId = msg.key.remoteJid;
     const db = getDatabase();
     const FRAME = UI.FREE_BAR;
-    if (!Perms.isBotOwner(db, sender)) return sock.sendMessage(chatId, { text: `❌ *OWNER ONLY.*\n${FRAME}\n/extract is an owner / co-owner command.` }, { quoted: msg });
+    if (!Perms.isBotOwner(db, sender)) return sock.sendMessage(chatId, { text: `❌ *OWNER ONLY.*\n${FRAME}\n/extract is an owner command.` }, { quoted: msg });
     const me = db.users[sender];
     if (!me) return sock.sendMessage(chatId, { text: '❌ Register first! Use /register' }, { quoted: msg });
 

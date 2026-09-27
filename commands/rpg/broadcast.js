@@ -17,7 +17,7 @@ module.exports = {
 
     if (!Perms.isBotOwner(db, sender)) {
       return sock.sendMessage(chatId, {
-        text: '❌ *Owner / Co-Owner only.*\n\nYou need owner permissions to broadcast.',
+        text: '❌ *Owner only.*\n\nYou need owner permissions to broadcast.',
       }, { quoted: msg });
     }
 

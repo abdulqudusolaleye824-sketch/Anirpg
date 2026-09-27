@@ -29,7 +29,7 @@ const EXPIRED_MSG =
   '⛔ *Subscription expired*\n' +
   '━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n' +
   '_Contact administration to renew._\n\n' +
-  '*(An owner / co-owner can run `/renew` to reactivate this group.)*';
+  '*(An owner can run `/renew` to reactivate this group.)*';
 
 class AstralGroups {
   static TYPES = TYPES;

@@ -50,7 +50,7 @@ module.exports = {
     }
     if (GroupAdmin.isProtected(db, targetId)) {
       return sock.sendMessage(chatId, {
-        text: '❌ That user is an *Owner/Co-Owner/Mod* — you cannot kick them.',
+        text: '❌ That user is an *Owner/Mod* — you cannot kick them.',
       }, { quoted: msg });
     }
 

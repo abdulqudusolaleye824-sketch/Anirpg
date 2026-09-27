@@ -260,7 +260,7 @@ const setainame = {
     const isOwnerOrMod = Perms.isBotOwner(db, sender) || Perms.isBotMod(db, sender);
     if (!isOwnerOrMod) {
       return sock.sendMessage(chatId, {
-        text: '❌ Only the bot owner, co-owner, or bot mods can rename bots.',
+        text: '❌ Only the bot owner or bot mods can rename bots.',
       }, { quoted: msg });
     }
 

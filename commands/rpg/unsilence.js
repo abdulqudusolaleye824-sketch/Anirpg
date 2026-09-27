@@ -13,7 +13,7 @@ module.exports = {
     const chatId = msg.key.remoteJid;
     const db = getDatabase();
     const FRAME = UI.FREE_BAR;
-    if (!Perms.isBotOwner(db, sender)) return sock.sendMessage(chatId, { text: `❌ *OWNER ONLY.*\n${FRAME}\n/unsilence is an owner / co-owner command.` }, { quoted: msg });
+    if (!Perms.isBotOwner(db, sender)) return sock.sendMessage(chatId, { text: `❌ *OWNER ONLY.*\n${FRAME}\n/unsilence is an owner command.` }, { quoted: msg });
     const ctx = msg.message?.extendedTextMessage?.contextInfo;
     let jid = ctx?.mentionedJid?.[0] || ctx?.participant || null;
     if (!jid && args[0]) { const d = args[0].replace(/\D/g, ''); if (d.length >= 8) jid = `${d}@s.whatsapp.net`; else { const q = args.join(' ').toLowerCase(); for (const [k, u] of Object.entries(db.users || {})) if (u?.name && String(u.name).toLowerCase() === q) { jid = k; break; } } }

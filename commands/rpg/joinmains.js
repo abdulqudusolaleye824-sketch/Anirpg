@@ -16,7 +16,7 @@ module.exports = {
     const db = getDatabase();
 
     if (!Perms.isBotMod(db, sender)) {
-      return sock.sendMessage(chatId, { text: '❌ Owner / Co-Owner only!' }, { quoted: msg });
+      return sock.sendMessage(chatId, { text: '❌ Owner only!' }, { quoted: msg });
     }
 
     const mains = (AstralGroups.getAll(db) || []).filter((g) => g && g.isMain && g.groupId);

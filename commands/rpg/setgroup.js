@@ -26,7 +26,7 @@ module.exports = {
     const db = getDatabase();
 
     if (!Perms.isBotMod(db, sender)) {
-      return sock.sendMessage(chatId, { text: '❌ Owner / Co-Owner only!' }, { quoted: msg });
+      return sock.sendMessage(chatId, { text: '❌ Owner only!' }, { quoted: msg });
     }
 
     const raw = args[0];
@@ -159,7 +159,7 @@ module.exports = {
     const mainLine = result.status === 'main'
       ? `👑 *MAIN GROUP* — the bot works here immediately and never expires.`
       : result.status === 'pending'
-        ? `⏳ *Subscription pending.* An owner/co-owner must run:\n   /ssub | <subscriber name>\n   to start the 30-day window (the bot stays silent until then).`
+        ? `⏳ *Subscription pending.* An owner must run:\n   /ssub | <subscriber name>\n   to start the 30-day window (the bot stays silent until then).`
         : `✅ The bot is active in this group.`;
 
     return sock.sendMessage(chatId, {

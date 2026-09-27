@@ -40,7 +40,7 @@ function initProcoin(player) {
 module.exports = {
   name: 'procoin',
   aliases: ['pc', 'addpc', 'addprocoin'],
-  description: '💠 Procoin (PC) — premium currency granted by owner/co-owner only',
+  description: '💠 Procoin (PC) — premium currency granted by owner only',
   usage: '/pc | /addpc <amount> @user',
   category: 'economy',
 
@@ -63,7 +63,7 @@ module.exports = {
           text: [
             ...(pro ? [UI.PRO_BAR, `💠 *PROCOIN — ACCESS DENIED* 💎`, UI.PRO_BAR] : [`💠 *PROCOIN — ACCESS DENIED*`, UI.FREE_BAR]),
             ``,
-            `❌ Only the *Owner* or *Co-Owner* can grant Procoins.`,
+            `❌ Only the *Owner* can grant Procoins.`,
             FRAME,
             ...(pro ? [UI.PRO_MINI, `💎 *PRO MINT* — grants are owner-only`] : [UI.upsell()]),
           ].join('\n'),
@@ -153,8 +153,8 @@ module.exports = {
     initProcoin(player);
 
     const privNote = isPrivileged(sender)
-      ? `\n👑 _(Owner/Co-Owner: use /addpc to grant)_`
-      : `\n💡 _Procoins can only be granted by the Owner or Co-Owner._`;
+      ? `\n👑 _(Owner: use /addpc to grant)_`
+      : `\n💡 _Procoins can only be granted by the Owner._`;
 
     return sock.sendMessage(chatId, {
       text: [

@@ -331,7 +331,7 @@ const affiliateCmd = require('./affiliate');
 
 const setdungeon = {
   name: 'setdungeon',
-  description: 'Register this group as a dungeon GC (owner/coowner only)',
+  description: 'Register this group as a dungeon GC (owner only)',
 
   async execute(sock, msg, args, getDatabase, saveDatabase, sender) {
     const chatId = msg.key?.remoteJid;
@@ -339,7 +339,7 @@ const setdungeon = {
       return sock.sendMessage(chatId, { text: '❌ This command only works in group chats.' }, { quoted: msg });
     }
     if (!isOwnerOrCoOwner(sender)) {
-      return sock.sendMessage(chatId, { text: '❌ Only the owner or co-owner can register dungeon GCs.' }, { quoted: msg });
+      return sock.sendMessage(chatId, { text: '❌ Only the owner can register dungeon GCs.' }, { quoted: msg });
     }
 
     const db = getDatabase();
@@ -368,7 +368,7 @@ const removedungeon = {
   async execute(sock, msg, args, getDatabase, saveDatabase, sender) {
     const chatId = msg.key?.remoteJid;
     if (!isOwnerOrCoOwner(sender)) {
-      return sock.sendMessage(chatId, { text: '❌ Only the owner or co-owner can remove dungeon GCs.' }, { quoted: msg });
+      return sock.sendMessage(chatId, { text: '❌ Only the owner can remove dungeon GCs.' }, { quoted: msg });
     }
 
     const db = getDatabase();
@@ -382,12 +382,12 @@ const removedungeon = {
 
 const dungeons = {
   name: 'dungeons',
-  description: 'List all registered dungeon GCs (owner/coowner only)',
+  description: 'List all registered dungeon GCs (owner only)',
 
   async execute(sock, msg, args, getDatabase, saveDatabase, sender) {
     const chatId = msg.key?.remoteJid;
     if (!isOwnerOrCoOwner(sender)) {
-      return sock.sendMessage(chatId, { text: '❌ Owner/co-owner only.' }, { quoted: msg });
+      return sock.sendMessage(chatId, { text: '❌ Owner only.' }, { quoted: msg });
     }
 
     const all = GKM.getAllDungeonGCs();

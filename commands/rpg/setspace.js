@@ -13,7 +13,7 @@ module.exports = {
     const db = getDatabase();
 
     if (!Perms.isBotOwner(db, sender)) {
-      return sock.sendMessage(chatId, { text: '❌ Owner / Co-Owner only!' }, { quoted: msg });
+      return sock.sendMessage(chatId, { text: '❌ Owner only!' }, { quoted: msg });
     }
 
     const sub = (args[0] || '').toLowerCase();

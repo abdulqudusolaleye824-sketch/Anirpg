@@ -372,7 +372,7 @@ module.exports = {
     const Mod = require('../../rpg/utils/ModerationUtils');
     // Push #88s: /spawn is OWNER / CO-OWNER level only.
     if (!Mod.isOwnerLike(db, sender)) {
-      return sock.sendMessage(chatId, { text: '❌ This command is for the bot owner / co-owner only.' }, { quoted: msg });
+      return sock.sendMessage(chatId, { text: '❌ This command is for the bot owner only.' }, { quoted: msg });
     }
 
     const sub = args[0]?.toLowerCase();
@@ -415,7 +415,7 @@ module.exports = {
         for (const pt of pets) { const r = String(pt.rarity || 'common').toLowerCase(); (byRarity[r] = byRarity[r] || []).push(`${pt.emoji || '🐾'} ${pt.name}`); }
         const epics = SPAWN_ARTIFACTS.filter(a => a.rarity === 'epic' && String(a.type).toLowerCase() === 'material' && !(a.isMendingStone || a.name === 'Mending Stone'));
         const F = '━━━━━━━━━━━━━━━━━━━━━━━━━━━';
-        lines.push(F, '📜 *SPAWN CATALOG* (owner / co-owner)', F, '',
+        lines.push(F, '📜 *SPAWN CATALOG* (owner)', F, '',
           '*Commands*',
           '• /spawn force — random diversified spawn (anyone can /claim)',
           '• /spawn mending — 🪨 Mending Stone',

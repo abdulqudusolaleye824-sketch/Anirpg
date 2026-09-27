@@ -83,7 +83,7 @@ async function requireGroupAdmin(sock, chatId, sender, db) {
   const senderPart = meta.participants.find((p) => p.id === sender || bare(p.id) === bare(sender));
   const isSelfAdmin = isAdminState(senderPart);
   if (!isOwner && !isSelfAdmin) {
-    return { ok: false, err: '❌ *Group admins only.*\n\n(You need to be a group admin, or the owner/co-owner.)' };
+    return { ok: false, err: '❌ *Group admins only.*\n\n(You need to be a group admin, or the bot owner.)' };
   }
 
   return { ok: true, meta, botIsAdmin: true, isOwner, isSelfAdmin, botJid };

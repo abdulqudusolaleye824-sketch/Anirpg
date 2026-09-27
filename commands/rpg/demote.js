@@ -35,7 +35,7 @@ module.exports = {
     }
     // Owners/Co-Owners are protected from demotion.
     if (Perms.getBotOwners(db).some((o) => GroupAdmin.bare(o) === GroupAdmin.bare(target))) {
-      return sock.sendMessage(chatId, { text: '❌ Cannot demote an Owner/Co-Owner.' }, { quoted: msg });
+      return sock.sendMessage(chatId, { text: '❌ Cannot demote an Owner.' }, { quoted: msg });
     }
 
     // Display names first (registered RPG names, LID/PN-agnostic); raw @tags

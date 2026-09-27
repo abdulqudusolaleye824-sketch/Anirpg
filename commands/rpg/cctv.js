@@ -63,7 +63,7 @@ function record(db, chatId, sender, text, saveDatabase) {
 // ── Command module ────────────────────────────────────────────────────────────
 module.exports = {
   name:        'cctv',
-  description: 'Group activity tracker (owner/co-owner only)',
+  description: 'Group activity tracker (owner only)',
   usage:       '/cctv on|off|log|stats|clear|top',
   category:    'admin',
 
@@ -82,7 +82,7 @@ module.exports = {
     const readOnly = ['log', 'stats', 'top'];
     if (!readOnly.includes(sub) && !isPrivileged(sender, db)) {
       return sock.sendMessage(chatId, {
-        text: '❌ Only the owner or co-owner can configure CCTV mode.',
+        text: '❌ Only the owner can configure CCTV mode.',
       }, { quoted: msg });
     }
 

@@ -12,7 +12,7 @@ module.exports = {
     const db = getDatabase();
 
     if (!Perms.isBotOwner(db, sender)) {
-      return sock.sendMessage(chatId, { text: '❌ Owner / Co-Owner only!' }, { quoted: msg });
+      return sock.sendMessage(chatId, { text: '❌ Owner only!' }, { quoted: msg });
     }
     if (!chatId.endsWith('@g.us')) {
       return sock.sendMessage(chatId, { text: '❌ Run this inside the group you are subscribing.' }, { quoted: msg });

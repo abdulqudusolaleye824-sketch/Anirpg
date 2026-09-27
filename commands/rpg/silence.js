@@ -47,7 +47,7 @@ module.exports = {
     const chatId = msg.key.remoteJid;
     const db = getDatabase();
     const FRAME = UI.FREE_BAR;
-    if (!Perms.isBotOwner(db, sender)) return sock.sendMessage(chatId, { text: `❌ *OWNER ONLY.*\n${FRAME}\n/silence is an owner / co-owner command.` }, { quoted: msg });
+    if (!Perms.isBotOwner(db, sender)) return sock.sendMessage(chatId, { text: `❌ *OWNER ONLY.*\n${FRAME}\n/silence is an owner command.` }, { quoted: msg });
 
     const { jid, rest } = resolveTarget(db, msg, args);
     if (!jid) return sock.sendMessage(chatId, { text: `❌ Tag/reply to a mod.\nUsage: /silence @mod 30|not active` }, { quoted: msg });

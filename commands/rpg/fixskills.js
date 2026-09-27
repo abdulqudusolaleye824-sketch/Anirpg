@@ -37,7 +37,7 @@ module.exports = {
     const bare = (j) => String(j || '').split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
     const privileged = new Set([OWNER_JID, COOWNER_JID].map(bare).filter(Boolean));
     if (!privileged.has(bare(sender))) {
-      return sock.sendMessage(chatId, { text: '❌ Only the bot owner or co-owner can use this command!' }, { quoted: msg });
+      return sock.sendMessage(chatId, { text: '❌ Only the bot owner can use this command!' }, { quoted: msg });
     }
 
     // Target: self by default, else reply-to or first mention.

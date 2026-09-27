@@ -12,7 +12,7 @@ const Perms = require('../../utils/permissions');
 
 module.exports = {
   name: 'clearactivebots',
-  description: 'Wipe all group active bot mappings and reset to fresh state (Owner/Co-Owner DM only)',
+  description: 'Wipe all group active bot mappings and reset to fresh state (Owner DM only)',
   ownerOnly: true,
 
   async execute(sock, msg, args, getDatabase, saveDatabase, sender) {
@@ -22,7 +22,7 @@ module.exports = {
     const isOwner = Perms.isBotOwner(db, sender);
     if (!isOwner) {
       return sock.sendMessage(chatId, {
-        text: '❌ Only the bot owner or co-owner can execute /clearactivebots.',
+        text: '❌ Only the bot owner can execute /clearactivebots.',
       }, { quoted: msg });
     }
 
