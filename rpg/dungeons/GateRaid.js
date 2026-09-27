@@ -134,10 +134,13 @@ function monsterCritChance(monster) {
 // Push #88q: SPEED / INITIATIVE. Chance (%) that the raid monster acts BEFORE
 // the hunter this turn: 35% at equal speed, ±1.5% per point of speed edge,
 // clamped 10–80. Held (stunned/frozen) monsters never win initiative.
+// Push #88t: ONLY a genuinely faster monster can win initiative — 0% when its
+// speed is equal or lower; +4% per point of speed edge, capped at 80%.
 function raidInitiativeChance(monster, player) {
   const ms = Number(monster?.speed || monster?.stats?.speed || 10);
   const ps = Number(player?.stats?.speed || 10);
-  return Math.max(10, Math.min(80, Math.round(35 + (ms - ps) * 1.5)));
+  if (ms <= ps) return 0;
+  return Math.min(80, Math.round((ms - ps) * 4));
 }
 function raidMonsterGoesFirst(monster, player) {
   if (!monster || !player) return false;
@@ -263,10 +266,11 @@ function resolveCode(code, db = null) {
       const { MONSTER_DROPS } = require('../data/MonsterDrops');
       const pool = (MONSTER_DROPS[rank] && MONSTER_DROPS[rank].monsters) || MONSTER_DROPS['E'].monsters;
       const bossPool = (MONSTER_DROPS[rank] && MONSTER_DROPS[rank].bosses) || MONSTER_DROPS['E'].bosses;
-      const bossData = bossPool[Math.floor(Math.random()*bossPool.length)];
+      const _themed = GateManager.pickGateTheme(rank, bossPool); // Push #88t
+      const bossData = _themed.boss;
       // Push #71: same bestiary/strength builder as spawnGate.
       const strengthPct = keyData.strengthPct || GateManager.rollGateStrength();
-      const monsters = GateManager.buildGateMonsters(rank, totalFloors, strengthPct);
+      const monsters = GateManager.buildGateMonsters(rank, totalFloors, strengthPct, bossData && bossData.name); // Push #88t: themed
       const bossHp = Math.floor(rd.bossHp * Math.max(0.6, strengthPct / 100));
       gate = {
         strengthPct, strengthLabel: GateManager.strengthLabel(strengthPct),
@@ -286,7 +290,7 @@ function resolveCode(code, db = null) {
         raidStarted:false, raidStartTime:null,
         currentFloor:0, totalFloors,
         monsters,
-        boss: { name: bossData.name, hp: bossHp, maxHp: bossHp, defeated:false },
+        boss: { name: bossData.name, baseName: bossData.baseName || bossData.name, family: _themed.theme || null, hp: bossHp, maxHp: bossHp, defeated:false }, theme: _themed.theme || null,
         bossLoot: [],
         lootDistributed:false,
         monstersKilled:0, damageDealt:{},
@@ -1196,6 +1200,8 @@ function clearGate(gate, key, keyData, db, saveDatabase) {
 // strikes the WEAKEST living member (lowest HP). Repeats every 30 s of
 // idleness. The caller (index.js ticker) sends the returned messages.
 const IDLE_STRIKE_MS = 30 * 1000;
+const IDLE_STRIKE_OTHER_MS = 45 * 1000;
+function idleStrikeMsFor(rank) { return ['S', 'SS', 'SSS', 'DISASTER'].includes(String(rank || '').toUpperCase()) ? IDLE_STRIKE_MS : IDLE_STRIKE_OTHER_MS; }
 function noteRaidTurn(gate, chatId) {
   if (!gate || !gate.raid) return;
   gate.raid.lastTurnAt = Date.now();
@@ -1216,10 +1222,9 @@ function autoStrikeIdleRaids(db, now = Date.now()) {
     try {
       const raid = gate && gate.raid;
       if (!raid || raid.status !== 'active' || gate.cleared) continue;
-      if (String(gate.rank || '').toUpperCase() !== 'S') continue;
       if (!(raid.mode === 'party' || (raid.members || []).length > 1)) continue;
       const last = raid.lastTurnAt || raid.startedAt || 0;
-      if (!last || now - last < IDLE_STRIKE_MS) continue;
+      if (!last || now - last < idleStrikeMsFor(gate.rank)) continue; // Push #88t: 30 s in S gates, 45 s in every other rank
       const target = _currentRaidTarget(gate);
       if (!target) continue;
       const held = (target.statusEffects || []).some(e => ['stun', 'freeze', 'paralyze'].includes(String(e.type || '').toLowerCase()));
@@ -1234,7 +1239,7 @@ function autoStrikeIdleRaids(db, now = Date.now()) {
       const dmg = monsterDamage(target, def, u);
       const crit = !!(monsterDamage.last && monsterDamage.last.crit);
       let maxHp = u.stats?.maxHp || 100; try { maxHp = require('../utils/GearSystem').effectiveMaxHp(u); } catch (e) {}
-      const lines = [`⏱️ *NO ONE MOVED FOR 30s — THE GATE STRIKES!*`, `👹 *${target.name}* lunges at the weakest hunter, *${u.name}*!`];
+      const lines = [`⏱️ *NO ONE MOVED FOR ${Math.round(idleStrikeMsFor(gate.rank) / 1000)}s — THE GATE STRIKES!*`, `👹 *${target.name}* lunges at the weakest hunter, *${u.name}*!`];
       if (dmg <= 0) lines.push(`💨 *${u.name}* dodged it!`);
       else {
         u.stats.hp = Math.max(0, (u.stats.hp || 0) - dmg);
@@ -1311,7 +1316,7 @@ module.exports = {
   saveGateState,
   spawnWildPet,
   tryCombatLock,
-  monsterCritChance, monsterDodgeChance, monsterDodges, critMultFor, noteRaidTurn, autoStrikeIdleRaids, IDLE_STRIKE_MS, raidInitiativeChance, raidMonsterGoesFirst, RAID_X2,
+  monsterCritChance, monsterDodgeChance, monsterDodges, critMultFor, noteRaidTurn, autoStrikeIdleRaids, IDLE_STRIKE_MS, IDLE_STRIKE_OTHER_MS, idleStrikeMsFor, raidInitiativeChance, raidMonsterGoesFirst, RAID_X2,
   releaseCombatLock,
   wipeGate,
   applyMonsterScaling, floorMultiplier, severityLabel, markHealerAggro, pickAggroTarget, supportCast,

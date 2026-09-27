@@ -1,3 +1,13 @@
+## 1.0.107 — Push #88t (2026-09-27)
+- Silent bots: FAST deaf cross-check — every bot in a group must see every group message; a connected bot that misses 2+ messages another bot decrypted (>45 s) is recycled immediately (was up to 4 min of silence; slow rule now 3 min). Max 2 fast recycles / 30 min per bot.
+- Raid initiative FIX: only a genuinely FASTER monster can strike first (0% at equal/lower speed, +4%/SPD point, cap 80%); an initiative strike IS the monster's action for that turn — no second counter-attack (and no double crit).
+- Support pets now heal on the kill turn too in gate raids (they only healed when the monster survived).
+- `/bug` reports go to BOTH owner and co-owner; the co-owner is never @mentioned in outputs (`/mods` hidden tag removed).
+- Ranger Snare Trap: stun chance 100% → 60%.
+- Gate raids: every ALIVE member gets general EXP on monster/boss defeats; the last hit still takes loot + aura + Astra Pass. Gate aura gain cut by 50%.
+- Idle strike: 30 s in S/SS gates, 45 s in every other rank.
+- Gate monsters are THEMED per gate (insect / beast / goblinoid / undead / reptile / construct / demon / elf / slime): the theme is rolled first, the boss matches it (from the boss table or the family's apex monster is crowned), and no other family leaks in — no ants in Lycan dens. Boss floor gets 2 ELITE SOLDIERS (×1.5). Within each floor monsters are fought weakest → strongest.
+
 ## 1.0.106 — Push #88s (2026-09-26)
 - `/spawn` is now owner/co-owner only. `/spawn pet <name|rarity>` picks the exact pet by name; the spawner's `/catch` is free (no Nexus/Mana Stones, no Luck Potion used) and guaranteed.
 

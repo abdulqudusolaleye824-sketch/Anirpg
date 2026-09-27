@@ -38,33 +38,121 @@ function strengthText(rank, pct, gate = null) {
   return `${rank} rank gate ${pct}% — ${strengthLabel(pct)}${pct >= 100 ? ` (strongest possible ${rank}-rank gate)` : ''} · final severity set by party strength at launch`;
 }
 // Shared by spawnGate() and GateRaid.reconstruct(): same monsters everywhere.
-function buildGateMonsters(rank, floors, strengthPct = 100) {
+// Push #88t — MONSTER FAMILIES. A gate has ONE theme (derived from its boss)
+// and every floor is populated from that family only: no Razor Ants in a
+// Lycan den, no slimes under a Dragon. Names that match no family are
+// "wild" and may appear anywhere. Order matters: first match wins.
+const MONSTER_FAMILIES = [
+  { id: 'insect',    re: /\b(ants?|spider|centipede|beetle|moth|crab|crawler|scorpion|wasp|mantis|beru|querehsha|hive)\b/i },
+  { id: 'goblinoid', re: /\b(goblin|hobgoblin|orc|kobold|ogre|troll|gnoll|imp|kargalgan|baruka|giant)\b/i },
+  { id: 'beast',     re: /\b(wolf|wolves|lycan|hound|bear|boar|rabbit|cerberus|beast|bloodhound|yeti|rakan|lion|tiger|fox|rat|bat)\b/i },
+  { id: 'undead',    re: /\b(skeleton|ghoul|wraith|bone|grave|vampire|hollow|shade|remnant|igris|bellion|blood moon|lich|zombie|revenant)\b/i },
+  { id: 'reptile',   re: /\b(lizard|lizardman|kasaka|naga|basilisk|drake|wyvern|dragon|kamish|antares|leviathan|turtle|wyrm|wyrmling|serpent|snake|kaisel|toad)\b/i },
+  { id: 'construct', re: /\b(golem|titan|gargoyle|steel|cataclysm|kandiaru|iron body|statue|sentinel|colossus|juggernaut)\b/i },
+  { id: 'demon',     re: /\b(demon|vulcan|metus|baran|greed|abyss|void|chaos|catastrophe|infernal|hell|devil|world ender|god|plague)\b/i },
+  { id: 'elf',       re: /\b(elf|elves|legia|harpy)\b/i },
+  { id: 'slime',     re: /\b(slime)\b/i },
+];
+// Modifier prefixes that never change what a monster IS ("Fallen Vulcan Demon Noble" is a demon).
+const MOD_PREFIX_RE = /^(?:(?:Elite|Fallen|Awakened|Ancient|Greater|Alpha|Cursed|Feral|Venomous|Abyssal|Toxic|Monarch-Touched|Elder|Crystal|Frost|Blood|Shadow|Void|Dark|Corrupted|Prime|Royal|Iron|Storm|Ice|Stone|Steel|Steel-Fanged|Venom-Fanged|Blue|Giant|Ember|Cave|Bone|Rabid|Wild|Dire)\s+)+/i;
+function stripMods(name) { const n = String(name || '').trim(); const s = n.replace(MOD_PREFIX_RE, '').trim(); return s || n; }
+function monsterFamily(name) {
+  const n = stripMods(name);
+  for (const f of MONSTER_FAMILIES) if (f.re.test(n)) return f.id;
+  // second pass on the full name (e.g. "Stone Golem Fragment" → stripped "Golem Fragment" already matched; "Ice Wolf" → beast)
+  const full = String(name || '');
+  for (const f of MONSTER_FAMILIES) if (f.re.test(full)) return f.id;
+  return null; // wild
+}
+// Families that may share a gate when a rank has too few monsters of the boss's family.
+const FAMILY_ALLIES = {
+  goblinoid: ['beast'], beast: ['goblinoid'], undead: ['demon'], demon: ['undead'],
+  reptile: ['construct'], construct: ['reptile'], elf: ['beast'], slime: ['goblinoid'], insect: [],
+};
+function themedPool(rank, theme) {
+  const list = SL.SL_MONSTERS[rank] || SL.SL_MONSTERS.E;
+  if (!theme) return list;
+  const wild = list.filter(m => monsterFamily(m.name) === null);
+  let pool = list.filter(m => monsterFamily(m.name) === theme);
+  if (pool.length < 4) for (const ally of (FAMILY_ALLIES[theme] || [])) pool = pool.concat(list.filter(m => monsterFamily(m.name) === ally));
+  if (pool.length < 4) pool = pool.concat(wild);
+  // Never let the boss's family be missing entirely: fall back to the full list minus insects
+  // (insects are the one family that must never leak into other themes).
+  if (pool.length < 4) pool = list.filter(m => theme === 'insect' || monsterFamily(m.name) !== 'insect');
+  return pool.length ? pool : list;
+}
+function pickThemed(pool, strengthPct) {
+  const maxTier = strengthPct >= 95 ? 5 : strengthPct >= 85 ? 4 : strengthPct >= 70 ? 3 : 2;
+  let p = pool.filter(m => m.tier <= maxTier);
+  if (!p.length) p = pool;
+  const weighted = p.flatMap(m => Array(m.tier).fill(m));
+  return weighted[Math.floor(Math.random() * weighted.length)] || pool[0];
+}
+// Push #88t: pick the gate's theme FIRST (weighted by how many monsters of
+// that family the rank has), then a boss of the same family — from the boss
+// table when one exists, otherwise the theme's apex monster is crowned.
+const FAMILY_TITLES = { beast: 'Alpha', goblinoid: 'Chieftain', undead: 'Lich Lord', reptile: 'Elder', construct: 'Colossus', demon: 'Overlord', elf: 'Monarch', slime: 'King', insect: 'Queen' };
+function pickGateTheme(rank, bossPool) {
+  const list = SL.SL_MONSTERS[rank] || SL.SL_MONSTERS.E;
+  const counts = {};
+  for (const m of list) { const f = monsterFamily(m.name); if (f) counts[f] = (counts[f] || 0) + 1; }
+  const options = Object.entries(counts).filter(([, n]) => n >= 4);
+  const bosses = Array.isArray(bossPool) ? bossPool : [];
+  if (!options.length) { const b = bosses[Math.floor(Math.random() * bosses.length)] || { name: 'Gate Warden' }; return { theme: monsterFamily(b.name), boss: { ...b, baseName: b.name } }; }
+  const total = options.reduce((a, [, n]) => a + n, 0);
+  let r = Math.random() * total, theme = options[0][0];
+  for (const [f, n] of options) { r -= n; if (r <= 0) { theme = f; break; } }
+  const matching = bosses.filter(b => monsterFamily(b.name) === theme);
+  if (matching.length) { const b = matching[Math.floor(Math.random() * matching.length)]; return { theme, boss: { ...b, baseName: b.name } }; }
+  const fam = list.filter(m => monsterFamily(m.name) === theme);
+  const top = Math.max(...fam.map(m => m.tier || 1));
+  const apex = fam.filter(m => (m.tier || 1) === top);
+  const base = apex[Math.floor(Math.random() * apex.length)] || fam[0];
+  const stripped = (String(base.name).replace(/^(?:(?:Elite|Fallen|Awakened|Ancient|Greater|Alpha|Cursed|Feral|Venomous|Abyssal|Toxic|Monarch-Touched|Elder)\s+)+/i, '').trim() || base.name).replace(/\s+(Alpha|Apex)$/i, '');
+  const hasTitle = /\b(Lord|King|Queen|Monarch|Avatar|Sovereign|Emperor|Overlord|Chief|Chieftain|Commander|Colossus|Titan|Matriarch|Broodmother|Alpha|Elder|Warden|Lich)\b/i.test(stripped);
+  return { theme, boss: { name: hasTitle ? `Apex ${stripped}` : `${stripped} ${FAMILY_TITLES[theme] || 'Lord'}`, baseName: base.name, synthetic: true } };
+}
+const ELITE_MULT = 1.5;
+function _power(m) { return (m.maxHp || m.hp || 0) + (m.atk || 0) * 3 + (m.def || 0) * 2; }
+// Push #88t: monsters within a floor are fought weakest → strongest.
+function orderFloors(monsters) {
+  return monsters.slice().sort((a, b) => (a.floor - b.floor) || (a.elite ? 1 : 0) - (b.elite ? 1 : 0) || _power(a) - _power(b));
+}
+function buildGateMonsters(rank, floors, strengthPct = 100, bossName = null) {
   const rd = GATE_RANKS[rank] || GATE_RANKS.E;
   const [minHp, maxHp] = rd.monsterRange || [15, 45];
   const scale = Math.max(0.6, Math.min(1, strengthPct / 100));
+  const theme = bossName ? monsterFamily(bossName) : null;
+  const pool = themedPool(rank, theme);
   const monsters = [];
-  const count = floors * 3;
-  for (let i = 0; i < count; i++) {
-    const floor = Math.floor(i / 3) + 1;
-    const m = SL.pickForStrength(rank, strengthPct);
+  const make = (m, floor, elite) => {
     const prof = SL.ROLE_PROFILE[m.role] || SL.ROLE_PROFILE.brute;
     // Deeper floors + higher tier + gate strength push the HP roll upward.
     const floorBias = (floor - 1) / Math.max(1, floors - 1);            // 0..1
     const tierBias  = (m.tier - 1) / 4;                                   // 0..1
     const roll = Math.random() * 0.5 + floorBias * 0.25 + tierBias * 0.25; // 0..1
-    const baseHp = Math.floor((minHp + roll * (maxHp - minHp)) * scale);
+    const baseHp = Math.floor((minHp + roll * (maxHp - minHp)) * scale) * (elite ? ELITE_MULT : 1);
     const hp = Math.max(5, Math.floor(baseHp * prof.hp));
-    monsters.push({
-      name: m.name, role: m.role, tier: m.tier,
+    return {
+      name: elite ? `${/^Elite\b/i.test(m.name) ? '' : 'Elite '}${m.name}${/\bSoldier$/i.test(m.name) ? '' : ' Soldier'}` : m.name, role: m.role, tier: m.tier,
       hp, maxHp: hp,
       atk: Math.max(1, Math.floor(baseHp * prof.atk)),
       def: Math.floor(baseHp * prof.def),
-      speed: Math.round(10 * prof.speed),
+      speed: Math.round(10 * prof.speed * (elite ? 1.2 : 1)),
       skills: m.skills,
       floor, defeated: false,
-    });
+      family: theme || monsterFamily(m.name) || 'wild',
+      ...(elite ? { elite: true } : {}),
+    };
+  };
+  for (let floor = 1; floor <= floors; floor++) {
+    for (let j = 0; j < 3; j++) monsters.push(make(pickThemed(pool, strengthPct), floor, false));
   }
-  return monsters;
+  // Push #88t: the boss floor is guarded by 2 ELITE SOLDIERS (strongest tier of the theme, ×1.5).
+  const topTier = Math.max(...pool.map(m => m.tier || 1));
+  const eliteBase = pool.filter(m => (m.tier || 1) >= Math.max(1, topTier - 1));
+  for (let j = 0; j < 2; j++) monsters.push(make(eliteBase[Math.floor(Math.random() * eliteBase.length)] || pool[0], floors, true));
+  return orderFloors(monsters);
 }
 
 const GATE_RANKS = {
@@ -110,7 +198,8 @@ class GateManager {
 
     const pool = MONSTER_DROPS[rank]?.monsters || MONSTER_DROPS['E'].monsters;
     const bossPool = MONSTER_DROPS[rank]?.bosses || MONSTER_DROPS['E'].bosses;
-    const bossData = bossPool[Math.floor(Math.random() * bossPool.length)];
+    const themed = pickGateTheme(rank, bossPool); // Push #88t: theme first, boss of the same family
+    const bossData = themed.boss;
     const bossName = bossData.name;
 
     const [pMin, pMax] = rankData.priceRange || [0, 0];
@@ -138,7 +227,7 @@ class GateManager {
 
     // Push #71: Solo Leveling bestiary + gate strength %.
     const strengthPct = rollGateStrength();
-    const monsters = buildGateMonsters(rank, rankData.floors, strengthPct);
+    const monsters = buildGateMonsters(rank, rankData.floors, strengthPct, bossName); // Push #88t: themed to the boss
     const bossHp = Math.floor(rankData.bossHp * Math.max(0.6, strengthPct / 100));
 
     const loot = this.generateBossLoot(rank, 6);
@@ -155,7 +244,8 @@ class GateManager {
       raidStarted: false, raidStartTime: null,
       strengthPct, strengthLabel: strengthLabel(strengthPct),
       currentFloor: 0, totalFloors: rankData.floors, monsters,
-      boss: { name: bossName, hp: bossHp, maxHp: bossHp, defeated: false },
+      boss: { name: bossName, baseName: bossData.baseName || bossName, family: themed.theme || null, hp: bossHp, maxHp: bossHp, defeated: false },
+      theme: themed.theme || null,
       bossLoot: loot, lootDistributed: false,
       monstersKilled: 0, damageDealt: {},
     };
@@ -193,7 +283,7 @@ class GateManager {
 
   static rollMonsterKillDrop(rank, monsterName) {
     // Push #71: bestiary monsters drop their own craft materials (45%).
-    const sl = SL.SL_BY_NAME[monsterName];
+    const sl = SL.SL_BY_NAME[monsterName] || SL.SL_BY_NAME[String(monsterName || '').replace(/^Elite\s+/i, '').replace(/\s+Soldier$/i, '')];
     if (sl) {
       if (Math.random() > 0.45) return null;
       const name = sl.drops[Math.floor(Math.random() * sl.drops.length)];
@@ -384,5 +474,8 @@ GateManager.rollGateStrength = rollGateStrength;
 GateManager.strengthLabel = strengthLabel;
 GateManager.strengthText = strengthText;
 GateManager.buildGateMonsters = buildGateMonsters;
+GateManager.monsterFamily = monsterFamily;
+GateManager.pickGateTheme = pickGateTheme;
+GateManager.orderFloors = orderFloors;
 
-module.exports = { GateManager, GATE_RANKS, LOOT_TABLES, GATE_MONSTERS, GATE_BOSSES, rollGateStrength, strengthLabel, strengthText, buildGateMonsters };
+module.exports = { GateManager, GATE_RANKS, LOOT_TABLES, GATE_MONSTERS, GATE_BOSSES, rollGateStrength, strengthLabel, strengthText, buildGateMonsters, monsterFamily, orderFloors, MONSTER_FAMILIES, pickGateTheme };

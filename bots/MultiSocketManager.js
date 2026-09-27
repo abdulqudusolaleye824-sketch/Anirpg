@@ -524,7 +524,7 @@ function startStallSweeper(ctx) {
 // After 3 recycles in a row with no recovery, purge session files as a last
 // resort (still no re-scan).
 // ═══════════════════════════════════════════════════════════════
-const DEAF_AFTER_MS = Number(process.env.BOT_DEAF_AFTER_MS || 4 * 60 * 1000);
+const DEAF_AFTER_MS = Number(process.env.BOT_DEAF_AFTER_MS || 3 * 60 * 1000); // Push #88t: 4 → 3 min
 const DEAF_SCAN_MS = 30 * 1000;
 let _badMacHits = [];
 const _lastInboundAt = {};      // key -> ts of last FRESH inbound (decrypted, not stale)
@@ -532,7 +532,53 @@ const _lastOpenAt = {};         // key -> ts the current socket opened
 const _lastStaleAt = {};        // key -> ts of last stale-dropped inbound (lagging socket)
 const _deafRecycles = {};       // key -> consecutive recycles without recovery
 const _deafHealAt = {};         // key -> ts of last recycle
-function noteFreshInbound(key) { _lastInboundAt[key] = Date.now(); _deafRecycles[key] = 0; }
+function noteFreshInbound(key, msg) {
+  _lastInboundAt[key] = Date.now(); _deafRecycles[key] = 0;
+  // Push #88t: per-message cross-check bookkeeping (see _crossCheckDeaf).
+  try {
+    const chat = msg?.key?.remoteJid; const id = msg?.key?.id;
+    if (!chat || !id || !chat.endsWith('@g.us')) return;
+    if (!_groupHeardAt[key]) _groupHeardAt[key] = {};
+    _groupHeardAt[key][chat] = Date.now();
+    const mk = chat + '|' + id;
+    let e = _msgSeen.get(mk);
+    if (!e) { e = { chat, firstAt: Date.now(), from: String(msg.key.participant || '').split('@')[0].split(':')[0], seen: new Set() }; _msgSeen.set(mk, e); }
+    e.seen.add(key);
+  } catch (e) {}
+}
+// Push #88t — FAST DEAF CROSS-CHECK. Every bot in a group receives every
+// message of that group. If bot A decrypted message M in group G and bot B
+// (which heard G within the last 30 min and is connected for >60 s) has NOT
+// seen M after CROSS_MISS_MS, B is deaf → recycle B right away instead of
+// waiting DEAF_AFTER_MS of total silence. Bounded by one recycle per scan.
+const CROSS_MISS_MS = Number(process.env.BOT_CROSS_MISS_MS || 45 * 1000);
+const CROSS_MEMBER_MS = 30 * 60 * 1000;
+const _groupHeardAt = {};   // key -> { chatId -> ts }
+const _msgSeen = new Map(); // 'chat|id' -> { chat, firstAt, from, seen:Set<key> }
+const _crossRecycles = {};  // key -> [ts] of fast recycles
+function _crossCheckDeaf(live, now) {
+  const missing = {}; // key -> count
+  for (const [mk, e] of _msgSeen) {
+    const age = now - e.firstAt;
+    if (age > 4 * 60 * 1000) { _msgSeen.delete(mk); continue; }
+    if (age < CROSS_MISS_MS) continue;
+    for (const k of live) {
+      if (e.seen.has(k)) continue;
+      const me = String(botSockets[k]?.user?.id || '').split(':')[0].split('@')[0];
+      if (me && e.from && me === e.from) continue;               // its own message
+      if (now - (_groupHeardAt[k]?.[e.chat] || 0) > CROSS_MEMBER_MS) continue; // not (known to be) in that group
+      if (now - (_lastOpenAt[k] || 0) < 60 * 1000) continue;       // just (re)connected
+      if (e.firstAt < (_lastOpenAt[k] || 0)) continue;             // message predates this socket
+      if ((_crossRecycles[k] || []).filter(t => now - t < 30 * 60 * 1000).length >= 2) continue; // max 2 fast recycles / 30 min (then the slow rule owns it)
+      missing[k] = (missing[k] || 0) + 1;
+    }
+  }
+  const worst = Object.entries(missing).sort((a, b) => b[1] - a[1])[0];
+  if (!worst || worst[1] < 2) return false; // need ≥2 missed messages (avoid one-off decrypt hiccups)
+  const ok = recycleDeafSocket(worst[0], `missed ${worst[1]} group message(s) that another bot decrypted (>${Math.round(CROSS_MISS_MS / 1000)}s)`, 90 * 1000);
+  if (ok) { (_crossRecycles[worst[0]] = _crossRecycles[worst[0]] || []).push(now); }
+  return ok;
+}
 (function _hookLibsignalNoise() {
   try {
     const origErr = console.error.bind(console);
@@ -577,11 +623,11 @@ function _purgeSignalSessions(authDir, key) {
   } catch (e) {}
   return n;
 }
-function recycleDeafSocket(key, why) {
+function recycleDeafSocket(key, why, minGapMs) {
   const bp = _bootParams[key];
   if (!bp) return false;
   const now = Date.now();
-  if (now - (_deafHealAt[key] || 0) < DEAF_AFTER_MS) return false;
+  if (now - (_deafHealAt[key] || 0) < (minGapMs || DEAF_AFTER_MS)) return false;
   _deafHealAt[key] = now;
   _deafRecycles[key] = (_deafRecycles[key] || 0) + 1;
   const n = _deafRecycles[key];
@@ -625,6 +671,7 @@ setInterval(() => {
     const now = Date.now();
     _badMacHits = _badMacHits.filter(t => now - t < 60 * 1000);
     const live = Object.keys(botSockets).filter(k => botSockets[k]?.user?.id && !_loggedOut.has(k));
+    if (live.length >= 2 && _crossCheckDeaf(live, now)) return; // Push #88t: fast path
     const anyoneHearing = live.some(k => now - (_lastInboundAt[k] || 0) < DEAF_AFTER_MS);
     if (live.length < 2 || !anyoneHearing) {
       // Nobody to compare against (or whole fleet quiet): lonely-deaf rule.
@@ -2001,7 +2048,7 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
       }
     } catch (e) {}
 
-    noteFreshInbound(personalityKey); // Push #86: a decrypted, non-stale message = this socket hears
+    noteFreshInbound(personalityKey, msg); // Push #86: a decrypted, non-stale message = this socket hears
 
     // Unwrap Baileys message containers (ephemeralMessage, viewOnceMessage, documentWithCaptionMessage, editedMessage, etc.)
     const realMessage = unwrapMessage(msg);

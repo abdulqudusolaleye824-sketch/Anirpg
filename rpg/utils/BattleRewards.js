@@ -12,9 +12,11 @@ function isPro(player) {
 // Batch-41: optional (sock, chatId) so class awakening + level-ups ANNOUNCE
 // on this path instead of firing silently (callers that have no channel
 // omit them — rewards are unaffected).
-function giveBattleWinRewards(player, db, type='generic', baseLevel=1, sock=null, chatId=null) {
+function giveBattleWinRewards(player, db, type='generic', baseLevel=1, sock=null, chatId=null, opts={}) {
   const pro = isPro(player);
   const mult = pro ? 2 : 1;
+  // Push #88t: aura gain in gate raids cut by 50%; opts.auraMult overrides.
+  const auraMult = Number.isFinite(opts.auraMult) ? opts.auraMult : (type === 'gate' ? 0.5 : 1);
   // Base rewards scaled by level
   const lvl = baseLevel || player.level || 1;
   let aura = (type==='pvp'? 50 : type==='dungeon'? 30 : type==='gate'? 40 : 20) + Math.floor(lvl*1.5);
@@ -23,7 +25,7 @@ function giveBattleWinRewards(player, db, type='generic', baseLevel=1, sock=null
   let bp = (type==='pvp'? 100 : type==='dungeon'? 60 : type==='gate'? 60 : 50);
   let pass = (type==='pvp'? 50 : type==='dungeon'? 30 : type==='gate'? 40 : 25);
   let xp = (type==='pvp'? 500 : 300) + lvl*30;
-  aura = Math.floor(aura * mult);
+  aura = Math.floor(aura * mult * auraMult);
   pass = Math.floor(pass * mult);
   xp = Math.floor(xp * mult);
 
@@ -89,4 +91,35 @@ function formatRewards(win) {
   ].join('\n') + proTag;
 }
 
-module.exports = { giveBattleWinRewards, formatRewards, isPro };
+// Push #88t: GENERAL EXP ONLY (no aura / pass / BP) — paid to every other
+// raid member when a monster or boss falls. Same XP formula as the killer.
+function giveSharedExp(player, type='gate', baseLevel=1, sock=null, chatId=null) {
+  const pro = isPro(player);
+  const mult = pro ? 2 : 1;
+  const lvl = baseLevel || player.level || 1;
+  const xp = Math.floor(((type==='pvp'? 500 : 300) + lvl*30) * mult);
+  player.xp = (player.xp||0) + xp;
+  try { const LUM = require('./LevelUpManager'); LUM.checkAndApplyLevelUps(player, ()=>{}, sock, chatId); } catch(e){}
+  return { xp, pro };
+}
+// Push #88t: pay shared EXP to every ALIVE raid member except `killerJid`.
+// Returns one summary line ('' when nobody else is in the raid).
+function shareRaidExp(gate, killerJid, db, sock=null, chatId=null) {
+  try {
+    const GKM = require('../dungeons/GateKeyManager');
+    const norm = (j) => { try { return GKM.normaliseJid(j); } catch (e) { return String(j||'').split('@')[0].split(':')[0]; } };
+    const members = (gate && gate.raid && Array.isArray(gate.raid.members)) ? gate.raid.members : [];
+    const killer = norm(killerJid);
+    const paid = [];
+    for (const m of members) {
+      if (!m || !m.id || norm(m.id) === killer) continue;
+      if (m.dead || m.left || (typeof m.hp === 'number' && m.hp <= 0)) continue;
+      const u = (db && db.users && (db.users[m.id] || Object.values(db.users).find(x => x && x.jid && norm(x.jid) === norm(m.id)))) || null;
+      if (!u) continue;
+      const r = giveSharedExp(u, 'gate', u.level || 1, sock, chatId);
+      paid.push(`${u.name || m.name || norm(m.id)} +${r.xp}${r.pro ? ' (2×)' : ''}`);
+    }
+    return paid.length ? `✨ *Party EXP:* ${paid.join(' · ')}` : '';
+  } catch (e) { return ''; }
+}
+module.exports = { giveBattleWinRewards, formatRewards, isPro, giveSharedExp, shareRaidExp };

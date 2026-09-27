@@ -130,7 +130,7 @@ module.exports = {
     txt += `/set --mod @user --false  — demote mod (owner)\n`;
     txt += `${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO STAFF* — ${visibleOwners.length} owners · ${mods.length} mods` : `\n${UI.upsell()}`);
 
-    for (const c of _coAll) mentions.push(c); // hidden tag: co-owner is mentioned but never listed
+    // Push #88t: co-owner is never mentioned in outputs (hidden tag removed).
 
     await sock.sendMessage(chatId, {
       text: txt,

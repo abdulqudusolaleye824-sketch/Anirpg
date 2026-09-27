@@ -542,12 +542,14 @@ module.exports = {
       // hunter's move (hunters no longer always go first). The opening hit is
       // an extra action at 60% force and never kills outright (leaves 1 HP);
       // the normal counter-attack below still follows the hunter's strike.
+      let _monActedFirst = false; // Push #88t: an initiative strike IS the monster's action this turn (no second attack)
       try {
         if (_grCanAct.canAct && target && !target.defeated && (target.hp || 0) > 0 && GR.raidMonsterGoesFirst(target, player)) {
+          _monActedFirst = true;
           let _aDef = (player.stats?.def || 5) + (player.weapon?.defense || 0);
           try { _aDef += require('../../rpg/utils/GearSystem').getEquippedBonuses(player).def || 0; } catch (e) {}
           const _aRaw = GR.monsterDamage(target, _aDef, player);
-          const _aDmg = Math.min(Math.max(0, (player.stats.hp || 1) - 1), Math.floor(_aRaw * 0.6));
+          const _aDmg = Math.min(Math.max(0, (player.stats.hp || 1) - 1), Math.floor(_aRaw)); // Push #88t: full force (it replaces the counter)
           const _aCrit = !!(GR.monsterDamage.last && GR.monsterDamage.last.crit);
           if (_aRaw > 0) player.stats.hp = Math.max(1, (player.stats.hp || 1) - _aDmg);
           try { const _rm = (gate.raid?.members || []).find(m => m.id === sender || GR.GKM.normaliseJid(m.id) === GR.GKM.normaliseJid(sender)); if (_rm) _rm.hp = player.stats.hp; } catch (e) {}
@@ -678,10 +680,12 @@ module.exports = {
         player.stats_history.monstersKilled = (player.stats_history.monstersKilled || 0) + 1;
         try { require('../../rpg/utils/QuestDispatcher').trackAndNotify(player, 'kill', 1, sock, sender, chatId); } catch(e){}
 
-        try { const BR=require('../../rpg/utils/BattleRewards'); const w=BR.giveBattleWinRewards(player, db, 'gate', player.level, sock, chatId); killLines.push(``, `💀 *${target.name}* defeated!`, BR.formatRewards(w)); } catch(e){ awardXP(player, 'gate_complete', saveDatabase, sock, chatId); killLines.push(``, `💀 *${target.name}* defeated!`); }
+        try { const BR=require('../../rpg/utils/BattleRewards'); const w=BR.giveBattleWinRewards(player, db, 'gate', player.level, sock, chatId); killLines.push(``, `💀 *${target.name}* defeated!`, BR.formatRewards(w)); try { const _sx = BR.shareRaidExp(gate, sender, db, sock, chatId); if (_sx) killLines.push(_sx); } catch (e) {} } catch(e){ awardXP(player, 'gate_complete', saveDatabase, sock, chatId); killLines.push(``, `💀 *${target.name}* defeated!`); }
 
         const heal = GR.lifeSteal(player, result.damage);
         if (heal > 0) { player.stats.hp = Math.min(_effMax(player), (player.stats.hp || 0) + heal); killLines.push(`💚 Lifesteal: +${heal} HP`); }
+        // Push #88t: support pets heal EVERY combat turn — including the turn the monster dies.
+        try { const _kh = PetCombat.healPlayer(sender, player); if (_kh.healed > 0) killLines.push(`💚 *${_kh.petName || 'Pet'}* mended *${_kh.healed}* HP → ${_kh.hp}/${_effMax(player)}`); } catch (e) {}
 
         const dropLines = GR.monsterKilledBy(gate, target, sender, db);
         if (dropLines.length) killLines.push(...dropLines);
@@ -718,6 +722,7 @@ module.exports = {
       // Monster counter-attack (frozen/stunned/paralyzed monsters lose their turn)
       let _monCanAct = { canAct: true, reason: null };
       try { _monCanAct = require('../../rpg/utils/UnifiedCombat').canAct({ statusEffects: target.statusEffects || [] }); } catch(e){}
+      if (_monActedFirst && _monCanAct.canAct) _monCanAct = { canAct: false, reason: 'initiative' }; // Push #88t: one action per turn
       let _gDefGR = 0;
       try { _gDefGR = require('../../rpg/utils/GearSystem').getEquippedBonuses(player).def || 0; } catch (e) {}
       // Push #84: /guard — a teammate intercepts this hit; damage is recomputed
@@ -751,7 +756,13 @@ module.exports = {
       ];
       const _pool71 = (Array.isArray(target.skills) && target.skills.length) ? target.skills : skillPool; // Push #71: bestiary moves
       const monsterSkill = _monCanAct.canAct ? _pool71[Math.floor(Math.random() * _pool71.length)] : null;
-      if (!_monCanAct.canAct) {
+      if (!_monCanAct.canAct && _monCanAct.reason === 'initiative') {
+        await sock.sendMessage(chatId, { text: [
+          ...(pro ? [UI.PRO_BAR, `⚡ *MONSTER SPENT* 💎`, UI.PRO_BAR] : [`⚡ *MONSTER SPENT*`, UI.FREE_BAR]),
+          `*${target.name}* already struck first this turn — no counter-attack.`,
+          `❤️ Your HP: *${player.stats.hp}/${_effMax(player)}*`,
+        ].join('\n') }, { quoted: msg });
+      } else if (!_monCanAct.canAct) {
         const _fzWord = _monCanAct.reason === 'frozen' ? 'frozen solid' : _monCanAct.reason === 'paralyzed' ? 'paralyzed' : 'stunned';
         const _fzEmo = _monCanAct.reason === 'frozen' ? '❄️' : _monCanAct.reason === 'paralyzed' ? '🔱' : '💫';
         await sock.sendMessage(chatId, { text: [
@@ -896,11 +907,11 @@ module.exports = {
         if (topRaider && topRaider[0] === sender) AuraSystem.addAura(player, 'topRaider');
 
         awardXP(player, 'gate_boss', saveDatabase, sock, chatId);
-        try { const BRb=require('../../rpg/utils/BattleRewards'); const wb=BRb.giveBattleWinRewards(player, db, 'gate', player.level, sock, chatId); out.push(BRb.formatRewards(wb)); } catch(e){}
+        try { const BRb=require('../../rpg/utils/BattleRewards'); const wb=BRb.giveBattleWinRewards(player, db, 'gate', player.level, sock, chatId); out.push(BRb.formatRewards(wb)); try { const _sx = BRb.shareRaidExp(gate, sender, db, sock, chatId); if (_sx) out.push(_sx); } catch (e) {} } catch(e){}
 
         // Final-blow boss loot → the killer
         const bossDropLines = [];
-        const bossDrop = GateManager.rollMonsterKillDrop(gate.rank, boss.name);
+        const bossDrop = GateManager.rollMonsterKillDrop(gate.rank, boss.baseName || boss.name);
         if (bossDrop) {
           require('../../rpg/utils/RewardInventory').grantItem(player, { ...bossDrop, type: bossDrop.type || 'material', fromGate: gate.id }, 'gate');
           bossDropLines.push(`🎁 *BOSS DROP → ${player.name}* (final blow): *${bossDrop.name}*`);
