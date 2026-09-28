@@ -109,31 +109,20 @@ module.exports = {
 
       player.inventory.cards[cardType]--;
 
-      let nexusReward = 0;
-      let manaReward  = 0;
-      let label       = '';
-      let emoji       = '';
-
-      if (cardType === 'gvc_gold') {
-        nexusReward = 15000;
-        manaReward  = 3000;
-        label       = 'GOLD GUILD VICTORY CARD';
-        emoji       = '🥇';
-      } else if (cardType === 'gvc_silver') {
-        nexusReward = 10000;
-        manaReward  = 2000;
-        label       = 'SILVER GUILD VICTORY CARD';
-        emoji       = '🥈';
-      } else {
-        nexusReward = 5000;
-        manaReward  = 2000;
-        label       = 'BRONZE GUILD VICTORY CARD';
-        emoji       = '🥉';
-      }
+      // Push #90: rewards from the single source of truth (×10 Nexus/Mana + GP boost)
+      const GWR = require('../../rpg/utils/GuildWarRewards');
+      const card = GWR.GVC[cardType];
+      const nexusReward = card.nexus;
+      const manaReward  = card.manaStones;
+      const label       = card.label;
+      const emoji       = card.emoji;
 
       player.gold = (player.gold || 0) + nexusReward;
       player.manaCrystals = (player.manaCrystals || 0) + manaReward;
       if (player.inventory) player.inventory.gold = player.gold;
+      const boost = GWR.applyGpBoost(player, card.gpMult);
+      // EXP buff (3 uses) that the inventory always advertised — now actually granted.
+      try { if (!player.activeBuffs) player.activeBuffs = {}; player.activeBuffs[card.buff] = { usesLeft: 3, activated: Date.now() }; } catch (e) {}
 
       saveDatabase();
 
@@ -145,6 +134,8 @@ module.exports = {
           `✨ *REWARDS RECEIVED:*`,
           `💠 Nexus: *+${nexusReward.toLocaleString()}*`,
           `💎 Mana Stones: *+${manaReward.toLocaleString()}*`,
+          `⚡ GP Boost: *×${card.gpMult}* for 3 days (all GP you earn)${boost && boost.mult > card.gpMult ? ` — your stronger ×${boost.mult} boost stays active` : ''}`,
+          `✨ ${card.short} EXP Buff: ×${card.gpMult} EXP for 3 fights`,
           FRAME,
           `💳 Cards Remaining: *${player.inventory.cards[cardType]}*`,
           ...(pro ? [FRAME] : [FRAME, UI.upsell()]),
@@ -196,9 +187,9 @@ ${FRAME}
 /use heal          - Use highest available HP Potion
 /use energy        - Show energy regen status (potions scrapped)
 /use revive        - Use Revive Token
-/use GVC --gold    - Use Gold Victory Card (15k Nexus + 3k MS)
-/use GVC --silver  - Use Silver Victory Card (10k Nexus + 2k MS)
-/use GVC --bronze  - Use Bronze Victory Card (10k Nexus + 2k MS)
+/use GVC --gold    - Gold Victory Card (150k Nexus + 30k MS + 2× GP 3d)
+/use GVC --silver  - Silver Victory Card (100k Nexus + 20k MS + 1.5× GP 3d)
+/use GVC --bronze  - Bronze Victory Card (50k Nexus + 20k MS + 1.25× GP 3d)
 ${FRAME}`;
       const _healPct = (lowerCount + legacyCount) * 10 + mediumCount * 25 + higherCount * 50;
       if (pro) menu += `\n${UI.PRO_MINI}\n💎 *PRO FIELD KIT* — ~${_healPct}% HP + ${player.inventory.reviveTokens || 0} revives stocked`;

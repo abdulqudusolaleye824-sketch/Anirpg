@@ -252,7 +252,7 @@ Legendary equipment you equip for powerful passive effects.
 
 --- GUILD WAR (/guildwar) ---
 • Weekly GP contest between guilds: /guildwar shows the board, /guildwar history past winners.
-• Earn GP through PvP wins and guild activity. Top guilds + the weekly MVP earn big rewards.
+• Earn GP through PvP wins and guild activity. Every member of the top-3 guilds gets a Victory Card: Gold = 150,000 Nexus + 30,000 Mana Stones + 2× GP for 3 days; Silver = 100,000 + 20,000 + 1.5× GP; Bronze = 50,000 + 20,000 + 1.25× GP (/use GVC --gold|--silver|--bronze). Weekly MVP gets 200,000 Nexus + a title. Winners are announced every week in the Announcements GC (Sat 23:59 WAT).
 
 --- ROB (/rob) ---
 • /rob @user (tag, reply, or name/number) steals Nexus from another player — but you can get caught and lose Nexus instead.

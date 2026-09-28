@@ -1299,9 +1299,13 @@ function _announceWeeklyWarIfClosed() {
     if (!summary) return;
     const text = WGW.buildResultsCard(summary, database);
     if (!text) { console.log('🏆 Weekly Guild War resolved (no podium to announce)'); return; }
+    // Push #90: winners are announced in EVERY announcements GC we know of.
+    let mainGuildGc = null; try { const AG = require('./rpg/utils/AstralGroups'); const g = AG.primaryOf(database, 'guild'); mainGuildGc = g && g.isMain ? g.groupId : null; } catch (e) {}
     const targets = [...new Set([
       database.announceGC,
+      database.announcementGC,
       database.community && database.community.main_groupId,
+      mainGuildGc,
     ].filter(Boolean))];
     const sock = MultiSocketManager.getAnySocket ? MultiSocketManager.getAnySocket() : MultiSocketManager.getHostSocket();
     if (!sock || !targets.length) {

@@ -147,6 +147,10 @@ function addGuildGP(db, playerId, points, reason, opts = {}) {
     if (!db || !playerId || !points) return 0;
     try { require('./WeeklyGuildWar').checkWeeklyReset(db, opts.saveDatabase || null); } catch(e){}
     const player = db.users?.[playerId];
+    // Push #90: Guild-War GP boost (from victory cards) multiplies every positive GP gain.
+    if (points > 0 && player && !opts.raw) {
+      try { const m = require('./GuildWarRewards').gpMultiplier(player); if (m > 1) points = Math.floor(points * m); } catch (e) {}
+    }
     const _hadGP = (player?.weeklyGP || 0) > 0;
     if (player) {
       player.weeklyGP = Math.max(0, (player.weeklyGP || 0) + points);

@@ -143,11 +143,11 @@ function undoSettle(db, saveDatabase, weekKey) {
   if (entry.mvp && entry.mvp.jid) {
     const u = findPlayer(db, entry.mvp.jid) || (db.users || {})[entry.mvp.jid];
     if (u) {
-      u.gold = Math.max(0, (u.gold || 0) - 20000);
+      u.gold = Math.max(0, (u.gold || 0) - require('./GuildWarRewards').MVP_NEXUS);
       const otherWins = hist.some(h => h !== entry && !h.reverted && h.mvp && h.mvp.jid === entry.mvp.jid);
       if (!otherWins && Array.isArray(u.titles)) u.titles = u.titles.filter(t => t !== 'Weekly Guild War MVP');
       u.weeklyGP = (u.weeklyGP || 0) + Number(entry.mvp.gp || 0);
-      out.mvp = { name: entry.mvp.name, nexusRemoved: 20000, titleRemoved: !otherWins, gpRestored: Number(entry.mvp.gp || 0) };
+      out.mvp = { name: entry.mvp.name, nexusRemoved: require('./GuildWarRewards').MVP_NEXUS, titleRemoved: !otherWins, gpRestored: Number(entry.mvp.gp || 0) };
     }
   }
   entry.reverted = Date.now();
@@ -164,7 +164,7 @@ function buildResultsCard(summary, db) {
     if (!g) return null;
     const parts = [`${medal} *${g.name}* — ${Number(g.gp || 0).toLocaleString()} GP`];
     if (g.error) parts.push(`    ⚠️ ${g.error}`);
-    else parts.push(`    🎫 ${label} ×${Number(g.granted || 0)} — one per member${g.flag ? ` (*/use GVC ${g.flag}*)` : ''}`);
+    else parts.push(`    🎫 ${label} ×${Number(g.granted || 0)} — one per member${g.flag ? ` (*/use GVC ${g.flag}*)` : ''}`, `    🎁 ${g.flag === '--gold' ? '150,000 💠 + 30,000 💎 + ⚡ 2× GP for 3 days' : g.flag === '--silver' ? '100,000 💠 + 20,000 💎 + ⚡ 1.5× GP for 3 days' : '50,000 💠 + 20,000 💎 + ⚡ 1.25× GP for 3 days'}`);
     return parts.join('\n');
   };
   const lines = [
@@ -178,7 +178,7 @@ function buildResultsCard(summary, db) {
     rowFor(third, '🥉', 'BRONZE victory cards'),
     '',
     mvp
-      ? `⭐ *WEEKLY MVP:* ${mvp.name} — ${Number(mvp.gp || 0).toLocaleString()} GP\n    🎁 +20,000 💠 Nexus · title *Weekly Guild War MVP*`
+      ? `⭐ *WEEKLY MVP:* ${mvp.name} — ${Number(mvp.gp || 0).toLocaleString()} GP\n    🎁 +200,000 💠 Nexus · title *Weekly Guild War MVP*`
       : '⭐ No MVP this week — nobody earned GP.',
     '',
     `🎫 Cards are already in your inventory: */use GVC --gold* · *--silver* · *--bronze*`,
@@ -251,7 +251,7 @@ function resolveWeeklyWar(db, weekKey, saveDatabase) {
   let mvpName = null;
   if (mvpUserJid && maxUserGP > 0) {
     const mvpUser = db.users[mvpUserJid];
-    mvpUser.gold = (mvpUser.gold || 0) + 20000; // MVP gets 20,000 Nexus
+    mvpUser.gold = (mvpUser.gold || 0) + require('./GuildWarRewards').MVP_NEXUS; // Push #90: MVP gets 200,000 Nexus
     mvpName = mvpUser.name || mvpUserJid.split('@')[0];
     if (!mvpUser.titles) mvpUser.titles = [];
     if (!mvpUser.titles.includes('Weekly Guild War MVP')) {

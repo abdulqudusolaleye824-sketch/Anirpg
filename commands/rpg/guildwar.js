@@ -64,7 +64,7 @@ module.exports = {
       return sock.sendMessage(chatId, { text: [
         `↩️ *SETTLEMENT REVERTED* — ${r.weekKey}`,
         ...r.guilds.map(g => `• ${g.name}: ${g.removed} × ${g.card.replace('gvc_','').toUpperCase()} card removed · ${g.gpRestored.toLocaleString()} GP restored`),
-        r.mvp ? `• MVP ${r.mvp.name}: −20,000 Nexus${r.mvp.titleRemoved ? ' · title removed' : ''} · ${r.mvp.gpRestored.toLocaleString()} GP restored` : '',
+        r.mvp ? `• MVP ${r.mvp.name}: −200,000 Nexus${r.mvp.titleRemoved ? ' · title removed' : ''} · ${r.mvp.gpRestored.toLocaleString()} GP restored` : '',
         `🎫 Total cards removed: *${r.cardsRemoved}*`,
       ].filter(Boolean).join('\n') }, { quoted: msg });
     }
@@ -82,7 +82,7 @@ module.exports = {
         histLines.push(`  🥇 1st: *${h.first?.name || 'None'}* (${(h.first?.gp || 0).toLocaleString()} GP)`);
         histLines.push(`  🥈 2nd: *${h.second?.name || 'None'}* (${(h.second?.gp || 0).toLocaleString()} GP)`);
         histLines.push(`  🥉 3rd: *${h.third?.name || 'None'}* (${(h.third?.gp || 0).toLocaleString()} GP)`);
-        histLines.push(`  🌟 MVP: *${h.mvp?.name || 'None'}* (${(h.mvp?.gp || 0).toLocaleString()} GP) — +20,000 Nexus`);
+        histLines.push(`  🌟 MVP: *${h.mvp?.name || 'None'}* (${(h.mvp?.gp || 0).toLocaleString()} GP) — +200,000 Nexus`);
         histLines.push(``);
       });
       const titles = myGuild ? history.filter(h => h.first?.name === myGuild.name).length : 0;
@@ -133,11 +133,13 @@ module.exports = {
         ...(topLines.length ? topLines : ['  _(No Guild GP recorded this week yet)_']),
         ``,
         `🎁 *WEEKLY REWARDS (Auto Sat 23:59):*`,
-        `🥇 Gold GVC — /use GVC --gold`,
-        `🥈 Silver GVC — /use GVC --silver`,
-        `🥉 Bronze GVC — /use GVC --bronze`,
-        `🌟 Weekly MVP: +20,000 Nexus (any guild!)`,
+        `🥇 Gold GVC — 150k 💠 + 30k 💎 + ⚡ 2× GP for 3 days (/use GVC --gold)`,
+        `🥈 Silver GVC — 100k 💠 + 20k 💎 + ⚡ 1.5× GP for 3 days (/use GVC --silver)`,
+        `🥉 Bronze GVC — 50k 💠 + 20k 💎 + ⚡ 1.25× GP for 3 days (/use GVC --bronze)`,
+        `🌟 Weekly MVP: +200,000 Nexus + title (any guild!)`,
+        `📢 Winners are announced every week in the Announcements GC.`,
         ``,
+        ...(function () { try { const t = require('../../rpg/utils/GuildWarRewards').gpBoostText(db.users[sender]); return t ? [t] : []; } catch (e) { return []; } })(),
         `💡 *EARN GP:* Gate Clears • Upgrades • Signings • PvP Wins • Level-ups`,
         `📌 */myguild* — your guild's member breakdown`,
       ],

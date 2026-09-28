@@ -1,3 +1,10 @@
+## v1.0.117 — Push #90 (Guild War rewards ×10 + GP boosts)
+- Victory cards ×10: Gold 150,000 💠 + 30,000 💎 · Silver 100,000 💠 + 20,000 💎 · Bronze 50,000 💠 + 20,000 💎. Weekly MVP 200,000 💠 (undo reverts the same).
+- NEW GP BOOST on card use: Gold ×2 / Silver ×1.5 / Bronze ×1.25 GP for 3 days — applies to every positive GP gain through the central ledger (`GuildPointsSystem.addGuildGP`). Stronger boost replaces weaker; same tier extends; weaker never downgrades. Shown in `/guildwar` (⚡ line) and on the card-use receipt.
+- Card use now really grants the advertised EXP buff (3 fights).
+- Weekly winners card now lists the prizes and is posted to every announcements GC (announceGC, legacy announcementGC, community main, main guild GC).
+- Reward text updated everywhere: /guildwar, /use menu, /inventory, history/undo, AI knowledge. New `rpg/utils/GuildWarRewards.js` is the single source of truth.
+
 ## v1.0.116 — Push #89c
 - `/announce` is now MOD-level (any bot mod or owner, from DM).
 - `/mute` and `/unmute` are now GROUP-ADMIN commands: any admin of the group can use them (bot mods/owners still can too). Bot must still be a group admin to delete muted messages. Removed dead duplicate `commands/rpg/admin/mute.js`.

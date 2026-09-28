@@ -368,9 +368,9 @@ module.exports = {
     const gvcTotal = (gcards.gvc_gold || 0) + (gcards.gvc_silver || 0) + (gcards.gvc_bronze || 0);
     if (gvcTotal > 0) {
       message += `🃏 *GUILD VICTORY CARDS* (${gvcTotal})\n`;
-      if (gcards.gvc_gold)   message += `  🥇 Gold ×${gcards.gvc_gold} — /use GVC --gold (15k 💠 + 3k 💎 + 2× EXP buff)\n`;
-      if (gcards.gvc_silver) message += `  🥈 Silver ×${gcards.gvc_silver} — /use GVC --silver (10k 💠 + 2k 💎 + 1.5× EXP buff)\n`;
-      if (gcards.gvc_bronze) message += `  🥉 Bronze ×${gcards.gvc_bronze} — /use GVC --bronze (5k 💠 + 2k 💎 + 1.25× EXP buff)\n`;
+      if (gcards.gvc_gold)   message += `  🥇 Gold ×${gcards.gvc_gold} — /use GVC --gold (150k 💠 + 30k 💎 + 2× GP 3d + 2× EXP buff)\n`;
+      if (gcards.gvc_silver) message += `  🥈 Silver ×${gcards.gvc_silver} — /use GVC --silver (100k 💠 + 20k 💎 + 1.5× GP 3d + 1.5× EXP buff)\n`;
+      if (gcards.gvc_bronze) message += `  🥉 Bronze ×${gcards.gvc_bronze} — /use GVC --bronze (50k 💠 + 20k 💎 + 1.25× GP 3d + 1.25× EXP buff)\n`;
       message += `\n`;
     }
 
