@@ -58,6 +58,8 @@ Rank is assigned at register and is destiny — you cannot change it. Use /stats
 Use /upgrade allocate <stat> <amount> to spend stat points (see /upgrade guide for class tips).
 
 --- CLASSES ---
+• Healer: only class that can heal teammates/party. Healing ANOTHER hunter costs the Healer HP (12% of max HP for a single ally, 8% + 0.4% per heal-% for party heals); Healer skill upgrades reduce that backlash (Lv2 −20% … Lv5 −80%) instead of adding damage. Healing a hunter under 10% HP stuns the Healer for 1 turn. Self-heals are free. Renew/Mass Renewal also restore the stated % of energy.
+• Energy potions do not exist — energy refills by rank outside battle (/use energy shows the timer).
 Classes are assigned automatically after reaching a minimum level. Higher ranks get classes sooner and from a larger pool.
 • E-Rank: Warrior, Archer, Rogue
 • D-Rank adds: Mage, Knight

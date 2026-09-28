@@ -97,6 +97,7 @@ module.exports = {
           `_${data.lore || data.description || 'A powerful awakener class.'}_`,
           ``,
           `📌 *In-Battle Command:* */${cmd} <skill_name>*`,
+          ...(/^healer$/i.test(String(matchedClass)) ? [``, `🩸 *Healer's Price:* healing ANOTHER hunter costs you HP (12% max HP single · more for party heals). Skill upgrades cut that backlash (Lv5 −80%) instead of adding damage. Healing a hunter under 10% HP stuns you for 1 turn. Self-heals are free.`] : []),
           ``,
           FRAME,
           `⚡ *CLASS SKILLS:*`,

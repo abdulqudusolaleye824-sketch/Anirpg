@@ -52,8 +52,7 @@ module.exports = {
 
     // ── Heal (potion-based, no cooldown timer) ───────────────
     const hpPotions = player.inventory?.healthPotions || 0;
-    const enPotions = player.inventory?.energyPotions || player.inventory?.manaPotions || 0;
-    lines.push(`💊 *Heal:* ${hpPotions} HP potions | ${enPotions} Energy potions${hpPotions > 0 ? ' — /use heal' : ' — /shop to restock'}`);
+    lines.push(`💊 *Heal:* ${hpPotions} HP potions${hpPotions > 0 ? ' — /use heal' : ' — /shop to restock'}`);
 
     // ── Rob/steal cooldown ────────────────────────────────────
     const robCd = player.stealCooldown

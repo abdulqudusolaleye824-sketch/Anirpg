@@ -13,7 +13,7 @@ module.exports = {
     maxBonuses: { hp: 80, atk: 35, def: 15, speed: 30, maxEnergy: 35 },
     skills: [
       { name: 'Aimed Shot',    type: 'damage',  maxPotency: 200, desc: 'Charged shot: {p}% ATK + 50% crit chance' },
-      { name: 'Snare Trap',    type: 'debuff',  maxPotency: 2,   desc: '60% chance to stun target for {p} turn(s)' },
+      { name: 'Snare Trap',    type: 'debuff',  maxPotency: 2,   desc: '75% chance to stun target for {p} turn(s)' },
       { name: 'Tracking',      type: 'passive', maxPotency: 20,  desc: 'Enemy DEF revealed — ignores {p}% of it' },
     ],
 };

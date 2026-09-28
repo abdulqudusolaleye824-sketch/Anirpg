@@ -40,7 +40,6 @@ module.exports = {
     // Old-style potions as virtual entries
     const synth = [];
     for (let i = 0; i < (inv.healthPotions||0); i++)  synth.push({ name:'Health Potion', type:'Potion', rarity:'common' });
-    for (let i = 0; i < (inv.energyPotions||inv.manaPotions||0); i++) synth.push({ name:'Energy Potion', type:'Potion', rarity:'common' });
     for (let i = 0; i < (inv.reviveTokens||0); i++)   synth.push({ name:'Revive Token', type:'Consumable', rarity:'uncommon' });
 
     const allCons = [...consumables, ...synth];

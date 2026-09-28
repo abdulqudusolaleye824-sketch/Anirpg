@@ -183,7 +183,6 @@ module.exports = {
 🎒 *YOUR INVENTORY*
 ${FRAME}
 🩹 HP Potions: *${hp}*
-⚡ Energy Potions: *${ep}*
 🎫 Revive Tokens: *${rv}*
 🍀 Luck Potions: *${lp}*
 🛡️ Shield Scrolls: *${ss}*

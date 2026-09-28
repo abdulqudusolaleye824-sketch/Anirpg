@@ -121,7 +121,6 @@ ${memberList}
 🎒 SHARED ITEMS
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━
 🩹 Health Potions: ${party.sharedItems.healthPotions} (Used: ${hpUsed}/5)
-💙 Energy Potions: ${party.sharedItems.energyPotions}
 🎫 Revive Tokens: ${party.sharedItems.reviveTokens} (Used: ${revUsed}/1)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
   }

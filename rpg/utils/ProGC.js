@@ -16,7 +16,7 @@
 // ═══════════════════════════════════════════════════════════════
 'use strict';
 
-const SPAWN_EVERY_MS = 5 * 60 * 60 * 1000;
+const SPAWN_EVERY_MS = 3 * 60 * 60 * 1000; // Push #91: every 3h (was 5h)
 const _timers = new Map();
 
 function _isProPlayer(p) {
@@ -145,7 +145,7 @@ class ProGC {
     return true;
   }
 
-  /** Idempotent per chat. Spawns immediately if 5h already elapsed. */
+  /** Idempotent per chat. Spawns immediately if 3h already elapsed. */
   static startScheduler(sock, chatId, getDatabase, saveDatabase) {
     if (!chatId || _timers.has(chatId)) return;
     const tick = async () => {
@@ -159,7 +159,7 @@ class ProGC {
     const iv = setInterval(tick, 10 * 60 * 1000); // check every 10 min
     _timers.set(chatId, iv);
     setTimeout(tick, 60 * 1000);
-    console.log(`[ProGC] 5h epic spawn scheduler armed for ${chatId}`);
+    console.log(`[ProGC] 3h epic spawn scheduler armed for ${chatId}`);
   }
 
   static bootAll(sock, getDatabase, saveDatabase) {

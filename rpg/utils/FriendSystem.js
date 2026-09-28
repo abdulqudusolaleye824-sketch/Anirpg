@@ -140,7 +140,6 @@ function canGift(player, friendId) {
 function generateGift(bondLevel) {
   const pool = [
     { name: 'Health Potion', type: 'item' },
-    { name: 'Energy Potion', type: 'item' },
     { gold: 5000 + bondLevel * 2000, type: 'gold' },
     { crystals: 100 + bondLevel * 50, type: 'crystals' },
     { name: 'Luck Potion', type: 'item' }

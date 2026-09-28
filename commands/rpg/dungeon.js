@@ -344,19 +344,17 @@ module.exports = {
 
       const shopAction = args[1]?.toLowerCase();
       if (!shopAction) {
-        return sock.sendMessage(chatId, { text: (pro ? `${UI.PRO_BAR}\n🛒 *DUNGEON SHOP* 💎\n${UI.PRO_BAR}\nYour ` : `🛒 *DUNGEON SHOP*\n${UI.FREE_BAR}\nYour `) + `Nexus: ${(player.gold || 0).toLocaleString()} 💠\n${FRAME}\n🩹 /dungeon shop hp [qty]     — 5,000 💠 Nexus — Restore 50% HP (party)\n💙 /dungeon shop energy [qty] — 4,000 💠 Nexus — Restore 50% Energy (party)\n🎫 /dungeon shop revive [qty] — 10,000 💠 Nexus — Revive a fallen member\n🍀 /dungeon shop luck [qty]   — 5,000 💠 Nexus — +25% claim luck (personal)\n${FRAME}\n🎒 Party inventory:\n🩹 HP Potions: ${party.sharedItems?.healthPotions || 0}\n💙 Energy Potions: ${party.sharedItems?.energyPotions || 0}\n🎫 Revive Tokens: ${party.sharedItems?.reviveTokens || 0}\n${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO QUARTERMASTER* — stock ${(party.sharedItems?.healthPotions || 0) + (party.sharedItems?.energyPotions || 0) + (party.sharedItems?.reviveTokens || 0)} shared items` : `\n${UI.upsell()}`) }, { quoted: msg });
+        return sock.sendMessage(chatId, { text: (pro ? `${UI.PRO_BAR}\n🛒 *DUNGEON SHOP* 💎\n${UI.PRO_BAR}\nYour ` : `🛒 *DUNGEON SHOP*\n${UI.FREE_BAR}\nYour `) + `Nexus: ${(player.gold || 0).toLocaleString()} 💠\n${FRAME}\n🩹 /dungeon shop hp [qty]     — 5,000 💠 Nexus — Restore 50% HP (party)\n🎫 /dungeon shop revive [qty] — 10,000 💠 Nexus — Revive a fallen member\n🍀 /dungeon shop luck [qty]   — 5,000 💠 Nexus — +25% claim luck (personal)\n${FRAME}\n🎒 Party inventory:\n🩹 HP Potions: ${party.sharedItems?.healthPotions || 0}\n🎫 Revive Tokens: ${party.sharedItems?.reviveTokens || 0}\n${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO QUARTERMASTER* — stock ${(party.sharedItems?.healthPotions || 0) + (party.sharedItems?.reviveTokens || 0)} shared items` : `\n${UI.upsell()}`) }, { quoted: msg });
       }
 
       const items = {
         hp: { key:'healthPotions', cost:5000, name:'Health Potion', emoji:'🩹', shared:true },
         health: { key:'healthPotions', cost:5000, name:'Health Potion', emoji:'🩹', shared:true },
-        energy: { key:'energyPotions', cost:4000, name:'Energy Potion', emoji:'💙', shared:true },
-        ep:     { key:'energyPotions', cost:4000, name:'Energy Potion', emoji:'💙', shared:true },
         revive: { key:'reviveTokens', cost:10000, name:'Revive Token', emoji:'🎫', shared:true },
         luck:   { key:'luckPotion', cost:5000, name:'Luck Potion', emoji:'🍀', shared:false },
       };
       const item = items[shopAction];
-      if (!item) return sock.sendMessage(chatId, { text: '❌ Invalid item! Try: hp | energy | revive | luck' }, { quoted: msg });
+      if (!item) return sock.sendMessage(chatId, { text: '❌ Invalid item! Try: hp | revive | luck' }, { quoted: msg });
 
       const qty  = parseInt(args[2]) || 1;
       const cost = item.cost * qty;
@@ -1366,14 +1364,7 @@ module.exports = {
           return sock.sendMessage(chatId, { text: `🩹 Healed *+${heal} HP*!\n❤️ ${player.stats.hp}/${player.stats.maxHp}\n🩹 Potions left: ${player.inventory.healthPotions}` }, { quoted: msg });
         }
         if (itemType === 'ep' || itemType === 'energy') {
-          const potions = player.inventory?.energyPotions || player.inventory?.manaPotions || 0;
-          if (potions <= 0) return sock.sendMessage(chatId, { text: '❌ No Energy Potions!\nBuy some: /shop buy 2 5' }, { quoted: msg });
-          if (player.inventory.energyPotions !== undefined) player.inventory.energyPotions--;
-          else player.inventory.manaPotions--;
-          const restore = Math.floor(player.stats.maxEnergy * 0.5);
-          player.stats.energy = Math.min(player.stats.maxEnergy, (player.stats.energy || 0) + restore);
-          saveDatabase();
-          return sock.sendMessage(chatId, { text: `💙 Restored *+${restore} Energy*!\n💙 ${player.stats.energy}/${player.stats.maxEnergy}` }, { quoted: msg });
+          return sock.sendMessage(chatId, { text: '❌ *Energy potions no longer exist.* Energy refills by rank outside battle — check /use energy.' }, { quoted: msg });
         }
         return sock.sendMessage(chatId, { text: '❌ Usage: /dungeon item hp OR /dungeon item energy' }, { quoted: msg });
       }

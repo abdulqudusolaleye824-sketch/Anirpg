@@ -39,6 +39,22 @@ function applySkillLevelBonus(skill) {
   };
 }
 
+// Push #91: Healer heal-skills deal no damage — their upgrades cut the HP
+// backlash paid when healing other hunters instead of raising DMG.
+function isHealerHealSkill(player, skill) {
+  try {
+    const base = String(require('../../rpg/utils/ClassPower').baseClassName(player) || '');
+    if (!/^healer$/i.test(base)) return false;
+    const t = String(skill.type || skill.effect?.type || '').toLowerCase();
+    return t.startsWith('heal') || /heal|renew|sanctuary|grace|purify|rebirth/i.test(String(skill.name || ''));
+  } catch (e) { return false; }
+}
+function healerUpgradeLine(skill) {
+  const HB = require('../../rpg/utils/HealerBacklash');
+  const lv = skill.level || 1;
+  return `🩸 Backlash: −${HB.reductionPct(lv)}% (heal an ally for ${HB.tollPct({ level: lv }).toFixed(1)}% of your max HP)`;
+}
+
 function getMaxSlots(player) {
   return player.maxSkillSlots || 5;
 }
@@ -149,10 +165,10 @@ module.exports = {
       let txt = pro ? `${UI.PRO_BAR}\n🔮 *${skill.name}* 💎\n${UI.PRO_BAR}\n` : `🔮 *${skill.name}*\n${UI.FREE_BAR}\n`;
       txt += `${info?.description || 'A powerful skill.'}\n\n`;
       txt += `📊 STATS (Level ${lv}/${max})\n${bar}\n`;
-      txt += `💥 Damage: ${bonuses.damage}\n`;
+      if (isHealerHealSkill(player, skill)) txt += `${healerUpgradeLine(skill)}\n`; else txt += `💥 Damage: ${bonuses.damage}\n`;
       txt += `${player.energyColor||'💙'} Cost: ${bonuses.energyCost} ${player.energyType||'Energy'}\n`;
       txt += `⏰ Cooldown: ${bonuses.cooldown}t\n`;
-      if (lv > 1) txt += `⬆️ Level bonus: +${Math.round((bonuses.dmgMult-1)*100)}% DMG, -${bonuses.costReduction} cost\n`;
+      if (lv > 1) txt += isHealerHealSkill(player, skill) ? `⬆️ Level bonus: −${require('../../rpg/utils/HealerBacklash').reductionPct(lv)}% backlash, -${bonuses.costReduction} cost\n` : `⬆️ Level bonus: +${Math.round((bonuses.dmgMult-1)*100)}% DMG, -${bonuses.costReduction} cost\n`;
       if (info?.effect) txt += `\n💡 EFFECTS:\n${info.effect}\n`;
       if (info?.animation) txt += `\n🎬 ANIMATION:\n${info.animation.split('\n')[0]}\n`;
       if (upgradeCost) txt += `\n${FRAME}\n⬆️ Upgrade to Lv ${lv+1}: 💠 ${upgradeCost.toLocaleString()} Nexus\n/skills upgrade [slot#]\n`;
@@ -178,7 +194,7 @@ module.exports = {
       const bar = skillLevelBar(skill.level, max);
       saveDatabase();
       return sock.sendMessage(chatId, {
-        text: (pro ? `${UI.PRO_BAR}\n⬆️ SKILL UPGRADED! 💎\n${UI.PRO_BAR}\n\n🔮 *${skill.name}*` : `⬆️ SKILL UPGRADED!\n${UI.FREE_BAR}\n\n🔮 *${skill.name}*`)+`\nLevel ${lv} → *${skill.level}/${max}*\n${bar}\n\n💥 DMG: +${Math.round((newBonuses.dmgMult-1)*100)}% boost\n${player.energyColor||'💙'} Cost: -${newBonuses.costReduction}\n💠 Spent: ${cost.toLocaleString()} Nexus\n💠 Remaining: ${player.gold.toLocaleString()}\n${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO LOADOUT* — Lv.${skill.level}/${max} ${skill.name}` : `\n${UI.upsell()}`)
+        text: (pro ? `${UI.PRO_BAR}\n⬆️ SKILL UPGRADED! 💎\n${UI.PRO_BAR}\n\n🔮 *${skill.name}*` : `⬆️ SKILL UPGRADED!\n${UI.FREE_BAR}\n\n🔮 *${skill.name}*`)+`\nLevel ${lv} → *${skill.level}/${max}*\n${bar}\n\n${isHealerHealSkill(player, skill) ? `🩸 Backlash: −${require('../../rpg/utils/HealerBacklash').reductionPct(skill.level)}% (was −${require('../../rpg/utils/HealerBacklash').reductionPct(lv)}%)` : `💥 DMG: +${Math.round((newBonuses.dmgMult-1)*100)}% boost`}\n${player.energyColor||'💙'} Cost: -${newBonuses.costReduction}\n💠 Spent: ${cost.toLocaleString()} Nexus\n💠 Remaining: ${player.gold.toLocaleString()}\n${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO LOADOUT* — Lv.${skill.level}/${max} ${skill.name}` : `\n${UI.upsell()}`)
       }, { quoted: msg });
     }
 

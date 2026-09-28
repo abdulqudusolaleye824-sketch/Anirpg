@@ -825,7 +825,7 @@ class PlayerManager {
       inventory: {
         healthPotions: 3,
         manaPotions: 0,
-        energyPotions: 2,
+        energyPotions: 0,
         reviveTokens: 1,
         items: []
       },

@@ -213,17 +213,9 @@ module.exports = {
         }, { quoted: msg });
       }
 
-      // ── Energy Potion ──
+      // ── Energy Potion (Push #91: scrapped everywhere) ──
       if (itemName === 'Energy Potion') {
-        const epKey = inv.energyPotions !== undefined ? 'energyPotions' : 'manaPotions';
-        if ((inv[epKey] || 0) < 1) return sock.sendMessage(chatId, { text: `❌ No Energy Potions!` }, { quoted: msg });
-        const restore = Math.floor(player.stats.maxEnergy * 0.5);
-        player.stats.energy = Math.min(player.stats.maxEnergy, player.stats.energy + restore);
-        player.inventory[epKey] = (inv[epKey] || 0) - 1;
-        saveDatabase();
-        return sock.sendMessage(chatId, {
-          text: `💙 *Energy Potion* used!\n\n⚡ Restored ${restore} ${player.energyType || 'Energy'}!\n💙 ${player.energyType || 'Energy'}: ${player.stats.energy}/${player.stats.maxEnergy}`
-        }, { quoted: msg });
+        return sock.sendMessage(chatId, { text: `❌ *Energy potions no longer exist.* Energy refills by rank outside battle — see /use energy.` }, { quoted: msg });
       }
 
       // ── Tiered Health Potions (batch-48: shop tiers finally usable) ──

@@ -203,7 +203,6 @@ module.exports = {
         giftDesc = `💠 ${gift.gold.toLocaleString()} Nexus + 💎 ${gift.crystals} Mana Stones`;
       } else {
         if (gift.name === 'Health Potion') target.inventory.healthPotions = (target.inventory.healthPotions || 0) + 1;
-        else if (gift.name === 'Energy Potion') target.inventory.energyPotions = (target.inventory.energyPotions || 0) + 1;
         else if (gift.name === 'Revive Token') target.inventory.reviveTokens = (target.inventory.reviveTokens || 0) + 1;
         else target.inventory.items.push({ name: gift.name, type: 'Consumable', rarity: 'uncommon' });
         giftDesc = `🎁 ${gift.name}`;

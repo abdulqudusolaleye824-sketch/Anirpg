@@ -1,3 +1,11 @@
+## v1.0.118 — Push #91
+- Spawns: EVERY epic crafting material can now drop as a single epic spawn (the whole Epic recipe pool + Dragon Scale, weighted by recipe demand) — never just Dragon Scale. Global spawn now every **3 hours** (was 24h); Pro GC spawn every 3h (was 5h). Global pick: 20% Mending Stone · 20% epic material · 60% material cache.
+- Scavenger pets: hard cap **40,000 Nexus** per dig (was uncapped — 144k seen).
+- Ranger Snare Trap stun chance 60% → **75%**.
+- Healer `Renew` / `Mass Renewal` now really restore their stated % energy (the "15% of max energy" wording was not parsed).
+- **Healer backlash:** healing ANOTHER hunter costs the Healer HP — 12% max HP for a single ally, 8% + 0.4%/heal-% for party heals (never below 1 HP). Skill level cuts it: Lv2 −20% · Lv3 −40% · Lv4 −60% · Lv5 −80%. Self-heals free. Healing a hunter under **10% HP** STUNS the Healer for 1 turn. Shown in /skills (upgrade + info now show backlash reduction instead of DMG for Healer heals), /class guide, AI knowledge. New `rpg/utils/HealerBacklash.js`.
+- Energy potions scrapped everywhere: dungeon shop, dungeon loot + boss loot, /equip use, friend gifts, /inventory /items /find /cooldowns /shop inv listings, battle item menu, starter kit, party shared list.
+
 ## v1.0.117 — Push #90 (Guild War rewards ×10 + GP boosts)
 - Victory cards ×10: Gold 150,000 💠 + 30,000 💎 · Silver 100,000 💠 + 20,000 💎 · Bronze 50,000 💠 + 20,000 💎. Weekly MVP 200,000 💠 (undo reverts the same).
 - NEW GP BOOST on card use: Gold ×2 / Silver ×1.5 / Bronze ×1.25 GP for 3 days — applies to every positive GP gain through the central ledger (`GuildPointsSystem.addGuildGP`). Stronger boost replaces weaker; same tier extends; weaker never downgrades. Shown in `/guildwar` (⚡ line) and on the card-use receipt.

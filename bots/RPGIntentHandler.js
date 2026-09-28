@@ -292,7 +292,6 @@ function buildInventoryText(player) {
   const consLines = Object.entries(stacked).slice(0, 8).map(([nm, n]) => `  📦 ${nm}${n > 1 ? ` ×${n}` : ''}`);
   const pots = [];
   if ((inv.healthPotions || 0) > 0) pots.push(`🩹 HP ×${inv.healthPotions}`);
-  if ((inv.energyPotions || inv.manaPotions || 0) > 0) pots.push(`⚡ Energy ×${inv.energyPotions || inv.manaPotions}`);
   if ((inv.reviveTokens || 0) > 0) pots.push(`🎫 Revive ×${inv.reviveTokens}`);
   const cards = inv.cards || {};
   const gvc = (cards.gvc_gold || 0) + (cards.gvc_silver || 0) + (cards.gvc_bronze || 0);

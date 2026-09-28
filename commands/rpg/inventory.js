@@ -90,7 +90,7 @@ function serialList(player) {
   // Legacy potion counters (no per-unit date — listed after dated items)
   // Push #88e: three separate health-potion tiers (Lower common / Medium rare / Higher EPIC).
   try { for (const t of require('../../rpg/utils/PotionTiers').listForInventory(player)) entries.push({ kind: 'potion', name: t.name, rarity: t.rarity, count: t.count, acquiredAt: 0, ref: null }); } catch (e) {}
-  if ((inv.energyPotions || inv.manaPotions || 0) > 0) entries.push({ kind: 'potion', name: 'Energy Potion', rarity: 'common', count: inv.energyPotions || inv.manaPotions, acquiredAt: 0, ref: null });
+  // Push #91: energy potions scrapped — never listed.
   if ((inv.reviveTokens || 0) > 0) entries.push({ kind: 'potion', name: 'Revive Token', rarity: 'uncommon', count: inv.reviveTokens, acquiredAt: 0, ref: null });
   // Materials stored as counters
   const mats = player.materials || {};
@@ -215,7 +215,6 @@ module.exports = {
           if (entry.name === 'Lower Health Potion' || entry.name === 'Health Potion') detail += `\n💚 Restores 10% HP. Use: /use hp lower\n`;
           else if (entry.name === 'Medium Health Potion') detail += `\n💚 Restores 25% HP (rare). Use: /use hp medium\n`;
           else if (entry.name === 'Higher Health Potion') detail += `\n💚 Restores 50% HP (EPIC). Use: /use hp higher\n`;
-          else if (entry.name === 'Energy Potion') detail += `\n⚡ Restores 50% Energy. Use: /equip use (see /items)\n`;
           else if (entry.name === 'Revive Token') detail += `\n💿 Auto-used on death in dungeons.\n`;
         } else {
           // Cross-reference the /items serial for use/gift
@@ -313,7 +312,6 @@ module.exports = {
     // ── Potions & Consumables ────────────────────────────────────
     const oldPotions = [];
     try { for (const t of require('../../rpg/utils/PotionTiers').listForInventory(player)) oldPotions.push({ name:t.name, count:t.count, rarity:t.rarity }); } catch (e) {}
-    if ((inv.energyPotions||inv.manaPotions||0) > 0) oldPotions.push({ name:'Energy Potion', count:inv.energyPotions||inv.manaPotions, rarity:'common' });
     if ((inv.reviveTokens||0)   > 0) oldPotions.push({ name:'Revive Token',   count:inv.reviveTokens,   rarity:'uncommon' });
 
     message += `💊 *POTIONS & CONSUMABLES*\n`;

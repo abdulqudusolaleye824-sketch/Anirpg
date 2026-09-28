@@ -900,17 +900,23 @@ function supportCast(caster, casterJid, target, targetJid, skillName, gate, db) 
     }
   }
   if ((caster.stats?.energy || 0) < cost) return { ok: false, error: `Not enough energy for *${skill.name}*! Need ${cost}${!isHealerClass && isHeal ? ' (self-heals cost double for non-Healers)' : ''}.` };
-  // Party heal HP toll — charged before the heal so the caster feels it.
-  let hpToll = 0;
-  if (party) {
+  // Push #91: HEALER BACKLASH — healing ANOTHER hunter costs the Healer HP
+  // (single 12% · party 8%+0.4%/heal%), cut by skill level (Lv5 = −80%).
+  // Self-heals are free. Checked before the heal so the caster feels it.
+  const HB = require('../utils/HealerBacklash');
+  let hpToll = 0, tollPct = 0, _hLv = 1;
+  const _healsOther = isHeal && isHealerClass && (party || (target && target !== caster && targetJid && casterJid && GKM.normaliseJid(targetJid) !== GKM.normaliseJid(casterJid)));
+  if (_healsOther) {
     const hpPct = Number(entry.healingPct) || 20;
-    const tollPct = Math.min(60, 8 + 0.4 * hpPct);
+    _hLv = Number(skill.level || entry.level || 1) || 1;
+    tollPct = HB.tollPct({ party, healPct: hpPct, level: _hLv, others: 1 });
     const cmax = (() => { try { return require('../utils/GearSystem').effectiveMaxHp(caster); } catch (e) { return caster.stats.maxHp || 100; } })();
     hpToll = Math.floor(cmax * tollPct / 100);
-    if ((caster.stats.hp || 0) <= hpToll) return { ok: false, error: `*${skill.name}* would cost *${hpToll} HP* (${tollPct.toFixed(0)}% of your max) — you only have ${caster.stats.hp}. Heal yourself first.` };
-    // (deducted AFTER the heal loop — the caster is a party target too, so
-    //  paying first would just be healed back by their own cast.)
+    if ((caster.stats.hp || 0) <= hpToll) return { ok: false, error: `*${skill.name}* would cost *${hpToll} HP* (${tollPct.toFixed(1)}% of your max — healer backlash) — you only have ${caster.stats.hp}. Heal yourself first.` };
+    // (deducted AFTER the heal loop — on a party heal the caster is a target
+    //  too, so paying first would just be healed back by their own cast.)
   }
+  let severeHealed = null;
   caster.stats.energy = Math.max(0, (caster.stats.energy || 0) - cost);
   SC.setCooldown(caster, entry);
   let healPower = 1;
@@ -935,13 +941,15 @@ function supportCast(caster, casterJid, target, targetJid, skillName, gate, db) 
       try { const CP = require('../utils/ClassPower'); recvBoost = 1 + ((CP.passiveMultipliers(u).healReceived || 0) / 100); } catch (e) {}
       const max = effMax(u);
       const before = u.stats.hp || 0;
+      if (_healsOther && u !== caster && before > 0 && before / max < HB.SEVERE_HP_PCT / 100) severeHealed = t.name;
       const amt = Math.max(1, Math.floor(max * pct / 100 * healPower * recvBoost));
       u.stats.hp = Math.min(max, before + amt);
       const got = u.stats.hp - before;
       healedTotal += got;
       lines.push(`💚 *${t.name}* +${got} HP → ${u.stats.hp}/${max}`);
       // energy component ("and X% max energy")
-      const em = text.match(/(\d+)%\s*(?:max\s*)?energy/);
+      // Push #91: Renew/Mass Renewal really restore their stated energy ("15% of max energy").
+      const em = text.match(/(\d+)%\s*(?:of\s+)?(?:their\s+)?(?:max(?:imum)?\s*)?energy/);
       if (em && u.stats.maxEnergy) { const e = Math.floor(u.stats.maxEnergy * parseInt(em[1], 10) / 100); u.stats.energy = Math.min(u.stats.maxEnergy, (u.stats.energy || 0) + e); lines.push(`⚡ *${t.name}* +${e} energy`); }
       if (/remov|clear|cleanse|purif/.test(text) && Array.isArray(u.statusEffects) && u.statusEffects.length) { const n = u.statusEffects.length; u.statusEffects = []; lines.push(`✨ *${t.name}* cleansed (${n} effect${n === 1 ? '' : 's'})`); }
     }
@@ -973,8 +981,10 @@ function supportCast(caster, casterJid, target, targetJid, skillName, gate, db) 
   }
   // Push #88f: aggro ONLY for the Healer class and ONLY on an actual heal.
   if (gate && isHeal && isHealerClass) markHealerAggro(gate, casterJid, caster.name);
-  if (hpToll > 0) { caster.stats.hp = Math.max(1, (caster.stats.hp || 0) - hpToll); lines.push(`🩸 *${caster.name}* channels ${hpToll} HP into the party heal → ${caster.stats.hp}`); }
-  return { ok: true, skill, lines, healed: healedTotal, party: targets.length > 1, isHeal, isBuff, energyCost: cost, hpToll };
+  let stunned = false;
+  if (hpToll > 0) { caster.stats.hp = Math.max(1, (caster.stats.hp || 0) - hpToll); lines.push(`🩸 *${caster.name}* pays ${hpToll} HP of backlash (${tollPct.toFixed(1)}%${_hLv > 1 ? `, Lv${_hLv} −${HB.reductionPct(_hLv)}%` : ''}) → ${caster.stats.hp}`); }
+  if (severeHealed) { HB.stunHealer(caster); stunned = true; lines.push(`💫 *${caster.name}* is STUNNED — pulling *${severeHealed}* back from under ${HB.SEVERE_HP_PCT}% HP was a shock (${HB.STUN_TURNS} turn).`); }
+  return { ok: true, skill, lines, healed: healedTotal, party: targets.length > 1, isHeal, isBuff, energyCost: cost, hpToll, stunned };
 }
 
 // ── Status ──────────────────────────────────────────────────────

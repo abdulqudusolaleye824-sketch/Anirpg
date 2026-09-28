@@ -69,6 +69,23 @@ const SPAWN_ARTIFACTS = [
   { name: 'Dragon Scale',           emoji: '🐉', rarity: 'epic',     type: 'material', bonus: {}, desc: 'Rare dragon scale.' },
 ];
 
+// Push #91: EVERY epic crafting material can spawn as a single epic drop —
+// the Epic recipe pool (Demonic Alloy, Abyssal Stone, Void Metal, …) plus the
+// catalog epics (Dragon Scale). Never only Dragon Scale.
+function pickEpicMaterial() {
+  const out = [];
+  try {
+    const MSP = require('../../rpg/utils/MaterialSpawnPool');
+    for (const [name, w] of Object.entries(MSP.build().epic || {})) out.push({ name, emoji: MSP.emojiFor(name), rarity: 'epic', type: 'material', bonus: {}, desc: `Epic crafting material — ${w} recipe${w === 1 ? '' : 's'} call for it.`, w });
+  } catch (e) {}
+  for (const a of SPAWN_ARTIFACTS) if (a.rarity === 'epic' && String(a.type).toLowerCase() === 'material' && !(a.isMendingStone || a.name === 'Mending Stone') && !out.some(o => o.name === a.name)) out.push({ ...a, w: 1 });
+  if (!out.length) return null;
+  const total = out.reduce((s, o) => s + (o.w || 1), 0); let r = Math.random() * total;
+  for (const o of out) { r -= (o.w || 1); if (r <= 0) return o; }
+  return out[out.length - 1];
+}
+const GLOBAL_SPAWN_EVERY_MS = 3 * 60 * 60 * 1000; // Push #91: every 3 hours (was 24h)
+
 // ─── RARITY ANNOUNCEMENT STYLES ──────────────────────────────
 const RARITY_STYLES = {
   common:    { color: '⚪', stars: '⭐',           header: '📦 AN ITEM APPEARS!',             urgency: '👆 First to /claim wins!' },
@@ -106,7 +123,7 @@ async function spawnArtifact(sock, chatId, db, saveDatabase, forcedArtifact) {
   if (!forcedArtifact) {
     if (!db.globalSpawn) db.globalSpawn = {};
     const last = db.globalSpawn.lastSpawnAt || 0;
-    if (Date.now() - last < 24*60*60*1000) return;
+    if (Date.now() - last < GLOBAL_SPAWN_EVERY_MS) return;
   }
 
   // Pick artifact — LIMITED to common->epic for global daily (per request)
@@ -120,8 +137,11 @@ async function spawnArtifact(sock, chatId, db, saveDatabase, forcedArtifact) {
     // Push #88f: spawns are RECIPE materials (bundle of 3, weighted by how many
     // recipes need them) — never just "Dragon Scale". Mending Stone stays 20%.
     const mending = SPAWN_ARTIFACTS.find(a => a.isMendingStone || a.name === 'Mending Stone');
-    if (mending && Math.random() < 0.20) {
+    const _r = Math.random();
+    if (mending && _r < 0.20) {
       artifact = mending;
+    } else if (_r < 0.40 && pickEpicMaterial()) {
+      artifact = pickEpicMaterial(); // Push #91: single epic material (any of them)
     } else {
       const MSP = require('../../rpg/utils/MaterialSpawnPool');
       const tier = MSP.rollTier();
@@ -187,7 +207,7 @@ async function handleClaim(sock, msg, args, getDatabase, saveDatabase, sender) {
   const spawn  = activeSpawns.get(chatId);
 
   if (!spawn) {
-    return sock.sendMessage(chatId, { text: '❌ No artifact to claim right now!\n⏰ Wait for the next spawn (every 2-3 hours).' }, { quoted: msg });
+    return sock.sendMessage(chatId, { text: '❌ No artifact to claim right now!\n⏰ Wait for the next spawn (every 3 hours).' }, { quoted: msg });
   }
 
   if (spawn.claimed) {
@@ -277,15 +297,15 @@ function startSpawnScheduler(sock, getDatabase, saveDatabase, groupChatIds) {
   }
 
   function scheduleNext() {
-    // For global daily: check once per hour if we can spawn (24h since last)
-    const delay = 60*60*1000; // check hourly
+    // Push #91: check every 10 min; spawn when 3h have passed since the last one
+    const delay = 10*60*1000;
     setTimeout(async () => {
       try {
         const db = getDatabase();
         const enabled = getSpawnEnabledIds(db);
         if (enabled.length === 0) { scheduleNext(); return; }
         const last = db.globalSpawn?.lastSpawnAt || 0;
-        if (Date.now() - last < 24*60*60*1000) { scheduleNext(); return; }
+        if (Date.now() - last < GLOBAL_SPAWN_EVERY_MS) { scheduleNext(); return; }
         // Pick ONE random GC among enabled to spawn the daily item
         const pick = enabled[Math.floor(Math.random()*enabled.length)];
         await spawnArtifact(sock, pick, db, saveDatabase);
@@ -304,14 +324,14 @@ function startSpawnScheduler(sock, getDatabase, saveDatabase, groupChatIds) {
       const enabled = getSpawnEnabledIds(db);
       if (enabled.length === 0) { scheduleNext(); return; }
       const last = db.globalSpawn?.lastSpawnAt || 0;
-      if (Date.now() - last < 24*60*60*1000) { scheduleNext(); return; }
+      if (Date.now() - last < GLOBAL_SPAWN_EVERY_MS) { scheduleNext(); return; }
       const pick = enabled[Math.floor(Math.random()*enabled.length)];
       await spawnArtifact(sock, pick, db, saveDatabase);
     } catch(e) {}
     scheduleNext();
   }, firstDelay);
 
-  console.log(`[ArtifactSpawn] Global daily scheduler started (common->epic, 1/day across all GCs where /set spawn --true). First check in ${Math.floor(firstDelay/60000)} minutes.`);
+  console.log(`[ArtifactSpawn] Global spawn scheduler started (every 3h across all GCs where /set spawn --true). First check in ${Math.floor(firstDelay/60000)} minutes.`);
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -347,8 +367,7 @@ function pickDiversifiedSpawn(opts = {}) {
     return { name: `${tier === 'epic' ? 'Epic' : tier === 'rare' ? 'Rare' : 'Common'} Material Cache`, emoji: '🧰', rarity: tier, type: 'material_bundle', bonus: {}, bundle,
              desc: `${bundle.reduce((a, b) => a + b.qty, 0)} crafting materials the forge is asking for.` };
   }
-  const epics = SPAWN_ARTIFACTS.filter(a => a.rarity === 'epic' && String(a.type).toLowerCase() === 'material' && !(a.isMendingStone || a.name === 'Mending Stone'));
-  return epics.length ? epics[Math.floor(Math.random() * epics.length)] : mending;
+  return pickEpicMaterial() || mending;
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -365,6 +384,7 @@ module.exports = {
   startSpawnScheduler,
   SPAWN_ARTIFACTS,
   pickDiversifiedSpawn,
+  pickEpicMaterial,
 
   async execute(sock, msg, args, getDatabase, saveDatabase, sender) {
     const chatId = msg.key?.remoteJid;
@@ -413,7 +433,7 @@ module.exports = {
         const pets = Object.values(PD.PET_DATABASE || {});
         const byRarity = {};
         for (const pt of pets) { const r = String(pt.rarity || 'common').toLowerCase(); (byRarity[r] = byRarity[r] || []).push(`${pt.emoji || '🐾'} ${pt.name}`); }
-        const epics = SPAWN_ARTIFACTS.filter(a => a.rarity === 'epic' && String(a.type).toLowerCase() === 'material' && !(a.isMendingStone || a.name === 'Mending Stone'));
+        const epics = (() => { const seen = new Set(); const arr = []; for (let i = 0; i < 400; i++) { const e = pickEpicMaterial(); if (e && !seen.has(e.name)) { seen.add(e.name); arr.push(e); } } return arr.sort((a, b) => a.name.localeCompare(b.name)); })();
         const F = '━━━━━━━━━━━━━━━━━━━━━━━━━━━';
         lines.push(F, '📜 *SPAWN CATALOG* (owner)', F, '',
           '*Commands*',

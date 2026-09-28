@@ -137,6 +137,7 @@ function abilityStrike(playerId, target, opts = {}) {
 }
 
 /** Scavenger payout for a clear: extra Nexus + an item find roll. */
+const SCAVENGE_CAP = 40000;
 function scavenge(playerId, baseAmount) {
   return safe(() => {
     const pb = battleBonus(playerId);
@@ -144,7 +145,8 @@ function scavenge(playerId, baseAmount) {
     const base = Math.max(0, Number(baseAmount) || 0);
     const rate = Number(pb.scavengeBonus || 0.1);
     // Push #88w: scavenger loot cut by 70% (bonus Nexus AND item-find chance).
-    const bonus = Math.floor(Math.max(pb.pet.level >= 5 ? 50 : 20, Math.floor(base * rate)) * 0.3);
+    // Push #91: hard cap — a scavenger never digs up more than 40,000 Nexus per clear.
+    const bonus = Math.min(SCAVENGE_CAP, Math.floor(Math.max(pb.pet.level >= 5 ? 50 : 20, Math.floor(base * rate)) * 0.3));
     const finds = (0.18 + (Number(pb.pet.stats?.scavengeRate || 0.1) || 0.1)) * 0.3;
     return { bonus, foundItem: Math.random() < finds ? true : null, pet: pb.pet };
   }, { bonus: 0, foundItem: null });

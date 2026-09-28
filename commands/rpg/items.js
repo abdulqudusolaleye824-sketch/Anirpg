@@ -76,7 +76,6 @@ function buildList(player, opts = {}) {
   // Add old-style potions as virtual items
   const synthetic = [];
   for (let i = 0; i < (inv.healthPotions || 0); i++)  synthetic.push({ name: 'Health Potion', type: 'Potion', rarity: 'common', _synthetic: 'healthPotions' });
-  for (let i = 0; i < (inv.energyPotions || inv.manaPotions || 0); i++) synthetic.push({ name: 'Energy Potion', type: 'Potion', rarity: 'common', _synthetic: 'energyPotions' });
   for (let i = 0; i < (inv.reviveTokens || 0); i++) synthetic.push({ name: 'Revive Token', type: 'Consumable', rarity: 'uncommon', _synthetic: 'reviveTokens' });
   // Batch-48: medium/higher tiers were INVISIBLE everywhere (own counters,
   // never listed) — listed now, with counts. Cards join too so every item

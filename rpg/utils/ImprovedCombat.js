@@ -529,8 +529,7 @@ class ImprovedCombat {
 
     let menu = `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🎒 ITEMS\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
     menu += `1. 🧪 Health Potion x${healthPots}\n   Restores 40% HP\n\n`;
-    menu += `2. ${player.energyColor || '💙'} Energy Potion x${energyPots}\n   Restores 50% ${player.energyType || 'Energy'}\n`;
-    menu += `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n📌 /battle item [1 or 2]\n━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+    menu += `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n📌 /battle item 1\n━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
     return menu;
   }
 

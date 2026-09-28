@@ -21,7 +21,7 @@ const TYPE_INFO = {
   support: { emoji: '🛡️', name: '✦ 𝐀𝐬𝐭𝐫𝐚™ Arise',   desc: 'General support & announcements' },
   mods:    { emoji: '🛡️', name: '✦ 𝐀𝐬𝐭𝐫𝐚™ Mods',    desc: 'Moderation & staff GC' },
   games:   { emoji: '🎮', name: '✦ 𝐀𝐬𝐭𝐫𝐚™ Games',   desc: 'Quiz, Tic-Tac-Toe & Chess' },
-  pro:     { emoji: '💎', name: '✦ 𝐀𝐬𝐭𝐫𝐚™ Pro Lounge', desc: 'PRO / BP-Premium members only — epic spawns every 5h' },
+  pro:     { emoji: '💎', name: '✦ 𝐀𝐬𝐭𝐫𝐚™ Pro Lounge', desc: 'PRO / BP-Premium members only — epic spawns every 3h' },
 };
 
 const EXPIRED_MSG =
