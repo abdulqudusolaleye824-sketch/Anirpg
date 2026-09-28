@@ -1,5 +1,5 @@
 /**
- * /unmute — Let a GROUP-muted user use bot commands again (mods + owners only).
+ * /unmute — Let a GROUP-muted user use bot commands again (group admins, plus bot mods/owners).
  *   /unmute @user   → target by mention
  *   /unmute          → target the replied-to user
  */
@@ -13,9 +13,9 @@ const UI = require('../../rpg/utils/UI');
 module.exports = {
   name: 'unmute',
   description: '🔊 Unmute a user so they can use the bot in this group',
-  category: 'mod',
+  category: 'group',
   usage: '/unmute @user',
-  availability: 'Mods / Owners',
+  availability: 'Group admins / Mods / Owners',
   where: 'Groups only',
 
   async execute(sock, msg, args, getDatabase, saveDatabase, sender) {
@@ -23,13 +23,20 @@ module.exports = {
     const db = getDatabase();
     const proN = UI.isPro(db.users[sender]);
 
-    if (!Mod.canModerate(db, sender)) {
-      return sock.sendMessage(chatId, {
-        text: '❌ *Mods / Owners only.*\n\nYou need mod permissions to use /unmute.',
-      }, { quoted: msg });
-    }
     if (!chatId.endsWith('@g.us')) {
       return sock.sendMessage(chatId, { text: '❌ This command only works in groups.' }, { quoted: msg });
+    }
+    // Group admins (or bot mods/owners) may unmute.
+    if (!Mod.canModerate(db, sender)) {
+      let isAdmin = false;
+      try {
+        const meta = await sock.groupMetadata(chatId);
+        const me = (meta.participants || []).find(p => p.id === sender || GroupAdmin.bare(p.id) === GroupAdmin.bare(sender));
+        isAdmin = GroupAdmin.isAdminState(me);
+      } catch (e) {}
+      if (!isAdmin) {
+        return sock.sendMessage(chatId, { text: '❌ *Group admins only.*\n\nYou need to be an admin of this group to use /unmute.' }, { quoted: msg });
+      }
     }
 
     const mentionedJid = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid?.[0];

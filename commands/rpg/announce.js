@@ -1,4 +1,4 @@
-// announce.js — owner/co-owner DMs the bot: /announce <text>
+// announce.js — MOD-LEVEL: a mod/owner DMs the bot: /announce <text>
 // Broadcasts <text> to the announcements GC (set via /setspace announcement)
 // with a full /tagall effect (mentions every member).
 const Perms = require('../../utils/permissions');
@@ -6,13 +6,13 @@ const Perms = require('../../utils/permissions');
 module.exports = {
   name: 'announce',
   aliases: ['globalannounce'],
-  description: '📢 [Owner] Broadcast an announcement to the announcements group (tag all)',
+  description: '📢 [Mod] Broadcast an announcement to the announcements group (tag all)',
   async execute(sock, msg, args, getDatabase, saveDatabase, sender) {
     const chatId = msg.key.remoteJid;
     const db = getDatabase();
 
-    if (!Perms.isBotOwner(db, sender)) {
-      return sock.sendMessage(chatId, { text: '❌ Owner only!' }, { quoted: msg });
+    if (!Perms.isBotMod(db, sender)) {
+      return sock.sendMessage(chatId, { text: '❌ *Mods / Owners only.*' }, { quoted: msg });
     }
 
     const text = args.join(' ').trim();

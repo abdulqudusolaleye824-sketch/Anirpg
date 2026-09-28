@@ -1,5 +1,5 @@
 /**
- * /mute — MOD-LEVEL command. Works like /ban but GROUP-RESTRICTED:
+ * /mute — GROUP-ADMIN command (group admins, plus bot mods/owners). Works like /ban but GROUP-RESTRICTED:
  *   - The muted player can't use commands in this group.
  *   - EVERY message they send (including commands) is silently deleted
  *     by the bot while muted.
@@ -18,10 +18,10 @@ const UI = require('../../rpg/utils/UI');
 
 module.exports = {
   name: 'mute',
-  description: '🔇 Group-restricted mute (mod level) — deletes the user\u2019s messages',
-  category: 'mod',
+  description: '🔇 Group-restricted mute (group admins) — deletes the user\u2019s messages',
+  category: 'group',
   usage: '/mute @user [minutes]',
-  availability: 'Mods / Owners (bot must be group admin)',
+  availability: 'Group admins / Mods / Owners (bot must be group admin)',
   where: 'Groups only',
 
   async execute(sock, msg, args, getDatabase, saveDatabase, sender) {
@@ -29,19 +29,18 @@ module.exports = {
     const db = getDatabase();
     const proM = UI.isPro(db.users[sender]);
 
-    if (!Mod.canModerate(db, sender)) {
-      return sock.sendMessage(chatId, {
-        text: '❌ *Mods / Owners only.*\n\nYou need mod permissions to use /mute.',
-      }, { quoted: msg });
-    }
     if (!chatId.endsWith('@g.us')) {
       return sock.sendMessage(chatId, { text: '❌ This command only works in groups.' }, { quoted: msg });
     }
 
     // Confirm the bot is a group admin (needed to delete muted messages).
+    // Group admins (or bot mods/owners) may mute; the bot must be a group admin to delete messages.
     const gate = await GroupAdmin.requireGroupAdmin(sock, chatId, sender, db);
-    if (!gate.ok) {
+    if (!gate.ok && gate.botIsAdmin === false) {
       return sock.sendMessage(chatId, { text: '❌ I need to be a *group admin* to mute + delete messages.' }, { quoted: msg });
+    }
+    if (!gate.ok && !Mod.canModerate(db, sender)) {
+      return sock.sendMessage(chatId, { text: '❌ *Group admins only.*\n\nYou need to be an admin of this group to use /mute.' }, { quoted: msg });
     }
 
     const mentionedJid = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid?.[0];

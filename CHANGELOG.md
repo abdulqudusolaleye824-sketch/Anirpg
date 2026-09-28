@@ -1,3 +1,7 @@
+## v1.0.116 — Push #89c
+- `/announce` is now MOD-level (any bot mod or owner, from DM).
+- `/mute` and `/unmute` are now GROUP-ADMIN commands: any admin of the group can use them (bot mods/owners still can too). Bot must still be a group admin to delete muted messages. Removed dead duplicate `commands/rpg/admin/mute.js`.
+
 ## v1.0.115 — Push #89b
 - `/recycle` is now open to EVERYONE (free hunters type `/recycle <material>` / `... confirm 1|max`); 💎 PRO hunters get tap buttons instead. Scroll-read hint updated.
 
