@@ -197,7 +197,7 @@ function formatScrollRead(scroll, player = null) {
     `Once crafted, this scroll is consumed forever.`,
     ``,
     `📌 To craft: */craft ${recipe.output} --${scroll.key}*`,
-    `♻️ Missing mats? PRO hunters: */recycle* turns unwanted same-rank materials into the ones you need.`,
+    `♻️ Missing mats? */recycle* turns 3 unwanted same-rank materials into 1 you need (PRO gets tap buttons).`,
     FRAME,
   ].join('\n');
 }

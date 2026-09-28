@@ -1,3 +1,6 @@
+## v1.0.115 — Push #89b
+- `/recycle` is now open to EVERYONE (free hunters type `/recycle <material>` / `... confirm 1|max`); 💎 PRO hunters get tap buttons instead. Scroll-read hint updated.
+
 ## 1.0.114 — Push #89 (2026-09-28)
 - NEW `/recycle` (PRO, buttons): turns 3 UNWANTED crafting materials of the same gate rank into 1 material a scroll recipe still needs. Costs Nexus per output (E 500 · D 1.5k · C 4k · B 10k · A 25k · S 60k). Bare `/recycle` lists what your un-crafted scrolls lack with tap buttons; picking one shows the plan (Make 1 / Make max / Cancel). Scroll reads mention it.
 - BOSS PARTY: the 2 elite soldiers no longer gate the boss fight — they are the boss's party. `/party boss` opens once the normal floor monsters are down; every living elite strikes beside the boss each round (never lethal on its own); they fall with the boss (no rewards) or can be thinned first with `/party attack`. Status shows the boss party.
