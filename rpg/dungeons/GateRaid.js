@@ -161,6 +161,19 @@ function monsterDodges(monster, player, move = null) {
   return Math.random() * 100 < monsterDodgeChance(monster, player);
 }
 function _isHealSkillEarly(entry, skill) { return String((entry && entry.type) || (skill && skill.type) || '').toLowerCase() === 'heal'; }
+// Push #89: ONE definition of a hunter's defence for every monster hit —
+// base + weapon + equipped gear + equipped TITLE + pet bonus + temp DEF buffs.
+// (Guards used to be resolved without title/pet, and titles were never counted.)
+function effectiveDef(player, jid = null) {
+  if (!player) return 5;
+  let def = (player.stats?.def || 5) + (player.weapon?.defense || 0);
+  try { def += require('../utils/GearSystem').getEquippedBonuses(player).def || 0; } catch (e) {}
+  try { def += require('../utils/TitleSystem').getEquippedBoost(player).def || 0; } catch (e) {}
+  try { if (jid) def += require('../utils/PetCombat').defBonus(jid) || 0; } catch (e) {}
+  try { const UC = require('../utils/UnifiedCombat'); if (typeof UC.tempBuffPct === 'function') def = Math.floor(def * (1 + (UC.tempBuffPct(player, 'def') || 0) / 100)); } catch (e) {}
+  return Math.max(0, Math.floor(def));
+}
+
 function monsterDamage(monster, def, player = null) {
   monsterDamage.last = { crit: false, dodged: false };
   // Push #74: the hunter can DODGE (speed vs monster speed + evasion +
@@ -177,7 +190,9 @@ function monsterDamage(monster, def, player = null) {
       // never below 4% of the hunter's max HP — high-DEF hunters used to
       // take a flat 3 from everything.
       const mAtk = (monster.atk || 10);
-      const soak = Math.min(mAtk * 0.6, Math.floor(((def || 5) * (1 + (pm.def || 0) / 100)) * 0.5));
+      // Push #89: DEF soaks 1:1 (was 0.5) — still capped at 60% of the hit. A
+      // 200-DEF hunter vs a 500-ATK boss now takes ~300 instead of ~400.
+      const soak = Math.min(mAtk * 0.6, Math.floor((def || 5) * (1 + (pm.def || 0) / 100)));
       const floorDmg = Math.max(3, Math.floor((player.stats?.maxHp || 100) * 0.04));
       let raw = Math.max(floorDmg, mAtk - soak);
       raw = raw * (0.8 + Math.random() * 0.4) * UC.weakenTakenMult(player) * (1 + (pm.dmgTaken || 0) / 100);
@@ -763,8 +778,11 @@ function floorMultiplier(gate, floor) {
 // Push #88n: global monster buff — ATK +70%, DEF +40% — applied on top of the
 // level/floor/severity scaling (which stays exactly as it was).
 const MON_ATK_BUFF = 1.7 * RAID_X2, MON_DEF_BUFF = 1.4 * RAID_X2 * 1.75, MON_HP_BUFF = 1.5, MON_SPD_BUFF = 1.75; // Push #88o: +50% HP · Push #88q: raid ATK/DEF ×2 again · Push #88z: DEF +75%, SPD +75%
+// Push #89: A–E gates are 25% softer (monsters AND boss); S+ untouched.
+const RANK_SOFTEN = { A: 0.75, B: 0.75, C: 0.75, D: 0.75, E: 0.75 };
+function rankSoften(rank) { return RANK_SOFTEN[String(rank || '').toUpperCase()] || 1; }
 function applyMonsterScaling(gate) {
-  const severity = (gate.calibrated && gate.calibrated.severity) || 1;
+  const severity = ((gate.calibrated && gate.calibrated.severity) || 1) * rankSoften(gate.rank);
   for (const mon of gate.monsters || []) {
     if (!mon || mon.defeated) continue;
     if (!mon._base) mon._base = { hp: mon.maxHp || mon.hp || 10, atk: mon.atk || 5, def: mon.def || 0, speed: mon.speed || 10 };
@@ -966,7 +984,8 @@ function statusOf(gate, db) {
   const floor = gate.currentFloor;
   const floorMonsters = (gate.monsters || []).filter(m => m.floor === floor && !m.defeated);
   const totalMonsters = (gate.monsters || []).filter(m => m.floor === floor).length;
-  const bossReady = floor >= gate.totalFloors && floorMonsters.length === 0 && !gate.boss.defeated;
+  // Push #89: elites are the boss's party — they never block the boss fight.
+  const bossReady = floor >= gate.totalFloors && floorMonsters.filter(m => !m.elite).length === 0 && !gate.boss.defeated;
 
   const lines = [
     `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
@@ -989,7 +1008,7 @@ function statusOf(gate, db) {
   }
   lines.push(`🗺️ Floor: *${floor}/${gate.totalFloors}*`);
   lines.push(`👾 Monsters: ${totalMonsters - floorMonsters.length}/${totalMonsters} cleared`);
-  if (bossReady) lines.push(`🏆 *BOSS READY — /gateraid boss*`);
+  if (bossReady) { lines.push(`🏆 *BOSS READY — /gateraid boss*`); const _bp = floorMonsters.filter(m => m.elite); if (_bp.length) lines.push(`⚜️ Boss party: ${_bp.map(m => `${m.name} (${m.hp} HP)`).join(' · ')} — they strike beside the boss`); }
   lines.push(``);
   lines.push(raid && raid.members.length > 1 ? `*Party members (${raid.members.length}):*` : `*Your status:*`);
   (raid ? raid.members : [])
@@ -1263,7 +1282,9 @@ function clearGate(gate, key, keyData, db, saveDatabase) {
 // idleness. The caller (index.js ticker) sends the returned messages.
 const IDLE_STRIKE_MS = 30 * 1000;
 const IDLE_STRIKE_OTHER_MS = 45 * 1000;
-function idleStrikeMsFor(rank) { return ['S', 'SS', 'SSS', 'DISASTER'].includes(String(rank || '').toUpperCase()) ? IDLE_STRIKE_MS : IDLE_STRIKE_OTHER_MS; }
+// Push #89: idle auto-attack window scales with gate rank.
+const IDLE_STRIKE_BY_RANK = { S: 30, SS: 30, SSS: 30, DISASTER: 30, A: 45, B: 60, C: 90, D: 120, E: 150 };
+function idleStrikeMsFor(rank) { const sec = IDLE_STRIKE_BY_RANK[String(rank || '').toUpperCase()]; return (sec || 150) * 1000; }
 function noteRaidTurn(gate, chatId) {
   if (!gate || !gate.raid) return;
   gate.raid.lastTurnAt = Date.now();
@@ -1383,8 +1404,7 @@ function autoStrikeIdleRaids(db, now = Date.now(), canStrike = null) {
       if (!living.length) continue;
       living.sort((a, b) => (a.u.stats.hp || 0) - (b.u.stats.hp || 0));
       const { m, u } = living[0];
-      let def = (u.stats?.def || 5) + (u.weapon?.defense || 0);
-      try { def += require('../utils/GearSystem').getEquippedBonuses(u).def || 0; } catch (e) {}
+      const def = effectiveDef(u, m.id); // Push #89: gear + title + pet
       const dmg = monsterDamage(target, def, u);
       const crit = !!(monsterDamage.last && monsterDamage.last.crit);
       let maxHp = u.stats?.maxHp || 100; try { maxHp = require('../utils/GearSystem').effectiveMaxHp(u); } catch (e) {}
@@ -1466,7 +1486,7 @@ module.exports = {
   saveGateState,
   spawnWildPet,
   tryCombatLock,
-  markFallen, isFallen, clearFallen, reviveFallen, FALLEN_TEXT, reviveFloor, reviveStaleFloors, FLOOR_REVIVE_MS, FLOOR_REVIVE_MULT, berserkHunters, monsterCritChance, monsterDodgeChance, monsterDodges, critMultFor, noteRaidTurn, autoStrikeIdleRaids, IDLE_STRIKE_MS, IDLE_STRIKE_OTHER_MS, idleStrikeMsFor, raidInitiativeChance, raidMonsterGoesFirst, RAID_X2,
+  markFallen, isFallen, clearFallen, reviveFallen, FALLEN_TEXT, effectiveDef, IDLE_STRIKE_BY_RANK, rankSoften, reviveFloor, reviveStaleFloors, FLOOR_REVIVE_MS, FLOOR_REVIVE_MULT, berserkHunters, monsterCritChance, monsterDodgeChance, monsterDodges, critMultFor, noteRaidTurn, autoStrikeIdleRaids, IDLE_STRIKE_MS, IDLE_STRIKE_OTHER_MS, idleStrikeMsFor, raidInitiativeChance, raidMonsterGoesFirst, RAID_X2,
   releaseCombatLock,
   wipeGate,
   applyMonsterScaling, floorMultiplier, severityLabel, markHealerAggro, pickAggroTarget, supportCast,

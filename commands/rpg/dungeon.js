@@ -102,7 +102,8 @@ function executeMonsterAI(monster, player, ctx = null) {
   const baseDmg  = Math.floor(monster.stats.atk * atkMult);
   let _gearDef0 = 0, _gearSpd0 = 0;
   try { const _gb = require('../../rpg/utils/GearSystem').getEquippedBonuses(player); _gearDef0 = _gb.def || 0; _gearSpd0 = _gb.speed || 0; } catch (e) {}
-  const defReduc = Math.floor(((player.stats.def || 0) + _gearDef0) * 0.4);
+  let _titleDef0 = 0; try { _titleDef0 = require('../../rpg/utils/TitleSystem').getEquippedBoost(player).def || 0; } catch (e) {}
+  const defReduc = Math.floor(((player.stats.def || 0) + _gearDef0 + _titleDef0 + (player.weapon?.defense || 0)) * 0.4); // Push #89: title + weapon count
 
   // Player dodge
   const speedDiff = ((player.stats.speed || 100) + _gearSpd0) - (monster.stats.speed || 80);

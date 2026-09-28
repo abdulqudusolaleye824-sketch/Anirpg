@@ -1,3 +1,10 @@
+## 1.0.114 — Push #89 (2026-09-28)
+- NEW `/recycle` (PRO, buttons): turns 3 UNWANTED crafting materials of the same gate rank into 1 material a scroll recipe still needs. Costs Nexus per output (E 500 · D 1.5k · C 4k · B 10k · A 25k · S 60k). Bare `/recycle` lists what your un-crafted scrolls lack with tap buttons; picking one shows the plan (Make 1 / Make max / Cancel). Scroll reads mention it.
+- BOSS PARTY: the 2 elite soldiers no longer gate the boss fight — they are the boss's party. `/party boss` opens once the normal floor monsters are down; every living elite strikes beside the boss each round (never lethal on its own); they fall with the boss (no rewards) or can be thinned first with `/party attack`. Status shows the boss party.
+- A–E gates: monsters AND boss −25% (S+ untouched).
+- Idle auto-attack window by gate rank: S 30s · A 45s · B 60s · C 90s · D 120s · E 150s.
+- DEFENCE FIX: one `effectiveDef` for every monster hit (initiative, counter, guard, boss, idle strike) = base + weapon + equipped gear + equipped TITLE + pet + temp DEF buffs — guards used to be resolved without title/pet and titles were never counted. DEF now soaks 1:1 (was 0.5), still capped at 60% of the hit: vs a 500-ATK boss, 130 DEF ≈370 dmg, 200 DEF ≈300 dmg. Tower monster hits count title + weapon DEF too.
+
 ## 1.0.113 — Push #88z (2026-09-27)
 - ELITE SOLDIERS on every boss floor: gate raids (last floor) AND every tower boss floor (5/10/15/20) are guarded by 2 elites before the boss. Elites have exactly 2× the stats (HP/ATK/DEF/SPD) of the monsters on the floor before them — re-pinned after every scaling pass — and use NO skills/abilities (no status effects).
 - Tower boss floors now run a queue: elite → elite → boss; kills pop the next guard instead of opening the floor.

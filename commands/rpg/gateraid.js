@@ -560,8 +560,7 @@ module.exports = {
       try {
         if (_grCanAct.canAct && target && !target.defeated && (target.hp || 0) > 0 && GR.raidMonsterGoesFirst(target, player)) {
           _monActedFirst = true;
-          let _aDef = (player.stats?.def || 5) + (player.weapon?.defense || 0);
-          try { _aDef += require('../../rpg/utils/GearSystem').getEquippedBonuses(player).def || 0; } catch (e) {}
+          const _aDef = GR.effectiveDef(player, sender); // Push #89: gear + title + pet
           const _aRaw = GR.monsterDamage(target, _aDef, player);
           const _aDmg = Math.min(Math.max(0, (player.stats.hp || 1) - 1), Math.floor(_aRaw)); // Push #88t: full force (it replaces the counter)
           const _aCrit = !!(GR.monsterDamage.last && GR.monsterDamage.last.crit);
@@ -714,8 +713,10 @@ module.exports = {
           if (_pr) killLines.push(..._pr);
         } catch (e) {}
 
-        const remaining = floorMonsters.filter(mm => !mm.defeated).length;
-        killLines.push(``, `👾 *${Math.max(0, remaining)}* monsters remaining on Floor ${floor}`);
+        // Push #89: on the boss floor the elites are the boss's party — they don't gate the boss fight.
+        const _eliteLeft = floor >= gate.totalFloors ? floorMonsters.filter(mm => !mm.defeated && mm.elite).length : 0;
+        const remaining = floorMonsters.filter(mm => !mm.defeated && !(mm.elite && floor >= gate.totalFloors)).length;
+        killLines.push(``, `👾 *${Math.max(0, remaining)}* monsters remaining on Floor ${floor}${_eliteLeft ? ` (+${_eliteLeft} elite guarding the boss)` : ''}`);
 
         if (remaining <= 0 && _revivedKill) {
           // Re-cleared a revived floor: treasure was already banked the first time.
@@ -761,7 +762,7 @@ module.exports = {
       const _victimJid = _guardHit ? _guardHit.guardianJid : sender;
       let _gDefV = _gDefGR;
       if (_guardHit) { try { _gDefV = require('../../rpg/utils/GearSystem').getEquippedBonuses(_victim).def || 0; } catch (e) { _gDefV = 0; } }
-      const def = (_victim.stats?.def || 5) + (_victim.weapon?.defense || 0) + _gDefV + (PetCombat.defBonus(_victimJid) || 0);
+      const def = GR.effectiveDef(_victim, _victimJid); // Push #89: guardian's FULL defence (gear + title + pet)
       const dmg = _monCanAct.canAct ? GR.monsterDamage(target, def, _victim) : 0;
       if (_guardHit && _guardHit.aggro) {
         await sock.sendMessage(chatId, { text: `🎯 *AGGRO!* *${target.name}* ignores *${player.name}* and lunges at the healer *${_guardHit.guardianName}*!` });
@@ -913,6 +914,8 @@ module.exports = {
         // crashed with "boss is not defined".
         const boss = gate.boss;
         boss.defeated = true;
+        // Push #89: the boss party falls with the boss (no rewards for them).
+        try { for (const _el of (gate.monsters || [])) if (_el && _el.elite && !_el.defeated) { _el.defeated = true; _el.hp = 0; _el.revived = true; } } catch (e) {}
         AuraSystem.addAura(player, 'bossKill');
         try {
           const QD = require('../../rpg/utils/QuestDispatcher');
@@ -1011,7 +1014,8 @@ module.exports = {
       }
       try {
       const floor = gate.currentFloor;
-      const floorMonsters = (gate.monsters || []).filter(mm => mm.floor === floor && !mm.defeated);
+      // Push #89: the 2 ELITE SOLDIERS are the boss's PARTY — they fight beside it, not before it.
+      const floorMonsters = (gate.monsters || []).filter(mm => mm.floor === floor && !mm.defeated && !mm.elite);
       if (floorMonsters.length > 0) return sock.sendMessage(chatId, { text: `❌ Clear all floor ${floor} monsters first!` }, { quoted: msg });
       if (floor < gate.totalFloors) return sock.sendMessage(chatId, { text: `❌ Reach Floor ${gate.totalFloors} before engaging the boss.` }, { quoted: msg });
       if (gate.boss.defeated) return sock.sendMessage(chatId, { text: '✅ Boss already defeated!' }, { quoted: msg });
@@ -1064,6 +1068,23 @@ module.exports = {
       if (boss.hp <= 0) {
         lines.push(...await finishBossDefeat());
       } else {
+        // Push #89: BOSS PARTY — every living elite soldier on this floor strikes
+        // alongside the boss (full force, never lethal on its own: leaves ≥1 HP).
+        try {
+          const _elites = (gate.monsters || []).filter(mm => mm && mm.elite && mm.floor === gate.currentFloor && !mm.defeated && (mm.hp || 0) > 0);
+          if (_elites.length) {
+            const _eDef = GR.effectiveDef(player, sender);
+            for (const _el of _elites) {
+              const _er = GR.monsterDamage(_el, _eDef, player);
+              const _ecrit = !!(GR.monsterDamage.last && GR.monsterDamage.last.crit);
+              if (_er <= 0) { lines.push(`⚜️ *${_el.name}* lunges beside the boss — 💨 *${player.name}* dodged!`); continue; }
+              const _ed = Math.min(Math.max(0, (player.stats.hp || 1) - 1), Math.floor(_er));
+              player.stats.hp = Math.max(1, (player.stats.hp || 1) - _ed);
+              lines.push(`⚜️ *${_el.name}* strikes beside the boss — ${_ecrit ? '💥 CRIT ' : ''}💢 *${_ed}* dmg → ❤️ ${player.stats.hp}/${_effMax(player)}`);
+            }
+            lines.push(`💡 Elites fall with the boss — or thin them first with /party attack.`);
+          }
+        } catch (e) {}
         let _gDefGR2 = 0;
         try { _gDefGR2 = require('../../rpg/utils/GearSystem').getEquippedBonuses(player).def || 0; } catch (e) {}
         // Push #84: /guard intercept (boss) — resolved against the guardian's stats.
@@ -1073,7 +1094,7 @@ module.exports = {
         const _bVictim = _bGuard ? _bGuard.guardian : player;
         const _bVictimJid = _bGuard ? _bGuard.guardianJid : sender;
         if (_bGuard) { try { _gDefGR2 = require('../../rpg/utils/GearSystem').getEquippedBonuses(_bVictim).def || 0; } catch (e) { _gDefGR2 = 0; } }
-        const def = (_bVictim.stats?.def || 5) + (_bVictim.weapon?.defense || 0) + _gDefGR2;
+        const def = GR.effectiveDef(_bVictim, _bVictimJid); // Push #89
         // Push #88: the boss hits with its CALIBRATED atk (severity × floor), not a flat rank constant.
         const bossAtk = (typeof boss.atk === 'number' && boss.atk > 0) ? boss.atk : Math.floor(GATE_RANKS[gate.rank].monsterRange[1] * 0.20 * ((gate.calibrated && gate.calibrated.severity) || 1));
         // Push #74: boss hits go through the same dodge/passive/weaken maths.
