@@ -1,3 +1,6 @@
+## v1.0.119 — Push #91b
+- Global spawn back to once every **24h**; Pro GC spawn stays every **3h**. Epic-material pool change from #91 kept.
+
 ## v1.0.118 — Push #91
 - Spawns: EVERY epic crafting material can now drop as a single epic spawn (the whole Epic recipe pool + Dragon Scale, weighted by recipe demand) — never just Dragon Scale. Global spawn now every **3 hours** (was 24h); Pro GC spawn every 3h (was 5h). Global pick: 20% Mending Stone · 20% epic material · 60% material cache.
 - Scavenger pets: hard cap **40,000 Nexus** per dig (was uncapped — 144k seen).

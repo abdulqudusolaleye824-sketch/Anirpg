@@ -84,7 +84,7 @@ function pickEpicMaterial() {
   for (const o of out) { r -= (o.w || 1); if (r <= 0) return o; }
   return out[out.length - 1];
 }
-const GLOBAL_SPAWN_EVERY_MS = 3 * 60 * 60 * 1000; // Push #91: every 3 hours (was 24h)
+const GLOBAL_SPAWN_EVERY_MS = 24 * 60 * 60 * 1000; // global spawn once a day (Pro GC spawns every 3h — ProGC.js)
 
 // ─── RARITY ANNOUNCEMENT STYLES ──────────────────────────────
 const RARITY_STYLES = {
@@ -207,7 +207,7 @@ async function handleClaim(sock, msg, args, getDatabase, saveDatabase, sender) {
   const spawn  = activeSpawns.get(chatId);
 
   if (!spawn) {
-    return sock.sendMessage(chatId, { text: '❌ No artifact to claim right now!\n⏰ Wait for the next spawn (every 3 hours).' }, { quoted: msg });
+    return sock.sendMessage(chatId, { text: '❌ No artifact to claim right now!\n⏰ Wait for the next spawn (daily; Pro GC every 3 hours).' }, { quoted: msg });
   }
 
   if (spawn.claimed) {
@@ -331,7 +331,7 @@ function startSpawnScheduler(sock, getDatabase, saveDatabase, groupChatIds) {
     scheduleNext();
   }, firstDelay);
 
-  console.log(`[ArtifactSpawn] Global spawn scheduler started (every 3h across all GCs where /set spawn --true). First check in ${Math.floor(firstDelay/60000)} minutes.`);
+  console.log(`[ArtifactSpawn] Global spawn scheduler started (every 24h across all GCs where /set spawn --true). First check in ${Math.floor(firstDelay/60000)} minutes.`);
 }
 
 // ═══════════════════════════════════════════════════════════════
