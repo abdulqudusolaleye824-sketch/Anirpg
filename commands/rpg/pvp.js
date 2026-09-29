@@ -174,6 +174,9 @@ module.exports = {
       { const _bz = _busyElsewhere(player, db) || _busyElsewhere(challenger, db); if (_bz) { saveDatabase(); return sock.sendMessage(chatId, { text: `❌ Can't start — one of you is in a *${_bz}* right now.` }, { quoted: msg }); } }
 
       // Initialize battle state
+      // Push #92b: nothing carries INTO a duel either — statuses, buffs,
+      // transformation recoil and cooldowns from the last fight are wiped.
+      try { const CR = require('../../rpg/utils/CombatReset'); CR.clearForBattle(challenger); CR.clearForBattle(player); } catch (e) {}
       challenger.pvpBattle = { opponentId: sender, turn: 1, pendingAction: null };
       player.pvpBattle = { opponentId: challenge.challengerId, turn: 1, pendingAction: null };
 
@@ -949,6 +952,9 @@ function calcMoveDamage(attacker, defender, act) {
 function _pvpCleanup(pl) {
   if (!pl) return;
   try {
+    // Push #92b: a still-running transformation ends cleanly — no recoil
+    // (weaken/stun/bleed) leaks out of the arena into the next fight.
+    try { const TF = require('../../rpg/utils/Transformation'); if (pl.transform) TF.end(pl, false, false); } catch (e) {}
     pl.statusEffects = [];
     pl.tempBuffs = {};
     pl.buffs = [];

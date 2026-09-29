@@ -19,6 +19,15 @@ function normaliseJid(jid) {
   return GKM.normaliseJid(jid);
 }
 
+// Push #92b: the guild a hunter currently holds official affiliate status with (or null).
+function currentAffiliation(db, jid) {
+  try {
+    const n = normaliseJid(jid);
+    for (const a of Object.values(db.affiliates || {})) if (a && a.jid && normaliseJid(a.jid) === n && a.guildName) return a;
+  } catch (e) {}
+  return null;
+}
+
 module.exports = {
   name: 'affiliate',
   aliases: ['aff'],
@@ -172,6 +181,13 @@ module.exports = {
       if (GKM.isGuildMember(targetJid, guildName, db)) {
         return sock.sendMessage(chatId, { text: '❌ That hunter is already a full member of your guild!' }, { quoted: msg });
       }
+      // Push #92b: ONE guild at a time — a hunter already holding affiliate
+      // status (anywhere) must be stripped by that guild before another grants.
+      {
+        const cur = currentAffiliation(db, targetJid);
+        if (cur && cur.guildName === guildName) return sock.sendMessage(chatId, { text: `❌ That hunter is already an official affiliate of *${guildName}*.` }, { quoted: msg });
+        if (cur) return sock.sendMessage(chatId, { text: `❌ That hunter is already an affiliate of *${cur.guildName}*. A hunter can hold affiliate status with ONE guild at a time — *${cur.guildName}* must /affiliate strip them first.` }, { quoted: msg });
+      }
 
       const splitText = args.slice(1).join(' ').replace(/@[0-9]+/g, '').trim();
       const split = parseSplit(splitText);
@@ -273,6 +289,11 @@ module.exports = {
       }
 
       if (offer.type === 'grant') {
+        const cur = currentAffiliation(db, sender);
+        if (cur && cur.guildName !== offer.guildName) {
+          delete db.affiliateOffers[sender]; saveDatabase();
+          return sock.sendMessage(chatId, { text: `❌ You are already an affiliate of *${cur.guildName}*. One guild at a time — ask them to /affiliate strip you before accepting another guild's offer.` }, { quoted: msg });
+        }
         const affId = `aff_${normaliseJid(sender)}`;
         db.affiliates[affId] = {
           jid: sender,

@@ -1,3 +1,7 @@
+## 1.0.121 — Push #92b (2026-09-29)
+- Transformation drawbacks (weaken 10 / stun 2 / bleed 7) verified on all 50 Monster variants; they and every status/buff/cooldown are wiped at the start AND end of every raid, dungeon and PvP duel — nothing carries over.
+- Affiliate: a hunter can hold official affiliate status with ONE guild at a time (grant and accept both refuse; the current guild must strip first).
+
 ## 1.0.120 — Push #92 (2026-09-29)
 - Gate raids: a STUNNED/FROZEN/PARALYZED monster's idle strike is thwarted (status −1 turn); idle timer resets on /party advance, boss, heals and missed/dodged attacks; an active guard absorbs the idle strike.
 - CombatReset: status effects, temp buffs, recoils and cooldowns never carry into the next battle (raids + dungeons, all hunters).
