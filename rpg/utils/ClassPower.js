@@ -338,26 +338,85 @@ function recalibrate(player) {
 // used to leave the OLD class's weapon in hand. This gives the hunter the
 // best class weapon their level allows. A store weapon (fromStore/id) is
 // never replaced unless `force` says the class changed underneath it.
+// Push #92: class weapons are BOUGHT, not auto-unlocked. The Lv.1 starter is
+// free; every ladder step must be purchased (/class weapons buy <level>) once
+// the hunter has the level. Ownership: player.classWeaponsOwned[cls] = [names].
+// Hunters already holding a ladder weapon are grandfathered as owners.
+const CLASS_WEAPON_PRICE = { 10: 25000, 20: 60000, 30: 150000, 40: 350000, 50: 750000 };
+function classWeaponPrice(level) { return CLASS_WEAPON_PRICE[Number(level)] || Math.max(25000, Math.round(Number(level || 10) * 5000)); }
+function ownedClassWeapons(player, cls) {
+  if (!player.classWeaponsOwned || typeof player.classWeaponsOwned !== 'object') player.classWeaponsOwned = {};
+  if (!Array.isArray(player.classWeaponsOwned[cls])) player.classWeaponsOwned[cls] = [];
+  return player.classWeaponsOwned[cls];
+}
+function ownsClassWeapon(player, cls, name) { return ownedClassWeapons(player, cls).includes(name); }
+function _ladder(def) { return [{ level: 1, ...(def.weapon || {}) }, ...(def.levelWeapons || [])].filter(w => w && w.name); }
+// Grandfather: whatever ladder weapon is in hand (or parked) is owned, plus every lower step.
+function _grandfather(player, cls, def) {
+  const owned = ownedClassWeapons(player, cls);
+  const lad = _ladder(def);
+  const held = [player.weapon, player.classWeapon].filter(Boolean).map(w => w.name);
+  let top = -1; lad.forEach((w, i) => { if (held.includes(w.name)) top = Math.max(top, i); });
+  // Push #92: Monsters that still hold the old shared ladder ("Primal Claws"…)
+  // are matched step-for-step onto their variant ladder.
+  let _PM = null; try { _PM = require('../player/PlayerManager'); } catch (e) {}
+  if (/^monster$/i.test(cls) && _PM && _PM.classDefinitions && _PM.classDefinitions.Monster) {
+    const gen = _ladder(_PM.classDefinitions.Monster);
+    gen.forEach((w, i) => { if (held.includes(w.name)) top = Math.max(top, i); });
+    gen.forEach((w, i) => { if (owned.includes(w.name) && lad[i] && !owned.includes(lad[i].name)) owned.push(lad[i].name); });
+  }
+  for (let i = 0; i <= top; i++) if (!owned.includes(lad[i].name)) owned.push(lad[i].name);
+  if (lad[0] && !owned.includes(lad[0].name)) owned.push(lad[0].name);
+  return owned;
+}
+function bestOwnedClassWeapon(player, cls, def) {
+  const owned = _grandfather(player, cls, def);
+  const lad = _ladder(def).filter(w => w.level <= (player.level || 1) && owned.includes(w.name));
+  return lad.length ? lad[lad.length - 1] : (def.weapon || null);
+}
+// Buy a ladder step. Returns { ok, weapon, price, equipped } or { ok:false, error }.
+function buyClassWeapon(player, query) {
+  let PM = null; try { PM = require('../player/PlayerManager'); } catch (e) { return { ok: false, error: 'Weapon table unavailable.' }; }
+  const cls = baseClassName(player);
+  let def = PM && PM.classDefinitions ? PM.classDefinitions[cls] : null;
+  if (def && /^monster$/i.test(cls)) { try { const TF = require('./Transformation'); const v = TF.variantName(player); if (v && !/^monster$/i.test(v)) def = { ...def, ...require('../data/MonsterVariantKits').weaponDef(v) }; } catch (e) {} }
+  if (!def) return { ok: false, error: 'You have no class yet — awaken first.' };
+  const lad = _ladder(def);
+  const q = String(query || '').trim().toLowerCase();
+  const w = lad.find(x => String(x.level) === q || String(x.name).toLowerCase() === q) || lad.find(x => x.level > 1 && String(x.name).toLowerCase().includes(q));
+  if (!w) return { ok: false, error: `No ${cls} class weapon matching *${query}*. See /class weapons.` };
+  if (w.level <= 1) return { ok: false, error: `*${w.name}* is your free starter weapon.` };
+  if (ownsClassWeapon(player, cls, w.name) || _grandfather(player, cls, def).includes(w.name)) return { ok: false, error: `You already own *${w.name}*.` };
+  if ((player.level || 1) < w.level) return { ok: false, error: `*${w.name}* needs Level ${w.level} (you are Lv.${player.level || 1}).` };
+  const price = classWeaponPrice(w.level);
+  if ((player.gold || 0) < price) return { ok: false, error: `*${w.name}* costs 💠 ${price.toLocaleString()} Nexus — you have ${(player.gold || 0).toLocaleString()}.` };
+  player.gold -= price;
+  try { require('./TransactionLog').logSpend(player, 'class_weapon', price, 0); } catch (e) {}
+  ownedClassWeapons(player, cls).push(w.name);
+  const r = ensureClassWeapon(player, false);
+  return { ok: true, weapon: w, price, equipped: !!(r && r.changed), cls };
+}
+
 function ensureClassWeapon(player, force = false) {
   if (!player) return { changed: false };
   let PM = null; try { PM = require('../player/PlayerManager'); } catch (e) { return { changed: false }; }
   const base = baseClassName(player);
-  const def = PM && PM.classDefinitions ? PM.classDefinitions[base] : null;
+  let def = PM && PM.classDefinitions ? PM.classDefinitions[base] : null;
+  // Push #92: each Monster variant has its own natural-weapon ladder.
+  if (def && /^monster$/i.test(base)) { try { const TF = require('./Transformation'); const v = TF.variantName(player); if (v && !/^monster$/i.test(v)) def = { ...def, ...require('../data/MonsterVariantKits').weaponDef(v) }; } catch (e) {} }
   if (!def) return { changed: false };
   const w = player.weapon;
   const isStore = !!(w && (w.fromStore || w.id || w.sku));
   if (isStore && !force) return { changed: false };
   if (isStore && force) {
-    // keep the store weapon equipped — just park the class weapon as fallback
-    const eligible = (def.levelWeapons || []).filter(x => x.level <= (player.level || 1));
-    const best = eligible.length ? eligible[eligible.length - 1] : def.weapon;
+    // keep the store weapon equipped — just park the best OWNED class weapon as fallback
+    const best = bestOwnedClassWeapon(player, base, def);
     player.classWeapon = best ? { name: best.name, bonus: best.bonus, cls: base } : null;
     return { changed: false, parked: true };
   }
-  const eligible = (def.levelWeapons || []).filter(x => x.level <= (player.level || 1));
-  const best = eligible.length ? eligible[eligible.length - 1] : def.weapon;
+  const best = bestOwnedClassWeapon(player, base, def);
   if (!best) return { changed: false };
-  const ladderNames = new Set([def.weapon && def.weapon.name, ...(def.levelWeapons || []).map(x => x.name)].filter(Boolean));
+  const ladderNames = new Set(_ladder(def).map(x => x.name));
   const wrongClass = !w || !w.name || !ladderNames.has(w.name);
   if (wrongClass || (w.bonus || 0) < best.bonus) {
     player.weapon = { name: best.name, bonus: best.bonus, cls: base };
@@ -374,4 +433,4 @@ function formatBonuses(b) {
   return parts.length ? parts.join(' · ') : 'none';
 }
 
-module.exports = { ensureClassBonuses, classBonuses, passiveMultipliers, recalibrate, formatBonuses, className, baseClassName, quality, scaled, ensureClassWeapon };
+module.exports = { classWeaponPrice, ownsClassWeapon, buyClassWeapon, bestOwnedClassWeapon, ensureClassBonuses, classBonuses, passiveMultipliers, recalibrate, formatBonuses, className, baseClassName, quality, scaled, ensureClassWeapon };

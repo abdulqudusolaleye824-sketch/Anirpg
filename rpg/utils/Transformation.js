@@ -127,12 +127,48 @@ function tick(player) {
   }
   // Innate passive: random Quarter Transformation for any Monster-class hunter.
   // Below Lv.10 it is a 47%/turn BERSERK surge; from Lv.10 an 8%/turn controlled one.
-  const chance = (player.level || 1) < BERSERK_LEVEL ? BERSERK_CHANCE : PASSIVE_CHANCE;
+  let chance = (player.level || 1) < BERSERK_LEVEL ? BERSERK_CHANCE : PASSIVE_CHANCE;
+  // Push #92: PACK RULE — with another living Monster on the team the surge
+  // chance is HALVED, but when it fires the whole pack rampages TOGETHER with
+  // a combo bonus (+25% ATK for the duration).
+  const pack = packmates(player);
+  if (pack.length) chance *= PACK_CHANCE_MULT;
   if (isMonster(player) && Math.random() < chance) {
     const r = apply(player, TIERS[0], 'passive');
-    if (r.ok) lines.push(...r.lines);
+    if (r.ok) {
+      lines.push(...r.lines);
+      if (pack.length) {
+        const joined = [player];
+        for (const m of pack) { const rr = apply(m, TIERS[0], 'passive'); if (rr.ok) { joined.push(m); lines.push(...rr.lines); } }
+        if (joined.length > 1) {
+          for (const m of joined) _comboBoost(m);
+          lines.push(`🐺 *PACK RAMPAGE!* ${joined.map(m => `*${m.name || 'Hunter'}*`).join(' & ')} rampage TOGETHER — combo strikes: +${Math.round((PACK_COMBO_MULT - 1) * 100)}% ATK while the pack rages!`);
+        }
+      }
+    }
   }
   return lines;
+}
+
+// ── Push #92: pack context ──────────────────────────────────────────────
+const PACK_CHANCE_MULT = 0.5;   // 2+ Monsters on a team → surge chance −50%
+const PACK_COMBO_MULT = 1.25;   // joint rampage combo bonus (ATK)
+let _pack = null;               // allies of the hunter currently ticking (set via withPack)
+function withPack(allies, fn) {
+  const prev = _pack; _pack = Array.isArray(allies) ? allies : null;
+  try { return fn(); } finally { _pack = prev; }
+}
+function packmates(player) {
+  if (!_pack || !player) return [];
+  return _pack.filter(m => m && m !== player && m.stats && (m.stats.hp || 0) > 0 && isMonster(m) && !active(m)
+    && !(m.jid && player.jid && m.jid === player.jid) && !(m.name && player.name && m.name === player.name && m.level === player.level));
+}
+function _comboBoost(player) {
+  const t = player && player.transform; if (!t || t.pack) return;
+  const add = Math.floor((Number(player.stats.atk) || 0) * (PACK_COMBO_MULT - 1));
+  player.stats.atk = (Number(player.stats.atk) || 0) + add;
+  t.applied = t.applied || {}; t.applied.atk = (Number(t.applied.atk) || 0) + add; // end() reverses it with the form
+  t.pack = true;
 }
 
 // Cast from a skill entry (support cast / PvP). Returns { ok, lines, error }.
@@ -194,4 +230,4 @@ function rosterEntries(variant) {
   }));
 }
 
-module.exports = { TIERS, PASSIVE_CHANCE, BERSERK_CHANCE, BERSERK_LEVEL, AFTERMATH, MAX_AGE_MS, isBerserk, BERSERK_TEXT, berserkPick, applyAftermath, isMonster, variantName, skillName, tierByName, isTransformSkill, active, apply, end, tick, cast, sweep, rosterEntries };
+module.exports = { PACK_CHANCE_MULT, PACK_COMBO_MULT, withPack, packmates, TIERS, PASSIVE_CHANCE, BERSERK_CHANCE, BERSERK_LEVEL, AFTERMATH, MAX_AGE_MS, isBerserk, BERSERK_TEXT, berserkPick, applyAftermath, isMonster, variantName, skillName, tierByName, isTransformSkill, active, apply, end, tick, cast, sweep, rosterEntries };

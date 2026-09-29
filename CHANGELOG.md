@@ -1,3 +1,11 @@
+## 1.0.120 — Push #92 (2026-09-29)
+- Gate raids: a STUNNED/FROZEN/PARALYZED monster's idle strike is thwarted (status −1 turn); idle timer resets on /party advance, boss, heals and missed/dodged attacks; an active guard absorbs the idle strike.
+- CombatReset: status effects, temp buffs, recoils and cooldowns never carry into the next battle (raids + dungeons, all hunters).
+- Class weapons are BOUGHT (/class weapons buy): Lv10 25k · 20 60k · 30 150k · 40 350k · 50 750k Nexus; starter free; held weapons grandfathered.
+- 50 Monster variants each get their own 20-skill roster (element procs) and natural-weapon ladder; live Monsters migrate slot-for-slot with levels kept.
+- Pack rule: 2+ Monsters on a team → surge chance −50%, joint PACK RAMPAGE with +25% combo ATK.
+- Dead hunters can no longer be re-affiliated into a battle.
+
 ## v1.0.119 — Push #91b
 - Global spawn back to once every **24h**; Pro GC spawn stays every **3h**. Epic-material pool change from #91 kept.
 

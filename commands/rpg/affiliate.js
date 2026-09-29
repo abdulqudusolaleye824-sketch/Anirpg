@@ -314,7 +314,13 @@ module.exports = {
         const GR = require('../../rpg/dungeons/GateRaid');
         const resolved = GR.resolveCode(offer.partyKey);
         if (resolved.ok && resolved.gate.raid) {
-          GR.ensureMember(resolved.gate, sender, db);
+          // Push #92: dead hunters are not re-affiliated into a live battle; a
+          // hire only seats you while the party is still recruiting.
+          if (GR.isFallen(resolved.gate, sender)) {
+            delete db.affiliateOffers[sender]; saveDatabase();
+            return sock.sendMessage(chatId, { text: `❌ ${GR.FALLEN_TEXT}` }, { quoted: msg });
+          }
+          if (resolved.gate.raid.status === 'recruiting') GR.ensureMember(resolved.gate, sender, db);
         }
 
         delete db.affiliateOffers[sender];

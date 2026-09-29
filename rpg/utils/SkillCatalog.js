@@ -495,6 +495,10 @@ function buildRoster(className, variant = null) {
   while (raws.length < SKILLS_PER_CLASS) raws.push(generateSkill(className, raws.length + gi++));
   if (raws.length > SKILLS_PER_CLASS) raws = raws.slice(0, SKILLS_PER_CLASS);
 
+  // Push #92: every Monster VARIANT has its own roster — names + element procs.
+  if (className === 'Monster' && variant && !/^monster$/i.test(String(variant))) {
+    try { const MVK = require('../data/MonsterVariantKits'); let ai = 0, pi = 0; raws = raws.map((r) => { const ps = isPassiveRaw(r); return MVK.reskin(r, variant, ps ? pi++ : ai++, ps); }); } catch (e) {}
+  }
   const roster = raws.map((r, i) => normalise(className, { ...r, unlocksAtLevel: (i + 1) * UNLOCK_STEP }, i));
   // Push #88q: the Healer is a pure support class — every non-passive Healer
   // skill is a SUPPORT cast (heal/buff). Two library entries ("World Heal",
@@ -644,6 +648,19 @@ function syncPlayerSkills(player) {
   const maxSlots = Math.max(1, Number(player.maxSkillSlots || 5));
   let changed = false;
   const nameOf = (s) => String(s?.name || '').toLowerCase();
+  // Push #92: Monster hunters who still hold the old shared names ("Primal
+  // Strike"…) are renamed slot-for-slot to their variant's roster — levels kept.
+  try {
+    if (canonicalClassName(player) === 'Monster') {
+      const generic = buildRoster('Monster', null);
+      const map = new Map();
+      generic.forEach((g, i) => { if (g && roster[i] && g.name !== roster[i].name) map.set(String(g.name).toLowerCase(), roster[i].name); });
+      if (map.size) for (const arr of [player.skills.active, player.skills.locked, player.skills.passive, player.availableSkills]) {
+        for (const sk of arr) { const nn = map.get(nameOf(sk)); if (nn) { sk.name = nn; changed = true; } }
+      }
+      if (map.size) player.skills.unlockedOverrides = player.skills.unlockedOverrides.map(n => map.get(String(n).toLowerCase()) || n);
+    }
+  } catch (e) {}
 
   // A skill the player already owns stays theirs. The catalog re-ladders
   // unlock levels, so without this a Lv.40 hunter would WAKE UP missing the

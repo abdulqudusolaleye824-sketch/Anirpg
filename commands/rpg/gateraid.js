@@ -380,6 +380,7 @@ module.exports = {
       if (floor >= gate.totalFloors) return sock.sendMessage(chatId, { text: `⚠️ Final floor. Engage the boss with /party boss` }, { quoted: msg });
       gate.currentFloor++;
       gate.floorClearedAt = null; // Push #88w
+      try { GR.noteRaidTurn(gate, chatId); } catch (e) {} // Push #92: idle clock restarts from /party advance
       try { GR.applyMonsterScaling(gate); } catch (e) {} // Push #88: deeper floor → stronger monsters
       const next = (gate.monsters || []).filter(mm => mm.floor === gate.currentFloor && !mm.defeated);
       const _fm = Math.round((GR.floorMultiplier(gate, gate.currentFloor) - 1) * 100);
@@ -463,6 +464,7 @@ module.exports = {
           const _t = _e ? String(_e.type || '').toLowerCase() : '';
           const _isSupport = !!_e && (_t === 'heal' || _t === 'buff');
           if (_isSupport) {
+            try { GR.noteRaidTurn(gate, chatId); } catch (e) {} // Push #92: a heal/buff is a move too
             let tgtJid = sender, tgt = player;
             if (_mentioned.length) {
               const mj = _mentioned[0];
@@ -518,7 +520,10 @@ module.exports = {
       let _tickLogs = [];
       try {
         const UCgTick = require('../../rpg/utils/UnifiedCombat');
-        _tickLogs = UCgTick.tickStatuses(player) || [];
+        // Push #92: pack context — other living Monsters on this raid team.
+        let _packAllies = [];
+        try { _packAllies = (gate.raid?.members || []).map(m => db.users[m.id] || Object.values(db.users).find(x => x && x.jid && GR.GKM.normaliseJid(x.jid) === GR.GKM.normaliseJid(m.id))).filter(Boolean); } catch (e) {}
+        _tickLogs = require('../../rpg/utils/Transformation').withPack(_packAllies, () => UCgTick.tickStatuses(player)) || [];
         if (target && target.statusEffects) {
           const _tgt = { name: target.name || 'Monster', statusEffects: target.statusEffects, stats: { hp: target.hp, maxHp: target.maxHp } };
           const tl2 = UCgTick.tickStatuses(_tgt);
@@ -1019,6 +1024,7 @@ module.exports = {
       if (floorMonsters.length > 0) return sock.sendMessage(chatId, { text: `❌ Clear all floor ${floor} monsters first!` }, { quoted: msg });
       if (floor < gate.totalFloors) return sock.sendMessage(chatId, { text: `❌ Reach Floor ${gate.totalFloors} before engaging the boss.` }, { quoted: msg });
       if (gate.boss.defeated) return sock.sendMessage(chatId, { text: '✅ Boss already defeated!' }, { quoted: msg });
+      try { GR.noteRaidTurn(gate, chatId); } catch (e) {} // Push #92: every boss action restarts the idle clock
       gate.floorClearedAt = null; // Push #88w: engaging the boss = moving on
 
       const boss = gate.boss;

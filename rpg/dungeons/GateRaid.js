@@ -400,6 +400,7 @@ function releaseCombatLock(gateId) {
 // Push #30: the key stays consumed (single-use) — no retry on the same key.
 // The party regroups with a fresh key; the GC itself is usable immediately.
 function wipeGate(gate, key, keyData, chatId, db) {
+  try { require('../utils/CombatReset').clearParty(db, [...(gate.raiders || []), ...((gate.raid && gate.raid.members) || [])]); } catch (e) {} // Push #92
   // Push #88: a WIPE salvages 10% (Push #88q, was half) of the accumulated floor treasure — and it
   // goes to the owning GUILD's treasury, never to any single hunter. (A single
   // death used to pay 50% to the fallen hunter; that is gone.)
@@ -549,6 +550,9 @@ function reviveFallen(gate, jid, db, hpPct = 50) {
 function ensureMember(gate, sender, db) {
   const player = db.users?.[sender];
   const raid = gate.raid;
+  // Push #92: a FALLEN hunter can never be re-seated by any path (affiliate
+  // hire, key re-use, roster self-heal). Only reviveFallen() clears the flag first.
+  if (isFallen(gate, sender)) return null;
   // Push #29: JID-tolerant match (LID/PN/device flips) + self-heal stored id.
   const sNum = GKM.normaliseJid(sender);
   let m = raid.members.find(x => x.id === sender)
@@ -590,6 +594,7 @@ function enter(sender, name, key, keyData, gate, db) {
     raid.leader = sender;
     raid.status = 'active'; raid.lastTurnAt = Date.now(); // Push #88q
     raid.startedAt = Date.now();
+    try { require('../utils/CombatReset').clearParty(db, [sender]); } catch (e) {} // Push #92: fresh battle state
     // Single-use: solo raids launch instantly, so the key is consumed here
     try {
       keyData.used = true; keyData.raidStarted = true;
@@ -654,6 +659,7 @@ function start(sender, keyData, gate, db) {
   raid.status = 'active'; raid.lastTurnAt = Date.now(); // Push #88q
   raid.startedAt = Date.now();
   gate.raidStarted = true;
+  try { require('../utils/CombatReset').clearParty(db, raid.members); } catch (e) {} // Push #92: no statuses/buffs/recoil carry in
   // Push #74: monster SEVERITY is calibrated to the party, not random.
   try { calibrateToParty(gate, raid, db); } catch (e) { console.error('calibrateToParty:', e.message); }
   // Single-use: launching the raid consumes the key (no second runs)
@@ -1071,6 +1077,7 @@ function monsterKilledBy(gate, monster, sender, db) {
 function clearGate(gate, key, keyData, db, saveDatabase) {
   const raid = gate.raid || {};
   const raiders = raid.members?.length ? raid.members : [];
+  try { require('../utils/CombatReset').clearParty(db, raiders); } catch (e) {} // Push #92: battle over → clean slate
 
   const nexus   = Math.floor(gate.nexusLoot || 0);
   const crystals = Math.floor(gate.crystalLoot || 0);
@@ -1407,18 +1414,35 @@ function autoStrikeIdleRaids(db, now = Date.now(), canStrike = null) {
       if (typeof canStrike === 'function' && !canStrike(raid.chatId || gate.chatId)) { raid.lastTurnAt = now; continue; }
       const target = _currentRaidTarget(gate);
       if (!target) continue;
-      const held = (target.statusEffects || []).some(e => ['stun', 'freeze', 'paralyze'].includes(String(e.type || '').toLowerCase()));
+      const _HELD = ['stun', 'freeze', 'paralyze'];
+      const heldFx = (target.statusEffects || []).filter(e => _HELD.includes(String(e.type || '').toLowerCase()));
       raid.lastTurnAt = now; // one strike per idle window, even if held
-      if (held) continue;
+      if (heldFx.length) {
+        // Push #92: a held monster still "tries" — the attack is thwarted and
+        // its holding status burns down one turn (removed at 0).
+        const word = { stun: 'STUNNED 💫', freeze: 'FROZEN 🧊', paralyze: 'PARALYZED 🔱' }[String(heldFx[0].type).toLowerCase()] || 'HELD';
+        const worn = [];
+        for (const e of heldFx) { e.duration = (Number(e.duration) || 1) - 1; if (e.duration <= 0) worn.push(String(e.type)); }
+        target.statusEffects = (target.statusEffects || []).filter(e => !(_HELD.includes(String(e.type || '').toLowerCase()) && (Number(e.duration) || 0) <= 0));
+        const hl = [`⏱️ *NO ONE MOVED FOR ${Math.round(idleStrikeMsFor(gate.rank) / 1000)}s — THE GATE TRIES TO STRIKE!*`, `👹 *${target.name}* is ${word} — *attack thwarted!*`, `⏳ Status effects −1 turn${worn.length ? ` · ${worn.join(', ')} wore off` : ''}`, `⚔️ Attack now — it strikes again in ${Math.round(idleStrikeMsFor(gate.rank) / 1000)} s of silence.`];
+        try { saveGateState(db, gate); } catch (e) {}
+        out.push({ chatId: raid.chatId || gate.chatId, text: hl.join('\n'), mentions: [] });
+        continue;
+      }
       const living = (raid.members || []).map(m => ({ m, u: findUserByBare(db, m.id) })).filter(x => x.u && (x.u.stats?.hp || 0) > 0);
       if (!living.length) continue;
       living.sort((a, b) => (a.u.stats.hp || 0) - (b.u.stats.hp || 0));
-      const { m, u } = living[0];
+      let { m, u } = living[0];
+      const victimName = u.name;
+      // Push #92: a standing /guard (for the weakest hunter or for everyone) takes the idle strike instead.
+      let guardHit = null; try { guardHit = takeGuard(gate, m.id, db); } catch (e) { guardHit = null; }
+      if (guardHit && guardHit.guardian && guardHit.member) { u = guardHit.guardian; m = guardHit.member; }
       const def = effectiveDef(u, m.id); // Push #89: gear + title + pet
       const dmg = monsterDamage(target, def, u);
       const crit = !!(monsterDamage.last && monsterDamage.last.crit);
       let maxHp = u.stats?.maxHp || 100; try { maxHp = require('../utils/GearSystem').effectiveMaxHp(u); } catch (e) {}
-      const lines = [`⏱️ *NO ONE MOVED FOR ${Math.round(idleStrikeMsFor(gate.rank) / 1000)}s — THE GATE STRIKES!*`, `👹 *${target.name}* lunges at the weakest hunter, *${u.name}*!`];
+      const lines = [`⏱️ *NO ONE MOVED FOR ${Math.round(idleStrikeMsFor(gate.rank) / 1000)}s — THE GATE STRIKES!*`, `👹 *${target.name}* lunges at the weakest hunter, *${victimName}*!`];
+      if (guardHit) lines.push(`🛡️ *${guardHit.guardianName}* steps in front of *${victimName}* and takes the blow!`);
       if (dmg <= 0) lines.push(`💨 *${u.name}* dodged it!`);
       else {
         u.stats.hp = Math.max(0, (u.stats.hp || 0) - dmg);

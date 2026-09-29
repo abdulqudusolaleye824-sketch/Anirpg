@@ -405,6 +405,7 @@ module.exports = {
 
       // Initialize dungeon state in party
       party.status = 'active';
+      try { require('../../rpg/utils/CombatReset').clearParty(db, party.members); } catch (e) {} // Push #92: fresh battle state
       party.dungeon = {
         name:            selected.name,
         rank:            selected.rank,
@@ -1528,6 +1529,7 @@ async function handlePlayerDeath(sock, chatId, party, dungeon, db, saveDatabase,
 
 async function handleDungeonComplete(sock, chatId, party, db, saveDatabase, msg) {
   try {
+    try { require('../../rpg/utils/CombatReset').clearParty(db, party.members); } catch (e) {} // Push #92
     const DungeonManager = require('../../rpg/dungeons/DungeonManager');
     const cPro = (party.members || []).some(m => { try { return UI.isPro(db.users[m.id]); } catch (e) { return false; } });
     const FRAME = cPro ? UI.PRO_BAR : UI.FREE_BAR;
@@ -1550,6 +1552,7 @@ async function handleDungeonComplete(sock, chatId, party, db, saveDatabase, msg)
 
 async function handleDungeonExit(sock, chatId, party, db, saveDatabase, msg, sender, fled) {
   try {
+    try { require('../../rpg/utils/CombatReset').clearParty(db, party.members); } catch (e) {} // Push #92
     party.status = 'disbanded';
     saveDatabase();
     await sock.sendMessage(chatId, {

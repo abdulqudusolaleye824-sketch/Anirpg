@@ -26,26 +26,51 @@ module.exports = {
     // ── /class weapons [class] (Push #84) — class weapon progression ─────────
     if (firstArg === 'weapons' || firstArg === 'weapon' || firstArg === 'wpn') {
       const PM = require('../../rpg/player/PlayerManager');
-      const defs = PM.classDefinitions || {};
+      let defs = PM.classDefinitions || {};
+      // Push #92: a Monster hunter sees THEIR variant's natural-weapon ladder.
+      let _monsterVariant = null;
+      try {
+        const CPm = require('../../rpg/utils/ClassPower'); const TFm = require('../../rpg/utils/Transformation');
+        if (viewer && /^monster$/i.test(CPm.baseClassName(viewer) || '')) {
+          const v = TFm.variantName(viewer);
+          if (v && !/^monster$/i.test(v) && defs.Monster) { _monsterVariant = v; defs = { ...defs, Monster: { ...defs.Monster, ...require('../../rpg/data/MonsterVariantKits').weaponDef(v) } }; }
+        }
+      } catch (e) {}
+      const CPw = require('../../rpg/utils/ClassPower');
+      // Push #92: /class weapons buy <level|name> — class weapons are purchased, not auto-unlocked.
+      if (/^(buy|purchase)$/i.test(String(args[1] || '')) ) {
+        if (!viewer) return sock.sendMessage(chatId, { text: '❌ Register first! Use /register' }, { quoted: msg });
+        const r = CPw.buyClassWeapon(viewer, args.slice(2).join(' '));
+        if (!r.ok) return sock.sendMessage(chatId, { text: `❌ ${r.error}` }, { quoted: msg });
+        saveDatabase();
+        return sock.sendMessage(chatId, { text: [
+          ...(pro ? [UI.PRO_BAR, `🗡️ *CLASS WEAPON BOUGHT!* 💎`, UI.PRO_BAR] : [`🗡️ *CLASS WEAPON BOUGHT!*`, UI.FREE_BAR]),
+          `*${r.weapon.name}* (+${r.weapon.bonus} ATK) — ${r.cls}`,
+          `💠 −${r.price.toLocaleString()} Nexus · left ${(viewer.gold || 0).toLocaleString()}`,
+          r.equipped ? `✅ Equipped.` : `📦 Owned — a store weapon stays equipped; it is your class fallback.`,
+          FRAME,
+        ].join('\n') }, { quoted: msg });
+      }
       const q = args.slice(1).join(' ').trim().toLowerCase();
       const ownCls = viewer ? (typeof viewer.class === 'string' ? viewer.class : viewer.class?.name) : null;
       let names = Object.keys(defs);
       if (q) names = names.filter(n => n.toLowerCase() === q || n.toLowerCase().includes(q));
+      else if (_monsterVariant) names = ['Monster'];
       else if (ownCls && defs[ownCls]) names = [ownCls];
       if (!names.length) return sock.sendMessage(chatId, { text: `❌ No class matching *${q}*. Try /class list.` }, { quoted: msg });
       const blocks = names.slice(0, 6).map(n => {
         const d = defs[n];
         const lw = [{ level: 1, ...d.weapon }, ...(d.levelWeapons || [])];
-        const cur = viewer && ownCls === n ? (viewer.level || 1) : null;
+        const cur = viewer && (ownCls === n || (n === 'Monster' && _monsterVariant)) ? (viewer.level || 1) : null;
         return [
-          `${(CLASS_DATA[n] || {}).emoji || '🎭'} *${n}*`,
-          ...lw.map(w => `  ${cur != null && cur >= w.level ? '✅' : '🔒'} Lv.${w.level}: *${w.name}* (+${w.bonus} ATK)`),
+          `${(CLASS_DATA[n] || {}).emoji || '🎭'} *${n === 'Monster' && _monsterVariant ? _monsterVariant + ' (Monster)' : n}*`,
+          ...lw.map(w => { const owned = cur != null && (w.level <= 1 || CPw.ownsClassWeapon(viewer, n, w.name) || (viewer.weapon && viewer.weapon.name === w.name)); const can = cur != null && cur >= w.level; return `  ${owned ? '✅' : can ? '🛒' : '🔒'} Lv.${w.level}: *${w.name}* (+${w.bonus} ATK)${w.level > 1 ? ` — 💠 ${CPw.classWeaponPrice(w.level).toLocaleString()}` : ' — free'}${!owned && can ? ` · /class weapons buy ${w.level}` : ''}`; }),
         ].join('\n');
       });
       return sock.sendMessage(chatId, { text: [
         ...(pro ? [UI.PRO_BAR, `🗡️ *CLASS WEAPONS* 💎`, UI.PRO_BAR] : [`🗡️ *CLASS WEAPONS*`, UI.FREE_BAR]),
         ``, ...blocks.join('\n\n').split('\n'), ``, FRAME,
-        `💡 Class weapons auto-upgrade as you level. Store weapons (/store, /weapons) replace them when equipped.`,
+        `💡 Class weapons are BOUGHT once you reach their level: */class weapons buy <level>* (Lv10 25k · Lv20 60k · Lv30 150k · Lv40 350k · Lv50 750k). Store weapons (/store, /weapons) replace them when equipped.`,
         `📋 /class weapons <class> to view another class · /class list for all classes`,
         ...(pro ? [] : [UI.upsell()]),
       ].join('\n') }, { quoted: msg });
