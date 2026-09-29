@@ -449,7 +449,8 @@ module.exports = {
         const curTurn = battle.turn || 1;
         const meId = sender;
         const myName = getPlayerName(player, 'Hunter');
-        setTimeout(async () => {
+        const _lockDeadline = Date.now() + 20000;
+        const _lockTimer = async () => {
           try {
             const me = db.users?.[meId];
             const them = db.users?.[oppId];
@@ -457,12 +458,15 @@ module.exports = {
             if (me.pvpBattle.turn !== curTurn || them.pvpBattle.turn !== curTurn) return;
             if (them.pvpBattle.pendingAction) return; // opponent locked in time
             if (!me.pvpBattle.pendingAction) return; // i was cleared?
+            // Push #92c: the bot can't hear the opponent (deaf socket / Bad MAC) → the clock waits, nobody is skipped.
+            if (!_pvpCanHear(chatId, [oppId]) && Date.now() < _lockDeadline + PVP_DEAF_GRACE_MS) { me.pvpBattle.turnExpiresAt = Date.now() + 5000; return setTimeout(_lockTimer, 5000); }
             // Opponent timed out — auto-resolve with opponent skipped
             // Create a dummy skipped action for opponent
             them.pvpBattle.pendingAction = { type: 'attack', arg: null, _timedOut: true, _skip: true };
             await resolveTurn(sock, chatId, me, them, db, saveDatabase);
           } catch(e) {}
-        }, 20000);
+        };
+        setTimeout(_lockTimer, 20000);
         return sock.sendMessage(chatId, {
           text: `✅ *Move locked in!* Waiting for *@${oppId.split('@')[0]}* to choose their move... ⏳ 20s to lock or turn will be skipped.`,
           mentions: [oppId],
@@ -892,13 +896,16 @@ async function resolveTurn(sock, chatId, p1, p2, db, saveDatabase) {
   if (p1.pvpBattle?.pendingAction?._cc && p2.pvpBattle?.pendingAction?._cc) {
     return resolveTurn(sock, chatId, p1, p2, db, saveDatabase);
   }
-  setTimeout(async () => {
+  const _roundDeadline = Date.now() + 20000;
+  const _roundTimer = async () => {
     try {
       const cur1 = db.users?.[id1];
       const cur2 = db.users?.[id2];
       if (!cur1?.pvpBattle || !cur2?.pvpBattle) return;
       if (cur1.pvpBattle.turn !== turnNum + 1) return;
       if (cur1.pvpBattle.pendingAction || cur2.pvpBattle.pendingAction) return;
+      // Push #92c: deaf / Bad-MAC bot → the turn clock pauses instead of skipping both hunters.
+      if (!_pvpCanHear(chatId, [id1, id2]) && Date.now() < _roundDeadline + PVP_DEAF_GRACE_MS) return setTimeout(_roundTimer, 5000);
       UC.tickStatuses(cur1);
       UC.tickStatuses(cur2);
       cur1.pvpBattle.turn = turnNum + 2;
@@ -911,7 +918,14 @@ async function resolveTurn(sock, chatId, p1, p2, db, saveDatabase) {
                          `❤️ ${getPlayerName(cur2)}: ${BarSystemPVP.getHPBar(cur2.stats?.hp || 0, cur2.stats?.maxHp || 100, UC.isPro(cur2))}`;
       await sock.sendMessage(chatId, { text: timeoutMsg, mentions: [id1, id2] });
     } catch(e) {}
-  }, 20000);
+  };
+  setTimeout(_roundTimer, 20000);
+}
+
+// Push #92c: can the active bot for this chat actually hear these hunters right now?
+const PVP_DEAF_GRACE_MS = 5 * 60 * 1000; // pause the clock up to 5 min while deaf, then rule as usual
+function _pvpCanHear(chatId, jids) {
+  try { const MSM = require('../../bots/MultiSocketManager'); return typeof MSM.canAutoAct === 'function' ? MSM.canAutoAct(chatId, jids) : true; } catch (e) { return true; }
 }
 
 function calcMoveDamage(attacker, defender, act) {

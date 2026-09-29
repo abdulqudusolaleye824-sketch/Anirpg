@@ -1428,7 +1428,7 @@ setInterval(() => {
     const GRi = require('./rpg/dungeons/GateRaid');
     const MSMi = require('./bots/MultiSocketManager');
     // Push #88u: never strike from a deaf socket — GateRaid restarts the idle clock instead.
-    const hits = GRi.autoStrikeIdleRaids(database, Date.now(), (chatId) => (typeof MSMi.chatHealthy === 'function' ? MSMi.chatHealthy(chatId) : true));
+    const hits = GRi.autoStrikeIdleRaids(database, Date.now(), (chatId, jids) => (typeof MSMi.canAutoAct === 'function' ? MSMi.canAutoAct(chatId, jids) : (typeof MSMi.chatHealthy === 'function' ? MSMi.chatHealthy(chatId) : true)));
     // Push #88w: cleared floors nobody advances from within 60 s revive (+30%, no rewards).
     try { if (typeof GRi.reviveStaleFloors === 'function') hits.push(...GRi.reviveStaleFloors(database, Date.now())); } catch (e) { console.error('floor-revive tick:', e.message); }
     if (!hits.length) return;
@@ -1456,7 +1456,7 @@ setInterval(async () => {
     for (const h of GRb.berserkHunters(database)) {
       try {
         if (!h.chatId) continue;
-        if (typeof MSMb.chatHealthy === 'function' && !MSMb.chatHealthy(h.chatId)) continue;
+        if (typeof MSMb.canAutoAct === 'function' ? !MSMb.canAutoAct(h.chatId, [h.jid]) : (typeof MSMb.chatHealthy === 'function' && !MSMb.chatHealthy(h.chatId))) continue;
         const sk = MSMb.getActiveSocket(h.chatId);
         if (!sk) continue;
         if (h.notice) { await sk.sendMessage(h.chatId, { text: h.notice, mentions: [h.jid] }).catch(() => {}); saveDatabase(); continue; }

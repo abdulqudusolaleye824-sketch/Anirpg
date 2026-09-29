@@ -73,6 +73,7 @@ const MAX_MSG_AGE_MS = Number(process.env.MAX_MSG_AGE_MS || 5 * 60 * 1000);
 // queue instead of a limit hit.
 const SEND_GAP_PER_CHAT_MS = Number(process.env.SEND_GAP_PER_CHAT_MS || 650);
 const SEND_GLOBAL_PER_SEC  = Number(process.env.SEND_GLOBAL_PER_SEC || 8);
+const SEND_TIMEOUT_MS      = Number(process.env.SEND_TIMEOUT_MS || 20_000); // Push #92c
 const _chatSendChain = new Map();   // `${key}|${jid}` -> Promise chain tail
 const _chatLastSend  = new Map();   // `${key}|${jid}` -> ts
 const _sockSendStamps = {};         // key -> [ts...] last second
@@ -561,6 +562,32 @@ const _chatInboundAt = {};  // chatId -> ts any bot last decrypted a message the
 // Push #88u: "is the bot that speaks for this chat actually HEARING right now?"
 // Timed game actions (idle strikes etc.) must never fire from a deaf socket —
 // players were being hit by a bot that could not see their /attack.
+// Push #92c: per-sender / per-chat decrypt-failure memory (CIPHERTEXT stubs).
+const _senderDecryptFailAt = {};  // number -> ts of last message we could NOT decrypt from them
+const _chatDecryptFailAt = {};    // chat -> ts of last undecryptable message in it
+const DECRYPT_FAIL_WINDOW_MS = 2 * 60 * 1000;
+function _num(j) { return String(j || '').split('@')[0].split(':')[0]; }
+function noteDecryptFailure(chatId, senderJid) {
+  const now = Date.now();
+  if (chatId) _chatDecryptFailAt[chatId] = now;
+  const n = _num(senderJid); if (n) _senderDecryptFailAt[n] = now;
+}
+function noteDecryptSuccess(senderJid) { const n = _num(senderJid); if (n) delete _senderDecryptFailAt[n]; }
+// false when we recently failed to decrypt a message from this hunter.
+function senderHealthy(jid, windowMs = DECRYPT_FAIL_WINDOW_MS) {
+  try { const n = _num(jid); return !n || Date.now() - (_senderDecryptFailAt[n] || 0) > windowMs; } catch (e) { return true; }
+}
+// false when this chat had an undecryptable message recently (someone in it is unheard).
+function chatDecryptOk(chatId, windowMs = DECRYPT_FAIL_WINDOW_MS) {
+  try { return Date.now() - (_chatDecryptFailAt[chatId] || 0) > windowMs; } catch (e) { return true; }
+}
+// Everyone listed must be hearable in this chat (chat alive + no recent decrypt failure for them).
+function canAutoAct(chatId, jids = []) {
+  if (!chatHealthy(chatId)) return false;
+  if (!chatDecryptOk(chatId)) return false;
+  for (const j of (jids || [])) if (j && !senderHealthy(j)) return false;
+  return true;
+}
 function chatHealthy(chatId, windowMs = 90 * 1000) {
   try {
     const now = Date.now();
@@ -1625,7 +1652,17 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
       for (let _i = 0; ; _i++) {
         try {
           try { await _pace(personalityKey, jid); } catch (e) {}
-          _res = await _rawSend(jid, content, options);
+          // Push #92c: a send on a dying socket used to hang for Baileys' full
+          // 60 s query timeout — and the player's whole command queue behind it.
+          // Text/functional sends now give up after SEND_TIMEOUT_MS (media 60 s).
+          {
+            const c = content || {};
+            const isMedia = !!(c.image || c.video || c.audio || c.document || c.sticker || c.ptv);
+            const lim = isMedia ? 60_000 : SEND_TIMEOUT_MS;
+            let _tm; const _p = _rawSend(jid, content, options);
+            _res = await Promise.race([_p, new Promise((_, rej) => { _tm = setTimeout(() => rej(new Error(`send timed out after ${lim / 1000}s`)), lim); })]).finally(() => clearTimeout(_tm));
+            _p.catch(() => {});
+          }
           try { markSendResult(personalityKey, true); } catch (e) {}
           break;
         } catch (e) {
@@ -1991,7 +2028,7 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
   // Now: every message is handled; each chat has its own serial queue (order
   // kept per chat), chats run in parallel, and a command is cut off after
   // CMD_TIMEOUT_MS so a hung one can never wedge the queue.
-  const CMD_TIMEOUT_MS = Number(process.env.CMD_TIMEOUT_MS || 90 * 1000);
+  const CMD_TIMEOUT_MS = Number(process.env.CMD_TIMEOUT_MS || 45 * 1000); // Push #92c: 90 s → 45 s
   const _chatQueues = new Map(); // chatId -> Promise tail
   let _inflightCmds = 0;
   // Push #80: inbound trace — /botstats shows where the last messages went.
@@ -2030,6 +2067,10 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
     // Joins/leaves arrive here as stub messages even when the
     // group-participants.update event doesn't fire. Single-sender: the
     // dispatcher bot only; GroupNoticeManager dedups against the event path.
+    // Push #92c: an UNDECRYPTABLE message (Bad MAC / closed session) arrives as
+    // a CIPHERTEXT stub — remember WHO we cannot hear, so no auto-attack or PvP
+    // turn timer punishes a hunter whose commands this bot can't read.
+    try { if (msg.messageStubType === 2 || msg.messageStubType === 'CIPHERTEXT') noteDecryptFailure(msg.key?.remoteJid, msg.key?.participant || msg.key?.remoteJid); } catch (e) {}
     if (msg.messageStubType && msg.key?.remoteJid?.endsWith('@g.us')) {
       try {
         const GNM = require('../rpg/utils/GroupNoticeManager');
@@ -2072,6 +2113,7 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
     } catch (e) {}
 
     noteFreshInbound(personalityKey, msg); // Push #86: a decrypted, non-stale message = this socket hears
+    try { noteDecryptSuccess(msg.key?.participant || msg.key?.remoteJid); } catch (e) {}
 
     // Unwrap Baileys message containers (ephemeralMessage, viewOnceMessage, documentWithCaptionMessage, editedMessage, etc.)
     const realMessage = unwrapMessage(msg);
@@ -2795,6 +2837,7 @@ module.exports = {
   safeSendDM,
   getActiveSocket,
   chatHealthy,
+  senderHealthy, chatDecryptOk, canAutoAct, noteDecryptFailure, noteDecryptSuccess,
   // Push #47: defined internally (line ~99) but never exported, so the
   // offline-active-bot failover in handlers/rpgCommandHandler.js called
   // undefined → TypeError → swallowed by its empty catch. Groups stayed silent

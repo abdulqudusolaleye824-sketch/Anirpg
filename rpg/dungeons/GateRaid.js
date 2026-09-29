@@ -1411,7 +1411,8 @@ function autoStrikeIdleRaids(db, now = Date.now(), canStrike = null) {
       const last = raid.lastTurnAt || raid.startedAt || 0;
       if (!last || now - last < idleStrikeMsFor(gate.rank)) continue; // Push #88t: 30 s in S gates, 45 s in every other rank
       // Push #88u: a bot that cannot HEAR this chat must not strike — restart the clock instead.
-      if (typeof canStrike === 'function' && !canStrike(raid.chatId || gate.chatId)) { raid.lastTurnAt = now; continue; }
+      // Push #92c: …nor a bot that cannot DECRYPT one of the raiders (Bad MAC) — their commands are invisible to it.
+      if (typeof canStrike === 'function' && !canStrike(raid.chatId || gate.chatId, (raid.members || []).map(m => m && m.id).filter(Boolean))) { raid.lastTurnAt = now; continue; }
       const target = _currentRaidTarget(gate);
       if (!target) continue;
       const _HELD = ['stun', 'freeze', 'paralyze'];

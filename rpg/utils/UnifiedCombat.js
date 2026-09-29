@@ -426,9 +426,10 @@ function buildTurnMessage(attacker, defender, move, result, isPlayerTurn = true)
   return msg;
 }
 
-// Delay helpers 3-5s
+// Delay helpers — Push #92c: was 3–5 s per bubble (six of them per PvP round
+// = up to 30 s of pure waiting). Now 0.7–1.2 s: still reads as a beat, not a stall.
 function randomDelay() {
-  return 3000 + Math.floor(Math.random() * 2000); // 3-5s
+  return 700 + Math.floor(Math.random() * 500); // 0.7-1.2s
 }
 async function slowSend(sock, chatId, content, opts = {}) {
   await new Promise(r => setTimeout(r, randomDelay()));

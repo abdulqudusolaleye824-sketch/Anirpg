@@ -1,3 +1,7 @@
+## 1.0.122 — Push #92c (2026-09-29)
+- Speed: PvP inter-bubble delay 3–5 s → 0.7–1.2 s; a send on a dying socket times out after 20 s (was 60 s) and the inbound command timeout is 45 s (was 90 s) so one stuck message no longer stalls a player's queue.
+- Bad MAC awareness: undecryptable (CIPHERTEXT) messages are remembered per sender/chat for 2 min. While a bot cannot hear a raider/duelist: no gate-raid idle strike, no berserk auto-turn, and PvP 20 s turn timers pause (up to 5 min) instead of skipping anyone.
+
 ## 1.0.121 — Push #92b (2026-09-29)
 - Transformation drawbacks (weaken 10 / stun 2 / bleed 7) verified on all 50 Monster variants; they and every status/buff/cooldown are wiped at the start AND end of every raid, dungeon and PvP duel — nothing carries over.
 - Affiliate: a hunter can hold official affiliate status with ONE guild at a time (grant and accept both refuse; the current guild must strip first).
