@@ -9,12 +9,12 @@
 module.exports = {
   name: 'Necromancer',
   emoji: '💀',
-    lore: 'Death is not a limit. It is a resource.',
+    lore: 'Death is not an obstacle — it is a currency, a shield, and a weapon.',
     maxBonuses: { hp: 55, atk: 35, def: 8, speed: 5, maxEnergy: 90, magicPower: 55 },
     skills: [
       { name: 'Corpse Explosion', type: 'damage',  maxPotency: 280, desc: 'Destroys a corpse for {p}% Magic Power AoE damage' },
-      { name: 'Soul Drain',       type: 'damage',  maxPotency: 150, desc: 'Drains {p}% target HP, restores half to you' },
-      { name: 'Bone Wall',        type: 'buff',    maxPotency: 60,  desc: 'Summons barrier absorbing {p}% of incoming damage' },
+      { name: 'Soul Drain',       type: 'damage',  maxPotency: 150, desc: '{p}% ATK dark strike that heals you for half — or tag an @ally to tithe 25% of their HP and STEAL their buffs' },
+      { name: 'Bone Wall',        type: 'buff',    maxPotency: 60,  desc: 'Wall absorbing {p}% of every hit for 3 turns; shields one more hunter per raid floor, the whole raid from floor 7' },
       { name: 'Grave Chill',     type: 'passive', maxPotency: 20,  desc: 'Lifesteal +{p}%. Damage taken -10%' },
     ],
 };

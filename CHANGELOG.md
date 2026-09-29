@@ -1,3 +1,8 @@
+## 1.0.123 — Push #93: Necromancer reforged (2026-09-29)
+- Bone Wall: absorbs 60% of every monster hit for 3 turns (pool 60% max HP). Targets scale with the raid floor (1→1 … 4→4, tag with @); floor 7+ untagged = whole raid (100 energy, CD 4). Tagged: 10 energy × targets, CD 1 + 1/target. Shields now really absorb everywhere (raids, idle strikes, PvP).
+- Soul Drain: on a monster 150% ATK + heals half the damage. On an @ally ("Tithe of the Fallen"): drains 25% (+3%/level) of their current HP, heals the Necromancer, STEALS all their positive buffs; ally ≤15% HP is sacrificed (falls); Bone Wall on the ally eats 60% of the drain.
+- Life Drain → Curse of Ruin: 100 energy, 200% ATK, no heal; target ATK −70% and takes +70% damage for 3 rounds (works on bosses; boss statuses now tick). Existing Necromancers keep skill levels.
+
 ## 1.0.122 — Push #92c (2026-09-29)
 - Speed: PvP inter-bubble delay 3–5 s → 0.7–1.2 s; a send on a dying socket times out after 20 s (was 60 s) and the inbound command timeout is 45 s (was 90 s) so one stuck message no longer stalls a player's queue.
 - Bad MAC awareness: undecryptable (CIPHERTEXT) messages are remembered per sender/chat for 2 min. While a bot cannot hear a raider/duelist: no gate-raid idle strike, no berserk auto-turn, and PvP 20 s turn timers pause (up to 5 min) instead of skipping anyone.

@@ -30,7 +30,7 @@ function bare(sender) {
 
 // ── Status summary helper (mirrors dungeon.js — gateraid previously crashed
 //    with "statusSummary is not defined" on every attack) ─────────────────
-function statusSummary(entity){ if(!entity||!entity.statusEffects||!entity.statusEffects.length) return null; const m={burn:'🔥 Burn -5% HP', poison:'☠️ Poison -3% HP', bleed:'🩸 Bleed -4% HP', stun:'💫 Stun skip + -50% SPD', freeze:'❄️ Freeze skip + -4% HP', paralyze:'🔱 Paralyze no-move', weaken:'💔 Weaken -75% ATK', weakness:'💔 Weakness -75% ATK', curse:'👁️ Curse -15% DEF', fear:'😱 Fear -50% all', enfeeble:'🐢 Enfeeble -30% DEF', trueslow:'🐌 Slow -35% SPD', silence:'🤐 Silence', blind:'🌫️ Blind -50% ACC'}; return entity.statusEffects.map(s=>{ const k=(s.type||'').toLowerCase(); const desc=m[k]||k; const dur=s.duration||s.turns||'?'; return `${desc} (${dur}t)`; }).join(' | '); }
+function statusSummary(entity){ if(!entity||!entity.statusEffects||!entity.statusEffects.length) return null; const m={burn:'🔥 Burn -5% HP', poison:'☠️ Poison -3% HP', bleed:'🩸 Bleed -4% HP', stun:'💫 Stun skip + -50% SPD', freeze:'❄️ Freeze skip + -4% HP', paralyze:'🔱 Paralyze no-move', weaken:'💔 Weaken -75% ATK', weakness:'💔 Weakness -75% ATK', curse:'👁️ Curse -15% DEF', fear:'😱 Fear -50% all', enfeeble:'🐢 Enfeeble -30% DEF', trueslow:'🐌 Slow -35% SPD', silence:'🤐 Silence', blind:'🌫️ Blind -50% ACC', ruin:'💀 Ruin -70% ATK / +70% dmg taken'}; return entity.statusEffects.map(s=>{ const k=(s.type||'').toLowerCase(); const desc=m[k]||k; const dur=s.duration||s.turns||'?'; return `${desc} (${dur}t)`; }).join(' | '); }
 
 module.exports = {
   name: 'gateraid',
@@ -463,6 +463,52 @@ module.exports = {
           const _e = _pre.ok ? (_pre.entry || _pre.skill) : null;
           const _t = _e ? String(_e.type || '').toLowerCase() : '';
           const _isSupport = !!_e && (_t === 'heal' || _t === 'buff');
+          // ── Push #93: NECROMANCER REFORGED ─────────────────────────────
+          try {
+            const NX = require('../../rpg/utils/Necromancy');
+            if (_e && NX.isNecro(player) && (NX.isBoneWall(_e) || (NX.isSoulDrain(_e) && _mentioned.length))) {
+              try { GR.noteRaidTurn(gate, chatId); } catch (e) {}
+              if (NX.isBoneWall(_e)) {
+                const bw = NX.castBoneWall(player, sender, _e, gate, db, _mentioned);
+                GR.releaseCombatLock(gate.id);
+                if (!bw.ok) return sock.sendMessage(chatId, { text: `❌ ${bw.error}` }, { quoted: msg });
+                try { GR.saveGateState(db, gate); } catch (e) {} saveDatabase();
+                return sock.sendMessage(chatId, { text: [
+                  ...(pro ? [UI.PRO_BAR, `🦴 *BONE WALL${bw.aoe ? ' — FULL RAID' : ''}* 💎`, UI.PRO_BAR] : [`🦴 *BONE WALL${bw.aoe ? ' — FULL RAID' : ''}*`, UI.FREE_BAR]),
+                  `🧱 *${player.name}* raises a fortress of the dead!`,
+                  ...bw.lines,
+                  ``,
+                  `🕊️ Support casts don't use your turn — the monster does not counter.`,
+                ].join('\n'), mentions: bw.mentions.filter(j => j !== sender) }, { quoted: msg });
+              }
+              // Soul Drain @ally — Tithe of the Fallen
+              const mj = _mentioned[0]; const mN = GR.GKM.normaliseJid(mj);
+              const inParty = (gate.raid?.members || []).find(m => GR.GKM.normaliseJid(m.id) === mN);
+              if (!inParty) { GR.releaseCombatLock(gate.id); return sock.sendMessage(chatId, { text: `❌ That hunter is not in this raid party.` }, { quoted: msg }); }
+              if (mN === GR.GKM.normaliseJid(sender)) { GR.releaseCombatLock(gate.id); return sock.sendMessage(chatId, { text: `❌ You cannot tithe yourself — tag an ally, or cast it on the monster: /party skill Soul Drain` }, { quoted: msg }); }
+              const ally = db.users[mj] || db.users[inParty.id] || Object.values(db.users || {}).find(u => u && u.jid && GR.GKM.normaliseJid(u.jid) === mN);
+              if (!ally) { GR.releaseCombatLock(gate.id); return sock.sendMessage(chatId, { text: `❌ Could not find that hunter's profile.` }, { quoted: msg }); }
+              if ((ally.stats?.hp ?? 0) <= 0) { GR.releaseCombatLock(gate.id); return sock.sendMessage(chatId, { text: `💀 *${inParty.name || ally.name}* is already down.` }, { quoted: msg }); }
+              const _cdS = SCx.onCooldown(player, _e); if (!_cdS.ready) { GR.releaseCombatLock(gate.id); return sock.sendMessage(chatId, { text: `❌ *${_e.name}* is on cooldown! (${Math.ceil(_cdS.msLeft / 1000)}s)` }, { quoted: msg }); }
+              const _costS = SCx.effectiveCost(_e, player); if ((player.stats?.energy || 0) < _costS) { GR.releaseCombatLock(gate.id); return sock.sendMessage(chatId, { text: `❌ Not enough energy for *${_e.name}*! Need ${_costS}.` }, { quoted: msg }); }
+              player.stats.energy = Math.max(0, (player.stats.energy || 0) - _costS); SCx.setCooldown(player, _e);
+              const _lvS = Number((_pre.skill || {}).level || 1);
+              const sd = NX.soulDrainAlly(player, ally, _lvS);
+              const extra = [];
+              try { inParty.hp = ally.stats.hp; } catch (e) {}
+              if (sd.fell) extra.push(...GR.hunterFalls(gate, inParty.id, ally, db));
+              GR.releaseCombatLock(gate.id);
+              try { GR.saveGateState(db, gate); } catch (e) {} saveDatabase();
+              return sock.sendMessage(chatId, { text: [
+                ...(pro ? [UI.PRO_BAR, `👑 *SOUL DRAIN — TITHE OF THE FALLEN* 💎`, UI.PRO_BAR] : [`👑 *SOUL DRAIN — TITHE OF THE FALLEN*`, UI.FREE_BAR]),
+                `🌑 *${player.name}* lays a hand on *${inParty.name || ally.name}*...`,
+                ...sd.lines,
+                ...extra,
+                ``,
+                `⚡ −${_costS} energy · 🕊️ does not use your turn.`,
+              ].join('\n'), mentions: [inParty.id] }, { quoted: msg });
+            }
+          } catch (e) { console.error('[gateraid] necromancy cast:', e.message); }
           if (_isSupport) {
             try { GR.noteRaidTurn(gate, chatId); } catch (e) {} // Push #92: a heal/buff is a move too
             let tgtJid = sender, tgt = player;
@@ -573,6 +619,7 @@ module.exports = {
           try { const _rm = (gate.raid?.members || []).find(m => m.id === sender || GR.GKM.normaliseJid(m.id) === GR.GKM.normaliseJid(sender)); if (_rm) _rm.hp = player.stats.hp; } catch (e) {}
           await sock.sendMessage(chatId, { text: [
             `⚡ *INITIATIVE!* *${target.name}* (SPD ${target.speed || 10}) is faster than *${player.name}* (SPD ${player.stats?.speed || 10}) and strikes first!`,
+            ...((GR.monsterDamage.last && GR.monsterDamage.last.shieldLine) ? [GR.monsterDamage.last.shieldLine] : []),
             _aRaw <= 0 ? `💨 *${player.name}* dodged the opening blow!` : `${_aCrit ? '💥 CRITICAL HIT — ' : ''}💢 *${player.name}* takes *${_aDmg}* damage → ❤️ ${player.stats.hp}/${_effMax(player)}`,
           ].join('\n') });
         }
@@ -658,6 +705,12 @@ module.exports = {
         tag: atkTitle, defenderBar: 'monster', gapMs: 600,
       });
       target.hp = Math.max(0, monWrap.stats.hp);
+      // Push #93: Soul Drain (monster) heals half the damage; Curse of Ruin lasts 3 ROUNDS.
+      try { const NX = require('../../rpg/utils/Necromancy'); const _su = result.skillUsed; const _nl = [];
+        if (_su && NX.isSoulDrain(_su) && (result.damage || 0) > 0 && !result.missed) { const _h = Math.floor(result.damage * 0.5); const _bh = player.stats.hp; player.stats.hp = Math.min(_effMax(player), _bh + _h); _nl.push(`🩸 *Soul Drain* — +${player.stats.hp - _bh} HP → ${player.stats.hp}/${_effMax(player)}`); }
+        if (_su && NX.isRuin(_su)) { const _liv = (gate.raid?.members || []).length || 1; const _d = NX.scaleRuinToRounds(target, _liv); if (_d) _nl.push(`💀 *CURSE OF RUIN* on *${target.name}* — ATK −${NX.RUIN.atkCut}% · takes +${NX.RUIN.takenUp}% damage for ${NX.RUIN.rounds} rounds (${_d - 1} hunter turns)`); }
+        if (_nl.length) await sock.sendMessage(chatId, { text: _nl.join('\n') });
+      } catch (e) {}
       // Push #71: recovery skills report the HP they actually restored.
       if (Array.isArray(result.hpPercentLines) && result.hpPercentLines.length) await sock.sendMessage(chatId, { text: result.hpPercentLines.join('\n') });
       else if (result.healed > 0) await sock.sendMessage(chatId, { text: `💚 *${result.skillUsed?.name || 'Recovery'}* restored *${result.healed}* HP → ${player.stats.hp}/${_effMax(player)}` });
@@ -809,7 +862,7 @@ module.exports = {
         await UCgFlow.playTurn(sock, chatId, {
           attacker: monAtk, defender: _victim,
           move: { name: monsterSkill.name, description: `A ferocious ${_skillBare} technique.`, cooldownMs: 0, effect: { type: monsterSkill.effect, chance: Math.min(90, (monsterSkill.chance || 35) * GR.RAID_X2), duration: 2 } }, // Push #71: no more 100% status · Push #88q: raid status chance ×2
-          result: { damage: dmg, crit: !!(GR.monsterDamage.last && GR.monsterDamage.last.crit), missed: dmg <= 0, dodged: dmg <= 0 },
+          result: { damage: dmg, crit: !!(GR.monsterDamage.last && GR.monsterDamage.last.crit), missed: dmg <= 0, dodged: dmg <= 0, preAbsorbed: true, absorbedNote: (GR.monsterDamage.last && GR.monsterDamage.last.shieldLine) || null },
           tag: `💢 *MONSTER COUNTER-ATTACK*`, gapMs: 600,
         });
         // Push #88: passives that trigger on being hit (reflect / survive-lethal / regen).
@@ -1028,6 +1081,8 @@ module.exports = {
       gate.floorClearedAt = null; // Push #88w: engaging the boss = moving on
 
       const boss = gate.boss;
+      // Push #93: boss statuses (Curse of Ruin) count down one per hunter turn.
+      try { if ((boss.statusEffects || []).length) { const _bt = { name: boss.name, statusEffects: boss.statusEffects, stats: { hp: boss.hp, maxHp: boss.maxHp } }; const _bl = require('../../rpg/utils/UnifiedCombat').tickStatuses(_bt); boss.hp = Math.max(0, _bt.stats.hp); if (_bl.some(l => /ruin wore off/.test(l))) await sock.sendMessage(chatId, { text: `✨ *Curse of Ruin* on *${boss.name}* has worn off.` }); } } catch (e) {}
       const result = GR.playerDamage(player, skillArg || null, { statusEffects: (boss.statusEffects = boss.statusEffects || []) });
       if (result.blocked) return sock.sendMessage(chatId, { text: `❌ ${result.reason}` }, { quoted: msg });
       // Push #55: pets fight the boss too — ATK bonus + their own ability hit.
@@ -1048,11 +1103,11 @@ module.exports = {
       const UCgBoss = require('../../rpg/utils/UnifiedCombat');
       let _bMove;
       if (result.skillUsed) {
-        _bMove = { name: result.skillUsed.name, description: result.skillUsed.description || 'A class skill unleashed on the boss.', cooldownMs: (result.skillUsed.cooldown || 3) * 1000, effect: null };
+        _bMove = { name: result.skillUsed.name, description: result.skillUsed.description || 'A class skill unleashed on the boss.', cooldownMs: (result.skillUsed.cooldown || 3) * 1000, effect: null, statuses: (result.statuses || []).filter(st => st && st.type === 'ruin') }; // Push #93: Curse of Ruin lands on bosses (other statuses stay boss-immune)
       } else {
         _bMove = UCgBoss.basicStrike();
       }
-      const bossWrap = { name: boss.name, stats: { hp: boss.hp, maxHp: boss.maxHp }, statusEffects: [] };
+      const bossWrap = { name: boss.name, stats: { hp: boss.hp, maxHp: boss.maxHp }, statusEffects: (boss.statusEffects = boss.statusEffects || []) }; // Push #93: skill statuses (Curse of Ruin) land on the boss
       await UCgBoss.playTurn(sock, chatId, {
         attacker: player, defender: bossWrap, move: _bMove,
         result: { damage: result.damage, crit: !!result.isCrit, missed: false },
@@ -1061,6 +1116,10 @@ module.exports = {
       boss.hp = Math.max(0, bossWrap.stats.hp);
 
       const lines = [];
+      try { const NX = require('../../rpg/utils/Necromancy'); const _su = result.skillUsed;
+        if (_su && NX.isSoulDrain(_su) && (result.damage || 0) > 0 && !result.missed) { const _h = Math.floor(result.damage * 0.5); const _bh = player.stats.hp; player.stats.hp = Math.min(_effMax(player), _bh + _h); lines.push(`🩸 Soul Drain: +${player.stats.hp - _bh} HP`); }
+        if (_su && NX.isRuin(_su)) { const _tg = boss; const _liv = (gate.raid?.members || []).length || 1; const _d = NX.scaleRuinToRounds(_tg, _liv); if (_d) lines.push(`💀 *CURSE OF RUIN* — ATK −${NX.RUIN.atkCut}% · takes +${NX.RUIN.takenUp}% damage for ${NX.RUIN.rounds} rounds (${_d - 1} hunter turns)`); }
+      } catch (e) {}
       if (Array.isArray(result.hpPercentLines) && result.hpPercentLines.length) lines.push(...result.hpPercentLines);
       else if (result.healed > 0) lines.push(`💚 *${result.skillUsed?.name || 'Recovery'}* restored *${result.healed}* HP → ${player.stats.hp}/${_effMax(player)}`);
       if ((result.synergyNotes || []).length) lines.push(`⚡ *SYNERGY* ${result.synergyNotes.join(' · ')}`);
@@ -1083,6 +1142,7 @@ module.exports = {
             for (const _el of _elites) {
               const _er = GR.monsterDamage(_el, _eDef, player);
               const _ecrit = !!(GR.monsterDamage.last && GR.monsterDamage.last.crit);
+              if (GR.monsterDamage.last && GR.monsterDamage.last.shieldLine) lines.push(GR.monsterDamage.last.shieldLine);
               if (_er <= 0) { lines.push(`⚜️ *${_el.name}* lunges beside the boss — 💨 *${player.name}* dodged!`); continue; }
               const _ed = Math.min(Math.max(0, (player.stats.hp || 1) - 1), Math.floor(_er));
               player.stats.hp = Math.max(1, (player.stats.hp || 1) - _ed);
@@ -1111,7 +1171,7 @@ module.exports = {
         await UCgBoss.playTurn(sock, chatId, {
           attacker: bossAtkW, defender: _bVictim,
           move: { name: 'Retaliation', description: 'The boss lashes out with overwhelming force.', cooldownMs: 0 },
-          result: { damage: dmg, crit: !!(GR.monsterDamage.last && GR.monsterDamage.last.crit), missed: dmg <= 0, dodged: dmg <= 0 },
+          result: { damage: dmg, crit: !!(GR.monsterDamage.last && GR.monsterDamage.last.crit), missed: dmg <= 0, dodged: dmg <= 0, preAbsorbed: true, absorbedNote: (GR.monsterDamage.last && GR.monsterDamage.last.shieldLine) || null },
           tag: `💢 *BOSS COUNTER*`, gapMs: 600,
         });
         try { const _pl = GR.afterMonsterHit(_bVictim, boss, dmg); if (_pl.length) lines.push(..._pl); } catch (e) {}

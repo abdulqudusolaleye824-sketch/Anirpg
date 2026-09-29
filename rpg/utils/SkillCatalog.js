@@ -521,6 +521,18 @@ function buildRoster(className, variant = null) {
       }
     } catch (e) { /* transformations optional */ }
   }
+  // Push #93: NECROMANCER REFORGED — Bone Wall / Soul Drain / Curse of Ruin
+  // replace their slots (same unlock level) with the redesigned mechanics.
+  try {
+    const NX = require('./Necromancy');
+    const ov = NX.REFORGED[className];
+    if (ov) for (const [oldName, o] of Object.entries(ov)) {
+      const idx = roster.findIndex(e => e && String(e.name).toLowerCase() === oldName.toLowerCase());
+      if (idx < 0) continue;
+      const { rename, ...rest } = o;
+      roster[idx] = { ...roster[idx], ...rest, name: rename || roster[idx].name, isPassive: false, reforged: true };
+    }
+  } catch (e) {}
   _rosterCache.set(cacheKey, roster);
   return roster;
 }
@@ -648,6 +660,14 @@ function syncPlayerSkills(player) {
   const maxSlots = Math.max(1, Number(player.maxSkillSlots || 5));
   let changed = false;
   const nameOf = (s) => String(s?.name || '').toLowerCase();
+  // Push #93: renamed skills (Life Drain → Curse of Ruin) keep their level.
+  try {
+    const RN = require('./Necromancy').RENAMES;
+    if (canonicalClassName(player) === 'Necromancer') {
+      for (const arr of [player.skills.active, player.skills.locked, player.skills.passive, player.availableSkills]) for (const sk of arr) { const nn = RN[nameOf(sk)]; if (nn) { sk.name = nn; changed = true; } }
+      player.skills.unlockedOverrides = player.skills.unlockedOverrides.map(n => RN[String(n).toLowerCase()] || n);
+    }
+  } catch (e) {}
   // Push #92: Monster hunters who still hold the old shared names ("Primal
   // Strike"…) are renamed slot-for-slot to their variant's roster — levels kept.
   try {

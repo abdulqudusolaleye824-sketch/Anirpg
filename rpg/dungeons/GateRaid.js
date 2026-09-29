@@ -175,7 +175,7 @@ function effectiveDef(player, jid = null) {
 }
 
 function monsterDamage(monster, def, player = null) {
-  monsterDamage.last = { crit: false, dodged: false };
+  monsterDamage.last = { crit: false, dodged: false, absorbed: 0, shieldLine: null };
   // Push #74: the hunter can DODGE (speed vs monster speed + evasion +
   // passives); passives also cut damage taken; WEAKEN on the hunter hurts.
   if (player) {
@@ -198,6 +198,8 @@ function monsterDamage(monster, def, player = null) {
       raw = raw * (0.8 + Math.random() * 0.4) * UC.weakenTakenMult(player) * (1 + (pm.dmgTaken || 0) / 100);
       try { raw = raw / (require('../utils/PetManager').lastGiftMultiplier(player) || 1); } catch (e) {}
       if (Math.random() * 100 < monsterCritChance(monster)) { raw *= critMultFor(monster); monsterDamage.last.crit = true; }
+      // Push #93: a monster under Curse of Ruin hits for −70%; Bone Wall / shields absorb.
+      try { const NX = require('../utils/Necromancy'); raw = raw * NX.ruinAtkMult(monster); const ab = NX.absorb(player, Math.floor(raw)); if (ab.absorbed) { monsterDamage.last.absorbed = ab.absorbed; monsterDamage.last.shieldLine = NX.shieldLine(ab, player.name || 'Hunter'); raw = ab.dmg; } } catch (e) {}
       return Math.max(0, Math.floor(raw));
     } catch (e) {}
   }
@@ -1371,6 +1373,28 @@ function reviveStaleFloors(db, now = Date.now()) {
   return out;
 }
 
+// Push #93: a hunter drops to 0 HP outside the normal strike flow (Dark
+// Sacrifice) — same bookkeeping as a monster kill: 15% crystals, removed from
+// the party, marked fallen, wipe if nobody is left. Returns lines.
+function hunterFalls(gate, memberId, u, db) {
+  const lines = []; const raid = gate && gate.raid; if (!raid || !u) return lines;
+  const _n = GKM.normaliseJid(memberId);
+  const m = (raid.members || []).find(x => x.id === memberId || GKM.normaliseJid(x.id) === _n);
+  u.stats.hp = 1;
+  u.stats_history = u.stats_history || {}; u.stats_history.gateDeaths = (u.stats_history.gateDeaths || 0) + 1;
+  const loss = Math.floor((u.manaCrystals || 0) * 0.15); u.manaCrystals = Math.max(0, (u.manaCrystals || 0) - loss);
+  raid.members = (raid.members || []).filter(x => x !== m && (!_n || GKM.normaliseJid(x.id) !== _n));
+  markFallen(gate, memberId);
+  gate.raiders = (gate.raiders || []).filter(id => id !== memberId && (!_n || GKM.normaliseJid(id) !== _n));
+  lines.push(`💀 *${u.name} HAS FALLEN!* Lost ${loss.toLocaleString()} 💎 · fled with 1 HP.`);
+  if (raid.members.length === 0) {
+    let key = null, keyData = null;
+    for (const [k, kd] of Object.entries((db && db.gateKeys) || {})) if (kd && kd.gateId === gate.id) { key = k; keyData = kd; break; }
+    lines.push(...wipeGate(gate, key, keyData, raid.chatId || gate.chatId, db));
+  }
+  return lines;
+}
+
 // ── Push #88x: BERSERK auto-turns ─────────────────────────────────────
 // Every raid member currently in a BERSERK surge gets one automatic move per
 // tick (index.js). Returns { chatId, gateId, jid, name, pick } entries.
@@ -1444,7 +1468,9 @@ function autoStrikeIdleRaids(db, now = Date.now(), canStrike = null) {
       let maxHp = u.stats?.maxHp || 100; try { maxHp = require('../utils/GearSystem').effectiveMaxHp(u); } catch (e) {}
       const lines = [`⏱️ *NO ONE MOVED FOR ${Math.round(idleStrikeMsFor(gate.rank) / 1000)}s — THE GATE STRIKES!*`, `👹 *${target.name}* lunges at the weakest hunter, *${victimName}*!`];
       if (guardHit) lines.push(`🛡️ *${guardHit.guardianName}* steps in front of *${victimName}* and takes the blow!`);
-      if (dmg <= 0) lines.push(`💨 *${u.name}* dodged it!`);
+      if (monsterDamage.last && monsterDamage.last.shieldLine) lines.push(monsterDamage.last.shieldLine);
+      if (dmg <= 0 && !(monsterDamage.last && monsterDamage.last.absorbed)) lines.push(`💨 *${u.name}* dodged it!`);
+      else if (dmg <= 0) lines.push(`🦴 The wall took it all — *${u.name}* is untouched!`);
       else {
         u.stats.hp = Math.max(0, (u.stats.hp || 0) - dmg);
         lines.push(`${crit ? '💥 CRITICAL HIT — ' : ''}💢 *${u.name}* takes *${dmg}* damage → ❤️ ${u.stats.hp}/${maxHp}`);
@@ -1521,7 +1547,7 @@ module.exports = {
   saveGateState,
   spawnWildPet,
   tryCombatLock,
-  markFallen, isFallen, clearFallen, reviveFallen, FALLEN_TEXT, effectiveDef, IDLE_STRIKE_BY_RANK, rankSoften, reviveFloor, reviveStaleFloors, FLOOR_REVIVE_MS, FLOOR_REVIVE_MULT, berserkHunters, monsterCritChance, monsterDodgeChance, monsterDodges, critMultFor, noteRaidTurn, autoStrikeIdleRaids, IDLE_STRIKE_MS, IDLE_STRIKE_OTHER_MS, idleStrikeMsFor, raidInitiativeChance, raidMonsterGoesFirst, RAID_X2,
+  hunterFalls, markFallen, isFallen, clearFallen, reviveFallen, FALLEN_TEXT, effectiveDef, IDLE_STRIKE_BY_RANK, rankSoften, reviveFloor, reviveStaleFloors, FLOOR_REVIVE_MS, FLOOR_REVIVE_MULT, berserkHunters, monsterCritChance, monsterDodgeChance, monsterDodges, critMultFor, noteRaidTurn, autoStrikeIdleRaids, IDLE_STRIKE_MS, IDLE_STRIKE_OTHER_MS, idleStrikeMsFor, raidInitiativeChance, raidMonsterGoesFirst, RAID_X2,
   releaseCombatLock,
   wipeGate,
   applyMonsterScaling, floorMultiplier, severityLabel, markHealerAggro, pickAggroTarget, supportCast,

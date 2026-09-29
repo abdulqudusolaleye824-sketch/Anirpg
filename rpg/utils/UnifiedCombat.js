@@ -158,7 +158,8 @@ function calcMoveDamage(attacker, defender, move) {
   const _passDef = 1 + ((_pmD && _pmD.def) || 0) / 100;
   // Push #76: skill stat buffs/debuffs (Fortress Stance DEF+50%, Hunter's Mark,
   // War Cry ATK+…) live in tempBuffs and now really change the numbers.
-  const _tbAtk = 1 + tempBuffPct(attacker, 'atk') / 100;
+  let _tbAtk = 1 + tempBuffPct(attacker, 'atk') / 100;
+  try { _tbAtk *= require('./Necromancy').ruinAtkMult(attacker); } catch (e) {} // Push #93: Curse of Ruin −70% ATK
   const _tbDef = 1 + tempBuffPct(defender, 'def') / 100;
   const _tbTaken = 1 + tempBuffPct(defender, 'damageTaken') / 100;
   const effectiveAtk = atkBase * atkMult * _passAtk * Math.max(0.1, _tbAtk);
@@ -267,7 +268,8 @@ function weakenTakenMult(entity) {
     else if (t === 'weakened') add += 15;
     else if (t === 'enfeeble') add += 10;
   }
-  return 1 + Math.min(50, add) / 100;
+  let ruin = 1; try { ruin = require('./Necromancy').ruinTakenMult(entity); } catch (e) {}
+  return (1 + Math.min(50, add) / 100) * ruin; // Push #93: Curse of Ruin +70% damage taken (outside the weaken cap)
 }
 
 function tryApplyEffect(attack, attacker, defender) {
@@ -480,6 +482,11 @@ async function playTurn(sock, chatId, o) {
   const result = o.result || calcMoveDamage(attacker, defender, move);
   let statusApplied = null;
   if (!result.missed && (result.damage || 0) > 0) {
+    // Push #93: shields (Bone Wall …) really absorb now.
+    try {
+      if (result.preAbsorbed) { if (result.absorbedNote) _buffNotes.push(result.absorbedNote); }
+      else { const NX = require('./Necromancy'); const _ab = NX.absorb(defender, result.damage); if (_ab.absorbed) { result.damage = _ab.dmg; result.absorbed = _ab.absorbed; _buffNotes.push(NX.shieldLine(_ab, defender.name || 'Target')); } }
+    } catch (e) {}
     if (defender.stats) defender.stats.hp = Math.max(0, (defender.stats.hp || 0) - result.damage);
     try { statusApplied = tryApplyEffect(move, attacker, defender); } catch (e) { statusApplied = null; }
     // Push #76: skills can carry SEVERAL statuses (move.statuses) — roll each.
