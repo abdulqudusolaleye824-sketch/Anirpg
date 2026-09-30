@@ -1,3 +1,7 @@
+## 1.0.125 — Push #94b: potions respect gear-boosted max HP
+
+- `/use` health potions: "HP already full" check and heal % now use the same gear-boosted max HP the message shows (587/1003 no longer counts as full). Same fix in `/equip` tiered potions.
+
 ## 1.0.124 — Push #94: every skill unique & honest · /recon monster · /bleep level floor
 
 - **500 skills, 25 classes — every description unique.** New `SkillFlavour` generator: imagery drawn from the skill's name, class voice, per-type sentence structures, tier notes; deterministic and distinct for all 500 (hand-written emoji descriptions kept). Zero template stamps remain.

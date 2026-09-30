@@ -223,7 +223,7 @@ module.exports = {
         const tKey = itemName === 'Medium Health Potion' ? 'mediumHealthPotions' : 'higherHealthPotions';
         if ((inv[tKey] || 0) < 1) return sock.sendMessage(chatId, { text: `❌ No ${itemName}s!` }, { quoted: msg });
         const pct = itemName === 'Medium Health Potion' ? 0.25 : 0.5;
-        const heal = Math.floor(player.stats.maxHp * pct);
+        const heal = Math.floor(_effMax(player) * pct); // Push #94b
         player.stats.hp = Math.min(_effMax(player), player.stats.hp + heal);
         player.inventory[tKey] = (inv[tKey] || 0) - 1;
         saveDatabase();

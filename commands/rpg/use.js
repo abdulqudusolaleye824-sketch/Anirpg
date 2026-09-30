@@ -287,13 +287,13 @@ ${FRAME}`;
       }
 
       // ── STANDARD HEAL OUTSIDE PVP ─────────────────────────────
-      if (player.stats.hp >= player.stats.maxHp) {
+      if (player.stats.hp >= _effMax(player)) { // Push #94b: gear-boosted max, same number the message shows
         return sock.sendMessage(chatId, {
           text: `❌ Your HP is already full!\n\n❤️ HP: ${player.stats.hp}/${_effMax(player)}`
         }, { quoted: msg });
       }
 
-      const healAmount = Math.floor(player.stats.maxHp * pct);
+      const healAmount = Math.floor(_effMax(player) * pct); // Push #94b: % of the real (gear-boosted) max
       const oldHp = player.stats.hp;
       player.stats.hp = Math.min(_effMax(player), player.stats.hp + healAmount);
       const actualHeal = player.stats.hp - oldHp;
