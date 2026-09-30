@@ -124,6 +124,11 @@ function getEquippedBonuses(player) {
     if (st.statusResist) bonuses.statusResist += st.statusResist;
     if (piece.special)            bonuses.specials.push(piece.special);
   }
+  // Push #95: Blacksmith / Enchanter jobs squeeze more out of every piece.
+  try {
+    const gb = require('./JobSystem').mod(player, 'gearBonus');
+    if (gb) for (const k of ['hp', 'atk', 'def', 'speed', 'crit', 'critDmg', 'evasion']) if (bonuses[k]) bonuses[k] = Math.floor(bonuses[k] * (1 + gb / 100));
+  } catch (e) {}
   return bonuses;
 }
 
@@ -136,6 +141,7 @@ function tickDurability(player) {
   for (const slot of GEAR_SLOTS) {
     const piece = equipped[slot];
     if (!piece) continue;
+    try { const ds = require('./JobSystem').mod(player, 'durabilitySave'); if (ds && Math.random() * 100 < ds) continue; } catch (e) {} // Push #95: Blacksmith spares the piece
     piece.durability = (piece.durability || 1) - 1;
     if (piece.durability <= 0) {
       broken.push({ slot, name: piece.name });

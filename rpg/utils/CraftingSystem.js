@@ -105,13 +105,15 @@ function attemptCraft(player, itemName, key, db) {
     return { success: false, reason: `❌ Key *${key}* is for *${recipe.output}*, not *${itemName}*.` };
   RI.migrateLegacy(player); // pull pre-fix legacy buckets into items first
   const missing = [];
+  let _disc = 0; try { _disc = require('./JobSystem').mod(player, 'craftDiscount'); } catch (e) {} // Push #95: crafting jobs waste less material
+  const _need = (qty) => Math.max(1, Math.ceil(qty * (1 - _disc / 100)));
   for (const [mat, qty] of Object.entries(recipe.materials)) {
     const have = RI.countMaterial(player, mat);
-    if (have < qty) missing.push(`${mat} (need ${qty}, have ${have})`);
+    if (have < _need(qty)) missing.push(`${mat} (need ${_need(qty)}, have ${have})`);
   }
   if (missing.length > 0) return { success: false, reason: `❌ Missing materials:\n${missing.map(m => `• ${m}`).join('\n')}` };
   for (const [mat, qty] of Object.entries(recipe.materials)) {
-    RI.consumeMaterial(player, mat, qty);
+    RI.consumeMaterial(player, mat, _need(qty));
   }
   targetScroll.crafted = true; targetScroll.craftedBy = player.jid || 'unknown'; targetScroll.craftedAt = Date.now();
   if (scrollOwnerJid && db.users[scrollOwnerJid]) {

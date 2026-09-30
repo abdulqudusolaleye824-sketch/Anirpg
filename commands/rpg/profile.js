@@ -132,6 +132,8 @@ function buildCard(player, db, targetId, mentionedId, isOwnProfile) {
     `⚡ *Power:* ${power.toLocaleString()} ${powerLabel.emoji} ${powerLabel.label}`,
     `🎭 *Class:* ${classDisplay}`,
     variantLore ? `_${variantLore}_` : null,
+    (() => { try { const JS = require('../../rpg/utils/JobSystem'); const j = JS.current(player); return j ? `🧭 *Job:* ${j.emoji} ${j.name} · Job Lv.${JS.level(player)} — _${j.levels[JS.level(player) - 1]}_` : `🧭 *Job:* None (/job)`; } catch (e) { return null; } })(), // Push #95: Class / Job Lv / Level
+    (() => { try { const DS = require('../../rpg/utils/DomainSystem'); return DS.has(player) ? `🌌 *Domain:* ${player.domain.name} Lv.${player.domain.level}` : null; } catch (e) { return null; } })(),
     `🏰 *Guild:* ${guildDisplay}`,
     `🏢 *Status:* ${employmentStatus}`,
     ``,

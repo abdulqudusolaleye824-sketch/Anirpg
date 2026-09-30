@@ -348,6 +348,18 @@ class PetManager {
 
   // ── BATTLE BONUSES ────────────────────────────────────────
   getPetBattleBonus(playerId) {
+    const r = this._getPetBattleBonusRaw(playerId);
+    if (!r || !r.bonuses) return r;
+    // Push #95: Beast Tamer / Beast King jobs make companions genuinely stronger.
+    try {
+      const JS = require('./JobSystem'); const m = JS.petMult(playerId), hm = JS.petHealMult(playerId);
+      if (m !== 1) for (const k of ['atk', 'def', 'spd']) if (r.bonuses[k]) r.bonuses[k] = Math.floor(r.bonuses[k] * m);
+      if (hm !== 1 && r.healBonus) r.healBonus = Math.floor(r.healBonus * hm);
+    } catch (e) {}
+    return r;
+  }
+
+  _getPetBattleBonusRaw(playerId) {
     const pet = this.getActivePet(playerId);
     if (!pet) return null;
     const bondMod = pet.bonding / 100;

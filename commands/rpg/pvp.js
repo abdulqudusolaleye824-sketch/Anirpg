@@ -718,6 +718,8 @@ async function resolveTurn(sock, chatId, p1, p2, db, saveDatabase) {
   const p1Spd = (_effSpd(p1) + (PetCombat.spdBonus(id1) || 0)) * (m1?.speedMult || 1);
   const p2Spd = (_effSpd(p2) + (PetCombat.spdBonus(id2) || 0)) * (m2?.speedMult || 1);
   const p1First = p1Spd > p2Spd || (p1Spd === p2Spd && Math.random() < 0.5);
+  // Push #95: the shared domain record for this pair counts down once per round.
+  try { const DS = require('../../rpg/utils/DomainSystem'); const _df = DS.tick(DS.pvpArena(id1, id2)); if (_df) await sock.sendMessage(chatId, { text: _df }); } catch (e) {}
   const order = p1First ? [{p:p1,opp:p2,move:m1,res:res1,name:name1,oppName:name2,skipped:p1Skipped,skipMsg:skipMsg1},
                            {p:p2,opp:p1,move:m2,res:res2,name:name2,oppName:name1,skipped:p2Skipped,skipMsg:skipMsg2}]
                         : [{p:p2,opp:p1,move:m2,res:res2,name:name2,oppName:name1,skipped:p2Skipped,skipMsg:skipMsg2},
@@ -1055,6 +1057,15 @@ function handlePvpVictory(sock, chatId, winner, loser, wId, lId, db, saveDatabas
 
   winner.gold = (winner.gold || 0) + rewardNexus;
   winner.manaCrystals = (winner.manaCrystals || 0) + rewardStones;
+  // Push #95: Job XP for the duel (winner 60, loser 20) + Dungeon Delver-style XP mult; auto Job-level-up announced.
+  let _jobLine = '';
+  try {
+    const JS = require('../../rpg/utils/JobSystem');
+    const jmW = JS.mods(winner); if (jmW.xpMult) rewardXP = Math.floor(rewardXP * (1 + jmW.xpMult / 100));
+    const jw = JS.gainXp(winner, JS.xpFor('pvp'), 'pvp_win'); const jl = JS.gainXp(loser, 20, 'pvp_loss');
+    for (const [pl, jr] of [[winner, jw], [loser, jl]]) if (jr && jr.levelUp) { _jobLine += `\n🧭 *JOB LEVEL UP!* ${pl.name} — ${jr.name} → Job Lv.${jr.to} *${jr.title}*`; }
+    if (jw) _jobLine = `\n🧭 Job XP: +${jw.gained}` + _jobLine;
+  } catch (e) {}
   winner.xp = (winner.xp || 0) + rewardXP;
   try {
     const { logTransaction } = require('../../rpg/utils/TransactionLog');
@@ -1090,6 +1101,7 @@ function handlePvpVictory(sock, chatId, winner, loser, wId, lId, db, saveDatabas
   winner.pvpBattle = null;
   loser.pvpBattle = null;
   _pvpCleanup(winner); _pvpCleanup(loser);
+  try { const DS = require('../../rpg/utils/DomainSystem'); DS.endPvpArena(winner.jid || winner.id || Object.keys(db.users).find(k => db.users[k] === winner), loser.jid || loser.id || Object.keys(db.users).find(k => db.users[k] === loser)); } catch (e) {}
   try { const RM = require('../../rpg/utils/RegenManager'); RM.endCombat(winner); RM.endCombat(loser); } catch (e) {}
 
   saveDatabase();
@@ -1108,7 +1120,7 @@ function handlePvpVictory(sock, chatId, winner, loser, wId, lId, db, saveDatabas
     `💠 Nexus: +${rewardNexus.toLocaleString()}${isProWinner?' (2×)':''}`,
     `💎 Mana Stones: +${rewardStones.toLocaleString()}${isProWinner?' (2×)':''}`,
     `📉 ${loserName} aura: \u2212${_auraLoss} (only deduction)`,
-    `✨ XP: +${rewardXP.toLocaleString()}${isProWinner?' (2×)':''} (general)`,
+    `✨ XP: +${rewardXP.toLocaleString()}${isProWinner?' (2×)':''} (general)` + _jobLine,
     `🌀 Aura: +${rewardAura.toLocaleString()}${isProWinner?' (2×)':''}`,
     `🎖️ Battle Pass XP: +${(_bpGained || rewardBp).toLocaleString()}${_bpGained > rewardBp ? ` (${_bpGained / rewardBp}×)` : ''}`,
     `🏰 Guild Points: +${pvpGP} GP (you: ${((winner.totalGP || 0)).toLocaleString()} total)${_guildName ? ` → ${_guildName}: ${_guildTotal.toLocaleString()} GP` : ''}`,

@@ -150,6 +150,13 @@ class LevelUpManager {
       
       if (sock && chatId) {
         this.sendLevelUpNotification(player, levelsGained, newSkills, skillUnlockLevels, totalUPAwarded, classAssigned, sock, chatId);
+        // Push #95: domain awakens at Lv.20 (DM for Pro, GC otherwise); new jobs become available every 5 levels.
+        try { require('./DomainSystem').onLevelUp(player, sock, chatId); } catch (e) {}
+        try {
+          const JS = require('./JobSystem');
+          const fresh = JS.JOBS.filter(j => j.unlock <= player.level && j.unlock > player.level - levelsGained);
+          if (fresh.length) sock.sendMessage(chatId, { text: `🧭 *NEW JOB AVAILABLE!* ${fresh.map(j => `${j.emoji} *${j.name}*`).join(', ')} — /job info ${fresh[0].name}\n🗝️ Take it by clearing its Job Change Quest (/instance).` }).catch(() => {});
+        } catch (e) {}
 
         // ── Milestone group announcements ────────────────────────
         const MILESTONES = [10, 25, 50, 75, 100];

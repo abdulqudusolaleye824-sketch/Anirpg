@@ -404,7 +404,11 @@ module.exports = async (sock, msg, messageText, config, getDatabase, saveDatabas
     return;
   }
 
-  if (isDM) {
+  // Push #95: instance dungeons, daily boxes and the domain/job cards live in
+  // DM for every REGISTERED hunter (the rest of the RPG stays group-only).
+  const PLAYER_DM_COMMANDS = new Set(['instance', 'inst', 'jobquest', 'box', 'dailybox', 'domain', 'expand', 'domainexpansion', 'job', 'jobs', 'profession', 'use']);
+  const _playerDmOk = isDM && !!(db.users && db.users[sender]) && (PLAYER_DM_COMMANDS.has(commandName) || PLAYER_DM_COMMANDS.has(resolvedCommand));
+  if (isDM && !_playerDmOk) {
     if (!isPrivilegedUser) {
       return sock.sendMessage(
         chatId,
@@ -433,6 +437,8 @@ module.exports = async (sock, msg, messageText, config, getDatabase, saveDatabas
     applyPassiveRegen(player, db);
     // Push #88f: lapsed Pro → strip every perk before anything reads them.
     try { if (require('../rpg/utils/ProGuard').enforce(player).stripped) saveDatabase(); } catch (e) {}
+    // Push #95: hunters already past Lv.20 when domains arrived awaken theirs on their next command (DM for Pro, GC otherwise).
+    try { const DS = require('../rpg/utils/DomainSystem'); if ((player.level || 1) >= 20 && !DS.has(player)) { DS.onLevelUp(player, sock, chatId); saveDatabase(); } } catch (e) {}
     // Push #88f: HP can never sit above the CURRENT effective max (a lapsed
     // pet "Last Gift" / removed gear used to leave 867/811 on the card).
     try { if (player && player.stats) { const _em = require('../rpg/utils/GearSystem').effectiveMaxHp(player); if ((player.stats.hp || 0) > _em) player.stats.hp = _em; } } catch (e) {}

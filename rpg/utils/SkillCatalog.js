@@ -714,6 +714,7 @@ function levelBonus(skill) {
 function effectiveCost(skill, caster = null) {
   const b = levelBonus(skill);
   let c = Math.max(5, (skill.energyCost || 0) - b.costReduction);
+  if (caster) { try { const ed = require('./JobSystem').mod(caster, 'energyDiscount'); if (ed) c = Math.max(5, Math.floor(c * (1 - ed / 100))); } catch (e) {} } // Push #95: Starforged
   // Push #88d: heals are a Healer's craft — every other class pays DOUBLE energy.
   if (caster && String(skill && skill.type || '').toLowerCase() === 'heal') {
     let base = '';

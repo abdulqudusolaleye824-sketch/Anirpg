@@ -1861,6 +1861,7 @@ function getEquippedArtifactStats(player) {
       else if (key === 'energy' || key === 'maxenergy') { bonuses.energy += value; bonuses.maxEnergy += value; }
     }
   }
+  try { const ab = require('./JobSystem').mod(player, 'artifactBonus'); if (ab) for (const k of Object.keys(bonuses)) if (bonuses[k]) bonuses[k] = Math.floor(bonuses[k] * (1 + ab / 100)); } catch (e) {} // Push #95: Relic Hunter
   return bonuses;
 }
 

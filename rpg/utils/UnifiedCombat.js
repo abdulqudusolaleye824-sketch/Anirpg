@@ -213,6 +213,7 @@ function calcMoveDamage(attacker, defender, move) {
   // Push #74: WEAKEN on the defender → takes more damage; passive damage reduction.
   try {
     const _wk = weakenTakenMult(defender);
+    try { raw = Math.max(1, Math.floor(raw * require('./JobSystem').targetMult(attacker, defender, {}))); } catch (e) {} // Push #95: job prey/elite bonuses
     if (_wk !== 1) raw = Math.max(1, Math.floor(raw * _wk));
   } catch (e) {}
   if (_pmD && _pmD.dmgTaken) raw = Math.max(1, Math.floor(raw * (1 + _pmD.dmgTaken / 100)));
@@ -274,7 +275,17 @@ function weakenTakenMult(entity) {
 
 function tryApplyEffect(attack, attacker, defender) {
   if (!attack.effect) return null;
-  const chance = attack.effect.chance || 50;
+  let chance = attack.effect.chance || 50;
+  // Push #95: Enchanter procs more; Brawler resists CC; Beast King ignores FEAR.
+  try {
+    const JS = require('./JobSystem');
+    if (attacker && attacker.job) { const sc = JS.mod(attacker, 'statusChance'); if (sc) chance = chance * (1 + sc / 100); }
+    if (defender && defender.job) {
+      const t = String(attack.effect.type || '').toLowerCase();
+      if (t === 'fear' && JS.mod(defender, 'fearImmune')) { defender._lastStatusBlock = 'Beast King — fear is beneath you'; return null; }
+      if (['stun', 'freeze', 'paralyze', 'petrify'].includes(t)) { const cr = JS.mod(defender, 'ccResist'); if (cr && Math.random() * 100 < cr) { defender._lastStatusBlock = 'Unbreakable — shrugged it off'; return null; } }
+    }
+  } catch (e) {}
   if (Math.random() * 100 > chance) return null;
   // Push #76: store gear defence — S immunity, B/A resist roll, −1 turn.
   let _turnCut = 0;

@@ -571,7 +571,8 @@ module.exports = {
         try { _packAllies = (gate.raid?.members || []).map(m => db.users[m.id] || Object.values(db.users).find(x => x && x.jid && GR.GKM.normaliseJid(x.jid) === GR.GKM.normaliseJid(m.id))).filter(Boolean); } catch (e) {}
         _tickLogs = require('../../rpg/utils/Transformation').withPack(_packAllies, () => UCgTick.tickStatuses(player)) || [];
         if (target && target.statusEffects) {
-          const _tgt = { name: target.name || 'Monster', statusEffects: target.statusEffects, stats: { hp: target.hp, maxHp: target.maxHp } };
+          if (!target.tempBuffs) target.tempBuffs = {}; // Push #95: monster roars / domain buffs tick down too
+          const _tgt = { name: target.name || 'Monster', statusEffects: target.statusEffects, tempBuffs: target.tempBuffs, stats: { hp: target.hp, maxHp: target.maxHp } };
           const tl2 = UCgTick.tickStatuses(_tgt);
           target.hp = Math.max(0, _tgt.stats.hp); // write tick damage back — the temp object is discarded
           if (tl2 && tl2.length) _tickLogs = _tickLogs.concat(tl2);
@@ -869,7 +870,11 @@ module.exports = {
         });
         // Push #88: passives that trigger on being hit (reflect / survive-lethal / regen).
         try { const _pl = GR.afterMonsterHit(_victim, target, dmg); if (_pl.length) await sock.sendMessage(chatId, { text: _pl.join('\n') }); } catch (e) {}
+        // Push #95: the move does what it says — Mana Drain drains energy, Life Drain heals the monster, Roars buff it.
+        try { const _fx = require('../../rpg/utils/MonsterSkillFX').apply(target, _victim, monsterSkill, dmg, { skipStatus: true }); if (_fx.lines.length) await sock.sendMessage(chatId, { text: _fx.lines.join('\n') }); } catch (e) {}
       }
+      // Push #95: DOMAINS — bosses / B-rank+ monsters may expand a domain over the party.
+      try { const DS = require('../../rpg/utils/DomainSystem'); const _hunters = GR.livingMembers ? GR.livingMembers(gate, db) : [player]; const _tl = DS.tick(DS.arenaOf(gate)); if (_tl) await sock.sendMessage(chatId, { text: _tl }); const _dl = DS.monsterTry(DS.arenaOf(gate), target, _hunters, { boss: !!_fightingBoss, rank: gate.rank }); if (_dl) await sock.sendMessage(chatId, { text: _dl }); } catch (e) {}
 
       try { const _lg = require('../../rpg/utils/PetManager').tickLastGift(player); if (_lg && _lg.healed > 0) await sock.sendMessage(chatId, { text: `✨ *Last Gift* (${_lg.from}): +${_lg.healed} HP regen · ${_lg.turnsLeft} turn${_lg.turnsLeft === 1 ? '' : 's'} left` }); } catch (e) {}
       if (_guardHit) {
@@ -996,11 +1001,11 @@ module.exports = {
         if (topRaider && topRaider[0] === sender) AuraSystem.addAura(player, 'topRaider');
 
         awardXP(player, 'gate_boss', saveDatabase, sock, chatId);
-        try { const BRb=require('../../rpg/utils/BattleRewards'); const wb=BRb.giveBattleWinRewards(player, db, 'gate', player.level, sock, chatId); out.push(BRb.formatRewards(wb)); try { const _sx = BRb.shareRaidExp(gate, sender, db, sock, chatId); if (_sx) out.push(_sx); } catch (e) {} } catch(e){}
+        try { const BRb=require('../../rpg/utils/BattleRewards'); const wb=BRb.giveBattleWinRewards(player, db, 'gate', player.level, sock, chatId, { boss: true }); out.push(BRb.formatRewards(wb)); try { const _sx = BRb.shareRaidExp(gate, sender, db, sock, chatId); if (_sx) out.push(_sx); } catch (e) {} } catch(e){}
 
         // Final-blow boss loot → the killer
         const bossDropLines = [];
-        const bossDrop = GateManager.rollMonsterKillDrop(gate.rank, boss.baseName || boss.name);
+        const bossDrop = GateManager.rollMonsterKillDrop(gate.rank, boss.baseName || boss.name, player);
         if (bossDrop) {
           require('../../rpg/utils/RewardInventory').grantItem(player, { ...bossDrop, type: bossDrop.type || 'material', fromGate: gate.id }, 'gate');
           bossDropLines.push(`🎁 *BOSS DROP → ${player.name}* (final blow): *${bossDrop.name}*`);

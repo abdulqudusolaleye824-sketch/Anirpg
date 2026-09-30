@@ -293,7 +293,8 @@ ${FRAME}`;
         }, { quoted: msg });
       }
 
-      const healAmount = Math.floor(_effMax(player) * pct); // Push #94b: % of the real (gear-boosted) max
+      let _pp = 1; try { _pp = 1 + require('../../rpg/utils/JobSystem').mod(player, 'potionPower') / 100; } catch (e) {} // Push #95: Alchemist
+      const healAmount = Math.floor(_effMax(player) * pct * _pp); // Push #94b: % of the real (gear-boosted) max
       const oldHp = player.stats.hp;
       player.stats.hp = Math.min(_effMax(player), player.stats.hp + healAmount);
       const actualHeal = player.stats.hp - oldHp;

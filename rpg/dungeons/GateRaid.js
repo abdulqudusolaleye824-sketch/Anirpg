@@ -61,10 +61,14 @@ function playerDamage(player, skillName = null, target = null) {
     // + passives), not bare stats.atk — a "+100% ATK" buff now doubles the hit.
     let dmg = SC.computeDamage({ ...player, stats: { ...(player.stats || {}), atk } }, entry || skill, { includeMagic: magicPower > 0, crit: false, target, notes: synergyNotes });
     if (_pm74.skillDmg) dmg = Math.max(1, Math.floor(dmg * (1 + (_pm74.skillDmg || 0) / 100)));
-    if (target && typeof target.def === 'number' && target.def > 0) dmg = Math.max(1, dmg - Math.floor(target.def * 0.35 * (1 - Math.min(0.6, (_pm74.armorPen || 0) / 100))));
+    let _tDefMult95 = 1, _tTaken95 = 1; try { const _UC95 = require('../utils/UnifiedCombat'); _tDefMult95 = Math.max(0.1, 1 + _UC95.tempBuffPct(target || {}, 'def') / 100); _tTaken95 = 1 + _UC95.tempBuffPct(target || {}, 'damageTaken') / 100; } catch (e) {} // Push #95: monster shells / domain debuffs are real
+    if (target && typeof target.def === 'number' && target.def > 0) dmg = Math.max(1, dmg - Math.floor(target.def * _tDefMult95 * 0.35 * (1 - Math.min(0.6, (_pm74.armorPen || 0) / 100))));
+    if (target && _tTaken95 !== 1) dmg = Math.max(1, Math.floor(dmg * _tTaken95));
     if (target) { try { dmg = Math.max(1, Math.floor(dmg * require('../utils/UnifiedCombat').weakenTakenMult(target))); } catch (e) {} }
+    if (target) { try { dmg = Math.max(1, Math.floor(dmg * require('../utils/JobSystem').targetMult(player, target, { boss: !!target.isBoss }))); } catch (e) {} } // Push #95: job prey/elite/pack bonuses
     const isCrit = Math.random() < ((player.stats?.critChance || 2) + (_pm74.crit || 0) + _gearCritGR + _titleCritGR) / 100;
     if (isCrit) dmg = Math.floor(dmg * ((player.stats?.critDamage || 150) + _gearCritDmgGR) / 100);
+    if (target) { try { require('../utils/JobSystem').noteHit(player, true); target.lastHitBy = player.jid || player.id || target.lastHitBy; } catch (e) {} } // Push #95
 
     player.stats.energy = Math.max(0, (player.stats.energy || 0) - cost);
     SC.setCooldown(player, entry || skill);
@@ -72,6 +76,7 @@ function playerDamage(player, skillName = null, target = null) {
     // Push #88o: the monster may DODGE a damaging skill — cooldown + energy are
     // already spent (a dodged/missed move still enters cooldown).
     if (target && !_isHealSkillEarly(entry, skill) && monsterDodges(target, player, entry || skill)) {
+      try { require('../utils/JobSystem').noteHit(player, false); } catch (e) {} // Push #95: Brawler momentum breaks on a miss
       return { damage: 0, isCrit: false, dodged: true, missed: true, skillUsed: skill, statuses: [], healingPct: 0, healed: 0, hpPercentLines: [], drained: 0, hpCost: 0, synergyNotes: [], buffs: [] };
     }
     // Push #71: RECOVERY SKILLS — healingPct was computed here and returned,
@@ -117,12 +122,16 @@ function playerDamage(player, skillName = null, target = null) {
       buffs: (entry && entry.buffs) || [],
     };
   }
-  if (target && monsterDodges(target, player)) return { damage: 0, isCrit: false, dodged: true, missed: true, synergyNotes: [], statuses: [] }; // Push #88o
+  if (target && monsterDodges(target, player)) { try { require('../utils/JobSystem').noteHit(player, false); } catch (e) {} return { damage: 0, isCrit: false, dodged: true, missed: true, synergyNotes: [], statuses: [] }; } // Push #88o
   let dmg = Math.max(5, atk * (0.85 + Math.random() * 0.30));
-  if (target && typeof target.def === 'number' && target.def > 0) dmg = Math.max(5, dmg - Math.floor(target.def * 0.35 * (1 - Math.min(0.6, (_pm74.armorPen || 0) / 100))));
+  let _tDefMult95 = 1, _tTaken95 = 1; try { const _UC95 = require('../utils/UnifiedCombat'); _tDefMult95 = Math.max(0.1, 1 + _UC95.tempBuffPct(target || {}, 'def') / 100); _tTaken95 = 1 + _UC95.tempBuffPct(target || {}, 'damageTaken') / 100; } catch (e) {} // Push #95: monster shells / domain debuffs are real
+  if (target && typeof target.def === 'number' && target.def > 0) dmg = Math.max(5, dmg - Math.floor(target.def * _tDefMult95 * 0.35 * (1 - Math.min(0.6, (_pm74.armorPen || 0) / 100))));
+  if (target && _tTaken95 !== 1) dmg = Math.max(5, Math.floor(dmg * _tTaken95));
   if (target) { try { dmg = Math.max(1, dmg * require('../utils/UnifiedCombat').weakenTakenMult(target)); } catch (e) {} }
+  if (target) { try { dmg = Math.max(1, dmg * require('../utils/JobSystem').targetMult(player, target, { boss: !!target.isBoss })); } catch (e) {} } // Push #95
   const isCrit = Math.random() < ((player.stats?.critChance || 2) + (_pm74.crit || 0) + _gearCritGR + _titleCritGR) / 100;
   if (isCrit) dmg = Math.floor(dmg * (player.stats?.critDamage || 150) / 100);
+  if (target) { try { require('../utils/JobSystem').noteHit(player, true); target.lastHitBy = player.jid || player.id || target.lastHitBy; } catch (e) {} } // Push #95
   let synergyNotes = [];
   if (target) { try { const syn = require('../utils/StatusSynergy').bonusFor({ name: 'strike', description: 'basic strike' }, target); if (syn.mult !== 1) { dmg *= syn.mult; synergyNotes = syn.notes; } } catch (e) {} }
   // Push #88: SpellBlade "free spell" proc + BloodKnight on-hit bleed on basic strikes.
@@ -205,13 +214,16 @@ function monsterDamage(monster, def, player = null) {
       // Push #85: defence soaks at most 60% of the hit and a landed hit is
       // never below 4% of the hunter's max HP — high-DEF hunters used to
       // take a flat 3 from everything.
-      const mAtk = (monster.atk || 10);
+      let mAtk = (monster.atk || 10);
+      try { mAtk = Math.floor(mAtk * (1 + UC.tempBuffPct(monster, 'atk') / 100)); } catch (e) {} // Push #95: monster roars / domains change its ATK
       // Push #89: DEF soaks 1:1 (was 0.5) — still capped at 60% of the hit. A
       // 200-DEF hunter vs a 500-ATK boss now takes ~300 instead of ~400.
       const soak = Math.min(mAtk * 0.6, Math.floor((def || 5) * (1 + (pm.def || 0) / 100)));
       const floorDmg = Math.max(3, Math.floor((player.stats?.maxHp || 100) * 0.04));
       let raw = Math.max(floorDmg, mAtk - soak);
       raw = raw * (0.8 + Math.random() * 0.4) * UC.weakenTakenMult(player) * (1 + (pm.dmgTaken || 0) / 100);
+      try { raw = raw * (1 + UC.tempBuffPct(player, 'damageTaken') / 100); } catch (e) {} // Push #95: damage-taken buffs/debuffs (domains, skills)
+      if (pm.job && pm.job.monsterDmgTaken) raw = raw * (1 + pm.job.monsterDmgTaken / 100); // Push #95: Beast King
       try { raw = raw / (require('../utils/PetManager').lastGiftMultiplier(player) || 1); } catch (e) {}
       if (Math.random() * 100 < monsterCritChance(monster)) { raw *= critMultFor(monster); monsterDamage.last.crit = true; }
       // Push #93: a monster under Curse of Ruin hits for −70%; Bone Wall / shields absorb.
@@ -1076,7 +1088,7 @@ function monsterKilledBy(gate, monster, sender, db) {
 
   // Material drop from monster — single commit to items (no more double-push
   // into the legacy bucket, which also duplicated the /inv display).
-  const drop = GateManager.rollMonsterKillDrop(gate.rank, monster.name);
+  const drop = GateManager.rollMonsterKillDrop(gate.rank, monster.name, player);
   if (drop) {
     RI.grantItem(player, { name: drop.name, type: 'material', rarity: drop.rarity || (gate.rank === 'S' || gate.rank === 'A' ? 'rare' : 'common'), fromGate: gate.id }, 'gate');
     lines.push(`🎁 *DROP → ${player.name}* (final blow): *${drop.name}*`);
@@ -1522,6 +1534,13 @@ function autoStrikeIdleRaids(db, now = Date.now(), canStrike = null) {
   return out;
 }
 
+// Push #95: living hunters of a gate's raid (for party-wide domain effects).
+function livingMembers(gate, db) {
+  try {
+    const raid = gate && gate.raid;
+    return (raid && raid.members || []).map(m => findUserByBare(db, m.id)).filter(u => u && (u.stats?.hp || 0) > 0);
+  } catch (e) { return []; }
+}
 function findUserByBare(db, jid) {
   if (!db?.users || !jid) return null;
   if (db.users[jid]) return db.users[jid];
@@ -1544,6 +1563,7 @@ function spawnWildPet(gate) {
 }
 
 module.exports = {
+  livingMembers,
   calibrateToParty, partyLuck, RANK_EXPECTED_POWER, totalStatsOf,
   MAX_PARTY,
   playerDamage,

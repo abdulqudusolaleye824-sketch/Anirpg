@@ -96,20 +96,31 @@ function executeMonsterAI(monster, player, ctx = null) {
   const FRAME = mPro ? UI.PRO_BAR : UI.FREE_BAR;
   const useSkill = Math.random() < 0.75 && monster.abilities?.length > 0;
   const ability  = useSkill ? monster.abilities[Math.floor(Math.random() * monster.abilities.length)] : null;
+  const abilityName = ability ? (typeof ability === 'string' ? ability : ability.name) : null;
   const line     = getDialogue(monster.name);
+  // Push #95: abilities do what they say — multiplier, pierce, drain, buff, status.
+  const MSFX = require('../../rpg/utils/MonsterSkillFX');
+  const _contract = ability ? MSFX.resolve(ability) : null;
+  const _UCm = require('../../rpg/utils/UnifiedCombat');
 
-  let atkMult = ability ? 1.5 : 1.0;
-  const baseDmg  = Math.floor(monster.stats.atk * atkMult);
+  let atkMult = _contract ? (_contract.mult || 1.5) : 1.0;
+  let _mAtk = monster.stats.atk;
+  try { _mAtk = Math.floor(_mAtk * (1 + _UCm.tempBuffPct(monster, 'atk') / 100)); } catch (e) {} // Push #95: monster buffs/domains are real
+  const baseDmg  = Math.floor(_mAtk * atkMult);
   let _gearDef0 = 0, _gearSpd0 = 0;
   try { const _gb = require('../../rpg/utils/GearSystem').getEquippedBonuses(player); _gearDef0 = _gb.def || 0; _gearSpd0 = _gb.speed || 0; } catch (e) {}
   let _titleDef0 = 0; try { _titleDef0 = require('../../rpg/utils/TitleSystem').getEquippedBoost(player).def || 0; } catch (e) {}
-  const defReduc = Math.floor(((player.stats.def || 0) + _gearDef0 + _titleDef0 + (player.weapon?.defense || 0)) * 0.4); // Push #89: title + weapon count
+  let _defTot = ((player.stats.def || 0) + _gearDef0 + _titleDef0 + (player.weapon?.defense || 0));
+  try { _defTot = Math.floor(_defTot * (1 + _UCm.tempBuffPct(player, 'def') / 100)); } catch (e) {} // Push #95: hunter DEF buffs/debuffs count
+  if (_contract && _contract.pierce) _defTot = Math.floor(_defTot * (1 - _contract.pierce / 100));
+  const defReduc = Math.floor(_defTot * 0.4); // Push #89: title + weapon count
 
   // Player dodge
   const speedDiff = ((player.stats.speed || 100) + _gearSpd0) - (monster.stats.speed || 80);
   const dodge     = Math.max(0, Math.min(0.30, speedDiff / 200));
-  if (dodge > 0 && Math.random() < dodge) {
-    return `\n${FRAME}\n🔄 ${monster.name.toUpperCase()}'S TURN${mPro ? ' 💎' : ''}\n${FRAME}\n${monster.emoji} ${monster.name} ${ability ? 'uses *' + ability + '*!' : 'attacks!'}\n💬 "${line}"\n💨 *DODGED!* You were too fast!\n❤️ Your HP: ${player.stats.hp}/${player.stats.maxHp}\n${FRAME}`;
+  const _blindMiss = (monster.statusEffects || []).some(e => String(e.type || '').toLowerCase() === 'blind') && Math.random() < 0.5;
+  if ((dodge > 0 && Math.random() < dodge) || _blindMiss) {
+    return `\n${FRAME}\n🔄 ${monster.name.toUpperCase()}'S TURN${mPro ? ' 💎' : ''}\n${FRAME}\n${monster.emoji} ${monster.name} ${abilityName ? 'uses *' + abilityName + '*!' : 'attacks!'}\n💬 "${line}"\n${FRAME}\n${_blindMiss ? '🌫️ Blinded — the strike goes wide!' : '💨 *You dodged the attack!*'}\n❤️ Your HP: ${Math.max(0, player.stats.hp)}/${_effMax(player)}\n`;
   }
 
   let finalDmg = Math.max(8, baseDmg - defReduc);
@@ -119,17 +130,31 @@ function executeMonsterAI(monster, player, ctx = null) {
   // Push #88: class passives — damage taken reduction, survive-lethal, regen, reflect.
   let _pm = null; try { _pm = require('../../rpg/utils/ClassPower').passiveMultipliers(player); } catch (e) {}
   if (_pm && _pm.dmgTaken) finalDmg = Math.max(1, Math.floor(finalDmg * (1 + _pm.dmgTaken / 100)));
+  if (_pm && _pm.job && _pm.job.monsterDmgTaken) finalDmg = Math.max(1, Math.floor(finalDmg * (1 + _pm.job.monsterDmgTaken / 100))); // Push #95: Beast King
+  try { finalDmg = Math.max(1, Math.floor(finalDmg * (1 + _UCm.tempBuffPct(player, 'damageTaken') / 100) * _UCm.weakenTakenMult(player))); } catch (e) {} // Push #95: damage-taken buffs/debuffs + WEAKEN
+  // Push #93/#94: Bone Wall / shields absorb before HP.
+  let _absLine = '';
+  try { const NX = require('../../rpg/utils/Necromancy'); const ab = NX.absorb(player, finalDmg); if (ab && ab.absorbed > 0) { finalDmg = ab.dmg; _absLine = `\n${NX.shieldLine(ab, player.name) || `🛡️ Shield absorbs *${ab.absorbed}*`}`; } } catch (e) {}
   player.stats.hp = Math.max(0, player.stats.hp - finalDmg);
   let passiveLines = '';
   if (_pm) {
-    if (_pm.surviveLethal && player.stats.hp <= 0 && (!player._lethalUsedAt || Date.now() - player._lethalUsedAt > 2 * 3600e3)) { player.stats.hp = 1; player._lethalUsedAt = Date.now(); passiveLines += `\n🛡️ *Unbreakable!* You refuse to fall — 1 HP.`; }
-    if (_pm.reflect > 0 && monster.stats) { const r = Math.max(1, Math.floor(finalDmg * _pm.reflect / 100)); monster.stats.hp = Math.max(0, monster.stats.hp - r); passiveLines += `\n↩️ Counterguard reflects ${r} damage!`; }
-    if (_pm.regenFlat > 0 && player.stats.hp > 0) { const b = player.stats.hp; player.stats.hp = Math.min(player.stats.maxHp, b + _pm.regenFlat); if (player.stats.hp > b) passiveLines += `\n🌿 Passive regen +${player.stats.hp - b} HP`; }
+    if (_pm.surviveLethal && player.stats.hp <= 0 && (!player._lethalUsedAt || Date.now() - player._lethalUsedAt > 2 * 3600e3)) { player.stats.hp = 1; player._lethalUsedAt = Date.now(); passiveLines += `\n🛡️ *Undying will!* You survive at 1 HP.`; }
+    if (_pm.reflect > 0 && monster.stats) { const r = Math.max(1, Math.floor(finalDmg * _pm.reflect / 100)); monster.stats.hp = Math.max(0, monster.stats.hp - r); passiveLines += `\n🔁 Reflected *${r}* damage back!`; }
+    if (_pm.regenFlat > 0 && player.stats.hp > 0) { const b = player.stats.hp; player.stats.hp = Math.min(_effMax(player), b + _pm.regenFlat); if (player.stats.hp > b) passiveLines += `\n💞 Regenerated *${player.stats.hp - b}* HP.`; }
+  }
+  // Push #94: temp reflect buffs bounce part of the hit too.
+  try { if (finalDmg > 0 && player.tempBuffs && player.tempBuffs.reflect && monster.stats) { const _rf = _UCm.reflectDamage(player, monster, finalDmg); if (_rf && _rf.back > 0) passiveLines += `\n${_rf.line}`; } } catch (e) {}
+  // Push #95: the ability's real effects — drain / lifesteal / self-buff / status.
+  let fxLines = '';
+  if (ability && player.stats.hp > 0) {
+    try { const fx = MSFX.apply(monster, player, ability, finalDmg); if (fx.lines.length) fxLines = '\n' + fx.lines.join('\n'); } catch (e) {}
   }
 
   let msg = `\n${FRAME}\n🔄 ${monster.name.toUpperCase()}'S TURN${mPro ? ' 💎' : ''}\n${FRAME}\n`;
-  msg += `${monster.emoji} ${monster.name} ${ability ? 'uses *' + ability + '*!' : 'attacks!'}\n💬 "${line}"\n${FRAME}\n`;
-  msg += `${_mCrit ? '💥 *CRITICAL HIT!* ' : ''}💥 You take *${finalDmg}* damage!${passiveLines}\n❤️ Your HP: ${Math.max(0, player.stats.hp)}/${player.stats.maxHp}\n${FRAME}`;
+  msg += `${monster.emoji} ${monster.name} ${abilityName ? 'uses *' + abilityName + '*!' : 'attacks!'}\n💬 "${line}"\n${FRAME}\n`;
+  msg += `${_mCrit ? '💥 *CRITICAL HIT!* ' : ''}💥 You take *${finalDmg}* damage!${_absLine}${passiveLines}${fxLines}\n❤️ Your HP: ${Math.max(0, player.stats.hp)}/${_effMax(player)}\n`;
+  // Push #95: DOMAINS — bosses and B-rank+ monsters may expand theirs.
+  try { const DS = require('../../rpg/utils/DomainSystem'); const arena = ctx && ctx.dungeon ? DS.arenaOf(ctx.dungeon) : null; if (arena) { const tl = DS.tick(arena); if (tl) msg += `\n${tl}\n`; const dl = DS.monsterTry(arena, monster, [player], { boss: !!monster.isBoss, rank: monster.rank }); if (dl) msg += `\n${dl}\n`; } } catch (e) {}
   return msg;
 }
 

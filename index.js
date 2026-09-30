@@ -601,6 +601,7 @@ const loadDatabase = (memDoc = null) => {
 };
 
 const getDatabase = () => database;
+try { require('./rpg/utils/JobSystem').setPlayerLookup((id) => (database && database.users) ? database.users[id] : null); } catch (e) {} // Push #95: pet/job hooks that only know a playerId
 try { require('./rpg/utils/ClassSystem').setDbProvider(getDatabase); } catch (e) {} // Push #94: unique Monster variants
 // Push #32: owner notice loop (L4 daily snapshot DM + degraded alarms).
 async function flushOwnerLoop() {

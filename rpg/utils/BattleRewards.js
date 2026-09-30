@@ -28,6 +28,21 @@ function giveBattleWinRewards(player, db, type='generic', baseLevel=1, sock=null
   aura = Math.floor(aura * mult * auraMult);
   pass = Math.floor(pass * mult);
   xp = Math.floor(xp * mult);
+  // Push #95: Dungeon Delver XP / Bounty Hunter reward multipliers + Job XP.
+  let jobLine = '';
+  try {
+    const JS = require('./JobSystem'); const jm = JS.mods(player);
+    if (jm.xpMult) xp = Math.floor(xp * (1 + jm.xpMult / 100));
+    if (jm.rewardMult) { aura = Math.floor(aura * (1 + jm.rewardMult / 100)); pass = Math.floor(pass * (1 + jm.rewardMult / 100)); }
+    const jr = JS.gainXp(player, JS.xpFor(type) * (opts.boss ? 2 : 1), type + '_win');
+    if (jr) {
+      player._lastJobXp = jr.gained;
+      if (jr.levelUp) {
+        jobLine = `🧭 *JOB LEVEL UP!* ${jr.name} → Job Lv.${jr.to} — *${jr.title}*`;
+        if (sock && chatId) { try { sock.sendMessage(chatId, { text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🧭 *JOB LEVEL UP!*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n👤 *${player.name}* — ${jr.name} reached *Job Lv.${jr.to}*\n⭐ New Job Level: *${jr.title}*\n_${(JS.BY_KEY[player.job.key] || {}).lore?.[jr.to - 1] || ''}_\n${JS.describeMods(JS.BY_KEY[player.job.key], jr.to).join('\n')}` }).catch(() => {}); } catch (e) {} }
+      }
+    }
+  } catch (e) {}
 
   // Aura with title routing — use addRawAura so title thresholds are checked cleanly
   try {
@@ -78,7 +93,7 @@ function giveBattleWinRewards(player, db, type='generic', baseLevel=1, sock=null
   player._lastAuraAdded = aura;
   player._lastXpAdded = xp;
 
-  return { aura, bp, pass, xp, pro, mult };
+  return { aura, bp, pass, xp, pro, mult, jobLine, jobXp: player._lastJobXp || 0 };
 }
 
 function formatRewards(win) {
@@ -88,7 +103,8 @@ function formatRewards(win) {
     `🎖️ Battle Pass XP: +${win.bp}${win.pro?' (2×)':''}`,
     `🌟 Astra Pass: +${win.pass}${win.pro?' (2×)':''}`,
     `✨ XP: +${win.xp}${win.pro?' (2×)':''} (general)`,
-  ].join('\n') + proTag;
+    win.jobXp ? `🧭 Job XP: +${win.jobXp}` : null,
+  ].filter(Boolean).join('\n') + proTag;
 }
 
 // Push #88t: GENERAL EXP ONLY (no aura / pass / BP) — paid to every other
@@ -97,7 +113,8 @@ function giveSharedExp(player, type='gate', baseLevel=1, sock=null, chatId=null)
   const pro = isPro(player);
   const mult = pro ? 2 : 1;
   const lvl = baseLevel || player.level || 1;
-  const xp = Math.floor(((type==='pvp'? 500 : 300) + lvl*30) * mult);
+  let xp = Math.floor(((type==='pvp'? 500 : 300) + lvl*30) * mult);
+  try { const JS = require('./JobSystem'); const jm = JS.mods(player); if (jm.xpMult) xp = Math.floor(xp * (1 + jm.xpMult / 100)); JS.gainXp(player, JS.xpFor('kill'), 'shared'); } catch (e) {} // Push #95: party members earn Job XP too
   player.xp = (player.xp||0) + xp;
   try { const LUM = require('./LevelUpManager'); LUM.checkAndApplyLevelUps(player, ()=>{}, sock, chatId); } catch(e){}
   return { xp, pro };

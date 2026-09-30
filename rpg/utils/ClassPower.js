@@ -292,6 +292,23 @@ function passiveMultipliers(player) {
     }
   } catch (e) {}
   for (const p of player.classSkills || []) if (String(p.type || '').toLowerCase() === 'passive') consider(p);
+  // Push #95: JOB modifiers ride on the same rails (real numbers, every engine).
+  try {
+    const JS = require('./JobSystem'); const jm = JS.mods(player);
+    for (const k of ['atk', 'def', 'speed', 'crit', 'dodge', 'dmgTaken', 'skillDmg', 'lifesteal', 'armorPen', 'reflect', 'healPower']) if (jm[k]) out[k] += jm[k];
+    if (jm.surviveLethal) out.surviveLethal = 1;
+    if (jm.regenPct && player.stats && player.stats.maxHp) out.regenFlat += Math.floor(player.stats.maxHp * jm.regenPct / 100);
+    if (jm.onHitStun) out.onHit.push({ type: 'stun', chance: jm.onHitStun, duration: 1 });
+    if (jm.momentumPerHit) { const hits = Math.min(10, Number(player._comboHits || 0)); if (hits > 0) out.atk += jm.momentumPerHit * hits; }
+    out.job = jm;
+  } catch (e) {}
+  // Push #95: temp buffs for the stats no engine read from tempBuffs before
+  // (domain / skill crit, lifesteal, armour pierce, speed) — atk/def/dodge/
+  // damageTaken are already read directly by the engines, so NOT repeated here.
+  try {
+    const UC = require('./UnifiedCombat');
+    for (const k of ['crit', 'lifesteal', 'armorPen', 'speed']) { const v = UC.tempBuffPct(player, k); if (v) out[k] += v; }
+  } catch (e) {}
   // Clamp to sane bounds.
   out.atk = Math.min(150, out.atk); out.def = Math.min(150, out.def); out.speed = Math.min(100, out.speed);
   out.crit = Math.min(60, out.crit); out.dodge = Math.min(40, out.dodge); out.dmgTaken = Math.max(-60, out.dmgTaken);

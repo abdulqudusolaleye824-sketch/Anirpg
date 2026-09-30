@@ -70,7 +70,17 @@ function trackAndNotify(player, type, amount = 1, sock = null, jid = null, chatI
       player.dailyQuests.quests.every(q => q.claimed)) {
     const streak = player.dailyQuests.streak || 0;
     txt += `🌟 *All 4 daily quests done!*\n`;
-    txt += `🔥 Streak: *${streak} day${streak===1?'':'s'}*\n\n`;
+    txt += `🔥 Streak: *${streak} day${streak===1?'':'s'}*\n`;
+    // Push #95: once per day — Instance Key roll (10%, job change must be open)
+    // and, for Pro hunters, the Blessed / Cursed box choice (buttons, in DM).
+    try {
+      const dk = player.dailyQuests.dayKey;
+      if (player._dailyDoneRewarded !== dk) {
+        const r = require('./InstanceDungeon').onDailyComplete(player, sock, jid, chatId);
+        if (r && r.lines && r.lines.length) txt += r.lines.join('\n') + `\n`;
+      }
+    } catch (e) {}
+    txt += `\n`;
   }
 
   if (!txt.trim()) return null;

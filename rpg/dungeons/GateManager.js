@@ -297,16 +297,22 @@ class GateManager {
     return loot;
   }
 
-  static rollMonsterKillDrop(rank, monsterName) {
+  static rollMonsterKillDrop(rank, monsterName, player = null) {
+    // Push #95: Treasure Hunter / Relic Hunter jobs raise the drop chance (and
+    // Treasure Hunter can upgrade a find one rank).
+    let _lc = 0, _rf = 0;
+    try { const JS = require('../utils/JobSystem'); if (player) { _lc = JS.mod(player, 'lootChance'); _rf = JS.mod(player, 'rareFind'); } } catch (e) {}
     // Push #71: bestiary monsters drop their own craft materials (45%).
     const sl = SL.SL_BY_NAME[monsterName] || SL.SL_BY_NAME[String(monsterName || '').replace(/^Elite\s+/i, '').replace(/\s+Soldier$/i, '')];
     if (sl) {
-      if (Math.random() > 0.45) return null;
+      if (Math.random() > 0.45 * (1 + _lc / 100)) return null;
       const name = sl.drops[Math.floor(Math.random() * sl.drops.length)];
       const rarity = { E: 'common', D: 'uncommon', C: 'rare', B: 'rare', A: 'epic', S: 'legendary' }[sl.rank] || 'common';
       return { name, type: 'material', source: 'monster', from: monsterName, rarity };
     }
-    const { drop, monster } = rollMonsterDrop(rank, monsterName);
+    let { drop, monster } = rollMonsterDrop(rank, monsterName);
+    if (!drop && _lc && Math.random() * 100 < _lc) ({ drop, monster } = rollMonsterDrop(rank, monsterName)); // second roll for hunters of treasure
+    if (drop && _rf && Math.random() * 100 < _rf) { try { const up = { E: 'D', D: 'C', C: 'B', B: 'A', A: 'S' }[rank]; if (up) { const r2 = rollMonsterDrop(up, monsterName); if (r2 && r2.drop) { drop = r2.drop; monster = r2.monster; } } } catch (e) {} }
     return drop ? { name: drop, type: 'material', source: 'monster', from: monster?.name || monsterName } : null;
   }
 
