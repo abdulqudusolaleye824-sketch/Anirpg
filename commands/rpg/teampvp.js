@@ -16,7 +16,8 @@ module.exports = {
   name: 'teampvp',
   aliases: ['teambattle', 'tpvp'],
   description: '🤝 Team PvP — up to 5 v 5, one-on-one bouts, optional switching, cumulative team record',
-  usage: '/teampvp <create|join a|b|start|switch n|status|leave|cancel|forfeit|record>',
+  usage: '/teampvp <create|join a|b|start|handicap on|off|switch n|status|leave|cancel|forfeit|record>',
+  subcommands: ['create', 'join a|b', 'start', 'handicap on|off', 'switch <n>', 'status', 'leave', 'cancel', 'forfeit', 'record'],
 
   async execute(sock, msg, args, getDatabase, saveDatabase, sender) {
     const chatId = msg.key?.remoteJid;
@@ -32,7 +33,7 @@ module.exports = {
 
     if (!sub || sub === 'help') {
       const st = TP.status(chatId, db);
-      return say([`🤝 *TEAM PVP* — up to ${TP.MAX_PER_TEAM} v ${TP.MAX_PER_TEAM}, fought one-on-one`, ``, `/teampvp create — open a lobby (Team A)`, `/teampvp join a|b — pick a side`, `/teampvp start — leader starts`, `/pvp attack · /pvp skill <name> — the active hunters fight`, `/teampvp switch <n> — (optional) swap in bench hunter #n; it uses your side's turn`, `/teampvp status · leave · cancel · forfeit · record`, ``, `When a hunter falls, the next one on that side steps in. Last team standing wins — every member's team record is updated.`, ...(st ? [``, st.text] : [])].join('\n'));
+      return say([`🤝 *TEAM PVP* — up to ${TP.MAX_PER_TEAM} v ${TP.MAX_PER_TEAM}, fought one-on-one`, ``, `/teampvp create — open a lobby (Team A)`, `/teampvp join a|b — pick a side`, `/teampvp start — leader starts (equal teams)`, `/teampvp handicap on|off — leader allows uneven teams (1 v 3, 2 v 5…); outnumbered side +${TP.HANDICAP_PCT_PER_MISSING}% ATK/DEF per missing hunter`, `/pvp attack · /pvp skill <name> — the active hunters fight`, `/teampvp switch <n> — (optional) swap in bench hunter #n; it uses your side's turn`, `/teampvp status · leave · cancel · forfeit · record`, ``, `When a hunter falls, the next one on that side steps in. Last team standing wins — every member's team record is updated.`, ...(st ? [``, st.text] : [])].join('\n'));
     }
 
     if (sub === 'create' || sub === 'new') {
@@ -55,6 +56,13 @@ module.exports = {
       const r = TP.leave(chatId, sender);
       if (!r.ok) return say(`❌ ${r.error}`);
       return say(r.lobby ? [`👋 *${player.name}* left the lobby.`, ``, TP.lobbyText(r.lobby, db)].join('\n') : '👋 Lobby closed — nobody left.');
+    }
+
+    if (sub === 'handicap' || sub === 'uneven') {
+      const v = String(args[1] || '').toLowerCase(); const on = v === 'on' || v === 'yes' || v === 'true' || v === '1' || (v === '' ? true : false);
+      const r = TP.setHandicap(chatId, sender, v === 'off' || v === 'no' || v === 'false' || v === '0' ? false : on);
+      if (!r.ok) return say(`❌ ${r.error}`);
+      return say([r.lobby.handicap ? `⚖️ *HANDICAP MATCH ENABLED* — uneven teams allowed (e.g. 1 v 3, 2 v 5). The outnumbered side gets *+${TP.HANDICAP_PCT_PER_MISSING}% ATK & DEF per missing hunter*.` : `⚖️ Handicap disabled — teams must be equal to start.`, ``, TP.lobbyText(r.lobby, db)].join('\n'));
     }
 
     if (sub === 'cancel') {
@@ -108,6 +116,6 @@ module.exports = {
       return;
     }
 
-    return say('❓ /teampvp <create|join a|b|start|switch n|status|leave|cancel|forfeit|record>');
+    return say('❓ /teampvp <create|join a|b|start|handicap on|off|switch n|status|leave|cancel|forfeit|record>');
   },
 };

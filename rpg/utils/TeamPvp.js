@@ -18,6 +18,7 @@
 const MAX_PER_TEAM = 5;
 const LOBBY_TTL_MS = 10 * 60 * 1000;
 const TURN_MS = 20000;
+const HANDICAP_PCT_PER_MISSING = 15; // outnumbered side: +15% ATK & DEF per missing hunter (handicap matches only)
 
 const lobbies = new Map();  // chatId → lobby
 const battles = new Map();  // battleId → battle
@@ -44,7 +45,7 @@ function inAnyTeam(jid) {
 function create(chatId, jid) {
   if (lobbyOf(chatId)) return { ok: false, error: 'A team battle lobby is already open here — /teampvp join a|b.' };
   if (inAnyTeam(jid) || battleOfPlayer(jid)) return { ok: false, error: 'You are already in a team battle.' };
-  const l = { chatId, leader: jid, A: [jid], B: [], createdAt: Date.now(), battleId: null };
+  const l = { chatId, leader: jid, A: [jid], B: [], createdAt: Date.now(), battleId: null, handicap: false };
   lobbies.set(chatId, l);
   return { ok: true, lobby: l };
 }
@@ -64,11 +65,19 @@ function leave(chatId, jid) {
   if (l.leader === jid) { if (l.A.length) l.leader = l.A[0]; else if (l.B.length) l.leader = l.B[0]; else lobbies.delete(chatId); }
   return { ok: true, lobby: lobbies.get(chatId) || null };
 }
+// Handicap matches: uneven teams allowed; the outnumbered side is boosted per missing hunter.
+function setHandicap(chatId, jid, on) {
+  const l = lobbyOf(chatId); if (!l) return { ok: false, error: 'No open lobby — /teampvp create first.' };
+  if (l.battleId) return { ok: false, error: 'That battle already started.' };
+  if (l.leader !== jid) return { ok: false, error: 'Only the lobby leader can toggle handicap.' };
+  l.handicap = !!on; return { ok: true, lobby: l };
+}
+function handicapPct(b, side) { const other = side === 'A' ? 'B' : 'A'; const miss = b[other].members.length - b[side].members.length; return b.handicap && miss > 0 ? miss * HANDICAP_PCT_PER_MISSING : 0; }
 function cancel(chatId) { const l = lobbies.get(chatId); if (l && !l.battleId) lobbies.delete(chatId); return !!l; }
 
 function lobbyText(l, db) {
   const side = (arr) => arr.length ? arr.map((j, i) => `  ${i + 1}. ${nameOf(db, j)}`).join('\n') : '  _(empty)_';
-  return [`🅰️ *TEAM A* (${l.A.length}/${MAX_PER_TEAM})`, side(l.A), ``, `🅱️ *TEAM B* (${l.B.length}/${MAX_PER_TEAM})`, side(l.B)].join('\n');
+  return [`🅰️ *TEAM A* (${l.A.length}/${MAX_PER_TEAM})`, side(l.A), ``, `🅱️ *TEAM B* (${l.B.length}/${MAX_PER_TEAM})`, side(l.B), ``, l.handicap ? `⚖️ Handicap: *ON* — uneven teams allowed, outnumbered side +${HANDICAP_PCT_PER_MISSING}% ATK/DEF per missing hunter` : `⚖️ Handicap: off — teams must be equal (/teampvp handicap on)`].join('\n');
 }
 
 // Start the battle: first hunter of each side steps in.
@@ -76,6 +85,7 @@ function start(chatId, jid, db) {
   const l = lobbyOf(chatId); if (!l) return { ok: false, error: 'No open lobby — /teampvp create first.' };
   if (l.leader !== jid) return { ok: false, error: `Only the lobby leader (${nameOf(db, l.leader)}) can start.` };
   if (!l.A.length || !l.B.length) return { ok: false, error: 'Both teams need at least one hunter.' };
+  if (!l.handicap && l.A.length !== l.B.length) return { ok: false, error: `Teams are uneven (${l.A.length} v ${l.B.length}). Even them out, or let the leader allow it: */teampvp handicap on*.` };
   for (const j of [...l.A, ...l.B]) {
     const p = db.users[j];
     if (!p) return { ok: false, error: `${bare(j)} is not registered.` };
@@ -84,7 +94,7 @@ function start(chatId, jid, db) {
   }
   const id = `tb${Date.now().toString(36)}${(++_seq).toString(36)}`;
   const b = {
-    id, chatId, startedAt: Date.now(), turn: 1,
+    id, chatId, startedAt: Date.now(), turn: 1, handicap: !!l.handicap,
     A: { members: [...l.A], fallen: [], active: l.A[0] },
     B: { members: [...l.B], fallen: [], active: l.B[0] },
   };
@@ -97,6 +107,8 @@ function start(chatId, jid, db) {
 function _arm(b, side, jid, oppJid, db, turn, pending) {
   const p = db.users[jid]; if (!p) return;
   p.pvpBattle = { opponentId: oppJid, turn, pendingAction: pending || null, teamBattleId: b.id, teamSide: side, turnExpiresAt: Date.now() + TURN_MS };
+  const hp = handicapPct(b, side);
+  if (hp > 0) { if (!p.tempBuffs) p.tempBuffs = {}; p.tempBuffs['Handicap:atk'] = { stat: 'atk', amount: hp, duration: 999 }; p.tempBuffs['Handicap:def'] = { stat: 'def', amount: hp, duration: 999 }; }
   try { require('./RegenManager').markCombatAction(p); } catch (e) {}
 }
 function sideOf(b, jid) { if (b.A.members.includes(jid)) return 'A'; if (b.B.members.includes(jid)) return 'B'; return null; }
@@ -138,7 +150,7 @@ function battleText(b, db) {
       return `  ${tag} ${nameOf(db, j)} — ${hp} HP`;
     }).join('\n');
   };
-  return [`🅰️ *TEAM A* — ${b.A.members.length - b.A.fallen.length} standing`, line('A'), ``, `🅱️ *TEAM B* — ${b.B.members.length - b.B.fallen.length} standing`, line('B'), ``, `⚔️ active · 🪑 bench · 💀 fallen`, `/pvp attack · /pvp skill <name> · /teampvp switch <n>`].join('\n');
+  return [...(b.handicap ? [`⚖️ *HANDICAP MATCH* ${b.A.members.length} v ${b.B.members.length}` + (handicapPct(b, 'A') ? ` — Team A +${handicapPct(b, 'A')}% ATK/DEF` : handicapPct(b, 'B') ? ` — Team B +${handicapPct(b, 'B')}% ATK/DEF` : ''), ``] : []), `🅰️ *TEAM A* — ${b.A.members.length - b.A.fallen.length} standing`, line('A'), ``, `🅱️ *TEAM B* — ${b.B.members.length - b.B.fallen.length} standing`, line('B'), ``, `⚔️ active · 🪑 bench · 💀 fallen`, `/pvp attack · /pvp skill <name> · /teampvp switch <n>`].join('\n');
 }
 
 // Called by the duel engine when a team fighter is knocked out / surrenders.
@@ -215,4 +227,4 @@ async function abandon(sock, chatId, jid, db, saveDatabase) {
 
 function recordText(p) { const r = ensureRecord(p); const t = r.wins + r.losses; return `🤝 *TEAM PVP RECORD*\n🏆 Wins: ${r.wins}\n💀 Losses: ${r.losses}\n👊 Knock-outs: ${r.kos || 0}\n🔥 Streak: ${r.streak || 0}\n📈 Win rate: ${t ? Math.round(r.wins / t * 100) : 0}%`; }
 
-module.exports = { MAX_PER_TEAM, create, join, leave, cancel, start, switchActive, status, onKnockout, abandon, recordText, lobbyText, battleText, battleOfPlayer, lobbyOf, ensureRecord, _battles: battles, _lobbies: lobbies };
+module.exports = { MAX_PER_TEAM, HANDICAP_PCT_PER_MISSING, setHandicap, handicapPct, create, join, leave, cancel, start, switchActive, status, onKnockout, abandon, recordText, lobbyText, battleText, battleOfPlayer, lobbyOf, ensureRecord, _battles: battles, _lobbies: lobbies };

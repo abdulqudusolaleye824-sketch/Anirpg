@@ -1,3 +1,8 @@
+## 1.0.129 — Push #96c: Team PvP handicap matches · /help updated
+
+- **`/teampvp handicap on|off`** (lobby leader): uneven teams allowed (1 v 3, 2 v 5 …). The outnumbered side gets **+15% ATK & DEF per missing hunter** for the whole match (shown in the lobby and the battle board). Without handicap, `/teampvp start` requires equal team sizes.
+- `/help` and `/help teampvp` list the full team-battle command set (create · join a|b · start · handicap · switch <n> · status · leave · cancel · forfeit · record).
+
 ## 1.0.128 — Push #96b: bots stop kicking each other · real /bots roster · /version owner-only
 
 - **Sibling bots are never moderated**: `ProGC.eligibility` now recognises our own linked bot numbers (PN + LID) → the dispatcher no longer kicks a freshly-added bot personality from the Pro GC as "not registered"; anti-link / slowmode strikes also skip sibling bots (owner-only powers unchanged).
