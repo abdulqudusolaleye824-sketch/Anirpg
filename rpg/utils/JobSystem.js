@@ -16,6 +16,8 @@
 const JOB_XP_PER_LEVEL = [0, 300, 900, 2000, 4000]; // cumulative XP to reach Job Lv 1..5 (Lv1 on take)
 
 // tier → per-Job-level scaling helper (L = 1..5)
+// Push #96: G(minLv, a, b) — a perk that only exists from Job level `minLv` (scales a→b from there to Lv5).
+const G = (minLv, a, b) => (lv) => { const l = Math.max(1, Math.min(5, lv)); if (l < minLv) return 0; return Math.round((a + (b - a) * ((l - minLv) / Math.max(1, 5 - minLv))) * 10) / 10; };
 const L = (a, b) => (lv) => Math.round((a + (b - a) * ((Math.max(1, Math.min(5, lv)) - 1) / 4)) * 10) / 10;
 
 const JOBS = [
@@ -26,15 +28,15 @@ const JOBS = [
   { key: 'brawler', name: 'Brawler', emoji: '👊', unlock: 10, tier: 'Street',
     levels: ['Street Fighter', 'Iron Fists', 'Counter Fighter', 'Unbreakable', 'Fighting Spirit'],
     lore: ['You learn to fight with nothing but your body, gaining improved effectiveness in close-range combat.', 'Repeated strikes build momentum, making consecutive attacks increasingly powerful.', 'Successfully avoiding or enduring an enemy attack creates an opening for a stronger counterattack.', 'Your resistance to knockback and interruption increases as you remain in close combat.', 'At maximum Job mastery, every exchange builds fighting spirit, allowing you to become more dangerous the longer the battle lasts.'],
-    mods: { atk: L(4, 12), momentumPerHit: L(1, 4), ccResist: L(5, 40), dmgTaken: L(-2, -10) } },
+    mods: { atk: L(4, 12), momentumPerHit: L(1, 4), counter: G(3, 15, 30), ccResist: L(5, 40), dmgTaken: L(-2, -10) } },
   { key: 'bounty_hunter', name: 'Bounty Hunter', emoji: '🏹', unlock: 15, tier: 'Street',
     levels: ['Contract Seeker', 'Tracker', 'Hunter\'s Mark', 'High Value Target', 'Master Hunter'],
     lore: ['You can accept hunting contracts and earn additional rewards for designated targets.', 'Marked targets become easier to locate and track across dangerous areas.', 'You can place a mark on a target, increasing your effectiveness against that specific enemy.', 'More difficult targets provide greater rewards when successfully defeated.', 'You become a professional target hunter capable of taking contracts against exceptionally powerful enemies.'],
-    mods: { rewardMult: L(10, 40), vsElite: L(5, 25), crit: L(2, 8) } },
+    mods: { rewardMult: L(10, 40), mark: G(3, 10, 25), vsElite: L(5, 25), crit: L(2, 8) } },
   { key: 'beast_tamer', name: 'Beast Tamer', emoji: '🐾', unlock: 20, tier: 'Street',
     levels: ['Beast Whisperer', 'Companion Bond', 'Pack Bond', 'Alpha Tamer', 'Beastmaster'],
     lore: ['You gain the ability to form stronger bonds with tameable creatures.', 'Your bonded beast becomes stronger and gains improved loyalty.', 'Multiple bonded creatures can cooperate more effectively during encounters.', 'Rare and powerful beasts become more willing to recognize you as their master.', 'Your bond with creatures reaches its peak, allowing you to command exceptionally powerful companions.'],
-    mods: { petPower: L(10, 50), petHeal: L(5, 25), bondGain: L(10, 50) } },
+    mods: { petPower: L(10, 50), petHeal: L(5, 25), bondGain: L(10, 50), rareHatch: G(4, 25, 50) } },
   { key: 'alchemist', name: 'Alchemist', emoji: '⚗️', unlock: 25, tier: 'Professional',
     levels: ['Apprentice Alchemist', 'Refined Mixtures', 'Advanced Alchemy', 'Master Formula', 'Philosopher\'s Hand'],
     lore: ['You learn to create basic potions and consumable mixtures.', 'Your creations become more potent and waste less material.', 'You gain access to stronger potions, catalysts, and specialized mixtures.', 'You can create rare compounds with powerful temporary effects.', 'Your mastery of alchemy allows you to create extraordinary mixtures from rare materials.'],
@@ -102,7 +104,7 @@ const JOBS = [
 ];
 const BY_KEY = Object.fromEntries(JOBS.map(j => [j.key, j]));
 
-const MOD_LABEL = { atk: 'ATK', def: 'DEF', speed: 'SPD', crit: 'Crit', dodge: 'Dodge', dmgTaken: 'Damage taken', skillDmg: 'Skill damage', lifesteal: 'Lifesteal', armorPen: 'Armor pierce', reflect: 'Reflect', healPower: 'Heal power', vsLowHp: 'Damage vs prey under 35% HP', packBonus: 'Damage when an ally already engaged the target', momentumPerHit: 'ATK per consecutive hit (max 10)', ccResist: 'Resist stun/freeze/paralyze', rewardMult: 'Win rewards', vsElite: 'Damage vs elites & bosses', petPower: 'Pet ATK/DEF', petHeal: 'Support-pet heals', bondGain: 'Pet bond gain', potionPower: 'Potion strength', craftDiscount: 'Crafting material cost', gearBonus: 'Equipped gear stats', durabilitySave: 'Chance to skip durability loss', statusChance: 'Status proc chance', lootChance: 'Loot drop chance', nexusMult: 'Nexus from wins', rareFind: 'Rare-drop upgrade chance', xpMult: 'XP from wins', regenPct: 'HP regen per turn (% max HP)', artifactBonus: 'Artifact stats', monsterDmgTaken: 'Damage taken from beasts/monsters', fearImmune: 'Immune to FEAR', onHitStun: 'Chance to STUN on hit', energyDiscount: 'Skill energy cost', shieldBreak: 'Damage vs shields', surviveLethal: 'Survive a lethal blow (1/2h)' };
+const MOD_LABEL = { rareHatch: 'Chance an egg hatch re-rolls and keeps the rarer beast', counter: 'Counter damage (next hit after being struck or dodging)', mark: "Hunter's Mark — damage vs your first-engaged target", atk: 'ATK', def: 'DEF', speed: 'SPD', crit: 'Crit', dodge: 'Dodge', dmgTaken: 'Damage taken', skillDmg: 'Skill damage', lifesteal: 'Lifesteal', armorPen: 'Armor pierce', reflect: 'Reflect', healPower: 'Heal power', vsLowHp: 'Damage vs prey under 35% HP', packBonus: 'Damage when an ally already engaged the target', momentumPerHit: 'ATK per consecutive hit (max 10)', ccResist: 'Resist stun/freeze/paralyze', rewardMult: 'Win rewards', vsElite: 'Damage vs elites & bosses', petPower: 'Pet ATK/DEF', petHeal: 'Support-pet heals', bondGain: 'Pet bond gain', potionPower: 'Potion strength', craftDiscount: 'Crafting material cost', gearBonus: 'Equipped gear stats', durabilitySave: 'Chance to skip durability loss', statusChance: 'Status proc chance', lootChance: 'Loot drop chance', nexusMult: 'Nexus from wins', rareFind: 'Rare-drop upgrade chance', xpMult: 'XP from wins', regenPct: 'HP regen per turn (% max HP)', artifactBonus: 'Artifact stats', monsterDmgTaken: 'Damage taken from beasts/monsters', fearImmune: 'Immune to FEAR', onHitStun: 'Chance to STUN on hit', energyDiscount: 'Skill energy cost', shieldBreak: 'Damage vs shields', surviveLethal: 'Survive a lethal blow (1/2h)' };
 const NEG_GOOD = new Set(['dmgTaken', 'craftDiscount', 'monsterDmgTaken', 'energyDiscount']);
 
 function findJob(q) {
@@ -192,9 +194,15 @@ function targetMult(player, target, ctx = {}) {
   if (m.vsElite && (target.elite || target.isBoss || target.boss || ctx.boss)) mult *= 1 + m.vsElite / 100;
   if (m.packBonus && (ctx.engagedByAlly || (target.lastHitBy && target.lastHitBy !== (player.jid || player.id)))) mult *= 1 + m.packBonus / 100;
   if (m.shieldBreak && target.tempBuffs && target.tempBuffs.shield) mult *= 1 + m.shieldBreak / 100;
+  // Push #96: Bounty Hunter's Mark — the first enemy you engage in a fight is marked; you hit it harder.
+  if (m.mark) { const pid = player.jid || player.id || player.name; if (!target._bountyMark) target._bountyMark = pid; if (target._bountyMark === pid) mult *= 1 + m.mark / 100; }
+  // Push #96: Brawler counter — after being struck or dodging, the next attack hits harder (consumed here).
+  if (m.counter && player._counterReady) { mult *= 1 + m.counter / 100; player._counterReady = false; }
   return mult;
 }
 // Combat bookkeeping: consecutive-hit momentum (Brawler) resets on miss.
+// Combat bookkeeping: the player was struck / dodged → counter window opens (Brawler Lv3+).
+function noteStruck(player) { if (player && player.job) player._counterReady = true; }
 function noteHit(player, landed) { if (!player) return; player._comboHits = landed ? Math.min(10, (Number(player._comboHits) || 0) + 1) : 0; }
 
 // Some engines (PetManager) only know a playerId — index.js registers a lookup.
@@ -202,6 +210,7 @@ let _lookup = null;
 function setPlayerLookup(fn) { _lookup = typeof fn === 'function' ? fn : null; }
 function byId(id) { try { return _lookup ? _lookup(id) : null; } catch (e) { return null; } }
 function petMult(playerId) { const p = byId(playerId); return p ? 1 + mod(p, 'petPower') / 100 : 1; }
+function bondMult(playerId) { const p = playerId && typeof playerId === 'object' ? playerId : byId(playerId); return p ? 1 + mod(p, 'bondGain') / 100 : 1; } // Push #96: Beast Tamer bonds faster
 function petHealMult(playerId) { const p = byId(playerId); return p ? 1 + mod(p, 'petHeal') / 100 : 1; }
 
-module.exports = { setPlayerLookup, byId, petMult, petHealMult, targetMult, noteHit, JOBS, BY_KEY, JOB_XP_PER_LEVEL, MOD_LABEL, findJob, ensure, current, level, available, isAvailable, mods, mod, gainXp, xpFor, xpToNext, setJob, describeMods, card };
+module.exports = { setPlayerLookup, byId, petMult, petHealMult, bondMult, noteStruck, targetMult, noteHit, JOBS, BY_KEY, JOB_XP_PER_LEVEL, MOD_LABEL, findJob, ensure, current, level, available, isAvailable, mods, mod, gainXp, xpFor, xpToNext, setJob, describeMods, card };

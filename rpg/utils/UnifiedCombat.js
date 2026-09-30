@@ -510,7 +510,11 @@ async function playTurn(sock, chatId, o) {
   try { if ((move.buffs || []).length || (move.selfDebuffs || []).length) _buffNotes = applyMoveBuffs({ ...move, debuffs: [] }, attacker, defender); } catch (e) {}
   const result = o.result || calcMoveDamage(attacker, defender, move);
   let statusApplied = null;
+  // Push #96: Brawler momentum counts in duels/dungeons too (resets on a miss); mark the target for pack bonuses.
+  try { const JS = require('./JobSystem'); JS.noteHit(attacker, !result.missed && (result.damage || 0) > 0); if (result.dodged || (!result.missed && (result.damage || 0) > 0)) JS.noteStruck(defender); if (!result.missed && (result.damage || 0) > 0 && defender) defender.lastHitBy = attacker.jid || attacker.id || defender.lastHitBy; } catch (e) {}
   if (!result.missed && (result.damage || 0) > 0) {
+    // Push #96: job on-hit procs (Brawler Iron Fist stun) — same in PvP and dungeons.
+    try { const pm = require('./ClassPower').passiveMultipliers(attacker); for (const oh of (pm.onHit || [])) { if (!oh || Math.random() * 100 > (oh.chance || 0)) continue; const got = tryApplyEffect({ id: 'job', effect: { type: oh.type, chance: 100, duration: oh.duration || 1 } }, attacker, defender); if (got && !statusApplied) statusApplied = got; } } catch (e) {}
     // Push #93: shields (Bone Wall …) really absorb now.
     try {
       if (result.preAbsorbed) { if (result.absorbedNote) _buffNotes.push(result.absorbedNote); }

@@ -130,6 +130,7 @@ function executeMonsterAI(monster, player, ctx = null) {
   // Push #88: class passives — damage taken reduction, survive-lethal, regen, reflect.
   let _pm = null; try { _pm = require('../../rpg/utils/ClassPower').passiveMultipliers(player); } catch (e) {}
   if (_pm && _pm.dmgTaken) finalDmg = Math.max(1, Math.floor(finalDmg * (1 + _pm.dmgTaken / 100)));
+  try { require('../../rpg/utils/JobSystem').noteStruck(player); } catch (e) {} // Push #96: Brawler counter window
   if (_pm && _pm.job && _pm.job.monsterDmgTaken) finalDmg = Math.max(1, Math.floor(finalDmg * (1 + _pm.job.monsterDmgTaken / 100))); // Push #95: Beast King
   try { finalDmg = Math.max(1, Math.floor(finalDmg * (1 + _UCm.tempBuffPct(player, 'damageTaken') / 100) * _UCm.weakenTakenMult(player))); } catch (e) {} // Push #95: damage-taken buffs/debuffs + WEAKEN
   // Push #93/#94: Bone Wall / shields absorb before HP.
@@ -811,7 +812,7 @@ module.exports = {
           let rewardLine = '';
           if (dunSd) {
             const rewards = DungeonManager.getFloorRewards(dunSd.currentFloor, player.level, dunSd.currentFloor % 5 === 0);
-            dunSd.totalNexus += Math.floor(rewards.gold);
+            dunSd.totalNexus += Math.floor(rewards.gold * (1 + (require('../../rpg/utils/JobSystem').mod(player, 'nexusMult') || 0) / 100)); // Push #96: Treasure Hunter
             dunSd.totalCrystals += Math.floor(rewards.crystals || 0);
             dunSd.awaitingAdvance = true;
             // Unified battle win rewards (aura/BP/pass/XP)
@@ -1222,7 +1223,7 @@ module.exports = {
           const isBossSk = sd.currentFloor % 5 === 0;
           const rewards  = DungeonManager.getFloorRewards(sd.currentFloor, player.level, isBossSk);
           const xpGain   = Math.floor(rewards.xp);
-          const goldGain = Math.floor(rewards.gold);
+          const goldGain = Math.floor(rewards.gold * (1 + (require('../../rpg/utils/JobSystem').mod(player, 'nexusMult') || 0) / 100)); // Push #96: Treasure Hunter
           const crysGain = Math.floor(rewards.crystals || 0);
           sd.totalXp += xpGain; sd.totalNexus += goldGain; sd.totalCrystals += crysGain;
 

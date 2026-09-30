@@ -841,6 +841,7 @@ module.exports = async (sock, msg, messageText, config, getDatabase, saveDatabas
   if (chatId.endsWith('@g.us') && db.community) {
     const COMMAND_GROUP_MAP = {
       pvp:       'pvp',
+      teampvp:   'pvp', // Push #96
       casino:    'casino',
       dungeon:   'dungeon',
       coop:      'dungeon',

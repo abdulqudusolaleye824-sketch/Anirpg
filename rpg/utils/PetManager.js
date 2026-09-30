@@ -112,7 +112,16 @@ class PetManager {
     if (pd.pets.length >= 20) return { success: false, message: '❌ Pet storage full! (Max 20)' };
     const eggInst = pd.eggs[eggIndex];
     // Push #74: bred eggs carry a fixed species (lineage) — honour it.
-    const template = (eggInst.bred && eggInst.childId && PET_DATABASE[eggInst.childId]) ? PET_DATABASE[eggInst.childId] : hatchEgg(eggInst.eggId);
+    let template = (eggInst.bred && eggInst.childId && PET_DATABASE[eggInst.childId]) ? PET_DATABASE[eggInst.childId] : hatchEgg(eggInst.eggId);
+    // Push #96: Beast Tamer Lv4+ — rare beasts recognise you: roll again and keep the rarer hatch.
+    try {
+      const JS = require('./JobSystem'); const owner = JS.byId(playerId); const rh = owner ? JS.mod(owner, 'rareHatch') : 0;
+      if (rh && !eggInst.bred && template && Math.random() * 100 < rh) {
+        const R = { common: 1, uncommon: 2, rare: 3, epic: 4, legendary: 5, mythic: 6 };
+        const alt = hatchEgg(eggInst.eggId);
+        if (alt && (R[String(alt.rarity).toLowerCase()] || 0) > (R[String(template.rarity).toLowerCase()] || 0)) { template = alt; this._lastRareHatch = true; }
+      }
+    } catch (e) {}
     if (!template) return { success: false, message: '❌ Egg hatching failed!' };
     const newPet = this.createPet(template);
     if (eggInst.bred) { newPet.lineage = eggInst.parents || null; newPet.hybrid = !!eggInst.mixed; }
@@ -239,7 +248,8 @@ class PetManager {
     }
 
     const isPreferred = Array.isArray(food.types) && food.types.includes((pet.type || '').toLowerCase());
-    const bondingGain = isPreferred ? food.bondingBonus * 2 : food.bondingBonus;
+    let bondingGain = isPreferred ? food.bondingBonus * 2 : food.bondingBonus;
+    try { bondingGain = Math.max(1, Math.round(bondingGain * require('./JobSystem').bondMult(playerId))); } catch (e) {} // Push #96: Beast Tamer
     const xpGain      = isPreferred ? Math.floor(food.xpBonus * 1.5) : food.xpBonus;
 
     pet.hunger    = Math.max(0, pet.hunger - food.hungerRestore);
@@ -264,7 +274,8 @@ class PetManager {
     const pet = pd.pets.find(p => p.instanceId === petInstanceId);
     if (!pet) return { success: false, message: '❌ Pet not found!' };
     if ((pet.hunger || 0) >= 80) return { success: false, message: `❌ ${pet.name} is too hungry to play! Feed it first.` };
-    const gain = 3 + Math.floor(Math.random() * 4);
+    let gain = 3 + Math.floor(Math.random() * 4);
+    try { gain = Math.max(1, Math.round(gain * require('./JobSystem').bondMult(playerId))); } catch (e) {} // Push #96: Beast Tamer
     pet.bonding = Math.min(100, (pet.bonding || 0) + gain);
     pet.happiness = Math.min(100, (pet.happiness || 0) + 10);
     pet.hunger = Math.min(100, (pet.hunger || 0) + 5);

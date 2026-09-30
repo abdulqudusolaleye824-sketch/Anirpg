@@ -205,6 +205,8 @@ class ImprovedCombat {
     // Apply active DEF debuffs on defender
     let _defArtBonus = ArtifactSystem?.getEquippedArtifactStats ? ArtifactSystem.getEquippedArtifactStats(defender) : { def: 0 };
     let effectiveDef = (defender.stats?.def || 0) + (_defArtBonus.def || 0);
+    // Push #96 (PvP parity): the defender's DEF buffs/debuffs (monster shells, domain debuffs, Hunter's Mark…) count here too.
+    try { effectiveDef = Math.max(0, Math.floor(effectiveDef * (1 + require('./UnifiedCombat').tempBuffPct(defender, 'def') / 100))); } catch (e) {}
     if (Array.isArray(defender.debuffs)) {
       for (const db of defender.debuffs) {
         if (db.stat === 'def') effectiveDef = Math.max(0, Math.floor(effectiveDef * (1 - db.amount / 100)));
@@ -216,6 +218,11 @@ class ImprovedCombat {
     const defReductionPct = Math.min(0.70, defRatio) * penFactor;
     const defReduction = Math.floor(baseDamage * defReductionPct);
     baseDamage = Math.max(parsedEffects.damage ? 5 : 0, baseDamage - defReduction);
+    // Push #96 (PvP parity): WEAKEN / damage-taken debuffs on the target, job prey/elite/pack bonuses.
+    if (baseDamage > 0) {
+      try { const UCp = require('./UnifiedCombat'); baseDamage = Math.max(1, Math.floor(baseDamage * UCp.weakenTakenMult(defender) * (1 + UCp.tempBuffPct(defender, 'damageTaken') / 100))); } catch (e) {}
+      try { baseDamage = Math.max(1, Math.floor(baseDamage * require('./JobSystem').targetMult(attacker, defender, { boss: !!defender.isBoss }))); } catch (e) {}
+    }
 
     // ── Apply all effects ─────────────────────────────────────
     const effectResult = EffectParser.applyEffects(
@@ -231,6 +238,34 @@ class ImprovedCombat {
 
     // Push #88o: dodged → no damage, no on-hit statuses; cooldown already spent.
     if (_monDodged) { finalDamage = 0; isCrit = false; try { parsedEffects.statusEffects = []; } catch (e) {} }
+    try { require('./JobSystem').noteHit(attacker, !_monDodged && finalDamage > 0); if (!_monDodged && finalDamage > 0) defender.lastHitBy = attacker.jid || attacker.id || defender.lastHitBy; } catch (e) {}
+    // Push #96 (PvP parity): the catalog contract — structured statuses (same chance as the duel),
+    // stat buffs/debuffs/self-debuffs on the move, and passive lifesteal — apply in dungeons too.
+    if (!_monDodged && entry) {
+      try {
+        const UCp = require('./UnifiedCombat');
+        if (finalDamage > 0) {
+          for (const st of (entry.statuses || [])) {
+            if (!st || !st.type) continue;
+            const t = String(st.type).toLowerCase();
+            if ((defender.statusEffects || []).some(e => String(e.type || '').toLowerCase() === t)) continue;
+            let ch = Number(st.chance ?? 60);
+            try { const sc = require('./JobSystem').mod(attacker, 'statusChance'); if (sc) ch = ch * (1 + sc / 100); } catch (e) {}
+            if (Math.random() * 100 > ch) continue;
+            const dur = Math.max(2, Number(st.duration) || 2);
+            if (StatusEffectManager.applyEffect(defender, t, dur)) _hpxLines.push(`☠️ ${defender.name || 'Target'} is ${t.toUpperCase()} (${dur}t)`);
+          }
+        }
+        const notes = UCp.applyMoveBuffs({ name: entry.name, buffs: entry.buffs || [], debuffs: finalDamage > 0 ? (entry.debuffs || []) : [], selfDebuffs: entry.selfDebuffs || [] }, attacker, defender);
+        if (notes && notes.length) _hpxLines = _hpxLines.concat(notes);
+        if (finalDamage > 0) {
+          const pm = require('./ClassPower').passiveMultipliers(attacker);
+          for (const oh of (pm.onHit || [])) { if (!oh || Math.random() * 100 > (oh.chance || 0)) continue; if (StatusEffectManager.applyEffect(defender, oh.type, oh.duration || 1)) _hpxLines.push(`👊 ${defender.name || 'Target'} is ${String(oh.type).toUpperCase()}!`); }
+          const ls = ((attacker.stats.lifesteal || 0) + (pm.lifesteal || 0)) / 100;
+          if (ls > 0 && !parsedEffects.special.some(s => s.type === 'lifesteal')) { let max = attacker.stats.maxHp || 100; try { max = require('./GearSystem').effectiveMaxHp(attacker) || max; } catch (e) {} const b = attacker.stats.hp; attacker.stats.hp = Math.min(max, b + Math.floor(finalDamage * ls)); if (attacker.stats.hp > b) _hpxLines.push(`🩸 Lifesteal +${attacker.stats.hp - b} HP`); }
+        }
+      } catch (e) {}
+    }
     // Apply damage to defender
     if (finalDamage > 0) {
       defender.stats.hp = Math.max(0, defender.stats.hp - finalDamage);

@@ -192,7 +192,7 @@ function act(player, skillQuery) {
     { const b = player.stats.hp; player.stats.hp = Math.min(_max(player), b + Math.floor(_max(player) * (m.isBoss ? 0.35 : 0.2))); if (player.stats.hp > b) lines.push(`💞 You catch your breath: +${player.stats.hp - b} HP`); }
     inst.floor++; inst.monster = makeMonster(player, inst.floor);
     lines.push(`➡️ *Floor ${inst.floor}* — ${inst.monster.emoji} *${inst.monster.name}* [${inst.monster.rank}] HP ${inst.monster.stats.maxHp}${inst.monster.isBoss ? ' · 👑 BOSS' : ''}${!inst.passed ? ` · target floor ${inst.target}` : ''}`);
-    return { ok: true, lines, floorCleared: true, ended: false };
+    return { ok: true, lines, floorCleared: true, bossKill: !!m.isBoss, ended: false };
   }
   // Monster turn
   const mc = UC.canAct ? UC.canAct(m) : { canAct: true };
@@ -215,6 +215,7 @@ function act(player, skillQuery) {
     else {
       let dmg = Math.max(Math.floor(_max(player) * 0.03), Math.floor(mAtk * (c ? c.mult : 1) * (0.85 + Math.random() * 0.3)) - Math.floor(pDef * 0.4));
       dmg = Math.floor(dmg * (1 + (pm.dmgTaken || 0) / 100) * (1 + (pm.job && pm.job.monsterDmgTaken || 0) / 100));
+      try { require('./JobSystem').noteStruck(player); } catch (e) {} // Push #96: Brawler counter window
       try { dmg = Math.floor(dmg * (1 + UC.tempBuffPct(player, 'damageTaken') / 100) * UC.weakenTakenMult(player)); } catch (e) {}
       try { const NX = require('./Necromancy'); const ab = NX.absorb(player, dmg); if (ab.absorbed > 0) { dmg = ab.dmg; lines.push(NX.shieldLine(ab, player.name) || `🛡️ Absorbed ${ab.absorbed}`); } } catch (e) {}
       player.stats.hp = Math.max(0, player.stats.hp - dmg);

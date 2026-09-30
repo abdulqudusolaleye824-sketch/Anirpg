@@ -98,7 +98,8 @@ function feedPet(pet, foodQuality = 'basic') {
   if (!pet) return { success: false, error: 'No active pet.' };
 
   const hungerReduction = { basic: 30, premium: 55, legendary: 100 }[foodQuality] || 30;
-  const bondingGain     = { basic: 2,  premium: 5,  legendary: 10  }[foodQuality] || 2;
+  let bondingGain     = { basic: 2,  premium: 5,  legendary: 10  }[foodQuality] || 2;
+  try { bondingGain = Math.max(1, Math.round(bondingGain * require('./JobSystem').bondMult(pet.ownerId || pet.owner))); } catch (e) {} // Push #96: Beast Tamer
 
   pet.hunger  = Math.max(0, (pet.hunger || 0) - hungerReduction);
   pet.bonding = Math.min(100, (pet.bonding || 0) + bondingGain);
@@ -117,7 +118,8 @@ function playWithPet(pet) {
   if (!pet) return { success: false, error: 'No active pet.' };
   if ((pet.hunger || 0) >= 80) return { success: false, error: `${pet.name || 'Your pet'} is too hungry to play! Feed it first.` };
 
-  const gain   = 3 + Math.floor(Math.random() * 4); // 3–6
+  let gain   = 3 + Math.floor(Math.random() * 4); // 3–6
+  try { gain = Math.max(1, Math.round(gain * require('./JobSystem').bondMult(pet.ownerId || pet.owner))); } catch (e) {}
   pet.bonding  = Math.min(100, (pet.bonding || 0) + gain);
   pet.hunger   = Math.min(100, (pet.hunger || 0) + 5); // playing makes them a bit hungry
 
@@ -127,7 +129,8 @@ function playWithPet(pet) {
 // ── Battle bonding gain ───────────────────────────────────────────────────────
 function onBattleWithPet(pet) {
   if (!pet) return;
-  const gain = pet.hunger < 50 ? 2 : 1;
+  let gain = pet.hunger < 50 ? 2 : 1;
+  try { gain = Math.max(1, Math.round(gain * require('./JobSystem').bondMult(pet.ownerId || pet.owner))); } catch (e) {}
   pet.bonding = Math.min(100, (pet.bonding || 0) + gain);
   pet.battles = (pet.battles || 0) + 1;
 }

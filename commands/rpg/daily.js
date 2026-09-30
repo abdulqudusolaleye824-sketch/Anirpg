@@ -110,7 +110,11 @@ module.exports = {
       const CMw = require('../../rpg/utils/GuildContractManager');
       const _wk = CMw.weekKey(now);
       if (player.dailyWeek && player.dailyWeek.key === _wk) player.dailyWeek.count = (player.dailyWeek.count || 0) + 1;
-      else player.dailyWeek = { key: _wk, count: 1 };
+      else player.dailyWeek = { key: _wk, count: 1, prev: player.dailyWeek && player.dailyWeek.key ? { key: player.dailyWeek.key, count: player.dailyWeek.count || 0 } : null };
+      // Push #96: exact claim log — the payroll counts claims inside the PAY PERIOD
+      // (the week that just ended), not the fresh week the payday lands in.
+      if (!Array.isArray(player.dailyClaimLog)) player.dailyClaimLog = [];
+      player.dailyClaimLog.push(now); if (player.dailyClaimLog.length > 30) player.dailyClaimLog = player.dailyClaimLog.slice(-30);
     } catch (e) {}
     // Daily Quest System: only tick Devoted quest on successful claim (not on Already Claimed)
     try { const { trackAndNotify } = require('../../rpg/utils/QuestDispatcher'); trackAndNotify(player, 'daily', 1, sock, sender, chatId); } catch(e){}

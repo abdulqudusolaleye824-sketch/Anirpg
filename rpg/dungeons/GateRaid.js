@@ -222,6 +222,7 @@ function monsterDamage(monster, def, player = null) {
       const floorDmg = Math.max(3, Math.floor((player.stats?.maxHp || 100) * 0.04));
       let raw = Math.max(floorDmg, mAtk - soak);
       raw = raw * (0.8 + Math.random() * 0.4) * UC.weakenTakenMult(player) * (1 + (pm.dmgTaken || 0) / 100);
+      try { require('../utils/JobSystem').noteStruck(player); } catch (e) {} // Push #96: Brawler counter window
       try { raw = raw * (1 + UC.tempBuffPct(player, 'damageTaken') / 100); } catch (e) {} // Push #95: damage-taken buffs/debuffs (domains, skills)
       if (pm.job && pm.job.monsterDmgTaken) raw = raw * (1 + pm.job.monsterDmgTaken / 100); // Push #95: Beast King
       try { raw = raw / (require('../utils/PetManager').lastGiftMultiplier(player) || 1); } catch (e) {}

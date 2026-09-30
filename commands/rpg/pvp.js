@@ -167,7 +167,8 @@ module.exports = {
         return sock.sendMessage(chatId, { text: '❌ Challenger is no longer available.' }, { quoted: msg });
       }
 
-      if (challenger.pvpBattle || player.pvpBattle) {
+      let _inTeam = false; try { const TP = require('../../rpg/utils/TeamPvp'); _inTeam = !!(TP.battleOfPlayer(sender) || TP.battleOfPlayer(challenge.challengerId)); } catch (e) {} // Push #96: benched team fighters can't start side duels
+      if (challenger.pvpBattle || player.pvpBattle || _inTeam) {
         saveDatabase();
         return sock.sendMessage(chatId, { text: '❌ One of the players is already in a battle!' }, { quoted: msg });
       }
@@ -285,6 +286,11 @@ module.exports = {
 
       const oppId = player.pvpBattle.opponentId;
       const opp = db.users?.[oppId];
+      // Push #96: surrendering inside a TEAM battle only knocks YOU out — your bench fights on.
+      if (player.pvpBattle.teamBattleId && opp) {
+        await sock.sendMessage(chatId, { text: `🏳️ *${getPlayerName(player)}* surrenders the bout to *${getPlayerName(opp)}*!` }, { quoted: msg });
+        return require('../../rpg/utils/TeamPvp').onKnockout(sock, chatId, opp, player, oppId, sender, db, saveDatabase, '');
+      }
 
       player.pvpBattle = null;
       if (opp) opp.pvpBattle = null;
@@ -993,6 +999,10 @@ function _busyElsewhere(pl, db) {
   } catch (e) { return null; }
 }
 function handlePvpVictory(sock, chatId, winner, loser, wId, lId, db, saveDatabase, turns, lastTurnText) {
+  // Push #96: TEAM battle — a knock-out brings the next hunter in instead of ending the fight.
+  if ((loser && loser.pvpBattle && loser.pvpBattle.teamBattleId) || (winner && winner.pvpBattle && winner.pvpBattle.teamBattleId)) {
+    return require('../../rpg/utils/TeamPvp').onKnockout(sock, chatId, winner, loser, wId, lId, db, saveDatabase, lastTurnText).catch(e => console.error('[teampvp ko]', e.message));
+  }
   const FRAME = pvpFrame(winner, loser);
   const winnerName = getPlayerName(winner, 'Winner');
   const loserName  = getPlayerName(loser, 'Loser');
@@ -1138,3 +1148,4 @@ function handlePvpVictory(sock, chatId, winner, loser, wId, lId, db, saveDatabas
 
 // Test hook (no prod effect): exposes the victory resolver to harnesses.
 module.exports._handlePvpVictory = handlePvpVictory;
+module.exports._resolveTurn = resolveTurn; // Push #96: team battles resolve through the same engine

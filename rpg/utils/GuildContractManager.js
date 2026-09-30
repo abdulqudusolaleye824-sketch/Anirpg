@@ -319,9 +319,30 @@ function weekKey(now = Date.now()) {
 
 // How many /daily claims the player logged in the CURRENT WAT week.
 // (daily.js maintains player.dailyWeek = { key, count } on every claim.)
-function weeklyDailyClaims(player, now = Date.now()) {
+function weeklyDailyClaims(player, now = Date.now(), periodEnd = null) {
+  if (!player) return 0;
   const wk = weekKey(now);
-  return (player && player.dailyWeek && player.dailyWeek.key === wk) ? (player.dailyWeek.count || 0) : 0;
+  let n = (player.dailyWeek && player.dailyWeek.key === wk) ? (player.dailyWeek.count || 0) : 0;
+  // Push #96: payday usually lands at the START of a new week — the old counter
+  // had already reset, so a hunter with a 5-day streak showed "1/3". Count the
+  // claims that fall inside the 7-day pay period that just ended.
+  try {
+    const end = Number(periodEnd) || now;
+    const start = end - 7 * 86400000;
+    if (Array.isArray(player.dailyClaimLog) && player.dailyClaimLog.length) {
+      const inPeriod = player.dailyClaimLog.filter(t => t > start && t <= end + 60000).length;
+      n = Math.max(n, inPeriod);
+    }
+    // Previous-week counter (rolled over on the first claim of a new week).
+    if (player.dailyWeek && player.dailyWeek.prev && player.dailyWeek.prev.count) {
+      const pk = weekKey(end - 1);
+      if (player.dailyWeek.prev.key === pk || player.dailyWeek.key === pk) n = Math.max(n, player.dailyWeek.key === pk ? (player.dailyWeek.count || 0) : (player.dailyWeek.prev.count || 0));
+    }
+    // Live streak: a hunter who claimed every day (streak ≥ N, last claim within 48h) has at least min(streak, 7) claims in the period.
+    const dq = player.dailyQuest || {};
+    if ((dq.streak || 0) >= 1 && dq.lastClaimed && end - dq.lastClaimed < 48 * 3600000) n = Math.max(n, Math.min(7, dq.streak || 0));
+  } catch (e) {}
+  return n;
 }
 
 function _isProPlayer(p) {
@@ -581,7 +602,7 @@ function processWeeklyPay(db, guildRef, saveDatabase) {
     // Pay any elapsed weeks (catch up if overdue)
     while (c.active && now >= c.nextPayAt) {
       const user = findUserInDb(db, bare);
-      const claims = weeklyDailyClaims(user, now);
+      const claims = weeklyDailyClaims(user, now, c.nextPayAt); // Push #96: claims inside the pay period
 
       // 1) ACTIVITY GATE — fewer than MIN_WEEKLY_DAILIES /daily claims this
       //    week: the wage is auto-skipped, the week still advances.
@@ -686,7 +707,7 @@ function tryResolveApprovalBySender(db, senderJid, approve, saveDatabase, guildR
       const c = (db.guildContracts?.[realId] || {})[normaliseJid(bare)] || null;
       if (!ap || ap.status !== 'pending' || !c || !c.active || now < c.nextPayAt) return null;
       const user = findUserInDb(db, bare);
-      if (weeklyDailyClaims(user, now) < MIN_WEEKLY_DAILIES) {
+      if (weeklyDailyClaims(user, now, c.nextPayAt) < MIN_WEEKLY_DAILIES) {
         skipWeek(db, guild, bare, c, 'skipped_inactive', 'Member did not hit the daily gate', now);
         ap.status = 'resolved'; ap.resolvedAt = now; ap.resolution = 'skipped_inactive';
         if (saveDatabase) saveDatabase();
@@ -767,7 +788,7 @@ function getSalaryStatus(db, playerJid) {
   const state = c.completedAt ? 'completed' : c.defaultedAt ? 'defaulted'
     : (c.active && weeksLeft > 0) ? 'active' : 'inactive';
   const ap = (db.salaryApprovals?.[realId] || {})[normaliseJid(playerJid)] || null;
-  const claims = weeklyDailyClaims(user, now);
+  const claims = weeklyDailyClaims(user, now, c.nextPayAt); // Push #96: pay-period count
 
   let dueState = 'not_due';
   if (state === 'active') {

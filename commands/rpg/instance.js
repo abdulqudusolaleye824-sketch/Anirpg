@@ -37,6 +37,8 @@ module.exports = {
       if ((sub === 'skill' || sub === 's') && !q) return sock.sendMessage(chatId, { text: '❌ Which skill? /instance skill <name>' }, { quoted: msg });
       const r = ID.act(player, q);
       if (!r.ok) return sock.sendMessage(chatId, { text: `❌ ${r.error}` }, { quoted: msg });
+      // Push #96: instance floors count for the daily quests (kill / boss / floor cleared / deepest floor).
+      if (r.floorCleared) { try { const QD = require('../../rpg/utils/QuestDispatcher'); QD.trackAndNotify(player, 'kill', 1, sock, sender, chatId); if (r.bossKill) QD.trackAndNotify(player, 'boss', 1, sock, sender, chatId); QD.trackAndNotify(player, 'dungeon', 1, sock, sender, chatId); QD.trackAndNotify(player, 'floor', Math.max(1, (player.instance && player.instance.floor || 2) - 1), sock, sender, chatId); } catch (e) {} }
       saveDatabase();
       const inst = player.instance;
       const tail = r.ended ? [] : [``, `❤️ ${player.stats.hp}/${require('../../rpg/utils/GearSystem').effectiveMaxHp(player)} · ⚡ ${player.stats.energy}/${player.stats.maxEnergy}${inst && inst.active && !r.floorCleared ? ` · ${inst.monster.emoji} ${inst.monster.name} ${inst.monster.stats.hp}/${inst.monster.stats.maxHp}` : ''}`];

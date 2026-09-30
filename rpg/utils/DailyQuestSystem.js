@@ -31,22 +31,22 @@ const DAILY_QUEST_POOL = [
   { id: 'dq_kills25',     name: 'Veteran Hunter',        desc: 'Defeat 25 monsters',                       type: 'kill',     target: 25,  reward: { gold: 650,   crystals: 15  } },
   { id: 'dq_kills50',     name: 'Exterminator',          desc: 'Defeat 50 monsters',                       type: 'kill',     target: 50,  reward: { gold: 1400,  crystals: 40  } },
   { id: 'dq_kills100',    name: 'Mass Extinction',       desc: 'Defeat 100 monsters',                      type: 'kill',     target: 100, reward: { gold: 3000,  crystals: 90 } },
-  { id: 'dq_boss1',       name: 'Boss Slayer',           desc: 'Defeat 1 dungeon boss',                    type: 'boss',     target: 1,   reward: { gold: 900,  crystals: 25  } },
-  { id: 'dq_boss3',       name: 'Boss Hunter',           desc: 'Defeat 3 dungeon bosses',                  type: 'boss',     target: 3,   reward: { gold: 2200,  crystals: 65  } },
-  { id: 'dq_boss5',       name: 'Warlord',               desc: 'Defeat 5 dungeon bosses',                  type: 'boss',     target: 5,   reward: { gold: 3800,  crystals: 110 } },
+  { id: 'dq_boss1',       name: 'Boss Slayer',           desc: 'Defeat 1 boss (dungeon, gate or instance)', type: 'boss',     target: 1,   reward: { gold: 900,  crystals: 25  } },
+  { id: 'dq_boss3',       name: 'Boss Hunter',           desc: 'Defeat 3 bosses (dungeon, gate or instance)', type: 'boss',     target: 3,   reward: { gold: 2200,  crystals: 65  } },
+  { id: 'dq_boss5',       name: 'Warlord',               desc: 'Defeat 5 bosses (dungeon, gate or instance)', type: 'boss',     target: 5,   reward: { gold: 3800,  crystals: 110 } },
   { id: 'dq_attack5',     name: 'Pattern Practitioner',  desc: 'Use attack patterns 5 times',             type: 'pattern',  target: 5,   reward: { gold: 450,   crystals: 10  } },
   { id: 'dq_attack10',    name: 'Pattern Master',        desc: 'Use attack patterns 10 times',            type: 'pattern',  target: 10,  reward: { gold: 900,  crystals: 28  } },
   { id: 'dq_attack25',    name: 'Combo King',            desc: 'Use attack patterns 25 times',            type: 'pattern',  target: 25,  reward: { gold: 1900,  crystals: 60  } },
 
   // ── Dungeons (8) ──────────────────────────────────────────────────────────
-  { id: 'dq_dungeons2',   name: 'Dungeon Diver',         desc: 'Clear 2 dungeon floors',                   type: 'dungeon',  target: 2,   reward: { gold: 450,   crystals: 9  } },
-  { id: 'dq_dungeons5',   name: 'Dungeon Veteran',       desc: 'Clear 5 dungeon floors',                   type: 'dungeon',  target: 5,   reward: { gold: 850,   crystals: 25  } },
-  { id: 'dq_dungeons10',  name: 'Dungeon Master',        desc: 'Clear 10 dungeon floors',                  type: 'dungeon',  target: 10,  reward: { gold: 1600,  crystals: 50  } },
-  { id: 'dq_floor5',      name: 'Floor Conqueror',       desc: 'Reach floor 5 in a dungeon',               type: 'floor',    target: 5,   reward: { gold: 650,   crystals: 18  } },
-  { id: 'dq_floor10',     name: 'Deep Diver',            desc: 'Reach floor 10 in a dungeon',              type: 'floor',    target: 10,  reward: { gold: 1100,  crystals: 33  } },
-  { id: 'dq_floor20',     name: 'Abyss Walker',          desc: 'Reach floor 4 in a dungeon',               type: 'floor',    target: 4,   reward: { gold: 600,   crystals: 15  } },
-  { id: 'dq_fullclear',   name: 'Full Clear',            desc: 'Fully clear a dungeon',    type: 'clear',    target: 1,   reward: { gold: 2200,  crystals: 70  } },
-  { id: 'dq_fullclear3',  name: 'Completionist',         desc: 'Fully clear 3 dungeons',                   type: 'clear',    target: 3,   reward: { gold: 4000,  crystals: 160 } },
+  { id: 'dq_dungeons2',   name: 'Dungeon Diver',         desc: 'Clear 2 floors (dungeon, gate or instance)', type: 'dungeon',  target: 2,   reward: { gold: 450,   crystals: 9  } },
+  { id: 'dq_dungeons5',   name: 'Dungeon Veteran',       desc: 'Clear 5 floors (dungeon, gate or instance)', type: 'dungeon',  target: 5,   reward: { gold: 850,   crystals: 25  } },
+  { id: 'dq_dungeons10',  name: 'Dungeon Master',        desc: 'Clear 10 floors (dungeon, gate or instance)', type: 'dungeon',  target: 10,  reward: { gold: 1600,  crystals: 50  } },
+  { id: 'dq_floor5',      name: 'Floor Conqueror',       desc: 'Reach floor 5 in a dungeon, gate or instance', type: 'floor',    target: 5,   reward: { gold: 650,   crystals: 18  } },
+  { id: 'dq_floor10',     name: 'Deep Diver',            desc: 'Reach floor 6 in a dungeon, gate or instance', type: 'floor',    target: 6,  reward: { gold: 1100,  crystals: 33  } },
+  { id: 'dq_floor20',     name: 'Abyss Walker',          desc: 'Reach floor 4 in a dungeon, gate or instance', type: 'floor',    target: 4,   reward: { gold: 600,   crystals: 15  } },
+  { id: 'dq_fullclear',   name: 'Full Clear',            desc: 'Fully clear a dungeon or gate', type: 'clear',    target: 1,   reward: { gold: 2200,  crystals: 70  } },
+  { id: 'dq_fullclear3',  name: 'Completionist',         desc: 'Fully clear 3 dungeons or gates', type: 'clear',    target: 3,   reward: { gold: 4000,  crystals: 160 } },
 
   // ── PvP (5) ──────────────────────────────────────────────────────────────
   { id: 'dq_pvp1',        name: 'Arena Fighter',         desc: 'Win 1 PvP duel',                           type: 'pvp',      target: 1,   reward: { gold: 500,   crystals: 12  } },
@@ -92,11 +92,11 @@ const DAILY_QUEST_POOL = [
 
 // ── Streak milestones (one-time, never reset, NERFED) ────────────────────────
 const STREAK_MILESTONES = {
-  7:   { gold: 200,    crystals: 1,   label: '1 week',     bonus: '+200 Ne'              },
-  14:  { gold: 200,    crystals: 2,   label: '2 weeks',    bonus: '+500 Nexus + 5 💎'        },
-  30:  { gold: 200,   crystals: 10,  label: '1 month',    bonus: '+1,500 Nexus + 20 💎'     },
-  60:  { gold: 200,   crystals: 25,  label: '2 months',   bonus: '+3,000 Nexus + 50 💎'     },
-  100: { gold: 240,   crystals: 50, label: '100 days',   bonus: '+7,500 Nexus + 100 💎'    },
+  7:   { gold: 200,    crystals: 1,   label: '1 week',     bonus: '+200 Nexus + 1 💎'        },
+  14:  { gold: 200,    crystals: 2,   label: '2 weeks',    bonus: '+200 Nexus + 2 💎'        },
+  30:  { gold: 200,   crystals: 10,  label: '1 month',    bonus: '+200 Nexus + 10 💎'       },
+  60:  { gold: 200,   crystals: 25,  label: '2 months',   bonus: '+200 Nexus + 25 💎'       },
+  100: { gold: 240,   crystals: 50, label: '100 days',   bonus: '+240 Nexus + 50 💎'       },
 };
 
 // ── Day key (timezone-aware) ─────────────────────────────────────────────────
@@ -129,6 +129,15 @@ function ensureDailyQuests(player) {
   if (!player.dailyQuests) player.dailyQuests = { streak: 0, milestones: [], quests: [] };
 
   if (player.dailyQuests.dayKey === dayKey) {
+    // Push #96: today's quests follow the CURRENT pool definition (targets/descriptions
+    // were retuned — e.g. "floor 10" → floor 6 — so nobody is stuck on an impossible copy).
+    try {
+      for (const q of player.dailyQuests.quests || []) {
+        const def = DAILY_QUEST_POOL.find(d => d.id === q.id);
+        if (!def || q.claimed) continue;
+        if (q.target !== def.target || q.desc !== def.desc) { q.target = def.target; q.desc = def.desc; q.name = def.name; q.type = def.type; if ((q.progress || 0) >= q.target) q.completed = true; }
+      }
+    } catch (e) {}
     // Auto-claim any completed but unclaimed quests
     autoClaimIfReady(player);
     return false;

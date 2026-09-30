@@ -786,7 +786,7 @@ module.exports = {
           else { killLines.push(``, `✅ *Floor ${floor} re-cleared!* Move on within 60s or it revives again (+30%).`, `/party advance — Floor ${floor + 1}`); }
         } else if (remaining <= 0) {
           gate.floorClearedAt = Date.now(); // Push #88w: 60s idle → floor revives
-          const fNexus = Math.floor((gate.nexusLoot || 1000) / (gate.totalFloors || 1));
+          const fNexus = Math.floor((gate.nexusLoot || 1000) / (gate.totalFloors || 1) * (1 + (require('../../rpg/utils/JobSystem').mod(player, 'nexusMult') || 0) / 100)); // Push #96: Treasure Hunter finds more
           const fCrystals = Math.floor((gate.crystalLoot || 100) / (gate.totalFloors || 1));
           if (!gate.accumulatedTreasure) gate.accumulatedTreasure = { nexus: 0, crystals: 0 };
           gate.accumulatedTreasure.nexus += fNexus;
