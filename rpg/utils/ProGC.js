@@ -57,6 +57,8 @@ class ProGC {
 
   /** { ok, reason } — who may be inside / use commands in the Pro GC. */
   static eligibility(db, jid) {
+    // Push #96b: our own linked bot personalities are never "non-members" — bots were kicking each other.
+    try { if (require('../../bots/MultiSocketManager').isOwnBotNumber(String(jid || '').split(':')[0].split('@')[0])) return { ok: true, why: 'bot' }; } catch (e) {}
     try {
       const Perms = require('../../utils/permissions');
       if (Perms.isBotOwner(db, jid) || Perms.isBotMod(db, jid)) return { ok: true, why: 'staff' };

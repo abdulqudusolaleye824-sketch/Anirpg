@@ -318,40 +318,58 @@ const bots = {
     const db = getDatabase();
     const activeKey = PersonalityManager.getActiveBot(chatId);
 
+    // Push #96b: the roster reflects REALITY — socket online/usable (health report)
+    // AND whether that bot number is actually a participant of THIS group.
     let presentKeys = new Set();
-    let linkedKeys = new Set();
-    let MSM = null;
+    let MSM = null; const health = {}; let groupBares = null;
     try {
       MSM = require('../../bots/MultiSocketManager');
-      linkedKeys = new Set(Object.keys(MSM.getAllSockets?.() || {}));
+      for (const h of (MSM.botHealthReport?.() || [])) health[h.key] = h;
       presentKeys = new Set(PersonalityManager.getPresentBots(chatId));
     } catch (_) {}
+    const bare = (j) => String(j || '').split(':')[0].split('@')[0];
+    if (String(chatId).endsWith('@g.us')) {
+      try { const meta = await sock.groupMetadata(chatId); groupBares = new Set((meta.participants || []).flatMap(p => [bare(p.id), bare(p.lid), bare(p.jid)]).filter(Boolean)); } catch (_) { groupBares = null; }
+    }
 
     const lines = [
       `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
       `🤖 *Astra Bot Roster*`,
       `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-      `🟢 Active = active in this group`,
-      `🟡 Present = linked & connected`,
+      `🟢 Active = answers this group`,
+      `🟡 Here = online & in this group`,
+      `🟠 Away = online, not in this group`,
+      `🔴 Offline = linked but disconnected`,
       `⚫ Dormant = no number linked`,
-      `💤AI-off = scripts only (/aimode)`,
       '',
     ];
 
+    let onlineHere = 0;
     for (const key of PersonalityManager.getAllPersonalities()) {
       const info = PersonalityManager.getPersonalityInfo(key);
-      const isActive = key === activeKey;
-      const isLinked = linkedKeys.has(key) || (MSM && !!MSM.getSocket?.(key));
+      const h = health[key];
+      const sk = MSM && MSM.getSocket ? MSM.getSocket(key) : null;
+      const online = !!(h ? (h.online && h.usable !== false) : (sk && sk.user && sk.user.id));
+      const linked = !!(h || sk);
+      let inGroup = null;
+      if (groupBares && sk && sk.user) inGroup = [bare(sk.user.id), bare(sk.user.lid)].some(b => b && groupBares.has(b));
+      else if (presentKeys.size) inGroup = presentKeys.has(key);
+      const isActive = key === activeKey && online && inGroup !== false;
 
       let status;
       if (isActive) status = '🟢 Active';
-      else if (isLinked || presentKeys.has(key)) status = '🟡 Present';
+      else if (online && inGroup !== false) status = '🟡 Here';
+      else if (online) status = '🟠 Away';
+      else if (linked) status = '🔴 Offline';
       else status = '⚫ Dormant';
-      // Batch-42: AI chat is back — mark AI-off (scripts-only) bots.
+      if (online && inGroup !== false) onlineHere++;
       let aiMark = '';
       try { aiMark = PersonalityManager.isAIOff(db, key) ? ' 💤AI-off' : ''; } catch (_) {}
-      lines.push(`${status} *${info.displayName}* (${info.theme})${aiMark}`);
+      const heard = h && h.lastInboundAgoSec != null && online ? ` · heard ${h.lastInboundAgoSec}s ago` : '';
+      lines.push(`${status} *${info.displayName}* (${info.theme})${aiMark}${heard}`);
     }
+    if (activeKey && !lines.some(l => l.startsWith('🟢'))) lines.push('', `⚠️ Active bot *${activeKey}* is offline or not in this group — /switch <name> to another one.`);
+    lines.push('', `📡 ${onlineHere} bot(s) online in this group`);
 
     lines.push('');
     lines.push(`📌 /start <name> — activate a bot`);

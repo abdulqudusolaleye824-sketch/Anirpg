@@ -355,7 +355,9 @@ module.exports = async (sock, msg, messageText, config, getDatabase, saveDatabas
   } catch (e) {}
 
   const Perms = require('../utils/permissions');
+  let _isSiblingBot = false; try { const MSM = require('../bots/MultiSocketManager'); _isSiblingBot = [sender, msg.key?.participant, msg.participant].some(f => f && MSM.isOwnBotNumber(String(f).split(':')[0].split('@')[0])); } catch (e) {} // Push #96b
   const isPrivilegedUser = Perms.isBotOwner(db, sender) || Perms.isBotMod(db, sender);
+  const _modExempt = isPrivilegedUser || _isSiblingBot; // moderation (anti-link / slowmode / spam) never targets our own bots
 
   // Push #88k: a /silence'd mod may only run moderation commands.
   try {
@@ -542,7 +544,7 @@ module.exports = async (sock, msg, messageText, config, getDatabase, saveDatabas
       } catch (e) { /* ignore */ }
     }
 
-    if (antiLinkOn && !isPrivilegedUser) {
+    if (antiLinkOn && !_modExempt) {
       const text =
         msg.message?.conversation ||
         msg.message?.extendedTextMessage?.text ||
@@ -605,7 +607,7 @@ module.exports = async (sock, msg, messageText, config, getDatabase, saveDatabas
   if (chatId.endsWith('@g.us')) {
     const settings = db.groupSettings?.[chatId];
 
-    if (settings?.slowmode && !isPrivilegedUser) {
+    if (settings?.slowmode && !_modExempt) {
       if (!db.userCooldowns) db.userCooldowns = {};
 
       const key = `${chatId}_${sender}`;

@@ -2791,6 +2791,7 @@ function getActiveSocket(chatId) {
 
 module.exports = {
   _pace,
+  isOwnBotNumber: _isOwnBotNumber, // Push #96b: sibling-bot guard for moderation paths
   getInboundTrace: () => _inboundTrace,
   connectBot,
   reconnectPolicy,

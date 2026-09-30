@@ -3,8 +3,10 @@
 const fs = require('fs'); const path = require('path');
 module.exports = {
   name: 'version', aliases: ['build', 'ver'],
-  description: '🧾 Show the running build (git commit + package version)',
+  description: '🧾 Show the running build (git commit + package version) — owner only',
   async execute(sock, msg, args, getDatabase, saveDatabase, sender) {
+    // Push #96b: owner-only.
+    try { const Perms = require('../../utils/permissions'); if (!Perms.isBotOwner(getDatabase(), sender)) return sock.sendMessage(msg.key.remoteJid, { text: '❌ /version is for the bot owner only.' }, { quoted: msg }); } catch (e) { return; }
     let v = 'unknown', pkg = '?';
     try { v = fs.readFileSync(path.join(__dirname, '../../VERSION'), 'utf8').trim(); } catch (e) {}
     try { pkg = require('../../package.json').version; } catch (e) {}

@@ -1,3 +1,9 @@
+## 1.0.128 — Push #96b: bots stop kicking each other · real /bots roster · /version owner-only
+
+- **Sibling bots are never moderated**: `ProGC.eligibility` now recognises our own linked bot numbers (PN + LID) → the dispatcher no longer kicks a freshly-added bot personality from the Pro GC as "not registered"; anti-link / slowmode strikes also skip sibling bots (owner-only powers unchanged).
+- **/bots** shows what is actually true: 🟢 Active (answers this group) · 🟡 Here (online & in this group) · 🟠 Away (online, not in this group) · 🔴 Offline (linked, disconnected) · ⚫ Dormant — from the live health report + group participants; warns when the active bot is offline/absent.
+- **/version** is owner-only.
+
 ## 1.0.127 — Push #96: Team PvP · Jobs do what they say · quest pool audit · wage count · dungeon skill parity
 
 - **Team PvP (`/teampvp`, `rpg/utils/TeamPvp.js`)**: `create` / `join a|b` (up to 5 per side) / `start`. Fought ONE-ON-ONE with the normal duel engine (`/pvp attack`, `/pvp skill`). `switch <n>` is OPTIONAL each turn (swaps the bench hunter in; it spends that side's action). A knock-out (or surrender) brings the next hunter in automatically; last team standing wins. Every member's cumulative team record (`/teampvp record`: wins, losses, KOs, streak) is kept; winners get normal PvP rewards + Job XP. Benched fighters can't start side duels.
