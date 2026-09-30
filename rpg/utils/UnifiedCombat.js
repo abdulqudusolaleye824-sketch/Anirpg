@@ -304,6 +304,17 @@ function tryApplyEffect(attack, attacker, defender) {
 }
 
 // Tick status effects: reduce duration by 1, apply DoT, return log lines
+// Push #94: reflect helper (shared by PvP/dungeon playTurn and raid monsterDamage).
+function reflectDamage(defender, attacker, dmg) {
+  const rf = defender && defender.tempBuffs && defender.tempBuffs.reflect;
+  if (!rf || !(rf.pct > 0) || !(dmg > 0) || !attacker) return null;
+  const back = Math.max(1, Math.floor(dmg * Math.min(100, rf.pct) / 100));
+  if (attacker.stats && typeof attacker.stats.hp === 'number') attacker.stats.hp = Math.max(0, attacker.stats.hp - back);
+  else if (typeof attacker.hp === 'number') attacker.hp = Math.max(0, attacker.hp - back);
+  else return null;
+  return { back, line: `🪞 ${rf.source || 'Reflect'} sends ${back} damage back at ${attacker.name || 'the attacker'}` };
+}
+
 function tickStatuses(entity) {
   const logs = [];
   // Push #88w: Monster-class transformations count down per turn (and the
@@ -313,8 +324,15 @@ function tickStatuses(entity) {
   try {
     for (const [k, v] of Object.entries(entity.tempBuffs || {})) {
       if (!v) { delete entity.tempBuffs[k]; continue; }
+      // Push #94: regeneration (HoT) really heals every turn it is up.
+      if (k === 'regen' && v.pct > 0 && entity.stats && (entity.stats.hp || 0) > 0) {
+        let max = entity.stats.maxHp || 100; try { max = require('./GearSystem').effectiveMaxHp(entity) || max; } catch (e) {}
+        const amt = Math.max(1, Math.floor(max * v.pct / 100 * (v.power || 1)));
+        const before = entity.stats.hp || 0; entity.stats.hp = Math.min(max, before + amt);
+        if (entity.stats.hp > before) logs.push(`💞 ${entity.name || 'Hunter'} regenerates +${entity.stats.hp - before} HP (${v.source || 'Regen'})`);
+      }
       v.duration = (v.duration || 0) - 1;
-      if (v.duration <= 0) { delete entity.tempBuffs[k]; if (v.stat) logs.push(`✨ ${String(v.stat).toUpperCase()} ${(v.amount || 0) >= 0 ? 'buff' : 'debuff'} wore off`); }
+      if (v.duration <= 0) { delete entity.tempBuffs[k]; if (v.stat) logs.push(`✨ ${String(v.stat).toUpperCase()} ${(v.amount || 0) >= 0 ? 'buff' : 'debuff'} wore off`); else if (k === 'shield' && v.immune) logs.push(`🛡️ Immunity faded`); else if (k === 'shield') logs.push(`🛡️ ${v.source || 'Shield'} faded`); else if (k === 'regen') logs.push(`💞 Regeneration ended`); else if (k === 'reflect') logs.push(`🪞 Reflect faded`); }
     }
   } catch (e) {}
   if (!entity.statusEffects || entity.statusEffects.length === 0) return logs;
@@ -488,6 +506,8 @@ async function playTurn(sock, chatId, o) {
       else { const NX = require('./Necromancy'); const _ab = NX.absorb(defender, result.damage); if (_ab.absorbed) { result.damage = _ab.dmg; result.absorbed = _ab.absorbed; _buffNotes.push(NX.shieldLine(_ab, defender.name || 'Target')); } }
     } catch (e) {}
     if (defender.stats) defender.stats.hp = Math.max(0, (defender.stats.hp || 0) - result.damage);
+    // Push #94: reflect — the defender's mirror sends part of the hit back.
+    try { const _rf = reflectDamage(defender, attacker, result.damage); if (_rf) _buffNotes.push(_rf.line); } catch (e) {}
     try { statusApplied = tryApplyEffect(move, attacker, defender); } catch (e) { statusApplied = null; }
     // Push #76: skills can carry SEVERAL statuses (move.statuses) — roll each.
     try {
@@ -561,7 +581,7 @@ async function playTurn(sock, chatId, o) {
 }
 
 module.exports = {
-  tempBuffPct, applyMoveBuffs,
+  tempBuffPct, applyMoveBuffs, reflectDamage,
   dodgeChance, weakenTakenMult,
   isPro,
   getCooldownMs,

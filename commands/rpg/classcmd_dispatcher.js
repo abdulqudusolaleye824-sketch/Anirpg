@@ -261,6 +261,9 @@ async function defaultHandler(sock, msg, player, skill, db, saveDatabase, getDat
     const tgt76 = player.dungeon?.currentBattle?.monster || { name: 'Target', tempBuffs: {} };
     const notes76 = UC76.applyMoveBuffs({ name: skill.name, buffs: e76.buffs || [], debuffs: player.dungeon?.currentBattle?.monster ? (e76.debuffs || []) : [], selfDebuffs: e76.selfDebuffs || [] }, player, tgt76);
     if (notes76.length) resultText += `\n${notes76.join('\n')}`;
+    // Push #94: support contract on the caster in dungeon casts too.
+    const _sf94 = SC76.applySupportFields(e76, player, player, { name: player.name });
+    if (_sf94.lines.length) resultText += `\n${_sf94.lines.join('\n')}`;
   } catch (e) {}
 
   // Push #71: catalog heal skills carry `type:'heal'` + `healingPct` (not

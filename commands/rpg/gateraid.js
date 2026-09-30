@@ -658,7 +658,9 @@ module.exports = {
         }
       } else {
         const useSkill = action === 'skill' ? skillArg : null;
+        try { GR.playerDamage.partyAllies = (gate.raid?.members || []).map(m => db.users[m.id] || Object.values(db.users || {}).find(x => x && x.jid && GR.GKM.normaliseJid(x.jid) === GR.GKM.normaliseJid(m.id))).filter(Boolean); } catch (e) { GR.playerDamage.partyAllies = []; } // Push #94: party buffs on hybrid strikes
         result = GR.playerDamage(player, useSkill, { statusEffects: target.statusEffects || [] });
+        GR.playerDamage.partyAllies = [];
         // Push #55: pets count in the general attack flow as well (this is the
         // path /attack and /skill take outside /party).
         try {
@@ -1083,7 +1085,9 @@ module.exports = {
       const boss = gate.boss;
       // Push #93: boss statuses (Curse of Ruin) count down one per hunter turn.
       try { if ((boss.statusEffects || []).length) { const _bt = { name: boss.name, statusEffects: boss.statusEffects, stats: { hp: boss.hp, maxHp: boss.maxHp } }; const _bl = require('../../rpg/utils/UnifiedCombat').tickStatuses(_bt); boss.hp = Math.max(0, _bt.stats.hp); if (_bl.some(l => /ruin wore off/.test(l))) await sock.sendMessage(chatId, { text: `✨ *Curse of Ruin* on *${boss.name}* has worn off.` }); } } catch (e) {}
+      try { GR.playerDamage.partyAllies = (gate.raid?.members || []).map(m => db.users[m.id] || Object.values(db.users || {}).find(x => x && x.jid && GR.GKM.normaliseJid(x.jid) === GR.GKM.normaliseJid(m.id))).filter(Boolean); } catch (e) { GR.playerDamage.partyAllies = []; } // Push #94
       const result = GR.playerDamage(player, skillArg || null, { statusEffects: (boss.statusEffects = boss.statusEffects || []) });
+      GR.playerDamage.partyAllies = [];
       if (result.blocked) return sock.sendMessage(chatId, { text: `❌ ${result.reason}` }, { quoted: msg });
       // Push #55: pets fight the boss too — ATK bonus + their own ability hit.
       try {

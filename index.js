@@ -601,6 +601,7 @@ const loadDatabase = (memDoc = null) => {
 };
 
 const getDatabase = () => database;
+try { require('./rpg/utils/ClassSystem').setDbProvider(getDatabase); } catch (e) {} // Push #94: unique Monster variants
 // Push #32: owner notice loop (L4 daily snapshot DM + degraded alarms).
 async function flushOwnerLoop() {
   try {

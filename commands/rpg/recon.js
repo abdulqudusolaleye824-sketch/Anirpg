@@ -45,7 +45,7 @@ function findPlayer(db, args, ctx) {
 module.exports = {
   name: 'recon',
   aliases: ['reclass', 'rerollclass'],
-  description: '🎭 [OWNER] re-roll a player\'s class (removes exclusive classes like Senku)',
+  description: '🎭 [OWNER] re-roll a player\'s class — /recon @p <Class>|<q> · /recon @p monster = a unique unclaimed Monster variant (no quality needed)',
   usage: '/recon @player [<Class>|<quality>] · /recon undo @player',
 
   async execute(sock, msg, args, getDatabase, saveDatabase, sender) {
@@ -127,7 +127,7 @@ module.exports = {
     player._reconUndo = { at: Date.now(), by: sender, data: snapshot(player) };
     // Class-only pin keeps the player's existing quality (only a random roll or an explicit |q changes it).
     const keepQ = (pinClass && pinQuality == null) ? (player.classQuality || null) : null;
-    const res = CS.reconClass(player, { className: pinClass || undefined, quality: pinQuality != null ? pinQuality : (keepQ || undefined) });
+    const res = CS.reconClass(player, { className: pinClass || undefined, quality: pinQuality != null ? pinQuality : (keepQ || undefined), db, jid });
     if (!res.success) { if (_prevUndo) player._reconUndo = _prevUndo; else delete player._reconUndo; return sock.sendMessage(chatId, { text: `❌ ${res.error}` }, { quoted: msg }); }
 
     // Rebuild derived skill state so /skills and combat read the new class.
@@ -147,6 +147,7 @@ module.exports = {
         `🗑️ Removed: *${oldName}*${CS.isExclusiveClass(oldName) ? ' _(exclusive — not rollable)_' : ''}`,
         `✨ New class: *${data.emoji || '🎭'} ${shown}* (${(data.rarity || 'common').toUpperCase()})`,
         `⭐ Quality: *${res.quality || player.classQuality || 0}%*${pinClass || pinQuality != null ? '  _(custom)_' : ''}`,
+        ...(res.variant ? [`👹 Unique Monster variant — *${res.uniqueLeft}* of 50 still unclaimed`] : []),
         ...(_carry ? [`📚 Skills carried: *${_carry.count}* unlocked · levels preserved (${_skillSnap.levels.filter(l => l > 1).length} upgraded)`] : []),
         `↩️ Undo: */recon undo @${bare(jid)}*`,
         ``,

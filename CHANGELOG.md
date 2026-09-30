@@ -1,3 +1,12 @@
+## 1.0.124 — Push #94: every skill unique & honest · /recon monster · /bleep level floor
+
+- **500 skills, 25 classes — every description unique.** New `SkillFlavour` generator: imagery drawn from the skill's name, class voice, per-type sentence structures, tier notes; deterministic and distinct for all 500 (hand-written emoji descriptions kept). Zero template stamps remain.
+- **Skills do what they say.** `SkillCatalog.normalise` now parses an explicit support contract from the text — `shieldPct` (pool or per-hit rate), `immuneTurns`, `energyPct`, `regen {pct,turns}`, `damageTakenPct`, `reflectPct`, `cleanse`, `party` — and appends an exact "Mechanics:" sentence. `applySupportFields` applies it in raids (support casts + hybrid strikes), PvP, dungeons; regen ticks in `UnifiedCombat.tickStatuses`; reflect hits back in raids and duels; immunity = unbreakable shield. Party-worded BUFFS reach the whole party for any class; "+X% ATK/DEF" buffs both stats; "All stats up" = ATK/DEF/SPEED +25%.
+- **Retyped:** Iron Wall, Divine Shield, Divine Protection, Blessing of Kings, Dragon Scale etc. are buffs now (no more "strike" that was supposed to shield). False immunities ("immune to BLEED/CC/elements") no longer count.
+- **/recon @p monster** — no quality needed; assigns a Monster variant nobody else holds; refuses when all 50 are taken. Natural awakenings also prefer unclaimed variants.
+- **/bleep** — true recalibration: pure stats (rank base + level growth, no upgrade points/class bonuses) are SET to the new rank's floor at the hunter's level, up OR down (demotion works); class bonuses + upgrade-point allocations re-applied on top. Mana/UP bonuses only on promotion.
+- Live hunters' stored skills refresh when description/type changes.
+
 ## 1.0.123 — Push #93: Necromancer reforged (2026-09-29)
 - Bone Wall: absorbs 60% of every monster hit for 3 turns (pool 60% max HP). Targets scale with the raid floor (1→1 … 4→4, tag with @); floor 7+ untagged = whole raid (100 energy, CD 4). Tagged: 10 energy × targets, CD 1 + 1/target. Shields now really absorb everywhere (raids, idle strikes, PvP).
 - Soul Drain: on a monster 150% ATK + heals half the damage. On an @ally ("Tithe of the Fallen"): drains 25% (+3%/level) of their current HP, heals the Necromancer, STEALS all their positive buffs; ally ≤15% HP is sacrificed (falls); Bone Wall on the ally eats 60% of the drain.

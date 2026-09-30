@@ -433,4 +433,4 @@ function formatBonuses(b) {
   return parts.length ? parts.join(' · ') : 'none';
 }
 
-module.exports = { classWeaponPrice, ownsClassWeapon, buyClassWeapon, bestOwnedClassWeapon, ensureClassBonuses, classBonuses, passiveMultipliers, recalibrate, formatBonuses, className, baseClassName, quality, scaled, ensureClassWeapon };
+module.exports = { _remove, _add, classWeaponPrice, ownsClassWeapon, buyClassWeapon, bestOwnedClassWeapon, ensureClassBonuses, classBonuses, passiveMultipliers, recalibrate, formatBonuses, className, baseClassName, quality, scaled, ensureClassWeapon };

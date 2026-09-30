@@ -574,6 +574,8 @@ async function resolveTurn(sock, chatId, p1, p2, db, saveDatabase) {
         const _opp = player === p1 ? p2 : p1;
         const _x = SCm.applyHpPercents(entry, player, _opp);
         if (_x.lines.length) healNote += ' ' + _x.lines.join(' ');
+        // Push #94: hybrid strikes keep their support promises (immunity/shield/regen/reflect/cleanse on self).
+        if (!(entry.type === 'heal' || entry.type === 'buff')) { const _sf = SCm.applySupportFields(entry, player, player, { name: player.name }); if (_sf.lines.length) healNote += ' ' + _sf.lines.join(' '); }
       } catch (e) {}
       // Push #88f: heal / buff skills are SUPPORT casts in the duel too — they
       // heal / buff / cleanse the caster and deal NO damage (same as dungeons).
@@ -591,7 +593,8 @@ async function resolveTurn(sock, chatId, p1, p2, db, saveDatabase) {
         // Push #88w: Monster-class transformations (×5/×10/×15 all stats) work in duels too.
         try { const TF = require('../../rpg/utils/Transformation'); if (TF.isTransformSkill(entry)) { const _tr = TF.cast(player, entry); _sl.push(...(_tr.ok ? _tr.lines : [`❌ ${_tr.error}`])); } } catch (e) {}
         try { for (const n of UC.applyMoveBuffs({ name: entry.name, buffs: entry.buffs || [], debuffs: [], selfDebuffs: entry.selfDebuffs || [] }, player, player)) _sl.push(n); } catch (e) {}
-        const _sh = _txt.match(/shield[^.]*?(\d+)%/);
+        try { const _sf = SCm.applySupportFields(entry, player, player, { name: player.name }); _sl.push(..._sf.lines); } catch (e) {}
+        const _sh = !entry.shieldPct && _txt.match(/shield[^.]*?(\d+)%/);
         if (_sh) { const amt = Math.floor(_effMax(player) * parseInt(_sh[1], 10) / 100); player.tempBuffs = player.tempBuffs || {}; player.tempBuffs.shield = { amount: amt, duration: 4 }; _sl.push(`🛡️ *${player.name}* shielded for ${amt} HP`); }
         return { id: 0, name: entry.name, _support: true, _supportLines: _sl, isHeal: entry.type === 'heal' || (entry.healingPct || 0) > 0,
                  description: entry.description, effectText: entry.effect, dmgMult: 0, buffs: [], debuffs: [], statuses: [],

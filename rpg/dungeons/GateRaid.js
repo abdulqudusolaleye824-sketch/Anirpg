@@ -91,6 +91,22 @@ function playerDamage(player, skillName = null, target = null) {
       healed = player.stats.hp - before;
       if (_isHealSkill) dmg = 0;
     }
+    // Push #94: hybrid strikes keep their promises too — immunity / shield /
+    // regen / reflect / cleanse on the caster, and "all allies +X%" buffs on
+    // every living party member (playerDamage.partyAllies set by the caller).
+    try {
+      if (entry) {
+        const _sf = SC.applySupportFields(entry, player, player, { name: player.name });
+        _hpx.lines = [...(_hpx.lines || []), ..._sf.lines];
+        const _allies = playerDamage.partyAllies || [];
+        if (entry.party && (entry.buffs || []).length && _allies.length) {
+          const UCp = require('../utils/UnifiedCombat');
+          let n = 0;
+          for (const ally of _allies) { if (!ally || ally === player || (ally.stats?.hp ?? 0) <= 0) continue; UCp.applyMoveBuffs({ name: skill.name, buffs: entry.buffs, debuffs: [], selfDebuffs: [] }, ally, ally); n++; }
+          if (n) _hpx.lines.push(`🤝 ${entry.buffs.map(b => `${String(b.stat).toUpperCase()} +${Math.abs(Number(b.amount) || 0)}%`).join(', ')} shared with ${n} all${n === 1 ? 'y' : 'ies'}`);
+        }
+      }
+    } catch (e) {}
     return {
       damage: dmg, isCrit, skillUsed: skill,
       statuses: [ ...((entry && entry.statuses) || skill.statuses || []), ...((_pm74.onHit || [])) ],
@@ -200,6 +216,8 @@ function monsterDamage(monster, def, player = null) {
       if (Math.random() * 100 < monsterCritChance(monster)) { raw *= critMultFor(monster); monsterDamage.last.crit = true; }
       // Push #93: a monster under Curse of Ruin hits for −70%; Bone Wall / shields absorb.
       try { const NX = require('../utils/Necromancy'); raw = raw * NX.ruinAtkMult(monster); const ab = NX.absorb(player, Math.floor(raw)); if (ab.absorbed) { monsterDamage.last.absorbed = ab.absorbed; monsterDamage.last.shieldLine = NX.shieldLine(ab, player.name || 'Hunter'); raw = ab.dmg; } } catch (e) {}
+      // Push #94: reflect — part of the landed hit bounces back onto the monster.
+      try { if (raw > 0 && player.tempBuffs && player.tempBuffs.reflect) { const _rf = require('../utils/UnifiedCombat').reflectDamage(player, monster, Math.floor(raw)); if (_rf) { monsterDamage.last.reflected = _rf.back; monsterDamage.last.shieldLine = [monsterDamage.last.shieldLine, _rf.line].filter(Boolean).join('\n'); if (monster.hp <= 0) monster.hp = 1; } } } catch (e) {}
       return Math.max(0, Math.floor(raw));
     } catch (e) {}
   }
@@ -894,6 +912,10 @@ function supportCast(caster, casterJid, target, targetJid, skillName, gate, db) 
   const partyWorded = /\b(all\s+(?:allies|party|members|alive\s+allies|ko'd\s+allies)|entire\s+party|every\s+ally|party(?:\s+members)?|allies|team(?:mates)?)\b/.test(textForScope);
   let cost = SC.effectiveCost(entry, caster);
   let party = false;
+  // Push #94: a BUFF that says "party / all allies / AOE buff" buffs the whole
+  // party for ANY class (heals stay Healer-gated below).
+  const partyBuffOnly = isBuff && !isHeal && (partyWorded || !!entry.party);
+  if (partyBuffOnly) party = true;
   if (isHeal) {
     if (!isHealerClass) {
       // Non-healers: self only, double energy.
@@ -957,9 +979,8 @@ function supportCast(caster, casterJid, target, targetJid, skillName, gate, db) 
       lines.push(`💚 *${t.name}* +${got} HP → ${u.stats.hp}/${max}`);
       // energy component ("and X% max energy")
       // Push #91: Renew/Mass Renewal really restore their stated energy ("15% of max energy").
-      const em = text.match(/(\d+)%\s*(?:of\s+)?(?:their\s+)?(?:max(?:imum)?\s*)?energy/);
-      if (em && u.stats.maxEnergy) { const e = Math.floor(u.stats.maxEnergy * parseInt(em[1], 10) / 100); u.stats.energy = Math.min(u.stats.maxEnergy, (u.stats.energy || 0) + e); lines.push(`⚡ *${t.name}* +${e} energy`); }
-      if (/remov|clear|cleanse|purif/.test(text) && Array.isArray(u.statusEffects) && u.statusEffects.length) { const n = u.statusEffects.length; u.statusEffects = []; lines.push(`✨ *${t.name}* cleansed (${n} effect${n === 1 ? '' : 's'})`); }
+      if (!entry.energyPct) { const em = text.match(/(\d+)%\s*(?:of\s+)?(?:their\s+)?(?:max(?:imum)?\s*)?energy/); if (em && u.stats.maxEnergy) { const e = Math.floor(u.stats.maxEnergy * parseInt(em[1], 10) / 100); u.stats.energy = Math.min(u.stats.maxEnergy, (u.stats.energy || 0) + e); lines.push(`⚡ *${t.name}* +${e} energy`); } }
+      if (!entry.cleanse && /remov|clear|cleanse|purif/.test(text) && Array.isArray(u.statusEffects) && u.statusEffects.length) { const n = u.statusEffects.length; u.statusEffects = []; lines.push(`✨ *${t.name}* cleansed (${n} effect${n === 1 ? '' : 's'})`); }
     }
     if (isBuff) {
       const UC = require('../utils/UnifiedCombat');
@@ -981,11 +1002,10 @@ function supportCast(caster, casterJid, target, targetJid, skillName, gate, db) 
         for (const b of buffs) lines.push(`⬆️ *${t.name}* ${String(b.stat).toUpperCase()} +${Math.abs(Number(b.amount) || 0)}% (${b.duration || 2}t)`);
         void notes;
       }
-      const sh = text.match(/shield[^.]*?(\d+)%/);
-      if (sh) { const max = effMax(u); const amt = Math.floor(max * parseInt(sh[1], 10) / 100 * healPower); u.tempBuffs = u.tempBuffs || {}; u.tempBuffs.shield = { amount: amt, duration: 4 }; lines.push(`🛡️ *${t.name}* shielded for ${amt} HP`); }
-      const es = text.match(/restores?\s+(\d+)%\s*(?:of\s+their\s+)?(?:max\s*)?energy/);
-      if (es && u.stats.maxEnergy) { const e = Math.floor(u.stats.maxEnergy * parseInt(es[1], 10) / 100); u.stats.energy = Math.min(u.stats.maxEnergy, (u.stats.energy || 0) + e); lines.push(`⚡ *${t.name}* +${e} energy`); }
     }
+    // Push #94: the explicit support contract — shield / immunity / energy /
+    // regen / damage-taken / reflect / cleanse — exactly as the description says.
+    try { const _sf = SC.applySupportFields(entry, caster, u, { name: t.name, healPower, effMaxOf: effMax }); lines.push(..._sf.lines); } catch (e) {}
   }
   // Push #88f: aggro ONLY for the Healer class and ONLY on an actual heal.
   if (gate && isHeal && isHealerClass) markHealerAggro(gate, casterJid, caster.name);

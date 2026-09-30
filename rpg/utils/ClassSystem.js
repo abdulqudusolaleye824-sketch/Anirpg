@@ -287,6 +287,27 @@ function reconClass(player, opts = {}) {
     const q = Math.round(Number(opts.quality));
     if (!(q >= MIN_AWAKEN_QUALITY && q <= MAX_AWAKEN_QUALITY)) return { success: false, error: `Quality must be ${MIN_AWAKEN_QUALITY}-${MAX_AWAKEN_QUALITY}.` };
   }
+  // Push #94: /recon @p monster — needs no quality; assigns a variant nobody
+  // else holds. All 50 taken → refuse (before stripping anything).
+  if (opts.className && /^monster$/i.test(String(opts.className))) {
+    const free = freeMonsterVariants(opts.db, opts.jid);
+    if (!free.length) return { success: false, error: `All ${_MONSTER_VARIANTS.length} Monster variants are already held by hunters — no unique Monster left to assign.` };
+    stripClassFromPlayer(player);
+    delete player.monsterVariant;
+    const variant = free[Math.floor(Math.random() * free.length)];
+    if (opts.quality != null) player.classQuality = Math.round(Number(opts.quality));
+    else if (!player.classQuality) player.classQuality = Math.floor(MIN_AWAKEN_QUALITY + Math.random() * (MAX_AWAKEN_QUALITY - MIN_AWAKEN_QUALITY + 1));
+    player.monsterVariant = variant;
+    applyClassToPlayer(player, 'Monster');
+    player.monsterVariant = variant;
+    player.class = variant.name;
+    player.classBase = 'Monster';
+    player.classAssignedAt = Date.now();
+    player.classReconAt = Date.now();
+    try { require('./SkillCatalog').resetPlayerSkills(player); } catch (e) {}
+    try { require('./ClassPower').ensureClassWeapon(player, true); } catch (e) {}
+    return { success: true, oldName, className: 'Monster', variant: variant.name, quality: player.classQuality, weapon: player.weapon, uniqueLeft: free.length - 1 };
+  }
   stripClassFromPlayer(player);
   let pool = rollableClasses();
   if (oldName) pool = pool.filter(n => n !== oldName);
@@ -319,8 +340,32 @@ function reconClass(player, opts = {}) {
 }
 
 // ── Roll a monster variant ───────────────────────────────────────────────────
-function rollMonsterVariant() {
-  return _MONSTER_VARIANTS[Math.floor(Math.random() * _MONSTER_VARIANTS.length)];
+// Push #94: variants are UNIQUE across the roster — no two hunters share a
+// Monster. Pass `db` (or set setDbProvider) so taken variants are excluded.
+let _dbProvider = null;
+function setDbProvider(fn) { _dbProvider = typeof fn === 'function' ? fn : null; }
+function _usersOf(db) {
+  const d = db || (_dbProvider ? (() => { try { return _dbProvider(); } catch (e) { return null; } })() : null);
+  return (d && (d.users || d.players)) || {};
+}
+function takenMonsterVariants(db, exceptJid) {
+  const taken = new Set();
+  for (const [jid, u] of Object.entries(_usersOf(db))) {
+    if (!u || jid === exceptJid) continue;
+    const v = u.monsterVariant;
+    const name = typeof v === 'string' ? v : (v && v.name);
+    if (name) taken.add(name);
+  }
+  return taken;
+}
+function freeMonsterVariants(db, exceptJid) {
+  const taken = takenMonsterVariants(db, exceptJid);
+  return _MONSTER_VARIANTS.filter(v => v && v.name && !taken.has(v.name));
+}
+function rollMonsterVariant(db, exceptJid) {
+  const free = freeMonsterVariants(db, exceptJid);
+  const pool = free.length ? free : _MONSTER_VARIANTS;
+  return pool[Math.floor(Math.random() * pool.length)];
 }
 
 // Push #88y: every Monster MUST be a named variant. Players whose class is the
@@ -395,7 +440,7 @@ function applyClassToPlayer(player, className) {
 
   // If Monster class, also assign a specific variant
   if (className === 'Monster' && !player.monsterVariant) {
-    const variant = rollMonsterVariant();
+    const variant = rollMonsterVariant(null, player._jid);
     player.monsterVariant = variant;
     player.class          = variant.name;
     player.classBase      = 'Monster';
@@ -558,6 +603,7 @@ function listByTier(tier) {
 }
 
 module.exports = {
+  setDbProvider, takenMonsterVariants, freeMonsterVariants,
   // Public API
   ALL_CLASSES,
   CLASS_DATA:        _CLASS_DATA,        // live reference (rebuilt on reload)

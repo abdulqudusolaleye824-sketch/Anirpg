@@ -258,6 +258,132 @@ const EXPLICIT = {
 
 // ── Normalise one raw entry into a catalog skill ─────────────────────────────
 function isPassive0(effect) { return /•\s*passive/i.test(String(effect || '')); }
+// ── Push #94: parse the SUPPORT CONTRACT out of an effect text ───────────────
+function parseSupportFields(effect, parsed) {
+  const out = { shieldPct: 0, shieldMode: 'pool', shieldTurns: 3, immuneTurns: 0, energyPct: 0, regen: null, damageTakenPct: 0, damageTakenTurns: 3, reflectPct: 0, reflectTurns: 3, cleanse: false, party: false, any: false, extraBuffs: [] };
+  const lines = String(effect || '').split('\n').map(l => l.toLowerCase().replace(/\*\*/g, ''));
+  const whole = lines.join(' ');
+  const turnsIn = (l, dflt) => { const m = l.match(/(\d+)\s*(?:turns?|rounds?)/); return m ? Math.max(1, Math.min(10, parseInt(m[1], 10))) : dflt; };
+  const pctIn = (l) => { const m = l.match(/(\d{1,3})\s*%/); return m ? Math.max(1, Math.min(100, parseInt(m[1], 10))) : 0; };
+  for (const l of lines) {
+    if (!l.trim() || /^\s*•?\s*passive/.test(l)) continue;
+    const aboutEnemy = (/\b(enemy|enemies|foe|opponent)\b/.test(l) || (/\btarget'?s?\b/.test(l) && /deals?|damage|dmg|drain|steal|inflict|debuff|-\s*\d+%/.test(l) && !/gains?|shield|heal|restor|regen/.test(l))) && !/\b(you|your|self|ally|allies|party|team)\b/.test(l);
+    // "+40% ATK/DEF" / "+30% ATK & DEF" → BOTH stats (the parser only reads the first)
+    {
+      const m = l.match(/\+\s*(\d{1,3})\s*%\s*(atk|attack|def|defen[cs]e|spd|speed)\s*(?:\/|&|and|,)\s*(atk|attack|def|defen[cs]e|spd|speed)\b/) || l.match(/(atk|attack|def|defen[cs]e|spd|speed)\s*(?:\/|&|and|,)\s*(atk|attack|def|defen[cs]e|spd|speed)\s*\+\s*(\d{1,3})\s*%/);
+      if (m && !aboutEnemy && !/enemy|target/.test(l)) {
+        const amt = parseInt(m[1].match(/^\d+$/) ? m[1] : m[3], 10);
+        const names = (m[1].match(/^\d+$/) ? [m[2], m[3]] : [m[1], m[2]]).map(x => /^atk|attack/.test(x) ? 'atk' : /^def/.test(x) ? 'def' : 'speed');
+        for (const st of names) out.extraBuffs.push({ stat: st, amount: amt, duration: turnsIn(l, 3) });
+      }
+    }
+    // vague stat promises → concrete buffs ("All stats up", "Buffs allies", "Massive defense")
+    if (!pctIn(l)) {
+      if (/\ball\s+stats\s+(?:up|boost\w*|increas\w*|rais\w*)|boosts?\s+all\s+stats|empower\w*\s+(?:all|party|allies)/.test(l)) { for (const st of ['atk', 'def', 'speed']) out.extraBuffs.push({ stat: st, amount: 25, duration: turnsIn(l, 3) }); }
+      else if (/^\W*buffs?\s+(?:all\s+)?(?:allies|party|all)\b|^\W*buffs?\s+allies/.test(l)) { for (const st of ['atk', 'def']) out.extraBuffs.push({ stat: st, amount: 15, duration: turnsIn(l, 3) }); }
+      else if (/massive\s+defen[cs]e|impenetrable\s+(?:armou?r|defen[cs]e)|unbreakable\s+guard/.test(l)) out.extraBuffs.push({ stat: 'def', amount: 50, duration: turnsIn(l, 3) });
+    }
+    // shield / barrier / block
+    if (/\bshield|barrier|\babsorbs?\b|blocks? (?:the )?next|\bward\b/.test(l) && !/breaks?\s+(?:enemy\s+)?shield|ignores?[^.]*shield|shield\s*(?:break|pierc|stance|bash|slam|charge|throw)|through\s+shield|bypass/.test(l) && !aboutEnemy) {
+      const pct = pctIn(l);
+      const rate = /of\s+(?:each|every|all|incoming|magic|physical|monster)?\s*(?:damage|hits?|dmg)|\d+%\s+each/.test(l);
+      const hits = l.match(/next\s+(\d+)\s+hits?/);
+      if (pct || hits) {
+        out.shieldPct = Math.max(out.shieldPct, pct || 30);
+        out.shieldMode = rate ? 'rate' : 'pool';
+        out.shieldTurns = hits ? Math.max(2, parseInt(hits[1], 10)) : turnsIn(l, 3);
+      } else if (/\bshield\b|\bbarrier\b/.test(l)) {
+        out.shieldPct = Math.max(out.shieldPct, 30); out.shieldTurns = turnsIn(l, 3);
+      }
+    }
+    // immunity / invulnerability / block all / untargetable / dodge all
+    const immuneGeneral = /(?:complete|total|full)\s+immunity|immun(?:e|ity)\s*(?:to\s+(?:all\s+)?(?:damage|everything)|(?:for\s+)?\d+\s+turns?|$|[,.;)+&]|and\s|for\s|after\s|next\s)|^\W*immune\W*$|invulnerab|block(?:s)?\s+all\s+damage|cannot\s+be\s+(?:hit|damaged|targeted)|untargetable|dodge\s+all|become\s+invisible|invisible\s+for|phase\s+out/.test(l.trim() + ' ')
+      && !/ignores?|bypass|pierc|cc\s+immun|status\s+immun|crowd|immun(?:e|ity)\s+to\s+(?:all\s+)?(?:cc|stun|status|fear|freez|slow|debuff|bleed|burn|poison|silence|knockback|weaken|elements?|magic|effects)/.test(l);
+    if (immuneGeneral && !aboutEnemy) {
+      out.immuneTurns = Math.max(out.immuneTurns, turnsIn(l, 1));
+    }
+    // energy restore
+    if (/\benergy\b|\bmana\b(?!\s*stones?)/.test(l) && !/cost|spend|drain\w*\s+(?:enemy|target)|steal|-\s*\d+\s*energy/.test(l)) {
+      const m = l.match(/(?:restor\w*|regain\w*|recover\w*|regenerat\w*|refill\w*|gains?|grants?)\s+(?:up\s+to\s+)?(?:\w+\s+){0,3}?(\d{1,3})\s*%\s*(?:of\s+)?(?:their\s+|your\s+)?(?:max(?:imum)?\s*)?(?:energy|mana)/)
+        || l.match(/(\d{1,3})\s*%\s*(?:of\s+)?(?:max(?:imum)?\s*)?(?:energy|mana)\s+(?:restored|regen\w*|recovered|back)/)
+        || l.match(/(?:energy|mana)\s*\+\s*(\d{1,3})\s*%/) || l.match(/\+\s*(\d{1,3})\s*%\s*(?:max\s+)?(?:energy|mana)\b/);
+      if (m) out.energyPct = Math.max(out.energyPct, Math.min(100, parseInt(m[1], 10)));
+    }
+    // regen (HoT)
+    if (/heal|regen|restor|recover/.test(l) && /(?:per|each|every)\s+turn|\/\s*turn|over\s+time|\bhot\b|over\s+\d+\s+turns/.test(l) && !/dmg\/turn|damage\/turn|damage per turn|poison|burn|bleed/.test(l) && !aboutEnemy) {
+      const pct = pctIn(l) || 5;
+      const turns = turnsIn(l, 3);
+      if (!out.regen || pct > out.regen.pct) out.regen = { pct, turns };
+    }
+    // damage reduction on self / party
+    if (!aboutEnemy) {
+      const m = l.match(/(?:damage|dmg)\s+(?:taken\s+)?(?:reduced|reduction|-)\s*(?:by\s+)?(\d{1,3})\s*%/) || l.match(/(?:reduces?|reduc\w+|take|takes)\s+(?:all\s+)?(?:incoming\s+)?(?:damage|dmg)(?:\s+taken)?\s+(?:by\s+)?(\d{1,3})\s*%/) || l.match(/(?:takes?|take)\s+(\d{1,3})\s*%\s+less/) || l.match(/damage\s+taken\s*-\s*(\d{1,3})\s*%/) || l.match(/-\s*(\d{1,3})\s*%\s*(?:damage|dmg)\s+taken/);
+      if (m) { out.damageTakenPct = Math.max(out.damageTakenPct, Math.min(90, parseInt(m[1], 10))); out.damageTakenTurns = turnsIn(l, 3); }
+      else if (/massive defen[cs]e|impenetrable|fortress/.test(l) && !pctIn(l)) { out.damageTakenPct = Math.max(out.damageTakenPct, 40); out.damageTakenTurns = turnsIn(l, 3); }
+    }
+    // reflect
+    if (/reflect/.test(l) && !/reflects?\s+(?:the\s+)?(?:enemy|target)|cannot\s+be[^.]*reflect|be\s+reflected|^\W*enem/.test(l)) {
+      const pct = pctIn(l) || 30;
+      out.reflectPct = Math.max(out.reflectPct, Math.min(100, pct)); out.reflectTurns = turnsIn(l, 3);
+    }
+    // cleanse
+    if (/cleanse|purif|remov\w*\s+(?:all\s+|\d+\s+|one\s+|1\s+)?(?:your\s+|ally\s+|party\s+)?(?:debuffs?|status(?:\s+effects?)?|ailments?|curses?)|clears?\s+(?:all\s+)?(?:debuffs?|status)/.test(l) && !/enemy|target'?s?\s+buffs?|removes?\s+(?:all\s+)?(?:enemy\s+)?buffs|cannot\s+be\s+cleansed|can't\s+be\s+cleansed/.test(l)) out.cleanse = true;
+  }
+  const scope = whole.replace(/(?:all|every)\s+(?:your\s+)?(?:de)?buffs?/g, ' ').replace(/all\s+(?:status\s+)?(?:effects|ailments)/g, ' ').replace(/(?:all|every)\s+enem(?:y|ies)/g, ' ');
+  out.party = /\b(all\s+(?:allies|party|members|alive\s+allies|ko'd\s+allies)|entire\s+party|every\s+ally|whole\s+party|party(?:\s+members|-wide)?|allies|team(?:mates)?|aoe\s+buff|area\s+buff|group\s+buff|aoe\s+heal)\b/.test(scope);
+  out.any = !!(out.shieldPct || out.immuneTurns || out.energyPct || out.regen || out.damageTakenPct || out.reflectPct || out.cleanse || out.extraBuffs.length || (parsed && parsed.buffs && parsed.buffs.length));
+  return out;
+}
+
+// ── Push #94: APPLY the support contract to one unit (self or an ally) ───────
+// Returns { lines }. Shields use the generic absorb model (Necromancy.absorb);
+// immunity = an unbreakable full-rate shield; regen/reflect/damage-taken ride
+// in tempBuffs and tick down with UnifiedCombat.tickStatuses.
+function applySupportFields(entry, caster, target, opts = {}) {
+  const lines = [];
+  if (!entry || !target || !target.stats) return { lines };
+  const u = target;
+  const who = opts.name || u.name || 'ally';
+  const max = (() => { try { return (opts.effMaxOf && opts.effMaxOf(u)) || require('./GearSystem').effectiveMaxHp(u); } catch (e) { return u.stats.maxHp || 100; } })();
+  const power = Number(opts.healPower) || 1;
+  u.tempBuffs = u.tempBuffs || {};
+  if (entry.immuneTurns > 0) {
+    u.tempBuffs.shield = { amount: 1e9, pct: 1, duration: entry.immuneTurns + 1, source: `${entry.name} (immunity)`, immune: true };
+    lines.push(`🛡️ *${who}* is IMMUNE to damage for ${entry.immuneTurns} turn${entry.immuneTurns === 1 ? '' : 's'}`);
+  } else if (entry.shieldPct > 0) {
+    const cur = u.tempBuffs.shield;
+    if (!(cur && cur.immune)) {
+      const rate = entry.shieldMode === 'rate';
+      const pool = Math.max(1, Math.floor(max * (rate ? 0.6 : entry.shieldPct / 100) * power));
+      u.tempBuffs.shield = { amount: pool, pct: rate ? entry.shieldPct / 100 : 1, duration: (entry.shieldTurns || 3) + 1, source: entry.name };
+      lines.push(rate ? `🛡️ *${who}* warded — ${entry.shieldPct}% of every hit absorbed for ${entry.shieldTurns} turns (${pool} HP pool)` : `🛡️ *${who}* shielded for ${pool} HP (${entry.shieldPct}% max HP, ${entry.shieldTurns} turns)`);
+    }
+  }
+  if (entry.energyPct > 0 && u.stats.maxEnergy) {
+    const e = Math.floor(u.stats.maxEnergy * entry.energyPct / 100);
+    const before = u.stats.energy || 0;
+    u.stats.energy = Math.min(u.stats.maxEnergy, before + e);
+    if (u.stats.energy - before > 0) lines.push(`⚡ *${who}* +${u.stats.energy - before} energy (${entry.energyPct}% max)`);
+  }
+  if (entry.regen && entry.regen.pct > 0) {
+    u.tempBuffs.regen = { pct: entry.regen.pct, duration: entry.regen.turns + 1, source: entry.name, power };
+    lines.push(`💞 *${who}* regenerates ${entry.regen.pct}% max HP per turn for ${entry.regen.turns} turns`);
+  }
+  if (entry.damageTakenPct > 0) {
+    u.tempBuffs[`${entry.name}:dr`] = { stat: 'damageTaken', amount: -Math.abs(entry.damageTakenPct), duration: (entry.damageTakenTurns || 3) + 1 };
+    lines.push(`🧱 *${who}* takes ${entry.damageTakenPct}% less damage for ${entry.damageTakenTurns} turns`);
+  }
+  if (entry.reflectPct > 0) {
+    u.tempBuffs.reflect = { pct: entry.reflectPct, duration: (entry.reflectTurns || 3) + 1, source: entry.name };
+    lines.push(`🪞 *${who}* reflects ${entry.reflectPct}% of damage taken for ${entry.reflectTurns} turns`);
+  }
+  if (entry.cleanse && Array.isArray(u.statusEffects) && u.statusEffects.length) {
+    const n = u.statusEffects.length; u.statusEffects = [];
+    lines.push(`✨ *${who}* cleansed (${n} effect${n === 1 ? '' : 's'})`);
+  }
+  return { lines };
+}
+
 function normalise(className, raw, index) {
   const name   = String(raw.name || `Skill ${index + 1}`).trim();
   const effect = ensureParseable(raw.effect || '• Deals 100% ATK damage');
@@ -265,17 +391,11 @@ function normalise(className, raw, index) {
   // Some source rows carry a stub ("💀 Killing shot"). Attack patterns never
   // read like that, and skills are meant to, so short lore is expanded with
   // the skill's real mechanics instead of shipping a one-liner.
-  if (desc.length < 45) {
-    const firstLine = effect.split('\n')[0].replace(/^[•\s]*/, '').replace(/\*\*/g, '');
-    const theme = themeFor(className, name)[hashRand(name, themeFor(className, name).length)];
-    desc = `${name} — ${titleCase(theme)} doctrine of ${className}. ${
-      (raw.type || '').toLowerCase() === 'passive' ? 'Always running; no energy, no activation.'
-      : (raw.type || '').toLowerCase() === 'heal' ? 'Bought with a turn of vulnerability and paid back in breath.'
-      : (raw.type || '').toLowerCase() === 'buff' ? 'A priming technique: set the fight up before you swing for real.'
-      : 'One opening, one commitment.'} ${
-      (raw.type || '').toLowerCase() === 'passive' ? 'It never stops working.' : `In play: ${firstLine}.`
-    }`;
-  }
+  // Push #94: short/stub/missing flavour → generated per skill (see
+  // SkillFlavour): name-driven imagery + class voice + type structure + tier
+  // note, deterministic, and distinct for every skill in the game. The exact
+  // mechanics sentence is appended below once the type is known.
+  let _needFlavour = desc.length < 45 || /doctrine of|is a signature .* technique/i.test(desc);
 
   let parsed = { damage: true, damageMultiplier: 0, statusEffects: [], buffs: [], debuffs: [], special: [] };
   try {
@@ -354,6 +474,15 @@ function normalise(className, raw, index) {
       duration: Math.max(2, Number(s.duration ?? s.turns ?? 2)), // Push #72: multi-turn
     }));
 
+  // Push #94: EXPLICIT SUPPORT CONTRACT — every shield / immunity / energy /
+  // regen / reflect / damage-reduction / cleanse / party promise in the text
+  // becomes a number the engines apply (no more regex-at-cast-time guessing).
+  const support = parseSupportFields(effect, parsed);
+  if (support.extraBuffs.length) {
+    parsed.buffs = parsed.buffs || [];
+    for (const b of support.extraBuffs) if (!parsed.buffs.some(x => x && x.stat === b.stat)) parsed.buffs.push(b);
+  }
+
   let type        = String(raw.type || (statuses.length && !parsed.damageMultiplier ? 'debuff' : 'damage')).toLowerCase();
   // Push #71: a healing move with no stated ATK multiplier IS a heal skill.
   if (type === 'damage' && selfHeal && !parsed.damageMultiplier) type = 'heal';
@@ -369,6 +498,15 @@ function normalise(className, raw, index) {
       const firstLine = lc.split('\n')[0];
       const buffFirst = /[+]\d+%|\b(?:atk|def|spd|speed|all stats)\s*\+|dodge all|immun|shield|barrier/.test(firstLine);
       type = buffFirst ? 'buff' : (/heal|restores?|cleanse|purif|reviv/.test(lc) ? 'heal' : 'buff');
+    }
+    // Push #94: no stated ATK multiplier + a support contract (Iron Wall
+    // "+200% DEF", Divine Shield "Block ALL damage", Blessing of Kings "All
+    // stats up", Divine Protection "Complete immunity") = a BUFF, not a strike.
+    else if (support.any && (() => {
+      const lcS = lcD.replace(/block\w*\s+all\s+damage|immun\w*\s+to\s+(?:all\s+)?damage|reflects?\s+(?:\d+%\s+)?(?:of\s+)?(?:magic\s+|physical\s+)?damage|damage\s+reduction|damage\s+boost|of\s+damage|absorbs?[^.\n]*damage|(?:heals?|healed)\s+\d+%\s+of\s+damage/g, ' ');
+      return !/(?<![+\-−])\b\d+\s*%\s*(?:atk|attack|physical|magic|magical|holy|dark|fire|ice|true|aoe|water|blood|shadow|lightning|void|spirit|damage|dmg)/.test(lcS) && !/\bdamage\b|\bdmg\b|\b(?:deals?|dealing|strikes?|hits?|slash\w*|shots?|arrows?|blasts?|pierc\w*)\b/.test(lcS);
+    })()) {
+      type = (selfHeal || support.regen) ? 'heal' : 'buff';
     }
   }
   const isPassive = type === 'passive' || /•\s*passive/i.test(effect);
@@ -389,14 +527,31 @@ function normalise(className, raw, index) {
   // Push #76: every description ends with a plain-language mechanics summary
   // (multiplier, buffs, debuffs, statuses, heal, cost) so a player knows
   // exactly what the skill does before spending energy on it.
+  if (_needFlavour) {
+    try {
+      const SF = require('./SkillFlavour');
+      desc = SF.flavourFor({ className, name, type: isPassive ? 'passive' : type, index, total: SKILLS_PER_CLASS });
+      if (raw._signature && raw._lore) desc = `${desc} Class creed: "${String(raw._lore).replace(/\.$/, '')}."`;
+    } catch (e) { desc = `${name} — a ${className} technique.`; }
+  }
   const _mech = [];
   if (!isPassive && damagePct > 0 && type !== 'heal' && type !== 'buff') _mech.push(`${damagePct}% ATK`);
-  for (const b of (parsed.buffs || [])) _mech.push(`self ${String(b.stat).toUpperCase()} +${b.amount}% for ${b.duration || 2} turns`);
+  for (const b of (parsed.buffs || [])) _mech.push(`${support.party && !isPassive ? 'party' : 'self'} ${String(b.stat).toUpperCase()} +${b.amount}% for ${b.duration || 2} turns`);
   for (const d of (parsed.debuffs || [])) _mech.push(d.stat === 'damageTaken' ? `target takes +${d.amount}% damage for ${d.duration || 3} turns` : `target ${String(d.stat).toUpperCase()} -${d.amount}% for ${d.duration || 3} turns`);
   for (const st of statuses) _mech.push(`${st.chance}% to inflict ${st.type.toUpperCase()} (${st.duration}t)`);
-  if (selfHeal) _mech.push(`heals ${Math.round(selfHeal.percent)}% max HP`);
+  const _healingPct = _hpPct.heal != null ? _hpPct.heal : _hpPct.drain ? 0 : (Math.round(Number(selfHeal && selfHeal.percent) || 0) || (type === 'heal' ? 20 + index : 0));
+  if (_healingPct > 0) _mech.push(`heals ${_healingPct}% max HP${support.party ? (className === 'Healer' ? ' to the whole party' : ' (self — party healing is a Healer power)') : ''}`);
+  if (support.shieldPct) _mech.push(support.shieldMode === 'rate' ? `shield absorbs ${support.shieldPct}% of each hit for ${support.shieldTurns} turns` : `shield worth ${support.shieldPct}% max HP for ${support.shieldTurns} turns`);
+  if (support.immuneTurns) _mech.push(`immune to damage for ${support.immuneTurns} turn${support.immuneTurns === 1 ? '' : 's'}`);
+  if (support.energyPct) _mech.push(`restores ${support.energyPct}% max energy`);
+  if (support.regen) _mech.push(`regenerates ${support.regen.pct}% max HP per turn for ${support.regen.turns} turns`);
+  if (support.damageTakenPct) _mech.push(`damage taken -${support.damageTakenPct}% for ${support.damageTakenTurns} turns`);
+  if (support.reflectPct) _mech.push(`reflects ${support.reflectPct}% of damage taken for ${support.reflectTurns} turns`);
+  if (support.cleanse) _mech.push(`cleanses status effects`);
+  if (support.party && !isPassive && !(parsed.buffs || []).length && !_healingPct) _mech.push(`reaches the whole party`);
   if (!isPassive) _mech.push(`${energyCost} energy`);
-  if (_mech.length && !/Mechanics:/.test(desc)) desc = `${desc.replace(/\s+$/, '')}${/[.!?]$/.test(desc) ? '' : '.'} Mechanics: ${_mech.join(' · ')}.`;
+  if (_mech.length && !/Mechanics:/.test(desc)) desc = `${desc.replace(/\s+$/, '')}${/[.!?]["”]?$/.test(desc) ? '' : '.'} Mechanics: ${_mech.join(' · ')}.`;
+  else if (!_mech.length && isPassive && !/Mechanics:/.test(desc)) desc = `${desc.replace(/\s+$/, '')}${/[.!?]$/.test(desc) ? '' : '.'} Mechanics: passive — ${effect.split('\n')[0].replace(/^[•\s]*(?:passive:\s*)?/i, '').replace(/\*\*/g, '')}.`;
 
   return {
     name, className, index,
@@ -409,7 +564,7 @@ function normalise(className, raw, index) {
     energyCost,
     damagePct,
     flatDamage: Number(raw.damage ?? 0) || 0,
-    healingPct: _hpPct.heal != null ? _hpPct.heal : _hpPct.drain ? 0 : (Math.round(Number(selfHeal && selfHeal.percent) || 0) || (type === 'heal' ? 20 + index : 0)),
+    healingPct: _healingPct,
     // Push #88b: "% of HP" is a CONTRACT. drainPct = % of target max HP taken
     // (healed back to caster unless drainHeals=false); selfCostPct = % of own
     // max HP paid to cast. Engines apply exactly these numbers, nothing else.
@@ -420,6 +575,15 @@ function normalise(className, raw, index) {
     debuffs: parsed.debuffs || [],
     selfDebuffs: parsed.selfDebuffs || [],
     statuses,
+    // Push #94 support contract (applied by applySupportFields in every engine)
+    shieldPct: support.shieldPct, shieldMode: support.shieldMode, shieldTurns: support.shieldTurns,
+    immuneTurns: support.immuneTurns,
+    energyPct: support.energyPct,
+    regen: support.regen,
+    damageTakenPct: support.damageTakenPct, damageTakenTurns: support.damageTakenTurns,
+    reflectPct: support.reflectPct, reflectTurns: support.reflectTurns,
+    cleanse: support.cleanse,
+    party: support.party,
     unlocksAtLevel: Math.min(100, (index + 1) * UNLOCK_STEP),
     level: 1,
     maxLevel: MAX_SKILL_LEVEL,
@@ -460,12 +624,9 @@ function buildRoster(className, variant = null) {
         raws.unshift({
           name: s.name, type: s.type, maxPotency: pot, fromClassFile: true,
           // Push #76: real lore, not a stub — class lore + what the move does.
-          description: s.desc ? `${s.name} is a signature ${className} technique${cls.lore ? ` — "${String(cls.lore).replace(/\.$/, '')}"` : ''}. ${
-            s.type === 'passive' ? 'It is always active, costs nothing and never needs to be cast.'
-            : s.type === 'buff' ? 'Cast it before the exchange to tilt the fight in your favour.'
-            : s.type === 'heal' ? 'A recovery technique that trades a moment of exposure for staying power.'
-            : s.type === 'debuff' ? 'It cripples the target before the real blow lands.'
-            : 'A committed strike that rewards good timing.'} In play: ${fill(s.desc)}.` : undefined,
+          // Push #94: flavour is generated per skill (SkillFlavour) — the old
+          // "is a signature <Class> technique" stamp read identically on 100+ skills.
+          description: undefined, _signature: true, _lore: cls.lore || null,
           effect: s.desc ? `• ${fill(s.desc)}` : undefined,
           energyCost: s.type === 'passive' ? 0 : 25,
           cooldown: s.type === 'passive' ? 0 : 2,
@@ -722,7 +883,7 @@ function syncPlayerSkills(player) {
 
     if (entry.isPassive) {
       if (!inPass) { player.skills.passive.push(fresh); changed = true; }
-      else if (inPass.effect !== fresh.effect) { Object.assign(inPass, fresh, { level: inPass.level || 1 }); changed = true; }
+      else if (inPass.effect !== fresh.effect || inPass.description !== fresh.description) { Object.assign(inPass, fresh, { level: inPass.level || 1 }); changed = true; }
       for (const arr of [player.skills.active, player.availableSkills, player.skills.locked]) {
         const i = arr.findIndex(s => nameOf(s) === n);
         if (i >= 0) { arr.splice(i, 1); changed = true; }
@@ -745,6 +906,7 @@ function syncPlayerSkills(player) {
         changed = true;
       } else if (holder.effect !== fresh.effect || holder.damagePct !== fresh.damagePct
               || holder.energyCost !== fresh.energyCost || holder.cooldown !== fresh.cooldown
+              || holder.description !== fresh.description || holder.type !== fresh.type // Push #94: new flavour / retyped support skills reach live hunters
               || !Array.isArray(holder.statuses)) {
         Object.assign(holder, fresh, { level: holder.level || 1 });
         changed = true;
@@ -989,6 +1151,7 @@ function carrySkillProgress(player, snap) {
   return { applied, count: now.length, wanted: snap.count };
 }
 module.exports = {
+  parseSupportFields, applySupportFields,
   snapshotSkillProgress, carrySkillProgress,
   applyHpPercents,
   SKILLS_PER_CLASS, UNLOCK_STEP, MAX_SKILL_LEVEL, SUPPORTED_STATUS,

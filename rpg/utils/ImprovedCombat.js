@@ -226,6 +226,8 @@ class ImprovedCombat {
     // Push #88b: exact %-HP drains / self-costs stated in the skill text.
     let _hpxLines = [];
     try { const _x = SkillCatalog.applyHpPercents(entry, attacker, defender); _hpxLines = _x.lines || []; } catch (e) {}
+    // Push #94: support contract on the caster (immunity / shield / regen / reflect / cleanse / energy).
+    try { const _sf = SkillCatalog.applySupportFields(entry, attacker, attacker, { name: attacker.name }); _hpxLines = _hpxLines.concat(_sf.lines || []); } catch (e) {}
 
     // Push #88o: dodged → no damage, no on-hit statuses; cooldown already spent.
     if (_monDodged) { finalDamage = 0; isCrit = false; try { parsedEffects.statusEffects = []; } catch (e) {} }
