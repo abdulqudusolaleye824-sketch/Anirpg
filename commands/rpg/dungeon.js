@@ -95,8 +95,13 @@ function executeMonsterAI(monster, player, ctx = null) {
   const mPro = UI.isPro(player);
   const FRAME = mPro ? UI.PRO_BAR : UI.FREE_BAR;
   const useSkill = Math.random() < 0.75 && monster.abilities?.length > 0;
-  const ability  = useSkill ? monster.abilities[Math.floor(Math.random() * monster.abilities.length)] : null;
+  // Push #96h-l: a support move (Regenerate / Harden …) is FREE — heal/buff lines first, no damage, then the real attack.
+  const _MSFXd = require('../../rpg/utils/MonsterSkillFX');
+  const _pickD = useSkill ? _MSFXd.pickMoves(monster.abilities, null) : { support: null, attack: null };
+  const ability  = _pickD.attack;
   const abilityName = ability ? (typeof ability === 'string' ? ability : ability.name) : null;
+  let _supportTxt = '';
+  if (_pickD.support) { try { const _ss = _MSFXd.supportStep(monster, player, _pickD.support); _supportTxt = _ss.blocks.join('\n') + '\n'; } catch (e) {} }
   const line     = getDialogue(monster.name);
   // Push #95: abilities do what they say — multiplier, pierce, drain, buff, status.
   const MSFX = require('../../rpg/utils/MonsterSkillFX');
@@ -121,7 +126,7 @@ function executeMonsterAI(monster, player, ctx = null) {
   let _mAccMod = 1; try { _mAccMod = require('../../rpg/utils/StatusEffectManager').getStatModifiers(monster).accuracyMod; } catch (e) {}
   const _blindMiss = _mAccMod < 1 && Math.random() >= _mAccMod; // Push #96h-j: blind/fear cut the beast's accuracy by the status table
   if ((dodge > 0 && Math.random() < dodge) || _blindMiss) {
-    return `\n${FRAME}\n🔄 ${monster.name.toUpperCase()}'S TURN${mPro ? ' 💎' : ''}\n${FRAME}\n${monster.emoji} ${monster.name} ${abilityName ? 'uses *' + abilityName + '*!' : 'attacks!'}\n💬 "${line}"\n${FRAME}\n${_blindMiss ? '🌫️ Blinded — the strike goes wide!' : '💨 *You dodged the attack!*'}\n❤️ Your HP: ${Math.max(0, player.stats.hp)}/${_effMax(player)}\n`;
+    return `\n${FRAME}\n🔄 ${monster.name.toUpperCase()}'S TURN${mPro ? ' 💎' : ''}\n${FRAME}\n${_supportTxt}${monster.emoji} ${monster.name} ${abilityName ? 'uses *' + abilityName + '*!' : 'attacks!'}\n💬 "${line}"\n${FRAME}\n${_blindMiss ? '🌫️ Blinded — the strike goes wide!' : '💨 *You dodged the attack!*'}\n❤️ Your HP: ${Math.max(0, player.stats.hp)}/${_effMax(player)}\n`;
   }
 
   // Push #96g: ratio mitigation — DEF/(DEF+monster ATK), capped 70% — so real armour matters against big hits.
@@ -153,7 +158,7 @@ function executeMonsterAI(monster, player, ctx = null) {
     try { const fx = MSFX.apply(monster, player, ability, finalDmg); if (fx.lines.length) fxLines = '\n' + fx.lines.join('\n'); } catch (e) {}
   }
 
-  let msg = `\n${FRAME}\n🔄 ${monster.name.toUpperCase()}'S TURN${mPro ? ' 💎' : ''}\n${FRAME}\n`;
+  let msg = `\n${FRAME}\n🔄 ${monster.name.toUpperCase()}'S TURN${mPro ? ' 💎' : ''}\n${FRAME}\n${_supportTxt}`;
   msg += `${monster.emoji} ${monster.name} ${abilityName ? 'uses *' + abilityName + '*!' : 'attacks!'}\n💬 "${line}"\n${FRAME}\n`;
   msg += `${_mCrit ? '💥 *CRITICAL HIT!* ' : ''}💥 You take *${finalDmg}* damage!${_absLine}${passiveLines}${fxLines}\n❤️ Your HP: ${Math.max(0, player.stats.hp)}/${_effMax(player)}\n`;
   // Push #95: DOMAINS — bosses and B-rank+ monsters may expand theirs.

@@ -228,7 +228,9 @@ function act(player, skillQuery) {
   if (m.stats.hp <= 0) return { ok: true, lines: [...lines, `☠️ ${m.name} succumbs to its wounds — strike again to claim the floor.`], ended: false };
   if (mc && mc.canAct === false) lines.push(`🧊 ${m.emoji} ${m.name} is ${mc.reason || 'held'} and cannot move!`);
   else if ((player.stats.hp || 0) > 0) {
-    const ability = Math.random() < 0.7 && m.abilities.length ? _pick(m.abilities) : null;
+    const _pk = Math.random() < 0.7 && m.abilities.length ? MSFX.pickMoves(m.abilities, null) : { support: null, attack: null }; // Push #96h-l: support moves are free
+    if (_pk.support) { try { lines.push(...MSFX.supportStep(m, player, _pk.support).blocks); } catch (e) {} }
+    const ability = _pk.attack;
     const abilityName = ability ? (typeof ability === 'string' ? ability : ability.name) : null;
     const c = ability ? MSFX.resolve(ability) : null;
     let mAtk = m.stats.atk; try { mAtk = Math.floor(mAtk * (1 + UC.tempBuffPct(m, 'atk') / 100)); } catch (e) {}

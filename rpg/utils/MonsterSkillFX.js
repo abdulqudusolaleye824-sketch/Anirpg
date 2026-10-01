@@ -148,6 +148,36 @@ function resolve(ability) {
   return out;
 }
 
+// Push #96h-l: SUPPORT moves (Regenerate, Harden, Roar-without-a-hit, Mend …) heal or buff the
+// beast and deal NO damage — and they cost it no turn: the beast still attacks afterwards.
+function isSupport(ability) {
+  const c = resolve(ability); if (!c.name) return false;
+  if (/^(💚\s*)?regenerate$/i.test(c.name)) return true;
+  const healOnly = c.selfHealPct > 0 && !c.status && !c.drainPct && c.healPct === 0;
+  const buffOnly = (c.selfBuffs || []).length > 0 && !c.status && !c.drainPct && c.healPct === 0 && c.mult <= DEFAULT_MULT;
+  return healOnly || buffOnly;
+}
+// Pick the beast's moves for this turn: an optional support move (free) + the attack it still makes.
+function pickMoves(pool, fallbackAttack = { name: 'Strike', effect: null, chance: 0 }) {
+  const list = Array.isArray(pool) && pool.length ? pool : [fallbackAttack];
+  const first = list[Math.floor(Math.random() * list.length)];
+  if (!isSupport(first)) return { support: null, attack: first };
+  const attacks = list.filter(a => !isSupport(a));
+  return { support: first, attack: attacks.length ? attacks[Math.floor(Math.random() * attacks.length)] : fallbackAttack };
+}
+// Execute a support move: heal/buff lines, zero damage. Returns the message blocks (step by step).
+function supportStep(monster, victim, ability) {
+  const c = resolve(ability); const nm = String(c.name || 'Support');
+  const fx = apply(monster, victim, ability, 0, { skipStatus: true });
+  const mStats = monster.stats || monster;
+  const blocks = [
+    `🌀 *MONSTER SUPPORT MOVE*\n${monster.emoji || '👹'} *${monster.name}* uses *${nm}*!`,
+    `_${(c.desc && c.desc.split('\n')[0]) || `${monster.name} steadies itself with ${nm.replace(/^[^\w]+/, '')}.`}_\n⏳ Costs no turn · deals no damage`,
+    fx.lines.length ? fx.lines.join('\n') : `✨ ${monster.name} braces — nothing changed.`,
+    `❤️ ${monster.emoji || '👹'} ${monster.name}: ${mStats.hp}/${mStats.maxHp || mStats.hp}\n⚔️ …and it still attacks!`,
+  ];
+  return { blocks, contract: c, lines: fx.lines };
+}
 function _max(p) { try { return require('./GearSystem').effectiveMaxHp(p) || p.stats.maxHp || 100; } catch (e) { return (p && p.stats && p.stats.maxHp) || 100; } }
 
 // Apply a status to a hunter with every defence layer (class resistance,
@@ -212,4 +242,4 @@ function apply(monster, player, ability, dmg, opts = {}) {
 function hitMult(ability) { return resolve(ability).mult || DEFAULT_MULT; }
 function pierce(ability) { return resolve(ability).pierce || 0; }
 
-module.exports = { FAMILY_BLIND_SKILL, blindSkillFor, parseDescription, descriptionOf, resolve, apply, applyStatus, hitMult, pierce, KEYWORDS };
+module.exports = { isSupport, pickMoves, supportStep, FAMILY_BLIND_SKILL, blindSkillFor, parseDescription, descriptionOf, resolve, apply, applyStatus, hitMult, pierce, KEYWORDS };

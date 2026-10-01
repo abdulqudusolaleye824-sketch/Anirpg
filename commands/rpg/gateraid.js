@@ -615,18 +615,30 @@ module.exports = {
       try {
         if (_grCanAct.canAct && target && !target.defeated && (target.hp || 0) > 0 && GR.raidMonsterGoesFirst(target, player)) {
           _monActedFirst = true;
-          const _aDef = GR.effectiveDef(player, sender); // Push #89: gear + title + pet
-          const _aRaw = GR.monsterDamage(target, _aDef, player);
-          const _aDmg = Math.min(Math.max(0, (player.stats.hp || 1) - 1), Math.floor(_aRaw)); // Push #88t: full force (it replaces the counter)
-          const _aCrit = !!(GR.monsterDamage.last && GR.monsterDamage.last.crit);
-          if (_aRaw > 0) player.stats.hp = Math.max(1, (player.stats.hp || 1) - _aDmg);
-          try { const _rm = (gate.raid?.members || []).find(m => m.id === sender || GR.GKM.normaliseJid(m.id) === GR.GKM.normaliseJid(sender)); if (_rm) _rm.hp = player.stats.hp; } catch (e) {}
           // Push #96h-e: SILENT initiative — the beast simply moves first; no speed talk.
-          await sock.sendMessage(chatId, { text: [
-            `${target.emoji || '👹'} *${target.name}* lunges before *${player.name}* can act!`,
-            ...((GR.monsterDamage.last && GR.monsterDamage.last.shieldLine) ? [GR.monsterDamage.last.shieldLine] : []),
-            _aRaw <= 0 ? `💨 *${player.name}* dodged the opening blow!` : `${_aCrit ? '💥 CRITICAL HIT — ' : ''}💢 *${player.name}* takes *${_aDmg}* damage → ❤️ ${player.stats.hp}/${_effMax(player)}`,
-          ].join('\n') });
+          // Push #96h-l: …but its move is explained step by step like any other, support moves are free.
+          await sock.sendMessage(chatId, { text: `${target.emoji || '👹'} *${target.name}* lunges before *${player.name}* can act!` });
+          const _MSFXi = require('../../rpg/utils/MonsterSkillFX');
+          const _iPool = (Array.isArray(target.skills) && target.skills.length) ? target.skills : [{ name: '🔥 Flame Spurt', effect: 'burn', chance: 40 }, { name: '⚡ Volt Shock', effect: 'stun', chance: 25 }, { name: '🩸 Savage Bite', effect: 'bleed', chance: 40 }, { name: '😱 Terror Howl', effect: 'fear', chance: 30 }, { name: '🌀 Void Crush', effect: 'weaken', chance: 35 }];
+          const _iPick = _MSFXi.pickMoves(_iPool);
+          if (_iPick.support) { try { const _ss = _MSFXi.supportStep(target, player, _iPick.support); for (const b of _ss.blocks) { await sock.sendMessage(chatId, { text: b }); await new Promise(r => setTimeout(r, 500)); } } catch (e) {} }
+          const _aDef = GR.effectiveDef(player, sender); // Push #89: gear + title + pet
+          const _hpBefore = player.stats.hp || 1;
+          const _aRaw = GR.monsterDamage(target, _aDef, player);
+          const _aDmg = Math.min(Math.max(0, _hpBefore - 1), Math.floor(_aRaw)); // Push #88t: full force (it replaces the counter), never a kill
+          const _iSkill = _iPick.attack || { name: 'Strike', effect: null, chance: 0 };
+          const _iBare = String(_iSkill.name || 'Strike').replace(/^[^\s]+\s/, '');
+          const _iWrap = { name: player.name, stats: { hp: _hpBefore, maxHp: _effMax(player) }, statusEffects: player.statusEffects || [] }; // playTurn applies the damage to this wrapper
+          await UCgFlow.playTurn(sock, chatId, {
+            attacker: { name: target.name, stats: { hp: target.hp, maxHp: target.maxHp }, statusEffects: target.statusEffects || [] }, defender: _iWrap,
+            move: { name: _iSkill.name, description: `A ferocious ${_iBare} technique.`, cooldownMs: 0, effect: _iSkill.effect ? { type: _iSkill.effect, chance: Math.min(90, (_iSkill.chance || 35) * GR.RAID_X2), duration: 2 } : null },
+            result: { damage: _aDmg, crit: !!(GR.monsterDamage.last && GR.monsterDamage.last.crit), missed: _aRaw <= 0, dodged: _aRaw <= 0, preAbsorbed: true, absorbedNote: (GR.monsterDamage.last && GR.monsterDamage.last.shieldLine) || null },
+            tag: `⚡ *MONSTER STRIKES FIRST*`, defenderBar: 'player', gapMs: 600,
+          });
+          player.stats.hp = Math.max(1, _hpBefore - (_aRaw > 0 ? _aDmg : 0));
+          try { if (_iWrap.statusEffects !== player.statusEffects) player.statusEffects = _iWrap.statusEffects; } catch (e) {}
+          try { const _rm = (gate.raid?.members || []).find(m => m.id === sender || GR.GKM.normaliseJid(m.id) === GR.GKM.normaliseJid(sender)); if (_rm) _rm.hp = player.stats.hp; } catch (e) {}
+          try { const _fx = _MSFXi.apply(target, player, _iSkill, _aDmg, { skipStatus: true }); if (_fx.lines.length) await sock.sendMessage(chatId, { text: _fx.lines.join('\n') }); } catch (e) {}
         }
       } catch (e) {}
       if (_grCanAct.canAct) {
@@ -845,7 +857,11 @@ module.exports = {
         { name: '🌀 Void Crush',  effect: 'weaken', chance: 35 }
       ];
       const _pool71 = (Array.isArray(target.skills) && target.skills.length) ? target.skills : skillPool; // Push #71: bestiary moves
-      const monsterSkill = _monCanAct.canAct ? _pool71[Math.floor(Math.random() * _pool71.length)] : null;
+      // Push #96h-l: support moves (Regenerate / Harden …) are free — the beast heals or buffs, then still attacks.
+      const _MSFXc = require('../../rpg/utils/MonsterSkillFX');
+      const _picked = _monCanAct.canAct ? _MSFXc.pickMoves(_pool71, skillPool[Math.floor(Math.random() * skillPool.length)]) : { support: null, attack: null };
+      const monsterSkill = _picked.attack;
+      if (_monCanAct.canAct && _picked.support) { try { const _ss = _MSFXc.supportStep(target, _victim, _picked.support); for (const b of _ss.blocks) { await sock.sendMessage(chatId, { text: b }); await new Promise(r => setTimeout(r, 500)); } } catch (e) {} }
       if (!_monCanAct.canAct && _monCanAct.reason === 'initiative') {
         await sock.sendMessage(chatId, { text: [
           ...(pro ? [UI.PRO_BAR, `⚡ *MONSTER SPENT* 💎`, UI.PRO_BAR] : [`⚡ *MONSTER SPENT*`, UI.FREE_BAR]),
@@ -1188,20 +1204,19 @@ module.exports = {
         // Push #88: the boss hits with its CALIBRATED atk (severity × floor), not a flat rank constant.
         const bossAtk = (typeof boss.atk === 'number' && boss.atk > 0) ? boss.atk : Math.floor(GATE_RANKS[gate.rank].monsterRange[1] * 0.20 * ((gate.calibrated && gate.calibrated.severity) || 1));
         // Push #74: boss hits go through the same dodge/passive/weaken maths.
-        const _bossRegen = Math.random() < 0.25 && boss.hp < boss.maxHp; // Push #96d: bosses can Regenerate (soft hit + heal 15%)
+        const _bossRegen = Math.random() < 0.25 && boss.hp < boss.maxHp; // Push #96d: bosses can Regenerate · Push #96h-l: it is a FREE support move (no damage, no turn) — the boss still strikes
+        if (_bossRegen) { try { const _ss = require('../../rpg/utils/MonsterSkillFX').supportStep(boss, _bVictim, '💚 Regenerate'); for (const b of _ss.blocks) { await sock.sendMessage(chatId, { text: b }); await new Promise(r => setTimeout(r, 500)); } } catch (e) {} }
         let dmg = GR.monsterDamage({ atk: bossAtk, speed: boss.speed || 14, statusEffects: boss.statusEffects || [], _raid: true, isBoss: true, rank: gate.rank }, def, _bVictim);
-        if (_bossRegen) dmg = Math.floor(dmg * 0.6);
         if (_bGuard && _bGuard.aggro) await sock.sendMessage(chatId, { text: `🎯 *AGGRO!* *${boss.name}* turns on the healer *${_bGuard.guardianName}*!` });
         else if (_bGuard) await sock.sendMessage(chatId, { text: `🛡️ *GUARD!* *${_bGuard.guardianName}* steps in front of *${player.name}* and takes the boss's blow!` });
         const bossAtkW = { name: boss.name, stats: { hp: boss.hp, maxHp: boss.maxHp }, statusEffects: [] };
         await UCgBoss.playTurn(sock, chatId, {
           attacker: bossAtkW, defender: _bVictim,
-          move: _bossRegen ? { name: '💚 Regenerate', description: 'The boss knits its wounds while lashing out.', cooldownMs: 0 } : { name: 'Retaliation', description: 'The boss lashes out with overwhelming force.', cooldownMs: 0 },
+          move: { name: 'Retaliation', description: 'The boss lashes out with overwhelming force.', cooldownMs: 0 },
           result: { damage: dmg, crit: !!(GR.monsterDamage.last && GR.monsterDamage.last.crit), missed: dmg <= 0, dodged: dmg <= 0, preAbsorbed: true, absorbedNote: (GR.monsterDamage.last && GR.monsterDamage.last.shieldLine) || null },
           tag: `💢 *BOSS COUNTER*`, gapMs: 600,
         });
         try { const _pl = GR.afterMonsterHit(_bVictim, boss, dmg); if (_pl.length) lines.push(..._pl); } catch (e) {}
-        if (_bossRegen) { try { const _fx = require('../../rpg/utils/MonsterSkillFX').apply(boss, _bVictim, '💚 Regenerate', dmg, { skipStatus: true }); if (_fx.lines.length) lines.push(..._fx.lines); } catch (e) {} }
         const heal = GR.lifeSteal(player, result.damage);
         if (heal > 0) player.stats.hp = Math.min(_effMax(player), player.stats.hp + heal);
         if (heal > 0) lines.push(`💚 Lifesteal: +${heal} HP`);
