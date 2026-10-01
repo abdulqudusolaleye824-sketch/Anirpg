@@ -5,8 +5,8 @@
 //     class, rolled at random, PERMANENT. Announced in DM (Pro) or the GC.
 //   • Domain Lv.1 → 100 with Upgrade Points: 10 to Lv.2, 15 to Lv.3, +5 each
 //     level after. Magnitude and duration scale with level.
-//   • /domain expand — 350 energy, lasts 2 turns at Lv.1 (+1 turn every 20
-//     levels, max 6). Buffs the caster's whole party, debuffs every enemy.
+//   • /domain expand — 350 energy at Lv.1, −5% every 2 levels (floor 30%); lasts 2 turns at Lv.1,
+//     +1 turn every 2 levels (Lv.10 → 6, Lv.20 → 11). Buffs the whole party, debuffs every enemy.
 //   • ONE domain per arena. Clash rules:
 //       monster ↔ hunter : stronger entity (domain power) wins
 //       hunter  ↔ hunter : class quality first, then domain power
@@ -114,7 +114,10 @@ function effectFor(cls, idx) {
   return { idx: i, name: names[i], arch: ARCHETYPES[i] };
 }
 function scale(lv) { return 1 + (Math.max(1, Math.min(MAX_LEVEL, lv)) - 1) * 0.02; }
-function turnsFor(lv) { return Math.min(6, 2 + Math.floor((Math.max(1, lv) - 1) / 20)); }
+// Push #96h-p: +1 turn every 2 domain levels (Lv.1 → 2 turns, Lv.10 → 6, Lv.20 → 11, Lv.100 → 51) and
+// −5% energy cost every 2 levels (floor 30% of base).
+function turnsFor(lv) { return 2 + Math.floor((Math.max(1, Math.min(MAX_LEVEL, lv)) - 1) / 2); }
+function costFor(lv) { return Math.max(Math.floor(CAST_ENERGY * 0.30), Math.floor(CAST_ENERGY * (1 - 0.05 * Math.floor((Math.max(1, Math.min(MAX_LEVEL, lv)) - 1) / 2)))); }
 function costToNext(lv) { return lv >= MAX_LEVEL ? null : 10 + 5 * (lv - 1); }
 function ensure(player) {
   if (!player) return null;
@@ -265,7 +268,7 @@ function expand(arena, player, allies = [player], enemies = [], ctx = {}) {
   if (!arena) return { ok: false, error: 'You can only expand a domain inside a raid, dungeon, instance or PvP battle.' };
   const e = scaledEffect(player);
   const energy = player.stats.energy || 0;
-  let _cost = CAST_ENERGY; try { if (require('./AuraSystem').AuraSystem.perks(player).sovereign) _cost = Math.floor(CAST_ENERGY / 2); } catch (e) {} // Push #96f: Sovereign aura tier
+  let _cost = costFor(player.domain.level || 1); try { if (require('./AuraSystem').AuraSystem.perks(player).sovereign) _cost = Math.floor(_cost / 2); } catch (e) {} // Push #96f: Sovereign aura tier
   if (energy < _cost) return { ok: false, error: `Domain Expansion costs *${_cost} ${player.energyType || 'energy'}* — you have ${energy}.` };
   const cur = active(arena); const lines = [];
   const myId = player.jid || player.id;
@@ -546,4 +549,4 @@ function findBattle(player, sender, db) {
   return null;
 }
 
-module.exports = { CLASS_KITS, kitFor, SKILL_DOMAINS, BREAK, splitMessages, sendDomain, FAMILY_DOMAINS, isShielded, shieldLine, monsterDomainInfo, MONSTER_DOMAINS, setupStep, setupPrompt, handleSetupReply, rename, pvpArena, endPvpArena, findBattle, CAST_ENERGY, MAX_LEVEL, UP_SHARE_CAP, ARCHETYPES, CLASS_DOMAINS, STAT_LABEL, effectFor, scale, turnsFor, costToNext, ensure, has, unlock, scaledEffect, describe, power, upgrade, arenaOf, active, shatter, tick, expand, monsterPower, monsterEligible, monsterTry, onLevelUp, shareUP };
+module.exports = { costFor, CLASS_KITS, kitFor, SKILL_DOMAINS, BREAK, splitMessages, sendDomain, FAMILY_DOMAINS, isShielded, shieldLine, monsterDomainInfo, MONSTER_DOMAINS, setupStep, setupPrompt, handleSetupReply, rename, pvpArena, endPvpArena, findBattle, CAST_ENERGY, MAX_LEVEL, UP_SHARE_CAP, ARCHETYPES, CLASS_DOMAINS, STAT_LABEL, effectFor, scale, turnsFor, costToNext, ensure, has, unlock, scaledEffect, describe, power, upgrade, arenaOf, active, shatter, tick, expand, monsterPower, monsterEligible, monsterTry, onLevelUp, shareUP };

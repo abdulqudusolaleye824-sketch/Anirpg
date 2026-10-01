@@ -1,3 +1,7 @@
+## 1.0.147 — Push #96h-p: domain duration & cost scale every 2 levels
+- Domain lasts **+1 turn every 2 levels**, no cap: Lv.1 → 2 turns, Lv.10 → 6, Lv.20 → 11, Lv.100 → 51.
+- Expansion costs **−5% energy every 2 levels** (floor 30%): Lv.1 350, Lv.10 280, Lv.20 192. `/domain` shows the live cost.
+
 ## 1.0.146 — Push #96h-o: DOMAIN REVAMP
 - **All class domains revamped:** archetype numbers ~2.5× (e.g. Bastion: Allies DEF +50% / dmg taken −30%, Enemies ATK −25%) PLUS a per-class kit on top — extra boosts, extra debuffs, forced STATUS EFFECTS on every enemy and an opening BURST (% of caster ATK). Berserker: ATK +40%, Crit +10%, Lifesteal +10%, enemies SPD −20%, 50% STUN · 100% BLEED · 100% SLOW, 250% burst. 25 kits; statuses/burst scale with domain level.
 - **No-miss:** while YOUR domain stands your moves have 100% accuracy (owner only — teammates unaffected).
