@@ -257,9 +257,12 @@ function hitCheck(attacker, defender, move, opts = {}) {
   const held = (defender?.statusEffects || []).some(e => ['stun', 'freeze', 'paralyze', 'petrify'].includes(String(e.type || '').toLowerCase()));
   let dodge = 0;
   if (!held && !(move && move.undodgeable)) { try { dodge = Math.min(opts.dodgeCap != null ? opts.dodgeCap : DODGE_CAP_VS_ACC, dodgeChance(attacker, defender, opts.pmD || null)); } catch (e) {} }
-  const hit = held ? 100 : Math.max(5, Math.min(100, a.acc - dodge));
+  // Push #96h-o: while YOUR domain stands, your moves cannot miss (owner only — not teammates).
+  let domainSure = false; try { const DS = require('./DomainSystem'); domainSure = !!DS.isShielded(attacker); } catch (e) {}
+  if (domainSure) { a.acc = 100; a.blind = false; dodge = 0; }
+  const hit = (held || domainSure) ? 100 : Math.max(5, Math.min(100, a.acc - dodge));
   const roll = Math.random() * 100;
-  const out = { hit: roll < hit, chance: Math.round(hit), acc: Math.round(a.acc), dodge: Math.round(dodge), blind: a.blind, held };
+  const out = { hit: roll < hit, chance: Math.round(hit), acc: Math.round(a.acc), dodge: Math.round(dodge), blind: a.blind, held, domainSure };
   out.why = out.hit ? null : (a.blind ? (a.blindType === 'fear' ? `😱 FEAR — accuracy cut to ${Math.round(a.acc)}%` : `🌫️ BLIND — accuracy cut to ${Math.round(a.acc)}%`) : dodge > 0 && roll >= a.acc - dodge && roll < a.acc ? `💨 dodged (${Math.round(dodge)}% speed edge)` : `🎯 missed (${Math.round(a.acc)}% accuracy)`);
   hitCheck.last = out;
   return out;

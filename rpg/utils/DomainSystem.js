@@ -24,17 +24,52 @@ const UP_SHARE_CAP = 20;
 // 10 archetypes. Numbers are the Lv.1 base; scale ×(1 + (lv−1)·0.02) → ~3× at Lv.100.
 // ally = tempBuffs on the caster's party; enemy = tempBuffs on every foe.
 const ARCHETYPES = [
-  { key: 'onslaught',  ally: { atk: 18, crit: 6 },                  enemy: { def: -12 } },
-  { key: 'bastion',    ally: { def: 22, damageTaken: -12 },         enemy: { atk: -10 } },
-  { key: 'tempo',      ally: { speed: 20, dodge: 8 },               enemy: { speed: -15 } },
-  { key: 'vampiric',   ally: { lifesteal: 12, atk: 8 },             enemy: { damageTaken: 10 } },
-  { key: 'execution',  ally: { crit: 12, armorPen: 15 },            enemy: { def: -10, dodge: -8 } },
-  { key: 'suppression',ally: { damageTaken: -8 },                   enemy: { atk: -20, speed: -10 } },
-  { key: 'sanctuary',  ally: { regen: 4, def: 10, damageTaken: -6 }, enemy: {} },
-  { key: 'mirror',     ally: { reflect: 18, def: 8 },               enemy: { damageTaken: 6 } },
-  { key: 'overload',   ally: { atk: 25, damageTaken: 8 },           enemy: { damageTaken: 8 } },
-  { key: 'sovereign',  ally: { atk: 10, def: 10, speed: 8, crit: 4 }, enemy: { atk: -6, def: -6 } },
+  // Push #96h-o: REVAMPED — roughly 2.5× the old numbers; every archetype now also shapes damage.
+  { key: 'onslaught',  ally: { atk: 45, crit: 15, armorPen: 10 },                 enemy: { def: -30 } },
+  { key: 'bastion',    ally: { def: 50, damageTaken: -30, atk: 15 },              enemy: { atk: -25 } },
+  { key: 'tempo',      ally: { speed: 45, dodge: 20, atk: 15 },                   enemy: { speed: -35 } },
+  { key: 'vampiric',   ally: { lifesteal: 25, atk: 25 },                          enemy: { damageTaken: 25 } },
+  { key: 'execution',  ally: { crit: 30, armorPen: 35, atk: 20 },                 enemy: { def: -25, dodge: -20 } },
+  { key: 'suppression',ally: { damageTaken: -20, atk: 15 },                       enemy: { atk: -40, speed: -25 } },
+  { key: 'sanctuary',  ally: { regen: 10, def: 25, damageTaken: -15, atk: 10 },   enemy: { atk: -10 } },
+  { key: 'mirror',     ally: { reflect: 40, def: 20, atk: 10 },                   enemy: { damageTaken: 15 } },
+  { key: 'overload',   ally: { atk: 60, crit: 10, damageTaken: 10 },              enemy: { damageTaken: 20 } },
+  { key: 'sovereign',  ally: { atk: 25, def: 25, speed: 20, crit: 10 },           enemy: { atk: -15, def: -15 } },
 ];
+
+// Push #96h-o: CLASS KITS — every class stamps its identity on top of the archetype:
+// extra ally boosts, extra enemy debuffs, STATUS EFFECTS forced on every enemy, and an
+// opening BURST (% of the caster's ATK) the moment the domain closes over the field.
+const CLASS_KITS = {
+  Berserker:    { ally: { atk: 40, crit: 10, lifesteal: 10 }, enemy: { speed: -20 }, statuses: [{ type: 'stun', chance: 50, duration: 1 }, { type: 'bleed', chance: 100, duration: 3 }, { type: 'trueslow', chance: 100, duration: 3 }], burst: 250 },
+  Warrior:      { ally: { atk: 30, def: 20 }, enemy: { def: -15 }, statuses: [{ type: 'stun', chance: 45, duration: 1 }, { type: 'weaken', chance: 100, duration: 3 }], burst: 200 },
+  Knight:       { ally: { def: 40, damageTaken: -15 }, enemy: { atk: -15 }, statuses: [{ type: 'stun', chance: 40, duration: 1 }, { type: 'trueslow', chance: 80, duration: 2 }], burst: 150 },
+  Paladin:      { ally: { def: 25, regen: 6, atk: 15 }, enemy: { atk: -15 }, statuses: [{ type: 'blind', chance: 80, duration: 2 }, { type: 'weaken', chance: 100, duration: 3 }], burst: 180 },
+  Warlord:      { ally: { atk: 30, def: 15, speed: 10 }, enemy: { atk: -15, def: -15 }, statuses: [{ type: 'fear', chance: 100, duration: 3 }, { type: 'trueslow', chance: 70, duration: 2 }], burst: 200 },
+  BloodKnight:  { ally: { lifesteal: 25, atk: 25 }, enemy: { damageTaken: 15 }, statuses: [{ type: 'bleed', chance: 100, duration: 4 }, { type: 'weaken', chance: 80, duration: 3 }], burst: 220 },
+  DragonKnight: { ally: { atk: 35, def: 15 }, enemy: { def: -15 }, statuses: [{ type: 'burn', chance: 100, duration: 3 }, { type: 'fear', chance: 70, duration: 2 }], burst: 260 },
+  Archer:       { ally: { crit: 25, armorPen: 20, atk: 25 }, enemy: { dodge: -25 }, statuses: [{ type: 'stun', chance: 75, duration: 1 }, { type: 'bleed', chance: 100, duration: 3 }], burst: 240 },
+  Ranger:       { ally: { crit: 15, speed: 20, atk: 20 }, enemy: { speed: -20 }, statuses: [{ type: 'poison', chance: 100, duration: 4 }, { type: 'trueslow', chance: 100, duration: 3 }], burst: 200 },
+  Rogue:        { ally: { crit: 25, dodge: 15, atk: 20 }, enemy: { def: -20 }, statuses: [{ type: 'bleed', chance: 100, duration: 3 }, { type: 'blind', chance: 80, duration: 2 }], burst: 220 },
+  Assassin:     { ally: { crit: 35, armorPen: 25, atk: 20 }, enemy: { def: -20 }, statuses: [{ type: 'poison', chance: 100, duration: 4 }, { type: 'silence', chance: 70, duration: 2 }], burst: 300 },
+  ShadowDancer: { ally: { dodge: 25, speed: 25, atk: 20 }, enemy: { dodge: -20 }, statuses: [{ type: 'blind', chance: 100, duration: 3 }, { type: 'bleed', chance: 80, duration: 3 }], burst: 220 },
+  Phantom:      { ally: { dodge: 25, atk: 20 }, enemy: { atk: -15 }, statuses: [{ type: 'fear', chance: 100, duration: 3 }, { type: 'blind', chance: 70, duration: 2 }], burst: 200 },
+  Monk:         { ally: { speed: 25, def: 20, atk: 20 }, enemy: { speed: -15 }, statuses: [{ type: 'paralyze', chance: 60, duration: 1 }, { type: 'weaken', chance: 100, duration: 3 }], burst: 220 },
+  Mage:         { ally: { atk: 40, crit: 10 }, enemy: { def: -20 }, statuses: [{ type: 'burn', chance: 100, duration: 3 }, { type: 'freeze', chance: 50, duration: 1 }], burst: 300 },
+  Elementalist: { ally: { atk: 35 }, enemy: { def: -15, speed: -15 }, statuses: [{ type: 'burn', chance: 100, duration: 3 }, { type: 'freeze', chance: 60, duration: 1 }, { type: 'paralyze', chance: 40, duration: 1 }], burst: 280 },
+  SpellBlade:   { ally: { atk: 30, crit: 15, armorPen: 15 }, enemy: { def: -15 }, statuses: [{ type: 'silence', chance: 80, duration: 2 }, { type: 'burn', chance: 80, duration: 2 }], burst: 240 },
+  Chronomancer: { ally: { speed: 40, dodge: 15, atk: 15 }, enemy: { speed: -40 }, statuses: [{ type: 'trueslow', chance: 100, duration: 4 }, { type: 'freeze', chance: 60, duration: 1 }], burst: 180 },
+  Necromancer:  { ally: { lifesteal: 20, atk: 25 }, enemy: { atk: -15, def: -10 }, statuses: [{ type: 'curse', chance: 100, duration: 3 }, { type: 'fear', chance: 80, duration: 2 }, { type: 'poison', chance: 80, duration: 3 }], burst: 220 },
+  Shaman:       { ally: { regen: 6, atk: 20, def: 15 }, enemy: { atk: -15 }, statuses: [{ type: 'weaken', chance: 100, duration: 3 }, { type: 'paralyze', chance: 50, duration: 1 }], burst: 180 },
+  Healer:       { ally: { regen: 15, def: 25, damageTaken: -20, atk: 10 }, enemy: { atk: -20 }, statuses: [{ type: 'blind', chance: 80, duration: 2 }, { type: 'weaken', chance: 80, duration: 3 }], burst: 120 },
+  Summoner:     { ally: { atk: 25, def: 15 }, enemy: { speed: -15 }, statuses: [{ type: 'bleed', chance: 80, duration: 3 }, { type: 'fear', chance: 70, duration: 2 }], burst: 200 },
+  Devourer:     { ally: { lifesteal: 30, atk: 30 }, enemy: { def: -15, atk: -10 }, statuses: [{ type: 'weaken', chance: 100, duration: 3 }, { type: 'bleed', chance: 100, duration: 3 }], burst: 250 },
+  Senku:        { ally: { crit: 20, armorPen: 25, atk: 20 }, enemy: { def: -25, dodge: -15 }, statuses: [{ type: 'paralyze', chance: 60, duration: 1 }, { type: 'poison', chance: 100, duration: 3 }], burst: 220 },
+  Monster:      { ally: { atk: 40, def: 20 }, enemy: { atk: -15 }, statuses: [{ type: 'fear', chance: 100, duration: 3 }, { type: 'bleed', chance: 100, duration: 3 }], burst: 260 },
+};
+const GENERIC_KIT = { ally: { atk: 20, def: 10 }, enemy: { atk: -10 }, statuses: [{ type: 'weaken', chance: 100, duration: 2 }], burst: 150 };
+function kitFor(cls) { return CLASS_KITS[cls] || GENERIC_KIT; }
+const STATUS_LABEL = { stun: 'STUN', bleed: 'BLEED', trueslow: 'SLOW', weaken: 'WEAKEN', blind: 'BLIND', fear: 'FEAR', burn: 'BURN', poison: 'POISON', freeze: 'FREEZE', paralyze: 'PARALYZE', silence: 'SILENCE', curse: 'CURSE' };
 
 // 10 names per class, mapped to archetypes in order.
 const CLASS_DOMAINS = {
@@ -103,7 +138,7 @@ function setupStep(player) { return (player && player.domain && player.domain.un
 function setupPrompt(player) {
   const d = player && player.domain; if (!d || !d.setup) return null;
   if (d.setup === 'name') return [`🌌 *NAME YOUR DOMAIN*`, `Reply here with the name of your domain (3–40 characters). Fate gave it the working name *${d.name}* — you may keep it by replying *keep*.`, `✏️ A name can be changed later with a 🃏 Rename Card (/domain rename).`].join('\n');
-  if (d.setup === 'desc') return [`📜 *DESCRIBE YOUR DOMAIN*`, `Reply here with a short description of *${d.name}* (up to 200 characters) — what does a hunter see when it expands?`, `⚠️ The description is *permanent*. Reply *skip* for none.`].join('\n');
+  if (d.setup === 'desc') return [`📜 *DESCRIBE YOUR DOMAIN*`, `Reply here with a short description of *${d.name}* (up to 2000 characters) — what does a hunter see when it expands?`, `⚠️ The description is *permanent*. Reply *skip* for none.`].join('\n');
   return null;
 }
 // Returns null if this text was not a setup reply; otherwise { reply, done }.
@@ -120,7 +155,7 @@ function handleSetupReply(player, text) {
   }
   if (d.setup === 'desc') {
     if (t.toLowerCase() !== 'skip') {
-      if (t.length > 200) return { reply: '❌ Up to 200 characters please. Reply again, or *skip*.', done: false };
+      if (t.length > 2000) return { reply: '❌ Up to 2000 characters please. Reply again, or *skip*.', done: false };
       d.desc = t;
     }
     delete d.setup;
@@ -137,14 +172,17 @@ function rename(player, name) {
 }
 function scaledEffect(player) {
   const d = player.domain; if (!d) return null;
-  const eff = effectFor(d.class || _cls(player), d.idx); const k = scale(d.level || 1);
+  const cls = d.class || _cls(player); const eff = effectFor(cls, d.idx); const k = scale(d.level || 1); const kit = kitFor(cls);
+  const merge = (a, b) => { const o = { ...a }; for (const [s, v] of Object.entries(b || {})) o[s] = (o[s] || 0) + v; return o; };
   const sc = (o) => Object.fromEntries(Object.entries(o).map(([s, v]) => [s, Math.round(v * k * 10) / 10]));
-  return { ...eff, ally: sc(eff.arch.ally), enemy: sc(eff.arch.enemy), turns: turnsFor(d.level || 1), level: d.level || 1 };
+  const statuses = (kit.statuses || []).map(st => ({ ...st, chance: Math.min(100, Math.round(st.chance * (1 + (k - 1) * 0.5))), duration: st.duration + Math.floor((d.level || 1) / 25) }));
+  return { ...eff, ally: sc(merge(eff.arch.ally, kit.ally)), enemy: sc(merge(eff.arch.enemy, kit.enemy)), statuses, burst: Math.round((kit.burst || 150) * k), turns: turnsFor(d.level || 1), level: d.level || 1, shown: d.name || eff.name };
 }
 function describe(player) {
   const e = scaledEffect(player); if (!e) return [];
   const fmt = (o, who) => Object.entries(o).filter(([, v]) => v).map(([s, v]) => `• ${who} ${STAT_LABEL[s] || s} ${v > 0 ? '+' : ''}${v}%`);
-  return [...fmt(e.ally, 'Allies'), ...fmt(e.enemy, 'Enemies')];
+  const st = (e.statuses || []).map(x => `• Enemies: ${x.chance}% ${STATUS_LABEL[x.type] || x.type.toUpperCase()} (${x.duration}t)`);
+  return [...fmt(e.ally, 'Allies'), ...fmt(e.enemy, 'Enemies'), ...st, `• Opening burst: ${e.burst}% ATK to every enemy`, `• Your moves cannot miss while your domain stands`];
 }
 function power(player) {
   const d = player.domain || {};
@@ -241,22 +279,41 @@ function expand(arena, player, allies = [player], enemies = [], ctx = {}) {
     else if (cur.quality !== _quality(player)) win = _quality(player) > cur.quality;
     else win = myPow > cur.power;
     if (!win) {
-      return { ok: false, clashed: true, error: `💥 *DOMAIN CLASH!* Your *${e.name}* (power ${myPow}) shattered against *${cur.name}* (${cur.side === 'monster' ? 'power ' + cur.power : 'quality ' + cur.quality + ' · power ' + cur.power}). ${CAST_ENERGY} energy lost.` };
+      const _isAlly = cur.side === 'hunter' && allies.some(a => _ownerKeys(a).includes(String(cur.ownerId)));
+      return { ok: false, clashed: true, error: _isAlly ? `🌌 *${cur.name}* (${cur.ownerName}) is the more refined domain — it keeps the field. Your *${e.shown}* could not take the space (quality ${_quality(player)} · power ${myPow} vs ${cur.quality} · ${cur.power}). ${_cost} energy lost.` : `💥 *DOMAIN CLASH!* Your *${e.shown}* (power ${myPow}) shattered against *${cur.name}* (${cur.side === 'monster' ? 'power ' + cur.power : 'quality ' + cur.quality + ' · power ' + cur.power}). ${_cost} energy lost.` };
     }
-    lines.push(`💥 *DOMAIN CLASH!* *${e.name}* overpowers *${cur.name}* (${myPow} vs ${cur.power}) — the rival domain shatters!`);
+    const _isAlly = cur.side === 'hunter' && allies.some(a => _ownerKeys(a).includes(String(cur.ownerId)));
+    lines.push(_isAlly ? `🌌 *${e.shown}* is the more refined domain — it takes the space *${cur.name}* held.` : `💥 *DOMAIN CLASH!* *${e.shown}* overpowers *${cur.name}* (${myPow} vs ${cur.power}) — the rival domain shatters!`);
     shatter(arena, [...allies, ...enemies], []);
   }
-  const src = `Domain: ${e.name}`;
+  const src = `Domain: ${e.shown}`;
   for (const a of allies) _applyBuffs(a, e.ally, e.turns, 'domain', src);
   for (const f of enemies) _applyBuffs(f, e.enemy, e.turns, 'domain', src);
-  arena.domain = { ownerId: myId, ownerName: player.name, side: 'hunter', name: e.name, level: e.level, turnsLeft: e.turns, power: myPow, quality: _quality(player), className: player.domain.class };
+  // Push #96h-o: class statuses + opening burst on every enemy.
+  const _fxLines = [];
+  try {
+    const atk = Number(player.stats.atk || 10); let _gb = 0; try { _gb = require('./GearSystem').getEquippedBonuses(player).atk || 0; } catch (e2) {}
+    const burst = Math.max(1, Math.floor((atk + _gb) * (e.burst / 100)));
+    for (const f of enemies) {
+      if (!f) continue;
+      const hit = [];
+      if (!Array.isArray(f.statusEffects)) f.statusEffects = [];
+      for (const st of (e.statuses || [])) { if (Math.random() * 100 < st.chance) { const ex = f.statusEffects.find(x => x && String(x.type).toLowerCase() === st.type); if (ex) ex.duration = Math.max(ex.duration || 0, st.duration); else f.statusEffects.push({ type: st.type, duration: st.duration, source: src }); hit.push(STATUS_LABEL[st.type] || st.type.toUpperCase()); } }
+      let dealt = 0;
+      if (f.stats && typeof f.stats.hp === 'number') { dealt = Math.min(burst, Math.max(0, f.stats.hp - 1)); f.stats.hp -= dealt; }
+      else if (typeof f.hp === 'number') { dealt = Math.min(burst, Math.max(0, f.hp - 1)); f.hp -= dealt; }
+      _fxLines.push(`💥 *${f.name || 'Enemy'}* — ${dealt.toLocaleString()} burst${hit.length ? ` · ${hit.join(' + ')}` : ''}`);
+    }
+  } catch (e3) {}
+  arena.domain = { ownerId: myId, ownerName: player.name, side: 'hunter', name: e.shown, effectName: e.name, level: e.level, turnsLeft: e.turns, power: myPow, quality: _quality(player), className: player.domain.class };
   _register(arena, myId); for (const k of _ownerKeys(player)) _register(arena, k);
   player.domain.casts = (player.domain.casts || 0) + 1;
   const d = player.domain;
-  const _head = [`🌌 *DOMAIN EXPANSION — ${e.name.toUpperCase()}*`]; if (d.desc) _head.push(`_${d.desc}_`); // Push #96h-c: separate messages
+  const _head = [`🌌 *DOMAIN EXPANSION — ${e.shown.toUpperCase()}*`]; if (d.desc) _head.push(`_${d.desc}_`); // Push #96h-c: separate messages · #96h-o: the name YOU gave it
   lines.unshift(..._head.map((t, i) => t + (i === _head.length - 1 ? '\u2063' : '\u2063')));
-  lines.push(`👤 ${player.name} · Domain Lv.${e.level} · ${e.turns} turns · power ${myPow}`, `🛡️ Inside your domain you are immune to new status effects.`);
+  lines.push(`👤 ${player.name} · Domain Lv.${e.level} · ${e.turns} turns · power ${myPow}`, `🛡️ Inside your domain you are immune to new status effects and *your moves cannot miss*.`);
   lines.push(...describe(player));
+  if (_fxLines.length) lines.push(``, `⚡ *THE FIELD CLOSES:*`, ..._fxLines);
   if (allies.length > 1) lines.push(`🤝 Party covered: ${allies.map(a => a.name).join(', ')}`);
   return { ok: true, text: lines.join('\n'), effect: e };
 }
@@ -489,4 +546,4 @@ function findBattle(player, sender, db) {
   return null;
 }
 
-module.exports = { SKILL_DOMAINS, BREAK, splitMessages, sendDomain, FAMILY_DOMAINS, isShielded, shieldLine, monsterDomainInfo, MONSTER_DOMAINS, setupStep, setupPrompt, handleSetupReply, rename, pvpArena, endPvpArena, findBattle, CAST_ENERGY, MAX_LEVEL, UP_SHARE_CAP, ARCHETYPES, CLASS_DOMAINS, STAT_LABEL, effectFor, scale, turnsFor, costToNext, ensure, has, unlock, scaledEffect, describe, power, upgrade, arenaOf, active, shatter, tick, expand, monsterPower, monsterEligible, monsterTry, onLevelUp, shareUP };
+module.exports = { CLASS_KITS, kitFor, SKILL_DOMAINS, BREAK, splitMessages, sendDomain, FAMILY_DOMAINS, isShielded, shieldLine, monsterDomainInfo, MONSTER_DOMAINS, setupStep, setupPrompt, handleSetupReply, rename, pvpArena, endPvpArena, findBattle, CAST_ENERGY, MAX_LEVEL, UP_SHARE_CAP, ARCHETYPES, CLASS_DOMAINS, STAT_LABEL, effectFor, scale, turnsFor, costToNext, ensure, has, unlock, scaledEffect, describe, power, upgrade, arenaOf, active, shatter, tick, expand, monsterPower, monsterEligible, monsterTry, onLevelUp, shareUP };

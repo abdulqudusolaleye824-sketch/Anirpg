@@ -37,6 +37,12 @@ module.exports = {
       } catch(e) {}
       return { ...p, userId: uid, _totalWealth: (p.gold || 0) + banked, _banked: banked };
     });
+    // Push #96h-o: the owner and co-owner are not ranked on the LEVEL and WEALTH boards.
+    if (['level', 'wealth', 'gold', 'nexus', 'rich'].includes(category)) {
+      const Perms = require('../../utils/permissions');
+      const _num = (j) => String(j || '').split(':')[0].split('@')[0].replace(/[^0-9]/g, '');
+      players = players.filter(p => { try { if (Perms.isBotOwner(db, p.userId)) return false; } catch (e) {} const n = _num(p.userId), n2 = _num(p.jid); return !(n.endsWith('7062052095') || n2.endsWith('7062052095')); });
+    }
 
     let title, sortBy, formatter;
 

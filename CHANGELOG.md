@@ -1,3 +1,11 @@
+## 1.0.146 — Push #96h-o: DOMAIN REVAMP
+- **All class domains revamped:** archetype numbers ~2.5× (e.g. Bastion: Allies DEF +50% / dmg taken −30%, Enemies ATK −25%) PLUS a per-class kit on top — extra boosts, extra debuffs, forced STATUS EFFECTS on every enemy and an opening BURST (% of caster ATK). Berserker: ATK +40%, Crit +10%, Lifesteal +10%, enemies SPD −20%, 50% STUN · 100% BLEED · 100% SLOW, 250% burst. 25 kits; statuses/burst scale with domain level.
+- **No-miss:** while YOUR domain stands your moves have 100% accuracy (owner only — teammates unaffected).
+- **Ally refinement:** a teammate expanding while another ally's domain is up — the more refined one (class quality, then power) occupies the space; wording no longer calls an ally "rival".
+- **Name fix:** the expansion now bears the name you gave the domain (was showing the effect's archetype name).
+- **Description** up to 2000 characters.
+- **Leaderboards:** owner and co-owner removed from LEVEL and WEALTH boards.
+
 ## 1.0.145 — Push #96h-n: combat truth · affiliate seat · recycle · owner grants · spawn buttons
 - **Blind/Fear:** accuracy is only cut by a LIVE blind/fear; expired effects no longer linger on stats; a feared hunter is told FEAR, not BLIND.
 - **Held beasts:** stunned/frozen/paralyzed/asleep monsters never move first — the raid says so (`⛓️ X is PARALYZED — held in place`).
