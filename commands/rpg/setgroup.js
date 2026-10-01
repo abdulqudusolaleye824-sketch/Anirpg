@@ -37,7 +37,7 @@ module.exports = {
     if (!sub || sub === 'show' || sub === 'list' || sub === 'status') {
       const groups = AstralGroups.getAll(db) || [];
       let txt = `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🌐 *✦ 𝐀𝐬𝐭𝐫𝐚™ COMMUNITY GROUPS*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🎮 *Server:* ✦ 𝐀𝐬𝐭𝐫𝐚™\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
-      const ordered = ['pvp', 'casino', 'games', 'dungeon', 'guild', 'support', 'pro'];
+      const ordered = ['pvp', 'casino', 'games', 'dungeon', 'guild', 'support', 'pro', 'events'];
       const shown = groups.filter((g, i, a) => g && g.groupId && a.findIndex((x) => x && x.groupId === g.groupId) === i);
       if (shown.length === 0) {
         txt += `⚠️ No groups registered yet.\n`;

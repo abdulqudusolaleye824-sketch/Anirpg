@@ -70,6 +70,7 @@ function applyMoveBuffs(move, attacker, defender) {
   for (const bf of (move.buffs || [])) {
     if (!bf || !bf.stat) continue;
     if (!attacker.tempBuffs) attacker.tempBuffs = {};
+    try { require('./DailyQuestSystem').creditBuff(attacker); } catch (e) {} // Push #96h: buff quest
     attacker.tempBuffs[`${tag}:${bf.stat}`] = { stat: bf.stat, amount: Math.abs(Number(bf.amount) || 0), duration: Math.max(1, Number(bf.duration) || 2) + 1 };
     notes.push(`⬆️ ${attacker.name || 'Caster'} ${String(bf.stat).toUpperCase()} +${Math.abs(Number(bf.amount) || 0)}% (${bf.duration || 2}t)`);
   }

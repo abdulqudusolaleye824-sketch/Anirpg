@@ -8,10 +8,10 @@
 
 const SUB_DAYS = 30; // length of one subscription window
 
-const TYPES = ['support', 'pvp', 'dungeon', 'casino', 'guild', 'mods', 'games', 'pro'];
+const TYPES = ['support', 'pvp', 'dungeon', 'casino', 'guild', 'mods', 'games', 'pro', 'events']; // Push #96h: events
 const FEATURE_TYPES = ['pvp', 'dungeon'];
 const TYPES_WITHOUT_MAIN = ['support', 'pvp', 'dungeon', 'mods'];
-const MAIN_ONLY_TYPES = ['casino', 'guild', 'games', 'pro'];
+const MAIN_ONLY_TYPES = ['casino', 'guild', 'games', 'pro', 'events'];
 
 const TYPE_INFO = {
   pvp:     { emoji: '⚔️', name: '✦ 𝐀𝐬𝐭𝐫𝐚™ PvP',     desc: 'PvP battles & ELO ranking' },
@@ -22,6 +22,7 @@ const TYPE_INFO = {
   mods:    { emoji: '🛡️', name: '✦ 𝐀𝐬𝐭𝐫𝐚™ Mods',    desc: 'Moderation & staff GC' },
   games:   { emoji: '🎮', name: '✦ 𝐀𝐬𝐭𝐫𝐚™ Games',   desc: 'Quiz, Tic-Tac-Toe & Chess' },
   pro:     { emoji: '💎', name: '✦ 𝐀𝐬𝐭𝐫𝐚™ Pro Lounge', desc: 'PRO / BP-Premium members only — epic spawns every 3h' },
+  events:  { emoji: '🏝️', name: '✦ 𝐀𝐬𝐭𝐫𝐚™ Events',   desc: 'Seasonal events — the Jeju Island Raid' },
 };
 
 const EXPIRED_MSG =

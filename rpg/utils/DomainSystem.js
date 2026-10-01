@@ -274,6 +274,24 @@ const MONSTER_DOMAINS = {
   SS: { name: 'Nightmare Expanse',  emoji: '🕳️', desc: 'There is no ground, no sky — only the thing that wants you dead.' },
 };
 const MONSTER_DOMAIN_NAMES = Object.values(MONSTER_DOMAINS).map(d => d.name); // kept for callers/tests
+// Push #96h: DEPTH — each beast FAMILY shapes the domain (name, lore, and a LAW that
+// only that family imposes), on top of the rank numbers. Laws:
+//   drain  → hunters lose energy on expansion       slow   → hunters lose SPEED for the duration
+//   regen  → the beast heals every turn inside      pierce → hunters' DEF counts for less (extra −DEF)
+const FAMILY_DOMAINS = {
+  beast:     { name: 'Hunting Grounds',   emoji: '🐺', desc: 'The scent of blood fills the air — the pack already knows where you will run.',        law: 'slow',   lawText: 'Hunters are SLOWED' },
+  goblinoid: { name: 'Warren of Knives',  emoji: '🗡️', desc: 'Tunnels close in; a blade waits behind every stone.',                                 law: 'pierce', lawText: 'Armour counts for less' },
+  undead:    { name: 'Grave Dominion',    emoji: '⚰️', desc: 'The dead do not tire. Every wound you deal is quietly undone.',                        law: 'regen',  lawText: 'The beast regenerates' },
+  reptile:   { name: 'Scalebound Marsh',  emoji: '🐊', desc: 'Mud swallows your boots; cold eyes watch from the still water.',                        law: 'slow',   lawText: 'Hunters are SLOWED' },
+  construct: { name: 'Iron Sanctum',      emoji: '🪨', desc: 'The walls themselves are the beast. Stone answers to it, not to you.',                   law: 'pierce', lawText: 'Armour counts for less' },
+  demon:     { name: 'Infernal Covenant', emoji: '😈', desc: 'Your mana is siphoned into the flame the moment it leaves your hands.',                  law: 'drain',  lawText: 'Hunters lose energy' },
+  elf:       { name: 'Whispering Glade',  emoji: '🧝', desc: 'Every rune on the trees is aimed at you. Spells unravel before they land.',             law: 'drain',  lawText: 'Hunters lose energy' },
+  slime:     { name: 'Dissolving Pool',   emoji: '🟢', desc: 'Acid mist eats at steel and skin alike — and feeds the thing beneath.',                  law: 'regen',  lawText: 'The beast regenerates' },
+  insect:    { name: 'Hive Mind Field',   emoji: '🐜', desc: 'A thousand eyes share one hunger. Nowhere you stand is unseen.',                         law: 'slow',   lawText: 'Hunters are SLOWED' },
+};
+function _familyDomain(monster) {
+  try { const f = require('./MonsterTypes').familyOf(monster); return FAMILY_DOMAINS[f] || null; } catch (e) { return null; }
+}
 const RANK_IDX = { E: 0, D: 1, C: 2, B: 3, A: 4, S: 5, SS: 6, F: 0 };
 // Per-rank domain numbers (monster side buffs itself; hunter side is debuffed).
 //  ri        0    1    2    3    4    5    6
@@ -315,19 +333,26 @@ function monsterTry(arena, monster, hunters = [], ctx = {}) {
     shatter(arena, hunters, [monster]);
   }
   const info = monsterDomainInfo(ctx.rank || monster.rank || 'E', isBoss);
+  const fam = _familyDomain(monster); if (fam) { info.name = fam.name; info.emoji = fam.emoji; info.desc = fam.desc; info.law = fam.law; info.lawText = fam.lawText; } // Push #96h: family depth
   const mag = info.debuff, turns = info.turns;
   const name = `${monster.name}'s ${info.name}`;
+  const lawLines = [];
   const src = `Domain: ${name}`;
   const hurt = []; const afflicted = [];
   for (const h of hunters) {
     if (!h || !h.stats || (h.stats.hp || 0) <= 0) continue;
     _applyBuffs(h, { atk: -mag, def: -mag, damageTaken: mag }, turns, 'domain', src);
+    // Push #96h: the family's LAW
+    if (info.law === 'slow') _applyBuffs(h, { speed: -Math.round(mag * 0.75) }, turns, 'domain', src);
+    if (info.law === 'pierce') { const k = h.tempBuffs && h.tempBuffs['domain:def']; if (k) k.amount -= Math.round(mag * 0.5); }
+    if (info.law === 'drain' && h.stats && typeof h.stats.energy === 'number') { const lost = Math.floor(h.stats.energy * Math.min(0.35, 0.10 + info.ri * 0.04)); h.stats.energy = Math.max(0, h.stats.energy - lost); if (lost) lawLines.push(`${h.name} −${lost} energy`); }
     const burst = Math.max(1, Math.floor(_max(h) * info.burst / 100));
     h.stats.hp = Math.max(1, h.stats.hp - burst); // devastating, never a kill on its own
     hurt.push(`${h.name} −${burst}`);
     try { const MSFX = require('./MonsterSkillFX'); if (Math.random() < info.statusChance) { const l = MSFX.applyStatus(h, info.status, 2); if (l) afflicted.push(l); } } catch (e) {}
   }
   _applyBuffs(monster, { atk: info.self, def: info.self }, turns, 'domain', src);
+  if (info.law === 'regen') _applyBuffs(monster, { regen: 3 + info.ri }, turns, 'domain', src); // Push #96h
   arena.domain = { ownerId: monster.id || monster.name, ownerName: monster.name, side: 'monster', name, level: 0, turnsLeft: turns, power: pow, rank: info.rank };
   _register(arena, monster.id || monster.name); for (const k of _ownerKeys(monster)) _register(arena, k);
   lines.unshift(
@@ -337,6 +362,7 @@ function monsterTry(arena, monster, hunters = [], ctx = {}) {
     `⬇️ Hunters: ATK −${mag}% · DEF −${mag}% · damage taken +${mag}% · 💥 ${info.burst}% max HP burst (${hurt.join(', ')})`,
     `⬆️ ${monster.name}: ATK +${info.self}% · DEF +${info.self}%`,
   );
+  if (info.law) lines.push(`⚖️ *Law of the domain:* ${info.lawText}${info.law === 'slow' ? ` (SPD −${Math.round(mag * 0.75)}%)` : info.law === 'pierce' ? ` (extra DEF −${Math.round(mag * 0.5)}%)` : info.law === 'regen' ? ` (+${3 + info.ri}% HP per turn)` : lawLines.length ? ` (${lawLines.join(', ')})` : ''}`);
   if (afflicted.length) lines.push(...afflicted);
   return lines.join('\n');
 }
@@ -421,4 +447,4 @@ function findBattle(player, sender, db) {
   return null;
 }
 
-module.exports = { isShielded, shieldLine, monsterDomainInfo, MONSTER_DOMAINS, setupStep, setupPrompt, handleSetupReply, rename, pvpArena, endPvpArena, findBattle, CAST_ENERGY, MAX_LEVEL, UP_SHARE_CAP, ARCHETYPES, CLASS_DOMAINS, STAT_LABEL, effectFor, scale, turnsFor, costToNext, ensure, has, unlock, scaledEffect, describe, power, upgrade, arenaOf, active, shatter, tick, expand, monsterPower, monsterEligible, monsterTry, onLevelUp, shareUP };
+module.exports = { FAMILY_DOMAINS, isShielded, shieldLine, monsterDomainInfo, MONSTER_DOMAINS, setupStep, setupPrompt, handleSetupReply, rename, pvpArena, endPvpArena, findBattle, CAST_ENERGY, MAX_LEVEL, UP_SHARE_CAP, ARCHETYPES, CLASS_DOMAINS, STAT_LABEL, effectFor, scale, turnsFor, costToNext, ensure, has, unlock, scaledEffect, describe, power, upgrade, arenaOf, active, shatter, tick, expand, monsterPower, monsterEligible, monsterTry, onLevelUp, shareUP };

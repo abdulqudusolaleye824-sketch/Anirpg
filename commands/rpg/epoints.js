@@ -1,0 +1,10 @@
+// /epoints — Push #96h
+const EventSystem = require('../../rpg/utils/EventSystem');
+module.exports = {
+  name: 'epoints', aliases: ['eventpoints'], description: '🏅 Jeju Raid: your event points',
+  async execute(sock, msg, args, getDatabase, saveDatabase, sender) {
+    const chatId = msg.key.remoteJid; const db = getDatabase(); const player = db.users[sender];
+    if (!player) return sock.sendMessage(chatId, { text: '❌ Not registered! Use /register first.' }, { quoted: msg });
+    EventSystem.tick(db); return sock.sendMessage(chatId, { text: EventSystem.pointsText(db, player) }, { quoted: msg });
+  },
+};

@@ -154,8 +154,8 @@ const RAID_X2 = 2;
 function critMultFor(monster) { return monster && monster._raid ? MON_CRIT_MULT * RAID_X2 : MON_CRIT_MULT; }
 function monsterCritChance(monster) {
   const rankIdx = { E: 0, D: 1, C: 2, B: 3, A: 4, S: 5, SS: 6, SSS: 7 }[String(monster?.rank || 'E').toUpperCase()] || 0;
-  const base = Math.min(25, 10 + rankIdx * 2 + (monster?.isBoss ? 5 : 0));
-  return monster && monster._raid ? Math.min(50, base * RAID_X2) : base;
+  const base = Math.min(25, 10 + rankIdx * 2 + (monster?.isBoss ? 5 : 0)) + (Number(monster?.critBonus) || 0); // Push #96h: sleek families crit more
+  return monster && monster._raid ? Math.min(60, base * RAID_X2) : base;
 }
 // Push #88q: SPEED / INITIATIVE. Chance (%) that the raid monster acts BEFORE
 // the hunter this turn: 35% at equal speed, ±1.5% per point of speed edge,
@@ -714,7 +714,19 @@ function start(sender, keyData, gate, db) {
   // leaves), may hide a second dungeon behind its boss, and a stronger beast may leak in.
   const notes = [];
   if (!gate.isDouble) {
-    if (Math.random() < RED_GATE_CHANCE) { gate.redGate = true; notes.push(RED_GATE_TEXT); }
+    if (Math.random() < RED_GATE_CHANCE) {
+      gate.redGate = true; notes.push(RED_GATE_TEXT);
+      // Push #96h: a Red Gate runs 10 floors DEEPER — extra floors are built from the same pool/theme.
+      try {
+        const extra = GateManager.buildGateMonsters(gate.rank, (gate.totalFloors || 5) + RED_GATE_EXTRA_FLOORS, gate.preRollStrengthPct || gate.strengthPct || 100, gate.boss && gate.boss.name) || [];
+        const oldTop = gate.totalFloors || 5; const newTop = oldTop + RED_GATE_EXTRA_FLOORS;
+        gate.monsters = (gate.monsters || []).filter(m => m && !m.elite);               // old elite guards go
+        for (const m of extra) if (m.floor > oldTop) gate.monsters.push(m);           // new floors + new elite guards on the new boss floor
+        gate.totalFloors = newTop;
+        gate.monsters = GateManager.orderFloors(gate.monsters);
+        notes.push(`🟥 The red light stretches the gate — *${RED_GATE_EXTRA_FLOORS} extra floors* (${newTop} in total).`);
+      } catch (e) {}
+    }
     if (Math.random() < DOUBLE_DUNGEON_CHANCE) gate.doubleRoll = true; // revealed only when the boss falls
   }
   try { const leak = leakMonster(gate); if (leak) notes.push(leak); } catch (e) {}
@@ -722,6 +734,7 @@ function start(sender, keyData, gate, db) {
 }
 
 // ── Push #96d: RED GATES · DOUBLE DUNGEONS · LEAKS · LEADER SUCCESSION ──────
+const RED_GATE_EXTRA_FLOORS = 10; // Push #96h
 const RED_GATE_CHANCE = 0.15;
 const DOUBLE_DUNGEON_CHANCE = 0.05;
 const LEAK_CHANCE = 0.17;
@@ -750,7 +763,7 @@ function leakMonster(gate) {
   const old = gate.monsters[i];
   gate.monsters[i] = { ...leaked, floor: old.floor, defeated: false, leaked: true, leakedFrom: fromRank, name: `${leaked.name} (${fromRank}-Rank leak)` };
   gate.leakedMonster = { name: gate.monsters[i].name, floor: old.floor, fromRank };
-  return `⚠️ *A ${fromRank}-Rank beast has leaked into this gate!* *${leaked.name}* prowls floor ${old.floor} — far stronger than anything here.`;
+  return `⚠️ *A ${fromRank}-Rank beast has leaked into this gate!* *${leaked.name}* prowls floor ${old.floor} — *three times* the strength it had in its own habitat.`;
 }
 // When the leader falls, the next hunter on the party list takes the crown.
 function succeedLeader(gate, fallenJid) {
@@ -897,7 +910,7 @@ function calibrateToParty(gate, raid, db) {
   severity = severity * (1 - luck / 100);
   severity = Math.round(severity * 100) / 100;
   const expected = Math.round(expectedPer * n);
-  gate.calibrated = { severity, label: null, partyPower: Math.floor(total), expected, luck, members: n, avgLevel: Math.round(avgLvl), at: Date.now() };
+  gate.calibrated = { severity, label: null, partyPower: Math.floor(total), expected, luck, members: n, avgLevel: Math.round(avgLvl), avgSpeed: Math.round(sumSpd / n), at: Date.now() };
   applyMonsterScaling(gate);
   const label = severityLabel(severity);
   gate.calibrated.label = label;
@@ -928,6 +941,15 @@ const MON_ATK_BUFF = 1.7 * RAID_X2, MON_DEF_BUFF = 1.4 * RAID_X2 * 1.75 * 2.2, M
 // Push #89: A–E gates are 25% softer (monsters AND boss); S+ untouched.
 const RANK_SOFTEN = { A: 0.75, B: 0.75, C: 0.75, D: 0.75, E: 0.75 };
 function rankSoften(rank) { return RANK_SOFTEN[String(rank || '').toUpperCase()] || 1; }
+const LEAK_MULT = 3; // Push #96h
+const SPEED_RANK_FACTOR = { E: 0.55, D: 0.65, C: 0.75, B: 0.85, A: 0.95, S: 1.10, SS: 1.25 };
+function _types() { try { return require('../utils/MonsterTypes'); } catch (e) { return null; } }
+function _anchorSpeed(gate, roleFactor = 1, boss = false) {
+  const avg = (gate && gate.calibrated && gate.calibrated.avgSpeed) || 0;
+  if (!avg) return 0;
+  const rf = SPEED_RANK_FACTOR[String(gate.rank || 'E').toUpperCase()] || 0.6;
+  return avg * rf * Math.max(0.5, Math.min(1.8, roleFactor)) * (boss ? 1.15 : 1);
+}
 function applyMonsterScaling(gate) {
   const severity = ((gate.calibrated && gate.calibrated.severity) || 1) * rankSoften(gate.rank);
   for (const mon of gate.monsters || []) {
@@ -941,6 +963,14 @@ function applyMonsterScaling(gate) {
     mon.atk = Math.max(1, Math.floor(mon._base.atk * mult * MON_ATK_BUFF));
     mon.def = Math.floor(mon._base.def * mult * 0.8 * MON_DEF_BUFF);
     mon.speed = Math.max(1, Math.round(mon._base.speed * (0.8 + Math.min(severity, 6) * 0.2) * MON_SPD_BUFF));
+    // Push #96h: SPEED anchored to the party. Base roll was ~10 → ×3.5 = 35 while
+    // hunters run 150–300, so beasts never out-paced anyone. Now a beast's speed
+    // is at least (party avg speed × rank factor × role profile).
+    mon.speed = Math.max(mon.speed, Math.round(_anchorSpeed(gate, mon._base.speed / 10, false)));
+    // Push #96h: family body types (armour → DEF, sleek → SPD/crit, hive → HP…). Buff only.
+    { const TM = _types(); if (TM) { const tm = TM.mults(mon); mon.maxHp = Math.floor(mon.maxHp * tm.hp); mon.hp = Math.max(1, Math.floor(mon.maxHp * hpPct)); mon.atk = Math.floor(mon.atk * tm.atk); mon.def = Math.floor(mon.def * tm.def); mon.speed = Math.round(mon.speed * tm.speed); mon.critBonus = tm.crit; mon.typeLabel = tm.label; } }
+    // Push #96h: a LEAKED beast is 3× what it would be in its own habitat.
+    if (mon.leaked) { mon.maxHp = Math.floor(mon.maxHp * LEAK_MULT); mon.hp = Math.max(1, Math.floor(mon.maxHp * hpPct)); mon.atk = Math.floor(mon.atk * LEAK_MULT); mon.def = Math.floor(mon.def * LEAK_MULT); mon.speed = Math.round(mon.speed * 1.5); }
     mon._raid = true; mon.rank = mon.rank || gate.rank; // Push #88q: raid ×2 package + initiative
   }
   // Push #88z: elites are ALWAYS exactly 2× the (scaled) monsters of the floor before them.
@@ -972,6 +1002,11 @@ function applyMonsterScaling(gate) {
     gate.boss.def = Math.floor((gate.boss._base.def || 0) * mult * 0.8 * MON_DEF_BUFF);
     gate.boss._raid = true; gate.boss.isBoss = true; gate.boss.rank = gate.boss.rank || gate.rank;
     if (!gate.boss.speed) gate.boss.speed = 14 + (({ E: 0, D: 2, C: 4, B: 6, A: 9, S: 12 })[gate.rank] || 0) * 2;
+    if (gate.boss._base.speed == null) gate.boss._base.speed = gate.boss.speed; else gate.boss.speed = gate.boss._base.speed; // Push #96h: recompute from base (no compounding)
+    // Push #96h: boss speed anchored to the party too (it was a flat 14–38, never scaled).
+    gate.boss.speed = Math.max(gate.boss.speed, Math.round(_anchorSpeed(gate, 1, true)));
+    { const TM = _types(); if (TM && !gate.boss._typedBoss) { const tm = TM.mults(gate.boss); gate.boss._typedBoss = true; gate.boss.typeLabel = tm.label; gate.boss.critBonus = tm.crit; gate.boss._typeMult = tm; }
+      const tm = gate.boss._typeMult; if (tm) { gate.boss.maxHp = Math.floor(gate.boss.maxHp * tm.hp); gate.boss.hp = Math.max(1, Math.floor(gate.boss.maxHp * hpPct)); gate.boss.atk = Math.floor(gate.boss.atk * tm.atk); gate.boss.def = Math.floor(gate.boss.def * tm.def); gate.boss.speed = Math.round(gate.boss.speed * tm.speed); } }
   }
 }
 

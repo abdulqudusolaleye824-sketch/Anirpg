@@ -381,6 +381,7 @@ function applySupportFields(entry, caster, target, opts = {}) {
     const n = u.statusEffects.length; u.statusEffects = [];
     lines.push(`✨ *${who}* cleansed (${n} effect${n === 1 ? '' : 's'})`);
   }
+  try { if (lines.length && caster && (caster.jid || caster.dailyQuests)) require('./DailyQuestSystem').creditBuff(caster); } catch (e) {} // Push #96h: buff quest
   return { lines };
 }
 

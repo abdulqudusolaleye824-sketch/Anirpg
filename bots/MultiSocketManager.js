@@ -1632,6 +1632,31 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
           }
         }
       } catch (e) {}
+      // Push #96h: SERF IRON WALL at the socket level. A DM to a registered
+      // hunter who has a serf may ONLY leave through that serf's socket —
+      // whatever code path produced it (box buttons, domain prompts, wages…).
+      // Replies to a DM the hunter started (options.quoted) stay with the bot
+      // they are talking to; owners/mods are exempt as in safeSendDM.
+      try {
+        const _j = String(jid || '');
+        const _isDm = (_j.endsWith('@s.whatsapp.net') || _j.endsWith('@lid')) && !(options && options.asSelf) && !(options && options.quoted) && !(content && (content.delete || content.react));
+        if (_isDm) {
+          const _db = typeof getDatabase === 'function' ? getDatabase() : null;
+          if (_db && _db.users) {
+            const _bare = _j.split('@')[0];
+            const _pl = _db.users[_j] || _db.users[Object.keys(_db.users).find(k => k.split('@')[0] === _bare || (_db.lidMap && _db.lidMap[k.split('@')[0]] === _bare)) || ''];
+            if (_pl && !(Perms.isBotOwner(_db, _j) || Perms.isBotMod(_db, _j))) {
+              const _serfKey = SerfManager.getSerfBotKey(_db, _pl.jid || _pl.id || _j) || SerfManager.getSerfBotKey(_db, _j);
+              if (_serfKey && _serfKey !== personalityKey) {
+                const _ss = botSockets[_serfKey];
+                if (_ss && _ss.user?.id) return await _ss.sendMessage(jid, content, { ...(options || {}), asSelf: true });
+                console.error(`🧱 [${personalityKey}] DM to ${_j} dropped — serf ${_serfKey} offline (iron wall)`);
+                return null;
+              }
+            }
+          }
+        }
+      } catch (e) {}
       if (options && options.asSelf) { options = { ...options }; delete options.asSelf; }
       let _res;
       // Push #74: WhatsApp rate-overlimit is handled HERE, once, for every

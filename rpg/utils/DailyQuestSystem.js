@@ -70,8 +70,8 @@ const DAILY_QUEST_POOL = [
   // ── Healer / Support (4) ──────────────────────────────────────────────────
   { id: 'dq_heal2',       name: 'Survivalist',           desc: 'Heal 2 times during battle',               type: 'heal',     target: 2,   reward: { gold: 350,   crystals: 7   } },
   { id: 'dq_heal5',       name: 'Field Medic',           desc: 'Heal 5 times during battle',               type: 'heal',     target: 5,   reward: { gold: 700,   crystals: 17  } },
-  { id: 'dq_buff1',       name: 'Supporter',             desc: 'Activate 1 buff (/buff)',               type: 'buff',     target: 1,   reward: { gold: 350,   crystals: 8  } },
-  { id: 'dq_buff3',       name: 'Battle Cleric',         desc: 'Activate 3 buffs (/buff)',               type: 'buff',     target: 3,   reward: { gold: 900,   crystals: 25  } },
+  { id: 'dq_buff1',       name: 'Supporter',             desc: 'Activate 1 buff (/buff or any buff skill)',               type: 'buff',     target: 1,   reward: { gold: 350,   crystals: 8  } },
+  { id: 'dq_buff3',       name: 'Battle Cleric',         desc: 'Activate 3 buffs (/buff or buff skills)',               type: 'buff',     target: 3,   reward: { gold: 900,   crystals: 25  } },
 
   // ── Pets / Taming (4) ────────────────────────────────────────────────────
   { id: 'dq_pet1',        name: 'Pet Trainer',           desc: 'Train your pet once',                      type: 'pet',      target: 1,   reward: { gold: 350,   crystals: 8  } },
@@ -223,6 +223,14 @@ function trackQuestProgress(player, type, amount = 1) {
   return { completed, justClaimed, milestone };
 }
 
+// Push #96h: ANY buff a hunter puts up counts for the "Activate a buff" quest —
+// /buff items, buff-type class skills (Bone Wall, War Cry, Fortress Stance…),
+// shields, regen, stat buffs. Silent (no chat post) — the next quest message
+// shows the progress. Callers pass the player object that owns dailyQuests.
+function creditBuff(player) {
+  try { if (!player || player.isBoss || player._raid || player.role) return null; if (!(player.dailyQuests || player.inventory !== undefined)) return null; return trackQuestProgress(player, 'buff', 1); } catch (e) { return null; }
+}
+
 // ── Manual claim (legacy /quest claim <id>) ─────────────────────────────────
 function claimQuestReward(player, questId) {
   const q = player.dailyQuests?.quests?.find(q => q.id === questId);
@@ -327,6 +335,7 @@ module.exports = {
   playerTz,
   ensureDailyQuests,
   trackQuestProgress,
+  creditBuff,
   claimQuestReward,
   checkStreakMilestone,
   autoClaimIfReady,

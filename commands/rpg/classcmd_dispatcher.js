@@ -295,6 +295,7 @@ async function defaultHandler(sock, msg, player, skill, db, saveDatabase, getDat
   if (skill.effect && skill.effect.type === 'buff') {
     if (!player.tempBuffs) player.tempBuffs = {};
     player.tempBuffs[skill.name] = { duration: skill.effect.duration || 2, effect: skill.effect };
+    try { require('../../rpg/utils/DailyQuestSystem').creditBuff(player); } catch (e) {} // Push #96h: buff quest
     resultText += `\n✨ Buff applied for ${skill.effect.duration || 2} turns!`;
   }
 
