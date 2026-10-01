@@ -1,3 +1,10 @@
+## 1.0.142 — Push #96h-k: every skill does exactly what its text says · listed cost = charged cost
+
+- **The text is the contract** (all 24 classes, 480 skills). A second pass over every effect line now catches what the parser missed: "25% chance to PARALYZE", "Burns everything", "STUN + SLOW + SILENCE all" (100% each), "20% BLIND per hit" over 7 hits (→ 79%), "Fears all enemies", "+100% dodge for 1 turn", "Next attack +50% DMG", "+20% crit chance", "-40% all enemy stats 3 turns", "-25% SPEED", "Terrifies enemies -10% ATK", "+20% damage taken". ~100 skills that promised a status/buff/debuff and did nothing now deliver it. Defensive mentions ("Immune to slow/freeze", "Strips poison/burn/bleed", "+40% ATK vs bleeding") are correctly NOT statuses, whichever parser guessed them.
+- **Debuffs reach gate raids** (incl. bosses — stat debuffs are not statuses) and **crit-chance buffs really raise crits** in raids, dungeons, PvP.
+- **Energy honesty**: a cost written in the skill text ("• 100 energy") is the cost; no active skill is free; `/skills`, `/skills locked` and your `/class` guide list the cost you are actually charged (level discount, Starforged discount, ×2 heals for non-Healers — the Mechanics line says "(×2 for non-Healers)").
+- Live hunters get the new contracts automatically (sync compares statuses/buffs/debuffs).
+
 ## 1.0.141 — Push #96h-j: one accuracy model · BLIND really cuts it · blinding beast skills · skills keep their descriptions · skills shape domains
 
 - **Accuracy fixed everywhere** (gate raids, dungeons, instances, PvP, event): `hit% = accuracy × blind/fear × (1 ± accuracy buffs) − dodge`. Accuracy is the move's own (attack patterns) or your stat (skills, 90 default) + gear accuracy. The beast's speed edge is now **capped at −8** — a 98% move lands ~90%, not a coin flip (sped-up bosses used to force a 25% dodge regardless of accuracy). Misses say why: _🎯 missed (90% accuracy)_ · _💨 dodged (8% speed edge)_ · _🌫️ BLIND — accuracy cut to 49%_. Stunned/frozen/petrified targets are auto-hit.

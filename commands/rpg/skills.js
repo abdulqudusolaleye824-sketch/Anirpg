@@ -25,6 +25,9 @@ function skillUpgradeCost(currentLevel) {
   return costs[currentLevel - 1] ?? null; // null = already max level
 }
 
+// Push #96h-k: the listed cost IS the charged cost (level discount, job discount, non-Healer heal ×2).
+let _SCk = null; try { _SCk = require('../../rpg/utils/SkillCatalog'); } catch (e) {}
+function realCost(skill, player) { try { if (_SCk && player) return _SCk.effectiveCost(skill, player); } catch (e) {} return Math.max(5, (skill.energyCost || 20) - ((skill.level || 1) - 1) * 3); }
 function applySkillLevelBonus(skill) {
   // Each level: +8% flat damage, -3 energy cost, -1 cooldown (floored)
   const lv = skill.level || 1;
@@ -66,9 +69,9 @@ function fmtSkillLine(skill, idx, player, compact=false) {
   const bar = skillLevelBar(lv, max);
   const prefix = idx !== undefined ? `${idx+1}. ` : '';
   if (compact) {
-    return `${prefix}*${skill.name}* [Lv${lv}/${max}] ${bar}\n   💥${bonuses.damage} | ${player.energyColor||'💙'}${bonuses.energyCost} | ⏰${bonuses.cooldown}t\n`;
+    return `${prefix}*${skill.name}* [Lv${lv}/${max}] ${bar}\n   💥${bonuses.damage} | ${player.energyColor||'💙'}${realCost(skill, player)} | ⏰${bonuses.cooldown}t\n`;
   }
-  return `${prefix}*${skill.name}*\nLv ${lv}/${max}: ${bar}\n💥 DMG: ${bonuses.damage} | ${player.energyColor||'💙'} ${bonuses.energyCost} | ⏰ ${bonuses.cooldown}t\n`;
+  return `${prefix}*${skill.name}*\nLv ${lv}/${max}: ${bar}\n💥 DMG: ${bonuses.damage} | ${player.energyColor||'💙'} ${realCost(skill, player)} | ⏰ ${bonuses.cooldown}t\n`;
 }
 
 module.exports = {
@@ -129,7 +132,7 @@ module.exports = {
       let txt = pro ? `${UI.PRO_BAR}\n🔒 *LOCKED SKILLS* 💎\n${UI.PRO_BAR}\n\n` : `🔒 *LOCKED SKILLS*\n${UI.FREE_BAR}\n\n`;
       locked.forEach(s => {
         txt += `🔒 *${s.name}* — Unlocks at Lv.${s.unlocksAtLevel || '?'}\n`;
-        txt += `   💥 DMG: ${s.damage} | ⚡ Cost: ${s.energyCost} | ⏰ CD: ${s.cooldown}t\n\n`;
+        txt += `   💥 DMG: ${s.damage} | ⚡ Cost: ${realCost(s, player)} | ⏰ CD: ${s.cooldown}t\n\n`;
       });
       txt += `${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO LOADOUT* — ${locked.length} locked` : `\n${UI.upsell()}`);
       return sock.sendMessage(chatId, { text: txt }, { quoted: msg });
@@ -166,7 +169,7 @@ module.exports = {
       txt += `${info?.description || 'A powerful skill.'}\n\n`;
       txt += `📊 STATS (Level ${lv}/${max})\n${bar}\n`;
       if (isHealerHealSkill(player, skill)) txt += `${healerUpgradeLine(skill)}\n`; else txt += `💥 Damage: ${bonuses.damage}\n`;
-      txt += `${player.energyColor||'💙'} Cost: ${bonuses.energyCost} ${player.energyType||'Energy'}\n`;
+      txt += `${player.energyColor||'💙'} Cost: ${realCost(skill, player)} ${player.energyType||'Energy'}\n`;
       txt += `⏰ Cooldown: ${bonuses.cooldown}t\n`;
       if (lv > 1) txt += isHealerHealSkill(player, skill) ? `⬆️ Level bonus: −${require('../../rpg/utils/HealerBacklash').reductionPct(lv)}% backlash, -${bonuses.costReduction} cost\n` : `⬆️ Level bonus: +${Math.round((bonuses.dmgMult-1)*100)}% DMG, -${bonuses.costReduction} cost\n`;
       if (info?.effect) txt += `\n💡 EFFECTS:\n${info.effect}\n`;

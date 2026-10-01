@@ -385,6 +385,84 @@ function applySupportFields(entry, caster, target, opts = {}) {
   return { lines };
 }
 
+// ── Push #96h-k: THE TEXT IS THE CONTRACT ──────────────────────────────────
+// EffectParser covers the common phrasings; everything it misses ("STUN + SLOW +
+// SILENCE all", "Burns everything", "25% chance to PARALYZE", "+100% dodge for 1
+// turn", "-40% all enemy stats 3 turns", "20% BLIND chance per hit" over 7 hits…)
+// is picked up here so EVERY status, buff and debuff a description promises is a
+// number the engines apply. Conditional / defensive mentions ("immune to", "vs
+// bleeding enemies", "cannot be slowed", "melts freeze effects") are NOT statuses.
+const STATUS_WORDS = [
+  [/\bburn(?:s|ing|ed)?\b|\bignite/i, 'burn'], [/\bpoison(?:s|ed|ous)?\b|\bvenom/i, 'poison'], [/\bbleed(?:s|ing)?\b|\bhemorrhag/i, 'bleed'],
+  [/\bstun(?:s|ned|ning)?\b|\bknock(?:s|ed)?\s*(?:down|back)|\bknockback|\bknockdown/i, 'stun'], [/\bfreez(?:e|es|ing)\b|\bfrozen\b/i, 'freeze'],
+  [/\bfears?\b|\bfeared\b|\bterrif(?:y|ies|ied)|\bfrighten/i, 'fear'], [/\bsilence[sd]?\b/i, 'silence'], [/\bblind(?:s|ed|ing)?\b/i, 'blind'],
+  [/\bparalyz(?:e|es|ed|ing)\b/i, 'paralyze'], [/\bcurse[sd]?\b/i, 'curse'], [/\bslow(?:s|ed)?\b/i, 'trueslow'], [/\bweaken(?:s|ed)?\b/i, 'weaken'],
+];
+const NOT_A_STATUS_LINE = /immun|resist|cleans|remov|strip|cure|purif|ignor|cannot be|can't be|\bvs\.?\b|against|if (?:the )?(?:target|enemy)|who were|consum\w* all|melts?|stacks?\b|thaw|dispel|unaffected|while (?:feared|stunned|bleeding|burning|poisoned|frozen|cursed|silenced|blinded)/i;
+function _lineStatuses(line, whole = '') {
+  const out = []; const raw = String(line || ''); if (!raw.trim()) return out;
+  const l = raw.replace(/uncleansable|unremovable|undispellable/gi, '');
+  if (NOT_A_STATUS_LINE.test(l)) return out;
+  const found = []; for (const [rx, type] of STATUS_WORDS) { const m = l.match(rx); if (m) found.push({ type, at: m.index }); }
+  if (!found.length) return out;
+  const dur = (() => { const m = l.match(/(\d+)\s*(?:turns?|t\b|rounds?)/i); return m ? Number(m[1]) : 2; })();
+  const hits = (() => { const src = `${l}\n${whole}`; const m = src.match(/(\d+)\s*(?:hits?|arrows?|strikes?|constructs?|shots?|impacts?)\s*[×x]/i) || src.match(/[×x]\s*(\d+)/i); return m ? Number(m[1]) : 0; })();
+  const guaranteed = /guaranteed|\ball\b|applied|inflicts?|force|everything|always|\bon all\b/i.test(l);
+  for (const f of found) {
+    // the % nearest BEFORE the status word, else "N% chance" anywhere on the line
+    const before = l.slice(0, f.at); const pm = [...before.matchAll(/(\d{1,3})\s*%\s*(?:chance\s*)?(?:to\s*(?:inflict\s*)?|of\s*)?$/gi)].pop() || [...before.matchAll(/(\d{1,3})\s*%\s*(?:chance\s*)?(?:to\s+)?(?:inflict\s+)?(?:\w+\s+){0,2}$/gi)].pop();
+    let chance = pm ? Number(pm[1]) : (() => { const m = l.match(/(\d{1,3})\s*%\s*chance/i); return m ? Number(m[1]) : (guaranteed ? 100 : 70); })();
+    if (/each|per (?:hit|arrow|strike|construct|shot)/i.test(l) && hits > 1 && chance < 100) chance = Math.round(100 * (1 - Math.pow(1 - chance / 100, hits)));
+    out.push({ type: f.type, chance: Math.max(5, Math.min(100, chance)), duration: Math.max(2, dur) });
+  }
+  return out;
+}
+const STAT_ALIAS = { atk: 'atk', attack: 'atk', 'magic damage': 'atk', damage: 'atk', dmg: 'atk', 'magic power': 'atk', 'magic pwr': 'atk', def: 'def', defense: 'def', defence: 'def', armor: 'def', armour: 'def', spd: 'speed', speed: 'speed', agility: 'speed', crit: 'crit', 'crit chance': 'crit', 'critical chance': 'crit', 'crit rate': 'crit', dodge: 'dodge', evasion: 'dodge', accuracy: 'accuracy', 'all stats': 'all', 'all enemy stats': 'all', 'max hp': 'maxhp' };
+for (const k of ['crit', 'crit chance', 'critical chance', 'crit rate']) STAT_ALIAS[k] = 'critChance'; // EffectParser's name for it
+const STAT_RX = 'atk|attack|magic damage|magic power|magic pwr|damage|dmg|def|defen[cs]e|armou?r|spd|speed|agility|crit(?: chance| rate)?|critical chance|dodge|evasion|accuracy|all (?:enemy )?stats';
+function augmentContract(effect, parsed, statuses) {
+  const addS = [], addB = [], addD = [];
+  const has = (arr, stat) => (arr || []).some(x => x && x.stat === stat);
+  for (const line of String(effect || '').split('\n')) {
+    const l = line.replace(/^[•\s]+/, '');
+    if (/^passive/i.test(l)) continue;
+    for (const st of _lineStatuses(l, effect)) if (!statuses.some(s => s.type === st.type) && !addS.some(s => s.type === st.type)) addS.push(st);
+    const dur = (() => { const m = l.match(/(\d+)\s*(?:turns?|t\b|rounds?)/i); return m ? Number(m[1]) : null; })();
+    // buffs: "+30% ATK", "ATK +30%", "Next attack +50% DMG", "+100% dodge for 1 turn"
+    for (const m of l.matchAll(new RegExp(`\\+\\s*(\\d{1,3})\\s*%\\s*(${STAT_RX})\\b`, 'gi'))) {
+      const pre = l.slice(Math.max(0, m.index - 24), m.index);
+      if (/enemy|enemies|target|their|foe|opponent/i.test(pre) || /taken/i.test(l.slice(m.index, m.index + m[0].length + 8))) continue; // "+20% damage taken" is a debuff
+      if (/vs|against|if\b/i.test(l.slice(m.index + m[0].length, m.index + m[0].length + 12)) && /damage|dmg/i.test(m[2])) continue; // "+100% damage vs boss" is a conditional multiplier, not a buff
+      const stat = STAT_ALIAS[m[2].toLowerCase().replace(/defence/, 'defense').replace(/armour/, 'armor')] || 'atk'; if (stat === 'maxhp') continue;
+      const d = dur || (/next (?:attack|hit|strike)|this turn/i.test(l) ? 1 : 2);
+      for (const s of (stat === 'all' ? ['atk', 'def', 'speed'] : [stat])) if (!has(parsed.buffs, s) && !has(addB, s)) addB.push({ stat: s, amount: Math.min(300, Number(m[1])), duration: d });
+    }
+    for (const m of l.matchAll(new RegExp(`\\b(${STAT_RX})\\s*\\+\\s*(\\d{1,3})\\s*%`, 'gi'))) {
+      const stat = STAT_ALIAS[m[1].toLowerCase()] || 'atk'; if (stat === 'maxhp') continue; if (/enemy|target|their/i.test(l.slice(Math.max(0, m.index - 24), m.index))) continue;
+      if (/\d\s*%\s*(?:\w+\s+)?$/.test(l.slice(Math.max(0, m.index - 14), m.index))) continue; // "200% damage + 80% AOE" is arithmetic, not a buff
+      for (const s of (stat === 'all' ? ['atk', 'def', 'speed'] : [stat])) if (!has(parsed.buffs, s) && !has(addB, s)) addB.push({ stat: s, amount: Math.min(300, Number(m[2])), duration: dur || 2 });
+    }
+    // debuffs: "-25% SPEED 3 turns", "-40% all enemy stats", "Terrifies enemies -10% ATK", "+20% damage taken"
+    for (const m of l.matchAll(new RegExp(`[-−]\\s*(\\d{1,3})\\s*%\\s*(?:enemy\\s+|target\\s+|their\\s+|all\\s+enemy\\s+)?(${STAT_RX})\\b`, 'gi'))) {
+      if (/\byour\b|\bself\b|\byou\b/i.test(l) && !/enemy|target|their/i.test(l)) continue; // self-debuffs are the parser's job
+      if (/permanent/i.test(l) && /max hp/i.test(m[2])) continue;
+      const stat = STAT_ALIAS[m[2].toLowerCase().replace(/defence/, 'defense').replace(/armour/, 'armor')] || 'atk'; if (stat === 'maxhp' || stat === 'dodge') continue;
+      for (const s of (stat === 'all' ? ['atk', 'def', 'speed'] : [stat])) if (!has(parsed.debuffs, s) && !has(addD, s)) addD.push({ stat: s, amount: Math.min(90, Number(m[1])), duration: dur || 3 });
+    }
+    const dt = l.match(/\+\s*(\d{1,3})\s*%\s*(?:more\s+)?damage\s+taken/i); if (dt && !has(parsed.debuffs, 'damageTaken') && !has(addD, 'damageTaken') && !/\byou\b|\byour\b|self/i.test(l)) addD.push({ stat: 'damageTaken', amount: Number(dt[1]), duration: dur || 3 });
+  }
+  return { statuses: addS, buffs: addB, debuffs: addD };
+}
+// A status the text only mentions defensively ("Immune to slow/freeze", "Strips poison")
+// is not a status the skill inflicts — drop it, whichever parser guessed it.
+function pruneStatuses(effect, statuses) {
+  const lines = String(effect || '').split('\n').map(l => l.replace(/uncleansable|unremovable/gi, ''));
+  return statuses.filter(st => {
+    const rx = STATUS_WORDS.find(([, t]) => t === st.type); if (!rx) return true; // engine-only types (ruin…) stay
+    return lines.some(l => rx[0].test(l) && !NOT_A_STATUS_LINE.test(l));
+  });
+}
+
 function normalise(className, raw, index) {
   const name   = String(raw.name || `Skill ${index + 1}`).trim();
   const effect = ensureParseable(raw.effect || '• Deals 100% ATK damage');
@@ -475,6 +553,15 @@ function normalise(className, raw, index) {
       duration: Math.max(2, Number(s.duration ?? s.turns ?? 2)), // Push #72: multi-turn
     }));
 
+  // Push #96h-k: everything else the text promises.
+  try {
+    const extra = augmentContract(effect, parsed, statuses);
+    for (const s of extra.statuses) statuses.push(s);
+    { const kept = pruneStatuses(effect, statuses); statuses.length = 0; statuses.push(...kept); }
+    parsed.buffs = parsed.buffs || []; parsed.debuffs = parsed.debuffs || [];
+    for (const b of extra.buffs) parsed.buffs.push(b);
+    for (const d of extra.debuffs) parsed.debuffs.push(d);
+  } catch (e) {}
   // Push #94: EXPLICIT SUPPORT CONTRACT — every shield / immunity / energy /
   // regen / reflect / damage-reduction / cleanse / party promise in the text
   // becomes a number the engines apply (no more regex-at-cast-time guessing).
@@ -517,6 +604,9 @@ function normalise(className, raw, index) {
     raw.rageCost ?? raw.focusCost ?? raw.chiCost ?? raw.cost ?? (isPassive ? 0 : 20 + index * 2)
   ) || 0);
 
+  // Push #96h-k: a cost written in the effect text ("• 100 energy — …") IS the cost.
+  const _statedCost = (() => { const m = String(effect || '').match(/(?:^|\n)[•\s]*(\d{1,3})\s*(?:energy|mana|rage|focus|chi|holy|hunger)\b/i) || String(effect || '').match(/costs?\s*(\d{1,3})\s*(?:energy|mana)/i); return m ? Number(m[1]) : null; })();
+  const energyCostFinal = isPassive ? 0 : (_statedCost != null ? _statedCost : (energyCost > 0 ? energyCost : 20 + index * 2)); // no free active skills
   // Damage as a % of ATK. If the description states a multiplier, honour it;
   // otherwise ramp by index so late skills are meaningfully stronger.
   const statedPct = parsed.damageMultiplier ? Math.round(parsed.damageMultiplier * 100) : 0;
@@ -550,7 +640,7 @@ function normalise(className, raw, index) {
   if (support.reflectPct) _mech.push(`reflects ${support.reflectPct}% of damage taken for ${support.reflectTurns} turns`);
   if (support.cleanse) _mech.push(`cleanses status effects`);
   if (support.party && !isPassive && !(parsed.buffs || []).length && !_healingPct) _mech.push(`reaches the whole party`);
-  if (!isPassive) _mech.push(`${energyCost} energy`);
+  if (!isPassive) _mech.push(`${energyCostFinal} energy${type === 'heal' && className !== 'Healer' ? ' (×2 for non-Healers)' : ''}`);
   if (_mech.length && !/Mechanics:/.test(desc)) desc = `${desc.replace(/\s+$/, '')}${/[.!?]["”]?$/.test(desc) ? '' : '.'} Mechanics: ${_mech.join(' · ')}.`;
   else if (!_mech.length && isPassive && !/Mechanics:/.test(desc)) desc = `${desc.replace(/\s+$/, '')}${/[.!?]$/.test(desc) ? '' : '.'} Mechanics: passive — ${effect.split('\n')[0].replace(/^[•\s]*(?:passive:\s*)?/i, '').replace(/\*\*/g, '')}.`;
 
@@ -562,7 +652,7 @@ function normalise(className, raw, index) {
     effect,
     animation: raw.animation || `⚡ ${name}!\n💥 The technique lands!`,
     cooldown: Math.max(0, Number(raw.cooldown ?? 2) || 0),          // turns (legacy unit)
-    energyCost,
+    energyCost: energyCostFinal,
     damagePct,
     flatDamage: Number(raw.damage ?? 0) || 0,
     healingPct: _healingPct,
@@ -777,7 +867,7 @@ function toPlayerSkill(player, entry) {
     animation: entry.animation,
     statuses: entry.statuses,
     buffs: entry.buffs,
-    debuffs: entry.debuffs,
+    debuffs: entry.debuffs, selfDebuffs: entry.selfDebuffs || [],
     healingPct: entry.healingPct,
     drainPct: entry.drainPct || 0, drainHealPct: entry.drainHealPct || 0, selfCostPct: entry.selfCostPct || 0,
     isPassive: entry.isPassive,
@@ -909,7 +999,8 @@ function syncPlayerSkills(player) {
       } else if (holder.effect !== fresh.effect || holder.damagePct !== fresh.damagePct
               || holder.energyCost !== fresh.energyCost || holder.cooldown !== fresh.cooldown
               || holder.description !== fresh.description || holder.type !== fresh.type // Push #94: new flavour / retyped support skills reach live hunters
-              || !Array.isArray(holder.statuses)) {
+              || !Array.isArray(holder.statuses) || JSON.stringify(holder.statuses) !== JSON.stringify(fresh.statuses) // Push #96h-k: contract changes reach live hunters
+              || JSON.stringify(holder.buffs || []) !== JSON.stringify(fresh.buffs || []) || JSON.stringify(holder.debuffs || []) !== JSON.stringify(fresh.debuffs || [])) {
         Object.assign(holder, fresh, { level: holder.level || 1 });
         changed = true;
       }
@@ -1153,6 +1244,7 @@ function carrySkillProgress(player, snap) {
   return { applied, count: now.length, wanted: snap.count };
 }
 module.exports = {
+  augmentContract,
   parseSupportFields, applySupportFields,
   snapshotSkillProgress, carrySkillProgress,
   applyHpPercents,

@@ -202,7 +202,9 @@ module.exports = {
     const _clsName = SCc ? SCc.canonicalClassName(player) : (typeof player.class === 'object' ? player.class?.name : player.class);
     const skillLines = rawSkills.map((s, i) => {
       const sd = describeSkill(_clsName, s.name) || {};
-      const desc = s.description || s.desc || sd.description || 'No description.';
+      let desc = s.description || s.desc || sd.description || 'No description.';
+      // Push #96h-k: the Mechanics cost shows what THIS hunter is really charged.
+      try { if (SCc) { const _rc = SCc.effectiveCost(s, player); desc = desc.replace(/(\d+) energy(?: \(×2 for non-Healers\))?/, `${_rc} energy`); } } catch (e) {}
       const _eff = s.effect || sd.effect;
       const eff = _eff ? `\n     ✨ ${String(_eff).replace(/\n/g, '\n     ')}` : '';
       return `  ${i+1}. *${s.name}*\n     ${desc}${eff}`;

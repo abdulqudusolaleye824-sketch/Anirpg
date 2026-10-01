@@ -203,7 +203,7 @@ function calcMoveDamage(attacker, defender, move) {
   try { const gb = require('./GearSystem').getEquippedBonuses(attacker) || {}; _gCrit = gb.crit || 0; _gCritDmg = gb.critDmg || 0; } catch (e) {}
   try { _tCrit = require('./TitleSystem').getEquippedBoost(attacker).crit || 0; } catch (e) {}
   try { _tCrit += require('./AuraSystem').AuraSystem.critPct(attacker); } catch (e) {} // Push #96f: aura title Crit%
-  critChance += ((attacker.stats?.critChance || 0) + ((_pmA && _pmA.crit) || 0) + _gCrit + _tCrit) / 100;
+  critChance += ((attacker.stats?.critChance || 0) + ((_pmA && _pmA.crit) || 0) + _gCrit + _tCrit + tempBuffPct(attacker, 'critChance') + tempBuffPct(attacker, 'crit')) / 100; // Push #96h-k: "+20% crit chance" buffs count
   const isCrit = Math.random() < Math.min(0.75, critChance);
   if (isCrit) {
     // Push #87: ring critDmg adds on top of the move's crit multiplier (+X% → +X/100).

@@ -67,7 +67,7 @@ function playerDamage(player, skillName = null, target = null) {
     if (target && _tTaken95 !== 1) dmg = Math.max(1, Math.floor(dmg * _tTaken95));
     if (target) { try { dmg = Math.max(1, Math.floor(dmg * require('../utils/UnifiedCombat').weakenTakenMult(target))); } catch (e) {} }
     if (target) { try { dmg = Math.max(1, Math.floor(dmg * require('../utils/JobSystem').targetMult(player, target, { boss: !!target.isBoss }))); } catch (e) {} } // Push #95: job prey/elite/pack bonuses
-    const isCrit = Math.random() < ((player.stats?.critChance || 2) + (_pm74.crit || 0) + _gearCritGR + _titleCritGR + _auraGR.crit) / 100;
+    const isCrit = Math.random() < ((player.stats?.critChance || 2) + (_pm74.crit || 0) + _gearCritGR + _titleCritGR + _auraGR.crit + _critBuffGR(player)) / 100;
     if (isCrit) dmg = Math.floor(dmg * ((player.stats?.critDamage || 150) + _gearCritDmgGR) / 100);
     if (target) { try { require('../utils/JobSystem').noteHit(player, true); target.lastHitBy = player.jid || player.id || target.lastHitBy; } catch (e) {} } // Push #95
 
@@ -121,6 +121,7 @@ function playerDamage(player, skillName = null, target = null) {
       hpPercentLines: _hpx.lines, drained: _hpx.drained, hpCost: _hpx.cost,
       synergyNotes,
       buffs: (entry && entry.buffs) || [],
+      debuffs: (entry && entry.debuffs) || [], selfDebuffs: (entry && entry.selfDebuffs) || [], // Push #96h-k: "-40% enemy DEF" lands
     };
   }
   if (target && monsterDodges(target, player)) { try { require('../utils/JobSystem').noteHit(player, false); } catch (e) {} return { damage: 0, isCrit: false, dodged: true, missed: true, missWhy: (monsterDodges.last && monsterDodges.last.why) || null, synergyNotes: [], statuses: [] }; } // Push #88o
@@ -130,7 +131,7 @@ function playerDamage(player, skillName = null, target = null) {
   if (target && _tTaken95 !== 1) dmg = Math.max(5, Math.floor(dmg * _tTaken95));
   if (target) { try { dmg = Math.max(1, dmg * require('../utils/UnifiedCombat').weakenTakenMult(target)); } catch (e) {} }
   if (target) { try { dmg = Math.max(1, dmg * require('../utils/JobSystem').targetMult(player, target, { boss: !!target.isBoss })); } catch (e) {} } // Push #95
-  const isCrit = Math.random() < ((player.stats?.critChance || 2) + (_pm74.crit || 0) + _gearCritGR + _titleCritGR + _auraGR.crit) / 100;
+  const isCrit = Math.random() < ((player.stats?.critChance || 2) + (_pm74.crit || 0) + _gearCritGR + _titleCritGR + _auraGR.crit + _critBuffGR(player)) / 100;
   if (isCrit) dmg = Math.floor(dmg * (player.stats?.critDamage || 150) / 100);
   if (target) { try { require('../utils/JobSystem').noteHit(player, true); target.lastHitBy = player.jid || player.id || target.lastHitBy; } catch (e) {} } // Push #95
   let synergyNotes = [];
@@ -198,6 +199,7 @@ function monsterDodges(monster, player, move = null) {
     return Math.random() * 100 < monsterDodgeChance(monster, player);
   }
 }
+function _critBuffGR(p) { try { const UC = require('../utils/UnifiedCombat'); return (UC.tempBuffPct(p, 'critChance') || 0) + (UC.tempBuffPct(p, 'crit') || 0); } catch (e) { return 0; } } // Push #96h-k
 function _isHealSkillEarly(entry, skill) { return String((entry && entry.type) || (skill && skill.type) || '').toLowerCase() === 'heal'; }
 // Push #89: ONE definition of a hunter's defence for every monster hit —
 // base + weapon + equipped gear + equipped TITLE + pet bonus + temp DEF buffs.

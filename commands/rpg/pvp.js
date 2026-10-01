@@ -960,7 +960,8 @@ function calcMoveDamage(attacker, defender, act) {
     }
   }
   let rawDmg = Math.floor(atk * dmgMult * (0.9 + Math.random() * 0.20));
-  const critChance = ((attacker.stats?.critChance || 5) + _gCrit) / 100;
+  let _cb = 0; try { const _U = require('../../rpg/utils/UnifiedCombat'); _cb = (_U.tempBuffPct(attacker, 'critChance') || 0) + (_U.tempBuffPct(attacker, 'crit') || 0); } catch (e) {} // Push #96h-k
+  const critChance = ((attacker.stats?.critChance || 5) + _gCrit + _cb) / 100;
   const isCrit = Math.random() < critChance;
   if (isCrit) {
     const critMult = (attacker.stats?.critDamage || 150) / 100;

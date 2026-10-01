@@ -699,7 +699,7 @@ module.exports = {
       } else if (result.skillUsed) {
         const _sk = result.skillUsed;
         const _skFx = (_sk.effect && typeof _sk.effect === 'object' && _sk.effect.type) ? _sk.effect : null;
-        _gmMove = { name: _sk.name, description: _sk.description || 'A class skill unleashed in the heat of battle.', cooldownMs: (_sk.cooldown || 3) * 1000, effect: _skFx, isSkill: true, statuses: result.statuses || [], buffs: result.buffs || [] };
+        _gmMove = { name: _sk.name, description: _sk.description || 'A class skill unleashed in the heat of battle.', cooldownMs: (_sk.cooldown || 3) * 1000, effect: _skFx, isSkill: true, statuses: result.statuses || [], buffs: result.buffs || [], debuffs: result.debuffs || [], selfDebuffs: result.selfDebuffs || [] };
         _gmResult = { damage: result.damage, crit: !!result.isCrit, missed: !!result.missed, dodged: !!result.dodged, missWhy: result.missWhy || null };
       } else {
         _gmMove = { ...UCgFlow.basicStrike(), statuses: result.statuses || [] };
@@ -1127,7 +1127,7 @@ module.exports = {
       const UCgBoss = require('../../rpg/utils/UnifiedCombat');
       let _bMove;
       if (result.skillUsed) {
-        _bMove = { name: result.skillUsed.name, description: result.skillUsed.description || 'A class skill unleashed on the boss.', cooldownMs: (result.skillUsed.cooldown || 3) * 1000, effect: null, statuses: (result.statuses || []).filter(st => st && st.type === 'ruin') }; // Push #93: Curse of Ruin lands on bosses (other statuses stay boss-immune)
+        _bMove = { name: result.skillUsed.name, description: result.skillUsed.description || 'A class skill unleashed on the boss.', cooldownMs: (result.skillUsed.cooldown || 3) * 1000, effect: null, statuses: (result.statuses || []).filter(st => st && st.type === 'ruin'), debuffs: result.debuffs || [], selfDebuffs: result.selfDebuffs || [] }; // Push #96h-k: stat debuffs land on bosses · Push #93: Curse of Ruin lands on bosses (other statuses stay boss-immune)
       } else {
         _bMove = UCgBoss.basicStrike();
       }
