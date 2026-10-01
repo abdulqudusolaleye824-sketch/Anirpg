@@ -49,9 +49,9 @@ module.exports = {
       if (!inGC) return needGC();
       const tj = Target.resolve(msg, []); // a TAGGED hunter inside your attack = hunter vs hunter
       const rest = args.slice(1).filter(a => !a.startsWith('@'));
-      if (tj) {
-        const victim = _findUser(db, tj); if (!victim) return say('That hunter is not registered.');
-        const skill = rest.join(' ').trim() || null;
+      const victim = tj ? _findUser(db, tj) : null; // a reply to a bot card / unregistered → beast attack
+      if (tj && victim && victim !== player) {
+        const skill = rest.filter(a => !/^#?\d+$/.test(a)).join(' ').trim() || null;
         const r = EventSystem.attackHunter(db, player, victim, skill); if (!r.ok) return say(`❌ ${r.error}`);
         saveDatabase(db); await say(r.text, { mentions: [tj] });
         if (r.pending) { // 20s retaliation window → resolve both moves at once

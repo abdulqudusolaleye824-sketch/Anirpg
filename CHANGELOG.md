@@ -1,3 +1,9 @@
+## 1.0.140 — Push #96h-i: /attack in the Events GC · reply = target · the island holds you · any message breaks AFK
+
+- **No more `/event attack`** — in the Events GC a plain `/attack [#|@hunter] [skill]`, `/skill <skill>`, `/hit`… *is* the event attack. **Replying** to a hunter's message targets them (reply to a bot card = beast attack).
+- **The island holds you**: a joined, non-AFK hunter cannot enter gate raids or dungeons (`/gateraid`, `/party join`, `/dungeon …`) — `/eventafk` first.
+- **Breaking AFK = saying anything in the Events GC** (any message or command except `/eventafk`): you are announced back on the island and **auto-removed** from any gate raid (leader succession applies), solo dungeon, dungeon party or instance.
+
 ## 1.0.139 — Push #96h-g: tag-in-attack duels (20s retaliation) · full stat pool in events · every pet fights
 
 - **Event duels reworked**: tag a hunter *inside your attack* — `/event attack @hunter [skill]`. The target gets a **20-second window** to retaliate with their own `/event attack @you [skill]`; then **both moves resolve at once** from the same starting state (double KO = no points move). No retaliation → only the attacker's move lands. The plain "@mention = strike" hook is removed. Expired windows also resolve on the next event command, so a clash can never hang.

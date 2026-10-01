@@ -2233,6 +2233,11 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
         try {
           const ES = require('../rpg/utils/EventSystem');
           const _pl = db.users[sender] || db.users[Object.keys(db.users).find(k => k.split('@')[0] === bareSender) || ''];
+          // Push #96h-h: ANY message in the Events GC breaks event-AFK (and pulls the hunter out of dungeons/raids).
+          if (_pl && isGroup && ES.isEventGC(db, chatId)) {
+            const _bk = ES.breakAfk(db, _pl);
+            if (_bk) { try { saveDatabase?.(); } catch (e) {} await sock.sendMessage(chatId, { text: _bk.text, mentions: [sender] }); }
+          }
           if (_pl && ES.setupStep(_pl) && (!isGroup || ES.isEventGC(db, chatId))) {
             const r = ES.handleSetupReply(_pl, messageText);
             if (r) { try { saveDatabase?.(); } catch (e) {} await sock.sendMessage(chatId, { text: r }, { quoted: msg }); return; }

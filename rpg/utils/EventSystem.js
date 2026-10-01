@@ -287,10 +287,35 @@ function resolveExpired(db) {
   for (const [vid, c] of Object.entries(ev.pending)) if (c && now >= c.resolveAt) { const r = resolvePending(db, vid); if (r.ok) out.push(r); }
   return out;
 }
+// Push #96h-h: while you are ON the island (joined, not AFK) you cannot enter raids or
+// dungeons — /eventafk first. Saying anything in the Events GC breaks AFK and pulls you
+// out of whatever dungeon/raid you were in (announced).
+function blocksRaids(db, player) {
+  const ev = _ev(db); if (!ev || !player) return null; const st = player.eventStats;
+  if (!st || st.id !== ev.id || !st.joined || st.afk) return null;
+  return `🏝️ You are on *Jeju Island* — the event holds you. */eventafk* in the Events GC before you raid or run dungeons.`;
+}
+function pullFromDungeons(db, player) {
+  const out = []; const id = _pid(player);
+  try { const GR = require('../dungeons/GateRaid'); const g = GR.findOtherRaid ? GR.findOtherRaid(id, null) : null;
+    if (g && g.raid) { const n = require('../dungeons/GateKeyManager').normaliseJid(id); const wasLeader = g.raid.leader === id || require('../dungeons/GateKeyManager').normaliseJid(g.raid.leader) === n;
+      g.raid.members = (g.raid.members || []).filter(m => m.id !== id && require('../dungeons/GateKeyManager').normaliseJid(m.id) !== n); g.raiders = (g.raiders || []).filter(j => j !== id);
+      if (wasLeader) { try { GR.succeedLeader(g, id); } catch (e) {} } out.push(`${g.rank || '?'}-Rank gate raid${g.id ? ` [${g.id}]` : ''}`); } } catch (e) {}
+  try { if (db.soloDungeons && db.soloDungeons[id]) { delete db.soloDungeons[id]; out.push('solo dungeon'); } } catch (e) {}
+  try { const DPM = require('../dungeons/DungeonPartyManager'); const party = DPM.getPartyByPlayer(id); if (party) { DPM.leaveParty(party.id, id); out.push('dungeon party'); } } catch (e) {}
+  try { if (player.instance && player.instance.active) { require('./InstanceDungeon').end(player, true); out.push('instance'); } } catch (e) {}
+  return out;
+}
+function breakAfk(db, player) {
+  const ev = _ev(db); if (!ev || !player) return null; const st = player.eventStats;
+  if (!st || st.id !== ev.id || !st.joined || !st.afk) return null;
+  st.afk = false; const pulled = pullFromDungeons(db, player);
+  return { ok: true, pulled, text: `⚔️ *${_name(player)} is back on the island!*${pulled.length ? ` Pulled out of: ${pulled.join(', ')}.` : ''} You can be targeted again.` };
+}
 function toggleAfk(db, player) {
   const ev = tick(db); if (!ev) return { ok: false, error: 'No event is running right now.' };
-  const st = _p(db, player); st.afk = !st.afk;
-  return { ok: true, afk: st.afk, text: st.afk ? `🛌 *${_name(player)} is now AFK* — no hunter or beast can target you, and you cannot attack. /eventafk again to return.` : `⚔️ *${_name(player)} is back on the island!* You can be targeted again.` };
+  const st = _p(db, player); if (!st.joined) return { ok: false, error: 'You have not joined the raid yet — */ejoin*.' }; st.afk = !st.afk;
+  return { ok: true, afk: st.afk, text: st.afk ? `🛌 *${_name(player)} is now AFK* — no hunter or beast can target you, you cannot attack, and you are free to raid/dungeon. *Saying anything in this GC* brings you back (and pulls you out of any dungeon).` : `⚔️ *${_name(player)} is back on the island!* You can be targeted again.` };
 }
 
 // ── event domain (Lv.10, event GC only) ───────────────────────
@@ -358,7 +383,7 @@ function infoText(db) {
     `👹 Alive by rank: ${RANKS.map(r => byRank[r] ? `${r}:${byRank[r]}` : null).filter(Boolean).join(' · ') || 'none'}`, `👑 Boss: ${boss ? `${boss.name} — ${boss.defeated ? 'slain' : `${boss.hp.toLocaleString()}/${boss.maxHp.toLocaleString()} HP${live.length > 1 ? ' (locked until the beasts fall)' : ' — OUT NOW'}`}` : '—'}`,
     ``, `👥 *PARTICIPANTS* — ${parts.length} hunters`, `⚔️ active ${active} · 🛌 AFK ${afk} · 💀 respawning ${dead}`, `☠️ beast kills ${tot.k.toLocaleString()} · 🗡️ hunter kills ${tot.hk} · deaths ${tot.d} · 💥 damage ${tot.dmg.toLocaleString()} · 🏅 points held ${tot.pts.toLocaleString()}`,
     ``, `🏆 *TOP 10*`, ...(lb.length ? lb.map((e, i) => `${['🥇', '🥈', '🥉'][i] || `${i + 1}.`} ${e.name} — ${e.points.toLocaleString()} pts · ${e.kills}☠️ ${e.hunterKills}🗡️`) : ['_Nobody has scored yet._']),
-    ``, `📜 *RULES*`, `• */ejoin* to enter (Lv.${DOMAIN_LEVEL}+) · 10 days · ${WAVE_SIZE} beasts + 1 boss per wave`, `• Beasts never start a fight — they counter; idle 30s → +5% HP per 30s`, `• Friendly fire: tag a hunter in your attack (/event attack @hunter [skill]); they get 20s to retaliate, then both moves land · kill = 50% of their points, theirs reset to 0`, `• Death = 1h respawn · /eventafk = untouchable but no attacking`, `• Lv.10 event domain: /event domain (name + desc first) · ${DOMAIN_ENERGY} energy · 1h cooldown`, `• Points: E${KILL_POINTS.E} D${KILL_POINTS.D} C${KILL_POINTS.C} B${KILL_POINTS.B} A${KILL_POINTS.A} S${KILL_POINTS.S} · boss ${BOSS_POINTS} · hunter kill +${HUNTER_KILL_BONUS} · spend in /eshop`].join('\n');
+    ``, `📜 *RULES*`, `• */ejoin* to enter (Lv.${DOMAIN_LEVEL}+) · 10 days · ${WAVE_SIZE} beasts + 1 boss per wave`, `• Beasts never start a fight — they counter; idle 30s → +5% HP per 30s`, `• Friendly fire: tag a hunter in your attack (/event attack @hunter [skill]); they get 20s to retaliate, then both moves land · kill = 50% of their points, theirs reset to 0`, `• Death = 1h respawn · /eventafk = untouchable, no attacking, free to raid — any message here brings you back`, `• Attack with plain */attack [#|@hunter] [skill]* or */skill <skill>* in this GC (reply to a hunter = target them)`, `• Lv.10 event domain: /event domain (name + desc first) · ${DOMAIN_ENERGY} energy · 1h cooldown`, `• Points: E${KILL_POINTS.E} D${KILL_POINTS.D} C${KILL_POINTS.C} B${KILL_POINTS.B} A${KILL_POINTS.A} S${KILL_POINTS.S} · boss ${BOSS_POINTS} · hunter kill +${HUNTER_KILL_BONUS} · spend in /eshop`].join('\n');
 }
 
-module.exports = { infoText, RETALIATE_MS, pendingFor, resolvePending, resolveExpired, join, isJoined, handleSetupReply, setupStep, _autoSkill, EVENT_LENGTH_MS, WAVE_SIZE, RESPAWN_MS, REGEN_IDLE_MS, REGEN_PCT, STEAL_PCT, DOMAIN_LEVEL, DOMAIN_ENERGY, SHOP, KILL_POINTS, BOSS_POINTS, gcId, isEventGC, buildWave, start, end, tick, alive, attackMonster, attackHunter, toggleAfk, domainState, setDomainName, setDomainDesc, castDomain, leaderboard, status, pointsText, statsText, shopText, buy, _p };
+module.exports = { infoText, blocksRaids, breakAfk, pullFromDungeons, RETALIATE_MS, pendingFor, resolvePending, resolveExpired, join, isJoined, handleSetupReply, setupStep, _autoSkill, EVENT_LENGTH_MS, WAVE_SIZE, RESPAWN_MS, REGEN_IDLE_MS, REGEN_PCT, STEAL_PCT, DOMAIN_LEVEL, DOMAIN_ENERGY, SHOP, KILL_POINTS, BOSS_POINTS, gcId, isEventGC, buildWave, start, end, tick, alive, attackMonster, attackHunter, toggleAfk, domainState, setDomainName, setDomainDesc, castDomain, leaderboard, status, pointsText, statsText, shopText, buy, _p };

@@ -612,6 +612,7 @@ function ensureMember(gate, sender, db) {
 
 // ── ENTRY ───────────────────────────────────────────────────────
 function enter(sender, name, key, keyData, gate, db) {
+  { try { const _eb = require('../utils/EventSystem').blocksRaids(db, db?.users?.[sender]); if (_eb) return { ok: false, error: _eb }; } catch (e) {} } // Push #96h-h
   const raid = raidOf(gate, key, keyData);
   { const sr = sealedReason(gate); const _in = (raid.members || []).some(m => m.id === sender || GKM.normaliseJid(m.id) === GKM.normaliseJid(sender)); if (sr && !_in) return { ok: false, error: sr }; } // Push #96d
   { const other = findOtherRaid(sender, gate); if (other) return { ok: false, error: otherRaidError(other) }; }
@@ -678,6 +679,7 @@ function enter(sender, name, key, keyData, gate, db) {
 }
 
 function join(sender, name, gate, db) {
+  { try { const _eb = require('../utils/EventSystem').blocksRaids(db, db?.users?.[sender]); if (_eb) return { ok: false, error: _eb }; } catch (e) {} } // Push #96h-h
   const raid = gate.raid;
   if (!raid) return { ok: false, error: 'No gate raid in progress.' };
   { const sr = sealedReason(gate); if (sr) return { ok: false, error: sr }; } // Push #96d
@@ -1732,6 +1734,7 @@ function spawnWildPet(gate) {
 }
 
 module.exports = {
+  findOtherRaid,
   RED_GATE_CHANCE, DOUBLE_DUNGEON_CHANCE, LEAK_CHANCE, RED_GATE_TEXT, sealedReason, leakMonster, succeedLeader, takeLeaderNotice, doublePending, evolveDouble, grantDoubleBoxes, // Push #96d
   livingMembers,
   calibrateToParty, partyLuck, RANK_EXPECTED_POWER, totalStatsOf,

@@ -266,7 +266,7 @@ module.exports = async (sock, msg, messageText, config, getDatabase, saveDatabas
     );
   }
 
-  const args = messageText.slice(config.prefix.length).trim().split(/ +/);
+  let args = messageText.slice(config.prefix.length).trim().split(/ +/);
   const commandName = args.shift()?.toLowerCase();
 
   const isGroup = msg.key.remoteJid?.endsWith('@g.us');
@@ -306,7 +306,18 @@ module.exports = async (sock, msg, messageText, config, getDatabase, saveDatabas
   }
 
   // Push #47: the literal command name wins over any alias mapping.
-  const resolvedCommand = (commandName && commands[commandName]) ? commandName : (ALIASES[commandName] || commandName);
+  let resolvedCommand = (commandName && commands[commandName]) ? commandName : (ALIASES[commandName] || commandName);
+  // Push #96h-h: in the EVENTS GC a plain /attack, /skill, /hit (…) IS the event attack.
+  try {
+    if (chatId.endsWith('@g.us') && ['attack', 'attacks', 'a', 'skill', 's', 'hit', 'strike', 'pk'].includes(commandName) && commands.event) {
+      const _edb = getDatabase(); const ES = require('../rpg/utils/EventSystem');
+      if (ES.isEventGC(_edb, chatId)) { resolvedCommand = 'event'; args = ['attack', ...args]; }
+    }
+    if (chatId.endsWith('@g.us') && !['eventafk', 'eafk'].includes(commandName)) {
+      const _edb = getDatabase(); const ES = require('../rpg/utils/EventSystem');
+      if (ES.isEventGC(_edb, chatId)) { const _bk = ES.breakAfk(_edb, _edb.users?.[sender]); if (_bk) { try { saveDatabase(); } catch (e) {} await sock.sendMessage(chatId, { text: _bk.text, mentions: [sender] }); } }
+    }
+  } catch (e) {}
   console.log(`[COMMAND] ${resolvedCommand}${resolvedCommand !== commandName ? ` (alias: ${commandName})` : ''} | Sender: ${sender} | Chat: ${chatId}`);
 
   const db = getDatabase();
