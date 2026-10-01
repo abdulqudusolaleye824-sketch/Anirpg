@@ -139,7 +139,7 @@ function buildGateMonsters(rank, floors, strengthPct = 100, bossName = null) {
       atk: Math.max(1, Math.floor(baseHp * prof.atk)),
       def: Math.floor(baseHp * prof.def),
       speed: Math.round(10 * prof.speed),
-      skills: m.skills,
+      skills: [...(Array.isArray(m.skills) ? m.skills : []), { name: '💚 Regenerate', effect: null, chance: 0 }], // Push #96d: every beast can regenerate
       floor, defeated: false,
       family: theme || monsterFamily(m.name) || 'wild',
       ...(elite ? { elite: true } : {}),

@@ -341,7 +341,7 @@ module.exports = {
       if (raidOver(gate)) return sock.sendMessage(chatId, { text: RAID_OVER_TEXT }, { quoted: msg });
       // Push #88w: revive tokens work ONLY on hunters who actually fell in this raid
       // (or a @mentioned fallen teammate). Living hunters heal with potions.
-      const _rvMent = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
+      const _rvMent = require('../../utils/target').resolveAll(msg, []);
       const _rvTarget = _rvMent.length ? _rvMent[0] : sender;
       if (!GR.isFallen(gate, _rvTarget)) {
         return sock.sendMessage(chatId, { text: _rvMent.length ? `❌ That hunter has not fallen in this raid — Revive Tokens only work on the dead.` : `❌ You have not fallen in this raid — Revive Tokens only work on the dead. Use /party heal for HP.` }, { quoted: msg });
@@ -456,7 +456,7 @@ module.exports = {
       // monsters remember the healer (aggro) for the next few counters.
       if (action === 'skill' && skillArg) {
         try {
-          const _mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
+          const _mentioned = require('../../utils/target').resolveAll(msg, []);
           const _rawName = String(skillArg).replace(/@\S+/g, '').trim();
           const SCx = require('../../rpg/utils/SkillCatalog');
           const _pre = SCx.resolveSkill(player, _rawName, { allowLibrary: true });
@@ -864,7 +864,7 @@ module.exports = {
         const monAtk = { name: target.name, stats: { hp: target.hp, maxHp: target.maxHp }, statusEffects: target.statusEffects || [] };
         await UCgFlow.playTurn(sock, chatId, {
           attacker: monAtk, defender: _victim,
-          move: { name: monsterSkill.name, description: `A ferocious ${_skillBare} technique.`, cooldownMs: 0, effect: { type: monsterSkill.effect, chance: Math.min(90, (monsterSkill.chance || 35) * GR.RAID_X2), duration: 2 } }, // Push #71: no more 100% status · Push #88q: raid status chance ×2
+          move: { name: monsterSkill.name, description: `A ferocious ${_skillBare} technique.`, cooldownMs: 0, effect: monsterSkill.effect ? { type: monsterSkill.effect, chance: Math.min(90, (monsterSkill.chance || 35) * GR.RAID_X2), duration: 2 } : null }, // Push #71: no more 100% status · Push #88q: raid status chance ×2
           result: { damage: dmg, crit: !!(GR.monsterDamage.last && GR.monsterDamage.last.crit), missed: dmg <= 0, dodged: dmg <= 0, preAbsorbed: true, absorbedNote: (GR.monsterDamage.last && GR.monsterDamage.last.shieldLine) || null },
           tag: `💢 *MONSTER COUNTER-ATTACK*`, gapMs: 600,
         });
@@ -890,6 +890,7 @@ module.exports = {
           const _gGone = (id) => id !== _victimJid && (!_gN || GR.GKM.normaliseJid(id) !== _gN);
           if (gate.raid) gate.raid.members = gate.raid.members.filter(m => _gGone(m.id));
           try { GR.markFallen(gate, _victimJid); } catch (e) {} // Push #88w
+          try { const _ln = GR.takeLeaderNotice(gate); if (_ln) await sock.sendMessage(chatId, { text: _ln }); } catch (e) {}
           gate.raiders = (gate.raiders || []).filter(_gGone);
           await sock.sendMessage(chatId, { text: [
             _guardHit.aggro ? `💀 *${_guardHit.guardianName} WAS CUT DOWN BY THE MONSTER'S AGGRO!*` : `💀 *${_guardHit.guardianName} FELL PROTECTING ${String(player.name || '').toUpperCase()}!*`,
@@ -930,6 +931,7 @@ module.exports = {
             const _gone = (id) => id !== sender && (!_sN || GR.GKM.normaliseJid(id) !== _sN);
             if (gate.raid) gate.raid.members = gate.raid.members.filter(m => _gone(m.id));
             try { GR.markFallen(gate, sender); } catch (e) {} // Push #88w
+            try { const _ln = GR.takeLeaderNotice(gate); if (_ln) await sock.sendMessage(chatId, { text: _ln }); } catch (e) {}
             gate.raiders = (gate.raiders || []).filter(_gone);
           }
           if (gate.raid && gate.raid.members.length === 0) {
@@ -1012,7 +1014,8 @@ module.exports = {
         }
 
         // Distribute full loot: gold→guild treasury, drops→final-blow, recovery
-        const loot = GR.clearGate(gate, key, keyData, db, saveDatabase);
+        const _double = !!(gate.doubleRoll && !gate.isDouble); // Push #96d: a second gate hides behind this boss
+        const loot = GR.clearGate(gate, key, keyData, db, saveDatabase, { keepOpen: _double });
 
         out.push(``, `💀 *${boss.name}* HAS BEEN DEFEATED!`, ``);
         out.push(`🔥 Aura gained!`);
@@ -1054,7 +1057,15 @@ module.exports = {
         } catch (e) {}
 
         out.push(``, `💚 *All members: +50% max HP recovery, no cooldown.*`);
-        out.push(`🚪 *GATE ${gate.id} CLEARED!*`);
+        if (_double) {
+          const _ldr = db.users?.[gate.raid?.leader]; const _ln = _ldr ? _ldr.name : 'Leader';
+          out.push(``, `🌀 *THE GATE DOES NOT CLOSE…*`, `A *DOUBLE DUNGEON* yawns open behind the fallen boss — rank unknown (B, A or S). Once entered it is sealed: nobody joins, nobody flees.`, `👑 *${_ln}* decides: */party proceed* or */party leave*`);
+          try { const Buttons = require('../../utils/buttons'); setTimeout(() => Buttons.sendButtons(sock, chatId, { text: `🌀 *DOUBLE DUNGEON* — ${_ln}, proceed or leave?`, buttons: Buttons.quickReplies([['⚔️ Proceed', '/party proceed'], ['🚪 Leave', '/party leave']]) }).catch(() => {}), 1500); } catch (e) {}
+        } else if (gate.isDouble) {
+          out.push(``, `🏆 *DOUBLE DUNGEON CONQUERED!* (${gate.rank}-Rank revealed)`, `🎁 Every survivor may open a box: */box blessed* or */box cursed* (sent to your DM)`);
+          try { const Buttons = require('../../utils/buttons'); for (const jid of (loot.doubleBoxes || [])) setTimeout(() => Buttons.sendButtons(sock, jid, { text: `🎁 *DOUBLE DUNGEON SURVIVOR* — choose your box:`, buttons: Buttons.quickReplies([['✨ Blessed box', '/box blessed'], ['🖤 Cursed box', '/box cursed']]) }).catch(() => {}), 1200); } catch (e) {}
+          out.push(`🚪 *GATE ${gate.id} CLEARED!*`);
+        } else out.push(`🚪 *GATE ${gate.id} CLEARED!*`);
         out.push(FRAME);
         if (pro) {
           const topName = topRaider ? (db.users?.[topRaider[0]]?.name || 'a raider') : 'none';
@@ -1173,17 +1184,20 @@ module.exports = {
         // Push #88: the boss hits with its CALIBRATED atk (severity × floor), not a flat rank constant.
         const bossAtk = (typeof boss.atk === 'number' && boss.atk > 0) ? boss.atk : Math.floor(GATE_RANKS[gate.rank].monsterRange[1] * 0.20 * ((gate.calibrated && gate.calibrated.severity) || 1));
         // Push #74: boss hits go through the same dodge/passive/weaken maths.
-        const dmg = GR.monsterDamage({ atk: bossAtk, speed: boss.speed || 14, statusEffects: boss.statusEffects || [], _raid: true, isBoss: true, rank: gate.rank }, def, _bVictim);
+        const _bossRegen = Math.random() < 0.25 && boss.hp < boss.maxHp; // Push #96d: bosses can Regenerate (soft hit + heal 15%)
+        let dmg = GR.monsterDamage({ atk: bossAtk, speed: boss.speed || 14, statusEffects: boss.statusEffects || [], _raid: true, isBoss: true, rank: gate.rank }, def, _bVictim);
+        if (_bossRegen) dmg = Math.floor(dmg * 0.6);
         if (_bGuard && _bGuard.aggro) await sock.sendMessage(chatId, { text: `🎯 *AGGRO!* *${boss.name}* turns on the healer *${_bGuard.guardianName}*!` });
         else if (_bGuard) await sock.sendMessage(chatId, { text: `🛡️ *GUARD!* *${_bGuard.guardianName}* steps in front of *${player.name}* and takes the boss's blow!` });
         const bossAtkW = { name: boss.name, stats: { hp: boss.hp, maxHp: boss.maxHp }, statusEffects: [] };
         await UCgBoss.playTurn(sock, chatId, {
           attacker: bossAtkW, defender: _bVictim,
-          move: { name: 'Retaliation', description: 'The boss lashes out with overwhelming force.', cooldownMs: 0 },
+          move: _bossRegen ? { name: '💚 Regenerate', description: 'The boss knits its wounds while lashing out.', cooldownMs: 0 } : { name: 'Retaliation', description: 'The boss lashes out with overwhelming force.', cooldownMs: 0 },
           result: { damage: dmg, crit: !!(GR.monsterDamage.last && GR.monsterDamage.last.crit), missed: dmg <= 0, dodged: dmg <= 0, preAbsorbed: true, absorbedNote: (GR.monsterDamage.last && GR.monsterDamage.last.shieldLine) || null },
           tag: `💢 *BOSS COUNTER*`, gapMs: 600,
         });
         try { const _pl = GR.afterMonsterHit(_bVictim, boss, dmg); if (_pl.length) lines.push(..._pl); } catch (e) {}
+        if (_bossRegen) { try { const _fx = require('../../rpg/utils/MonsterSkillFX').apply(boss, _bVictim, '💚 Regenerate', dmg, { skipStatus: true }); if (_fx.lines.length) lines.push(..._fx.lines); } catch (e) {} }
         const heal = GR.lifeSteal(player, result.damage);
         if (heal > 0) player.stats.hp = Math.min(_effMax(player), player.stats.hp + heal);
         if (heal > 0) lines.push(`💚 Lifesteal: +${heal} HP`);
@@ -1202,6 +1216,7 @@ module.exports = {
             const _gGone = (id) => id !== _bVictimJid && (!_gN || GR.GKM.normaliseJid(id) !== _gN);
             if (gate.raid) gate.raid.members = gate.raid.members.filter(m => _gGone(m.id));
           try { GR.markFallen(gate, _bVictimJid); } catch (e) {} // Push #88w
+          try { const _ln = GR.takeLeaderNotice(gate); if (_ln) lines.push(_ln); } catch (e) {}
             gate.raiders = (gate.raiders || []).filter(_gGone);
             lines.push(``, `💀 *${_bGuard.guardianName} FELL PROTECTING ${String(player.name || '').toUpperCase()}!*`, `Too strong to withstand. Lost ${gl.toLocaleString()} 💎 · fled with 1 HP.`);
             if (gate.raid && gate.raid.members.length === 0) lines.push(...GR.wipeGate(gate, key, keyData, chatId, db));
@@ -1228,6 +1243,7 @@ module.exports = {
               const _gone = (id) => id !== sender && (!_sN || GR.GKM.normaliseJid(id) !== _sN);
               if (gate.raid) gate.raid.members = gate.raid.members.filter(m => _gone(m.id));
             try { GR.markFallen(gate, sender); } catch (e) {} // Push #88w
+            try { const _ln = GR.takeLeaderNotice(gate); if (_ln) await sock.sendMessage(chatId, { text: _ln }); } catch (e) {}
               gate.raiders = (gate.raiders || []).filter(_gone);
             }
             if (gate.raid && gate.raid.members.length === 0) {

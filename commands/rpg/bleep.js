@@ -93,7 +93,7 @@ module.exports = {
       }, { quoted: msg });
     }
 
-    const mentionedId = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid?.[0];
+    const mentionedId = require('../../utils/target').resolve(msg, []);
     const found = findPlayer(db, args, mentionedId);
     if (!found) {
       return sock.sendMessage(chatId, {

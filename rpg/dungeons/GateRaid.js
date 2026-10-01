@@ -558,6 +558,7 @@ function markFallen(gate, jid) {
     const n = GKM.normaliseJid(jid) || String(jid);
     if (!Array.isArray(gate.raid.fallen)) gate.raid.fallen = [];
     if (!gate.raid.fallen.includes(n)) gate.raid.fallen.push(n);
+    succeedLeader(gate, jid); // Push #96d: next on the list leads
   } catch (e) {}
 }
 function isFallen(gate, jid) {
@@ -609,6 +610,7 @@ function ensureMember(gate, sender, db) {
 // ── ENTRY ───────────────────────────────────────────────────────
 function enter(sender, name, key, keyData, gate, db) {
   const raid = raidOf(gate, key, keyData);
+  { const sr = sealedReason(gate); const _in = (raid.members || []).some(m => m.id === sender || GKM.normaliseJid(m.id) === GKM.normaliseJid(sender)); if (sr && !_in) return { ok: false, error: sr }; } // Push #96d
   { const other = findOtherRaid(sender, gate); if (other) return { ok: false, error: otherRaidError(other) }; }
   // Push #30: single-use keys — fresh entry on a consumed key is refused.
   // (Members re-running enter on their own live raid pass straight through.)
@@ -662,6 +664,7 @@ function enter(sender, name, key, keyData, gate, db) {
 function join(sender, name, gate, db) {
   const raid = gate.raid;
   if (!raid) return { ok: false, error: 'No gate raid in progress.' };
+  { const sr = sealedReason(gate); if (sr) return { ok: false, error: sr }; } // Push #96d
   if (isFallen(gate, sender)) return { ok: false, error: FALLEN_TEXT }; // Push #88w
   if (raid.status !== 'recruiting') return { ok: false, error: 'The raid has already started.' };
   if (raid.members.length >= MAX_PARTY) return { ok: false, error: `Party is full! (${MAX_PARTY} max)` };
@@ -704,7 +707,108 @@ function start(sender, keyData, gate, db) {
   gate.currentFloor = 1;
   gate.raiders = gate.raiders || [];
   raid.members.forEach(m => { if (!gate.raiders.includes(m.id)) gate.raiders.push(m.id); });
-  return { ok: true, raid };
+  // Push #96d: hidden rolls — the gate may EVOLVE into a Red Gate (sealed: nobody enters or
+  // leaves), may hide a second dungeon behind its boss, and a stronger beast may leak in.
+  const notes = [];
+  if (!gate.isDouble) {
+    if (Math.random() < RED_GATE_CHANCE) { gate.redGate = true; notes.push(RED_GATE_TEXT); }
+    if (Math.random() < DOUBLE_DUNGEON_CHANCE) gate.doubleRoll = true; // revealed only when the boss falls
+  }
+  try { const leak = leakMonster(gate); if (leak) notes.push(leak); } catch (e) {}
+  return { ok: true, raid, notes };
+}
+
+// ── Push #96d: RED GATES · DOUBLE DUNGEONS · LEAKS · LEADER SUCCESSION ──────
+const RED_GATE_CHANCE = 0.15;
+const DOUBLE_DUNGEON_CHANCE = 0.05;
+const LEAK_CHANCE = 0.17;
+const RED_GATE_TEXT = '🟥 *THE GATE TURNS RED!* The entrance seals behind you — *nobody can enter or leave* this raid until the gate is cleared or the party falls.';
+const RANK_ORDER = ['E', 'D', 'C', 'B', 'A', 'S'];
+// Null when the raid is open; otherwise the reason entry/exit is refused.
+function sealedReason(gate) {
+  if (!gate || !gate.raid || gate.raid.status !== 'active') return null;
+  if (gate.isDouble) return '🚫 *DOUBLE DUNGEON* — the second gate is sealed: nobody can join, leave or flee until it is cleared.';
+  if (gate.redGate) return '🟥 *RED GATE* — the entrance is sealed: nobody can enter or leave until the gate is cleared.';
+  return null;
+}
+// 17%: ONE beast from a higher rank leaks into this raid (replaces a random non-elite floor monster).
+function leakMonster(gate) {
+  if (!gate || !Array.isArray(gate.monsters) || !gate.monsters.length) return null;
+  const idx = RANK_ORDER.indexOf(String(gate.rank || 'E').toUpperCase());
+  if (idx < 0 || idx >= RANK_ORDER.length - 1) return null; // S has nothing above it
+  if (Math.random() >= LEAK_CHANCE) return null;
+  const fromRank = RANK_ORDER[idx + 1 + Math.floor(Math.random() * (RANK_ORDER.length - 1 - idx))];
+  const pool = GateManager.buildGateMonsters(fromRank, 1, gate.strengthPct || 100, null) || [];
+  const leaked = pool.find(m => m && !m.elite) || pool[0];
+  if (!leaked) return null;
+  const slots = gate.monsters.map((m, i) => (m && !m.defeated && !m.elite && m.floor !== gate.totalFloors ? i : -1)).filter(i => i >= 0);
+  if (!slots.length) return null;
+  const i = slots[Math.floor(Math.random() * slots.length)];
+  const old = gate.monsters[i];
+  gate.monsters[i] = { ...leaked, floor: old.floor, defeated: false, leaked: true, leakedFrom: fromRank, name: `${leaked.name} (${fromRank}-Rank leak)` };
+  gate.leakedMonster = { name: gate.monsters[i].name, floor: old.floor, fromRank };
+  return `⚠️ *A ${fromRank}-Rank beast has leaked into this gate!* *${leaked.name}* prowls floor ${old.floor} — far stronger than anything here.`;
+}
+// When the leader falls, the next hunter on the party list takes the crown.
+function succeedLeader(gate, fallenJid) {
+  try {
+    const raid = gate && gate.raid; if (!raid || !raid.leader) return null;
+    const n = GKM.normaliseJid(fallenJid) || String(fallenJid);
+    if (raid.leader !== fallenJid && GKM.normaliseJid(raid.leader) !== n) return null;
+    const next = (raid.members || []).find(m => m && m.id !== fallenJid && GKM.normaliseJid(m.id) !== n && (m.hp == null || m.hp > 0));
+    if (!next) return null;
+    raid.leader = next.id; raid.leaderSucceededAt = Date.now();
+    raid._leaderNotice = `👑 *${next.name}* takes command of the party — the leader has fallen.`;
+    return next;
+  } catch (e) { return null; }
+}
+function takeLeaderNotice(gate) { const n = gate && gate.raid && gate.raid._leaderNotice; if (n) gate.raid._leaderNotice = null; return n || null; }
+// The boss fell on a gate that rolled a double dungeon → the raid is paused for the leader's choice.
+function doublePending(gate) { return !!(gate && gate.doubleRoll && !gate.isDouble && gate.doublePending); }
+// Evolve the cleared gate IN PLACE into a hidden-rank B/A/S second dungeon.
+function evolveDouble(gate, db) {
+  if (!gate || !gate.raid) return { ok: false, error: 'No raid.' };
+  if (!gate.doublePending) return { ok: false, error: 'No second gate is waiting.' };
+  const rank = ['B', 'A', 'S'][Math.floor(Math.random() * 3)];
+  const rd = GATE_RANKS[rank];
+  const floors = rd.floors || 5;
+  let bossName = 'Gate Warden', bossData = null, themed = null;
+  try {
+    const { MONSTER_DROPS } = require('../data/MonsterDrops');
+    const bossPool = (MONSTER_DROPS[rank] && MONSTER_DROPS[rank].bosses) || [];
+    themed = GateManager.pickGateTheme(rank, bossPool); bossData = themed.boss; bossName = bossData.name;
+  } catch (e) {}
+  const strengthPct = GateManager.rollGateStrength();
+  const monsters = GateManager.buildGateMonsters(rank, floors, strengthPct, bossName);
+  const bossHp = Math.floor(rd.bossHp * Math.max(0.6, strengthPct / 100));
+  const prevRank = gate.rank;
+  Object.assign(gate, {
+    rank, rankData: rd, hiddenRank: true, isDouble: true, doublePending: false, doubleFrom: prevRank,
+    strengthPct, strengthLabel: GateManager.strengthLabel(strengthPct),
+    currentFloor: 1, totalFloors: floors, monsters,
+    boss: { name: bossName, baseName: (bossData && bossData.baseName) || bossName, family: (themed && themed.theme) || null, hp: bossHp, maxHp: bossHp, defeated: false },
+    theme: (themed && themed.theme) || null,
+    nexusLoot: Math.floor((gate.nexusLoot || 1000) * 2), crystalLoot: Math.floor((gate.crystalLoot || 100) * 2),
+    accumulatedTreasure: { nexus: 0, crystals: 0 }, damageDealt: {}, monstersKilled: 0, calibrated: null, floorClearedAt: null, _wipeSalvaged: false,
+    cleared: false, active: true, lootDistributed: false,
+  });
+  // Only the survivors go on — fallen hunters stay fallen; the sealed gate admits nobody.
+  gate.raid.members = (gate.raid.members || []).filter(m => { const u = db && db.users && db.users[m.id]; return u ? (u.stats && u.stats.hp > 0) : (m.hp == null || m.hp > 0); });
+  gate.raid.status = 'active'; gate.raid.lastTurnAt = Date.now(); gate.raid.doubleStartedAt = Date.now();
+  try { require('../utils/CombatReset').clearParty(db, gate.raid.members); } catch (e) {}
+  try { calibrateToParty(gate, gate.raid, db); } catch (e) {}
+  try { applyMonsterScaling(gate); } catch (e) {}
+  return { ok: true, rank, floors, survivors: gate.raid.members.length };
+}
+// Survivors of a cleared double dungeon each choose a Blessed or Cursed box (/box, any tier).
+function grantDoubleBoxes(gate, db) {
+  const out = [];
+  for (const m of (gate.raid && gate.raid.members) || []) {
+    const u = db && db.users && db.users[m.id]; if (!u || !(u.stats && u.stats.hp > 0)) continue;
+    u.pendingBoxes = (Number(u.pendingBoxes) || 0) + 1; u.freeBoxes = (Number(u.freeBoxes) || 0) + 1;
+    out.push(m.id);
+  }
+  return out;
 }
 
 // ── Push #74: party-calibrated severity ─────────────────────────
@@ -816,7 +920,7 @@ function floorMultiplier(gate, floor) {
 // floor multiplier. Idempotent — safe to call on every calibrate/advance.
 // Push #88n: global monster buff — ATK +70%, DEF +40% — applied on top of the
 // level/floor/severity scaling (which stays exactly as it was).
-const MON_ATK_BUFF = 1.7 * RAID_X2, MON_DEF_BUFF = 1.4 * RAID_X2 * 1.75, MON_HP_BUFF = 1.5, MON_SPD_BUFF = 1.75; // Push #88o: +50% HP · Push #88q: raid ATK/DEF ×2 again · Push #88z: DEF +75%, SPD +75%
+const MON_ATK_BUFF = 1.7 * RAID_X2, MON_DEF_BUFF = 1.4 * RAID_X2 * 1.75 * 2.2, MON_HP_BUFF = 1.5, MON_SPD_BUFF = 1.75 * 2; // Push #96d: DEF ×2.2, SPD ×2 // Push #88o: +50% HP · Push #88q: raid ATK/DEF ×2 again · Push #88z: DEF +75%, SPD +75%
 // Push #89: A–E gates are 25% softer (monsters AND boss); S+ untouched.
 const RANK_SOFTEN = { A: 0.75, B: 0.75, C: 0.75, D: 0.75, E: 0.75 };
 function rankSoften(rank) { return RANK_SOFTEN[String(rank || '').toUpperCase()] || 1; }
@@ -1109,7 +1213,8 @@ function monsterKilledBy(gate, monster, sender, db) {
 }
 
 // ── On full clear (boss defeated) — distribute loot ─────────────
-function clearGate(gate, key, keyData, db, saveDatabase) {
+function clearGate(gate, key, keyData, db, saveDatabase, opts = {}) {
+  const keepOpen = !!opts.keepOpen; // Push #96d: double dungeon — pay out floor 1 rewards but keep the gate alive
   const raid = gate.raid || {};
   const raiders = raid.members?.length ? raid.members : [];
   try { require('../utils/CombatReset').clearParty(db, raiders); } catch (e) {} // Push #92: battle over → clean slate
@@ -1303,6 +1408,12 @@ function clearGate(gate, key, keyData, db, saveDatabase) {
     }
   }
 
+  if (keepOpen) {
+    gate.doublePending = true; gate.doublePendingAt = Date.now();
+    gate.raid.firstLoot = { nexus, crystals, destinationText };
+    if (saveDatabase) saveDatabase();
+    return { nexus, crystals, destinationText, dest, guild, contractPayouts, affiliatePayouts, wildPet, recovered, raiders, wildToken, doublePending: true };
+  }
   try { if (db && db.activeGates) delete db.activeGates[gate.id]; } catch (e) {}
   GateManager.clearGate(gate.id, db);
   if (keyData) {
@@ -1316,11 +1427,13 @@ function clearGate(gate, key, keyData, db, saveDatabase) {
   gate.raid.status = 'done';
   gate.raid.clearedAt = Date.now();
   gate.raid.loot = { nexus, crystals, destinationText, dest, contractPayouts, affiliatePayouts, wildPet, recovered };
+  let doubleBoxes = [];
+  if (gate.isDouble) { try { doubleBoxes = grantDoubleBoxes(gate, db); } catch (e) {} } // Push #96d: survivors pick a box
   if (saveDatabase) saveDatabase();
 
   return {
     nexus, crystals, destinationText, dest, guild,
-    contractPayouts, affiliatePayouts, wildPet, recovered, raiders, wildToken,
+    contractPayouts, affiliatePayouts, wildPet, recovered, raiders, wildToken, doubleBoxes,
   };
 }
 
@@ -1376,7 +1489,7 @@ function reviveStaleFloors(db, now = Date.now()) {
   for (const gate of Object.values(GateManager.activeGates || {})) {
     try {
       const raid = gate && gate.raid;
-      if (!raid || raid.status !== 'active' || gate.cleared || gate.broken) continue;
+      if (!raid || raid.status !== 'active' || gate.cleared || gate.broken || gate.doublePending) continue;
       if (!gate.floorClearedAt || now - gate.floorClearedAt < FLOOR_REVIVE_MS) continue;
       const floor = gate.currentFloor || 1;
       const alive = (gate.monsters || []).some(m => m && m.floor === floor && !m.defeated && (m.hp || 0) > 0);
@@ -1420,6 +1533,7 @@ function hunterFalls(gate, memberId, u, db) {
   markFallen(gate, memberId);
   gate.raiders = (gate.raiders || []).filter(id => id !== memberId && (!_n || GKM.normaliseJid(id) !== _n));
   lines.push(`💀 *${u.name} HAS FALLEN!* Lost ${loss.toLocaleString()} 💎 · fled with 1 HP.`);
+  { const _ln = takeLeaderNotice(gate); if (_ln) lines.push(_ln); }
   if (raid.members.length === 0) {
     let key = null, keyData = null;
     for (const [k, kd] of Object.entries((db && db.gateKeys) || {})) if (kd && kd.gateId === gate.id) { key = k; keyData = kd; break; }
@@ -1463,7 +1577,7 @@ function autoStrikeIdleRaids(db, now = Date.now(), canStrike = null) {
   for (const gate of gates) {
     try {
       const raid = gate && gate.raid;
-      if (!raid || raid.status !== 'active' || gate.cleared) continue;
+      if (!raid || raid.status !== 'active' || gate.cleared || gate.doublePending) continue;
       if (!(raid.mode === 'party' || (raid.members || []).length > 1)) continue;
       const last = raid.lastTurnAt || raid.startedAt || 0;
       if (!last || now - last < idleStrikeMsFor(gate.rank)) continue; // Push #88t: 30 s in S gates, 45 s in every other rank
@@ -1520,6 +1634,7 @@ function autoStrikeIdleRaids(db, now = Date.now(), canStrike = null) {
           markFallen(gate, m.id); // Push #88w
           gate.raiders = (gate.raiders || []).filter(id => id !== m.id && (!_n || GKM.normaliseJid(id) !== _n));
           lines.push(`💀 *${u.name} WAS CUT DOWN!* Lost ${loss.toLocaleString()} 💎 · fled with 1 HP.`);
+          { const _ln = takeLeaderNotice(gate); if (_ln) lines.push(_ln); }
           if (raid.members.length === 0) {
             let key = null, keyData = null;
             for (const [k, kd] of Object.entries(db.gateKeys || {})) if (kd && kd.gateId === gate.id) { key = k; keyData = kd; break; }
@@ -1564,6 +1679,7 @@ function spawnWildPet(gate) {
 }
 
 module.exports = {
+  RED_GATE_CHANCE, DOUBLE_DUNGEON_CHANCE, LEAK_CHANCE, RED_GATE_TEXT, sealedReason, leakMonster, succeedLeader, takeLeaderNotice, doublePending, evolveDouble, grantDoubleBoxes, // Push #96d
   livingMembers,
   calibrateToParty, partyLuck, RANK_EXPECTED_POWER, totalStatsOf,
   MAX_PARTY,

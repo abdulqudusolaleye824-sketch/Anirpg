@@ -94,8 +94,46 @@ function unlock(player) {
   const cls = _cls(player) || 'Hunter';
   const idx = Math.floor(Math.random() * 10);
   const eff = effectFor(cls, idx);
-  player.domain = { unlocked: true, class: cls, idx, level: 1, name: eff.name, desc: '', spentUP: 0, unlockedAt: Date.now(), casts: 0 };
+  player.domain = { unlocked: true, class: cls, idx, level: 1, name: eff.name, desc: '', spentUP: 0, unlockedAt: Date.now(), casts: 0, setup: 'name' };
   return player.domain;
+}
+// ── Push #96d: DM setup prompts (name → description) — no command needed ──
+const _clean = (t) => String(t || '').replace(/[*_~`]/g, '').replace(/\s+/g, ' ').trim();
+function setupStep(player) { return (player && player.domain && player.domain.unlocked && player.domain.setup) || null; }
+function setupPrompt(player) {
+  const d = player && player.domain; if (!d || !d.setup) return null;
+  if (d.setup === 'name') return [`🌌 *NAME YOUR DOMAIN*`, `Reply here with the name of your domain (3–40 characters). Fate gave it the working name *${d.name}* — you may keep it by replying *keep*.`, `✏️ A name can be changed later with a 🃏 Rename Card (/domain rename).`].join('\n');
+  if (d.setup === 'desc') return [`📜 *DESCRIBE YOUR DOMAIN*`, `Reply here with a short description of *${d.name}* (up to 200 characters) — what does a hunter see when it expands?`, `⚠️ The description is *permanent*. Reply *skip* for none.`].join('\n');
+  return null;
+}
+// Returns null if this text was not a setup reply; otherwise { reply, done }.
+function handleSetupReply(player, text) {
+  const d = player && player.domain; if (!d || !d.unlocked || !d.setup) return null;
+  const t = _clean(text); if (!t || t.startsWith('/') || t.startsWith('!') || t.startsWith('.')) return null;
+  if (d.setup === 'name') {
+    if (t.toLowerCase() !== 'keep') {
+      if (t.length < 3 || t.length > 40) return { reply: '❌ 3–40 characters please. Reply with your domain name, or *keep*.', done: false };
+      d.name = t;
+    }
+    d.setup = 'desc';
+    return { reply: `✨ Your domain shall be known as *${d.name}*.\n\n${setupPrompt(player)}`, done: false };
+  }
+  if (d.setup === 'desc') {
+    if (t.toLowerCase() !== 'skip') {
+      if (t.length > 200) return { reply: '❌ Up to 200 characters please. Reply again, or *skip*.', done: false };
+      d.desc = t;
+    }
+    delete d.setup;
+    return { reply: [`🌌 *${d.name}*${d.desc ? ` — _${d.desc}_` : ''}`, `Your domain is sealed in the records. See it any time with /domain.`].join('\n'), done: true };
+  }
+  return null;
+}
+function rename(player, name) {
+  const d = player && player.domain; if (!d || !d.unlocked) return { ok: false, error: 'No domain yet.' };
+  const n = _clean(name); if (n.length < 3 || n.length > 40) return { ok: false, error: 'Give a name of 3–40 characters.' };
+  if (!player.cards || (Number(player.cards.namechange) || 0) < 1) return { ok: false, error: 'Renaming a domain costs 1 🃏 Rename Card — /prostore buy namechange' };
+  player.cards.namechange -= 1; const old = d.name; d.name = n;
+  return { ok: true, old, name: n, left: player.cards.namechange };
 }
 function scaledEffect(player) {
   const d = player.domain; if (!d) return null;
@@ -219,7 +257,7 @@ function monsterTry(arena, monster, hunters = [], ctx = {}) {
   if (!arena || !monster || !hunters.length || !monsterEligible(monster, ctx)) return null;
   const cur = active(arena);
   if (cur && cur.side === 'monster') return null;
-  const chance = ctx.boss || monster.isBoss ? 0.25 : 0.15;
+  const chance = ctx.boss || monster.isBoss ? 0.70 : 0.40; // Push #96d: bosses 70%, B/A/S monsters 40%
   if (Math.random() > (ctx.forceChance != null ? ctx.forceChance : chance)) return null;
   const pow = monsterPower(monster, ctx);
   const lines = [];
@@ -255,9 +293,11 @@ function onLevelUp(player, sock, chatId) {
     const d = unlock(player); if (!d) return null;
     const text = [`🌌 *DOMAIN AWAKENED!*`, `👤 *${player.name}* (Lv.${player.level}) — the ${d.class} within you takes form.`, `✨ Your permanent domain: *${d.name}*`, ...describe(player), ``, `⚡ /domain expand (${CAST_ENERGY} energy, ${turnsFor(1)} turns at Lv.1) · 📈 /domain upgrade (10 UP → Lv.2)`, `✏️ /domain name <name> · /domain desc <text>`].join('\n');
     if (sock) {
-      const to = _isPro(player) ? (player.jid || player.id || chatId) : chatId;
-      if (to) sock.sendMessage(to, { text }).catch(() => {});
-      if (_isPro(player) && chatId && chatId !== to) sock.sendMessage(chatId, { text: `🌌 *${player.name}*'s domain has awakened — sent to their DM 💎` }).catch(() => {});
+      // Push #96d: the awakening + name/description prompts always go to the hunter's DM.
+      const dm = player.jid || player.id || null;
+      const to = dm || chatId;
+      if (to) sock.sendMessage(to, { text }).then(() => { const p = setupPrompt(player); if (p) return sock.sendMessage(to, { text: p }); }).catch(() => {});
+      if (chatId && chatId !== to) sock.sendMessage(chatId, { text: `🌌 *${player.name}*'s domain has awakened — check your DM to name it.` }).catch(() => {});
     }
     return d;
   } catch (e) { return null; }
@@ -327,4 +367,4 @@ function findBattle(player, sender, db) {
   return null;
 }
 
-module.exports = { pvpArena, endPvpArena, findBattle, CAST_ENERGY, MAX_LEVEL, UP_SHARE_CAP, ARCHETYPES, CLASS_DOMAINS, STAT_LABEL, effectFor, scale, turnsFor, costToNext, ensure, has, unlock, scaledEffect, describe, power, upgrade, arenaOf, active, shatter, tick, expand, monsterPower, monsterEligible, monsterTry, onLevelUp, shareUP };
+module.exports = { setupStep, setupPrompt, handleSetupReply, rename, pvpArena, endPvpArena, findBattle, CAST_ENERGY, MAX_LEVEL, UP_SHARE_CAP, ARCHETYPES, CLASS_DOMAINS, STAT_LABEL, effectFor, scale, turnsFor, costToNext, ensure, has, unlock, scaledEffect, describe, power, upgrade, arenaOf, active, shatter, tick, expand, monsterPower, monsterEligible, monsterTry, onLevelUp, shareUP };

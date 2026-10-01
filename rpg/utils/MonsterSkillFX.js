@@ -31,6 +31,7 @@ const KEYWORDS = [
   [/roar|howl|shriek|screech|scream|terror|fear|dread|wail|majestic/i, { status: { type: 'fear', chance: 55, duration: 2 }, selfBuff: { stat: 'atk', amount: 20, turns: 3 } }],
   [/rage|frenzy|berserk|fury|enrage|wrath|demon form|bloodlust/i, { selfBuff: { stat: 'atk', amount: 30, turns: 3 } }],
   [/shell|harden|armor|carapace|fortify|iron skin|stone skin|bulwark|guard/i, { selfBuff: { stat: 'def', amount: 35, turns: 3 } }],
+  [/^(💚\s*)?regenerate$/i, { selfHealPct: 15, mult: 0.6 }], // Push #96d: the universal Regenerate skill — soft hit, heals 15% max HP
   [/regen|mend|heal|restore|recover|photosynth/i, { healPct: 100, selfHealPct: 12 }],
   [/pierce|sunder|shatter|breaker|penetrat|impale|lance|spear|puncture/i, { pierce: 50 }],
   [/web|net|snare|slow|tangle|bind|grasp|entangle/i, { status: { type: 'trueslow', chance: 55, duration: 2 } }],
@@ -66,6 +67,7 @@ function resolve(ability) {
   // 3) name semantics — the words on the tin.
   for (const [rx, patch] of KEYWORDS) {
     if (!rx.test(name)) continue;
+    if (patch.mult) out.mult = patch.mult;
     if (patch.drainPct) out.drainPct = Math.max(out.drainPct, patch.drainPct);
     if (patch.healPct) out.healPct = Math.max(out.healPct, patch.healPct);
     if (patch.selfHealPct) out.selfHealPct = Math.max(out.selfHealPct, patch.selfHealPct);

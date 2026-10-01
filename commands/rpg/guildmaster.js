@@ -29,7 +29,7 @@ module.exports = {
 
     if (!db.authorizedGuildMasters) db.authorizedGuildMasters = [];
     const sub = args[0]?.toLowerCase();
-    const mentionedId = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid?.[0];
+    const mentionedId = require('../../utils/target').resolve(msg, []);
 
     if (sub === 'authorize' || sub === 'add') {
       if (!mentionedId) return sock.sendMessage(chatId, { text: '❌ Mention a user: /guildmaster authorize @user' }, { quoted: msg });

@@ -362,7 +362,7 @@ module.exports = {
         return sock.sendMessage(chatId, {
           text: [
             ...(pro ? [UI.PRO_BAR, `${rd.emoji} *RAID IN PROGRESS* 💎`, UI.PRO_BAR] : [`${rd.emoji} *RAID IN PROGRESS*`, UI.FREE_BAR]),
-            `🆔 Gate: *${rd.label}* [\`${activeKey}\`]`,
+            `🆔 Gate: *${gate.hiddenRank ? '❓ Double Dungeon (rank hidden)' : rd.label}*${gate.redGate ? ' 🟥 RED' : ''} [\`${activeKey}\`]`,
           strengthLine(gate),
             strengthLine(gate),
             `🗺️ Floor: *${floor}/${gate.totalFloors}*`,
@@ -384,7 +384,7 @@ module.exports = {
       return sock.sendMessage(chatId, {
         text: [
           ...(pro ? [UI.PRO_BAR, `${rd.emoji} *GATE RAID PARTY STATUS* 💎`, UI.PRO_BAR] : [`${rd.emoji} *GATE RAID PARTY STATUS*`, UI.FREE_BAR]),
-          `🆔 Gate: *${rd.label}* [\`${activeKey}\`]`,
+          `🆔 Gate: *${gate.hiddenRank ? '❓ Double Dungeon (rank hidden)' : rd.label}*${gate.redGate ? ' 🟥 RED' : ''} [\`${activeKey}\`]`,
           `👑 Leader: *${owner?.name || keyData.ownedBy.split('@')[0]}*`,
           `🏰 Type: *${raid.partyType === 'affiliate' ? 'Affiliate Party' : 'Guild Party'}* (${keyData.guildName || 'Guild'})`,
           `📊 Status: *${raid.status.toUpperCase()}*`,
@@ -528,6 +528,8 @@ module.exports = {
 
       try { GR.saveGateState(db, gate); } catch (e) {}
       saveDatabase();
+      // Push #96d: Red Gate evolution / beast leak are announced right after the launch card.
+      if (res.notes && res.notes.length) setTimeout(() => sock.sendMessage(chatId, { text: res.notes.join('\n\n') }).catch(() => {}), 1200);
 
       const rd = GATE_RANKS[keyData.gateRank] || GATE_RANKS['E'];
       return sock.sendMessage(chatId, {
@@ -558,10 +560,19 @@ module.exports = {
 
       const resolved = GR.resolveCode(activeKey, db);
       if (!resolved.ok) return sock.sendMessage(chatId, { text: resolved.error }, { quoted: msg });
-      const { gate } = resolved;
+      const { gate, keyData } = resolved;
 
       const raid = gate.raid;
       if (!raid) return sock.sendMessage(chatId, { text: '❌ No active party.' }, { quoted: msg });
+      // Push #96d: a DOUBLE DUNGEON is waiting → the leader's "leave" closes the gate for everyone.
+      if (GR.doublePending(gate)) {
+        if (raid.leader !== sender && normaliseJid(keyData.ownedBy) !== normaliseJid(sender)) return sock.sendMessage(chatId, { text: '❌ Only the party leader decides — proceed or leave.' }, { quoted: msg });
+        gate.doublePending = false; gate.doubleRoll = false;
+        try { GR.clearGate(gate, activeKey, keyData, db, saveDatabase); } catch (e) {}
+        saveDatabase();
+        return sock.sendMessage(chatId, { text: `🚪 *${player.name}* leads the party out. The second gate seals shut behind you — *GATE ${gate.id} CLEARED*.`, mentions: raid.members.map(m => m.id) }, { quoted: msg });
+      }
+      { const sr = GR.sealedReason(gate); if (sr) return sock.sendMessage(chatId, { text: sr }, { quoted: msg }); }
 
       raid.members = (raid.members || []).filter(m => m.id !== sender);
       gate.raiders = (gate.raiders || []).filter(r => r !== sender);
@@ -580,7 +591,7 @@ module.exports = {
     if (action === 'kick') {
       if (!activeKey) return sock.sendMessage(chatId, { text: '❌ No active party.' }, { quoted: msg });
 
-      const targetJid = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid?.[0];
+      const targetJid = require('../../utils/target').resolve(msg, []);
       if (!targetJid) return sock.sendMessage(chatId, { text: '❌ Usage: /party kick @user' }, { quoted: msg });
 
       const resolved = GR.resolveCode(activeKey, db);
@@ -593,6 +604,7 @@ module.exports = {
       if (raid.leader !== sender && normaliseJid(keyData.ownedBy) !== normaliseJid(sender)) {
         return sock.sendMessage(chatId, { text: '❌ Only the party leader can kick members!' }, { quoted: msg });
       }
+      { const sr = GR.sealedReason(gate); if (sr) return sock.sendMessage(chatId, { text: sr }, { quoted: msg }); } // Push #96d
 
       raid.members = (raid.members || []).filter(m => m.id !== targetJid);
       gate.raiders = (gate.raiders || []).filter(r => r !== targetJid);
@@ -610,6 +622,35 @@ module.exports = {
     // Batch-47: /party absorbs every /gateraid function — advance, boss,
     // heal, revive, attack, skill all run keyless against this chat's raid.
     // ═══════════════════════════════════════════════════════════════
+    // ═════════════════════════════════════════════════════════════
+    // Push #96d: /party proceed — leader enters the DOUBLE DUNGEON
+    // ═════════════════════════════════════════════════════════════
+    if (action === 'proceed' || action === 'continue') {
+      if (!activeKey) return sock.sendMessage(chatId, { text: '❌ No active raid in this chat.' }, { quoted: msg });
+      const resolved = GR.resolveCode(activeKey, db);
+      if (!resolved.ok) return sock.sendMessage(chatId, { text: resolved.error }, { quoted: msg });
+      const { gate, keyData } = resolved;
+      if (!GR.doublePending(gate)) return sock.sendMessage(chatId, { text: '❌ No second gate is waiting here.' }, { quoted: msg });
+      if (gate.raid.leader !== sender && normaliseJid(keyData.ownedBy) !== normaliseJid(sender)) return sock.sendMessage(chatId, { text: '❌ Only the party leader decides — proceed or leave.' }, { quoted: msg });
+      const ev = GR.evolveDouble(gate, db);
+      if (!ev.ok) return sock.sendMessage(chatId, { text: `❌ ${ev.error}` }, { quoted: msg });
+      try { GR.saveGateState(db, gate); } catch (e) {}
+      saveDatabase();
+      return sock.sendMessage(chatId, {
+        text: [
+          ...(pro ? [UI.PRO_BAR, `🌀 *DOUBLE DUNGEON — ENTERED* 💎`, UI.PRO_BAR] : [`🌀 *DOUBLE DUNGEON — ENTERED*`, UI.FREE_BAR]),
+          `❓ Rank: *HIDDEN* (B, A or S) · ${ev.floors} floors`,
+          strengthLine(gate),
+          `🔒 Sealed — nobody can join, leave or flee.`,
+          `👥 Survivors: ${gate.raid.members.map(m => `${m.id === gate.raid.leader ? '👑' : '⚔️'} ${m.name}`).join(', ')}`,
+          ``,
+          `/attack · /skill <name> · /party advance · /party boss`,
+          `🎁 Clear it and every survivor chooses a Blessed or Cursed box.`,
+        ].filter(Boolean).join('\n'),
+        mentions: gate.raid.members.map(m => m.id),
+      }, { quoted: msg });
+    }
+
     if (['advance', 'boss', 'heal', 'revive', 'attack', 'skill'].includes(action)) {
       if (!activeKey) {
         return sock.sendMessage(chatId, { text: '❌ No active raid in this chat. Start one: /party create --<KEY>' }, { quoted: msg });
@@ -619,7 +660,7 @@ module.exports = {
     }
 
     return sock.sendMessage(chatId, {
-      text: '❌ Usage: /party [create|join|ready|raid|advance|boss|status|heal|revive|leave|kick]'
+      text: '❌ Usage: /party [create|join|ready|raid|advance|boss|proceed|status|heal|revive|leave|kick]'
     }, { quoted: msg });
   }
 };

@@ -2188,6 +2188,17 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
         if (msg.participant) _forms.push(String(msg.participant).split(':')[0].split('@')[0]);
       } catch (e) {}
       if (_forms.some(f => f && _isOwnBotNumber(f))) return;
+      // Push #96d: domain name/description setup — plain DM replies are consumed here.
+      if (!isGroup && db && db.users) {
+        try {
+          const _pl = db.users[sender] || db.users[Object.keys(db.users).find(k => k.split('@')[0] === bareSender) || ''];
+          if (_pl && _pl.domain && _pl.domain.setup && messageText.trim()) {
+            const DS = require('../rpg/utils/DomainSystem');
+            const r = DS.handleSetupReply(_pl, messageText);
+            if (r) { try { saveDatabase?.(); } catch (e) {} await sock.sendMessage(chatId, { text: r.reply }, { quoted: msg }); return; }
+          }
+        } catch (e) {}
+      }
     }
 
     const commandName = isCommand

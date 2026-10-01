@@ -190,7 +190,7 @@ function partySeverity(members) {
 }
 
 // Push #88n: global monster buff — ATK +70%, DEF +40% on top of level/floor scaling.
-const MON_ATK_BUFF = 1.7, MON_DEF_BUFF = 1.4 * 1.75, MON_HP_BUFF = 1.5, MON_SPD_BUFF = 1.75; // Push #88o: +50% HP · Push #88z: DEF +75%, SPD +75%
+const MON_ATK_BUFF = 1.7, MON_DEF_BUFF = 1.4 * 1.75 * 2.2, MON_HP_BUFF = 1.5, MON_SPD_BUFF = 1.75 * 2; // Push #96d: DEF ×2.2, SPD ×2 // Push #88o: +50% HP · Push #88z: DEF +75%, SPD +75%
 function scaleMonsterForFloor(baseMonster, playerLevel, floor, severity = 1) {
   const floorMult  = 1 + (floor - 1) * 0.15;  // Push #88: steeper climb per floor
   const levelMult  = 1 + (playerLevel - 1) * 0.03;
@@ -200,7 +200,7 @@ function scaleMonsterForFloor(baseMonster, playerLevel, floor, severity = 1) {
     emoji: baseMonster.emoji,
     level: playerLevel + Math.floor(floor * 0.5),
     rank: _getRankByFloor(floor),
-    abilities: [...(baseMonster.abilities || ['Strike'])],
+    abilities: [...(baseMonster.abilities || ['Strike']), 'Regenerate'], // Push #96d: every beast can regenerate
     isElite: false,
     isBoss: false,
     stats: {
@@ -232,7 +232,7 @@ function scaleBossForFloor(bossDef, playerLevel, floor, severity = 1) {
     isBoss: true,
     isFinalBoss: isFinal,
     isElite: false,
-    abilities: [...bossDef.abilities],
+    abilities: [...bossDef.abilities, 'Regenerate'], // Push #96d
     stats: { hp, maxHp: hp, atk, def, speed: Math.round((100 + floor) * MON_SPD_BUFF) },
     statusEffects: []
   };

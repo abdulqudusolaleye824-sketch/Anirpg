@@ -18,7 +18,7 @@ function _max(p) { try { return require('./GearSystem').effectiveMaxHp(p) || p.s
 function dayKey(player) { try { return player.dailyQuests && player.dailyQuests.dayKey; } catch (e) { return null; } }
 
 // Jobs the hunter could switch to right now (available and not current).
-function eligibleJobs(player) { const cur = JS.current(player); return JS.available(player).filter(j => !cur || j.key !== cur.key); }
+function eligibleJobs(player) { return JS.questable(player); } // Push #96d: jobs unlock in order — only the next one is questable
 function keys(player) { return Math.max(0, Number(player && player.jobKeys) || 0); }
 
 // ── Daily completion hook ─────────────────────────────────────────────────
@@ -54,11 +54,12 @@ function onDailyComplete(player, sock, jid, chatId) {
 // ── Boxes ─────────────────────────────────────────────────────────────────
 function _pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
 function openBox(player, kind) {
-  if (!_pro(player)) return { ok: false, error: 'Daily boxes are a *Pro* feature 💎' };
+  const free = (Number(player.freeBoxes) || 0) > 0; // Push #96d: double-dungeon survivor boxes — any tier
+  if (!free && !_pro(player)) return { ok: false, error: 'Daily boxes are a *Pro* feature 💎' };
   if ((Number(player.pendingBoxes) || 0) < 1) return { ok: false, error: 'No box waiting — finish all 4 daily quests first.' };
   kind = String(kind || '').toLowerCase();
   if (kind !== 'blessed' && kind !== 'cursed') return { ok: false, error: 'Choose /box blessed or /box cursed.' };
-  player.pendingBoxes -= 1;
+  player.pendingBoxes -= 1; if (free) player.freeBoxes -= 1;
   const lvl = Math.max(1, player.level || 1); const inv = player.inventory || (player.inventory = {});
   const out = [];
   const RI = (() => { try { return require('./RewardInventory'); } catch (e) { return null; } })();
@@ -187,7 +188,7 @@ function act(player, skillQuery) {
     try { player.statusEffects = []; } catch (e) {}
     inst.domain = null;
     const job = JS.BY_KEY[inst.job];
-    if (!inst.passed && inst.floor >= inst.target) { inst.passed = true; player.jobQuest = { cleared: inst.job, at: Date.now(), floor: inst.floor }; lines.push(`🏆 *JOB CHANGE QUEST CLEARED!* Floor ${inst.floor} reached — *${job.name}* is yours: /job change ${job.name}`, `Keep climbing for extra rewards, or /instance leave.`); }
+    if (!inst.passed && inst.floor >= inst.target) { inst.passed = true; player.jobQuest = { cleared: inst.job, at: Date.now(), floor: inst.floor }; try { JS.unlock(player, JS.findJob(inst.job)); } catch (e) {} lines.push(`🏆 *JOB CHANGE QUEST CLEARED!* Floor ${inst.floor} reached — *${job.name}* is yours: /job change ${job.name}`, `Keep climbing for extra rewards, or /instance leave.`); }
     // Breather between floors: +20% HP (a boss floor: +35%).
     { const b = player.stats.hp; player.stats.hp = Math.min(_max(player), b + Math.floor(_max(player) * (m.isBoss ? 0.35 : 0.2))); if (player.stats.hp > b) lines.push(`💞 You catch your breath: +${player.stats.hp - b} HP`); }
     inst.floor++; inst.monster = makeMonster(player, inst.floor);

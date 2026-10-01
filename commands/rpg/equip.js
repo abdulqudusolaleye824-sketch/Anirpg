@@ -414,7 +414,7 @@ module.exports = {
         }, { quoted: msg });
       }
 
-      const mentions = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
+      const mentions = require('../../utils/target').resolveAll(msg, []);
       if (!mentions.length) {
         return sock.sendMessage(chatId, { text: `❌ Tag a player!\nExample: /equip gift 1 @player` }, { quoted: msg });
       }

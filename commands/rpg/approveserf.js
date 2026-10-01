@@ -68,7 +68,7 @@ module.exports = {
 
     // ── /approveserf pending @user ────────────────────────────
     if (sub === 'show' || sub === 'check') {
-      const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
+      const mentioned = require('../../utils/target').resolveAll(msg, []);
       if (mentioned.length === 0) {
         return sock.sendMessage(chatId, {
           text: '❌ Tag a player. Usage: `/approveserf pending @user`',

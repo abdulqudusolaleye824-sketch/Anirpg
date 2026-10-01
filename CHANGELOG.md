@@ -1,3 +1,18 @@
+## 1.0.130 — Push #96d: Red Gates · Double Dungeons · beast leaks · tougher regen monsters · job ladder · domain DM naming · /forcequest · reply targets
+
+- **Handicap matches give no stat bonus** — `/teampvp handicap on` only allows uneven teams.
+- **Dungeon & gate monsters/bosses**: SPD ×2, DEF ×2.2, and every one of them carries 💚 *Regenerate* (soft hit, heals 15% max HP). Gate bosses regenerate on 25% of counters.
+- **Domain use**: bosses 70%, B/A/S monsters 40%.
+- **🟥 Red Gates (15%)**: hidden until `/party raid`; then nobody can join, leave, be kicked or flee until the gate is cleared or the party falls.
+- **🌀 Double Dungeons (5%)**: after the boss falls the gate stays open — leader gets *Proceed* / *Leave* buttons (`/party proceed|leave`). Proceeding evolves the gate into a hidden-rank B/A/S dungeon (independent of the first), sealed (no join, no flee), only survivors go on, loot ×2. Clearing it gives **every survivor a Blessed/Cursed box** (`/box`, no Pro needed).
+- **Beast leak (17%)**: one monster from one rank higher replaces a floor monster, announced on raid start.
+- **Leader succession**: when the leader falls, the next hunter on the party list takes the crown (announced).
+- **Jobs unlock in order**: only the next job on the ladder is questable (`/instance`), `/job change` refuses skips, **`/job switch <job>`** moves freely between unlocked jobs (progress kept). Hunters already deep in the ladder are grandfathered.
+- **Domain naming/description in DM**: when a domain awakens the system DMs the hunter and asks for a name, then a *permanent* description — plain replies, no command. `/domain rename` costs a 🃏 Rename Card; `/domain name|desc` commands removed.
+- **`/forcequest [@hunter | reply]`** (owner): instantly completes today's 4 daily quests through the normal reward flow.
+- **Every tag command also accepts a reply** — shared `utils/target.js` resolver (mention → replied author → number); 15 former mention-only commands migrated.
+- `/help` updated.
+
 ## 1.0.129 — Push #96c: Team PvP handicap matches · /help updated
 
 - **`/teampvp handicap on|off`** (lobby leader): uneven teams allowed (1 v 3, 2 v 5 …). The outnumbered side gets **+15% ATK & DEF per missing hunter** for the whole match (shown in the lobby and the battle board). Without handicap, `/teampvp start` requires equal team sizes.

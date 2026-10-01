@@ -134,7 +134,7 @@ module.exports = {
     }
 
     // Allow viewing another player's class
-    const mentionedJid = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid?.[0];
+    const mentionedJid = require('../../utils/target').resolve(msg, []);
     const targetId     = mentionedJid || sender;
     const player       = db.users?.[targetId];
 

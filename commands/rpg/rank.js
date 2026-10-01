@@ -125,7 +125,7 @@ module.exports = {
     const db     = getDatabase();
 
     // Resolve target — self or @mention
-    const mention  = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid?.[0];
+    const mention  = require('../../utils/target').resolve(msg, []);
     const targetId = mention || sender;
     const isOther  = targetId !== sender;
 

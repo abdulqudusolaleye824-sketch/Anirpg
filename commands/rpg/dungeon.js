@@ -1312,7 +1312,7 @@ module.exports = {
         const _e = _pre.ok ? (_pre.entry || _pre.skill) : null;
         const _t = _e ? String(_e.type || '').toLowerCase() : '';
         if (_e && (_t === 'heal' || _t === 'buff')) {
-          const _mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
+          const _mentioned = require('../../utils/target').resolveAll(msg, []);
           let tgtJid = sender, tgt = player;
           if (_mentioned.length) {
             const mj = _mentioned[0];

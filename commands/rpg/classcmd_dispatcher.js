@@ -339,7 +339,7 @@ async function healerHandler(sock, msg, player, skill, db, saveDatabase, getData
   }
 
   // Determine target (default: self)
-  const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid?.[0];
+  const mentioned = require('../../utils/target').resolve(msg, []);
   let targetJid = sender;
   let targetName = player.name;
   if (mentioned && mentioned !== sender) {

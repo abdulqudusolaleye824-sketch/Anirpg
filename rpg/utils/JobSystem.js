@@ -118,8 +118,30 @@ function ensure(player) {
   if (!player) return null;
   if (!player.job || typeof player.job !== 'object') player.job = { key: null, level: 0, xp: 0, history: [] };
   if (!Array.isArray(player.job.history)) player.job.history = [];
+  // Push #96d: UNLOCKED jobs — every job you have ever held (and, for hunters who were
+  // already deep in the ladder, every job below it) stays unlocked for free switching.
+  if (!Array.isArray(player.job.unlocked)) {
+    const set = new Set();
+    const held = [player.job.key, ...player.job.history.map(h => h && h.key)].filter(Boolean);
+    let top = -1; for (const k of held) { const i = JOBS.findIndex(j => j.key === k); if (i > top) top = i; }
+    for (let i = 0; i <= top; i++) set.add(JOBS[i].key);
+    player.job.unlocked = [...set];
+  }
   return player.job;
 }
+function unlockedKeys(player) { const j = ensure(player); return j ? j.unlocked : []; }
+function isUnlocked(player, job) { return !!job && unlockedKeys(player).includes(job.key); }
+// The ONE job you may quest for next: the first locked job in the ladder (no skipping),
+// provided your level allows it.
+function nextQuestJob(player) {
+  const un = unlockedKeys(player);
+  const idx = JOBS.findIndex(j => !un.includes(j.key));
+  if (idx < 0) return null;
+  const job = JOBS[idx];
+  return isAvailable(player, job) ? job : null;
+}
+function questable(player) { const j = nextQuestJob(player); return j ? [j] : []; }
+function unlock(player, job) { const j = ensure(player); if (j && job && !j.unlocked.includes(job.key)) j.unlocked.push(job.key); }
 function current(player) { const j = ensure(player); return j && j.key ? BY_KEY[j.key] || null : null; }
 function level(player) { const j = ensure(player); return j && j.key ? Math.max(1, Math.min(5, Number(j.level) || 1)) : 0; }
 function available(player) { const lv = Number(player && player.level) || 1; return JOBS.filter(j => j.unlock <= lv); }
@@ -155,11 +177,17 @@ function setJob(player, job, opts = {}) {
   const j = ensure(player); if (!j || !job) return { ok: false, error: 'Unknown job.' };
   if (!isAvailable(player, job)) return { ok: false, error: `${job.emoji} *${job.name}* unlocks at Lv.${job.unlock} (you are Lv.${player.level || 1}).` };
   if (j.key === job.key) return { ok: false, error: `You already walk the path of the ${job.name}.` };
-  if (!opts.force) {
+  if (!opts.force && !isUnlocked(player, job)) {
     const cleared = player.jobQuest && player.jobQuest.cleared === job.key;
-    if (!cleared) return { ok: false, error: `Job changes are sealed behind a *Job Change Quest*. Clear the ${job.name} instance dungeon first (keys drop from finishing all daily quests) — /instance.` };
+    if (!cleared) {
+      const nx = nextQuestJob(player);
+      return { ok: false, error: `${job.emoji} *${job.name}* is still locked. Jobs unlock *in order* — no skipping.${nx ? ` Next on your ladder: ${nx.emoji} *${nx.name}* (clear its Job Change Quest — /instance).` : ''}\n🔁 Switch between jobs you already unlocked with */job switch <job>*.` };
+    }
+    const idx = JOBS.findIndex(x => x.key === job.key);
+    if (idx > 0 && !isUnlocked(player, JOBS[idx - 1])) return { ok: false, error: `You must unlock ${JOBS[idx - 1].emoji} *${JOBS[idx - 1].name}* before ${job.emoji} *${job.name}* — no skipping.` };
     delete player.jobQuest.cleared;
   }
+  unlock(player, job);
   if (j.key) j.history.push({ key: j.key, level: j.level, xp: j.xp, left: Date.now() });
   const prev = j.history.find(h => h.key === job.key); // returning to an old job keeps its progress
   j.key = job.key; j.level = prev ? Math.max(1, prev.level) : 1; j.xp = prev ? prev.xp : 0; j.since = Date.now();
@@ -213,4 +241,4 @@ function petMult(playerId) { const p = byId(playerId); return p ? 1 + mod(p, 'pe
 function bondMult(playerId) { const p = playerId && typeof playerId === 'object' ? playerId : byId(playerId); return p ? 1 + mod(p, 'bondGain') / 100 : 1; } // Push #96: Beast Tamer bonds faster
 function petHealMult(playerId) { const p = byId(playerId); return p ? 1 + mod(p, 'petHeal') / 100 : 1; }
 
-module.exports = { setPlayerLookup, byId, petMult, petHealMult, bondMult, noteStruck, targetMult, noteHit, JOBS, BY_KEY, JOB_XP_PER_LEVEL, MOD_LABEL, findJob, ensure, current, level, available, isAvailable, mods, mod, gainXp, xpFor, xpToNext, setJob, describeMods, card };
+module.exports = { unlockedKeys, isUnlocked, nextQuestJob, questable, unlock, setPlayerLookup, byId, petMult, petHealMult, bondMult, noteStruck, targetMult, noteHit, JOBS, BY_KEY, JOB_XP_PER_LEVEL, MOD_LABEL, findJob, ensure, current, level, available, isAvailable, mods, mod, gainXp, xpFor, xpToNext, setJob, describeMods, card };

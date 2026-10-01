@@ -18,7 +18,7 @@ module.exports = {
     const FRAME = pro ? UI.PRO_BAR : UI.FREE_BAR;
     const kind = String(args[0] || '').toLowerCase();
     if (!kind) {
-      if (!pro) return sock.sendMessage(chatId, { text: [FRAME, `🎁 *DAILY BOXES* — Pro feature 💎`, FRAME, `Finish all 4 daily quests as a Pro hunter and choose a ✨ Blessed or 🖤 Cursed box.`, UI.upsell()].join('\n') }, { quoted: msg });
+      if (!pro && !(Number(player.freeBoxes) > 0)) return sock.sendMessage(chatId, { text: [FRAME, `🎁 *DAILY BOXES* — Pro feature 💎`, FRAME, `Finish all 4 daily quests as a Pro hunter and choose a ✨ Blessed or 🖤 Cursed box.`, UI.upsell()].join('\n') }, { quoted: msg });
       const n = Number(player.pendingBoxes) || 0;
       if (!n) return sock.sendMessage(chatId, { text: `🎁 No box waiting — finish all 4 daily quests.` }, { quoted: msg });
       try { const Buttons = require('../../utils/buttons'); return await Buttons.sendButtons(sock, chatId, { text: `🎁 *${n} box${n === 1 ? '' : 'es'} waiting* — choose:`, buttons: Buttons.quickReplies([['✨ Blessed box', '/box blessed'], ['🖤 Cursed box', '/box cursed']]) }, msg); } catch (e) { return sock.sendMessage(chatId, { text: `🎁 ${n} waiting — /box blessed or /box cursed` }, { quoted: msg }); }

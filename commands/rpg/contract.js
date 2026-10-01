@@ -56,7 +56,7 @@ module.exports = {
     const pro = UI.isPro(db.users?.[sender] || {});
     const FRAME = pro ? UI.PRO_BAR : UI.FREE_BAR;
 
-    const mentionedId = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid?.[0];
+    const mentionedId = require('../../utils/target').resolve(msg, []);
     const targetId = mentionedId || sender;
     const isOwn = targetId === sender;
     const targetPlayer = db.users[targetId];

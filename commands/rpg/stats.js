@@ -22,7 +22,7 @@ module.exports = {
     const FRAME = pro ? UI.PRO_BAR : UI.FREE_BAR;
 
     // ── COMPARE MODE: /stats @user ────────────────────────────
-    const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid?.[0];
+    const mentioned = require('../../utils/target').resolve(msg, []);
     if (mentioned && mentioned !== sender) {
       const other = db.users[mentioned];
       if (!other) return sock.sendMessage(chatId, { text: '❌ That player is not registered!' }, { quoted: msg });

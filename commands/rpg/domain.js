@@ -43,17 +43,16 @@ module.exports = {
       return sock.sendMessage(chatId, { text: [FRAME, `🌌 *${cls.toUpperCase()} DOMAINS* (Lv.1 values)`, FRAME, ...lines, FRAME, `✨ = yours. Values grow +2% per Domain level.`].join('\n') }, { quoted: msg });
     }
 
-    if (sub === 'name' || sub === 'rename') {
+    if (sub === 'rename' || sub === 'name') {
       const name = args.slice(1).join(' ').trim();
-      if (!name || name.length < 3 || name.length > 40) return sock.sendMessage(chatId, { text: '❌ Give your domain a name (3–40 characters).' }, { quoted: msg });
-      d.name = name.replace(/[*_~`]/g, ''); saveDatabase();
-      return sock.sendMessage(chatId, { text: `🌌 Your domain is now called *${d.name}*.` }, { quoted: msg });
+      if (!name) return sock.sendMessage(chatId, { text: `✏️ Usage: /domain rename <new name> — costs 1 🃏 Rename Card (you have ${player.cards?.namechange || 0}).` }, { quoted: msg });
+      const r = DS.rename(player, name);
+      if (!r.ok) return sock.sendMessage(chatId, { text: `❌ ${r.error}` }, { quoted: msg });
+      saveDatabase();
+      return sock.sendMessage(chatId, { text: `🌌 *${r.old}* → *${r.name}* · 🃏 1 Rename Card used (${r.left} left)` }, { quoted: msg });
     }
     if (sub === 'desc' || sub === 'description') {
-      const desc = args.slice(1).join(' ').trim();
-      if (!desc || desc.length > 200) return sock.sendMessage(chatId, { text: '❌ Give a description (up to 200 characters).' }, { quoted: msg });
-      d.desc = desc.replace(/[*_~`]/g, ''); saveDatabase();
-      return sock.sendMessage(chatId, { text: `🌌 *${d.name}* — _${d.desc}_` }, { quoted: msg });
+      return sock.sendMessage(chatId, { text: d.desc ? `📜 *${d.name}* — _${d.desc}_\n⚠️ Domain descriptions are permanent.` : `📜 Your domain has no description — it is set once, in your DM, when the domain awakens.${DS.setupStep(player) ? ' Check your DM — the system is still waiting for your reply.' : ''}` }, { quoted: msg });
     }
 
     if (sub === 'upgrade' || sub === 'up') {

@@ -86,7 +86,7 @@ module.exports = {
 
     // Determine target: owner can @mention someone, otherwise self
     let targetId = sender;
-    const mentions = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
+    const mentions = require('../../utils/target').resolveAll(msg, []);
     if (mentions.length && ALLOWED.includes(sender)) {
       targetId = mentions[0];
     }

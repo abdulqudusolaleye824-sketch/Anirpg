@@ -40,7 +40,7 @@ module.exports = {
     }
 
     // ── Determine target ─────────────────────────────────────────
-    const mentionedJid = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid?.[0];
+    const mentionedJid = require('../../utils/target').resolve(msg, []);
     const targetId = mentionedJid || sender;
     const target = db.users[targetId];
 

@@ -26,7 +26,7 @@ module.exports = {
     }
 
     // ── Get target ────────────────────────────────────────────────────────────
-    const mentions = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
+    const mentions = require('../../utils/target').resolveAll(msg, []);
 
     // No tag = self-hakai: wipe the caller's own data (owner/co-owner only)
     if (!mentions.length) {
