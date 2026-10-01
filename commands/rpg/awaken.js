@@ -141,7 +141,7 @@ module.exports = {
       // Apply stat boosts
       const b = tierData.statBoosts;
       player.stats.maxHp     = (player.stats.maxHp     || 100) + b.maxHp;
-      player.stats.hp        = player.stats.maxHp; // full heal on awaken
+      try { player.stats.hp = require('../../rpg/utils/GearSystem').effectiveMaxHp(player); } catch (e) { player.stats.hp = player.stats.maxHp; } // full heal on awaken (gear pool)
       player.stats.maxEnergy = (player.stats.maxEnergy || 100) + b.maxEnergy;
       player.stats.energy    = player.stats.maxEnergy;
       player.stats.atk       = (player.stats.atk || 10) + b.atk;

@@ -338,7 +338,7 @@ function giveConstellation(player, conId) {
     // First pull — sponsored! Apply base bonus
     player.constellations[conId] = { favorability: 1, pulledAt: Date.now() };
     for (const [stat, val] of Object.entries(con.baseBonus)) {
-      if (stat === 'maxHp') { player.stats.maxHp=(player.stats.maxHp||100)+val; player.stats.hp=Math.min(player.stats.maxHp,player.stats.hp+val); }
+      if (stat === 'maxHp') { player.stats.maxHp=(player.stats.maxHp||100)+val; player.stats.hp=Math.min(require('./GearSystem').effectiveMaxHp(player), player.stats.hp+val); }
       else if (player.stats[stat]!==undefined) player.stats[stat]=(player.stats[stat]||0)+val;
     }
     return {
@@ -362,7 +362,7 @@ function giveConstellation(player, conId) {
   // Apply favorability bonus
   if (con.favorabilityBonus) {
     for (const [stat, val] of Object.entries(con.favorabilityBonus)) {
-      if (stat === 'maxHp') { player.stats.maxHp=(player.stats.maxHp||100)+val; player.stats.hp=Math.min(player.stats.maxHp,player.stats.hp+val); }
+      if (stat === 'maxHp') { player.stats.maxHp=(player.stats.maxHp||100)+val; player.stats.hp=Math.min(require('./GearSystem').effectiveMaxHp(player), player.stats.hp+val); }
       else if (player.stats[stat]!==undefined) player.stats[stat]=(player.stats[stat]||0)+val;
     }
   }

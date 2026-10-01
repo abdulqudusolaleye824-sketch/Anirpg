@@ -69,7 +69,7 @@ function apply(player, tier, source = 'cast') {
     player.stats[k] = v + add;
   }
   const hpBefore = Math.max(0, Number(player.stats.hp) || 0);
-  player.stats.hp = Math.min(player.stats.maxHp, Math.floor(hpBefore * mult));
+  player.stats.hp = Math.min(require('./GearSystem').effectiveMaxHp(player), Math.floor(hpBefore * mult));
   const berserk = source === 'passive' && (player.level || 1) < BERSERK_LEVEL;
   player.transform = {
     key: tier.key, name: skillName(tier, player), tierName: tier.name, mult, turnsLeft: tier.turns + 1, // +1: the casting turn's tick
@@ -105,7 +105,7 @@ function end(player, aftermath = false, fromTick = false) {
       player.stats[k] = Math.max(k === 'maxHp' ? 1 : 0, v - (Number(a[k]) || 0));
     }
     const hp = Number(player.stats.hp) || 0;
-    player.stats.hp = Math.max(hp > 0 ? 1 : 0, Math.min(player.stats.maxHp, Math.ceil(hp / mult)));
+    player.stats.hp = Math.max(hp > 0 ? 1 : 0, Math.min(require('./GearSystem').effectiveMaxHp(player), Math.ceil(hp / mult)));
   } catch (e) {}
   delete player.transform;
   let line = `🧬 *${player.name || 'Hunter'}*'s ${t.tierName || 'transformation'} fades — back to normal form.`;

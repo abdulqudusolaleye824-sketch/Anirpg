@@ -67,8 +67,8 @@ const ARENAS = [
     applyPassive(p1, p2, p1s, p2s, turn) {
       const h1 = Math.floor(p1.stats.maxHp * 0.05);
       const h2 = Math.floor(p2.stats.maxHp * 0.05);
-      p1.stats.hp = Math.min(p1.stats.maxHp, p1.stats.hp + h1);
-      p2.stats.hp = Math.min(p2.stats.maxHp, p2.stats.hp + h2);
+      p1.stats.hp = Math.min(require('../../rpg/utils/GearSystem').effectiveMaxHp(p1), p1.stats.hp + h1);
+      p2.stats.hp = Math.min(require('../../rpg/utils/GearSystem').effectiveMaxHp(p2), p2.stats.hp + h2);
       return `💎 *Mana Stone Regen:* +${h1} to ${p1.name}, +${h2} to ${p2.name}`;
     }
   },
@@ -261,7 +261,7 @@ const BATTLE_EVENTS = [
     apply(p1,p2) {
       const t=p1.stats.hp<=p2.stats.hp?p1:p2;
       const h=Math.floor(t.stats.maxHp*0.20);
-      t.stats.hp=Math.min(t.stats.maxHp,t.stats.hp+h);
+      t.stats.hp=Math.min(require('../../rpg/utils/GearSystem').effectiveMaxHp(t), t.stats.hp+h);
       return `💚 ${t.name} restored *${h}* HP!`;
     }
   },
@@ -282,7 +282,7 @@ const BATTLE_EVENTS = [
       const isP1=p1.stats.hp<=p2.stats.hp;
       const [wp,ws]=isP1?[p1,p1s]:[p2,p2s];
       ws.stagger=0; ws.momentum=Math.min(5,(ws.momentum||0)+2);
-      const h=Math.floor(wp.stats.maxHp*0.10); wp.stats.hp=Math.min(wp.stats.maxHp,wp.stats.hp+h);
+      const h=Math.floor(wp.stats.maxHp*0.10); wp.stats.hp=Math.min(require('../../rpg/utils/GearSystem').effectiveMaxHp(wp), wp.stats.hp+h);
       return `✨ ${wp.name}: stagger cleared, +2 momentum, +${h} HP!`;
     }
   },
@@ -337,8 +337,8 @@ const BATTLE_EVENTS = [
     apply(p1,p2,SEM,p1s,p2s) {
       const roll=Math.floor(Math.random()*6);
       switch(roll){
-        case 0:{const h=Math.floor(p1.stats.maxHp*0.25);p1.stats.hp=Math.min(p1.stats.maxHp,p1.stats.hp+h);return `🍀 Lucky! ${p1.name} healed ${h} HP!`;}
-        case 1:{const h=Math.floor(p2.stats.maxHp*0.25);p2.stats.hp=Math.min(p2.stats.maxHp,p2.stats.hp+h);return `🍀 Lucky! ${p2.name} healed ${h} HP!`;}
+        case 0:{const h=Math.floor(p1.stats.maxHp*0.25);p1.stats.hp=Math.min(require('../../rpg/utils/GearSystem').effectiveMaxHp(p1), p1.stats.hp+h);return `🍀 Lucky! ${p1.name} healed ${h} HP!`;}
+        case 1:{const h=Math.floor(p2.stats.maxHp*0.25);p2.stats.hp=Math.min(require('../../rpg/utils/GearSystem').effectiveMaxHp(p2), p2.stats.hp+h);return `🍀 Lucky! ${p2.name} healed ${h} HP!`;}
         case 2:SEM.applyEffect(p1,'stun',1);return `💫 ${p1.name} randomly STUNNED!`;
         case 3:SEM.applyEffect(p2,'stun',1);return `💫 ${p2.name} randomly STUNNED!`;
         case 4:p1s.momentum=Math.min(5,(p1s.momentum||0)+3);return `⚡ ${p1.name} gets +3 free momentum!`;
@@ -414,7 +414,7 @@ const BATTLE_EVENTS = [
     desc:'A demon appears — both fighters\' HP is SWAPPED!',
     apply(p1,p2) {
       const hp1=p1.stats.hp; const hp2=p2.stats.hp;
-      p1.stats.hp=Math.min(hp2,p1.stats.maxHp); p2.stats.hp=Math.min(hp1,p2.stats.maxHp);
+      p1.stats.hp=Math.min(hp2, require('../../rpg/utils/GearSystem').effectiveMaxHp(p1)); p2.stats.hp=Math.min(hp1, require('../../rpg/utils/GearSystem').effectiveMaxHp(p2));
       return `😈 HP SWAPPED! ${p1.name}: ${hp1}→${p1.stats.hp}, ${p2.name}: ${hp2}→${p2.stats.hp}!`;
     }
   },

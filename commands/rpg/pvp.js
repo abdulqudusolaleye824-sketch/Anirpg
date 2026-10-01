@@ -986,7 +986,7 @@ function _pvpCleanup(pl) {
     pl.attackCooldowns = {};
     if (pl.skills && pl.skills.cooldowns) pl.skills.cooldowns = {};
     if (pl.skillCooldowns) pl.skillCooldowns = {};
-    if (pl.stats && pl.stats.hp > (pl.stats.maxHp || 0)) pl.stats.hp = pl.stats.maxHp;
+    if (pl.stats) { let _mx = pl.stats.maxHp || 0; try { _mx = require('../../rpg/utils/GearSystem').effectiveMaxHp(pl); } catch (e) {} if (pl.stats.hp > _mx) pl.stats.hp = _mx; }
   } catch (e) {}
 }
 

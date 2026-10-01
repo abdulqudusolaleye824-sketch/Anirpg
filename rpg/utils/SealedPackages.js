@@ -178,7 +178,7 @@ function open(player, entry) {
         player.permBonuses = player.permBonuses || {};
         player.permBonuses[field] = (player.permBonuses[field] || 0) + amt;
         try { require('./StatAllocationSystem').applyAllocationsToStats(player); } catch (e) {}
-        if (src.stat === 'hp') player.stats.hp = Math.min(player.stats.hp || 0, player.stats.maxHp || 0);
+        if (src.stat === 'hp') { let _mx = player.stats.maxHp || 0; try { _mx = require('./GearSystem').effectiveMaxHp(player); } catch (e) {} player.stats.hp = Math.min(player.stats.hp || 0, _mx); }
         lines.push(`📈 Permanent +${amt} ${String(src.stat).toUpperCase()} (now ${player.stats[field]})`);
       } else lines.push('⚠️ The package contained no usable stat');
       break;

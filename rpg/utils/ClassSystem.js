@@ -250,7 +250,7 @@ function stripClassFromPlayer(player) {
       const bonus = applyQuality(max, quality);
       if (stat === 'hp' || stat === 'maxHp') {
         player.stats.maxHp = Math.max(50, (player.stats.maxHp || 100) - bonus);
-        player.stats.hp = Math.min(player.stats.hp || 0, player.stats.maxHp);
+        player.stats.hp = Math.min(player.stats.hp || 0, require('./GearSystem').effectiveMaxHp(player));
       } else if (stat === 'maxEnergy') {
         player.stats.maxEnergy = Math.max(50, (player.stats.maxEnergy || 100) - bonus);
         player.stats.energy = Math.min(player.stats.energy || 0, player.stats.maxEnergy);
@@ -413,7 +413,7 @@ function applyClassToPlayer(player, className) {
       if (player.baseStats && typeof player.baseStats === 'object') { const _bk = _k === 'maxHp' ? 'hp' : _k; player.baseStats[_bk] = (player.baseStats[_bk] || 0) + bonus; } }
     if (stat === 'hp' || stat === 'maxHp') {
       player.stats.maxHp = (player.stats.maxHp || 100) + bonus;
-      player.stats.hp    = Math.min(player.stats.hp || 100, player.stats.maxHp);
+      player.stats.hp    = Math.min(player.stats.hp || 100, require('./GearSystem').effectiveMaxHp(player));
     } else if (stat === 'maxEnergy') {
       player.stats.maxEnergy = (player.stats.maxEnergy || 100) + bonus;
     } else if (stat === 'lifesteal' || stat === 'critChance' || stat === 'magicPower') {

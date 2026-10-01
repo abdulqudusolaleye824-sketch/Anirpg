@@ -288,7 +288,7 @@ module.exports = {
 
       // Grant target a bonus heal
       const healAmt = Math.floor((target.stats.maxHp || 100) * 0.30);
-      target.stats.hp = Math.min(target.stats.maxHp, (target.stats.hp || 0) + healAmt);
+      target.stats.hp = Math.min(require('../../rpg/utils/GearSystem').effectiveMaxHp(target), (target.stats.hp || 0) + healAmt);
 
       saveDatabase();
 

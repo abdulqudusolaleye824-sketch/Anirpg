@@ -158,7 +158,7 @@ module.exports = {
       if ((player.stats.maxHp || 0) < base.maxHp) {
         const diff = base.maxHp - player.stats.maxHp;
         player.stats.maxHp += diff;
-        player.stats.hp = Math.min(player.stats.hp + diff, player.stats.maxHp);
+        player.stats.hp = Math.min(player.stats.hp + diff, require('../../rpg/utils/GearSystem').effectiveMaxHp(player));
         player.baseStats.maxHp = Math.max(player.baseStats.maxHp || 0, base.maxHp);
         log.push(`❤️ MaxHP restored to class floor (+${diff})`);
       }
@@ -189,7 +189,7 @@ module.exports = {
     player.stats.def      = Math.max(0,  player.stats.def      || 0);
     player.stats.maxHp    = Math.max(50, player.stats.maxHp    || 50);
     player.stats.maxEnergy= Math.max(10, player.stats.maxEnergy || 10);
-    player.stats.hp       = Math.min(player.stats.hp || player.stats.maxHp, player.stats.maxHp);
+    player.stats.hp       = Math.min(player.stats.hp || player.stats.maxHp, require('../../rpg/utils/GearSystem').effectiveMaxHp(player));
     player.stats.energy   = Math.min(player.stats.energy || player.stats.maxEnergy, player.stats.maxEnergy);
 
     // ── Step 5: Sync weapon slot stat (class default weapon) ─────────────────

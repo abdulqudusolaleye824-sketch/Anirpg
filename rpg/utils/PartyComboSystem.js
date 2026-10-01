@@ -354,7 +354,7 @@ All party members channel their power!
     if (combo.effect) {
       if (combo.effect.type === 'burn' && Math.random() < combo.effect.chance) {
         if (!monster.statusEffects) monster.statusEffects = [];
-        monster.statusEffects.push({
+        if (!(() => { try { return require('./DomainSystem').isShielded(monster); } catch (e) { return null; } })()) monster.statusEffects.push({
           type: 'burn',
           damage: 15 * combo.effect.duration,
           duration: combo.effect.duration
@@ -362,15 +362,15 @@ All party members channel their power!
         effectText = `\n🔥 Enemy is BURNING! (${15 * combo.effect.duration} damage over ${combo.effect.duration} turns)`;
       } else if (combo.effect.type === 'stun' && Math.random() < combo.effect.chance) {
         if (!monster.statusEffects) monster.statusEffects = [];
-        monster.statusEffects.push({
+        if (!(() => { try { return require('./DomainSystem').isShielded(monster); } catch (e) { return null; } })()) monster.statusEffects.push({
           type: 'stun',
           duration: combo.effect.duration
         });
         effectText = `\n😵 Enemy is STUNNED! (${combo.effect.duration} turns)`;
       } else if (combo.effect.type === 'lifesteal') {
         const healAmount = Math.floor(totalDamage * combo.effect.percent);
-        player1.stats.hp = Math.min(player1.stats.maxHp, player1.stats.hp + Math.floor(healAmount / 2));
-        player2.stats.hp = Math.min(player2.stats.maxHp, player2.stats.hp + Math.floor(healAmount / 2));
+        player1.stats.hp = Math.min(require('./GearSystem').effectiveMaxHp(player1), player1.stats.hp + Math.floor(healAmount / 2));
+        player2.stats.hp = Math.min(require('./GearSystem').effectiveMaxHp(player2), player2.stats.hp + Math.floor(healAmount / 2));
         effectText = `\n💚 Party healed for ${healAmount} HP!`;
       }
     }

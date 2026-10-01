@@ -188,7 +188,7 @@ function _cleanup(p) {
   p.statusEffects = []; p.tempBuffs = {}; p.buffs = []; p.attackCooldowns = {};
   if (p.skills && p.skills.cooldowns) p.skills.cooldowns = {};
   if (p.skillCooldowns) p.skillCooldowns = {};
-  if (p.stats && p.stats.hp > (p.stats.maxHp || 0)) p.stats.hp = p.stats.maxHp;
+  if (p.stats) { let _mx = p.stats.maxHp || 0; try { _mx = require('./GearSystem').effectiveMaxHp(p); } catch (e) {} if (p.stats.hp > _mx) p.stats.hp = _mx; }
 }
 
 async function finish(sock, chatId, b, wSide, db, saveDatabase) {

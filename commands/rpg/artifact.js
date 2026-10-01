@@ -230,7 +230,7 @@ module.exports = {
         const enh = player.artifacts?.enhanced?.[artifactName] || 0;
         const finalHp = enh > 0 ? Math.floor(hpBonus * (1 + enh * 0.1)) : hpBonus;
         player.stats.maxHp = (player.stats.maxHp || 0) + finalHp;
-        player.stats.hp = Math.min(player.stats.maxHp, (player.stats.hp || 0) + finalHp);
+        player.stats.hp = Math.min(require('../../rpg/utils/GearSystem').effectiveMaxHp(player), (player.stats.hp || 0) + finalHp);
       }
 
       saveDatabase();

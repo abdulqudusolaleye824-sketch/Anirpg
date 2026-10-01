@@ -874,7 +874,7 @@ class PlayerManager {
   static applyLevelUp(player) {
     player.level++;
     player.stats.maxHp += 10;
-    player.stats.hp = Math.min(player.stats.maxHp, player.stats.hp + 10);
+    player.stats.hp = Math.min(require('../utils/GearSystem').effectiveMaxHp(player), player.stats.hp + 10);
     player.stats.maxEnergy += 5;
     player.stats.energy = Math.min(player.stats.maxEnergy, player.stats.energy + 5);
     player.stats.atk += 3;

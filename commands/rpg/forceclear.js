@@ -129,7 +129,7 @@ module.exports = {
 
     // ── Full heal ────────────────────────────────────────────────────────────
     if (player.stats) {
-      player.stats.hp     = player.stats.maxHp;
+      try { player.stats.hp = require('../../rpg/utils/GearSystem').effectiveMaxHp(player); } catch (e) { player.stats.hp = player.stats.maxHp; }
       player.stats.energy = player.stats.maxEnergy;
     }
     player.statusEffects = [];

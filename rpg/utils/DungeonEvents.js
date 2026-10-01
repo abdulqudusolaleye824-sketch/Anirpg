@@ -37,8 +37,8 @@ const EVENT_TYPES = {
       let healed = [];
       players.forEach(p => {
         const h = Math.floor(p.stats.maxHp * healPct);
-        const actual = Math.min(h, p.stats.maxHp - p.stats.hp);
-        p.stats.hp = Math.min(p.stats.maxHp, p.stats.hp + h);
+        const actual = Math.min(h, require('./GearSystem').effectiveMaxHp(p) - p.stats.hp);
+        p.stats.hp = Math.min(require('./GearSystem').effectiveMaxHp(p), p.stats.hp + h);
         p.stats.energy = Math.min(p.stats.maxEnergy, (p.stats.energy||0) + Math.floor(p.stats.maxEnergy*0.3));
         healed.push(`❤️ ${p.name}: +${actual} HP`);
       });
@@ -238,7 +238,7 @@ const EVENT_TYPES = {
       const outcome = outcomes[Math.floor(Math.random()*outcomes.length)];
       let msg='';
       if (outcome==='heal') {
-        players.forEach(p=>{ const h=Math.floor(p.stats.maxHp*0.25); p.stats.hp=Math.min(p.stats.maxHp,p.stats.hp+h); });
+        players.forEach(p=>{ const h=Math.floor(p.stats.maxHp*0.25); p.stats.hp=Math.min(require('./GearSystem').effectiveMaxHp(p), p.stats.hp+h); });
         msg=`✅ It was a *Healing Potion*! +25% HP!`;
       } else if (outcome==='buff') {
         players.forEach(p=>{ if(!p.buffs)p.buffs=[]; p.buffs.push({stat:'atk',amount:20,duration:3,name:'Mystery Buff'}); });

@@ -76,7 +76,7 @@ class LevelUpManager {
         player.stats.maxEnergy += energyGain;
         player.stats.atk       += atkGain;
         player.stats.def       += defGain;
-        player.stats.hp = Math.min(player.stats.maxHp, player.stats.hp + hpGain);
+        player.stats.hp = Math.min(require('./GearSystem').effectiveMaxHp(player), player.stats.hp + hpGain);
         player.stats.energy = Math.min(player.stats.maxEnergy, player.stats.energy + energyGain);
 
         player.baseStats.hp        = (player.baseStats.hp        || 0) + hpGain;

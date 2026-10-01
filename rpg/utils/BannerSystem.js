@@ -368,7 +368,7 @@ function applyDuplicate(player, item) {
     if (!existing) {
       if (item.bonus) {
         for (const [stat,val] of Object.entries(item.bonus)) {
-          if (stat==='maxHp'){player.stats.maxHp+=val;player.stats.hp=Math.min(player.stats.maxHp,player.stats.hp+val);}
+          if (stat==='maxHp'){player.stats.maxHp+=val;player.stats.hp=Math.min(require('./GearSystem').effectiveMaxHp(player), player.stats.hp+val);}
           else if (player.stats[stat]!==undefined) player.stats[stat]=(player.stats[stat]||0)+val;
         }
       }

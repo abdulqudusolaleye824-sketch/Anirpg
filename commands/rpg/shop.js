@@ -400,7 +400,7 @@ ${FRAME}`
         try { require('../../rpg/utils/TransactionLog').logTransaction(player, { type: 'shop_buy', amount: item.cost, currency: '💎', note: `${item.name}` }); } catch (e) {};
         if(item.stat==='atk') player.stats.atk=(player.stats.atk||10)+item.amount;
         else if(item.stat==='def') player.stats.def=(player.stats.def||5)+item.amount;
-        else if(item.stat==='hp'){player.stats.maxHp=(player.stats.maxHp||100)+item.amount;player.stats.hp=Math.min(player.stats.hp+item.amount,player.stats.maxHp);}
+        else if(item.stat==='hp'){player.stats.maxHp=(player.stats.maxHp||100)+item.amount;player.stats.hp=Math.min(player.stats.hp+item.amount, require('../../rpg/utils/GearSystem').effectiveMaxHp(player));}
         else if(item.stat==='en') player.stats.maxEnergy=(player.stats.maxEnergy||100)+item.amount;
         else if(item.stat==='spd') player.stats.speed=(player.stats.speed||10)+item.amount;
         else if(item.stat==='crit') player.stats.crit=(player.stats.crit||0)+item.amount;
