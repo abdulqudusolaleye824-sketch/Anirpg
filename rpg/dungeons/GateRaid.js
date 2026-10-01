@@ -219,9 +219,11 @@ function monsterDamage(monster, def, player = null) {
       try { mAtk = Math.floor(mAtk * (1 + UC.tempBuffPct(monster, 'atk') / 100)); } catch (e) {} // Push #95: monster roars / domains change its ATK
       // Push #89: DEF soaks 1:1 (was 0.5) — still capped at 60% of the hit. A
       // 200-DEF hunter vs a 500-ATK boss now takes ~300 instead of ~400.
-      const soak = Math.min(mAtk * 0.6, Math.floor((def || 5) * (1 + (pm.def || 0) / 100)));
-      const floorDmg = Math.max(3, Math.floor((player.stats?.maxHp || 100) * 0.04));
-      let raw = Math.max(floorDmg, mAtk - soak);
+      // Push #96g: ratio mitigation — DEF/(DEF+ATK), capped 70% (was flat soak ≤60%).
+      const _defEff = Math.floor((def || 5) * (1 + (pm.def || 0) / 100));
+      const _mit = Math.min(0.70, _defEff / (_defEff + Math.max(1, mAtk)));
+      const floorDmg = Math.max(3, Math.floor((player.stats?.maxHp || 100) * 0.03));
+      let raw = Math.max(floorDmg, Math.floor(mAtk * (1 - _mit)));
       raw = raw * (0.8 + Math.random() * 0.4) * UC.weakenTakenMult(player) * (1 + (pm.dmgTaken || 0) / 100);
       try { require('../utils/JobSystem').noteStruck(player); } catch (e) {} // Push #96: Brawler counter window
       try { raw = raw * (1 + UC.tempBuffPct(player, 'damageTaken') / 100); } catch (e) {} // Push #95: damage-taken buffs/debuffs (domains, skills)

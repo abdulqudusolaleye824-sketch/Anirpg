@@ -276,7 +276,7 @@ class ImprovedCombat {
       const lifestealEffect = parsedEffects.special.find(s => s.type === 'lifesteal');
       if (lifestealEffect && finalDamage > 0) {
         const healAmt = Math.floor(finalDamage * (lifestealEffect.amount / 100));
-        attacker.stats.hp = Math.min(attacker.stats.maxHp || attacker.stats.hp + healAmt, attacker.stats.hp + healAmt);
+        attacker.stats.hp = Math.min(require('./GearSystem').effectiveMaxHp(attacker), attacker.stats.hp + healAmt);
         effectResult.narrative += `💚 *Lifesteal!* Healed ${healAmt} HP!\n`;
       }
     }
@@ -289,7 +289,7 @@ class ImprovedCombat {
           const healPct = parseFloat(eff.match(/(\d+)%/)?.[1] || '0') / 100;
           const healAmt = Math.floor(finalDamage * healPct);
           if (healAmt > 0) {
-            attacker.stats.hp = Math.min(attacker.stats.maxHp, (attacker.stats.hp || 0) + healAmt);
+            attacker.stats.hp = Math.min(require('./GearSystem').effectiveMaxHp(attacker), (attacker.stats.hp || 0) + healAmt);
           }
         }
       }
@@ -450,8 +450,9 @@ class ImprovedCombat {
     if (!victory) {
       // Monster counter-attack
       const monsterAtk = monster.stats?.atk || monster.atk || 10;
-      const playerDef = Math.floor((player.stats.def || 0) * (1 + (_pm.def || 0) / 100) * 0.4);
-      let monsterDmg = Math.max(1, monsterAtk - playerDef);
+      let _gD = 0, _tD = 0; try { _gD = require('./GearSystem').getEquippedBonuses(player).def || 0; } catch (e) {} try { _tD = require('./TitleSystem').getEquippedBoost(player).def || 0; } catch (e) {} // Push #96g: gear + title DEF count
+      const _defTot = ((player.stats.def || 0) + _gD + _tD + (player.weapon?.defense || 0)) * (1 + (_pm.def || 0) / 100);
+      let monsterDmg = Math.max(1, Math.floor(monsterAtk * (1 - Math.min(0.70, _defTot / (_defTot + monsterAtk)))));
       let _dodged = false;
       try {
         const UC = require('./UnifiedCombat');
@@ -508,8 +509,9 @@ class ImprovedCombat {
       narrative += `👹 ${monster.name}: ❤️ ${currentHp}/${maxHp}\n`;
       if (!victory) {
         const monsterAtk = monster.stats?.atk || monster.atk || 10;
-        const playerDef = Math.floor((player.stats.def || 0) * 0.4);
-        const monsterDmg = Math.max(1, monsterAtk - playerDef);
+        let _gD = 0, _tD = 0; try { _gD = require('./GearSystem').getEquippedBonuses(player).def || 0; } catch (e) {} try { _tD = require('./TitleSystem').getEquippedBoost(player).def || 0; } catch (e) {} // Push #96g
+        const _defTot = (player.stats.def || 0) + _gD + _tD + (player.weapon?.defense || 0);
+        const monsterDmg = Math.max(1, Math.floor(monsterAtk * (1 - Math.min(0.70, _defTot / (_defTot + monsterAtk)))));
         player.stats.hp = Math.max(0, player.stats.hp - monsterDmg);
         narrative += `\n👹 ${monster.name} counter-attacks!\n`;
         narrative += `💢 You took *${monsterDmg}* damage!\n`;
@@ -533,7 +535,7 @@ class ImprovedCombat {
       const count = player.inventory.healthPotions || 0;
       if (count <= 0) return { success: false, message: '❌ You have no Health Potions!' };
       const healAmount = Math.floor(player.stats.maxHp * 0.4);
-      player.stats.hp = Math.min(player.stats.maxHp, player.stats.hp + healAmount);
+      player.stats.hp = Math.min(require('./GearSystem').effectiveMaxHp(player), player.stats.hp + healAmount);
       player.inventory.healthPotions--;
       return {
         success: true,

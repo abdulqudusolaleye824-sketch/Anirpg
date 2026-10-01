@@ -34,6 +34,8 @@ class StatusEffectManager {
     const className = getClassName(entity);
     const { resisted } = checkEffectResistance(className, key);
     if (resisted) return false;
+    // Push #96g: the owner of an active domain is immune to NEW statuses inside it.
+    try { const DS = require('./DomainSystem'); const d = DS.isShielded(entity); if (d) { entity._lastStatusBlock = `inside ${d.name} — immune to new status effects`; return false; } } catch (e) {}
     // Push #76: store gear immunity / resistance / turn reduction (skip if the
     // caller already ran it — UnifiedCombat.tryApplyEffect passes _armoryChecked).
     if (!entity._armoryChecked) {

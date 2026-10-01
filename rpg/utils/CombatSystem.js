@@ -82,6 +82,7 @@ class CombatSystem {
 
   static applyStatusEffect(entity, effectType, duration, extraData = {}) {
     if (!entity) return;
+    try { if (require('./DomainSystem').isShielded(entity)) return; } catch (e) {} // Push #96g: domain owner immune to new statuses
     
     if (!entity.statusEffects) {
       entity.statusEffects = [];
@@ -190,7 +191,7 @@ class CombatSystem {
           // Heal for total damage dealt
           const totalDamage = damage + bonusDamage;
           const healing = totalDamage;
-          player.stats.hp = Math.min(player.stats.maxHp, player.stats.hp + healing);
+          player.stats.hp = Math.min(require('./GearSystem').effectiveMaxHp(player), player.stats.hp + healing);
           
           // Reduce enemy ATK by 15% for 2 turns
           this.applyStatusEffect(monster, 'weakened', 2, { reduction: 15 });
@@ -207,7 +208,7 @@ class CombatSystem {
         execute: (player, monster, damage) => {
           // Heal 25% of damage dealt
           const healing = Math.floor(damage * 0.25);
-          player.stats.hp = Math.min(player.stats.maxHp, player.stats.hp + healing);
+          player.stats.hp = Math.min(require('./GearSystem').effectiveMaxHp(player), player.stats.hp + healing);
           
           // 30% chance to curse
           if (Math.random() < 0.3) {
@@ -253,7 +254,7 @@ class CombatSystem {
           
           // Heal for ALL damage
           const totalDamage = damage + bonusDamage;
-          player.stats.hp = Math.min(player.stats.maxHp, player.stats.hp + totalDamage);
+          player.stats.hp = Math.min(require('./GearSystem').effectiveMaxHp(player), player.stats.hp + totalDamage);
           
           // Steal 10% of enemy stats for 3 turns (visual only)
           const statSteal = Math.floor(monster.atk * 0.10);
@@ -270,7 +271,7 @@ class CombatSystem {
         execute: (player, monster, damage) => {
           // Heal 50% of damage
           const healing = Math.floor(damage * 0.50);
-          player.stats.hp = Math.min(player.stats.maxHp, player.stats.hp + healing);
+          player.stats.hp = Math.min(require('./GearSystem').effectiveMaxHp(player), player.stats.hp + healing);
           
           // Restore 15 Blood
           player.stats.energy = Math.min(player.stats.maxEnergy, player.stats.energy + 15);
@@ -438,7 +439,7 @@ class CombatSystem {
         execute: (player, monster, damage) => {
           // Heal 15% of damage dealt
           const healing = Math.floor(damage * 0.15);
-          player.stats.hp = Math.min(player.stats.maxHp, player.stats.hp + healing);
+          player.stats.hp = Math.min(require('./GearSystem').effectiveMaxHp(player), player.stats.hp + healing);
           
           if (!player.tempBuffs) player.tempBuffs = {};
           player.tempBuffs.atk = { bonus: 0.50, duration: 3 };
@@ -459,7 +460,7 @@ class CombatSystem {
             
             // Heal 30% max HP on kill
             const healing = Math.floor(player.stats.maxHp * 0.30);
-            player.stats.hp = Math.min(player.stats.maxHp, player.stats.hp + healing);
+            player.stats.hp = Math.min(require('./GearSystem').effectiveMaxHp(player), player.stats.hp + healing);
             
             return {
               message: `🪓 EXECUTED! +${healing} HP healed!`,
@@ -482,7 +483,7 @@ class CombatSystem {
         execute: (player, monster, damage) => {
           // Heal nearby allies 10% of damage
           const healing = Math.floor(damage * 0.10);
-          player.stats.hp = Math.min(player.stats.maxHp, player.stats.hp + healing);
+          player.stats.hp = Math.min(require('./GearSystem').effectiveMaxHp(player), player.stats.hp + healing);
           
           return {
             message: `✨ Holy strike! +${healing} HP healed!`,
@@ -511,7 +512,7 @@ class CombatSystem {
         execute: (player, monster, damage) => {
           // Heal 50% max HP
           const healing = Math.floor(player.stats.maxHp * 0.50);
-          player.stats.hp = Math.min(player.stats.maxHp, player.stats.hp + healing);
+          player.stats.hp = Math.min(require('./GearSystem').effectiveMaxHp(player), player.stats.hp + healing);
           
           // Remove all debuffs
           if (player.statusEffects) {

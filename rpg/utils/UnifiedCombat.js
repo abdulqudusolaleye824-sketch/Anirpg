@@ -181,8 +181,13 @@ function calcMoveDamage(attacker, defender, move) {
   const finalAtk = effectiveAtk * statusAtkMult * (move.isSkill && _pmA && _pmA.skillDmg ? 1 + _pmA.skillDmg / 100 : 1);
   const finalDef = effectiveDef * statusDefMult;
 
-  // Base formula: (ATK - DEF/2) * dmgMult with minimum
-  let raw = (finalAtk - finalDef * 0.5) * dmgMult * Math.max(0.1, _tbTaken);
+  // Push #96g: DEF is REAL. The old "(ATK − DEF/2)" was swamped by ×3–5
+  // pattern multipliers, so 2,000 DEF changed nothing. Now armour soaks a
+  // share of the hit: mitigation = DEF / (DEF + attacker's base ATK), capped
+  // at 70% — pattern/skill multipliers scale the hit, not the armour.
+  const _atkRef = Math.max(1, finalAtk / Math.max(0.1, atkMult));
+  const _mit = Math.min(0.70, finalDef / (finalDef + _atkRef));
+  let raw = finalAtk * (1 - _mit) * dmgMult * Math.max(0.1, _tbTaken);
   raw = Math.max(5, raw);
   // Move capability: max pre-variance, pre-crit potential. The effectiveness
   // tier compares dealt damage against this (very effective ≥ 80%).
@@ -311,6 +316,7 @@ function tryApplyEffect(attack, attacker, defender) {
   // Push #74: POISON is a real DoT — never shorter than 4 turns.
   if (String(attack.effect.type || '').toLowerCase() === 'poison') _dur = Math.max(4, _dur);
   if (_turnCut) _dur = Math.max(1, _dur - _turnCut);
+  try { const DS = require('./DomainSystem'); const d = DS.isShielded(defender); if (d) { defender._lastStatusBlock = `inside ${d.name} — immune to new status effects`; return null; } } catch (e) {} // Push #96g
   const eff = { type: attack.effect.type, duration: _dur, sourceAttack: attack.id };
   defender.statusEffects.push(eff);
   return eff;

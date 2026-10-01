@@ -123,7 +123,8 @@ function executeMonsterAI(monster, player, ctx = null) {
     return `\n${FRAME}\n🔄 ${monster.name.toUpperCase()}'S TURN${mPro ? ' 💎' : ''}\n${FRAME}\n${monster.emoji} ${monster.name} ${abilityName ? 'uses *' + abilityName + '*!' : 'attacks!'}\n💬 "${line}"\n${FRAME}\n${_blindMiss ? '🌫️ Blinded — the strike goes wide!' : '💨 *You dodged the attack!*'}\n❤️ Your HP: ${Math.max(0, player.stats.hp)}/${_effMax(player)}\n`;
   }
 
-  let finalDmg = Math.max(8, baseDmg - defReduc);
+  // Push #96g: ratio mitigation — DEF/(DEF+monster ATK), capped 70% — so real armour matters against big hits.
+  let finalDmg = Math.max(8, Math.floor(baseDmg * (1 - Math.min(0.70, _defTot / (_defTot + Math.max(1, _mAtk))))));
   // Push #88o: monsters can crit.
   let _mCrit = false;
   try { if (Math.random() * 100 < require('../../rpg/dungeons/GateRaid').monsterCritChance(monster)) { _mCrit = true; finalDmg = Math.floor(finalDmg * 1.5); } } catch (e) {}
@@ -479,8 +480,8 @@ module.exports = {
       party.members.forEach(m => {
         const mp  = db.users[m.id];
         if (!mp) return;
-        const bar = BarSystem.getHPBar(mp.stats.hp, mp.stats.maxHp, require('../../rpg/utils/UnifiedCombat').isPro(mp));
-        txt += `${mp.stats.hp > 0 ? '⚔️' : '💀'} *${m.name}* — ${bar} ${mp.stats.hp}/${mp.stats.maxHp}\n`;
+        const bar = BarSystem.getHPBar(mp.stats.hp, _effMax(mp), require('../../rpg/utils/UnifiedCombat').isPro(mp));
+        txt += `${mp.stats.hp > 0 ? '⚔️' : '💀'} *${m.name}* — ${bar} ${mp.stats.hp}/${_effMax(mp)}\n`;
       });
       txt += `\n${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO READ* — ${monster.name} at ${Math.max(0, Math.round(100 * monster.stats.hp / monster.stats.maxHp))}%` : `\n${UI.upsell()}`);
       return sock.sendMessage(chatId, { text: txt }, { quoted: msg });
@@ -1432,7 +1433,7 @@ module.exports = {
         if (!DungeonPartyManager.useItem(party.id, 'reviveTokens', 1)) return sock.sendMessage(chatId, { text: '❌ No Revive Tokens in party inventory!' }, { quoted: msg });
         if (!party.sharedItems.reviveTokensUsed) party.sharedItems.reviveTokensUsed = 0;
         party.sharedItems.reviveTokensUsed++;
-        player.stats.hp     = Math.floor(player.stats.maxHp * 0.3);
+        player.stats.hp     = Math.floor(_effMax(player) * 0.3);
         player.stats.energy = Math.floor(player.stats.maxEnergy * 0.3);
         saveDatabase();
         return sock.sendMessage(chatId, { text: `🎫 *${player.name}* has been REVIVED!\n❤️ ${player.stats.hp}/${player.stats.maxHp}` }, { quoted: msg });
@@ -1529,7 +1530,7 @@ async function handleMonsterDefeat(sock, chatId, party, monster, dungeon, db, sa
     party.members.forEach(m => {
       const mp = db.users[m.id];
       if (!mp) return;
-      txt += `${mp.stats.hp > 0 ? '⚔️' : '💀'} *${m.name}* — ${BarSystem.getHPBar(mp.stats.hp, mp.stats.maxHp, require('../../rpg/utils/UnifiedCombat').isPro(mp))} ${mp.stats.hp}/${mp.stats.maxHp}\n`;
+      txt += `${mp.stats.hp > 0 ? '⚔️' : '💀'} *${m.name}* — ${BarSystem.getHPBar(mp.stats.hp, _effMax(mp), require('../../rpg/utils/UnifiedCombat').isPro(mp))} ${mp.stats.hp}/${_effMax(mp)}\n`;
     });
     txt += _nextQ ? `\n${FRAME}\n/dungeon attack — keep fighting` : `\n${FRAME}\n/dungeon advance — next floor\n/dungeon leave   — exit & keep rewards`;
     txt += dPro ? `\n${UI.PRO_MINI}\n💎 *PRO DELVER* — floor ${dungeon.currentFloor}/${dungeon.maxFloors} · ${dungeon.monstersDefeated} slain` : `\n${UI.upsell()}`;

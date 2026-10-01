@@ -1,3 +1,10 @@
+## 1.0.133 — Push #96g: full HP pool with gear · DEF is real · domain status immunity · rank-scaled monster domains
+
+- **HP pool = base + gear + title everywhere.** 39 heal/level/cap sites that clamped HP back to *base* maxHp (so a 1825+5557 hunter sat at 1825/7382) now use `effectiveMaxHp`. Full heals (awaken, force-clear, boxes, revive-at-30%) fill the whole pool; dungeon/party status shows the real max.
+- **DEF actually matters.** PvP/UnifiedCombat: `(ATK − DEF/2)` was swamped by ×3–5 patterns → now ratio mitigation `DEF / (DEF + attacker base ATK)`, capped 70%. Dungeon (ImprovedCombat ×2, dungeon.js) and gate monster hits use the same ratio and finally count **gear + title + weapon DEF**.
+- **Domain status immunity**: the owner of an ACTIVE domain (hunter, monster or boss) is immune to NEW status effects inside it — existing ones keep ticking. Hooked into StatusEffectManager, UnifiedCombat, CombatSystem, EffectParser, PartyCombo. Immunity ends when the domain fades/shatters.
+- **Monster domains rebuilt & rank-scaled**: one named domain per rank (E Crushing Presence → S Realm of Ruin → SS Nightmare Expanse) with descriptions; debuff 12/16/20/26/32/40/48%, monster self-buff 10–46%, HP burst 6–24%, 2–4 turns, rank-themed status (weaken → bleed → burn → poison → curse) at 40–100% — bosses ×1.25 and +1 turn. Monster domain power raised (rank ×40, boss +90).
+
 ## 1.0.132 — Push #96f: aura farm reactions + flop penalty · aura title perks actually apply
 
 - **/aura farm**: 50 flop + 50 success reaction lines (`rpg/data/AuraFarmLines.js`). A **flop now costs aura — 3–7× what the harvest would have paid** (floored at 0; tier drops announced).

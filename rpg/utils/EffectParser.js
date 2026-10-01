@@ -407,7 +407,7 @@ class EffectParser {
       if (special.type === 'lifesteal') {
         const heal = Math.floor(finalDamage * (special.amount / 100));
         if (heal > 0) {
-          attacker.stats.hp = Math.min(attacker.stats.maxHp, attacker.stats.hp + heal);
+          attacker.stats.hp = Math.min(require('./GearSystem').effectiveMaxHp(attacker), attacker.stats.hp + heal);
           narrative += `💚 Lifesteal: healed ${heal} HP!\n`;
         }
       }
@@ -426,7 +426,7 @@ class EffectParser {
 
       if (special.type === 'selfHeal') {
         const heal = Math.floor(attacker.stats.maxHp * (special.percent / 100));
-        attacker.stats.hp = Math.min(attacker.stats.maxHp, attacker.stats.hp + heal);
+        attacker.stats.hp = Math.min(require('./GearSystem').effectiveMaxHp(attacker), attacker.stats.hp + heal);
         narrative += `💚 Healed ${heal} HP! (${attacker.stats.hp}/${attacker.stats.maxHp})\n`;
       }
 
@@ -448,7 +448,7 @@ class EffectParser {
           StatusEffectManager.applyEffect(defender, effect.type.toUpperCase(), effect.duration);
         } else {
           if (!defender.statusEffects) defender.statusEffects = [];
-          defender.statusEffects.push({ type: effect.type.toUpperCase(), duration: effect.duration });
+          { let _sh = null; try { _sh = require('./DomainSystem').isShielded(defender); } catch (e) {} if (!_sh) defender.statusEffects.push({ type: effect.type.toUpperCase(), duration: effect.duration }); } // Push #96g
         }
         const icons = { burn:'🔥', freeze:'❄️', poison:'☠️', stun:'💫', bleed:'🩸', slow:'🐢', weaken:'💀' };
         const eName = effect.type.charAt(0).toUpperCase() + effect.type.slice(1);

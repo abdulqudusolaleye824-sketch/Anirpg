@@ -172,6 +172,25 @@ function upgrade(player, want = 1) {
 function arenaOf(x) { return x && typeof x === 'object' ? x : null; }
 function active(arena) { const d = arena && arena.domain; return d && d.turnsLeft > 0 ? d : null; }
 
+// ── Push #96g: the owner of an ACTIVE domain is immune to NEW status effects
+// cast inside it (effects already on them keep ticking). Registry: owner key → arena.
+const _shield = new Map();
+function _ownerKeys(entity) {
+  if (!entity) return [];
+  return [entity.jid, entity.id, entity.name].filter(Boolean).map(String);
+}
+function _register(arena, ownerKey) { if (arena && ownerKey) _shield.set(String(ownerKey), arena); }
+function isShielded(entity) {
+  for (const k of _ownerKeys(entity)) {
+    const arena = _shield.get(k); if (!arena) continue;
+    const d = active(arena);
+    if (!d) { _shield.delete(k); continue; }
+    if (String(d.ownerId) === k) return d;
+  }
+  return null;
+}
+function shieldLine(entity) { const d = isShielded(entity); return d ? `🌌 *${entity.name}* stands inside *${d.name}* — the status cannot take hold.` : null; }
+
 function _applyBuffs(entity, buffs, turns, tag, source) {
   if (!entity) return;
   if (!entity.tempBuffs) entity.tempBuffs = {};
@@ -231,34 +250,62 @@ function expand(arena, player, allies = [player], enemies = [], ctx = {}) {
   for (const a of allies) _applyBuffs(a, e.ally, e.turns, 'domain', src);
   for (const f of enemies) _applyBuffs(f, e.enemy, e.turns, 'domain', src);
   arena.domain = { ownerId: myId, ownerName: player.name, side: 'hunter', name: e.name, level: e.level, turnsLeft: e.turns, power: myPow, quality: _quality(player), className: player.domain.class };
+  _register(arena, myId); for (const k of _ownerKeys(player)) _register(arena, k);
   player.domain.casts = (player.domain.casts || 0) + 1;
   const d = player.domain;
   lines.unshift(`🌌 *DOMAIN EXPANSION — ${e.name.toUpperCase()}*`);
   if (d.desc) lines.push(`_${d.desc}_`);
-  lines.push(`👤 ${player.name} · Domain Lv.${e.level} · ${e.turns} turns · power ${myPow}`);
+  lines.push(`👤 ${player.name} · Domain Lv.${e.level} · ${e.turns} turns · power ${myPow}`, `🛡️ Inside your domain you are immune to new status effects.`);
   lines.push(...describe(player));
   if (allies.length > 1) lines.push(`🤝 Party covered: ${allies.map(a => a.name).join(', ')}`);
   return { ok: true, text: lines.join('\n'), effect: e };
 }
 
 // ── Monster / boss domains ─────────────────────────────────────────────────
+// Push #96g: monster domains — one per rank tier, each with a real identity.
+// Numbers scale hard with rank: an S-rank domain is a different world from a B.
+const MONSTER_DOMAINS = {
+  E:  { name: 'Crushing Presence',  emoji: '🌫️', desc: 'The air thickens; even a weak beast feels heavier here.' },
+  D:  { name: 'Field of Despair',   emoji: '🥀', desc: 'Hope drains out of the ground beneath your feet.' },
+  C:  { name: "Predator's Ground",  emoji: '🐾', desc: 'Every shadow is a hunting lane — you are the prey.' },
+  B:  { name: 'Abyssal Pressure',   emoji: '🌊', desc: 'Pressure like the deep sea. Armour groans, lungs burn.' },
+  A:  { name: "Tyrant's Territory", emoji: '👁️', desc: 'The beast rules here. Your strikes slide off its law.' },
+  S:  { name: 'Realm of Ruin',      emoji: '☄️', desc: 'Reality bends to the monarch. Steel rusts, mana curdles, courage dies.' },
+  SS: { name: 'Nightmare Expanse',  emoji: '🕳️', desc: 'There is no ground, no sky — only the thing that wants you dead.' },
+};
+const MONSTER_DOMAIN_NAMES = Object.values(MONSTER_DOMAINS).map(d => d.name); // kept for callers/tests
 const RANK_IDX = { E: 0, D: 1, C: 2, B: 3, A: 4, S: 5, SS: 6, F: 0 };
-const MONSTER_DOMAIN_NAMES = ['Crushing Presence', 'Field of Despair', 'Predator\'s Ground', 'Abyssal Pressure', 'Tyrant\'s Territory', 'Realm of Ruin', 'Suffocating Aura', 'Killing Field', 'Nightmare Expanse', 'Sovereign\'s Wrath'];
+// Per-rank domain numbers (monster side buffs itself; hunter side is debuffed).
+//  ri        0    1    2    3    4    5    6
+const MD_DEBUFF = [12, 16, 20, 26, 32, 40, 48];   // hunters: −ATK% −DEF% +damage taken%
+const MD_SELF   = [10, 14, 18, 24, 30, 38, 46];   // monster: +ATK% +DEF%
+const MD_BURST  = [6, 8, 10, 13, 16, 20, 24];     // % max HP burst on expansion
+const MD_TURNS  = [2, 2, 2, 3, 3, 4, 4];
+const MD_STATUS = ['weaken', 'weaken', 'bleed', 'burn', 'poison', 'curse', 'curse'];
+const MD_STATUS_CHANCE = [0.40, 0.45, 0.50, 0.60, 0.70, 0.85, 1.0];
 function monsterPower(monster, ctx = {}) {
   const rank = String(ctx.rank || monster.rank || 'E').toUpperCase();
-  return (RANK_IDX[rank] || 0) * 25 + (Number(monster.level) || 1) + (ctx.boss || monster.isBoss ? 60 : 0) + (monster.elite || monster.isElite ? 20 : 0);
+  return (RANK_IDX[rank] || 0) * 40 + (Number(monster.level) || 1) + (ctx.boss || monster.isBoss ? 90 : 0) + (monster.elite || monster.isElite ? 30 : 0);
 }
 function monsterEligible(monster, ctx = {}) {
   if (ctx.boss || monster.isBoss) return true;
   const rank = String(ctx.rank || monster.rank || 'E').toUpperCase();
   return (RANK_IDX[rank] || 0) >= 3;
 }
+function monsterDomainInfo(rank, boss = false) {
+  const r = String(rank || 'E').toUpperCase(); const ri = RANK_IDX[r] || 0; const md = MONSTER_DOMAINS[r] || MONSTER_DOMAINS.E;
+  const b = boss ? 1.25 : 1;
+  return { rank: r, ri, name: md.name, emoji: md.emoji, desc: md.desc,
+    debuff: Math.round(MD_DEBUFF[ri] * b), self: Math.round(MD_SELF[ri] * b), burst: Math.min(30, Math.round(MD_BURST[ri] * b)),
+    turns: MD_TURNS[ri] + (boss ? 1 : 0), status: MD_STATUS[ri], statusChance: Math.min(1, MD_STATUS_CHANCE[ri] * (boss ? 1.15 : 1)) };
+}
 // Called on the monster's turn. Returns a text block or null.
 function monsterTry(arena, monster, hunters = [], ctx = {}) {
   if (!arena || !monster || !hunters.length || !monsterEligible(monster, ctx)) return null;
   const cur = active(arena);
   if (cur && cur.side === 'monster') return null;
-  const chance = ctx.boss || monster.isBoss ? 0.70 : 0.40; // Push #96d: bosses 70%, B/A/S monsters 40%
+  const isBoss = !!(ctx.boss || monster.isBoss);
+  const chance = isBoss ? 0.70 : 0.40; // Push #96d: bosses 70%, B/A/S monsters 40%
   if (Math.random() > (ctx.forceChance != null ? ctx.forceChance : chance)) return null;
   const pow = monsterPower(monster, ctx);
   const lines = [];
@@ -267,24 +314,30 @@ function monsterTry(arena, monster, hunters = [], ctx = {}) {
     lines.push(`💥 *DOMAIN CLASH!* *${monster.name}* (power ${pow}) crushes *${cur.name}* (${cur.power}) — ${cur.ownerName}'s domain shatters!`);
     shatter(arena, hunters, [monster]);
   }
-  const rank = String(ctx.rank || monster.rank || 'E').toUpperCase(); const ri = RANK_IDX[rank] || 0;
-  const mag = 12 + ri * 5 + (ctx.boss || monster.isBoss ? 8 : 0);
-  const turns = ctx.boss || monster.isBoss ? 3 : 2;
-  const name = `${monster.name}'s ${MONSTER_DOMAIN_NAMES[(ri * 3 + (monster.name || '').length) % MONSTER_DOMAIN_NAMES.length]}`;
+  const info = monsterDomainInfo(ctx.rank || monster.rank || 'E', isBoss);
+  const mag = info.debuff, turns = info.turns;
+  const name = `${monster.name}'s ${info.name}`;
   const src = `Domain: ${name}`;
-  const burstPct = Math.min(20, 6 + ri * 2 + (ctx.boss || monster.isBoss ? 4 : 0));
-  const hurt = [];
+  const hurt = []; const afflicted = [];
   for (const h of hunters) {
     if (!h || !h.stats || (h.stats.hp || 0) <= 0) continue;
     _applyBuffs(h, { atk: -mag, def: -mag, damageTaken: mag }, turns, 'domain', src);
-    const burst = Math.max(1, Math.floor(_max(h) * burstPct / 100));
+    const burst = Math.max(1, Math.floor(_max(h) * info.burst / 100));
     h.stats.hp = Math.max(1, h.stats.hp - burst); // devastating, never a kill on its own
     hurt.push(`${h.name} −${burst}`);
-    try { const MSFX = require('./MonsterSkillFX'); if (Math.random() < 0.5) { const l = MSFX.applyStatus(h, ri >= 5 ? 'curse' : ri >= 4 ? 'burn' : 'weaken', 2); if (l) lines.push(l); } } catch (e) {}
+    try { const MSFX = require('./MonsterSkillFX'); if (Math.random() < info.statusChance) { const l = MSFX.applyStatus(h, info.status, 2); if (l) afflicted.push(l); } } catch (e) {}
   }
-  _applyBuffs(monster, { atk: Math.floor(mag / 2), def: Math.floor(mag / 2) }, turns, 'domain', src);
-  arena.domain = { ownerId: monster.id || monster.name, ownerName: monster.name, side: 'monster', name, level: 0, turnsLeft: turns, power: pow };
-  lines.unshift(`🌌 *DOMAIN EXPANSION — ${name.toUpperCase()}*`, `${monster.emoji || '👹'} The air turns to lead. ${turns} turns · power ${pow}`, `⬇️ Hunters: ATK −${mag}% · DEF −${mag}% · damage taken +${mag}%`, `📈 ${monster.name}: ATK/DEF +${Math.floor(mag / 2)}%`, `💥 Crushing burst: ${hurt.join(' · ')}`);
+  _applyBuffs(monster, { atk: info.self, def: info.self }, turns, 'domain', src);
+  arena.domain = { ownerId: monster.id || monster.name, ownerName: monster.name, side: 'monster', name, level: 0, turnsLeft: turns, power: pow, rank: info.rank };
+  _register(arena, monster.id || monster.name); for (const k of _ownerKeys(monster)) _register(arena, k);
+  lines.unshift(
+    `${info.emoji} *DOMAIN EXPANSION — ${name.toUpperCase()}* [${info.rank}${isBoss ? ' BOSS' : ''}]`,
+    `_${info.desc}_`,
+    `${monster.emoji || '👹'} ${turns} turns · power ${pow} · 🛡️ immune to new status effects inside`,
+    `⬇️ Hunters: ATK −${mag}% · DEF −${mag}% · damage taken +${mag}% · 💥 ${info.burst}% max HP burst (${hurt.join(', ')})`,
+    `⬆️ ${monster.name}: ATK +${info.self}% · DEF +${info.self}%`,
+  );
+  if (afflicted.length) lines.push(...afflicted);
   return lines.join('\n');
 }
 
@@ -368,4 +421,4 @@ function findBattle(player, sender, db) {
   return null;
 }
 
-module.exports = { setupStep, setupPrompt, handleSetupReply, rename, pvpArena, endPvpArena, findBattle, CAST_ENERGY, MAX_LEVEL, UP_SHARE_CAP, ARCHETYPES, CLASS_DOMAINS, STAT_LABEL, effectFor, scale, turnsFor, costToNext, ensure, has, unlock, scaledEffect, describe, power, upgrade, arenaOf, active, shatter, tick, expand, monsterPower, monsterEligible, monsterTry, onLevelUp, shareUP };
+module.exports = { isShielded, shieldLine, monsterDomainInfo, MONSTER_DOMAINS, setupStep, setupPrompt, handleSetupReply, rename, pvpArena, endPvpArena, findBattle, CAST_ENERGY, MAX_LEVEL, UP_SHARE_CAP, ARCHETYPES, CLASS_DOMAINS, STAT_LABEL, effectFor, scale, turnsFor, costToNext, ensure, has, unlock, scaledEffect, describe, power, upgrade, arenaOf, active, shatter, tick, expand, monsterPower, monsterEligible, monsterTry, onLevelUp, shareUP };
