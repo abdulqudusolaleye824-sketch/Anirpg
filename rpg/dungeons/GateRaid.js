@@ -26,6 +26,7 @@ function playerDamage(player, skillName = null, target = null) {
   try { const gb = require('../utils/GearSystem').getEquippedBonuses(player) || {}; _gearAtkGR = gb.atk || 0; _gearCritGR = gb.crit || 0; _gearCritDmgGR = gb.critDmg || 0; } catch (e) {}
   try { const tb = require('../utils/TitleSystem').getEquippedBoost(player) || {}; _titleCritGR = tb.crit || 0; _titleAtkGR = tb.atk || 0; } catch (e) {}
   _gearAtkGR += _titleAtkGR; // Push #87: title ATK counts in raids too
+  let _auraGR = { atk: 1, crit: 0 }; try { const AS = require('../utils/AuraSystem').AuraSystem; _auraGR = { atk: AS.atkMult(player), crit: AS.critPct(player) }; } catch (e) {} // Push #96f
   let _pm74 = { atk: 0, crit: 0, skillDmg: 0 };
   try { _pm74 = require('../utils/ClassPower').passiveMultipliers(player); } catch (e) {}
   // Push #74: class passives (+X% ATK, quality-scaled) apply to every raid hit.
@@ -34,7 +35,7 @@ function playerDamage(player, skillName = null, target = null) {
   // raid strike too — they only reached PvP/pattern maths before. Kill stacks
   // (Devourer) add flat ATK.
   let _tbAtk = 0; try { _tbAtk = require('../utils/UnifiedCombat').tempBuffPct(player, 'atk'); } catch (e) {}
-  const atk = Math.floor(((player.stats?.atk || 10) + _gearAtkGR + (player.weapon?.attack || player.weapon?.bonus || 0) + (_pm74.atkFlat || 0)) * (1 + (_pm74.atk || 0) / 100) * (1 + Math.max(-90, _tbAtk) / 100) * _gift);
+  const atk = Math.floor(((player.stats?.atk || 10) + _gearAtkGR + (player.weapon?.attack || player.weapon?.bonus || 0) + (_pm74.atkFlat || 0)) * (1 + (_pm74.atk || 0) / 100) * (1 + Math.max(-90, _tbAtk) / 100) * _gift * _auraGR.atk);
   const magicPower = player.stats?.magicPower || 0;
   if (skillName) {
     // SkillCatalog: name / prefix / number, equipped OR library, and it tells
@@ -66,7 +67,7 @@ function playerDamage(player, skillName = null, target = null) {
     if (target && _tTaken95 !== 1) dmg = Math.max(1, Math.floor(dmg * _tTaken95));
     if (target) { try { dmg = Math.max(1, Math.floor(dmg * require('../utils/UnifiedCombat').weakenTakenMult(target))); } catch (e) {} }
     if (target) { try { dmg = Math.max(1, Math.floor(dmg * require('../utils/JobSystem').targetMult(player, target, { boss: !!target.isBoss }))); } catch (e) {} } // Push #95: job prey/elite/pack bonuses
-    const isCrit = Math.random() < ((player.stats?.critChance || 2) + (_pm74.crit || 0) + _gearCritGR + _titleCritGR) / 100;
+    const isCrit = Math.random() < ((player.stats?.critChance || 2) + (_pm74.crit || 0) + _gearCritGR + _titleCritGR + _auraGR.crit) / 100;
     if (isCrit) dmg = Math.floor(dmg * ((player.stats?.critDamage || 150) + _gearCritDmgGR) / 100);
     if (target) { try { require('../utils/JobSystem').noteHit(player, true); target.lastHitBy = player.jid || player.id || target.lastHitBy; } catch (e) {} } // Push #95
 
@@ -129,7 +130,7 @@ function playerDamage(player, skillName = null, target = null) {
   if (target && _tTaken95 !== 1) dmg = Math.max(5, Math.floor(dmg * _tTaken95));
   if (target) { try { dmg = Math.max(1, dmg * require('../utils/UnifiedCombat').weakenTakenMult(target)); } catch (e) {} }
   if (target) { try { dmg = Math.max(1, dmg * require('../utils/JobSystem').targetMult(player, target, { boss: !!target.isBoss })); } catch (e) {} } // Push #95
-  const isCrit = Math.random() < ((player.stats?.critChance || 2) + (_pm74.crit || 0) + _gearCritGR + _titleCritGR) / 100;
+  const isCrit = Math.random() < ((player.stats?.critChance || 2) + (_pm74.crit || 0) + _gearCritGR + _titleCritGR + _auraGR.crit) / 100;
   if (isCrit) dmg = Math.floor(dmg * (player.stats?.critDamage || 150) / 100);
   if (target) { try { require('../utils/JobSystem').noteHit(player, true); target.lastHitBy = player.jid || player.id || target.lastHitBy; } catch (e) {} } // Push #95
   let synergyNotes = [];
@@ -847,7 +848,8 @@ function totalStatsOf(u, jid) {
   try { const PC = require('../utils/PetCombat'); petA = PC.atkBonus(jid || u.jid) || 0; petD = PC.defBonus(jid || u.jid) || 0; } catch (e) {}
   let gift = 1;
   try { gift = require('../utils/PetManager').lastGiftMultiplier(u) || 1; } catch (e) {}
-  const atk = Math.floor(((st.atk || 10) + (g.atk || 0) + (u.weapon?.attack || u.weapon?.bonus || 0) + (tb.atk || 0) + petA) * (1 + (pm.atk || 0) / 100) * gift);
+  let auraA = 1; try { auraA = require('../utils/AuraSystem').AuraSystem.atkMult(u); } catch (e) {} // Push #96f
+  const atk = Math.floor(((st.atk || 10) + (g.atk || 0) + (u.weapon?.attack || u.weapon?.bonus || 0) + (tb.atk || 0) + petA) * (1 + (pm.atk || 0) / 100) * gift * auraA);
   const def = Math.floor(((st.def || 5) + (g.def || 0) + (u.weapon?.defense || 0) + (tb.def || 0) + petD) * gift);
   const maxHp = Math.floor(((st.maxHp || 100) + (g.hp || 0) + (tb.maxHp || 0) + (u.weapon?.hp || 0)) * gift);
   const speed = Math.floor(((st.speed || 10) + (g.speed || 0) + (tb.speed || 0)) * gift);
@@ -1265,9 +1267,10 @@ function clearGate(gate, key, keyData, db, saveDatabase, opts = {}) {
   let guildNexus = nexus, guildCrystals = crystals;
   const affiliatePayouts = {};
   for (const [jid, p] of Object.entries(payouts)) {
-    const goldCut = Math.floor(p.gold * scale);
-    const crystalCut = Math.floor(p.crystals * scale);
     const hunter = db.users?.[jid];
+    let _auraL = 1; try { if (hunter) _auraL = require('../utils/AuraSystem').AuraSystem.lootMult(hunter); } catch (e) {} // Push #96f: aura title Gate Loot%
+    const goldCut = Math.floor(p.gold * scale * _auraL);
+    const crystalCut = Math.floor(p.crystals * scale * _auraL);
     if (hunter) {
       hunter.gold = (hunter.gold || 0) + goldCut;
       hunter.manaCrystals = (hunter.manaCrystals || 0) + crystalCut;

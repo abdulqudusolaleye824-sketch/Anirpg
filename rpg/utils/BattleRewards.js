@@ -28,6 +28,7 @@ function giveBattleWinRewards(player, db, type='generic', baseLevel=1, sock=null
   aura = Math.floor(aura * mult * auraMult);
   pass = Math.floor(pass * mult);
   xp = Math.floor(xp * mult);
+  try { xp = Math.floor(xp * require('./AuraSystem').AuraSystem.expMult(player)); } catch (e) {} // Push #96f: aura title EXP%
   // Push #95: Dungeon Delver XP / Bounty Hunter reward multipliers + Job XP.
   let jobLine = '';
   try {
@@ -114,6 +115,7 @@ function giveSharedExp(player, type='gate', baseLevel=1, sock=null, chatId=null)
   const mult = pro ? 2 : 1;
   const lvl = baseLevel || player.level || 1;
   let xp = Math.floor(((type==='pvp'? 500 : 300) + lvl*30) * mult);
+  try { xp = Math.floor(xp * require('./AuraSystem').AuraSystem.expMult(player)); } catch (e) {} // Push #96f
   try { const JS = require('./JobSystem'); const jm = JS.mods(player); if (jm.xpMult) xp = Math.floor(xp * (1 + jm.xpMult / 100)); JS.gainXp(player, JS.xpFor('kill'), 'shared'); } catch (e) {} // Push #95: party members earn Job XP too
   player.xp = (player.xp||0) + xp;
   try { const LUM = require('./LevelUpManager'); LUM.checkAndApplyLevelUps(player, ()=>{}, sock, chatId); } catch(e){}

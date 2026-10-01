@@ -129,6 +129,7 @@ class ImprovedCombat {
     let effectiveAtk = (attacker.stats.atk || 0) + (_artBonus.atk || 0) + _atkBuffBoost;
     // Push #74: quality-scaled class passives (+X% ATK / skill damage)
     try { const _pm = require('./ClassPower').passiveMultipliers(attacker); effectiveAtk = Math.floor(effectiveAtk * (1 + ((_pm.atk || 0) + (_pm.skillDmg || 0)) / 100)); } catch (e) {}
+    try { effectiveAtk = Math.floor(effectiveAtk * require('./AuraSystem').AuraSystem.atkMult(attacker)); } catch (e) {} // Push #96f: aura title ATK%
 
     // Apply passive skills (Rampage, Blood Rage, etc.)
     const passives = attacker.skills?.passive || [];
@@ -191,7 +192,8 @@ class ImprovedCombat {
 
     // ── Crit ──────────────────────────────────────────────────
     const guaranteedCrit = parsedEffects.special.some(s => s.type === 'guaranteedCrit');
-    const critChance = 0.15 + ((attacker.stats.critChance || 0) / 100) + ((_artBonus.critChance || 0) / 100);
+    let _auraCrit = 0; try { _auraCrit = require('./AuraSystem').AuraSystem.critPct(attacker); } catch (e) {} // Push #96f
+    const critChance = 0.15 + ((attacker.stats.critChance || 0) / 100) + ((_artBonus.critChance || 0) / 100) + _auraCrit / 100;
     let isCrit = guaranteedCrit || Math.random() < critChance;
     if (isCrit && baseDamage > 0) {
       const critMult = 1.5 + ((attacker.stats.critDamage || 0) / 100);
@@ -423,8 +425,9 @@ class ImprovedCombat {
     const weaponBonus = player.weapon?.bonus || player.weapon?.attack || 0;
     let _pm = { atk: 0, crit: 0, def: 0, dmgTaken: 0 };
     try { _pm = require('./ClassPower').passiveMultipliers(player); } catch (e) {}
-    const baseAtk = Math.floor(((player.stats.atk || 10) + weaponBonus) * (1 + (_pm.atk || 0) / 100));
-    const isCrit = Math.random() < (0.1 + ((player.stats.critChance || 0) + (_pm.crit || 0)) / 100);
+    let _au = { atk: 1, crit: 0 }; try { const AS = require('./AuraSystem').AuraSystem; _au = { atk: AS.atkMult(player), crit: AS.critPct(player) }; } catch (e) {} // Push #96f
+    const baseAtk = Math.floor(((player.stats.atk || 10) + weaponBonus) * (1 + (_pm.atk || 0) / 100) * _au.atk);
+    const isCrit = Math.random() < (0.1 + ((player.stats.critChance || 0) + (_pm.crit || 0) + _au.crit) / 100);
     let damage = Math.max(1, baseAtk - Math.floor((monster.stats?.def || monster.def || 0) * 0.4));
     if (isCrit) damage = Math.floor(damage * 1.5);
     try { damage = Math.max(1, Math.floor(damage * require('./UnifiedCombat').weakenTakenMult(monster))); } catch (e) {}

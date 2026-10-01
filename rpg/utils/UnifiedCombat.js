@@ -138,7 +138,8 @@ function calcMoveDamage(attacker, defender, move) {
   try { const TS = require('./TitleSystem'); _tA = TS.getEquippedBoost(attacker).atk || 0; _tD = TS.getEquippedBoost(defender).def || 0; } catch (e) {}
   try { const PM = require('./PetManager'); _gA = PM.lastGiftMultiplier(attacker) || 1; _gD = PM.lastGiftMultiplier(defender) || 1; } catch (e) {}
   // Push #88: kill-stack flat ATK (Devourer) + armour penetration passives (Ranger/Phantom).
-  const atkBase = ((attacker.stats?.atk || attacker.stats?.attack || 50) + _gearAtk + _wpnAtk + _tA + ((_pmA && _pmA.atkFlat) || 0)) * _gA;
+  let _auA = 1; try { _auA = require('./AuraSystem').AuraSystem.atkMult(attacker); } catch (e) {} // Push #96f: aura title ATK%
+  const atkBase = ((attacker.stats?.atk || attacker.stats?.attack || 50) + _gearAtk + _wpnAtk + _tA + ((_pmA && _pmA.atkFlat) || 0)) * _gA * _auA;
   const defBase = ((defender.stats?.def || defender.stats?.defense || 20) + _gearDef + _wpnDef + _tD) * _gD * (1 - Math.min(0.6, ((_pmA && _pmA.armorPen) || 0) / 100));
 
   // Multipliers from attack pattern
@@ -204,6 +205,7 @@ function calcMoveDamage(attacker, defender, move) {
   let _gCrit = 0, _gCritDmg = 0, _tCrit = 0;
   try { const gb = require('./GearSystem').getEquippedBonuses(attacker) || {}; _gCrit = gb.crit || 0; _gCritDmg = gb.critDmg || 0; } catch (e) {}
   try { _tCrit = require('./TitleSystem').getEquippedBoost(attacker).crit || 0; } catch (e) {}
+  try { _tCrit += require('./AuraSystem').AuraSystem.critPct(attacker); } catch (e) {} // Push #96f: aura title Crit%
   critChance += ((attacker.stats?.critChance || 0) + ((_pmA && _pmA.crit) || 0) + _gCrit + _tCrit) / 100;
   const isCrit = Math.random() < Math.min(0.75, critChance);
   if (isCrit) {

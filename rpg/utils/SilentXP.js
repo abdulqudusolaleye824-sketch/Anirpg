@@ -124,6 +124,7 @@ function awardXP(player, action = 'command', saveDatabase, sock, chatId, extraMu
   const _bpPrem = !!(player.battlePass && player.battlePass.premium);
   if (_bpPrem) extraMult *= 2.0;
 
+  try { extraMult *= require('./AuraSystem').AuraSystem.expMult(player); } catch (e) {} // Push #96f: aura title EXP%
   const baseRoll = rand(range[0], range[1]) * rankMult;
   const amount   = Math.floor(baseRoll * extraMult);
 

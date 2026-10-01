@@ -264,7 +264,8 @@ function effectiveMaxHp(player) {
   try { t = require('./TitleSystem').getEquippedBoost(player).maxHp || 0; } catch (e) {}
   try { w = player.weapon?.hp || 0; } catch (e) {}
   try { gift = require('./PetManager').lastGiftMultiplier(player) || 1; } catch (e) {}
-  return Math.max(1, Math.floor(((player.stats.maxHp || 100) + g + t + w) * gift));
+  let aura = 1; try { aura = require('./AuraSystem').AuraSystem.hpMult(player) || 1; } catch (e) {} // Push #96f: aura title HP%
+  return Math.max(1, Math.floor(((player.stats.maxHp || 100) + g + t + w) * gift * aura));
 }
 
 module.exports = {

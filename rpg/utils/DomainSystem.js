@@ -208,11 +208,12 @@ function expand(arena, player, allies = [player], enemies = [], ctx = {}) {
   if (!arena) return { ok: false, error: 'You can only expand a domain inside a raid, dungeon, instance or PvP battle.' };
   const e = scaledEffect(player);
   const energy = player.stats.energy || 0;
-  if (energy < CAST_ENERGY) return { ok: false, error: `Domain Expansion costs *${CAST_ENERGY} ${player.energyType || 'energy'}* — you have ${energy}.` };
+  let _cost = CAST_ENERGY; try { if (require('./AuraSystem').AuraSystem.perks(player).sovereign) _cost = Math.floor(CAST_ENERGY / 2); } catch (e) {} // Push #96f: Sovereign aura tier
+  if (energy < _cost) return { ok: false, error: `Domain Expansion costs *${_cost} ${player.energyType || 'energy'}* — you have ${energy}.` };
   const cur = active(arena); const lines = [];
   const myId = player.jid || player.id;
   if (cur && cur.ownerId === myId) return { ok: false, error: `*${cur.name}* is already active (${cur.turnsLeft} turn${cur.turnsLeft === 1 ? '' : 's'} left).` };
-  player.stats.energy = energy - CAST_ENERGY;
+  player.stats.energy = energy - _cost;
   const myPow = power(player);
   if (cur) {
     // CLASH

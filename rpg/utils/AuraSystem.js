@@ -23,6 +23,18 @@ const AURA_TITLES = [
   { min: 500000,  title: 'Sovereign',         emoji: '👑', description: 'An existence beyond human measure.', perks: '👑 +40% ATK | ✨ +50% EXP | 🚪 +35% Gate Loot | 🎯 +15% Crit | ❤️ +30% HP | 🌌 Sovereign Domain' },
 ];
 
+// Push #96f: the perks above are REAL. Parsed straight from the description
+// text so the card can never drift from the numbers that are applied.
+function _parsePerks(str) {
+  const g = (rx) => { const m = rx.exec(str || ''); return m ? Number(m[1]) : 0; };
+  return {
+    atkPct: g(/\+(\d+)% ATK/), expPct: g(/\+(\d+)% EXP/), lootPct: g(/\+(\d+)% Gate Loot/),
+    critPct: g(/\+(\d+)% Crit/), hpPct: g(/\+(\d+)% HP/), sovereign: /Sovereign Domain/.test(str || ''),
+  };
+}
+for (const t of AURA_TITLES) t.bonus = _parsePerks(t.perks);
+AURA_TITLES[AURA_TITLES.length - 1].perks = AURA_TITLES[AURA_TITLES.length - 1].perks.replace('🌌 Sovereign Domain', '🌌 Sovereign Domain (Domain Expansion costs half energy)');
+
 // ─── AURA GAIN EVENTS ─────────────────────────────────────────────
 const AURA_GAINS = {
   pvpWin:          { amount: 25,   message: '⚡ +25 Aura (PvP Win)' },
@@ -66,6 +78,17 @@ class AuraSystem {
     }
     return current;
   }
+
+  // Push #96f: active perk numbers for a hunter ({ atkPct, expPct, lootPct, critPct, hpPct, sovereign }).
+  static perks(player) {
+    const t = this.getAuraTitle((player && player.aura) || 0);
+    return t.bonus || _parsePerks(t.perks);
+  }
+  static atkMult(player) { return 1 + (this.perks(player).atkPct || 0) / 100; }
+  static expMult(player) { return 1 + (this.perks(player).expPct || 0) / 100; }
+  static lootMult(player) { return 1 + (this.perks(player).lootPct || 0) / 100; }
+  static hpMult(player) { return 1 + (this.perks(player).hpPct || 0) / 100; }
+  static critPct(player) { return this.perks(player).critPct || 0; }
 
   // Add aura to player — returns new total + if title changed
   static addAura(player, eventKey) {

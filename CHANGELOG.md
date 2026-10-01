@@ -1,3 +1,8 @@
+## 1.0.132 — Push #96f: aura farm reactions + flop penalty · aura title perks actually apply
+
+- **/aura farm**: 50 flop + 50 success reaction lines (`rpg/data/AuraFarmLines.js`). A **flop now costs aura — 3–7× what the harvest would have paid** (floored at 0; tier drops announced).
+- **Aura title perks are real** — parsed from the tier card so text and numbers can never disagree: ATK% (UnifiedCombat, ImprovedCombat, gate raids), Crit% (same three), EXP% (BattleRewards, dungeon totals via BuffManager, SilentXP, PvP), Gate Loot% (gate clear payouts), HP% (`effectiveMaxHp`), Sovereign = Domain Expansion costs half energy.
+
 ## 1.0.131 — Push #96e: daily-quest bonus for regular hunters · Pro keys from boxes · B/C weapons in boxes
 
 - **Regular hunters**: finishing all 4 daily quests rolls a hidden 50% **Daily Bonus** — one of: 📈 1–7 UP · 💠 Nexus · 💎 Mana Stones · a D/E-Rank weapon or gear (store-grade, straight into the bag) · 🗝️ Instance Key (if a job change is open). Told clearly whether they got a bonus or *none today*. No Mending Stones in that pool.

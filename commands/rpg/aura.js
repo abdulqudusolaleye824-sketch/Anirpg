@@ -62,19 +62,30 @@ module.exports = {
 
       const has100Pct = isPro && player.auraFarmBoostUntil && Date.now() <= player.auraFarmBoostUntil;
       const success = has100Pct || Math.random() < 0.35;
+      const Lines = require('../../rpg/data/AuraFarmLines');
+      const wouldGain = has100Pct ? 50 : Math.floor(Math.random() * 20) + 10;
 
       if (success) {
-        const gained = has100Pct ? 50 : Math.floor(Math.random() * 20) + 10;
+        const gained = wouldGain;
+        const before = AuraSystem.getAuraTitle(player.aura || 0).title;
         player.aura = (player.aura || 0) + gained;
         if (has100Pct) player.auraFarmBoostUntil = 0; // consume boost
+        const after = AuraSystem.getAuraTitle(player.aura);
         saveDatabase();
+        // Push #96f: just the reaction line (+ the number), nothing bland.
         return sock.sendMessage(chatId, {
-          text: (pro ? `${UI.PRO_BAR}\n✨ *AURA HARVEST SUCCESSFUL!* 💎 ${has100Pct ? '(🌟 100% PRO STAR BOOST ACTIVE!)' : ''}\n${UI.PRO_BAR}\n\nGained +*${gained}* Aura! Total: *${player.aura.toLocaleString()}*\n${UI.PRO_BAR}\n${UI.PRO_MINI}\n💎 *PRO AURA* — ${player.aura.toLocaleString()} banked` : `✨ *AURA HARVEST SUCCESSFUL!*\n${UI.FREE_BAR}\n\nGained +*${gained}* Aura! Total: *${player.aura.toLocaleString()}*\n${UI.FREE_BAR}\n${UI.upsell()}`)
+          text: [`${Lines.win()}`, `✨ +${gained} aura${has100Pct ? ' (🌟 PRO STAR BOOST)' : ''}`, ...(after.title !== before ? [`${after.emoji} *${after.title}* — new aura tier!`] : [])].join('\n'),
         }, { quoted: msg });
       } else {
+        // Push #96f: a flop COSTS aura — 3–7× what the harvest would have paid.
+        const mult = 3 + Math.floor(Math.random() * 5);
+        const lost = Math.min(player.aura || 0, wouldGain * mult);
+        const before = AuraSystem.getAuraTitle(player.aura || 0).title;
+        player.aura = Math.max(0, (player.aura || 0) - lost);
+        const after = AuraSystem.getAuraTitle(player.aura);
         saveDatabase();
         return sock.sendMessage(chatId, {
-          text: (pro ? `${UI.PRO_BAR}\n💨 *AURA FARM FAILED* 💎\n${UI.PRO_BAR}\n\nThe wild energy dispersed.\n💡 🌟 reactions grant 5-second 100% windows! (/prostore)\n${UI.PRO_BAR}\n${UI.PRO_MINI}\n💎 *PRO AURA* — retry after cooldown` : `💨 *Aura farm failed!* The wild energy dispersed.\n💡 Pro players get random 🌟 reactions granting 5-second 100% success rate windows! (/prostore)\n${UI.FREE_BAR}`)
+          text: [`${Lines.flop()}`, lost > 0 ? `🥀 −${lost} aura` : `🥀 Nothing left to lose.`, ...(after.title !== before ? [`${after.emoji} *${after.title}* — aura tier lost.`] : [])].join('\n'),
         }, { quoted: msg });
       }
     }

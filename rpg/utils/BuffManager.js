@@ -52,9 +52,10 @@ function getXpMultiplier(player) {
     const b = player.activeBuffs?.[k];
     if (b && b.usesLeft > 0 && (!best || BUFF_DEFINITIONS[k].value > BUFF_DEFINITIONS[best].value)) best = k;
   }
-  if (best) { consumeBuff(player, best); return BUFF_DEFINITIONS[best].value; }
+  if (best) { consumeBuff(player, best); let au = 1; try { au = require('./AuraSystem').AuraSystem.expMult(player); } catch (e) {} return BUFF_DEFINITIONS[best].value * au; }
   // Push #87: XP Booster scrapped — leftover stock is inert.
-  return 1.0;
+  // Push #96f: aura title EXP% rides on this multiplier (dungeon totals).
+  try { return require('./AuraSystem').AuraSystem.expMult(player); } catch (e) { return 1.0; }
 }
 
 function getNexusMultiplier(player) {
