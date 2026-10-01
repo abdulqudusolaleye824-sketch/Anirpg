@@ -2237,18 +2237,6 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
             const r = ES.handleSetupReply(_pl, messageText);
             if (r) { try { saveDatabase?.(); } catch (e) {} await sock.sendMessage(chatId, { text: r }, { quoted: msg }); return; }
           }
-          if (_pl && isGroup && ES.isEventGC(db, chatId)) {
-            const _tj = require('../utils/target').resolve(msg, []);
-            if (_tj && _tj !== sender) {
-              const _tb = String(_tj).split('@')[0];
-              const _victim = db.users[_tj] || db.users[Object.keys(db.users).find(k => k.split('@')[0] === _tb || (db.lidMap && db.lidMap[k.split('@')[0]] === _tb)) || ''];
-              if (_victim && _victim !== _pl && ES.isJoined(db, _pl)) {
-                const r = ES.attackHunter(db, _pl, _victim);
-                try { saveDatabase?.(); } catch (e) {}
-                await sock.sendMessage(chatId, { text: r.ok ? r.text : `❌ ${r.error}`, mentions: [_tj] }, { quoted: msg }); return;
-              }
-            }
-          }
         } catch (e) {}
       }
       // Push #96d: domain name/description setup — plain DM replies are consumed here.

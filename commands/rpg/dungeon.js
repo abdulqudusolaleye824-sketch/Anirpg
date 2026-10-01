@@ -939,7 +939,7 @@ module.exports = {
         // ability, support pets mend, and a clear pays the scavenger + pet XP.
         try {
           const PetCombat = require('../../rpg/utils/PetCombat');
-          const _st = PetCombat.abilityStrike(sender, monster.stats);
+          const _st = PetCombat.abilityStrike(sender, monster.stats, { owner: player });
           if (_st?.damage) { monster.stats.hp = Math.max(0, (monster.stats.hp || 0) - _st.damage); log += _st.line + '\n'; }
           const _ph = PetCombat.healPlayer(sender, player);
           if (_ph.healed > 0) log += `💚 *${_ph.petName}* mended *${_ph.healed}* HP\n`;
@@ -1111,7 +1111,7 @@ module.exports = {
         // ability, support pets mend, and a clear pays the scavenger + pet XP.
         try {
           const PetCombat = require('../../rpg/utils/PetCombat');
-          const _st = PetCombat.abilityStrike(sender, monster.stats);
+          const _st = PetCombat.abilityStrike(sender, monster.stats, { owner: player });
           if (_st?.damage) { monster.stats.hp = Math.max(0, (monster.stats.hp || 0) - _st.damage); log += _st.line + '\n'; }
           const _ph = PetCombat.healPlayer(sender, player);
           if (_ph.healed > 0) log += `💚 *${_ph.petName}* mended *${_ph.healed}* HP\n`;

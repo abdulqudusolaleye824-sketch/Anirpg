@@ -1,3 +1,9 @@
+## 1.0.139 — Push #96h-g: tag-in-attack duels (20s retaliation) · full stat pool in events · every pet fights
+
+- **Event duels reworked**: tag a hunter *inside your attack* — `/event attack @hunter [skill]`. The target gets a **20-second window** to retaliate with their own `/event attack @you [skill]`; then **both moves resolve at once** from the same starting state (double KO = no points move). No retaliation → only the attacker's move lands. The plain "@mention = strike" hook is removed. Expired windows also resolve on the next event command, so a clash can never hang.
+- **Event stats read the full pool**: base + gear + title + weapon + pet for ATK/DEF/SPD/crit/HP (the raid engine already did; the event's own counters/defence now match).
+- **Pets**: every pet fights. Attack pets have the strongest ATK (0.45×) and use their special skills; support pets lend a small bite (0.20×) but **heal first** — they only strike while their hunter is ≥70% HP; scavengers bite lightly (0.20×) and still scavenge. All dungeon / gate / PvP pet-strike sites pass the owner so the heal-first rule works.
+
 ## 1.0.138 — Push #96h-f: tower scales with level · late affiliates raid at once · Pro tier bonuses · Unemployed vs Self-Employed
 
 - **Tower dungeons scale with hunter level**: level multiplier 5%/level (was 3%), level weighs 40% of party severity (was 30%), severity cap 12×. A Lv.60 hunter meets a floor several times stronger than a Lv.10 on the same floor.

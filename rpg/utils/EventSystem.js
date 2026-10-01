@@ -61,8 +61,12 @@ function _name(p) { return p.name || p.username || 'Hunter'; }
 function _hunterStats(p) {
   const s = p.stats || {}; let g = { atk: 0, def: 0, hp: 0, speed: 0, crit: 0 };
   try { g = require('./GearSystem').getEquippedBonuses(p) || g; } catch (e) {}
-  let maxHp = (s.maxHp || 100) + (g.hp || 0); try { maxHp = require('./GearSystem').effectiveMaxHp(p) || maxHp; } catch (e) {}
-  return { atk: (s.atk || 10) + (g.atk || 0), def: (s.def || 0) + (g.def || 0), speed: (s.speed || 50) + (g.speed || 0), crit: 5 + (g.crit || 0), maxHp };
+  let tb = {}; try { tb = require('./TitleSystem').getEquippedBoost(p) || {}; } catch (e) {}
+  let pet = { atk: 0, def: 0, spd: 0 }; try { const PC = require('./PetCombat'); const id = p.jid || p.id; pet = { atk: PC.atkBonus(id), def: PC.defBonus(id), spd: PC.spdBonus(id) }; } catch (e) {}
+  let maxHp = (s.maxHp || 100) + (g.hp || 0) + (tb.hp || 0); try { maxHp = require('./GearSystem').effectiveMaxHp(p) || maxHp; } catch (e) {}
+  const wAtk = (p.weapon && (p.weapon.attack || p.weapon.bonus)) || 0;
+  // Push #96h-g: base + gear + title + weapon + pet — the same pool the raid engine reads.
+  return { atk: (s.atk || 10) + (g.atk || 0) + (tb.atk || 0) + wAtk + pet.atk, def: (s.def || 0) + (g.def || 0) + (tb.def || 0) + pet.def, speed: (s.speed || 50) + (g.speed || 0) + (tb.speed || 0) + pet.spd, crit: (s.critChance || 5) + (g.crit || 0) + (tb.crit || 0), maxHp };
 }
 function _mit(def, atk) { return Math.min(0.70, def / Math.max(1, def + atk)); }
 function _dmg(atk, def, mult = 1) { return Math.max(5, Math.floor(atk * (1 - _mit(def, atk)) * mult * (0.9 + Math.random() * 0.2))); }
@@ -163,14 +167,14 @@ function join(db, player) {
     `🌌 *Your Lv.${DOMAIN_LEVEL} EVENT DOMAIN awakens.* It works only here: 12% burst on every beast, −20% ATK/DEF on beasts and rival hunters for 10 min, +25% own damage. ${archLine}${d.suggested ? ` (suggested name: *${d.suggested}*)` : ''}`];
   if (d.setup === 'name') msgs.push(`✍️ *Name your domain.* Reply with the name (3–40 characters).`);
   else if (d.setup === 'desc') msgs.push(`✍️ *Describe ${d.name}.* Reply with the description (5–220 characters).`);
-  else msgs.push(`Your domain *${d.name}* is ready — */event domain* to expand it. Attack: */event attack*, or just *tag a hunter* to strike them.`);
+  else msgs.push(`Your domain *${d.name}* is ready — */event domain* to expand it. Attack: */event attack*, or tag a hunter in your attack to duel them.`);
   return { ok: true, messages: msgs };
 }
 // Plain replies after /ejoin are consumed here (event GC or DM). Returns a reply string or null.
 function handleSetupReply(player, text) {
   const d = player && player.eventDomain; if (!d || !d.setup) return null; const t = String(text || '').trim(); if (!t || t.startsWith('/')) return null;
   if (d.setup === 'name') { const r = setDomainName(player, t); if (!r.ok) return `❌ ${r.error}`; d.setup = 'desc'; return `${r.text}\n✍️ Now *describe ${d.name}* — reply with the description.`; }
-  if (d.setup === 'desc') { const r = setDomainDesc(player, t); if (!r.ok) return `❌ ${r.error}`; d.setup = null; return `${r.text}\n🌌 *${d.name}* is ready. Expand it in the Events GC with */event domain*. Strike beasts with */event attack*, or tag a hunter to hit them.`; }
+  if (d.setup === 'desc') { const r = setDomainDesc(player, t); if (!r.ok) return `❌ ${r.error}`; d.setup = null; return `${r.text}\n🌌 *${d.name}* is ready. Expand it in the Events GC with */event domain*. Strike beasts with */event attack*; tag a hunter in it to duel them (20s to retaliate).`; }
   return null;
 }
 function setupStep(player) { return (player && player.eventDomain && player.eventDomain.setup) || null; }
@@ -225,33 +229,63 @@ function attackMonster(db, player, targetId, skillName = null) {
   }
   return { ok: true, text: lines.join('\n'), monster: m };
 }
-function attackHunter(db, player, victim) {
+// ── HUNTER vs HUNTER: tag a hunter in your attack/skill. They get a 20s window to
+//    retaliate (their own attack/skill on you); then BOTH moves resolve at once.
+const RETALIATE_MS = 20 * 1000;
+function _pid(p) { return p.jid || p.id || p.name; }
+function _pend(ev) { if (!ev.pending) ev.pending = {}; return ev.pending; }
+function pendingFor(db, player) { const ev = _ev(db); if (!ev) return null; const id = _pid(player); return Object.values(_pend(ev)).find(x => x && (x.attackerId === id || x.victimId === id)) || null; }
+function attackHunter(db, player, victim, skillName = null) {
   const g = _guard(db, player); if (g.error) return { ok: false, error: g.error }; const { ev, st } = g;
-  if (!victim || victim === player) return { ok: false, error: 'Tag a hunter to strike.' };
+  if (!victim || victim === player) return { ok: false, error: 'Tag the hunter you want to strike in your attack: */event attack @hunter [skill]*.' };
   if ((victim.level || 0) < DOMAIN_LEVEL) return { ok: false, error: `${_name(victim)} is not part of the raid (Lv.${DOMAIN_LEVEL}+ only).` };
   const vs = _p(db, victim);
   if (!vs.joined) return { ok: false, error: `*${_name(victim)}* is not on the island (they have not /ejoin-ed).` };
   if (vs.afk) return { ok: false, error: `🛌 *${_name(victim)}* is AFK — untouchable.` };
   if (_isDead(vs) || (victim.stats && victim.stats.hp <= 0)) return { ok: false, error: `*${_name(victim)}* is already down.` };
-  const h = _hunterStats(player), v = _hunterStats(victim); const lines = [];
-  const vt = { name: _name(victim), def: Math.floor(v.def * _hunterDebuff(victim)), statusEffects: victim.statusEffects || [] };
-  let res = null; try { res = require('../dungeons/GateRaid').playerDamage(player, _autoSkill(player), vt); } catch (e) { res = null; }
-  if (!res || res.blocked) { const c = Math.random() * 100 < h.crit; res = { damage: _dmg(h.atk, vt.def, c ? 1.6 : 1), isCrit: c }; }
-  const crit = !!res.isCrit; const dmg = Math.max(0, Math.floor((res.damage || 0) * _domainMult(player, 'atk') * _hunterDebuff(player)));
-  if (res.skillUsed) st.skillsUsed++; if (crit) st.crits++;
-  victim.stats.hp = Math.max(0, (victim.stats.hp || 0) - dmg); st.dmg += dmg; vs.dmgTaken += dmg;
-  lines.push(`🗡️ *${_name(player)}* strikes *${_name(victim)}* for *${dmg.toLocaleString()}*${crit ? ' 💥CRIT' : ''} — ${victim.stats.hp}/${v.maxHp} HP`);
-  if (victim.stats.hp <= 0) {
-    const stolen = Math.floor((vs.points || 0) * STEAL_PCT);
-    st.points += stolen + HUNTER_KILL_BONUS; st.hunterKills++; vs.points = 0; vs.deaths++; vs.diedAt = Date.now();
-    lines.push(`💀 *${_name(victim)} is slain!* ${_name(player)} steals *${stolen} points* (+${HUNTER_KILL_BONUS} bounty). ${_name(victim)}'s points reset to *0* — respawn in 60 min.`);
-  } else {
-    const vc = Math.random() * 100 < v.crit; const back = _dmg(v.atk * 0.6 * _hunterDebuff(victim), h.def, vc ? 1.6 : 1);
-    player.stats.hp = Math.max(0, (player.stats.hp || 0) - back); st.dmgTaken += back;
-    lines.push(`↩️ *${_name(victim)}* answers for *${back.toLocaleString()}* — you: ${player.stats.hp}/${h.maxHp} HP`);
-    if (player.stats.hp <= 0) { const stolen = Math.floor((st.points || 0) * STEAL_PCT); vs.points += stolen + HUNTER_KILL_BONUS; vs.hunterKills++; st.points = 0; st.deaths++; st.diedAt = Date.now(); lines.push(`💀 *The counter kills you!* ${_name(victim)} takes *${stolen} points*; yours reset to 0 — respawn in 60 min.`); }
-  }
-  return { ok: true, text: lines.join('\n') };
+  if (skillName) { try { const SC = require('./SkillCatalog'); const r = SC.resolveSkill(player, skillName, { allowLibrary: true }); if (!r.ok) return { ok: false, error: r.error }; skillName = r.skill.name; } catch (e) {} }
+  const me = _pid(player), you = _pid(victim); const pend = _pend(ev);
+  // Retaliation: the victim answers an open challenge against them → resolve NOW.
+  const open = pend[me];
+  if (open && open.attackerId === you) { open.victimSkill = skillName; open.victimAnswered = true; return resolvePending(db, me); }
+  if (pend[you]) return { ok: false, error: `*${_name(victim)}* is already being challenged — wait for that clash to resolve.` };
+  if (Object.values(pend).some(x => x.attackerId === me)) return { ok: false, error: 'Your previous strike has not resolved yet (20s window).' };
+  pend[you] = { attackerId: me, victimId: you, attackerSkill: skillName, at: Date.now(), resolveAt: Date.now() + RETALIATE_MS };
+  return { ok: true, pending: true, resolveAt: pend[you].resolveAt, text: `🗡️ *${_name(player)}* targets *${_name(victim)}*${skillName ? ` with *${skillName}*` : ''}!\n⏳ *${_name(victim)}* has *20 seconds* to retaliate — */event attack @${String(you).split('@')[0]} [skill]* — then both moves land at once.` };
+}
+function _find(db, id) { if (!id) return null; if (db.users[id]) return db.users[id]; const b = String(id).split('@')[0]; return Object.values(db.users || {}).find(u => u && (_pid(u) === id || String(_pid(u)).split('@')[0] === b)) || null; }
+function _strike(db, ev, atkP, defP, skillName, lines) {
+  const h = _hunterStats(atkP), v = _hunterStats(defP); const as = _p(db, atkP), ds = _p(db, defP);
+  const vt = { name: _name(defP), def: Math.floor(v.def * _hunterDebuff(defP)), statusEffects: defP.statusEffects || [] };
+  let res = null; try { res = require('../dungeons/GateRaid').playerDamage(atkP, skillName || _autoSkill(atkP), vt); } catch (e) { res = null; }
+  if (res && res.blocked) { lines.push(`⚠️ ${_name(atkP)}: ${res.reason || 'skill unavailable'} — basic strike instead.`); res = null; }
+  if (!res) { const c = Math.random() * 100 < h.crit; res = { damage: _dmg(h.atk, vt.def, c ? 1.6 : 1), isCrit: c }; }
+  const crit = !!res.isCrit; const dmg = Math.max(0, Math.floor((res.damage || 0) * _domainMult(atkP, 'atk') * _hunterDebuff(atkP)));
+  if (res.skillUsed) as.skillsUsed++; if (crit) as.crits++;
+  as.dmg += dmg; ds.dmgTaken += dmg;
+  lines.push(`${res.skillUsed ? `✨ *${res.skillUsed.name}*` : '🗡️'} *${_name(atkP)}* → *${_name(defP)}*: *${dmg.toLocaleString()}*${crit ? ' 💥CRIT' : ''}${res.missed ? ' (missed)' : ''}`);
+  return dmg;
+}
+function resolvePending(db, victimId) {
+  const ev = _ev(db); if (!ev) return { ok: false, error: 'No event is running right now.' };
+  const pend = _pend(ev); const c = pend[victimId]; if (!c) return { ok: false, error: 'Nothing to resolve.' };
+  delete pend[victimId];
+  const A = _find(db, c.attackerId), B = _find(db, c.victimId); if (!A || !B) return { ok: false, error: 'A duelist vanished.' };
+  const as = _p(db, A), bs = _p(db, B); const lines = [`⚔️ *CLASH — ${_name(A)} vs ${_name(B)}*${c.victimAnswered ? '' : ` (${_name(B)} did not retaliate)`}`];
+  // Both moves are computed from the SAME starting state, then applied together.
+  const dA = _strike(db, ev, A, B, c.attackerSkill, lines);
+  const dB = c.victimAnswered ? _strike(db, ev, B, A, c.victimSkill, lines) : 0;
+  B.stats.hp = Math.max(0, (B.stats.hp || 0) - dA); if (dB) A.stats.hp = Math.max(0, (A.stats.hp || 0) - dB);
+  lines.push(`❤️ ${_name(A)} ${A.stats.hp}/${_hunterStats(A).maxHp} · ${_name(B)} ${B.stats.hp}/${_hunterStats(B).maxHp}`);
+  const kill = (winner, loser, ws, ls) => { const stolen = Math.floor((ls.points || 0) * STEAL_PCT); ws.points += stolen + HUNTER_KILL_BONUS; ws.hunterKills++; ls.points = 0; ls.deaths++; ls.diedAt = Date.now(); lines.push(`💀 *${_name(loser)} is slain!* ${_name(winner)} takes *${stolen} points* (+${HUNTER_KILL_BONUS} bounty) — ${_name(loser)}'s points reset to *0*, respawn in 60 min.`); };
+  if (B.stats.hp <= 0 && A.stats.hp <= 0) { lines.push(`☠️ *Double knockout!* Both fall — no points change hands.`); as.deaths++; bs.deaths++; as.diedAt = bs.diedAt = Date.now(); }
+  else { if (B.stats.hp <= 0) kill(A, B, as, bs); if (A.stats.hp <= 0) kill(B, A, bs, as); }
+  return { ok: true, text: lines.join('\n'), attackerId: c.attackerId, victimId: c.victimId };
+}
+function resolveExpired(db) {
+  const ev = _ev(db); if (!ev || !ev.pending) return []; const out = []; const now = Date.now();
+  for (const [vid, c] of Object.entries(ev.pending)) if (c && now >= c.resolveAt) { const r = resolvePending(db, vid); if (r.ok) out.push(r); }
+  return out;
 }
 function toggleAfk(db, player) {
   const ev = tick(db); if (!ev) return { ok: false, error: 'No event is running right now.' };
@@ -324,7 +358,7 @@ function infoText(db) {
     `👹 Alive by rank: ${RANKS.map(r => byRank[r] ? `${r}:${byRank[r]}` : null).filter(Boolean).join(' · ') || 'none'}`, `👑 Boss: ${boss ? `${boss.name} — ${boss.defeated ? 'slain' : `${boss.hp.toLocaleString()}/${boss.maxHp.toLocaleString()} HP${live.length > 1 ? ' (locked until the beasts fall)' : ' — OUT NOW'}`}` : '—'}`,
     ``, `👥 *PARTICIPANTS* — ${parts.length} hunters`, `⚔️ active ${active} · 🛌 AFK ${afk} · 💀 respawning ${dead}`, `☠️ beast kills ${tot.k.toLocaleString()} · 🗡️ hunter kills ${tot.hk} · deaths ${tot.d} · 💥 damage ${tot.dmg.toLocaleString()} · 🏅 points held ${tot.pts.toLocaleString()}`,
     ``, `🏆 *TOP 10*`, ...(lb.length ? lb.map((e, i) => `${['🥇', '🥈', '🥉'][i] || `${i + 1}.`} ${e.name} — ${e.points.toLocaleString()} pts · ${e.kills}☠️ ${e.hunterKills}🗡️`) : ['_Nobody has scored yet._']),
-    ``, `📜 *RULES*`, `• */ejoin* to enter (Lv.${DOMAIN_LEVEL}+) · 10 days · ${WAVE_SIZE} beasts + 1 boss per wave`, `• Beasts never start a fight — they counter; idle 30s → +5% HP per 30s`, `• Friendly fire ON: kill a hunter → 50% of their points, theirs reset to 0`, `• Death = 1h respawn · /eventafk = untouchable but no attacking`, `• Lv.10 event domain: /event domain (name + desc first) · ${DOMAIN_ENERGY} energy · 1h cooldown`, `• Points: E${KILL_POINTS.E} D${KILL_POINTS.D} C${KILL_POINTS.C} B${KILL_POINTS.B} A${KILL_POINTS.A} S${KILL_POINTS.S} · boss ${BOSS_POINTS} · hunter kill +${HUNTER_KILL_BONUS} · spend in /eshop`].join('\n');
+    ``, `📜 *RULES*`, `• */ejoin* to enter (Lv.${DOMAIN_LEVEL}+) · 10 days · ${WAVE_SIZE} beasts + 1 boss per wave`, `• Beasts never start a fight — they counter; idle 30s → +5% HP per 30s`, `• Friendly fire: tag a hunter in your attack (/event attack @hunter [skill]); they get 20s to retaliate, then both moves land · kill = 50% of their points, theirs reset to 0`, `• Death = 1h respawn · /eventafk = untouchable but no attacking`, `• Lv.10 event domain: /event domain (name + desc first) · ${DOMAIN_ENERGY} energy · 1h cooldown`, `• Points: E${KILL_POINTS.E} D${KILL_POINTS.D} C${KILL_POINTS.C} B${KILL_POINTS.B} A${KILL_POINTS.A} S${KILL_POINTS.S} · boss ${BOSS_POINTS} · hunter kill +${HUNTER_KILL_BONUS} · spend in /eshop`].join('\n');
 }
 
-module.exports = { infoText, join, isJoined, handleSetupReply, setupStep, _autoSkill, EVENT_LENGTH_MS, WAVE_SIZE, RESPAWN_MS, REGEN_IDLE_MS, REGEN_PCT, STEAL_PCT, DOMAIN_LEVEL, DOMAIN_ENERGY, SHOP, KILL_POINTS, BOSS_POINTS, gcId, isEventGC, buildWave, start, end, tick, alive, attackMonster, attackHunter, toggleAfk, domainState, setDomainName, setDomainDesc, castDomain, leaderboard, status, pointsText, statsText, shopText, buy, _p };
+module.exports = { infoText, RETALIATE_MS, pendingFor, resolvePending, resolveExpired, join, isJoined, handleSetupReply, setupStep, _autoSkill, EVENT_LENGTH_MS, WAVE_SIZE, RESPAWN_MS, REGEN_IDLE_MS, REGEN_PCT, STEAL_PCT, DOMAIN_LEVEL, DOMAIN_ENERGY, SHOP, KILL_POINTS, BOSS_POINTS, gcId, isEventGC, buildWave, start, end, tick, alive, attackMonster, attackHunter, toggleAfk, domainState, setDomainName, setDomainDesc, castDomain, leaderboard, status, pointsText, statsText, shopText, buy, _p };

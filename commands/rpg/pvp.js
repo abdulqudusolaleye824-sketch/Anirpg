@@ -688,8 +688,8 @@ async function resolveTurn(sock, chatId, p1, p2, db, saveDatabase) {
   // checkPetSacrifice — ATK bonuses, support heals and abilities did nothing.
   const PetCombat = require('../../rpg/utils/PetCombat');
   let _pet1 = null, _pet2 = null;
-  try { _pet1 = PetCombat.abilityStrike(id1, p2.stats ? p2 : null); } catch (e) {}
-  try { _pet2 = PetCombat.abilityStrike(id2, p1.stats ? p1 : null); } catch (e) {}
+  try { _pet1 = PetCombat.abilityStrike(id1, p2.stats ? p2 : null, { owner: p1 }); } catch (e) {}
+  try { _pet2 = PetCombat.abilityStrike(id2, p1.stats ? p1 : null, { owner: p2 }); } catch (e) {}
 
   if (!p1Skipped && m1) {
     res1 = UC.calcMoveDamage(p1, p2, m1);

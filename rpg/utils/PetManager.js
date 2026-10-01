@@ -377,12 +377,14 @@ class PetManager {
     const happMod = pet.happiness / 100;
     const total   = (bondMod + happMod) / 2;
 
+    // Push #96h-g: EVERY pet fights. Attack pets hit hardest (and own the special
+    // skills); support pets lend a smaller bite but put healing first; scavengers
+    // bite lightly and still scavenge.
     if (pet.role === 'scavenger') {
-      // Scavengers don't fight — they just scavenge
       return {
-        pet, bonuses: { atk: 0, def: 0, spd: 0 },
+        pet, bonuses: { atk: Math.floor(pet.stats.atk * total * 0.20), def: Math.floor(pet.stats.def * total * 0.15), spd: Math.floor(pet.stats.spd * total * 0.10) },
         scavengeBonus: pet.stats.scavengeRate || 0.10,
-        canUseAbility: false,
+        canUseAbility: pet.happiness > 30 && pet.hunger < 80,
         isScavenger: true,
       };
     }
@@ -390,7 +392,7 @@ class PetManager {
     if (pet.role === 'support') {
       return {
         pet,
-        bonuses: { atk: 0, def: Math.floor(pet.stats.def * total * 0.3), spd: 0 },
+        bonuses: { atk: Math.floor(pet.stats.atk * total * 0.20), def: Math.floor(pet.stats.def * total * 0.3), spd: 0 },
         healBonus: Math.floor((pet.stats.healPower || 10) * total),
         canUseAbility: pet.happiness > 30 && pet.hunger < 80,
         isSupport: true,

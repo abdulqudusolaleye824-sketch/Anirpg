@@ -35,7 +35,7 @@ module.exports = {
       if (!inGC) return needGC();
       const r = EventSystem.start(db, sender); if (!r.ok) return say(`❌ ${r.error}`);
       saveDatabase(db);
-      return say([`🏝️ *THE JEJU ISLAND RAID HAS BEGUN!*`, `For *10 days* the island belongs to whoever takes it.`, ``, `🌊 Each wave: *${EventSystem.WAVE_SIZE} beasts + 1 boss*. Clear it and a stronger wave rises.`, `🏝️ */ejoin* — enter the island (you get your event domain, then name + describe it).`, `⚔️ */event attack [#] [skill]* — your gear, passives and class skills are wired in; no skill named → your strongest ready skill fires. *Tag a hunter* in this GC to strike them.`, `⚔️ */event attack [#]* — strike a beast (they only counter, never start a fight; left alone 30s they regenerate).`, `🗡️ */event hit @hunter* — friendly fire is ON. Kill a hunter: take *50%* of their points, theirs reset to *0*.`, `💀 Die and you wait *1 hour* to respawn.`, `🛌 */eventafk* — untouchable, but you cannot attack.`, `🌌 */event domain* — your *Lv.10 event domain* (name it: /event domain name …).`, `🏅 */epoints* · */estats* · */eshop* · */event lb*`, ``, `Hunters Lv.${EventSystem.DOMAIN_LEVEL}+ only. Good hunting.`].join('\n'));
+      return say([`🏝️ *THE JEJU ISLAND RAID HAS BEGUN!*`, `For *10 days* the island belongs to whoever takes it.`, ``, `🌊 Each wave: *${EventSystem.WAVE_SIZE} beasts + 1 boss*. Clear it and a stronger wave rises.`, `🏝️ */ejoin* — enter the island (you get your event domain, then name + describe it).`, `⚔️ */event attack [#] [skill]* — strike a beast; gear, passives and class skills are wired in (no skill named → your strongest ready skill). Beasts only counter, never start a fight; left alone 30s they regenerate.`, `🗡️ */event attack @hunter [skill]* — tag a hunter in your attack. They get *20 seconds* to retaliate with their own attack, then both moves land at once. Kill a hunter: take *50%* of their points, theirs reset to *0*.`, `💀 Die and you wait *1 hour* to respawn.`, `🛌 */eventafk* — untouchable, but you cannot attack.`, `🌌 */event domain* — your *Lv.10 event domain* (name it: /event domain name …).`, `🏅 */epoints* · */estats* · */eshop* · */event lb*`, ``, `Hunters Lv.${EventSystem.DOMAIN_LEVEL}+ only. Good hunting.`].join('\n'));
     }
     if (sub === 'end' || sub === 'stop') {
       if (!Perms.isBotOwner(db, sender)) return say('❌ Only an owner can end the event.');
@@ -43,18 +43,26 @@ module.exports = {
       saveDatabase(db); const lb = EventSystem.leaderboard(db, 3);
       return say([`🏁 *JEJU ISLAND RAID — OVER.* Waves cleared: ${ev.wavesCleared}`, ...lb.map((e, i) => `${['🥇', '🥈', '🥉'][i]} ${e.name} — ${e.points.toLocaleString()} pts`), `\n_Points can still be spent in /eshop._`].join('\n'));
     }
-    if (sub === 'attack' || sub === 'a' || sub === 'strike') {
+    // Any expired 20s windows resolve first (so a clash never hangs if the timer died).
+    try { for (const r of EventSystem.resolveExpired(db)) await sock.sendMessage(chatId, { text: r.text }); } catch (e) {}
+    if (sub === 'attack' || sub === 'a' || sub === 'strike' || sub === 'hit' || sub === 'pk' || sub === 'skill' || sub === 's') {
       if (!inGC) return needGC();
-      const _hasId = args[1] && /^#?\d+$/.test(args[1]); const _skill = args.slice(_hasId ? 2 : 1).join(' ').trim() || null;
-      const r = EventSystem.attackMonster(db, player, _hasId ? args[1].replace('#', '') : null, _skill);
+      const tj = Target.resolve(msg, []); // a TAGGED hunter inside your attack = hunter vs hunter
+      const rest = args.slice(1).filter(a => !a.startsWith('@'));
+      if (tj) {
+        const victim = _findUser(db, tj); if (!victim) return say('That hunter is not registered.');
+        const skill = rest.join(' ').trim() || null;
+        const r = EventSystem.attackHunter(db, player, victim, skill); if (!r.ok) return say(`❌ ${r.error}`);
+        saveDatabase(db); await say(r.text, { mentions: [tj] });
+        if (r.pending) { // 20s retaliation window → resolve both moves at once
+          const vid = victim.jid || victim.id || victim.name;
+          setTimeout(async () => { try { const d2 = getDatabase(); const res = EventSystem.resolvePending(d2, vid); if (res.ok) { saveDatabase(d2); await sock.sendMessage(chatId, { text: res.text }); } } catch (e) {} }, EventSystem.RETALIATE_MS + 500);
+        }
+        return;
+      }
+      const _hasId = rest[0] && /^#?\d+$/.test(rest[0]); const _skill = rest.slice(_hasId ? 1 : 0).join(' ').trim() || null;
+      const r = EventSystem.attackMonster(db, player, _hasId ? rest[0].replace('#', '') : null, _skill);
       if (!r.ok) return say(`❌ ${r.error}`); saveDatabase(db); return say(r.text);
-    }
-    if (sub === 'hit' || sub === 'pk' || sub === 'strikehunter') {
-      if (!inGC) return needGC();
-      const tj = Target.resolve(msg, args.slice(1)); const victim = tj ? _findUser(db, tj) : null;
-      if (!victim) return say('Tag or reply to the hunter you want to strike.');
-      const r = EventSystem.attackHunter(db, player, victim); if (!r.ok) return say(`❌ ${r.error}`);
-      saveDatabase(db); return say(r.text, { mentions: [tj] });
     }
     if (sub === 'domain' || sub === 'de') {
       const what = (args[1] || '').toLowerCase();

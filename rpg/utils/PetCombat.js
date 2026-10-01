@@ -112,14 +112,23 @@ function learnedAbility(pet) {
 function abilityStrike(playerId, target, opts = {}) {
   return safe(() => {
     const pb = battleBonus(playerId);
-    if (!pb || !pb.isAttack || pb.isSupport || !pb.canUseAbility) return null; // Push #85: support pets never strike
-    const chance = Number.isFinite(opts.chance) ? opts.chance : ABILITY_CHANCE;
-    if (Math.random() > chance) return null;
+    if (!pb || !pb.canUseAbility) return null;
+    // Push #96h-g: every pet strikes. Attack pets use their SPECIAL skill at full
+    // force; support pets bite only while their hunter is healthy (≥70% HP) —
+    // otherwise they spend the round healing; scavengers bite lightly.
     const pet = pb.pet;
-    const ability = learnedAbility(pet);
-    if (!ability) return null;
     const level = Number(pet.level || 1);
-    const raw = Math.max(1, Number(ability.damage || 0)) * (1 + level * 0.35) * 0.45;
+    let ability = learnedAbility(pet); let raw;
+    if (pb.isAttack) {
+      if (!ability) return null;
+      raw = Math.max(1, Number(ability.damage || 0)) * (1 + level * 0.35) * 0.45;
+    } else {
+      if (pb.isSupport && opts.owner && opts.owner.stats) { let mx = opts.owner.stats.maxHp || 100; try { mx = require('./GearSystem').effectiveMaxHp(opts.owner) || mx; } catch (e) {} if ((opts.owner.stats.hp || 0) < mx * 0.7) return null; }
+      ability = { name: pb.isSupport ? 'Nip' : 'Scavenger Bite', type: 'physical' };
+      raw = Math.max(1, Number(pet.stats?.atk || 10)) * (1 + level * 0.35) * (pb.isSupport ? 0.18 : 0.22);
+    }
+    const chance = Number.isFinite(opts.chance) ? opts.chance : (pb.isAttack ? ABILITY_CHANCE : ABILITY_CHANCE * 0.8);
+    if (Math.random() > chance) return null;
     const targetMax = Math.max(1, Number(target?.maxHp || target?.hp || target?.stats?.maxHp || 0));
     const cap = Math.max(10, Math.floor(targetMax * 0.15));
     const dmg = Math.max(1, Math.min(cap, Math.floor(raw)));

@@ -672,7 +672,7 @@ module.exports = {
           const _pba = PetCombat.atkBonus(sender) || 0;
           if (_pba > 0) result.damage = Math.max(1, (result.damage || 0) + _pba);
           if (target && !result.blocked) {
-            const _st = PetCombat.abilityStrike(sender, target);
+            const _st = PetCombat.abilityStrike(sender, target, { owner: player });
             if (_st) { result.damage = Math.max(1, (result.damage || 0) + _st.damage); result.petLine = _st.line; }
           }
         } catch (e) {}
@@ -744,7 +744,7 @@ module.exports = {
       // below) — when the player is stunned this whole block is skipped and
       // the counter-attack epilogue still reads _petLines.
       try {
-        const _ps = PetCombat.abilityStrike(sender, target);
+        const _ps = PetCombat.abilityStrike(sender, target, { owner: player });
         if (_ps) _petLines.push(_ps.line);
       } catch (e) {}
 
@@ -1113,7 +1113,7 @@ module.exports = {
       try {
         const _pbAtk = PetCombat.atkBonus(sender) || 0;
         if (_pbAtk > 0) result.damage = Math.max(1, (result.damage || 0) + _pbAtk);
-        const _bstrike = PetCombat.abilityStrike(sender, boss);
+        const _bstrike = PetCombat.abilityStrike(sender, boss, { owner: player });
         if (_bstrike) {
           result.damage = Math.max(1, (result.damage || 0) + _bstrike.damage);
           result.petLine = _bstrike.line;
