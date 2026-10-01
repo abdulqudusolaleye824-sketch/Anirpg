@@ -30,13 +30,24 @@ const KILL_POINTS = { E: 10, D: 15, C: 20, B: 30, A: 45, S: 60 };
 const BOSS_POINTS = 300;
 const HUNTER_KILL_BONUS = 25;
 
+const _grant = (p, rank, kind) => { try { return require('./ArmoryStore').grantRandom(p, rank, kind, 'event_shop'); } catch (e) { return null; } };
+const _inv = (p) => (p.inventory || (p.inventory = {}));
 const SHOP = [
-  { key: 'nexus1',  name: '💠 25,000 Nexus',          cost: 150,  give: (p) => { p.gold = (p.gold || 0) + 25000; } },
-  { key: 'nexus2',  name: '💠 120,000 Nexus',         cost: 600,  give: (p) => { p.gold = (p.gold || 0) + 120000; } },
-  { key: 'mana1',   name: '💎 3,000 Mana Stones',     cost: 250,  give: (p) => { p.manaCrystals = (p.manaCrystals || 0) + 3000; } },
-  { key: 'mana2',   name: '💎 15,000 Mana Stones',    cost: 1000, give: (p) => { p.manaCrystals = (p.manaCrystals || 0) + 15000; } },
-  { key: 'key',     name: '🗝️ Instance Key',          cost: 400,  give: (p) => { p.jobKeys = (p.jobKeys || 0) + 1; } },
-  { key: 'title',   name: '🏝️ Title: Jeju Conqueror', cost: 2500, give: (p) => { p.titles = Array.isArray(p.titles) ? p.titles : []; if (!p.titles.includes('Jeju Conqueror')) p.titles.push('Jeju Conqueror'); } },
+  { key: 'nexus1',  cat: 'Currency', name: '💠 250,000 Nexus',           cost: 150,  give: (p) => { p.gold = (p.gold || 0) + 250000; } },
+  { key: 'nexus2',  cat: 'Currency', name: '💠 1,200,000 Nexus',         cost: 600,  give: (p) => { p.gold = (p.gold || 0) + 1200000; } },
+  { key: 'mana1',   cat: 'Currency', name: '💎 30,000 Mana Stones',      cost: 250,  give: (p) => { p.manaCrystals = (p.manaCrystals || 0) + 30000; } },
+  { key: 'mana2',   cat: 'Currency', name: '💎 150,000 Mana Stones',     cost: 1000, give: (p) => { p.manaCrystals = (p.manaCrystals || 0) + 150000; } },
+  { key: 'potion1', cat: 'Potions',  name: '🧪 3× Medium Health Potion', cost: 120,  give: (p) => { _inv(p).mediumHealthPotions = (_inv(p).mediumHealthPotions || 0) + 3; } },
+  { key: 'potion2', cat: 'Potions',  name: '🧪 2× Higher Health Potion', cost: 220,  give: (p) => { _inv(p).higherHealthPotions = (_inv(p).higherHealthPotions || 0) + 2; } },
+  { key: 'revive',  cat: 'Potions',  name: '✨ Revive Token',             cost: 350,  give: (p) => { _inv(p).reviveTokens = (_inv(p).reviveTokens || 0) + 1; } },
+  { key: 'weaponc', cat: 'Armoury',  name: '🗡️ C-Rank weapon (random)',  cost: 500,  give: (p) => _grant(p, 'C', 'weapon') },
+  { key: 'gearc',   cat: 'Armoury',  name: '🛡️ C-Rank gear (random)',    cost: 500,  give: (p) => _grant(p, 'C', 'gear') },
+  { key: 'weaponb', cat: 'Armoury',  name: '🗡️ B-Rank weapon (random)',  cost: 1200, give: (p) => _grant(p, 'B', 'weapon') },
+  { key: 'gearb',   cat: 'Armoury',  name: '🛡️ B-Rank gear (random)',    cost: 1200, give: (p) => _grant(p, 'B', 'gear') },
+  { key: 'weapona', cat: 'Armoury',  name: '🗡️ A-Rank weapon (random)',  cost: 3000, give: (p) => _grant(p, 'A', 'weapon') },
+  { key: 'geara',   cat: 'Armoury',  name: '🛡️ A-Rank gear (random)',    cost: 3000, give: (p) => _grant(p, 'A', 'gear') },
+  { key: 'key',     cat: 'Special',  name: '🗝️ Instance Key',             cost: 400,  give: (p) => { p.jobKeys = (p.jobKeys || 0) + 1; } },
+  { key: 'title',   cat: 'Special',  name: '🏝️ Title: Jeju Conqueror',    cost: 2500, give: (p) => { p.titles = Array.isArray(p.titles) ? p.titles : []; if (!p.titles.includes('Jeju Conqueror')) p.titles.push('Jeju Conqueror'); } },
 ];
 
 function _bare(j) { return String(j || '').split(':')[0].split('@')[0]; }
@@ -228,13 +239,36 @@ function status(db) {
 }
 function pointsText(db, player) { const ev = db.event; if (!ev) return 'No event running.'; const st = _p(db, player); return `🏝️ *${_name(player)}* — *${st.points.toLocaleString()} event points*${st.afk ? ' · 🛌 AFK' : ''}${_isDead(st) ? ` · 💀 respawn in ${_respawnIn(st)}` : ''}`; }
 function statsText(db, player) { const ev = db.event; if (!ev) return 'No event running.'; const st = _p(db, player); const d = player.eventDomain || {}; return [`📊 *JEJU RAID — ${_name(player)}*`, `🏅 Points: ${st.points.toLocaleString()}`, `☠️ Beast kills: ${st.kills} (👑 ${st.bossKills} bosses)`, `🗡️ Hunter kills: ${st.hunterKills}`, `💀 Deaths: ${st.deaths}`, `💥 Damage dealt: ${st.dmg.toLocaleString()}`, `🛒 Points spent: ${st.spent || 0}`, `🌌 Event domain: ${d.name ? `${d.name} (${d.casts || 0} casts)` : 'unnamed — /event domain name <name>'}`, `${st.afk ? '🛌 AFK' : '⚔️ Active'}${_isDead(st) ? ` · respawn in ${_respawnIn(st)}` : ''}`].join('\n'); }
-function shopText(db, player) { const st = db.event ? _p(db, player) : { points: 0 }; return [`🛒 *EVENT SHOP* — you have *${st.points}* points`, ...SHOP.map((it, i) => `${i + 1}. ${it.name} — *${it.cost}* pts  (/eshop buy ${it.key})`), `\n_Points stay spendable until the event ends._`].join('\n'); }
+function shopText(db, player) {
+  const st = db.event ? _p(db, player) : { points: 0 }; const out = [`🛒 *EVENT SHOP* — you have *${st.points.toLocaleString()}* points`];
+  let cat = null; SHOP.forEach((it, i) => { if (it.cat !== cat) { cat = it.cat; out.push(`\n*${cat}*`); } out.push(`${i + 1}. ${it.name} — *${it.cost.toLocaleString()}* pts  (/eshop buy ${it.key})`); });
+  out.push(`\n_Armoury pieces land in your bag (/equip). Points stay spendable until the event ends._`); return out.join('\n');
+}
 function buy(db, player, key) {
   if (!db.event) return { ok: false, error: 'No event running.' }; const st = _p(db, player);
   const it = SHOP.find(s => s.key === String(key || '').toLowerCase()) || SHOP[Number(key) - 1]; if (!it) return { ok: false, error: 'Unknown item — /eshop' };
   if (st.points < it.cost) return { ok: false, error: `You need *${it.cost}* points for ${it.name} (you have ${st.points}).` };
-  st.points -= it.cost; st.spent = (st.spent || 0) + it.cost; it.give(player);
-  return { ok: true, text: `✅ Bought ${it.name} for *${it.cost}* points — ${st.points} left.` };
+  const got = it.give(player);
+  if (it.cat === 'Armoury' && !got) return { ok: false, error: 'The armoury is locked right now — try again shortly.' };
+  st.points -= it.cost; st.spent = (st.spent || 0) + it.cost;
+  return { ok: true, text: `✅ Bought ${it.name} for *${it.cost.toLocaleString()}* points — ${st.points.toLocaleString()} left.${got && got.name ? `\n${got.emoji || '🎁'} *${got.name}* is in your bag — /equip` : ''}` };
 }
 
-module.exports = { EVENT_LENGTH_MS, WAVE_SIZE, RESPAWN_MS, REGEN_IDLE_MS, REGEN_PCT, STEAL_PCT, DOMAIN_LEVEL, DOMAIN_ENERGY, SHOP, KILL_POINTS, BOSS_POINTS, gcId, isEventGC, buildWave, start, end, tick, alive, attackMonster, attackHunter, toggleAfk, domainState, setDomainName, setDomainDesc, castDomain, leaderboard, status, pointsText, statsText, shopText, buy, _p };
+function _fmtLeft(ms) { ms = Math.max(0, ms); const d = Math.floor(ms / DAY), h = Math.floor((ms % DAY) / 3600000), m = Math.floor((ms % 3600000) / 60000); return d ? `${d}d ${h}h` : h ? `${h}h ${m}m` : `${m}m`; }
+function infoText(db) {
+  const ev = tick(db) || db.event; if (!ev) return '🏝️ *JEJU ISLAND RAID* — no event yet. An owner can */event start* in the Events GC.';
+  const live = alive(ev); const boss = ev.monsters.find(m => m.isBoss); const byRank = {}; for (const m of live) if (!m.isBoss) byRank[m.rank] = (byRank[m.rank] || 0) + 1;
+  const parts = Object.values(db.users || {}).filter(u => u && u.eventStats && u.eventStats.id === ev.id); const now = Date.now();
+  const active = parts.filter(u => !u.eventStats.afk && !_isDead(u.eventStats)).length, afk = parts.filter(u => u.eventStats.afk).length, dead = parts.filter(u => _isDead(u.eventStats)).length;
+  const tot = parts.reduce((a, u) => ({ k: a.k + (u.eventStats.kills || 0), hk: a.hk + (u.eventStats.hunterKills || 0), d: a.d + (u.eventStats.deaths || 0), dmg: a.dmg + (u.eventStats.dmg || 0), pts: a.pts + (u.eventStats.points || 0) }), { k: 0, hk: 0, d: 0, dmg: 0, pts: 0 });
+  const killed = ev.monsters.filter(m => m.defeated).length; const prog = Math.round(killed / ev.monsters.length * 100); const bar = '█'.repeat(Math.round(prog / 10)) + '░'.repeat(10 - Math.round(prog / 10));
+  const lb = leaderboard(db, 10);
+  return [`🏝️ *JEJU ISLAND RAID — FULL BRIEFING*`, ev.active ? `⏳ ${_fmtLeft(ev.endsAt - now)} left · started ${new Date(ev.startedAt).toUTCString().slice(5, 16)}` : `🏁 Ended (${ev.endReason || 'ended'})`,
+    ``, `🌊 *PROGRESSION*`, `Wave *${ev.wave}* · waves cleared: ${ev.wavesCleared} · next wave is 22% stronger`, `${bar} ${prog}% of this wave (${killed}/${ev.monsters.length})`,
+    `👹 Alive by rank: ${RANKS.map(r => byRank[r] ? `${r}:${byRank[r]}` : null).filter(Boolean).join(' · ') || 'none'}`, `👑 Boss: ${boss ? `${boss.name} — ${boss.defeated ? 'slain' : `${boss.hp.toLocaleString()}/${boss.maxHp.toLocaleString()} HP${live.length > 1 ? ' (locked until the beasts fall)' : ' — OUT NOW'}`}` : '—'}`,
+    ``, `👥 *PARTICIPANTS* — ${parts.length} hunters`, `⚔️ active ${active} · 🛌 AFK ${afk} · 💀 respawning ${dead}`, `☠️ beast kills ${tot.k.toLocaleString()} · 🗡️ hunter kills ${tot.hk} · deaths ${tot.d} · 💥 damage ${tot.dmg.toLocaleString()} · 🏅 points held ${tot.pts.toLocaleString()}`,
+    ``, `🏆 *TOP 10*`, ...(lb.length ? lb.map((e, i) => `${['🥇', '🥈', '🥉'][i] || `${i + 1}.`} ${e.name} — ${e.points.toLocaleString()} pts · ${e.kills}☠️ ${e.hunterKills}🗡️`) : ['_Nobody has scored yet._']),
+    ``, `📜 *RULES*`, `• Lv.${DOMAIN_LEVEL}+ · 10 days · ${WAVE_SIZE} beasts + 1 boss per wave`, `• Beasts never start a fight — they counter; idle 30s → +5% HP per 30s`, `• Friendly fire ON: kill a hunter → 50% of their points, theirs reset to 0`, `• Death = 1h respawn · /eventafk = untouchable but no attacking`, `• Lv.10 event domain: /event domain (name + desc first) · ${DOMAIN_ENERGY} energy · 1h cooldown`, `• Points: E${KILL_POINTS.E} D${KILL_POINTS.D} C${KILL_POINTS.C} B${KILL_POINTS.B} A${KILL_POINTS.A} S${KILL_POINTS.S} · boss ${BOSS_POINTS} · hunter kill +${HUNTER_KILL_BONUS} · spend in /eshop`].join('\n');
+}
+
+module.exports = { infoText, EVENT_LENGTH_MS, WAVE_SIZE, RESPAWN_MS, REGEN_IDLE_MS, REGEN_PCT, STEAL_PCT, DOMAIN_LEVEL, DOMAIN_ENERGY, SHOP, KILL_POINTS, BOSS_POINTS, gcId, isEventGC, buildWave, start, end, tick, alive, attackMonster, attackHunter, toggleAfk, domainState, setDomainName, setDomainDesc, castDomain, leaderboard, status, pointsText, statsText, shopText, buy, _p };
