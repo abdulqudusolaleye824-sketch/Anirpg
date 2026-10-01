@@ -1,3 +1,16 @@
+## 1.0.145 — Push #96h-n: combat truth · affiliate seat · recycle · owner grants · spawn buttons
+- **Blind/Fear:** accuracy is only cut by a LIVE blind/fear; expired effects no longer linger on stats; a feared hunter is told FEAR, not BLIND.
+- **Held beasts:** stunned/frozen/paralyzed/asleep monsters never move first — the raid says so (`⛓️ X is PARALYZED — held in place`).
+- **/guard vs initiative:** a raised guard intercepts the opening strike too.
+- **Leaked beasts:** ATK −70% (5× × 0.30); HP/DEF stay 5×.
+- **Affiliate hire:** accepting now seats you in a recruiting OR active raid (resolved with db) — no more "You are not in this raid" after accept.
+- **Last floor never revives:** the stale-floor revive skips the final floor.
+- **Monster speed recomputed:** anchored to the party's average with a per-beast spread — some beasts are faster than hunters, some slower.
+- **/addxp <amount> [@|reply]**, **/addnexus <amount> [@|reply]** — owner only (self when no target).
+- **Recycle fix:** bestiary drops (Void Essence, Wraith Soul …) and base materials are recognised as gate materials.
+- **/spawn material <name>** (any material, any tier) · **/spawn materials <E|D|C|B|A|S|common|rare|epic|legendary>** (tier cache).
+- **Buttons:** spawns carry 🎯 Claim; wild pets (spawn + raid drop) carry 🪤 Catch; gate spawns carry 🛒 Buy (`/gate buy <id>` accepted).
+
 ## 1.0.144 — Push #96h-m: /guild sack · /xp · leaks 5× · red gates −60% · GC isolation · guild shop prices · Archer/Berserker +50%
 - **/guild sack <#>** (GM/Vice; serial from /guild members): 72h notice, target DM'd. Target runs **/guild active** to cancel. Expired → CLEAN removal (members, memberData, user.guild, contract row, pending record) — no payout, no penalty, no orphans. `/guild sack` lists pending; `/guild sack cancel <#>` withdraws. Clock runs on every guild command + once a minute in the handler (DM-only notices).
 - **/xp** (`!xp` works too): level, current XP / needed, bar, total XP, XP to next level.

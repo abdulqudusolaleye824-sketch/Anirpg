@@ -173,8 +173,10 @@ const gate = {
         '';
 
       let gateId = null;
+      // Push #96h-n: the spawn's 🛒 BUY button sends `/gate buy <gateId>`.
+      try { const _ga = String(args[1] || '').trim(); if (/^[Gg]-[\w-]+$/.test(_ga)) gateId = _ga; } catch (e) {}
 
-      if (quotedText) {
+      if (!gateId && quotedText) {
         const match = quotedText.match(/GATE\s*ID:\s*\*?([Gg]-[\w-]+)\*?/i)
                    || quotedText.match(/ID:\s*\*?([Gg]-[\w-]+)\*?/i)
                    || quotedText.match(/([Gg]-\d+-\d+)/i);

@@ -622,32 +622,38 @@ module.exports = {
       // the normal counter-attack below still follows the hunter's strike.
       let _monActedFirst = false; // Push #88t: an initiative strike IS the monster's action this turn (no second attack)
       try {
-        if (_grCanAct.canAct && target && !target.defeated && (target.hp || 0) > 0 && GR.raidMonsterGoesFirst(target, player)) {
+        const _goesFirst = _grCanAct.canAct && target && !target.defeated && (target.hp || 0) > 0 && GR.raidMonsterGoesFirst(target, player);
+        if (!_goesFirst && GR.raidMonsterGoesFirst.lastHeld && _grCanAct.canAct && target && !target.defeated) { try { await sock.sendMessage(chatId, { text: `⛓️ *${target.name}* is *${String(GR.raidMonsterGoesFirst.lastHeld).toUpperCase()}* — held in place, it cannot move first this turn.` }); } catch (e) {} }
+        if (_goesFirst) {
           _monActedFirst = true;
           // Push #96h-e: SILENT initiative — the beast simply moves first; no speed talk.
           // Push #96h-l: …but its move is explained step by step like any other, support moves are free.
+          // Push #96h-n: a raised /guard intercepts the opening strike too.
+          let _iGuard = null; try { _iGuard = GR.takeGuard(gate, sender, db); } catch (e) { _iGuard = null; }
+          const _iVictim = _iGuard ? _iGuard.guardian : player; const _iVictimJid = _iGuard ? _iGuard.guardianJid : sender;
           await sock.sendMessage(chatId, { text: `${target.emoji || '👹'} *${target.name}* lunges before *${player.name}* can act!` });
+          if (_iGuard) await sock.sendMessage(chatId, { text: `🛡️ *GUARD!* *${_iGuard.guardianName}* steps in and takes the opening strike meant for *${player.name}*!` });
           const _MSFXi = require('../../rpg/utils/MonsterSkillFX');
           const _iPool = (Array.isArray(target.skills) && target.skills.length) ? target.skills : [{ name: '🔥 Flame Spurt', effect: 'burn', chance: 40 }, { name: '⚡ Volt Shock', effect: 'stun', chance: 25 }, { name: '🩸 Savage Bite', effect: 'bleed', chance: 40 }, { name: '😱 Terror Howl', effect: 'fear', chance: 30 }, { name: '🌀 Void Crush', effect: 'weaken', chance: 35 }];
           const _iPick = _MSFXi.pickMoves(_iPool);
           if (_iPick.support) { try { const _ss = _MSFXi.supportStep(target, player, _iPick.support); for (const b of _ss.blocks) { await sock.sendMessage(chatId, { text: b }); await new Promise(r => setTimeout(r, 500)); } } catch (e) {} }
-          const _aDef = GR.effectiveDef(player, sender); // Push #89: gear + title + pet
-          const _hpBefore = player.stats.hp || 1;
-          const _aRaw = GR.monsterDamage(target, _aDef, player);
+          const _aDef = GR.effectiveDef(_iVictim, _iVictimJid); // Push #89: gear + title + pet
+          const _hpBefore = _iVictim.stats.hp || 1;
+          const _aRaw = GR.monsterDamage(target, _aDef, _iVictim);
           const _aDmg = Math.min(Math.max(0, _hpBefore - 1), Math.floor(_aRaw)); // Push #88t: full force (it replaces the counter), never a kill
           const _iSkill = _iPick.attack || { name: 'Strike', effect: null, chance: 0 };
           const _iBare = String(_iSkill.name || 'Strike').replace(/^[^\s]+\s/, '');
-          const _iWrap = { name: player.name, stats: { hp: _hpBefore, maxHp: _effMax(player) }, statusEffects: player.statusEffects || [] }; // playTurn applies the damage to this wrapper
+          const _iWrap = { name: _iVictim.name, stats: { hp: _hpBefore, maxHp: _effMax(_iVictim) }, statusEffects: _iVictim.statusEffects || [] }; // playTurn applies the damage to this wrapper
           await UCgFlow.playTurn(sock, chatId, {
             attacker: { name: target.name, stats: { hp: target.hp, maxHp: target.maxHp }, statusEffects: target.statusEffects || [] }, defender: _iWrap,
             move: { name: _iSkill.name, description: `A ferocious ${_iBare} technique.`, cooldownMs: 0, effect: _iSkill.effect ? { type: _iSkill.effect, chance: Math.min(90, (_iSkill.chance || 35) * GR.RAID_X2), duration: 2 } : null },
             result: { damage: _aDmg, crit: !!(GR.monsterDamage.last && GR.monsterDamage.last.crit), missed: _aRaw <= 0, dodged: _aRaw <= 0, preAbsorbed: true, absorbedNote: (GR.monsterDamage.last && GR.monsterDamage.last.shieldLine) || null },
             tag: `⚡ *MONSTER STRIKES FIRST*`, defenderBar: 'player', gapMs: 600,
           });
-          player.stats.hp = Math.max(1, _hpBefore - (_aRaw > 0 ? _aDmg : 0));
-          try { if (_iWrap.statusEffects !== player.statusEffects) player.statusEffects = _iWrap.statusEffects; } catch (e) {}
-          try { const _rm = (gate.raid?.members || []).find(m => m.id === sender || GR.GKM.normaliseJid(m.id) === GR.GKM.normaliseJid(sender)); if (_rm) _rm.hp = player.stats.hp; } catch (e) {}
-          try { const _fx = _MSFXi.apply(target, player, _iSkill, _aDmg, { skipStatus: true }); if (_fx.lines.length) await sock.sendMessage(chatId, { text: _fx.lines.join('\n') }); } catch (e) {}
+          _iVictim.stats.hp = Math.max(1, _hpBefore - (_aRaw > 0 ? _aDmg : 0));
+          try { if (_iWrap.statusEffects !== _iVictim.statusEffects) _iVictim.statusEffects = _iWrap.statusEffects; } catch (e) {}
+          try { const _rm = (gate.raid?.members || []).find(m => m.id === _iVictimJid || GR.GKM.normaliseJid(m.id) === GR.GKM.normaliseJid(_iVictimJid)); if (_rm) _rm.hp = _iVictim.stats.hp; } catch (e) {}
+          try { const _fx = _MSFXi.apply(target, _iVictim, _iSkill, _aDmg, { skipStatus: true }); if (_fx.lines.length) await sock.sendMessage(chatId, { text: _fx.lines.join('\n') }); } catch (e) {}
         }
       } catch (e) {}
       if (_grCanAct.canAct) {
@@ -1070,6 +1076,7 @@ module.exports = {
         out.push(``, `🐾 *WILD PET APPEARED!*`);
         out.push(`${loot.wildPet.emoji} *${loot.wildPet.name}* [${loot.wildPet.rarity.toUpperCase()}]`);
         out.push(`🪤 */catch* — 3 shared attempts for the whole raid, first success keeps it! Flees in 60s.`);
+        try { const B = require('../../utils/buttons'); setTimeout(() => { B.sendButtons(sock, chatId, { text: `🐾 *${loot.wildPet.name}* is loose — tap to catch!`, buttons: B.quickReplies([[`🪤 Catch ${loot.wildPet.name}`.slice(0, 20), '/catch']]) }).catch(() => {}); }, 1200); } catch (e) {} // Push #96h-n: catch button
         }
 
         // Push #55: scavenger pets pay out on the clear, and every raider's

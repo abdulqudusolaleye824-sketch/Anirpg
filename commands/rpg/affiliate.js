@@ -333,7 +333,10 @@ module.exports = {
         keyData.contracts[sender] = offer.affiliatePct;
 
         const GR = require('../../rpg/dungeons/GateRaid');
-        const resolved = GR.resolveCode(offer.partyKey);
+        // Push #96h-n: resolve WITH db (revives a persisted raid) and seat the hire in a recruiting
+        // OR active raid (late hires raid immediately) — "You are not in this raid" after accepting is over.
+        const resolved = GR.resolveCode(offer.partyKey, db);
+        let _seated = false;
         if (resolved.ok && resolved.gate.raid) {
           // Push #92: dead hunters are not re-affiliated into a live battle; a
           // hire only seats you while the party is still recruiting.
@@ -341,8 +344,11 @@ module.exports = {
             delete db.affiliateOffers[sender]; saveDatabase();
             return sock.sendMessage(chatId, { text: `❌ ${GR.FALLEN_TEXT}` }, { quoted: msg });
           }
-          if (resolved.gate.raid.status === 'recruiting') GR.ensureMember(resolved.gate, sender, db);
+          if (resolved.gate.raid.status === 'recruiting' || resolved.gate.raid.status === 'active') { _seated = !!GR.ensureMember(resolved.gate, sender, db); try { if (db.activeGates && db.activeGates[resolved.gate.id]) db.activeGates[resolved.gate.id] = resolved.gate; } catch (e) {} }
+        } else if (resolved.ok) {
+          try { if (!Array.isArray(resolved.gate.raiders)) resolved.gate.raiders = []; if (!resolved.gate.raiders.includes(sender)) resolved.gate.raiders.push(sender); _seated = true; } catch (e) {}
         }
+        if (!_seated && !(resolved.ok && resolved.gate.raid)) { try { if (!Array.isArray(keyData.hiredAffiliates)) keyData.hiredAffiliates = []; if (!keyData.hiredAffiliates.includes(sender)) keyData.hiredAffiliates.push(sender); } catch (e) {} }
 
         delete db.affiliateOffers[sender];
         saveDatabase();

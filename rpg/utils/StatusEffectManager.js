@@ -116,6 +116,7 @@ class StatusEffectManager {
       return { atkMod: 1.0, defMod: 1.0, speedMod: 1.0, accuracyMod: 1.0 };
     let atkMod = 1.0, defMod = 1.0, speedMod = 1.0, accuracyMod = 1.0;
     for (const e of entity.statusEffects) {
+      if (!e || (e.duration != null && Number(e.duration) <= 0)) continue; // Push #96h-n: expired effects no longer linger on stats
       // Explicit per-effect values win; otherwise fall back to the EFFECTS
       // table (UnifiedCombat-applied effects carry type+duration only).
       const d = this.EFFECTS[(e.type || '').toLowerCase()] || {};

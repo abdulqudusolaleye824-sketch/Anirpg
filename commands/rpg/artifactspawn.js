@@ -186,7 +186,10 @@ async function spawnArtifact(sock, chatId, db, saveDatabase, forcedArtifact) {
   // (the separate Announcer alert was a second, duplicate message).
   let _mentions = [];
   try { const meta = await sock.groupMetadata(chatId); _mentions = (meta.participants || []).map(p => p.id); } catch (e) { _mentions = []; }
-  await sock.sendMessage(chatId, { text: msg, mentions: _mentions });
+  // Push #96h-n: every spawn carries a tap-to-CLAIM button (text fallback keeps the ping).
+  let _sentBtn = false;
+  try { const B = require('../../utils/buttons'); if (B && B.sendButtons) { await B.sendButtons(sock, chatId, { text: msg, buttons: B.quickReplies([[`🎯 Claim ${artifact.name}`.slice(0, 20), '/claim']]), mentions: _mentions }); _sentBtn = true; } } catch (e) { _sentBtn = false; }
+  if (!_sentBtn) await sock.sendMessage(chatId, { text: msg, mentions: _mentions });
 
   // Expire after 5 minutes
   setTimeout(() => {
@@ -420,7 +423,9 @@ module.exports = {
       db.wildPets = db.wildPets.filter(w => w && w.expiresAt > now && !(w.forJids || []).some(j => String(j).split('@')[0] === String(sender).split('@')[0]));
       db.wildPets.push({ token: `WP-${now}-${Math.floor(Math.random() * 999)}`, petId: chosen.id, name: chosen.name, emoji: chosen.emoji, rarity: chosen.rarity, gate: 'spawn', spawnedAt: now, expiresAt: now + 60 * 1000, caughtBy: null, attemptsUsed: 0, attemptLog: [], forJids: [sender], spawnedBy: sender });
       saveDatabase();
-      return sock.sendMessage(chatId, { text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🐾 *A WILD PET APPEARS!*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n${chosen.emoji} *${chosen.name}* — ${String(chosen.rarity || 'common').toUpperCase()}\n👤 Only *@${String(sender).split('@')[0]}* can catch it.\n⏰ It flees in *60 seconds*!\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🪤 */catch* — FREE & guaranteed for the spawner`, mentions: [sender] }, { quoted: msg });
+      { const _pt = `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🐾 *A WILD PET APPEARS!*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n${chosen.emoji} *${chosen.name}* — ${String(chosen.rarity || 'common').toUpperCase()}\n👤 Only *@${String(sender).split('@')[0]}* can catch it.\n⏰ It flees in *60 seconds*!\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🪤 */catch* — FREE & guaranteed for the spawner`;
+        try { const B = require('../../utils/buttons'); return await B.sendButtons(sock, chatId, { text: _pt, buttons: B.quickReplies([[`🪤 Catch ${chosen.name}`.slice(0, 20), '/catch']]), mentions: [sender] }, msg); } catch (e) {} // Push #96h-n: catch button
+        return sock.sendMessage(chatId, { text: _pt, mentions: [sender] }, { quoted: msg }); }
     }
 
     // Push #88u: bare /spawn → the full spawn CATALOG in the owner's DM.
@@ -441,7 +446,8 @@ module.exports = {
           '• /spawn mending — 🪨 Mending Stone',
           '• /spawn potion — 🧪 health potion (random tier)',
           '• /spawn food — 🍖 pet food (random)',
-          '• /spawn materials — 🧰 crafting material cache',
+          '• /spawn materials — 🧰 crafting material cache · /spawn materials <E|D|C|B|A|S|common|rare|epic|legendary> — cache of that tier',
+          '• /spawn material <name> — ANY single crafting material, every tier',
           '• /spawn pet <name|rarity> — wild pet, only YOU can /catch (free, guaranteed, 60 s)',
           '• /spawn status · /spawn clear', '',
           `*🧪 Health potions* (${TIERS.length})`, ...TIERS.map(t => `• ${t.emoji} ${t.name} — heals ${t.pct}% (${t.rarity})`), '',
@@ -468,6 +474,36 @@ module.exports = {
       return;
     }
 
+    // Push #96h-n: /spawn material <name> — ANY crafting material of ANY tier (bestiary drops, base
+    // materials, forge pools). /spawn materials <E|D|C|B|A|S|common|rare|epic|legendary> — a cache of that tier.
+    const _allMats = () => { const out = {}; try { const Rc = require('../../rpg/utils/Recycler'); for (const [k, v] of Object.entries(Rc.materialRanks ? Rc.materialRanks() : {})) out[k] = { name: v.name, rank: v.rank }; } catch (e) {}
+      try { const MSP = require('../../rpg/utils/MaterialSpawnPool'); const b = MSP.build(); for (const [tier, map] of Object.entries(b)) for (const n of Object.keys(map)) { const k = n.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim(); if (!out[k]) out[k] = { name: n, rank: tier === 'epic' ? 'A' : tier === 'rare' ? 'C' : 'E' }; } } catch (e) {}
+      return out; };
+    const _rarOfRank = (r) => ({ E: 'common', D: 'common', C: 'rare', B: 'rare', A: 'epic', S: 'legendary' }[String(r).toUpperCase()] || 'common');
+    if (sub === 'material' || sub === 'mat' || sub === 'item') {
+      if (activeSpawns.has(chatId)) return sock.sendMessage(chatId, { text: '⚠️ There is already an unclaimed spawn here — /claim it first (or /spawn clear).' }, { quoted: msg });
+      const want = args.slice(1).join(' ').trim().toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+      const all = _allMats(); const keys = Object.keys(all);
+      if (!want) return sock.sendMessage(chatId, { text: `Usage: */spawn material <name>* — ${keys.length} materials across every tier.\nTier caches: */spawn materials <E|D|C|B|A|S|common|rare|epic|legendary>*` }, { quoted: msg });
+      const k = keys.find(x => x === want) || keys.find(x => x.startsWith(want)) || keys.find(x => x.includes(want));
+      if (!k) return sock.sendMessage(chatId, { text: `❌ No material matches *${args.slice(1).join(' ')}*.` }, { quoted: msg });
+      const m = all[k]; const MSP = require('../../rpg/utils/MaterialSpawnPool');
+      await spawnArtifact(sock, chatId, db, saveDatabase, { name: m.name, emoji: MSP.emojiFor(m.name), rarity: _rarOfRank(m.rank), type: 'material', bonus: {}, desc: `${m.rank}-rank crafting material. Forge it with /craft.` });
+      return;
+    }
+    if ((sub === 'materials' || sub === 'cache') && args[1]) {
+      if (activeSpawns.has(chatId)) return sock.sendMessage(chatId, { text: '⚠️ There is already an unclaimed spawn here — /claim it first (or /spawn clear).' }, { quoted: msg });
+      const t = String(args[1]).toLowerCase(); const MSP = require('../../rpg/utils/MaterialSpawnPool');
+      const tierMap = { common: ['E', 'D'], rare: ['C', 'B'], epic: ['A'], legendary: ['S'], e: ['E'], d: ['D'], c: ['C'], b: ['B'], a: ['A'], s: ['S'] };
+      const ranks = tierMap[t]; if (!ranks) return sock.sendMessage(chatId, { text: `❌ Unknown tier *${args[1]}*. Use E/D/C/B/A/S or common/rare/epic/legendary.` }, { quoted: msg });
+      const pool = Object.values(_allMats()).filter(m => ranks.includes(String(m.rank).toUpperCase()));
+      if (!pool.length) return sock.sendMessage(chatId, { text: `❌ No materials registered for *${args[1]}*.` }, { quoted: msg });
+      const seen = new Set(); const bundle = [];
+      for (let i = 0; i < 30 && bundle.length < 3; i++) { const m = pool[Math.floor(Math.random() * pool.length)]; if (seen.has(m.name)) continue; seen.add(m.name); bundle.push({ name: m.name, qty: ranks[0] === 'A' || ranks[0] === 'S' ? 1 : 2 + Math.floor(Math.random() * 3), rarity: _rarOfRank(m.rank), emoji: MSP.emojiFor(m.name), type: 'material' }); }
+      const rar = _rarOfRank(ranks[0]);
+      await spawnArtifact(sock, chatId, db, saveDatabase, { name: `${ranks.join('/')}-Rank Material Cache`, emoji: '🧰', rarity: rar, type: 'material', bonus: {}, bundle, desc: `A sealed cache of ${ranks.join('/')}-rank crafting materials.` });
+      return;
+    }
     if (sub === 'force' || sub === 'random' || ['mending', 'stone', 'potion', 'food', 'petfood', 'materials', 'cache'].includes(sub)) {
       if (activeSpawns.has(chatId)) return sock.sendMessage(chatId, { text: '⚠️ There is already an unclaimed spawn here — /claim it first (or /spawn clear).' }, { quoted: msg });
       let art;

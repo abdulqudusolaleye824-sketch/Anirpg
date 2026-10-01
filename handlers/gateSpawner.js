@@ -339,15 +339,21 @@ class GateSpawner {
     try {
       const imagePath = gateImage(gate.rank);
       const caption = gateCaption(gate);
-      if (fs.existsSync(imagePath)) {
-        const imageBuffer = fs.readFileSync(imagePath);
-        await sock.sendMessage(chatId, {
-          image: imageBuffer,
-          mimetype: 'image/jpeg',
-          caption: caption
-        });
-      } else {
-        await sock.sendMessage(chatId, { text: caption });
+      // Push #96h-n: the gate spawn carries a tap-to-BUY button (image header + button when the
+      // socket can upload media; plain image/text fallback otherwise).
+      let _btnSent = false;
+      try {
+        const B = require('../utils/buttons');
+        const _img = fs.existsSync(imagePath) ? fs.readFileSync(imagePath) : null;
+        if (B && B.sendButtons) { await B.sendButtons(sock, chatId, { text: caption, ...(_img ? { image: _img, mimetype: 'image/jpeg' } : {}), buttons: B.quickReplies([[`🛒 Buy ${gate.rank}-Rank Gate`.slice(0, 20), `/gate buy ${gate.id}`]]) }); _btnSent = true; }
+      } catch (e) { _btnSent = false; }
+      if (!_btnSent) {
+        if (fs.existsSync(imagePath)) {
+          const imageBuffer = fs.readFileSync(imagePath);
+          await sock.sendMessage(chatId, { image: imageBuffer, mimetype: 'image/jpeg', caption: caption });
+        } else {
+          await sock.sendMessage(chatId, { text: caption });
+        }
       }
       console.log(`[GATE] Spawned ${gate.rank}-rank gate ${gate.id} in ${chatId} with image`);
     } catch (error) {

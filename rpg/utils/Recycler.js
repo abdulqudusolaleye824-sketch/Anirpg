@@ -29,6 +29,20 @@ function materialRanks() {
       }
     }
   } catch (e) {}
+  // Push #96h-n: the bestiary drop table (MonsterDrops.js — Void Essence, Wraith Soul …) counts too.
+  try {
+    const MD = require('../data/MonsterDrops');
+    const RMAP = { F: 'E', E: 'E', D: 'D', C: 'C', B: 'B', A: 'A', S: 'S', DISASTER: 'S' };
+    for (const [rank, blk] of Object.entries(MD.MONSTER_DROPS || {})) {
+      const r = RMAP[String(rank).toUpperCase()] || 'E';
+      const lists = [...((blk && blk.monsters) || []), ...((blk && blk.bosses) || [])];
+      for (const m of lists) for (const d of [...(m.drops || []), m.primary, m.secondary].filter(Boolean)) {
+        const k = norm(d);
+        if (!_rankMap[k] || RANK_ORDER.indexOf(r) < RANK_ORDER.indexOf(_rankMap[k].rank)) _rankMap[k] = { rank: r, name: d };
+      }
+    }
+    for (const [rank, list] of Object.entries(MD.BASE_MATERIALS || {})) { const r = RMAP[String(rank).toUpperCase()] || 'E'; for (const d of list || []) { const k = norm(d); if (!_rankMap[k]) _rankMap[k] = { rank: r, name: d }; } }
+  } catch (e) {}
   return _rankMap;
 }
 function norm(n) { return String(n || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim(); }
@@ -103,4 +117,4 @@ function execute(player, target, count = 1) {
   return { ...p, executed: true, have: RI.countMaterial(player, p.name) };
 }
 
-module.exports = { RATIO, NEXUS_COST, rankOf, canonicalName, holdings, needed, plan, execute, materialRanks };
+module.exports = { materialRanks, RATIO, NEXUS_COST, rankOf, canonicalName, holdings, needed, plan, execute };

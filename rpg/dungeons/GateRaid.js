@@ -171,8 +171,10 @@ function raidInitiativeChance(monster, player) {
 }
 function raidMonsterGoesFirst(monster, player) {
   if (!monster || !player) return false;
-  const held = (monster.statusEffects || []).some(e => ['stun', 'freeze', 'paralyze'].includes(String(e.type || '').toLowerCase()));
-  if (held) return false;
+  // Push #96h-n: a HELD beast (stun/freeze/paralyze/sleep/petrify) never moves first — and says so.
+  const heldFx = (monster.statusEffects || []).find(e => /^(stun|stunned|freeze|frozen|paralyze|paralyzed|paralysis|sleep|asleep|petrify|petrified)$/i.test(String(e.type || '')));
+  raidMonsterGoesFirst.lastHeld = heldFx ? String(heldFx.type) : null;
+  if (heldFx) return false;
   return Math.random() * 100 < raidInitiativeChance(monster, player);
 }
 function monsterDodgeChance(monster, player) {
@@ -973,13 +975,19 @@ const MON_ATK_BUFF = 1.7 * RAID_X2, MON_DEF_BUFF = 1.4 * RAID_X2 * 1.75 * 2.2, M
 const RANK_SOFTEN = { A: 0.75, B: 0.75, C: 0.75, D: 0.75, E: 0.75 };
 function rankSoften(rank) { return RANK_SOFTEN[String(rank || '').toUpperCase()] || 1; }
 const LEAK_MULT = 5; // Push #96h-m: 5× (silent — never stated in text)
+const LEAK_ATK_CUT = 0.30; // Push #96h-n: leaked ATK −70% (5× × 0.3 = 1.5× habitat ATK)
 const SPEED_RANK_FACTOR = { E: 0.55, D: 0.65, C: 0.75, B: 0.85, A: 0.95, S: 1.10, SS: 1.25 };
 function _types() { try { return require('../utils/MonsterTypes'); } catch (e) { return null; } }
-function _anchorSpeed(gate, roleFactor = 1, boss = false) {
+// Push #96h-n: SPEED RECOMPUTED — anchored to the party's average speed with a per-beast spread
+// (deterministic per monster), so on every floor SOME beasts out-pace the hunters and some don't.
+const SPEED_RANK_BASE = { E: 0.85, D: 0.90, C: 0.95, B: 1.00, A: 1.05, S: 1.15, SS: 1.25 };
+function _speedJitter(seed) { let h = 2166136261; for (const ch of String(seed || '')) { h ^= ch.charCodeAt(0); h = Math.imul(h, 16777619) >>> 0; } return 0.70 + (h % 1000) / 1000 * 0.65; } // 0.70 … 1.35
+function _anchorSpeed(gate, roleFactor = 1, boss = false, seed = '') {
   const avg = (gate && gate.calibrated && gate.calibrated.avgSpeed) || 0;
   if (!avg) return 0;
-  const rf = SPEED_RANK_FACTOR[String(gate.rank || 'E').toUpperCase()] || 0.6;
-  return avg * rf * Math.max(0.5, Math.min(1.8, roleFactor)) * (boss ? 1.15 : 1) * 1.4; // Push #96h-c: +40% monster speed everywhere
+  const rb = SPEED_RANK_BASE[String(gate.rank || 'E').toUpperCase()] || 0.85;
+  const role = 0.85 + Math.max(0.5, Math.min(1.8, roleFactor)) * 0.15; // role nudges (±), never dominates
+  return avg * rb * role * (boss ? 1.2 : _speedJitter(seed));
 }
 function applyMonsterScaling(gate) {
   const severity = ((gate.calibrated && gate.calibrated.severity) || 1) * rankSoften(gate.rank);
@@ -997,11 +1005,11 @@ function applyMonsterScaling(gate) {
     // Push #96h: SPEED anchored to the party. Base roll was ~10 → ×3.5 = 35 while
     // hunters run 150–300, so beasts never out-paced anyone. Now a beast's speed
     // is at least (party avg speed × rank factor × role profile).
-    mon.speed = Math.max(mon.speed, Math.round(_anchorSpeed(gate, mon._base.speed / 10, false)));
+    { const _as = Math.round(_anchorSpeed(gate, mon._base.speed / 10, false, `${mon.name}|${mon.floor}|${gate.id}`)); if (_as > 0) mon.speed = _as; } // Push #96h-n: anchor REPLACES (spread above and below the party)
     // Push #96h: family body types (armour → DEF, sleek → SPD/crit, hive → HP…). Buff only.
     { const TM = _types(); if (TM) { const tm = TM.mults(mon); mon.maxHp = Math.floor(mon.maxHp * tm.hp); mon.hp = Math.max(1, Math.floor(mon.maxHp * hpPct)); mon.atk = Math.floor(mon.atk * tm.atk); mon.def = Math.floor(mon.def * tm.def); mon.speed = Math.round(mon.speed * tm.speed); mon.critBonus = tm.crit; mon.typeLabel = tm.label; } }
     // Push #96h-m: a LEAKED beast is 5× what it would be in its own habitat (kept silent in-chat).
-    if (mon.leaked) { mon.maxHp = Math.floor(mon.maxHp * LEAK_MULT); mon.hp = Math.max(1, Math.floor(mon.maxHp * hpPct)); mon.atk = Math.floor(mon.atk * LEAK_MULT); mon.def = Math.floor(mon.def * LEAK_MULT); mon.speed = Math.round(mon.speed * 1.5); }
+    if (mon.leaked) { mon.maxHp = Math.floor(mon.maxHp * LEAK_MULT); mon.hp = Math.max(1, Math.floor(mon.maxHp * hpPct)); mon.atk = Math.floor(mon.atk * LEAK_MULT * LEAK_ATK_CUT); mon.def = Math.floor(mon.def * LEAK_MULT); mon.speed = Math.round(mon.speed * 1.5); } // Push #96h-n: ATK cut 70%
     mon._raid = true; mon.rank = mon.rank || gate.rank; // Push #88q: raid ×2 package + initiative
   }
   // Push #88z: elites are ALWAYS exactly 2× the (scaled) monsters of the floor before them.
@@ -1565,8 +1573,8 @@ function reviveStaleFloors(db, now = Date.now()) {
       const floor = gate.currentFloor || 1;
       const alive = (gate.monsters || []).some(m => m && m.floor === floor && !m.defeated && (m.hp || 0) > 0);
       if (alive) { gate.floorClearedAt = null; continue; }
-      // Final floor: engaging the boss counts as moving on.
-      if (floor >= (gate.totalFloors || 1) && gate.boss && (gate.boss.defeated || (gate.boss.hp || 0) < (gate.boss.maxHp || gate.boss.hp || 0))) { gate.floorClearedAt = null; continue; }
+      // Push #96h-n: the LAST floor never revives — once its monsters fall, the boss is the only thing left.
+      if (floor >= (gate.totalFloors || 1)) { gate.floorClearedAt = null; continue; }
       const mons = reviveFloor(gate, floor);
       if (!mons.length) { gate.floorClearedAt = null; continue; }
       gate.floorClearedAt = null;
@@ -1749,7 +1757,7 @@ function spawnWildPet(gate) {
   return { petId: chosen.id, name: chosen.name, emoji: chosen.emoji, rarity: chosen.rarity };
 }
 
-module.exports = { LEAK_MULT, LEAK_REGEN_CHANCE: 0.90, LEAK_DOMAIN_CHANCE: 0.80,
+module.exports = { LEAK_MULT, LEAK_ATK_CUT, LEAK_REGEN_CHANCE: 0.90, LEAK_DOMAIN_CHANCE: 0.80,
   findOtherRaid,
   RED_GATE_CHANCE, DOUBLE_DUNGEON_CHANCE, LEAK_CHANCE, RED_GATE_TEXT, sealedReason, leakMonster, succeedLeader, takeLeaderNotice, doublePending, evolveDouble, grantDoubleBoxes, // Push #96d
   livingMembers,

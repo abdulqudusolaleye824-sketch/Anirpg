@@ -246,8 +246,10 @@ function accuracyOf(attacker, move) {
   try { acc += require('./GearSystem').getEquippedBonuses(attacker).accuracy || 0; } catch (e) {}
   let mod = 1; try { mod = SEM.getStatModifiers(attacker).accuracyMod; } catch (e) {}
   let tb = 0; try { tb = tempBuffPct(attacker, 'accuracy'); } catch (e) {}
-  const blind = (attacker?.statusEffects || []).some(e => ['blind', 'fear'].includes(String(e.type || '').toLowerCase()));
-  return { acc: Math.max(5, Math.min(100, acc * mod * (1 + tb / 100))), base: acc, mod, blind };
+  // Push #96h-n: only a LIVE blind/fear (duration left) cuts accuracy — and the label says which one.
+  const _bf = (attacker?.statusEffects || []).find(e => e && ['blind', 'fear'].includes(String(e.type || '').toLowerCase()) && (e.duration == null || e.duration > 0));
+  const blind = !!_bf; const blindType = _bf ? String(_bf.type).toLowerCase() : null;
+  return { acc: Math.max(5, Math.min(100, acc * mod * (1 + tb / 100))), base: acc, mod, blind, blindType };
 }
 const DODGE_CAP_VS_ACC = 8; // a beast's speed edge takes at most 8 points off your hit chance
 function hitCheck(attacker, defender, move, opts = {}) {
@@ -258,7 +260,7 @@ function hitCheck(attacker, defender, move, opts = {}) {
   const hit = held ? 100 : Math.max(5, Math.min(100, a.acc - dodge));
   const roll = Math.random() * 100;
   const out = { hit: roll < hit, chance: Math.round(hit), acc: Math.round(a.acc), dodge: Math.round(dodge), blind: a.blind, held };
-  out.why = out.hit ? null : (a.blind ? `🌫️ BLIND — accuracy cut to ${Math.round(a.acc)}%` : dodge > 0 && roll >= a.acc - dodge && roll < a.acc ? `💨 dodged (${Math.round(dodge)}% speed edge)` : `🎯 missed (${Math.round(a.acc)}% accuracy)`);
+  out.why = out.hit ? null : (a.blind ? (a.blindType === 'fear' ? `😱 FEAR — accuracy cut to ${Math.round(a.acc)}%` : `🌫️ BLIND — accuracy cut to ${Math.round(a.acc)}%`) : dodge > 0 && roll >= a.acc - dodge && roll < a.acc ? `💨 dodged (${Math.round(dodge)}% speed edge)` : `🎯 missed (${Math.round(a.acc)}% accuracy)`);
   hitCheck.last = out;
   return out;
 }
