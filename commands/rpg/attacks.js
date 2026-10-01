@@ -71,6 +71,8 @@ function detectActiveCombat(player, chatId, db, sender) {
   for (const gate of Object.values(GateManager.gates || {})) {
     if (gate.raid && gate.raid.status === 'active') {
       const isMember = gate.raid.members?.some(m => normaliseJid(m.id) === sNum);
+      // Push #96h-m: a raid only plays out in its own GC — from another group, /attack is NOT a raid move.
+      if (isMember && String(chatId || '').endsWith('@g.us')) { const _kd = GKM.getKey(gate.raid.key); const _home = (_kd && _kd.dungeonChatId) || gate.chatId; if (_home && String(_home).endsWith('@g.us') && _home !== chatId) continue; }
       if (isMember) {
         return { type: 'gateraid', gate, key: gate.raid.key, keyData: GKM.getKey(gate.raid.key) };
       }

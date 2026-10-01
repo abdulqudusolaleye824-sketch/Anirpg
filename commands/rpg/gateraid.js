@@ -164,6 +164,15 @@ module.exports = {
     const resolved = GR.resolveCode(code, db);
     if (!resolved.ok) return sock.sendMessage(chatId, { text: resolved.error }, { quoted: msg });
     const { key, keyData, gate } = resolved;
+    // Push #96h-m: a raid belongs to ONE GC. A raider typing /attack (or any raid action) from a
+    // different group used to get the whole raid turn posted THERE — the "messages for one GC land
+    // in another" bug. Now the raid only plays out in the GC it was opened in.
+    try {
+      const _home = (gate && gate.raid && gate.raid.status === 'active') ? (keyData?.dungeonChatId || gate.chatId) : null;
+      if (_home && String(_home).endsWith('@g.us') && String(chatId).endsWith('@g.us') && _home !== chatId && !msg._berserkAuto) {
+        return sock.sendMessage(chatId, { text: `❌ *That raid is running in another group.*\nGo back to the dungeon GC where the gate was opened and act there.` }, { quoted: msg });
+      }
+    } catch (e) {}
     // Push #88x: a BERSERK hunter (sub-Lv.10 Monster in a passive surge) cannot
     // command their own body — the bot plays their turns (msg._berserkAuto).
     try {
@@ -810,6 +819,10 @@ module.exports = {
 
           killLines.push(``, `💰 *Floor ${floor} Treasure Accumulated:* +${fNexus.toLocaleString()} 💠 Nexus & +${fCrystals.toLocaleString()} 💎 Mana Stones`);
 
+          // Push #96h-m: floor XP, scaled by floor + rank, committed now (every living raider).
+          try { const BRf = require('../../rpg/utils/BattleRewards'); let _fx = 0; const _ids = [sender, ...((gate.raid?.members || []).map(m => m.id).filter(id => id !== sender))];
+            for (const id of _ids) { const u = db.users?.[id]; if (!u || (id !== sender && !((gate.raid?.members || []).find(m => m.id === id && (m.hp == null || m.hp > 0))))) continue; const got = BRf.grantFloorXp(u, floor, gate.rank); if (id === sender) _fx = got; LevelUpManager.checkAndApplyLevelUps(u, saveDatabase, sock, chatId); }
+            if (_fx) killLines.push(`✨ *Floor ${floor} XP:* +${_fx.toLocaleString()} XP (every living raider) · /xp`); } catch (e) {}
           if (floor >= gate.totalFloors) { killLines.push(``, `🏆 *BOSS FLOOR REACHED!*`, `/party boss — Engage the boss!`); }
           else { killLines.push(``, `✅ *Floor ${floor} CLEARED!*`, `/party advance — Floor ${floor + 1}`, `⏳ Move on within *60s* — idle floors revive *+30% stronger* with no rewards.`); }
         }
@@ -861,6 +874,8 @@ module.exports = {
       const _MSFXc = require('../../rpg/utils/MonsterSkillFX');
       const _picked = _monCanAct.canAct ? _MSFXc.pickMoves(_pool71, skillPool[Math.floor(Math.random() * skillPool.length)]) : { support: null, attack: null };
       const monsterSkill = _picked.attack;
+      // Push #96h-m: a LEAKED beast regenerates 90% of its turns (free support move, like any other).
+      if (_monCanAct.canAct && target.leaked && !_picked.support && target.hp < target.maxHp && Math.random() < 0.90) _picked.support = '💚 Regenerate';
       if (_monCanAct.canAct && _picked.support) { try { const _ss = _MSFXc.supportStep(target, _victim, _picked.support); for (const b of _ss.blocks) { await sock.sendMessage(chatId, { text: b }); await new Promise(r => setTimeout(r, 500)); } } catch (e) {} }
       if (!_monCanAct.canAct && _monCanAct.reason === 'initiative') {
         await sock.sendMessage(chatId, { text: [

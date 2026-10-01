@@ -814,6 +814,7 @@ function getSalaryStatus(db, playerJid) {
 }
 
 module.exports = {
+  _dmPlayer, _notifyMaster,
   Week, normaliseJid, rankOf, findUserInDb, findGuild, resolvePlayerGuild, mergeDuplicateGuilds,
   isGuildMasterOrVice, isGuildMember,
   getContract, hire, remainingBalance, kickPayout, creditKickPayout, processWeeklyPay,

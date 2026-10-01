@@ -2183,7 +2183,7 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
       if (!sender?.endsWith('@s.whatsapp.net') && !sender?.endsWith('@lid')) return;
     }
 
-    const messageText =
+    let messageText =
       msg.message.conversation ||
       msg.message.extendedTextMessage?.text ||
       msg.message.imageMessage?.caption ||
@@ -2213,7 +2213,11 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
     } catch (e) {}
 
     const config = readConfigCached();
+    // Push #96h-m: `!xp` works exactly like `/xp`.
+    if (/^!xp\b/i.test(messageText.trim())) messageText = config.prefix + messageText.trim().slice(1);
     const isCommand = messageText.startsWith(config.prefix);
+    // Push #96h-m: sack clock — executes expired 72h sack notices (throttled to once a minute).
+    try { if (db && Date.now() - (global.__sackTick || 0) > 60e3) { global.__sackTick = Date.now(); const GSk = require('../rpg/utils/GuildSack'); const done = GSk.processDue(db); if (done.length) { try { saveDatabase?.(); } catch (e) {} const CM = require('../rpg/utils/GuildContractManager'); for (const d of done) { try { CM._dmPlayer(db, d.id, d.dm); } catch (e) {} try { CM._notifyMaster && CM._notifyMaster(db, d.guild, d.text); } catch (e) {} } } } } catch (e) {}
 
     // Sibling-bot loop prevention for non-command messages (e.g. AI chat).
     // Every sender form is checked — a sibling bot's message must NEVER be

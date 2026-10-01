@@ -463,6 +463,8 @@ function pruneStatuses(effect, statuses) {
   });
 }
 
+// Push #96h-m: per-class power multiplier (skills + buffs).
+const CLASS_POWER = { Archer: 1.5, Berserker: 1.5 };
 function normalise(className, raw, index) {
   const name   = String(raw.name || `Skill ${index + 1}`).trim();
   const effect = ensureParseable(raw.effect || '• Deals 100% ATK damage');
@@ -610,10 +612,24 @@ function normalise(className, raw, index) {
   // Damage as a % of ATK. If the description states a multiplier, honour it;
   // otherwise ramp by index so late skills are meaningfully stronger.
   const statedPct = parsed.damageMultiplier ? Math.round(parsed.damageMultiplier * 100) : 0;
-  const damagePct = isPassive ? 0
+  let damagePct = isPassive ? 0
     : type === 'heal' ? (statedPct || 40)
     : type === 'buff' ? (statedPct || 100) // Push #88: a buff skill still lands a full-strength strike, then the buff doubles what follows
     : (statedPct || 100 + index * 6);
+  // Push #96h-m: CLASS POWER — Archer & Berserker skills AND buffs are 50% stronger. Applied to
+  // the contract numbers themselves so the listed Mechanics line and the engines agree.
+  const _cp = CLASS_POWER[className] || 1;
+  if (_cp !== 1) {
+    if (damagePct > 0) damagePct = Math.round(damagePct * _cp);
+    for (const b of (parsed.buffs || [])) if (b && b.amount > 0) b.amount = Math.round(b.amount * _cp);
+    for (const d of (parsed.debuffs || [])) if (d && d.amount > 0) d.amount = Math.round(d.amount * _cp);
+    if (support.shieldPct) support.shieldPct = Math.min(100, Math.round(support.shieldPct * _cp));
+    if (support.regen && support.regen.pct) support.regen.pct = Math.round(support.regen.pct * _cp);
+    if (support.damageTakenPct) support.damageTakenPct = Math.min(90, Math.round(support.damageTakenPct * _cp));
+    if (support.reflectPct) support.reflectPct = Math.round(support.reflectPct * _cp);
+    if (selfHeal && selfHeal.percent) selfHeal.percent = Math.round(selfHeal.percent * _cp);
+    if (_hpPct.heal) _hpPct.heal = Math.round(_hpPct.heal * _cp);
+  }
 
   // Push #76: every description ends with a plain-language mechanics summary
   // (multiplier, buffs, debuffs, statuses, heal, cost) so a player knows
@@ -1243,7 +1259,7 @@ function carrySkillProgress(player, snap) {
   }
   return { applied, count: now.length, wanted: snap.count };
 }
-module.exports = {
+module.exports = { CLASS_POWER,
   augmentContract,
   parseSupportFields, applySupportFields,
   snapshotSkillProgress, carrySkillProgress,

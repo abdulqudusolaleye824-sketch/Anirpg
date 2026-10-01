@@ -1,3 +1,13 @@
+## 1.0.144 — Push #96h-m: /guild sack · /xp · leaks 5× · red gates −60% · GC isolation · guild shop prices · Archer/Berserker +50%
+- **/guild sack <#>** (GM/Vice; serial from /guild members): 72h notice, target DM'd. Target runs **/guild active** to cancel. Expired → CLEAN removal (members, memberData, user.guild, contract row, pending record) — no payout, no penalty, no orphans. `/guild sack` lists pending; `/guild sack cancel <#>` withdraws. Clock runs on every guild command + once a minute in the handler (DM-only notices).
+- **/xp** (`!xp` works too): level, current XP / needed, bar, total XP, XP to next level.
+- **Floor XP:** every floor clear pays XP scaling with floor × gate rank to every living raider, committed immediately (level-ups applied).
+- **Leaked beasts:** 5× HP/ATK/DEF (silent — never stated), Regenerate 90% of turns (free support step), Domain Expansion 80% per turn (always eligible).
+- **Red Gate chance** 15% → 6%.
+- **GC isolation:** a raid only plays out in the GC it was opened in — raid actions typed in another group are refused, and `/attack` elsewhere is no longer treated as a raid move (the cross-GC message leak). Sack notices never post into the current chat.
+- **Guild shop:** Revive Token 100,000 · Starter Pack 105,000 · Dungeon Kit 500,000 (matches /shop).
+- **Archer & Berserker:** all skill damage, buffs, debuffs, heals, shields ×1.5 — applied to the contract numbers so the listed Mechanics line and engines agree.
+
 ## 1.0.143 — Push #96h-l: monster support moves are free · initiative strikes explained step by step
 
 - **Support moves cost the beast nothing**: Regenerate, Harden, Shell, "+X% DEF" style abilities (any heal/buff-only skill) now play as a *🌀 MONSTER SUPPORT MOVE* — name → description ("Costs no turn · deals no damage") → heal/buff lines → HP → "…and it still attacks!" — followed by a real attack with a real skill. No more "Regenerate dealt 13 damage" eating the turn. Gate raids (counter, initiative, boss Regenerate — now full-force hit after the free heal), dungeons and instances.

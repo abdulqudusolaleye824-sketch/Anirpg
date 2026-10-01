@@ -766,7 +766,7 @@ function start(sender, keyData, gate, db) {
 
 // ── Push #96d: RED GATES · DOUBLE DUNGEONS · LEAKS · LEADER SUCCESSION ──────
 const RED_GATE_EXTRA_FLOORS = 10; // Push #96h
-const RED_GATE_CHANCE = 0.15;
+const RED_GATE_CHANCE = 0.06; // Push #96h-m: −60% (was 0.15)
 const DOUBLE_DUNGEON_CHANCE = 0.05;
 const LEAK_CHANCE = 0.17;
 const RED_GATE_TEXT = '🟥 *THE GATE TURNS RED!* The entrance seals behind you — *nobody can enter or leave* this raid until the gate is cleared or the party falls.';
@@ -794,7 +794,7 @@ function leakMonster(gate) {
   const old = gate.monsters[i];
   gate.monsters[i] = { ...leaked, floor: old.floor, defeated: false, leaked: true, leakedFrom: fromRank, name: `${leaked.name} (${fromRank}-Rank leak)` };
   gate.leakedMonster = { name: gate.monsters[i].name, floor: old.floor, fromRank };
-  return `⚠️ *A ${fromRank}-Rank beast has leaked into this gate!* *${leaked.name}* prowls floor ${old.floor} — *three times* the strength it had in its own habitat.`;
+  return `⚠️ *A ${fromRank}-Rank beast has leaked into this gate!* *${leaked.name}* prowls floor ${old.floor} — far stronger than anything native to this gate.`;
 }
 // When the leader falls, the next hunter on the party list takes the crown.
 function succeedLeader(gate, fallenJid) {
@@ -972,7 +972,7 @@ const MON_ATK_BUFF = 1.7 * RAID_X2, MON_DEF_BUFF = 1.4 * RAID_X2 * 1.75 * 2.2, M
 // Push #89: A–E gates are 25% softer (monsters AND boss); S+ untouched.
 const RANK_SOFTEN = { A: 0.75, B: 0.75, C: 0.75, D: 0.75, E: 0.75 };
 function rankSoften(rank) { return RANK_SOFTEN[String(rank || '').toUpperCase()] || 1; }
-const LEAK_MULT = 3; // Push #96h
+const LEAK_MULT = 5; // Push #96h-m: 5× (silent — never stated in text)
 const SPEED_RANK_FACTOR = { E: 0.55, D: 0.65, C: 0.75, B: 0.85, A: 0.95, S: 1.10, SS: 1.25 };
 function _types() { try { return require('../utils/MonsterTypes'); } catch (e) { return null; } }
 function _anchorSpeed(gate, roleFactor = 1, boss = false) {
@@ -1000,7 +1000,7 @@ function applyMonsterScaling(gate) {
     mon.speed = Math.max(mon.speed, Math.round(_anchorSpeed(gate, mon._base.speed / 10, false)));
     // Push #96h: family body types (armour → DEF, sleek → SPD/crit, hive → HP…). Buff only.
     { const TM = _types(); if (TM) { const tm = TM.mults(mon); mon.maxHp = Math.floor(mon.maxHp * tm.hp); mon.hp = Math.max(1, Math.floor(mon.maxHp * hpPct)); mon.atk = Math.floor(mon.atk * tm.atk); mon.def = Math.floor(mon.def * tm.def); mon.speed = Math.round(mon.speed * tm.speed); mon.critBonus = tm.crit; mon.typeLabel = tm.label; } }
-    // Push #96h: a LEAKED beast is 3× what it would be in its own habitat.
+    // Push #96h-m: a LEAKED beast is 5× what it would be in its own habitat (kept silent in-chat).
     if (mon.leaked) { mon.maxHp = Math.floor(mon.maxHp * LEAK_MULT); mon.hp = Math.max(1, Math.floor(mon.maxHp * hpPct)); mon.atk = Math.floor(mon.atk * LEAK_MULT); mon.def = Math.floor(mon.def * LEAK_MULT); mon.speed = Math.round(mon.speed * 1.5); }
     mon._raid = true; mon.rank = mon.rank || gate.rank; // Push #88q: raid ×2 package + initiative
   }
@@ -1749,7 +1749,7 @@ function spawnWildPet(gate) {
   return { petId: chosen.id, name: chosen.name, emoji: chosen.emoji, rarity: chosen.rarity };
 }
 
-module.exports = {
+module.exports = { LEAK_MULT, LEAK_REGEN_CHANCE: 0.90, LEAK_DOMAIN_CHANCE: 0.80,
   findOtherRaid,
   RED_GATE_CHANCE, DOUBLE_DUNGEON_CHANCE, LEAK_CHANCE, RED_GATE_TEXT, sealedReason, leakMonster, succeedLeader, takeLeaderNotice, doublePending, evolveDouble, grantDoubleBoxes, // Push #96d
   livingMembers,

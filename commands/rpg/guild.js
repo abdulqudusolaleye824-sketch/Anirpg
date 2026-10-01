@@ -48,7 +48,7 @@ const REGULAR_SHOP_POOL = [
   { id: 'medium_health_potion', name: 'Medium Health Potion', category: 'Potions', type: 'potion', currency: 'gold', basePrice: 5000, description: 'Restores 25% HP', key: 'mediumHealthPotions' },
   { id: 'higher_health_potion', name: 'Higher Health Potion', category: 'Potions', type: 'potion', currency: 'gold', basePrice: 7000, description: 'Restores 50% HP', key: 'higherHealthPotions' },
   { id: 'health_potion', name: 'Health Potion', category: 'Potions', type: 'potion', currency: 'gold', basePrice: 800, description: 'Restores 10% HP', key: 'lowerHealthPotions' },
-  { id: 'revive_token', name: 'Revive Token', category: 'Potions', type: 'potion', currency: 'gold', basePrice: 3000, description: 'Auto-revives once in dungeon', key: 'reviveTokens' },
+  { id: 'revive_token', name: 'Revive Token', category: 'Potions', type: 'potion', currency: 'gold', basePrice: 100000, description: 'Auto-revives once in dungeon', key: 'reviveTokens' },
   { id: 'luck_potion', name: 'Luck Potion', category: 'Potions', type: 'potion', currency: 'gold', basePrice: 2000, description: '+25% catch rate & casino odds', key: 'luckPotion' },
   { id: 'xp_booster', name: 'XP Booster', category: 'Potions', type: 'potion', currency: 'gold', basePrice: 5000, description: '+50% XP for 3 battles', key: 'xpBooster' },
   { id: 'nexus_mult', name: 'Nexus Multiplier', category: 'Potions', type: 'potion', currency: 'gold', basePrice: 8000, description: 'Next 3 wins give 2x gold', key: 'goldMult' },
@@ -69,8 +69,8 @@ const REGULAR_SHOP_POOL = [
   { id: 'crit_gem', name: 'Crit Gem', category: 'Stat Orbs', type: 'stat', currency: 'crystals', basePrice: 800, description: '+3% Crit permanently', stat: 'crit', amount: 3 },
 
   // Bundles (Nexus)
-  { id: 'starter_pack', name: 'Starter Pack', category: 'Bundles', type: 'bundle', currency: 'gold', basePrice: 5000, description: '5 HP Pots + 5 Energy Pots + 1 Revive Token', bundleId: 1 },
-  { id: 'dungeon_kit', name: 'Dungeon Kit', category: 'Bundles', type: 'bundle', currency: 'gold', basePrice: 18000, description: '10 HP Pots + 5 Revives + 1 XP Booster', bundleId: 2 },
+  { id: 'starter_pack', name: 'Starter Pack', category: 'Bundles', type: 'bundle', currency: 'gold', basePrice: 105000, description: '5 HP Pots + 5 Energy Pots + 1 Revive Token', bundleId: 1 },
+  { id: 'dungeon_kit', name: 'Dungeon Kit', category: 'Bundles', type: 'bundle', currency: 'gold', basePrice: 500000, description: '10 HP Pots + 5 Revive Tokens + 2 Luck Potions', bundleId: 2 },
   { id: 'pvp_bundle', name: 'PvP Bundle', category: 'Bundles', type: 'bundle', currency: 'gold', basePrice: 20000, description: 'Elixir of Might + Shield Scroll + 2 Luck Potions', bundleId: 3 },
 
   // Attack Patterns (Nexus)
@@ -168,6 +168,34 @@ module.exports = {
       if (db.guildContracts && db.guildContracts['[object Object]']) delete db.guildContracts['[object Object]'];
     } catch (e) {}
     const playerGuild = _CM71.resolvePlayerGuild(db, sender, player);
+    // Push #96h-m: run the sack clock on every guild command (also ticked from the handler).
+    try { const GSk = require('../../rpg/utils/GuildSack'); const done = GSk.processDue(db); if (done.length) { saveDatabase(); for (const d of done) { try { await sock.sendMessage(chatId, { text: d.text }); } catch (e) {} try { _CM71._dmPlayer && _CM71._dmPlayer(db, d.id, d.dm); } catch (e) {} } } } catch (e) {}
+
+    // ═══════════════════════════════════════════════════════════════════
+    // /guild sack <#> — 72h notice · /guild active — clear it (Push #96h-m)
+    // ═══════════════════════════════════════════════════════════════════
+    if (action === 'sack' || action === 'sacks') {
+      const GSk = require('../../rpg/utils/GuildSack');
+      if (!playerGuild) return sock.sendMessage(chatId, { text: '❌ You are not in a guild!' }, { quoted: msg });
+      const _r = playerGuild.members?.find(m => (typeof m === 'object' ? m.id : m) === sender)?.rank || (playerGuild.leader === sender ? 'Leader' : 'Member');
+      const _can = playerGuild.leader === sender || /leader|guild master|vice/i.test(String(_r));
+      if (!_can) return sock.sendMessage(chatId, { text: '❌ Only the Guild Master or Vice GM can sack members.' }, { quoted: msg });
+      const a1 = (args[1] || '').toLowerCase();
+      if (!a1 || a1 === 'list' || action === 'sacks') return sock.sendMessage(chatId, { text: GSk.list(db, playerGuild) + `\n\nUsage: */guild sack <#>* (serial from */guild members*)` }, { quoted: msg });
+      if (a1 === 'cancel' || a1 === 'withdraw') { const c = GSk.cancel(db, playerGuild, args[2]); if (c.ok) saveDatabase(); return sock.sendMessage(chatId, { text: c.ok ? c.text : c.error }, { quoted: msg }); }
+      const r = GSk.sack(db, playerGuild, sender, a1.replace('#', ''));
+      if (!r.ok) return sock.sendMessage(chatId, { text: r.error }, { quoted: msg });
+      saveDatabase();
+      try { _CM71._dmPlayer && _CM71._dmPlayer(db, r.target.id, r.dm); } catch (e) {}
+      return sock.sendMessage(chatId, { text: `${FRAME}\n${r.text}\n${FRAME}`, mentions: [r.target.id] }, { quoted: msg });
+    }
+    if (action === 'active' || action === 'clearance') {
+      const GSk = require('../../rpg/utils/GuildSack');
+      const r = GSk.clear(db, playerGuild, sender);
+      if (!r.ok) return sock.sendMessage(chatId, { text: r.error }, { quoted: msg });
+      if (r.cleared) saveDatabase();
+      return sock.sendMessage(chatId, { text: r.text, mentions: [sender] }, { quoted: msg });
+    }
 
     // ═══════════════════════════════════════════════════════════════════
     // /guild list — Table of all registered guilds
@@ -1142,7 +1170,7 @@ ${FRAME}\n`;
       memberList += `${FRAME}\n`;
       memberList += `Total: ${rows.length}/${maxM} · 👑 1 GM · ⭐ ${Math.max(0, officers - 1)} officer(s)\n`;
       memberList += `Guild Points: *${(playerGuild.guildPoints || playerGuild.totalGP || 0).toLocaleString()} GP*\n`;
-      memberList += `${FRAME}\n💡 /guild promote @user · /guild demote @user · /guild assign @user · /guild kick @user`;
+      memberList += `${FRAME}\n💡 /guild promote @user · /guild demote @user · /guild assign @user · /guild kick @user · /guild sack <#>`;
 
       return sock.sendMessage(chatId, { text: memberList });
     }

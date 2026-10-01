@@ -141,4 +141,14 @@ function shareRaidExp(gate, killerJid, db, sock=null, chatId=null) {
     return paid.length ? `✨ *Party EXP:* ${paid.join(' · ')}` : '';
   } catch (e) { return ''; }
 }
-module.exports = { giveBattleWinRewards, formatRewards, isPro, giveSharedExp, shareRaidExp };
+// Push #96h-m: FLOOR-GATE XP — clearing a floor pays XP that scales with the floor and the gate
+// rank, committed straight to the profile (level-ups applied by the caller).
+const FLOOR_RANK_MULT = { F: 0.8, E: 1, D: 1.5, C: 2.2, B: 3.2, A: 4.5, S: 6, SS: 8 };
+function floorXp(floor, rank) { return Math.floor((250 + Math.max(1, floor) * 180) * (FLOOR_RANK_MULT[String(rank || 'E').toUpperCase()] || 1)); }
+function grantFloorXp(player, floor, rank) {
+  if (!player) return 0; let xp = floorXp(floor, rank);
+  try { xp = Math.floor(xp * require('./AuraSystem').AuraSystem.expMult(player)); } catch (e) {}
+  try { const JS = require('./JobSystem'); const jm = JS.mods ? JS.mods(player) : {}; if (jm && jm.xpMult) xp = Math.floor(xp * (1 + jm.xpMult / 100)); } catch (e) {}
+  player.xp = (player.xp || 0) + xp; player.lifetimeXp = (player.lifetimeXp || 0) + xp; return xp;
+}
+module.exports = { floorXp, grantFloorXp, FLOOR_RANK_MULT, giveBattleWinRewards, formatRewards, isPro, giveSharedExp, shareRaidExp };

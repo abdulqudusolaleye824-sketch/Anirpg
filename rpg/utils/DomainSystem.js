@@ -346,7 +346,7 @@ function monsterPower(monster, ctx = {}) {
   return (RANK_IDX[rank] || 0) * 40 + (Number(monster.level) || 1) + (ctx.boss || monster.isBoss ? 90 : 0) + (monster.elite || monster.isElite ? 30 : 0);
 }
 function monsterEligible(monster, ctx = {}) {
-  if (ctx.boss || monster.isBoss) return true;
+  if (ctx.boss || monster.isBoss || monster.leaked) return true; // Push #96h-m: leaked beasts always eligible
   const rank = String(ctx.rank || monster.rank || 'E').toUpperCase();
   return (RANK_IDX[rank] || 0) >= 3;
 }
@@ -363,7 +363,7 @@ function monsterTry(arena, monster, hunters = [], ctx = {}) {
   const cur = active(arena);
   if (cur && cur.side === 'monster') return null;
   const isBoss = !!(ctx.boss || monster.isBoss);
-  const chance = isBoss ? 0.70 : 0.40; // Push #96d: bosses 70%, B/A/S monsters 40%
+  const chance = monster.leaked ? 0.80 : isBoss ? 0.70 : 0.40; // Push #96d: bosses 70%, B/A/S 40% · Push #96h-m: leaked 80%
   if (Math.random() > (ctx.forceChance != null ? ctx.forceChance : chance)) return null;
   const pow = monsterPower(monster, ctx);
   const lines = [];
