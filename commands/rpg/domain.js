@@ -70,8 +70,9 @@ module.exports = {
       const r = DS.expand(battle.arena, player, battle.allies, battle.enemies, { kind: battle.kind });
       saveDatabase();
       if (!r.ok) return sock.sendMessage(chatId, { text: r.clashed ? r.error : `❌ ${r.error}` }, { quoted: msg });
-      const text = [FRAME, r.text, FRAME, `⚡ ${player.stats.energy}/${player.stats.maxEnergy} ${player.energyType || 'energy'} left`].join('\n');
-      await sock.sendMessage(chatId, { text }, { quoted: msg });
+      // Push #96h-c: name → description → effect as separate messages.
+      const _parts = DS.splitMessages(r.text); const _last = _parts.length - 1;
+      for (let i = 0; i < _parts.length; i++) { const _t = i === 0 ? `${FRAME}\n${_parts[i]}` : i === _last ? `${_parts[i]}\n${FRAME}\n⚡ ${player.stats.energy}/${player.stats.maxEnergy} ${player.energyType || 'energy'} left` : _parts[i]; await sock.sendMessage(chatId, { text: _t }, i === 0 ? { quoted: msg } : undefined); }
       // PvP: tell the opponent too (they may be in another chat / DM).
       if (battle.kind === 'pvp') { try { const opp = battle.enemies[0]; const to = opp && (opp.jid || opp.id); if (to && to !== chatId) await sock.sendMessage(to, { text: `🌌 *${player.name}* expanded their domain against you!\n${r.text}` }); } catch (e) {} }
       return;

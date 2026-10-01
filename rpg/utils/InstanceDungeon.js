@@ -135,7 +135,7 @@ function makeMonster(player, floor) {
   const name = (def && def.name) || _pick(['Shade', 'Ghoul', 'Warg', 'Imp', 'Sentinel']);
   return { id: `inst_${floor}`, name: isBoss ? `${name} Overlord` : name, emoji: isBoss ? '👑' : '👹', level: lvl + floor, rank, isBoss, floor,
     abilities: (def && def.skills && def.skills.length) ? def.skills : ['Strike', 'Rend'],
-    stats: { hp, maxHp: hp, atk, def: dfn, speed: 90 + floor * 3 }, statusEffects: [], tempBuffs: {} };
+    stats: { hp, maxHp: hp, atk, def: dfn, speed: Math.round((90 + floor * 3) * 1.4) /* Push #96h-c: +40% */ }, statusEffects: [], tempBuffs: {} };
 }
 
 function start(player, jobQuery) {

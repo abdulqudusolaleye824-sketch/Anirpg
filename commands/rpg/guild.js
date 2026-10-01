@@ -7,6 +7,11 @@ const StatusEffectManager = require('../../rpg/utils/StatusEffectManager');
 const StatAllocationSystem = require('../../rpg/utils/StatAllocationSystem');
 const AchievementManager = require('../../rpg/utils/AchievementManager');
 const CM = require('../../rpg/utils/GuildContractManager');
+// Push #96h-c: an AFFILIATE belongs to one guild's banner already — they cannot join or create another.
+function _affiliateBlock(db, jid) {
+  try { const n = String(jid || '').split(':')[0].split('@')[0]; for (const a of Object.values(db.affiliates || {})) if (a && a.jid && String(a.jid).split(':')[0].split('@')[0] === n && a.guildName) return `❌ You are an *affiliate of ${a.guildName}* — affiliates cannot join or create a guild. Ask them to */affiliate strip* you first.`; } catch (e) {}
+  return null;
+}
 
 // Helper: Calculate max member capacity based on size level
 function getMaxMembers(guild) {
@@ -232,6 +237,7 @@ module.exports = {
           mentions: [sender]
         }, { quoted: msg });
       }
+      { const _ab = _affiliateBlock(db, sender); if (_ab) return sock.sendMessage(chatId, { text: _ab }, { quoted: msg }); }
       if (playerGuild) {
         delete db.pendingGuildHires[_offerKey];
         return sock.sendMessage(chatId, { text: '❌ You are already in a guild! Leave your current guild first.' }, { quoted: msg });
@@ -563,6 +569,7 @@ module.exports = {
         }
       }
 
+      { const _ab = _affiliateBlock(db, sender); if (_ab) return sock.sendMessage(chatId, { text: _ab }, { quoted: msg }); }
       if (playerGuild) {
         return sock.sendMessage(chatId, {
           text: '❌ You are already in a guild!\n\nUse /guild leave first.'
@@ -662,6 +669,7 @@ ${FRAME}`
         }, { quoted: msg });
       }
 
+      { const _ab = _affiliateBlock(db, sender); if (_ab) return sock.sendMessage(chatId, { text: _ab }, { quoted: msg }); }
       if (playerGuild) {
         return sock.sendMessage(chatId, {
           text: '❌ You are already in a guild! Leave your current guild first with */guild leave*.'

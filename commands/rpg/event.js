@@ -29,12 +29,13 @@ module.exports = {
       return say([`🏆 *JEJU ISLAND RAID — LEADERBOARD*${db.event.active ? '' : ' (final)'}`, ...(lb.length ? lb.map((e, i) => `${['🥇', '🥈', '🥉'][i] || `${i + 1}.`} *${e.name}* — ${e.points.toLocaleString()} pts · ${e.kills} kills · ${e.hunterKills} hunter kills`) : ['_Nobody has scored yet._'])].join('\n'));
     }
     if (sub === 'status' || sub === 'info') return say(EventSystem.status(db));
+    if (sub === 'join') { const r = EventSystem.join(db, player); if (!r.ok) return say(`❌ ${r.error}`); saveDatabase(db); for (const t of r.messages) await sock.sendMessage(chatId, { text: t }); return; }
     if (sub === 'start') {
       if (!Perms.isBotOwner(db, sender)) return say('❌ Only an owner can start the event.');
       if (!inGC) return needGC();
       const r = EventSystem.start(db, sender); if (!r.ok) return say(`❌ ${r.error}`);
       saveDatabase(db);
-      return say([`🏝️ *THE JEJU ISLAND RAID HAS BEGUN!*`, `For *10 days* the island belongs to whoever takes it.`, ``, `🌊 Each wave: *${EventSystem.WAVE_SIZE} beasts + 1 boss*. Clear it and a stronger wave rises.`, `⚔️ */event attack [#]* — strike a beast (they only counter, never start a fight; left alone 30s they regenerate).`, `🗡️ */event hit @hunter* — friendly fire is ON. Kill a hunter: take *50%* of their points, theirs reset to *0*.`, `💀 Die and you wait *1 hour* to respawn.`, `🛌 */eventafk* — untouchable, but you cannot attack.`, `🌌 */event domain* — your *Lv.10 event domain* (name it: /event domain name …).`, `🏅 */epoints* · */estats* · */eshop* · */event lb*`, ``, `Hunters Lv.${EventSystem.DOMAIN_LEVEL}+ only. Good hunting.`].join('\n'));
+      return say([`🏝️ *THE JEJU ISLAND RAID HAS BEGUN!*`, `For *10 days* the island belongs to whoever takes it.`, ``, `🌊 Each wave: *${EventSystem.WAVE_SIZE} beasts + 1 boss*. Clear it and a stronger wave rises.`, `🏝️ */ejoin* — enter the island (you get your event domain, then name + describe it).`, `⚔️ */event attack [#] [skill]* — your gear, passives and class skills are wired in; no skill named → your strongest ready skill fires. *Tag a hunter* in this GC to strike them.`, `⚔️ */event attack [#]* — strike a beast (they only counter, never start a fight; left alone 30s they regenerate).`, `🗡️ */event hit @hunter* — friendly fire is ON. Kill a hunter: take *50%* of their points, theirs reset to *0*.`, `💀 Die and you wait *1 hour* to respawn.`, `🛌 */eventafk* — untouchable, but you cannot attack.`, `🌌 */event domain* — your *Lv.10 event domain* (name it: /event domain name …).`, `🏅 */epoints* · */estats* · */eshop* · */event lb*`, ``, `Hunters Lv.${EventSystem.DOMAIN_LEVEL}+ only. Good hunting.`].join('\n'));
     }
     if (sub === 'end' || sub === 'stop') {
       if (!Perms.isBotOwner(db, sender)) return say('❌ Only an owner can end the event.');
@@ -44,7 +45,8 @@ module.exports = {
     }
     if (sub === 'attack' || sub === 'a' || sub === 'strike') {
       if (!inGC) return needGC();
-      const r = EventSystem.attackMonster(db, player, args[1] && /^#?\d+$/.test(args[1]) ? args[1].replace('#', '') : null);
+      const _hasId = args[1] && /^#?\d+$/.test(args[1]); const _skill = args.slice(_hasId ? 2 : 1).join(' ').trim() || null;
+      const r = EventSystem.attackMonster(db, player, _hasId ? args[1].replace('#', '') : null, _skill);
       if (!r.ok) return say(`❌ ${r.error}`); saveDatabase(db); return say(r.text);
     }
     if (sub === 'hit' || sub === 'pk' || sub === 'strikehunter') {

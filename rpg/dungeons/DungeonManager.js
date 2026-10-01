@@ -190,7 +190,7 @@ function partySeverity(members) {
 }
 
 // Push #88n: global monster buff — ATK +70%, DEF +40% on top of level/floor scaling.
-const MON_ATK_BUFF = 1.7, MON_DEF_BUFF = 1.4 * 1.75 * 2.2, MON_HP_BUFF = 1.5, MON_SPD_BUFF = 1.75 * 2; // Push #96d: DEF ×2.2, SPD ×2 // Push #88o: +50% HP · Push #88z: DEF +75%, SPD +75%
+const MON_ATK_BUFF = 1.7, MON_DEF_BUFF = 1.4 * 1.75 * 2.2, MON_HP_BUFF = 1.5, MON_SPD_BUFF = 1.75 * 2 * 1.4; /* Push #96h-c: +40% */ // Push #96d: DEF ×2.2, SPD ×2 // Push #88o: +50% HP · Push #88z: DEF +75%, SPD +75%
 function scaleMonsterForFloor(baseMonster, playerLevel, floor, severity = 1) {
   const floorMult  = 1 + (floor - 1) * 0.15;  // Push #88: steeper climb per floor
   const levelMult  = 1 + (playerLevel - 1) * 0.03;

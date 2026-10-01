@@ -937,7 +937,7 @@ function floorMultiplier(gate, floor) {
 // floor multiplier. Idempotent — safe to call on every calibrate/advance.
 // Push #88n: global monster buff — ATK +70%, DEF +40% — applied on top of the
 // level/floor/severity scaling (which stays exactly as it was).
-const MON_ATK_BUFF = 1.7 * RAID_X2, MON_DEF_BUFF = 1.4 * RAID_X2 * 1.75 * 2.2, MON_HP_BUFF = 1.5, MON_SPD_BUFF = 1.75 * 2; // Push #96d: DEF ×2.2, SPD ×2 // Push #88o: +50% HP · Push #88q: raid ATK/DEF ×2 again · Push #88z: DEF +75%, SPD +75%
+const MON_ATK_BUFF = 1.7 * RAID_X2, MON_DEF_BUFF = 1.4 * RAID_X2 * 1.75 * 2.2, MON_HP_BUFF = 1.5, MON_SPD_BUFF = 1.75 * 2 * 1.4 /* Push #96h-c: +40% */; // Push #96d: DEF ×2.2, SPD ×2 // Push #88o: +50% HP · Push #88q: raid ATK/DEF ×2 again · Push #88z: DEF +75%, SPD +75%
 // Push #89: A–E gates are 25% softer (monsters AND boss); S+ untouched.
 const RANK_SOFTEN = { A: 0.75, B: 0.75, C: 0.75, D: 0.75, E: 0.75 };
 function rankSoften(rank) { return RANK_SOFTEN[String(rank || '').toUpperCase()] || 1; }
@@ -948,7 +948,7 @@ function _anchorSpeed(gate, roleFactor = 1, boss = false) {
   const avg = (gate && gate.calibrated && gate.calibrated.avgSpeed) || 0;
   if (!avg) return 0;
   const rf = SPEED_RANK_FACTOR[String(gate.rank || 'E').toUpperCase()] || 0.6;
-  return avg * rf * Math.max(0.5, Math.min(1.8, roleFactor)) * (boss ? 1.15 : 1);
+  return avg * rf * Math.max(0.5, Math.min(1.8, roleFactor)) * (boss ? 1.15 : 1) * 1.4; // Push #96h-c: +40% monster speed everywhere
 }
 function applyMonsterScaling(gate) {
   const severity = ((gate.calibrated && gate.calibrated.severity) || 1) * rankSoften(gate.rank);

@@ -1,3 +1,13 @@
+## 1.0.135 — Push #96h-c: /ejoin · auto-wired event combat · tag = strike · affiliates can't join guilds · every domain multi-message · monster speed +40%
+
+- **/ejoin** — enter the Jeju Island Raid (Events GC). The bot awakens your Lv.10 event domain (class-leaning archetype shown), then asks for a **name**, then a **description** — plain replies in the GC or DM are consumed. You must have joined to fight or be struck.
+- **Event combat auto-wired**: `/event attack [#] [skill]` runs through the real raid engine (gear, weapon, title, passives, buffs, class skills, cooldowns, energy). No skill named → your strongest *ready damage* skill fires; nothing ready → basic strike. Beast counters use the real monster-damage path (your DEF/dodge count).
+- **Tag = strike**: in the Events GC, simply mentioning a joined hunter attacks them (no command).
+- **Stats tracked**: damage dealt/taken, skills cast, crits, domain casts, join time, kills, boss kills, hunter kills, deaths, points, spent — shown in `/estats`; `/einfo` counts only joined hunters.
+- **Affiliates cannot join, create or accept a guild** (3 guild entry points guarded).
+- **All Domain Expansions are multi-message** — hunter (`/domain expand`, PvP, raids, dungeons, instances) and monster/boss domains send *name → description → effect* as separate messages. Done once at the socket layer (invisible break U+2063), so every call site benefits.
+- **Monster speed +40%** everywhere: gate beasts (buff and party anchor), gate bosses, tower dungeon monsters/bosses, instances, dungeon-event beasts, Jeju waves.
+
 ## 1.0.134 — Push #96h: serf iron wall · monster speed fixed · family body types · Red Gate +10 · leak ×3 · Jeju Island Raid · deeper monster domains
 
 - **One bot DMs you — your serf.** The wall now sits at the *socket* level: any DM a non-serf bot tries to send to a hunter with a serf is forwarded through the serf socket (owners/mods and replies-in-DM exempt).

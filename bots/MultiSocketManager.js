@@ -1658,6 +1658,20 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
         }
       } catch (e) {}
       if (options && options.asSelf) { options = { ...options }; delete options.asSelf; }
+      // Push #96h-c: MULTI-MESSAGE blocks. Any text carrying the invisible break
+      // (U+2063 — Domain Expansion name / description / effect) is sent as
+      // separate messages, in order, wherever in the bot it was produced.
+      try {
+        if (content && typeof content.text === 'string' && content.text.includes('\u2063')) {
+          const _parts = content.text.split('\u2063').map(t => t.replace(/^\n+|\n+$/g, '')).filter(Boolean);
+          if (_parts.length > 1) {
+            let _last = null;
+            for (let i = 0; i < _parts.length; i++) _last = await sock.sendMessage(jid, { ...content, text: _parts[i] }, i === 0 ? { ...(options || {}), asSelf: true } : { asSelf: true });
+            return _last;
+          }
+          content = { ...content, text: _parts[0] || content.text.replace(/\u2063/g, '') };
+        }
+      } catch (e) {}
       let _res;
       // Push #74: WhatsApp rate-overlimit is handled HERE, once, for every
       // send in the bot: back off and retry (1.5s → 3s → 6s → 12s); if it still
@@ -2213,6 +2227,30 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
         if (msg.participant) _forms.push(String(msg.participant).split(':')[0].split('@')[0]);
       } catch (e) {}
       if (_forms.some(f => f && _isOwnBotNumber(f))) return;
+      // Push #96h-c: Jeju event — (a) /ejoin name/description replies (event GC or DM),
+      // (b) in the Events GC, simply TAGGING a hunter strikes them.
+      if (db && db.users && messageText.trim()) {
+        try {
+          const ES = require('../rpg/utils/EventSystem');
+          const _pl = db.users[sender] || db.users[Object.keys(db.users).find(k => k.split('@')[0] === bareSender) || ''];
+          if (_pl && ES.setupStep(_pl) && (!isGroup || ES.isEventGC(db, chatId))) {
+            const r = ES.handleSetupReply(_pl, messageText);
+            if (r) { try { saveDatabase?.(); } catch (e) {} await sock.sendMessage(chatId, { text: r }, { quoted: msg }); return; }
+          }
+          if (_pl && isGroup && ES.isEventGC(db, chatId)) {
+            const _tj = require('../utils/target').resolve(msg, []);
+            if (_tj && _tj !== sender) {
+              const _tb = String(_tj).split('@')[0];
+              const _victim = db.users[_tj] || db.users[Object.keys(db.users).find(k => k.split('@')[0] === _tb || (db.lidMap && db.lidMap[k.split('@')[0]] === _tb)) || ''];
+              if (_victim && _victim !== _pl && ES.isJoined(db, _pl)) {
+                const r = ES.attackHunter(db, _pl, _victim);
+                try { saveDatabase?.(); } catch (e) {}
+                await sock.sendMessage(chatId, { text: r.ok ? r.text : `❌ ${r.error}`, mentions: [_tj] }, { quoted: msg }); return;
+              }
+            }
+          }
+        } catch (e) {}
+      }
       // Push #96d: domain name/description setup — plain DM replies are consumed here.
       if (!isGroup && db && db.users) {
         try {

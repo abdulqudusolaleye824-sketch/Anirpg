@@ -253,8 +253,8 @@ function expand(arena, player, allies = [player], enemies = [], ctx = {}) {
   _register(arena, myId); for (const k of _ownerKeys(player)) _register(arena, k);
   player.domain.casts = (player.domain.casts || 0) + 1;
   const d = player.domain;
-  lines.unshift(`🌌 *DOMAIN EXPANSION — ${e.name.toUpperCase()}*`);
-  if (d.desc) lines.push(`_${d.desc}_`);
+  const _head = [`🌌 *DOMAIN EXPANSION — ${e.name.toUpperCase()}*`]; if (d.desc) _head.push(`_${d.desc}_`); // Push #96h-c: separate messages
+  lines.unshift(..._head.map((t, i) => t + (i === _head.length - 1 ? '\u2063' : '\u2063')));
   lines.push(`👤 ${player.name} · Domain Lv.${e.level} · ${e.turns} turns · power ${myPow}`, `🛡️ Inside your domain you are immune to new status effects.`);
   lines.push(...describe(player));
   if (allies.length > 1) lines.push(`🤝 Party covered: ${allies.map(a => a.name).join(', ')}`);
@@ -289,6 +289,12 @@ const FAMILY_DOMAINS = {
   slime:     { name: 'Dissolving Pool',   emoji: '🟢', desc: 'Acid mist eats at steel and skin alike — and feeds the thing beneath.',                  law: 'regen',  lawText: 'The beast regenerates' },
   insect:    { name: 'Hive Mind Field',   emoji: '🐜', desc: 'A thousand eyes share one hunger. Nowhere you stand is unseen.',                         law: 'slow',   lawText: 'Hunters are SLOWED' },
 };
+// Push #96h-c: EVERY domain expansion goes out as separate messages — name, then
+// description, then the effect. Blocks are joined with an invisible break; callers
+// use sendDomain()/splitMessages(). Unsplit output just shows a blank line.
+const BREAK = '\n\u2063\n';
+function splitMessages(text) { return String(text || '').split('\u2063').map(s => s.replace(/^\n+|\n+$/g, '')).filter(Boolean); }
+async function sendDomain(sock, chatId, text, opts = {}) { for (const part of splitMessages(text)) { try { await sock.sendMessage(chatId, { text: part, ...(opts.extra || {}) }, opts.quoted ? { quoted: opts.quoted } : undefined); } catch (e) {} } }
 function _familyDomain(monster) {
   try { const f = require('./MonsterTypes').familyOf(monster); return FAMILY_DOMAINS[f] || null; } catch (e) { return null; }
 }
@@ -356,8 +362,8 @@ function monsterTry(arena, monster, hunters = [], ctx = {}) {
   arena.domain = { ownerId: monster.id || monster.name, ownerName: monster.name, side: 'monster', name, level: 0, turnsLeft: turns, power: pow, rank: info.rank };
   _register(arena, monster.id || monster.name); for (const k of _ownerKeys(monster)) _register(arena, k);
   lines.unshift(
-    `${info.emoji} *DOMAIN EXPANSION — ${name.toUpperCase()}* [${info.rank}${isBoss ? ' BOSS' : ''}]`,
-    `_${info.desc}_`,
+    `${info.emoji} *DOMAIN EXPANSION — ${name.toUpperCase()}* [${info.rank}${isBoss ? ' BOSS' : ''}]\u2063`,
+    `_${info.desc}_\u2063`,
     `${monster.emoji || '👹'} ${turns} turns · power ${pow} · 🛡️ immune to new status effects inside`,
     `⬇️ Hunters: ATK −${mag}% · DEF −${mag}% · damage taken +${mag}% · 💥 ${info.burst}% max HP burst (${hurt.join(', ')})`,
     `⬆️ ${monster.name}: ATK +${info.self}% · DEF +${info.self}%`,
@@ -447,4 +453,4 @@ function findBattle(player, sender, db) {
   return null;
 }
 
-module.exports = { FAMILY_DOMAINS, isShielded, shieldLine, monsterDomainInfo, MONSTER_DOMAINS, setupStep, setupPrompt, handleSetupReply, rename, pvpArena, endPvpArena, findBattle, CAST_ENERGY, MAX_LEVEL, UP_SHARE_CAP, ARCHETYPES, CLASS_DOMAINS, STAT_LABEL, effectFor, scale, turnsFor, costToNext, ensure, has, unlock, scaledEffect, describe, power, upgrade, arenaOf, active, shatter, tick, expand, monsterPower, monsterEligible, monsterTry, onLevelUp, shareUP };
+module.exports = { BREAK, splitMessages, sendDomain, FAMILY_DOMAINS, isShielded, shieldLine, monsterDomainInfo, MONSTER_DOMAINS, setupStep, setupPrompt, handleSetupReply, rename, pvpArena, endPvpArena, findBattle, CAST_ENERGY, MAX_LEVEL, UP_SHARE_CAP, ARCHETYPES, CLASS_DOMAINS, STAT_LABEL, effectFor, scale, turnsFor, costToNext, ensure, has, unlock, scaledEffect, describe, power, upgrade, arenaOf, active, shatter, tick, expand, monsterPower, monsterEligible, monsterTry, onLevelUp, shareUP };

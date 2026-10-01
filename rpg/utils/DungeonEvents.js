@@ -343,7 +343,7 @@ function spawnMiniBoss(dungeonRank, avgLevel) {
       maxHp: Math.floor(hpBase  * tmpl.hpMult),
       atk:   Math.floor(atkBase * tmpl.atkMult),
       def:   Math.floor(defBase * 1.3),
-      speed: 90 + Math.floor(Math.random()*20)
+      speed: Math.round((90 + Math.floor(Math.random()*20)) * 1.4) // Push #96h-c: +40%
     },
     level: avgLevel
   };
