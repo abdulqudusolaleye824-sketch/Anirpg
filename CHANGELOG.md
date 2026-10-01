@@ -1,3 +1,10 @@
+## 1.0.131 — Push #96e: daily-quest bonus for regular hunters · Pro keys from boxes · B/C weapons in boxes
+
+- **Regular hunters**: finishing all 4 daily quests rolls a hidden 50% **Daily Bonus** — one of: 📈 1–7 UP · 💠 Nexus · 💎 Mana Stones · a D/E-Rank weapon or gear (store-grade, straight into the bag) · 🗝️ Instance Key (if a job change is open). Told clearly whether they got a bonus or *none today*. No Mending Stones in that pool.
+- **Pro hunters**: Instance Keys now come **only from the Blessed/Cursed boxes** (no separate roll).
+- **Pro boxes** can drop weapons: Blessed → C-Rank, Cursed → B or C-Rank (`ArmoryStore.grantRandom`).
+- Box payout lines say *Nexus* (💠) correctly.
+
 ## 1.0.130 — Push #96d: Red Gates · Double Dungeons · beast leaks · tougher regen monsters · job ladder · domain DM naming · /forcequest · reply targets
 
 - **Handicap matches give no stat bonus** — `/teampvp handicap on` only allows uneven teams.

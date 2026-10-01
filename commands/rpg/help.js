@@ -207,7 +207,7 @@ module.exports = {
       `  /store (/armory) — daily weapons & gear (the ONLY source), /inv <#> · /equip <#> · /mend <#> · /equip gift <#> @p, /class, /awaken, /attacks, /craft, /forge, /enchant, /upgrade, /pet, /artifact, /aura, /constellation, /skin, /title`,
       ``,
       `🧭 *JOBS & DOMAINS:*`,
-      `  /job (list/info/switch/change) — 20 Jobs × 5 Job Levels, unlocked IN ORDER via Job Change Quests, switch freely between unlocked jobs · /domain (expand/upgrade/rename) — your permanent Lv.20 domain, named & described in your DM when it awakens (rename = Rename Card, description permanent), 350 energy · /instance (DM) — Job Change Quest dungeon, keys from finishing all 4 dailies · /box (Pro, DM) — Blessed/Cursed daily box · /giveup @p <n> — share UP (20/day)`,
+      `  /job (list/info/switch/change) — 20 Jobs × 5 Job Levels, unlocked IN ORDER via Job Change Quests, switch freely between unlocked jobs · /domain (expand/upgrade/rename) — your permanent Lv.20 domain, named & described in your DM when it awakens (rename = Rename Card, description permanent), 350 energy · /instance (DM) — Job Change Quest dungeon, keys from finishing all 4 dailies · /box (Pro, DM) — Blessed/Cursed daily box (Nexus, UP, B/C-Rank weapons, Instance Keys…) · regular hunters: finishing all 4 dailies rolls a hidden daily bonus (UP ≤7, Nexus, Mana Stones, D/E weapon or gear, Instance Key) — you are told either way · /giveup @p <n> — share UP (20/day)`,
       ``,
       `🏰 *GUILD & ECONOMY:*`,
       `  /guild (icon: reply to image with /guild icon), /guildwar (/gw), /market, /trade, /shop, /bank, /casino, /contract, /wages`,

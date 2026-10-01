@@ -29,10 +29,11 @@ function onDailyComplete(player, sock, jid, chatId) {
   const dk = dayKey(player) || new Date().toISOString().slice(0, 10);
   if (player._dailyDoneRewarded === dk) return { lines };
   player._dailyDoneRewarded = dk;
-  // Key roll — only for hunters who already qualify for a job change.
-  if (eligibleJobs(player).length && Math.random() < KEY_CHANCE) {
-    player.jobKeys = keys(player) + 1;
-    lines.push(`🗝️ *INSTANCE KEY!* A Job Change Quest key materialises (you hold ${player.jobKeys}). Bound to you — /instance start`);
+  // Push #96e: Pro hunters get their keys from the boxes; regular hunters roll a
+  // hidden 50% daily bonus (UP ≤7 · Nexus · Mana Stones · D/E weapon or gear · key).
+  if (!_pro(player)) {
+    const b = regularBonus(player);
+    lines.push(b.line);
   }
   // Pro: Blessed / Cursed box choice in DM.
   if (_pro(player)) {
@@ -42,13 +43,35 @@ function onDailyComplete(player, sock, jid, chatId) {
       (async () => {
         try {
           const Buttons = require('../../utils/buttons');
-          const text = [`🎁 *DAILY BOX* 💎`, `All 4 daily quests done, *${player.name}*. Fate offers two boxes:`, ``, `✨ *Blessed* — light: Mana Stones, UP, Mending Stones, potions, maybe a key.`, `🖤 *Cursed* — dark: bigger jackpots, rare materials, keys… or a price.`, ``, `Boxes waiting: ${player.pendingBoxes}`].join('\n');
+          const text = [`🎁 *DAILY BOX* 💎`, `All 4 daily quests done, *${player.name}*. Fate offers two boxes:`, ``, `✨ *Blessed* — light: Nexus, UP, Mending Stones, potions, a C-Rank weapon, maybe a key.`, `🖤 *Cursed* — dark: bigger jackpots, B/C-Rank weapons, rare materials, keys… or a price.`, ``, `Boxes waiting: ${player.pendingBoxes}`].join('\n');
           await Buttons.sendButtons(sock, jid, { text, buttons: Buttons.quickReplies([['✨ Blessed box', '/box blessed'], ['🖤 Cursed box', '/box cursed']]) });
         } catch (e) { try { await sock.sendMessage(jid, { text: `🎁 Daily box ready — /box blessed or /box cursed` }); } catch (e2) {} }
       })();
     }
   }
   return { lines };
+}
+
+// ── Regular hunter daily bonus (hidden 50% chance) ────────────────────────
+const REGULAR_BONUS_CHANCE = 0.50;
+function regularBonus(player) {
+  if (Math.random() >= REGULAR_BONUS_CHANCE) return { got: false, line: `🎁 Daily bonus: *none today* — the system offered nothing extra. Try again tomorrow.` };
+  const lvl = Math.max(1, player.level || 1);
+  const pool = ['up', 'nexus', 'stones', 'gear'];
+  if (eligibleJobs(player).length) pool.push('key');
+  const kind = _pick(pool);
+  let what = '';
+  if (kind === 'up') { const up = 1 + Math.floor(Math.random() * 7); player.upgradePoints = (player.upgradePoints || 0) + up; what = `📈 +${up} Upgrade Point${up === 1 ? '' : 's'}`; }
+  else if (kind === 'nexus') { const g = Math.floor((3000 + lvl * 400) * (0.8 + Math.random() * 0.6)); player.gold = (player.gold || 0) + g; what = `💠 +${g.toLocaleString()} Nexus`; }
+  else if (kind === 'stones') { const c = Math.floor((150 + lvl * 20) * (0.8 + Math.random() * 0.6)); player.manaCrystals = (player.manaCrystals || 0) + c; what = `💎 +${c.toLocaleString()} Mana Stones`; }
+  else if (kind === 'key') { player.jobKeys = keys(player) + 1; what = `🗝️ +1 Instance Key (bound) — /instance start`; }
+  else {
+    const rank = Math.random() < 0.6 ? 'E' : 'D';
+    let inst = null; try { inst = require('./ArmoryStore').grantRandom(player, rank, null, 'daily_bonus'); } catch (e) {}
+    if (inst) what = `${inst.emoji} *${inst.name}* (${rank}-Rank ${inst.isWeapon ? 'weapon' : 'gear'}) — in your bag, /equip`;
+    else { const g = Math.floor(2000 + lvl * 300); player.gold = (player.gold || 0) + g; what = `💠 +${g.toLocaleString()} Nexus`; }
+  }
+  return { got: true, kind, line: `🎁 *DAILY BONUS!* ${what}` };
 }
 
 // ── Boxes ─────────────────────────────────────────────────────────────────
@@ -64,9 +87,10 @@ function openBox(player, kind) {
   const out = [];
   const RI = (() => { try { return require('./RewardInventory'); } catch (e) { return null; } })();
   if (kind === 'blessed') {
-    const gold = Math.floor((8000 + lvl * 900) * (0.8 + Math.random() * 0.6)); player.gold = (player.gold || 0) + gold; out.push(`💠 +${gold.toLocaleString()} Mana Stones`);
+    const gold = Math.floor((8000 + lvl * 900) * (0.8 + Math.random() * 0.6)); player.gold = (player.gold || 0) + gold; out.push(`💠 +${gold.toLocaleString()} Nexus`);
     const r = Math.random();
-    if (r < 0.30) { inv.mendingStones = (inv.mendingStones || 0) + 1; out.push(`🪨 +1 Mending Stone`); }
+    if (r < 0.15) { let w = null; try { w = require('./ArmoryStore').grantRandom(player, 'C', 'weapon', 'blessed_box'); } catch (e) {} if (w) out.push(`${w.emoji} *${w.name}* (C-Rank weapon) — in your bag`); else { inv.mendingStones = (inv.mendingStones || 0) + 1; out.push(`🪨 +1 Mending Stone`); } } // Push #96e
+    else if (r < 0.30) { inv.mendingStones = (inv.mendingStones || 0) + 1; out.push(`🪨 +1 Mending Stone`); }
     else if (r < 0.60) { const up = 2 + Math.floor(Math.random() * 4); player.upgradePoints = (player.upgradePoints || 0) + up; out.push(`📈 +${up} Upgrade Points`); }
     else if (r < 0.85) { inv.mediumHealthPotions = (inv.mediumHealthPotions || 0) + 2; out.push(`🧪 +2 Medium Health Potions`); }
     else { inv.higherHealthPotions = (inv.higherHealthPotions || 0) + 1; inv.reviveTokens = (inv.reviveTokens || 0) + 1; out.push(`🧪 +1 Higher Health Potion · ✨ +1 Revive Token`); }
@@ -76,7 +100,8 @@ function openBox(player, kind) {
   }
   // cursed — dark rewards, sometimes with a price
   const r = Math.random();
-  if (r < 0.40) { const gold = Math.floor((25000 + lvl * 2500) * (0.8 + Math.random() * 0.8)); player.gold = (player.gold || 0) + gold; out.push(`🖤 Dark jackpot: +${gold.toLocaleString()} Mana Stones`); }
+  if (r < 0.15) { const rk = Math.random() < 0.5 ? 'B' : 'C'; let w = null; try { w = require('./ArmoryStore').grantRandom(player, rk, 'weapon', 'cursed_box'); } catch (e) {} if (w) out.push(`🗡️ Cursed armament: ${w.emoji} *${w.name}* (${rk}-Rank weapon) — in your bag`); else { const gold = Math.floor((25000 + lvl * 2500)); player.gold = (player.gold || 0) + gold; out.push(`🖤 Dark jackpot: +${gold.toLocaleString()} Nexus`); } } // Push #96e
+  else if (r < 0.40) { const gold = Math.floor((25000 + lvl * 2500) * (0.8 + Math.random() * 0.8)); player.gold = (player.gold || 0) + gold; out.push(`🖤 Dark jackpot: +${gold.toLocaleString()} Nexus`); }
   else if (r < 0.65) { const up = 6 + Math.floor(Math.random() * 6); player.upgradePoints = (player.upgradePoints || 0) + up; out.push(`🩸 Blood-bought power: +${up} Upgrade Points`); }
   else if (r < 0.85) {
     const rank = lvl >= 60 ? 'S' : lvl >= 40 ? 'A' : lvl >= 25 ? 'B' : 'C';
@@ -115,7 +140,7 @@ function makeMonster(player, floor) {
 
 function start(player, jobQuery) {
   if (player.instance && player.instance.active) return { ok: false, error: 'You are already inside an instance — /instance attack, or /instance leave.' };
-  if (keys(player) < 1) return { ok: false, error: 'You need an *Instance Key* — 10% chance whenever you finish all 4 daily quests (if a job change is open to you).' };
+  if (keys(player) < 1) return { ok: false, error: 'You need an *Instance Key* — Pro hunters find them in their daily boxes, regular hunters in the daily-quest bonus (when a job change is open to you).' };
   const elig = eligibleJobs(player);
   if (!elig.length) return { ok: false, error: 'No job change is open to you yet — level up to unlock more jobs (/job list).' };
   let job = jobQuery ? JS.findJob(jobQuery) : elig[elig.length - 1];
@@ -252,4 +277,4 @@ function status(player) {
   return [`🏚️ *INSTANCE — ${job.emoji} ${job.name.toUpperCase()} QUEST*`, `Floor *${inst.floor}* · target ${inst.target}${inst.passed ? ' ✅' : ''} · kills ${inst.kills}`, `${m.emoji} *${m.name}* [${m.rank}]${m.isBoss ? ' 👑' : ''} — HP ${m.stats.hp}/${m.stats.maxHp}`, `❤️ You: ${player.stats.hp}/${_max(player)} · ⚡ ${player.stats.energy}/${player.stats.maxEnergy}`, `⚔️ /instance attack · ✨ /instance skill <name> · 🌌 /domain expand · 🚪 /instance leave`].join('\n');
 }
 
-module.exports = { KEY_CHANCE, eligibleJobs, keys, onDailyComplete, openBox, targetFloorFor, makeMonster, start, act, end, status };
+module.exports = { regularBonus, REGULAR_BONUS_CHANCE, KEY_CHANCE, eligibleJobs, keys, onDailyComplete, openBox, targetFloorFor, makeMonster, start, act, end, status };

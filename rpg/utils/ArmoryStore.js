@@ -245,6 +245,20 @@ function buy(player, noOrSku) {
   return { ok: true, item, inst };
 }
 
+// Push #96e: drop a freshly rolled store-grade item straight into a hunter's bag
+// (daily-quest bonus: D/E · Pro boxes: B/C). Same generators as /store.
+function grantRandom(player, rank, kind, source = 'bonus') {
+  if (!player || !RANKS.includes(rank)) return null;
+  const k = kind || (Math.random() < 0.5 ? 'weapon' : 'gear');
+  const stock = k === 'weapon' ? genWeapon(rank, Math.random, 'X') : genGear(rank, Math.random, 'X');
+  const inst = instantiate(stock, player);
+  inst.fromStore = false; inst.source = source;
+  if (!player.inventory) player.inventory = {};
+  if (!Array.isArray(player.inventory.items)) player.inventory.items = [];
+  player.inventory.items.push(inst);
+  return inst;
+}
+
 // ── Equip / durability / mending ─────────────────────────────────────────────
 function equipWeapon(player, inst) {
   if (!inst || !inst.isWeapon) return { ok: false, error: 'Not a weapon.' };
@@ -415,7 +429,7 @@ function renderDetail(it) {
 module.exports = {
   lowDurabilityCheck, autoMendEnabled, LOW_DUR,
   RANKS, RANK_EMOJI, RANK_RARITY, BANDS, STATUS_EMOJI, STATUSES,
-  dayKey, msUntilRotation, getStock, findStock, buy, instantiate, maxDurabilityFor,
+  dayKey, msUntilRotation, getStock, findStock, buy, instantiate, maxDurabilityFor, grantRandom,
   equipWeapon, unequipWeapon, wearWeapon, wearGear, mendAll, mendAllShared,
   statusDefense, weaponEffects, describeGearSpecial,
   renderStock, renderDetail, statLine, priceLine,
