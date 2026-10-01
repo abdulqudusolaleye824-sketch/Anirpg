@@ -1,3 +1,10 @@
+## 1.0.138 — Push #96h-f: tower scales with level · late affiliates raid at once · Pro tier bonuses · Unemployed vs Self-Employed
+
+- **Tower dungeons scale with hunter level**: level multiplier 5%/level (was 3%), level weighs 40% of party severity (was 30%), severity cap 12×. A Lv.60 hunter meets a floor several times stronger than a Lv.10 on the same floor.
+- **Affiliates/members hired after a raid started raid immediately**: `/gateraid <code>` seats them in the live party (ready, battle state cleared, beasts re-calibrated to the bigger party) with a "joins the raid mid-fight" card. Outsiders are still stopped by the consumed-key rule.
+- **/profaq** now shows each Pro card's currency bonus (Nexus · Mana Stones · UP) under its price.
+- **Profile status**: *Self-Employed* is a Pro perk — non-Pro unguilded hunters show *Unemployed*.
+
 ## 1.0.137 — Push #96h-e: silent initiative · /guildwages
 
 - **Initiative is silent.** A faster beast still moves first, but the card no longer compares speeds — it just reads "*Beast* lunges before *Hunter* can act!" followed by the hit; the step-by-step turn continues as before.

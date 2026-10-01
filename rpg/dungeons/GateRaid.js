@@ -619,12 +619,16 @@ function enter(sender, name, key, keyData, gate, db) {
   // (Members re-running enter on their own live raid pass straight through.)
   const _alreadyIn = (raid.members || []).some(m =>
     m.id === sender || GKM.normaliseJid(m.id) === GKM.normaliseJid(sender));
-  if (!_alreadyIn && keyData?.consumed) {
+  const rel = relationOf(sender, keyData, db);
+  // Push #96h-f: a guild MEMBER or AFFILIATE (incl. one hired AFTER the raid began) walks
+  // straight into the guild's live party — the consumed-key rule only stops outsiders
+  // from re-opening a spent key.
+  const _liveGuildRaid = rel !== 'outsider' && raid.leader && raid.status !== 'done';
+  if (!_alreadyIn && keyData?.consumed && !_liveGuildRaid) {
     return { ok: false, error: '🔥 *This key is already consumed!*\n\nSingle-use: each key opens exactly one party. Buy a fresh gate for another run.' };
   }
   // Burn it now — committed from this point on (covers solo + /gateraid enter).
   try { keyData.consumed = true; if (db?.gateKeys?.[key]) db.gateKeys[key].consumed = true; } catch (e) {}
-  const rel = relationOf(sender, keyData, db);
 
   // No-guild hunter (not a member of the owning guild, not an affiliate) → instant SOLO raid.
   if (rel === 'outsider') {
@@ -658,10 +662,19 @@ function enter(sender, name, key, keyData, gate, db) {
     raid.members = [];
     raid.fallen = [];
   }
-  ensureMember(gate, sender, db);
+  const _wasIn = (raid.members || []).some(m => m.id === sender || GKM.normaliseJid(m.id) === GKM.normaliseJid(sender));
+  const m = ensureMember(gate, sender, db);
   gate.raiders = gate.raiders || [];
   if (!gate.raiders.includes(sender)) gate.raiders.push(sender);
-  return { ok: true, mode: 'party', raid, rel };
+  // Push #96h-f: joined a raid that is ALREADY running (late member / freshly hired affiliate):
+  // seated as ready, raid is re-calibrated to the new party, and the caller is told.
+  let lateJoin = false;
+  if (!_wasIn && raid.status === 'active' && m) {
+    m.ready = true; lateJoin = true;
+    try { require('../utils/CombatReset').clearParty(db, [sender]); } catch (e) {}
+    try { gate.calibrated = null; calibrateToParty(gate, raid, db); applyMonsterScaling(gate); } catch (e) {}
+  }
+  return { ok: true, mode: 'party', raid, rel, lateJoin };
 }
 
 function join(sender, name, gate, db) {

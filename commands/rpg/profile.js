@@ -96,7 +96,8 @@ function buildCard(player, db, targetId, mentionedId, isOwnProfile) {
   const Nexus       = (player.gold || 0).toLocaleString();
   const manaStones  = (player.manaCrystals || 0).toLocaleString();
   const guildDisplay = player.guild ? `*${player.guild}*` : 'None';
-  const employmentStatus = player.guild ? `Employed 💼 *(${player.guild})*` : `Self-Employed 💼`;
+  const _isProEmp = (() => { try { return require('../../rpg/utils/UI').isPro(player); } catch (e) { return false; } })();
+  const employmentStatus = player.guild ? `Employed 💼 *(${player.guild})*` : (_isProEmp ? `Self-Employed 💼` : `Unemployed 🪪`); // Push #96h-f: Self-Employed is a PRO perk
 
   let petDisplay = player.pet
     ? `${player.pet.emoji || '🐾'} ${player.pet.name || 'Unnamed'} Lv.${player.pet.level || 1}`

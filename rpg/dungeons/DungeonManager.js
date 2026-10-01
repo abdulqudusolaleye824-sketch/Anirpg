@@ -184,16 +184,16 @@ function partySeverity(members) {
   const expectedPer = 260 + avgLvl * 14;
   const statRatio = total / Math.max(1, expectedPer * n);
   const lvlRatio = avgLvl / 20;
-  const ratio = (statRatio * 0.7 + lvlRatio * 0.3) * Math.sqrt(n);
+  const ratio = (statRatio * 0.6 + lvlRatio * 0.4) * Math.sqrt(n); // Push #96h-f: level weighs more
   let sev = 0.55 + ratio * 0.75;
-  return Math.round(Math.max(1.0, Math.min(10.0, sev)) * 100) / 100;
+  return Math.round(Math.max(1.0, Math.min(12.0, sev)) * 100) / 100;
 }
 
 // Push #88n: global monster buff — ATK +70%, DEF +40% on top of level/floor scaling.
 const MON_ATK_BUFF = 1.7, MON_DEF_BUFF = 1.4 * 1.75 * 2.2, MON_HP_BUFF = 1.5, MON_SPD_BUFF = 1.75 * 2 * 1.4; /* Push #96h-c: +40% */ // Push #96d: DEF ×2.2, SPD ×2 // Push #88o: +50% HP · Push #88z: DEF +75%, SPD +75%
 function scaleMonsterForFloor(baseMonster, playerLevel, floor, severity = 1) {
   const floorMult  = 1 + (floor - 1) * 0.15;  // Push #88: steeper climb per floor
-  const levelMult  = 1 + (playerLevel - 1) * 0.03;
+  const levelMult  = 1 + (playerLevel - 1) * 0.05; // Push #96h-f: hunter LEVEL drives the tower harder (was 3%/lvl)
   const combined   = floorMult * levelMult * Math.max(1, Number(severity) || 1);
   return {
     name: baseMonster.name,
@@ -215,7 +215,7 @@ function scaleMonsterForFloor(baseMonster, playerLevel, floor, severity = 1) {
 }
 
 function scaleBossForFloor(bossDef, playerLevel, floor, severity = 1) {
-  const levelMult  = 1 + (playerLevel - 1) * 0.03;
+  const levelMult  = 1 + (playerLevel - 1) * 0.05; // Push #96h-f
   const isFinal    = floor === 20;
   const finalMult  = isFinal ? 1.8 : 1;
   const floorMult  = 1 + (floor - 1) * 0.08; // Push #88: later bosses hit harder
