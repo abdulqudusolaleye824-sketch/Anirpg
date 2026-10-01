@@ -618,8 +618,9 @@ module.exports = {
           const _aCrit = !!(GR.monsterDamage.last && GR.monsterDamage.last.crit);
           if (_aRaw > 0) player.stats.hp = Math.max(1, (player.stats.hp || 1) - _aDmg);
           try { const _rm = (gate.raid?.members || []).find(m => m.id === sender || GR.GKM.normaliseJid(m.id) === GR.GKM.normaliseJid(sender)); if (_rm) _rm.hp = player.stats.hp; } catch (e) {}
+          // Push #96h-e: SILENT initiative — the beast simply moves first; no speed talk.
           await sock.sendMessage(chatId, { text: [
-            `⚡ *INITIATIVE!* *${target.name}* (SPD ${target.speed || 10}) is faster than *${player.name}* (SPD ${player.stats?.speed || 10}) and strikes first!`,
+            `${target.emoji || '👹'} *${target.name}* lunges before *${player.name}* can act!`,
             ...((GR.monsterDamage.last && GR.monsterDamage.last.shieldLine) ? [GR.monsterDamage.last.shieldLine] : []),
             _aRaw <= 0 ? `💨 *${player.name}* dodged the opening blow!` : `${_aCrit ? '💥 CRITICAL HIT — ' : ''}💢 *${player.name}* takes *${_aDmg}* damage → ❤️ ${player.stats.hp}/${_effMax(player)}`,
           ].join('\n') });

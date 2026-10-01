@@ -1,3 +1,8 @@
+## 1.0.137 — Push #96h-e: silent initiative · /guildwages
+
+- **Initiative is silent.** A faster beast still moves first, but the card no longer compares speeds — it just reads "*Beast* lunges before *Hunter* can act!" followed by the hit; the step-by-step turn continues as before.
+- **/guildwages** (`/gwages`, `/payroll`) — Guild Master / Vice only: contracted members, weekly total, everything still owed over remaining weeks, paid so far, treasury and how many weeks it covers (⚠️ when the next payday would default), next payday, per-member breakdown.
+
 ## 1.0.136 — Push #96h-d: events are generic when idle · Monster class = 100% quality · Battle Pass Premium $2 · /profaq headings
 
 - **/einfo · /event status** with no event running now speak generically ("Astra Events") — the Jeju Island Raid is one event of many; past events are listed by name.
