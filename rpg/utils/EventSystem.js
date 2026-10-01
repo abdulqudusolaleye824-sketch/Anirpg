@@ -108,7 +108,7 @@ function start(db, starterJid) {
 }
 function end(db, reason = 'ended') {
   const ev = _ev(db); if (!ev) return null;
-  ev.active = false; ev.endedAt = Date.now(); ev.endReason = reason; db.eventHistory = (db.eventHistory || []).slice(-5).concat([{ id: ev.id, startedAt: ev.startedAt, endedAt: ev.endedAt, waves: ev.wavesCleared, top: leaderboard(db, 3).map(e => ({ name: e.name, points: e.points })) }]);
+  ev.active = false; ev.endedAt = Date.now(); ev.endReason = reason; db.eventHistory = (db.eventHistory || []).slice(-5).concat([{ id: ev.id, name: ev.name, startedAt: ev.startedAt, endedAt: ev.endedAt, waves: ev.wavesCleared, top: leaderboard(db, 3).map(e => ({ name: e.name, points: e.points })) }]);
   return ev;
 }
 function tick(db) { // expiry + regen (cheap; call before any event action)
@@ -288,7 +288,7 @@ function leaderboard(db, n = 10) {
   return Object.values(db.users || {}).filter(u => u && u.eventStats && u.eventStats.id === ev.id && (u.eventStats.points > 0 || u.eventStats.kills > 0)).map(u => ({ name: _name(u), points: u.eventStats.points || 0, kills: u.eventStats.kills || 0, hunterKills: u.eventStats.hunterKills || 0 })).sort((a, b) => b.points - a.points).slice(0, n);
 }
 function status(db) {
-  const ev = tick(db); if (!ev) return '🏝️ *JEJU ISLAND RAID* — not running. An owner can */event start* in the Events GC.';
+  const ev = tick(db); if (!ev) return '🎪 *ASTRA EVENTS* — nothing is running right now. Watch the Events GC for the next one.';
   const live = alive(ev); const boss = ev.monsters.find(m => m.isBoss); const left = Math.max(0, Math.ceil((ev.endsAt - Date.now()) / DAY));
   const low = live.filter(m => !m.isBoss).sort((a, b) => a.hp / a.maxHp - b.hp / b.maxHp).slice(0, 5).map(m => `  #${m.id} ${m.typeLabel ? m.typeLabel.split(' ')[0] : '👹'} ${m.name} [${m.rank}] ${m.hp.toLocaleString()}/${m.maxHp.toLocaleString()}`).join('\n');
   return [`🏝️ *JEJU ISLAND RAID* — Wave *${ev.wave}* · ${left} day${left === 1 ? '' : 's'} left`, `👹 Beasts alive: *${live.filter(m => !m.isBoss).length}/${WAVE_SIZE}* · 👑 Boss: ${boss ? (boss.defeated ? 'slain' : `${boss.hp.toLocaleString()}/${boss.maxHp.toLocaleString()} HP`) : '—'}`, `🌊 Waves cleared: ${ev.wavesCleared}`, low ? `\n🎯 *Weakest targets:*\n${low}` : '', `\n/event attack [#] · /event hit @hunter · /event domain · /eventafk · /epoints · /eshop`].filter(Boolean).join('\n');
@@ -312,7 +312,7 @@ function buy(db, player, key) {
 
 function _fmtLeft(ms) { ms = Math.max(0, ms); const d = Math.floor(ms / DAY), h = Math.floor((ms % DAY) / 3600000), m = Math.floor((ms % 3600000) / 60000); return d ? `${d}d ${h}h` : h ? `${h}h ${m}m` : `${m}m`; }
 function infoText(db) {
-  const ev = tick(db) || db.event; if (!ev) return '🏝️ *JEJU ISLAND RAID* — no event yet. An owner can */event start* in the Events GC.';
+  const ev = tick(db) || db.event; if (!ev) return '🎪 *ASTRA EVENTS*\n\nNo event is running right now. Seasonal events are announced in the Events GC — when one opens, */einfo* carries the full briefing and */ejoin* gets you in.\n\n_Past events: ' + ((db.eventHistory || []).length ? db.eventHistory.slice(-3).map(h => `${h.name || 'Event'} (${h.waves} waves)`).join(', ') : 'none yet') + '_';
   const live = alive(ev); const boss = ev.monsters.find(m => m.isBoss); const byRank = {}; for (const m of live) if (!m.isBoss) byRank[m.rank] = (byRank[m.rank] || 0) + 1;
   const parts = Object.values(db.users || {}).filter(u => u && u.eventStats && u.eventStats.id === ev.id && u.eventStats.joined); const now = Date.now();
   const active = parts.filter(u => !u.eventStats.afk && !_isDead(u.eventStats)).length, afk = parts.filter(u => u.eventStats.afk).length, dead = parts.filter(u => _isDead(u.eventStats)).length;

@@ -63,7 +63,7 @@ function migratePlayer(player) {
   const _finish = (p) => {
     if (p && p.class && typeof p.class === 'object') p.class = p.class.name || _clsName;
     // Push #74: class stat bonuses are guaranteed on every hunter (idempotent).
-    try { require('./ClassPower').ensureClassBonuses(p); } catch (e) {}
+    try { const _CP = require('./ClassPower'); if (_CP.isMonsterClass(p) && p.classQuality !== 100) p.classQuality = 100; _CP.ensureClassBonuses(p); } catch (e) {} // Push #96h-d: Monster class = 100% quality
     // Push #74c: skills follow the ladder on every command (revokes the
     // classSkills leak that unlocked the whole kit at Lv.1).
     try { if (p && p.class && p.stats) require('./SkillCatalog').syncPlayerSkills(p); } catch (e) {}

@@ -25,7 +25,7 @@ module.exports = {
 
     if (sub === 'lb' || sub === 'leaderboard' || sub === 'top') {
       const lb = EventSystem.leaderboard(db, 10);
-      if (!db.event) return say('🏝️ No event has run yet.');
+      if (!db.event) return say('🎪 No event has run yet — the leaderboard opens with the first one.');
       return say([`🏆 *JEJU ISLAND RAID — LEADERBOARD*${db.event.active ? '' : ' (final)'}`, ...(lb.length ? lb.map((e, i) => `${['🥇', '🥈', '🥉'][i] || `${i + 1}.`} *${e.name}* — ${e.points.toLocaleString()} pts · ${e.kills} kills · ${e.hunterKills} hunter kills`) : ['_Nobody has scored yet._'])].join('\n'));
     }
     if (sub === 'status' || sub === 'info') return say(EventSystem.status(db));

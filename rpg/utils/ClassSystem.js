@@ -295,8 +295,7 @@ function reconClass(player, opts = {}) {
     stripClassFromPlayer(player);
     delete player.monsterVariant;
     const variant = free[Math.floor(Math.random() * free.length)];
-    if (opts.quality != null) player.classQuality = Math.round(Number(opts.quality));
-    else if (!player.classQuality) player.classQuality = Math.floor(MIN_AWAKEN_QUALITY + Math.random() * (MAX_AWAKEN_QUALITY - MIN_AWAKEN_QUALITY + 1));
+    player.classQuality = 100; // Push #96h-d: Monster class is always 100% quality
     player.monsterVariant = variant;
     applyClassToPlayer(player, 'Monster');
     player.monsterVariant = variant;
@@ -396,6 +395,7 @@ function applyClassToPlayer(player, className) {
   // are mapped via ASSIGNED_CLASSES in SoloLevelingCore.js — we read the map
   // dynamically so the policy stays in one place).
   let quality = player.classQuality;
+  if (className === 'Monster' || player.monsterVariant) { quality = MAX_AWAKEN_QUALITY; player.classQuality = quality; } // Push #96h-d
   if (!quality) {
     quality = isPrivilegedAssignment(player, className)
       ? MAX_AWAKEN_QUALITY

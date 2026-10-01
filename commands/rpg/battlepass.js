@@ -1,6 +1,6 @@
 // ═══════════════════════════════════════════════════════════════
 // /battlepass (/bp alias) — Seasonal Battle Pass (40 Tiers, 30 Days)
-// Cost: 1,000 PC for Premium BP. — 30 Day Season
+// Cost: 2,000 PC ($2) for Premium BP. — 30 Day Season
 // 4 levels grant Currency alone (Free: L1, L2, L3 | Prem: L7)
 // All other 36 levels grant Currency + Items / PC Refunds!
 // 20 levels are locked to Premium.
@@ -14,7 +14,7 @@ const TextMenu = (()=>{ try { return require('../../utils/textMenu'); } catch(e)
 const Buttons = (()=>{ try { return require('../../utils/buttons'); } catch(e){ return null; } })();
 
 const TOTAL_TIERS = 40;
-const BP_COST_PC = 1000;
+const BP_COST_PC = 2000; // Push #96h-d: $2 (same as a Weekly Pro Card)
 
 function isProPlayer(player) {
   if (!player) return false;
@@ -103,7 +103,7 @@ function addItemToInventory(player, item) {
 module.exports = {
   name: 'battlepass',
   aliases: ['bp'],
-  description: '🎖️ Seasonal Battle Pass (40 Tiers, 30 Days) — 1,000 PC to unlock Premium',
+  description: '🎖️ Seasonal Battle Pass (40 Tiers, 30 Days) — 2,000 PC ($2) to unlock Premium',
 
   async execute(sock, msg, args, getDatabase, saveDatabase, sender) {
     const chatId = msg.key.remoteJid;
@@ -147,8 +147,8 @@ module.exports = {
           `• ⚡ *Your Current Rate:* **${expRate}**`,
           ``,
           `💰 *PREMIUM REFUND TRACK:*`,
-          `• Unlock Premium for **1,000 PC** (/bp buy)`,
-          `• Tiers 8, 16, 24, 32, and 40 return **200 PC each** (Full 1,000 PC Refunded at Tier 40!).`,
+          `• Unlock Premium for **2,000 PC** ($2) (/bp buy)`,
+          `• Tiers 8, 16, 24, 32, and 40 return **200 PC each** (1,000 PC back by Tier 40!).`,
         ],
         proLines: [`💎 *PRO TRACK*`, `  ⚡ Rate: **${expRate}** · ✅ ${claimedN}/${unlockedN} claimed`],
         tip: '/bp to view your tiers',
@@ -164,7 +164,7 @@ module.exports = {
       if ((player.procoin || 0) < BP_COST_PC) {
         return sock.sendMessage(chatId, {
           text: `${FRAME}\n🎖️ *PREMIUM BATTLE PASS UNLOCK*\n${FRAME}\n\n💰 Cost: *${BP_COST_PC.toLocaleString()} PC*\n💼 Your Balance: *${(player.procoin || 0).toLocaleString()} PC*\n\n✨ *PREMIUM PERKS:*` +
-            `\n• Unlocks all 20 Premium-Locked Tiers\n• **2x BP EXP Boost** on all Battle XP!\n• Combine with PRO for **4x BP EXP**!\n• Receive 200 PC back at Tiers 8, 16, 24, 32, 40 (1,000 PC Total Refund!)\n\n💡 Use /prostore to get PC, or buy with /bp buy when ready!`
+            `\n• Unlocks all 20 Premium-Locked Tiers\n• **2x BP EXP Boost** on all Battle XP!\n• Combine with PRO for **4x BP EXP**!\n• Receive 200 PC back at Tiers 8, 16, 24, 32, 40 (1,000 PC back by Tier 40!)\n\n💡 Use /prostore to get PC, or buy with /bp buy when ready!`
         }, { quoted: msg });
       }
 
@@ -216,7 +216,7 @@ module.exports = {
         if (totalClaimed === 0) {
           const hasLockedUnclaimed = LOCKED_TIERS.some(t => t <= bp.level && !bp.claimed.includes(t));
           if (hasLockedUnclaimed && !bp.premium) {
-            return sock.sendMessage(chatId, { text: '🔒 Unclaimed levels are Premium-Locked! Use /bp buy to unlock Premium for 1,000 PC.' }, { quoted: msg });
+            return sock.sendMessage(chatId, { text: '🔒 Unclaimed levels are Premium-Locked! Use /bp buy to unlock Premium for 2,000 PC ($2).' }, { quoted: msg });
           }
           return sock.sendMessage(chatId, { text: '❌ No unclaimed Battle Pass rewards available.' }, { quoted: msg });
         }
@@ -246,7 +246,7 @@ module.exports = {
 
       const isLocked = LOCKED_TIERS.includes(targetLvl);
       if (isLocked && !bp.premium) {
-        return sock.sendMessage(chatId, { text: `🔒 Tier ${targetLvl} is locked to Premium Battle Pass! Use /bp buy to unlock for 1,000 PC.` }, { quoted: msg });
+        return sock.sendMessage(chatId, { text: `🔒 Tier ${targetLvl} is locked to Premium Battle Pass! Use /bp buy to unlock for 2,000 PC ($2).` }, { quoted: msg });
       }
 
       bp.claimed.push(targetLvl);
@@ -364,7 +364,7 @@ module.exports = {
       `📌 *COMMANDS:*`,
       `• /bp claim — Claim all available rewards`,
       `• /bp claim [num] — Claim specific tier`,
-      `• /bp buy — Unlock Premium (1,000 PC)`,
+      `• /bp buy — Unlock Premium (2,000 PC · $2)`,
       `• /bp [page] — View Page 1–4 (10 tiers per page)`,
       ...(pro ? [FRAME] : [FRAME, UI.upsell()]),
     ];

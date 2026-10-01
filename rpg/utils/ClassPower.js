@@ -41,7 +41,9 @@ function baseClassName(player) {
   if (CS && Array.isArray(CS.MONSTER_VARIANTS) && CS.MONSTER_VARIANTS.some(v => v && v.name === n)) return 'Monster';
   return n;
 }
+function isMonsterClass(player) { try { return baseClassName(player) === 'Monster' || !!(player && player.monsterVariant); } catch (e) { return false; } }
 function quality(player) {
+  if (isMonsterClass(player)) { if (player && player.classQuality !== 100) player.classQuality = 100; return 100; } // Push #96h-d: Monster class is always 100% — current and future
   const q = Number(player && player.classQuality);
   return q >= 1 && q <= 100 ? q : 100;
 }
@@ -450,4 +452,4 @@ function formatBonuses(b) {
   return parts.length ? parts.join(' · ') : 'none';
 }
 
-module.exports = { _remove, _add, classWeaponPrice, ownsClassWeapon, buyClassWeapon, bestOwnedClassWeapon, ensureClassBonuses, classBonuses, passiveMultipliers, recalibrate, formatBonuses, className, baseClassName, quality, scaled, ensureClassWeapon };
+module.exports = { isMonsterClass, _remove, _add, classWeaponPrice, ownsClassWeapon, buyClassWeapon, bestOwnedClassWeapon, ensureClassBonuses, classBonuses, passiveMultipliers, recalibrate, formatBonuses, className, baseClassName, quality, scaled, ensureClassWeapon };

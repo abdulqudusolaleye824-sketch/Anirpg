@@ -1,3 +1,10 @@
+## 1.0.136 — Push #96h-d: events are generic when idle · Monster class = 100% quality · Battle Pass Premium $2 · /profaq headings
+
+- **/einfo · /event status** with no event running now speak generically ("Astra Events") — the Jeju Island Raid is one event of many; past events are listed by name.
+- **Monster class quality is always 100%** — existing Monster-class hunters are normalised on their next command (migration + `ClassPower.quality`), and `/recon @p monster` / awakening always assign 100.
+- **Battle Pass Premium is $2 → 2,000 PC** (same as a Weekly Pro Card); every quote in `/bp` updated.
+- **/profaq** rewritten as a clean price list + 18 perk *headings* (no spiels), with Battle Pass Premium in the card list.
+
 ## 1.0.135 — Push #96h-c: /ejoin · auto-wired event combat · tag = strike · affiliates can't join guilds · every domain multi-message · monster speed +40%
 
 - **/ejoin** — enter the Jeju Island Raid (Events GC). The bot awakens your Lv.10 event domain (class-leaning archetype shown), then asks for a **name**, then a **description** — plain replies in the GC or DM are consumed. You must have joined to fight or be struck.
