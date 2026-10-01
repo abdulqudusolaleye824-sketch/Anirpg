@@ -1,3 +1,11 @@
+## 1.0.141 — Push #96h-j: one accuracy model · BLIND really cuts it · blinding beast skills · skills keep their descriptions · skills shape domains
+
+- **Accuracy fixed everywhere** (gate raids, dungeons, instances, PvP, event): `hit% = accuracy × blind/fear × (1 ± accuracy buffs) − dodge`. Accuracy is the move's own (attack patterns) or your stat (skills, 90 default) + gear accuracy. The beast's speed edge is now **capped at −8** — a 98% move lands ~90%, not a coin flip (sped-up bosses used to force a 25% dodge regardless of accuracy). Misses say why: _🎯 missed (90% accuracy)_ · _💨 dodged (8% speed edge)_ · _🌫️ BLIND — accuracy cut to 49%_. Stunned/frozen/petrified targets are auto-hit.
+- **BLIND cuts beasts too**: a blinded monster's accuracy is halved by the status table in gate, dungeon and instance engines ("🌫️ it swings wide").
+- **Blinding monster skills**: one per family (Spore Cloud, Acid Mist, Dust Kick, Sand Throw, Grave Mist, Mud Spray, Stone Dust, Hellsmoke, Flash Rune, Dirt Flick). 35% of spawned beasts carry one; **bosses always do**.
+- **Skills follow their descriptions**: every monster skill's text is a contract — "+40% DEF", "recovers 15% HP", "amplifies", "hardens", "blinds for 3 turns", "drains mana", "pierces armour" all become real buffs / heals / statuses (multiple buffs per skill now apply). The description outranks a guess from the name. Dungeon skill-card multipliers/effects (Rage Mode ×2.8 …) are read too.
+- **A beast's skills decide its domain**: the dominant theme across its abilities names the domain, writes the lore ("Born of *Fire Bolt*"), picks the law and the status — Sea of Flames, Frozen Tomb, Venomous Mire, Field of Blades, Veil of Blindness (new law: hunters are BLINDED), Thunder Cage, Crushing Quake, Cursed Expanse, Terror Dominion, Siphon Field, Undying Ground, Armour-Breaking Zone, Binding Web. Family domains remain the fallback.
+
 ## 1.0.140 — Push #96h-i: /attack in the Events GC · reply = target · the island holds you · any message breaks AFK
 
 - **No more `/event attack`** — in the Events GC a plain `/attack [#|@hunter] [skill]`, `/skill <skill>`, `/hit`… *is* the event attack. **Replying** to a hunter's message targets them (reply to a bot card = beast attack).

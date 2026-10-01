@@ -237,7 +237,9 @@ function act(player, skillQuery) {
     try { pDef = Math.floor(pDef * (1 + (pm.def || 0) / 100) * (1 + UC.tempBuffPct(player, 'def') / 100)); } catch (e) {}
     if (c && c.pierce) pDef = Math.floor(pDef * (1 - c.pierce / 100));
     const dodge = UC.dodgeChance({ stats: { speed: m.stats.speed, atk: mAtk }, statusEffects: m.statusEffects }, player, pm);
-    if (Math.random() * 100 < dodge) lines.push(`💨 ${m.emoji} ${m.name} ${abilityName ? `uses *${abilityName}*` : 'attacks'} — you dodge!`);
+    let _mAcc = 1; try { _mAcc = require('./StatusEffectManager').getStatModifiers(m).accuracyMod; } catch (e) {}
+    if (_mAcc < 1 && Math.random() >= _mAcc) lines.push(`🌫️ ${m.emoji} ${m.name} is BLIND — ${abilityName ? `*${abilityName}*` : 'its attack'} swings wide!`); // Push #96h-j
+    else if (Math.random() * 100 < dodge) lines.push(`💨 ${m.emoji} ${m.name} ${abilityName ? `uses *${abilityName}*` : 'attacks'} — you dodge!`);
     else {
       let dmg = Math.max(Math.floor(_max(player) * 0.03), Math.floor(mAtk * (c ? c.mult : 1) * (0.85 + Math.random() * 0.3)) - Math.floor(pDef * 0.4));
       dmg = Math.floor(dmg * (1 + (pm.dmgTaken || 0) / 100) * (1 + (pm.job && pm.job.monsterDmgTaken || 0) / 100));

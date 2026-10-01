@@ -100,22 +100,13 @@ function calcMoveDamage(attacker, defender, move) {
   // Attacker accuracy mods (blind/fear) come from the status table.
   const _defFx = defender.statusEffects || [];
   const _noDodge = _defFx.some(e => ['stun', 'freeze', 'paralyze'].includes((e.type || '').toLowerCase()));
-  let acc = move.accuracy != null ? move.accuracy : 85;
-  try { acc *= SEM.getStatModifiers(attacker).accuracyMod; } catch (e) {}
-  const roll = Math.random() * 100;
-  if (!_noDodge && roll > acc) {
-    return { damage: 0, missed: true, crit: false, effective: 'missed', capability: 1 };
-  }
-  // Push #74: DODGE — the defender's own roll, driven by SPEED difference +
-  // gear evasion + passive dodge. (Accuracy above is the attacker missing;
-  // this is the defender getting out of the way.)
+  // Push #96h-j: one combined roll — accuracy (blind/buffs/gear) minus a capped dodge.
   let _pmA = null, _pmD = null;
   try { const CP = require('./ClassPower'); _pmA = CP.passiveMultipliers(attacker); _pmD = CP.passiveMultipliers(defender); } catch (e) {}
-  if (!_noDodge && !move.undodgeable) {
-    const dodge = dodgeChance(attacker, defender, _pmD);
-    if (Math.random() * 100 < dodge) {
-      return { damage: 0, missed: true, dodged: true, crit: false, effective: 'missed', capability: 1, dodgeChance: dodge };
-    }
+  const _hc = hitCheck(attacker, defender, { ...move, accuracy: move.accuracy != null ? move.accuracy : 85 }, { pmD: _pmD });
+  if (!_hc.hit) {
+    const _wasDodge = !_hc.blind && _hc.dodge > 0 && /dodged/.test(_hc.why || '');
+    return { damage: 0, missed: true, dodged: _wasDodge, crit: false, effective: 'missed', capability: 1, dodgeChance: _hc.dodge, hitChance: _hc.chance, missWhy: _hc.why };
   }
 
   // Base ATK vs DEF — equipped gear always counts (players AND monsters
@@ -236,7 +227,7 @@ function calcMoveDamage(attacker, defender, move) {
   // Determine effectiveness for longer description
   const effectiveness = raw > 200 ? 'devastating' : raw > 120 ? 'powerful' : raw > 60 ? 'solid' : 'light';
 
-  return { damage: raw, missed: false, crit: isCrit, effective: effectiveness, capability, variance, atkMult, defMult, speedMult, critMult, accuracy: acc, synergyNotes };
+  return { damage: raw, missed: false, crit: isCrit, effective: effectiveness, capability, variance, atkMult, defMult, speedMult, critMult, accuracy: _hc.acc, hitChance: _hc.chance, synergyNotes };
 }
 
 // Process status effect application
@@ -244,6 +235,33 @@ function calcMoveDamage(attacker, defender, move) {
 //   base 3% + speed edge (each point of speed the defender has over the
 //   attacker = +0.25%, capped +20%) + gear evasion + passive dodge − attacker
 //   speed edge. Clamped 0–45%. Frozen/stunned/paralyzed never dodge.
+// Push #96h-j: ONE accuracy model for every engine.
+//   hit% = accuracy × blind/fear modifier × (1 + temp accuracy buffs) − defender dodge
+//   accuracy = the move's own accuracy (attack patterns) or the hunter's stat (skills, default 90)
+//   blind halves it (status table), "−X% accuracy" debuffs cut it, "+X% accuracy" buffs raise it,
+//   gear/artifacts with accuracy add; dodge is the defender's speed edge (capped so a 98%
+//   move cannot be turned into a coin flip by a sped-up beast).
+function accuracyOf(attacker, move) {
+  let acc = move && move.accuracy != null ? Number(move.accuracy) : Number(attacker?.stats?.accuracy || 90);
+  try { acc += require('./GearSystem').getEquippedBonuses(attacker).accuracy || 0; } catch (e) {}
+  let mod = 1; try { mod = SEM.getStatModifiers(attacker).accuracyMod; } catch (e) {}
+  let tb = 0; try { tb = tempBuffPct(attacker, 'accuracy'); } catch (e) {}
+  const blind = (attacker?.statusEffects || []).some(e => ['blind', 'fear'].includes(String(e.type || '').toLowerCase()));
+  return { acc: Math.max(5, Math.min(100, acc * mod * (1 + tb / 100))), base: acc, mod, blind };
+}
+const DODGE_CAP_VS_ACC = 8; // a beast's speed edge takes at most 8 points off your hit chance
+function hitCheck(attacker, defender, move, opts = {}) {
+  const a = accuracyOf(attacker, move);
+  const held = (defender?.statusEffects || []).some(e => ['stun', 'freeze', 'paralyze', 'petrify'].includes(String(e.type || '').toLowerCase()));
+  let dodge = 0;
+  if (!held && !(move && move.undodgeable)) { try { dodge = Math.min(opts.dodgeCap != null ? opts.dodgeCap : DODGE_CAP_VS_ACC, dodgeChance(attacker, defender, opts.pmD || null)); } catch (e) {} }
+  const hit = held ? 100 : Math.max(5, Math.min(100, a.acc - dodge));
+  const roll = Math.random() * 100;
+  const out = { hit: roll < hit, chance: Math.round(hit), acc: Math.round(a.acc), dodge: Math.round(dodge), blind: a.blind, held };
+  out.why = out.hit ? null : (a.blind ? `🌫️ BLIND — accuracy cut to ${Math.round(a.acc)}%` : dodge > 0 && roll >= a.acc - dodge && roll < a.acc ? `💨 dodged (${Math.round(dodge)}% speed edge)` : `🎯 missed (${Math.round(a.acc)}% accuracy)`);
+  hitCheck.last = out;
+  return out;
+}
 function dodgeChance(attacker, defender, pmD) {
   let gearEvaD = 0, gearSpdA = 0, gearSpdD = 0;
   try {
@@ -437,7 +455,7 @@ function buildTurnMessage(attacker, defender, move, result, isPlayerTurn = true)
   msg += `📊 Atk×${move.atkMult || 1} Def×${move.defMult || 1} Spd×${move.speedMult || 1} Crit×${move.critMult || 1} Acc ${move.accuracy || 85}%\n`;
   msg += `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
   if (result.missed) {
-    msg += `💨 *Missed!* The strike sliced air — no damage.\n`;
+    msg += `💨 *Missed!* The strike sliced air — no damage.${result.missWhy ? ` (${result.missWhy})` : ''}\n`;
   } else {
     if (result.crit) msg += `💥 *CRITICAL!* ×${move.critMult} — the hit found the perfect opening!\n`;
     for (const n of (result.synergyNotes || [])) msg += `⚡ *SYNERGY* ${n}\n`;
@@ -578,7 +596,7 @@ async function playTurn(sock, chatId, o) {
   const t1 = `${tag}${o.prepend ? o.prepend + '\n' : ''}⚔️ *${atkName} Uses ${moveName}!*`;
   const t2 = [desc ? `_${desc}_` : null, effLabel, `⏳ Cooldown: ${formatCd(cdMs)}`].filter(Boolean).join('\n'); // batch-47: full description
   let t3;
-  if (tier === 'missed') t3 = result.dodged ? `💨 *DODGED!* ${defName} slipped clear of ${atkName}'s attack!` : `💨 *It missed!* ${atkName}'s attack sliced air.`;
+  if (tier === 'missed') t3 = (result.dodged ? `💨 *DODGED!* ${defName} slipped clear of ${atkName}'s attack!` : `💨 *It missed!* ${atkName}'s attack sliced air.`) + (result.missWhy ? ` _(${result.missWhy})_` : '');
   else if (tier === 'very') t3 = `🔥 *It is very effective!* ${defName} is ${_fxWord(statusApplied.type)}!`;
   else if (tier === 'weak') t3 = `🛡️ *It is not effective...* ${defName}'s defense held firm.`;
   else t3 = statusApplied
@@ -604,7 +622,7 @@ async function playTurn(sock, chatId, o) {
   return { result, statusApplied, tier, texts };
 }
 
-module.exports = {
+module.exports = { accuracyOf, hitCheck, DODGE_CAP_VS_ACC,
   tempBuffPct, applyMoveBuffs, reflectDamage,
   dodgeChance, weakenTakenMult,
   isPro,

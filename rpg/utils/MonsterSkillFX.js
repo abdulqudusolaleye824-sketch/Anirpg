@@ -43,12 +43,60 @@ const KEYWORDS = [
 ];
 const DEFAULT_MULT = 1.5;
 
+// Push #96h-j: BLINDING skills — one per beast family. Handed to beasts at spawn
+// (gate + dungeon) so blind is a real threat; the hunter's accuracy is halved while it lasts.
+const FAMILY_BLIND_SKILL = {
+  insect:    { name: 'Spore Cloud',  effect: 'blind', chance: 55, desc: 'A choking cloud of spores — the hunter cannot see. Blinds for 2 turns.' },
+  slime:     { name: 'Acid Mist',    effect: 'blind', chance: 55, desc: 'Caustic mist stings the eyes. Blinds for 2 turns.' },
+  beast:     { name: 'Dust Kick',    effect: 'blind', chance: 50, desc: 'Hind legs hurl dirt into the hunter\'s face. Blinds for 2 turns.' },
+  goblinoid: { name: 'Sand Throw',   effect: 'blind', chance: 55, desc: 'A fistful of sand, straight to the eyes. Blinds for 2 turns.' },
+  undead:    { name: 'Grave Mist',   effect: 'blind', chance: 50, desc: 'Cold grave-fog swallows all light. Blinds for 2 turns.' },
+  reptile:   { name: 'Mud Spray',    effect: 'blind', chance: 50, desc: 'A tail-whip of marsh mud across the eyes. Blinds for 2 turns.' },
+  construct: { name: 'Stone Dust',   effect: 'blind', chance: 45, desc: 'Grinding plates shed a blinding cloud of grit. Blinds for 2 turns.' },
+  demon:     { name: 'Hellsmoke',    effect: 'blind', chance: 55, desc: 'Black sulphur smoke pours out. Blinds for 2 turns.' },
+  elf:       { name: 'Flash Rune',   effect: 'blind', chance: 55, desc: 'A rune detonates in white light. Blinds for 2 turns.' },
+  wild:      { name: 'Dirt Flick',   effect: 'blind', chance: 45, desc: 'Dirt and leaves flung at the eyes. Blinds for 2 turns.' },
+};
+function blindSkillFor(monster) { let f = 'wild'; try { f = require('./MonsterTypes').familyOf(monster); } catch (e) {} return { ...(FAMILY_BLIND_SKILL[f] || FAMILY_BLIND_SKILL.wild) }; }
+
+// Push #96h-j: the DESCRIPTION is a contract too — "+30% ATK", "DEF rises", "recovers 20% HP",
+// "amplifies", "weakens", "numbs", "blinds" … every promise in the text becomes a real effect.
+const STAT_WORD = { atk: 'atk', attack: 'atk', power: 'atk', def: 'def', defense: 'def', defence: 'def', armor: 'def', spd: 'speed', speed: 'speed', agility: 'speed' };
+function parseDescription(text) {
+  const out = { selfBuffs: [], selfHealPct: 0, healPct: 0, status: null, drainPct: 0, pierce: 0 };
+  const t = String(text || ''); if (!t) return out;
+  let m; const rx = /([+-]?)(\d+)%\s*(atk|attack|power|def|defen[cs]e|armou?r|spd|speed|agility)\b/gi;
+  while ((m = rx.exec(t))) { const stat = STAT_WORD[m[3].toLowerCase().replace(/defence|defense/, 'def').replace(/armour/, 'armor')] || 'atk'; const amt = Number(m[2]); if (m[1] === '-' && /enemy|hunter|target|your/i.test(t.slice(Math.max(0, m.index - 20), m.index))) continue; out.selfBuffs.push({ stat, amount: amt, turns: 3 }); }
+  const heal = t.match(/(?:recover|heal|restore|regenerate|mend)s?\s*(?:up to\s*)?(\d+)%/i); if (heal) out.selfHealPct = Number(heal[1]);
+  else if (/recover|regenerat|heals? itself|mends|restores? (?:its|his|her) hp/i.test(t)) out.selfHealPct = 12;
+  if (/(?:drains?|siphons?)\s+(?:\w+\s+){0,2}(?:mana|energy)|(?:mana|energy)\s+(?:is\s+)?(?:drained|siphoned)/i.test(t)) out.drainPct = 20;
+  if (/drains? life|life essence|absorbs? (?:\w+ )?hp|leech/i.test(t)) out.healPct = 40;
+  if (!out.selfBuffs.length) {
+    if (/amplif|surges?|empower|strengthen|fury|rage|frenzy|bloodlust|power rises|grows stronger/i.test(t)) out.selfBuffs.push({ stat: 'atk', amount: 25, turns: 3 });
+    if (/harden|thicken|armou?r up|shell|fortif|braces?/i.test(t)) out.selfBuffs.push({ stat: 'def', amount: 30, turns: 3 });
+    if (/quicken|hastens?|accelerat|speeds? up/i.test(t)) out.selfBuffs.push({ stat: 'speed', amount: 25, turns: 3 });
+  }
+  const st = [[/blind|cannot see|can't see|flash/i, 'blind'], [/weaken/i, 'weaken'], [/numb|entangle|slow|snare|web/i, 'trueslow'], [/paraly/i, 'paralyze'], [/terrif|fear|dread/i, 'fear'], [/burn|flame|fire|scorch/i, 'burn'], [/poison|venom|toxi/i, 'poison'], [/bleed|lacerat|tear/i, 'bleed'], [/stun|daze/i, 'stun'], [/freez|frost|chill/i, 'freeze'], [/curse|hex/i, 'curse'], [/silence/i, 'silence'], [/confus/i, 'confuse'], [/petrif/i, 'petrify']];
+  for (const [r, type] of st) { if (r.test(t)) { const d = t.match(/(\d+)\s*turns?/i); out.status = { type, chance: 55, duration: d ? Number(d[1]) : 2 }; break; } }
+  if (/pierc|ignores? (?:\w+ )?(?:armou?r|def)/i.test(t)) out.pierce = 40;
+  return out;
+}
+function descriptionOf(ability) {
+  const name = typeof ability === 'string' ? ability : (ability && ability.name) || '';
+  const clean = name.replace(/^[^\w]+/, '').trim(); const parts = [];
+  if (ability && typeof ability === 'object') { for (const k of ['desc', 'description', 'effectText', 'text']) if (ability[k]) parts.push(String(ability[k])); }
+  { const fb = Object.values(FAMILY_BLIND_SKILL).find(b => b.name === clean); if (fb && !parts.length) parts.push(fb.desc); }
+  try { const SD = require('./SkillDescriptions'); const ms = SD.getMonsterSkill && SD.getMonsterSkill(clean); if (ms && ms.description && !/A powerful attack!/.test(ms.description)) parts.push(ms.description); } catch (e) {}
+  try { const MA = require('./MonsterAbilities'); const d = MA.abilities && (MA.abilities[clean] || MA.abilities[name]); if (d && d.animation) parts.push(d.animation); } catch (e) {}
+  return parts.join(' ');
+}
+
 // Bestiary `effect` → status type normalisation.
 const EFFECT_ALIAS = { weaken: 'weaken', burn: 'burn', bleed: 'bleed', stun: 'stun', poison: 'poison', fear: 'fear', freeze: 'freeze', paralyze: 'paralyze', curse: 'curse', slow: 'trueslow', blind: 'blind', silence: 'silence', confuse: 'confuse', petrify: 'petrify', knockback: 'stun', doom: 'curse' };
 
 function resolve(ability) {
   const name = typeof ability === 'string' ? ability : (ability && ability.name) || '';
-  const out = { name, mult: DEFAULT_MULT, status: null, drainPct: 0, healPct: 0, selfHealPct: 0, selfBuff: null, pierce: 0 };
+  const out = { name, mult: DEFAULT_MULT, status: null, drainPct: 0, healPct: 0, selfHealPct: 0, selfBuff: null, selfBuffs: [], pierce: 0, desc: '' };
   if (!name) return out;
   // 1) MonsterAbilities table (dungeon monsters) — take its multiplier / status.
   try {
@@ -60,10 +108,21 @@ function resolve(ability) {
       if (def.statusEffect && def.statusEffect.type) out.status = { type: EFFECT_ALIAS[def.statusEffect.type] || def.statusEffect.type, chance: def.statusEffect.chance || 50, duration: def.statusEffect.duration || 2, damage: def.statusEffect.damage || 0 };
     }
   } catch (e) {}
+  // 1b) SkillDescriptions monster table (dungeon skill cards) — multiplier + effect.
+  try {
+    const SD = require('./SkillDescriptions'); const clean = name.replace(/^[^\w]+/, '').trim();
+    const ms = SD.getMonsterSkill && SD.getMonsterSkill(clean);
+    if (ms && !/A powerful attack!/.test(ms.description || '')) {
+      if (ms.damageMultiplier && out.mult === DEFAULT_MULT) out.mult = ms.damageMultiplier;
+      if (ms.effect && !out.status) { out.status = { type: EFFECT_ALIAS[String(ms.effect).toLowerCase()] || String(ms.effect).toLowerCase(), chance: 55, duration: ms.effectDuration || 3 }; out._statusSrc = 'table'; }
+    }
+  } catch (e) {}
   // 2) bestiary contract { name, effect, chance }
   if (ability && typeof ability === 'object' && ability.effect) {
     out.status = { type: EFFECT_ALIAS[String(ability.effect).toLowerCase()] || String(ability.effect).toLowerCase(), chance: Number(ability.chance) || 50, duration: 3 };
   }
+  // 2b) family blinding skills (Push #96h-j) — blind wins over the element words in the name.
+  { const clean = name.replace(/^[^\w]+/, '').trim(); const fb = Object.values(FAMILY_BLIND_SKILL).find(b => b.name === clean); if (fb) { out.status = { type: 'blind', chance: fb.chance, duration: 2 }; out.mult = 1.1; out.blindSkill = true; } }
   // 3) name semantics — the words on the tin.
   for (const [rx, patch] of KEYWORDS) {
     if (!rx.test(name)) continue;
@@ -73,8 +132,19 @@ function resolve(ability) {
     if (patch.selfHealPct) out.selfHealPct = Math.max(out.selfHealPct, patch.selfHealPct);
     if (patch.pierce) out.pierce = Math.max(out.pierce, patch.pierce);
     if (patch.selfBuff && !out.selfBuff) out.selfBuff = { ...patch.selfBuff };
-    if (patch.status && !out.status) out.status = { ...patch.status };
+    if (patch.status && !out.status) { out.status = { ...patch.status }; out._statusSrc = 'name'; }
   }
+  if (out.selfBuff) out.selfBuffs.push({ ...out.selfBuff });
+  // 4) the description's promises (Push #96h-j)
+  try {
+    out.desc = descriptionOf(ability);
+    const d = parseDescription(out.desc);
+    for (const b of d.selfBuffs) if (!out.selfBuffs.find(x => x.stat === b.stat)) out.selfBuffs.push(b);
+    out.selfHealPct = Math.max(out.selfHealPct, d.selfHealPct); out.healPct = Math.max(out.healPct, d.healPct);
+    out.drainPct = Math.max(out.drainPct, d.drainPct); out.pierce = Math.max(out.pierce, d.pierce);
+    if (d.status && (!out.status || out._statusSrc === 'name')) { out.status = { ...d.status, chance: Math.max(d.status.chance, (out.status && out.status.chance) || 0) }; out._statusSrc = 'desc'; } // the description outranks a guess from the name
+  } catch (e) {}
+  if (!out.selfBuff && out.selfBuffs.length) out.selfBuff = out.selfBuffs[0];
   return out;
 }
 
@@ -123,10 +193,10 @@ function apply(monster, player, ability, dmg, opts = {}) {
     }
   }
   // Roar / rage / shell → monster buffs itself (real tempBuffs, ticked per turn).
-  if (c.selfBuff) {
+  for (const b of (c.selfBuffs && c.selfBuffs.length ? c.selfBuffs : (c.selfBuff ? [c.selfBuff] : []))) {
     if (!monster.tempBuffs) monster.tempBuffs = {};
-    monster.tempBuffs[`mskill:${c.selfBuff.stat}`] = { stat: c.selfBuff.stat, amount: c.selfBuff.amount, duration: c.selfBuff.turns + 1, source: c.name };
-    lines.push(`📈 ${monster.emoji || '👹'} ${monster.name}'s ${c.selfBuff.stat.toUpperCase()} rises +${c.selfBuff.amount}% (${c.selfBuff.turns}t)`);
+    monster.tempBuffs[`mskill:${b.stat}`] = { stat: b.stat, amount: b.amount, duration: b.turns + 1, source: c.name };
+    lines.push(`📈 ${monster.emoji || '👹'} ${monster.name}'s ${String(b.stat).toUpperCase()} rises +${b.amount}% (${b.turns}t)`);
   }
   // Status on the hunter.
   if (c.status && !opts.skipStatus && !(monster.noStatus) && (dmg > 0 || opts.forceStatus)) {
@@ -142,4 +212,4 @@ function apply(monster, player, ability, dmg, opts = {}) {
 function hitMult(ability) { return resolve(ability).mult || DEFAULT_MULT; }
 function pierce(ability) { return resolve(ability).pierce || 0; }
 
-module.exports = { resolve, apply, applyStatus, hitMult, pierce, KEYWORDS };
+module.exports = { FAMILY_BLIND_SKILL, blindSkillFor, parseDescription, descriptionOf, resolve, apply, applyStatus, hitMult, pierce, KEYWORDS };

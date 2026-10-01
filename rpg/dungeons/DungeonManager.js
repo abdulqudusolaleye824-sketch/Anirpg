@@ -200,7 +200,7 @@ function scaleMonsterForFloor(baseMonster, playerLevel, floor, severity = 1) {
     emoji: baseMonster.emoji,
     level: playerLevel + Math.floor(floor * 0.5),
     rank: _getRankByFloor(floor),
-    abilities: [...(baseMonster.abilities || ['Strike']), 'Regenerate'], // Push #96d: every beast can regenerate
+    abilities: [...(baseMonster.abilities || ['Strike']), 'Regenerate', ...(() => { try { if (Math.random() < 0.35) return [require('../utils/MonsterSkillFX').blindSkillFor(baseMonster).name]; } catch (e) {} return []; })()], // Push #96d regen · #96h-j 35% blind skill
     isElite: false,
     isBoss: false,
     stats: {
@@ -232,7 +232,7 @@ function scaleBossForFloor(bossDef, playerLevel, floor, severity = 1) {
     isBoss: true,
     isFinalBoss: isFinal,
     isElite: false,
-    abilities: [...bossDef.abilities, 'Regenerate'], // Push #96d
+    abilities: [...bossDef.abilities, 'Regenerate', (() => { try { return require('../utils/MonsterSkillFX').blindSkillFor(bossDef).name; } catch (e) { return 'Dirt Flick'; } })()], // Push #96d · #96h-j bosses always carry a blinding skill
     stats: { hp, maxHp: hp, atk, def, speed: Math.round((100 + floor) * MON_SPD_BUFF) },
     statusEffects: []
   };

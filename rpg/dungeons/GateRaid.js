@@ -78,7 +78,7 @@ function playerDamage(player, skillName = null, target = null) {
     // already spent (a dodged/missed move still enters cooldown).
     if (target && !_isHealSkillEarly(entry, skill) && monsterDodges(target, player, entry || skill)) {
       try { require('../utils/JobSystem').noteHit(player, false); } catch (e) {} // Push #95: Brawler momentum breaks on a miss
-      return { damage: 0, isCrit: false, dodged: true, missed: true, skillUsed: skill, statuses: [], healingPct: 0, healed: 0, hpPercentLines: [], drained: 0, hpCost: 0, synergyNotes: [], buffs: [] };
+      return { damage: 0, isCrit: false, dodged: true, missed: true, missWhy: (monsterDodges.last && monsterDodges.last.why) || null, skillUsed: skill, statuses: [], healingPct: 0, healed: 0, hpPercentLines: [], drained: 0, hpCost: 0, synergyNotes: [], buffs: [] };
     }
     // Push #71: RECOVERY SKILLS — healingPct was computed here and returned,
     // but no caller ever applied it, so heals in gate raids restored 0 HP.
@@ -123,7 +123,7 @@ function playerDamage(player, skillName = null, target = null) {
       buffs: (entry && entry.buffs) || [],
     };
   }
-  if (target && monsterDodges(target, player)) { try { require('../utils/JobSystem').noteHit(player, false); } catch (e) {} return { damage: 0, isCrit: false, dodged: true, missed: true, synergyNotes: [], statuses: [] }; } // Push #88o
+  if (target && monsterDodges(target, player)) { try { require('../utils/JobSystem').noteHit(player, false); } catch (e) {} return { damage: 0, isCrit: false, dodged: true, missed: true, missWhy: (monsterDodges.last && monsterDodges.last.why) || null, synergyNotes: [], statuses: [] }; } // Push #88o
   let dmg = Math.max(5, atk * (0.85 + Math.random() * 0.30));
   let _tDefMult95 = 1, _tTaken95 = 1; try { const _UC95 = require('../utils/UnifiedCombat'); _tDefMult95 = Math.max(0.1, 1 + _UC95.tempBuffPct(target || {}, 'def') / 100); _tTaken95 = 1 + _UC95.tempBuffPct(target || {}, 'damageTaken') / 100; } catch (e) {} // Push #95: monster shells / domain debuffs are real
   if (target && typeof target.def === 'number' && target.def > 0) dmg = Math.max(5, dmg - Math.floor(target.def * _tDefMult95 * 0.35 * (1 - Math.min(0.6, (_pm74.armorPen || 0) / 100))));
@@ -181,10 +181,22 @@ function monsterDodgeChance(monster, player) {
 }
 // Roll a monster dodge against a hunter's strike. Frozen/stunned monsters never dodge.
 function monsterDodges(monster, player, move = null) {
-  if (!monster || (move && move.undodgeable)) return false;
-  const held = (monster.statusEffects || []).some(e => ['stun', 'freeze', 'paralyze'].includes(String(e.type || '').toLowerCase()));
-  if (held) return false;
-  return Math.random() * 100 < monsterDodgeChance(monster, player);
+  if (!monster) return false;
+  // Push #96h-j: the hunter's ACCURACY decides (stat / move accuracy, gear, +/− accuracy
+  // buffs, BLIND halves it) minus a capped speed dodge. Held monsters never dodge.
+  try {
+    const UC = require('../utils/UnifiedCombat');
+    const mon = { stats: { speed: Number(monster.speed || monster.stats?.speed || 10), atk: Number(monster.atk || monster.stats?.atk || 10) }, statusEffects: monster.statusEffects || [] };
+    let pm = null; try { pm = require('../utils/ClassPower').passiveMultipliers(mon); } catch (e) {}
+    const hc = UC.hitCheck(player, mon, move || { accuracy: player?.stats?.accuracy || 90 }, { pmD: pm });
+    monsterDodges.last = hc; playerDamage.lastMiss = hc.hit ? null : hc;
+    return !hc.hit;
+  } catch (e) {
+    if (move && move.undodgeable) return false;
+    const held = (monster.statusEffects || []).some(e => ['stun', 'freeze', 'paralyze'].includes(String(e.type || '').toLowerCase()));
+    if (held) return false;
+    return Math.random() * 100 < monsterDodgeChance(monster, player);
+  }
 }
 function _isHealSkillEarly(entry, skill) { return String((entry && entry.type) || (skill && skill.type) || '').toLowerCase() === 'heal'; }
 // Push #89: ONE definition of a hunter's defence for every monster hit —
@@ -212,6 +224,8 @@ function monsterDamage(monster, def, player = null) {
       const mon = { stats: { speed: monster.speed || 10, atk: monster.atk || 10 }, statusEffects: monster.statusEffects || [] };
       const held = (player.statusEffects || []).some(e => ['stun', 'freeze', 'paralyze'].includes(String(e.type || '').toLowerCase()));
       if (!held && Math.random() * 100 < UC.dodgeChance(mon, player, pm)) { monsterDamage.last.dodged = true; return 0; }
+      // Push #96h-j: a BLINDED beast swings wide — its accuracy is halved like a hunter's.
+      try { const _am = require('../utils/StatusEffectManager').getStatModifiers(mon).accuracyMod; if (_am < 1 && !held && Math.random() >= _am) { monsterDamage.last.dodged = true; monsterDamage.last.blindMiss = true; return 0; } } catch (e) {}
       // Push #85: defence soaks at most 60% of the hit and a landed hit is
       // never below 4% of the hunter's max HP — high-DEF hunters used to
       // take a flat 3 from everything.
@@ -1671,7 +1685,7 @@ function autoStrikeIdleRaids(db, now = Date.now(), canStrike = null) {
       const lines = [`⏱️ *NO ONE MOVED FOR ${Math.round(idleStrikeMsFor(gate.rank) / 1000)}s — THE GATE STRIKES!*`, `👹 *${target.name}* lunges at the weakest hunter, *${victimName}*!`];
       if (guardHit) lines.push(`🛡️ *${guardHit.guardianName}* steps in front of *${victimName}* and takes the blow!`);
       if (monsterDamage.last && monsterDamage.last.shieldLine) lines.push(monsterDamage.last.shieldLine);
-      if (dmg <= 0 && !(monsterDamage.last && monsterDamage.last.absorbed)) lines.push(`💨 *${u.name}* dodged it!`);
+      if (dmg <= 0 && !(monsterDamage.last && monsterDamage.last.absorbed)) lines.push(monsterDamage.last && monsterDamage.last.blindMiss ? `🌫️ *${target.name}* is BLIND — it swings wide of *${u.name}*!` : `💨 *${u.name}* dodged it!`);
       else if (dmg <= 0) lines.push(`🦴 The wall took it all — *${u.name}* is untouched!`);
       else {
         u.stats.hp = Math.max(0, (u.stats.hp || 0) - dmg);

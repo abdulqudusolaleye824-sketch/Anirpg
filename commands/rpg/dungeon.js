@@ -118,7 +118,8 @@ function executeMonsterAI(monster, player, ctx = null) {
   // Player dodge
   const speedDiff = ((player.stats.speed || 100) + _gearSpd0) - (monster.stats.speed || 80);
   const dodge     = Math.max(0, Math.min(0.30, speedDiff / 200));
-  const _blindMiss = (monster.statusEffects || []).some(e => String(e.type || '').toLowerCase() === 'blind') && Math.random() < 0.5;
+  let _mAccMod = 1; try { _mAccMod = require('../../rpg/utils/StatusEffectManager').getStatModifiers(monster).accuracyMod; } catch (e) {}
+  const _blindMiss = _mAccMod < 1 && Math.random() >= _mAccMod; // Push #96h-j: blind/fear cut the beast's accuracy by the status table
   if ((dodge > 0 && Math.random() < dodge) || _blindMiss) {
     return `\n${FRAME}\n🔄 ${monster.name.toUpperCase()}'S TURN${mPro ? ' 💎' : ''}\n${FRAME}\n${monster.emoji} ${monster.name} ${abilityName ? 'uses *' + abilityName + '*!' : 'attacks!'}\n💬 "${line}"\n${FRAME}\n${_blindMiss ? '🌫️ Blinded — the strike goes wide!' : '💨 *You dodged the attack!*'}\n❤️ Your HP: ${Math.max(0, player.stats.hp)}/${_effMax(player)}\n`;
   }
@@ -803,7 +804,7 @@ module.exports = {
           {
             text: [
               isCrit ? '💥 *CRITICAL HIT!*' : null,
-              `💥 Dealt *${finalDmg}* damage! (×${atk.dmgMult})`,
+              (_dungeonUnified && _dungeonUnified.missed) ? `💨 *Missed!* ${_dungeonUnified.missWhy || ''}`.trim() : `💥 Dealt *${finalDmg}* damage! (×${atk.dmgMult})`,
             ].filter(Boolean).join('\n'),
           },
         ];
