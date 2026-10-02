@@ -18,6 +18,7 @@
 // ═══════════════════════════════════════════════════════════════════════════
 
 const CAST_ENERGY = 350;
+const CASTER_REGEN_PCT = 10; // Push #96h-q
 const MAX_LEVEL = 100;
 const UP_SHARE_CAP = 20;
 
@@ -185,7 +186,7 @@ function describe(player) {
   const e = scaledEffect(player); if (!e) return [];
   const fmt = (o, who) => Object.entries(o).filter(([, v]) => v).map(([s, v]) => `• ${who} ${STAT_LABEL[s] || s} ${v > 0 ? '+' : ''}${v}%`);
   const st = (e.statuses || []).map(x => `• Enemies: ${x.chance}% ${STATUS_LABEL[x.type] || x.type.toUpperCase()} (${x.duration}t)`);
-  return [...fmt(e.ally, 'Allies'), ...fmt(e.enemy, 'Enemies'), ...st, `• Opening burst: ${e.burst}% ATK to every enemy`, `• Your moves cannot miss while your domain stands`];
+  return [...fmt(e.ally, 'Allies'), ...fmt(e.enemy, 'Enemies'), ...st, `• Opening burst: ${e.burst}% ATK to every enemy`, `• Caster regenerates ${CASTER_REGEN_PCT}% max HP every turn`, `• Your moves cannot miss while your domain stands`];
 }
 function power(player) {
   const d = player.domain || {};
@@ -222,11 +223,14 @@ function _ownerKeys(entity) {
 }
 function _register(arena, ownerKey) { if (arena && ownerKey) _shield.set(String(ownerKey), arena); }
 function isShielded(entity) {
+  // Push #96h-q: match on ANY owner key (jid / id / name) — raid player objects often carry no
+  // `.jid`, so the old ownerId-only compare never matched and the owner was NOT immune.
   for (const k of _ownerKeys(entity)) {
     const arena = _shield.get(k); if (!arena) continue;
     const d = active(arena);
     if (!d) { _shield.delete(k); continue; }
-    if (String(d.ownerId) === k) return d;
+    const keys = Array.isArray(d.ownerKeys) && d.ownerKeys.length ? d.ownerKeys : [String(d.ownerId)];
+    if (keys.includes(k)) return d;
   }
   return null;
 }
@@ -271,8 +275,8 @@ function expand(arena, player, allies = [player], enemies = [], ctx = {}) {
   let _cost = costFor(player.domain.level || 1); try { if (require('./AuraSystem').AuraSystem.perks(player).sovereign) _cost = Math.floor(_cost / 2); } catch (e) {} // Push #96f: Sovereign aura tier
   if (energy < _cost) return { ok: false, error: `Domain Expansion costs *${_cost} ${player.energyType || 'energy'}* — you have ${energy}.` };
   const cur = active(arena); const lines = [];
-  const myId = player.jid || player.id;
-  if (cur && cur.ownerId === myId) return { ok: false, error: `*${cur.name}* is already active (${cur.turnsLeft} turn${cur.turnsLeft === 1 ? '' : 's'} left).` };
+  const myId = player.jid || player.id || player.name;
+  if (cur && (cur.ownerId === myId || (Array.isArray(cur.ownerKeys) && _ownerKeys(player).some(k => cur.ownerKeys.includes(k))))) return { ok: false, error: `*${cur.name}* is already active (${cur.turnsLeft} turn${cur.turnsLeft === 1 ? '' : 's'} left).` };
   player.stats.energy = energy - _cost;
   const myPow = power(player);
   if (cur) {
@@ -282,16 +286,18 @@ function expand(arena, player, allies = [player], enemies = [], ctx = {}) {
     else if (cur.quality !== _quality(player)) win = _quality(player) > cur.quality;
     else win = myPow > cur.power;
     if (!win) {
-      const _isAlly = cur.side === 'hunter' && allies.some(a => _ownerKeys(a).includes(String(cur.ownerId)));
+      const _isAlly = cur.side === 'hunter' && allies.some(a => _ownerKeys(a).some(k => k === String(cur.ownerId) || (cur.ownerKeys || []).includes(k)));
       return { ok: false, clashed: true, error: _isAlly ? `🌌 *${cur.name}* (${cur.ownerName}) is the more refined domain — it keeps the field. Your *${e.shown}* could not take the space (quality ${_quality(player)} · power ${myPow} vs ${cur.quality} · ${cur.power}). ${_cost} energy lost.` : `💥 *DOMAIN CLASH!* Your *${e.shown}* (power ${myPow}) shattered against *${cur.name}* (${cur.side === 'monster' ? 'power ' + cur.power : 'quality ' + cur.quality + ' · power ' + cur.power}). ${_cost} energy lost.` };
     }
-    const _isAlly = cur.side === 'hunter' && allies.some(a => _ownerKeys(a).includes(String(cur.ownerId)));
+    const _isAlly = cur.side === 'hunter' && allies.some(a => _ownerKeys(a).some(k => k === String(cur.ownerId) || (cur.ownerKeys || []).includes(k)));
     lines.push(_isAlly ? `🌌 *${e.shown}* is the more refined domain — it takes the space *${cur.name}* held.` : `💥 *DOMAIN CLASH!* *${e.shown}* overpowers *${cur.name}* (${myPow} vs ${cur.power}) — the rival domain shatters!`);
     shatter(arena, [...allies, ...enemies], []);
   }
   const src = `Domain: ${e.shown}`;
   for (const a of allies) _applyBuffs(a, e.ally, e.turns, 'domain', src);
   for (const f of enemies) _applyBuffs(f, e.enemy, e.turns, 'domain', src);
+  // Push #96h-q: every domain regenerates its CASTER 10% max HP per turn while it stands.
+  try { if (!player.tempBuffs) player.tempBuffs = {}; const cr = player.tempBuffs.regen; const want = Math.max(CASTER_REGEN_PCT, (cr && cr.pct) || 0); player.tempBuffs.regen = { pct: want, duration: e.turns + 1, source: src }; } catch (e4) {}
   // Push #96h-o: class statuses + opening burst on every enemy.
   const _fxLines = [];
   try {
@@ -308,7 +314,7 @@ function expand(arena, player, allies = [player], enemies = [], ctx = {}) {
       _fxLines.push(`💥 *${f.name || 'Enemy'}* — ${dealt.toLocaleString()} burst${hit.length ? ` · ${hit.join(' + ')}` : ''}`);
     }
   } catch (e3) {}
-  arena.domain = { ownerId: myId, ownerName: player.name, side: 'hunter', name: e.shown, effectName: e.name, level: e.level, turnsLeft: e.turns, power: myPow, quality: _quality(player), className: player.domain.class };
+  arena.domain = { ownerId: myId, ownerKeys: _ownerKeys(player), ownerName: player.name, side: 'hunter', name: e.shown, effectName: e.name, level: e.level, turnsLeft: e.turns, power: myPow, quality: _quality(player), className: player.domain.class };
   _register(arena, myId); for (const k of _ownerKeys(player)) _register(arena, k);
   player.domain.casts = (player.domain.casts || 0) + 1;
   const d = player.domain;
@@ -549,4 +555,4 @@ function findBattle(player, sender, db) {
   return null;
 }
 
-module.exports = { costFor, CLASS_KITS, kitFor, SKILL_DOMAINS, BREAK, splitMessages, sendDomain, FAMILY_DOMAINS, isShielded, shieldLine, monsterDomainInfo, MONSTER_DOMAINS, setupStep, setupPrompt, handleSetupReply, rename, pvpArena, endPvpArena, findBattle, CAST_ENERGY, MAX_LEVEL, UP_SHARE_CAP, ARCHETYPES, CLASS_DOMAINS, STAT_LABEL, effectFor, scale, turnsFor, costToNext, ensure, has, unlock, scaledEffect, describe, power, upgrade, arenaOf, active, shatter, tick, expand, monsterPower, monsterEligible, monsterTry, onLevelUp, shareUP };
+module.exports = { CASTER_REGEN_PCT, costFor, CLASS_KITS, kitFor, SKILL_DOMAINS, BREAK, splitMessages, sendDomain, FAMILY_DOMAINS, isShielded, shieldLine, monsterDomainInfo, MONSTER_DOMAINS, setupStep, setupPrompt, handleSetupReply, rename, pvpArena, endPvpArena, findBattle, CAST_ENERGY, MAX_LEVEL, UP_SHARE_CAP, ARCHETYPES, CLASS_DOMAINS, STAT_LABEL, effectFor, scale, turnsFor, costToNext, ensure, has, unlock, scaledEffect, describe, power, upgrade, arenaOf, active, shatter, tick, expand, monsterPower, monsterEligible, monsterTry, onLevelUp, shareUP };

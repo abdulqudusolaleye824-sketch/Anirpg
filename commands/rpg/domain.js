@@ -52,6 +52,14 @@ module.exports = {
       return sock.sendMessage(chatId, { text: `🌌 *${r.old}* → *${r.name}* · 🃏 1 Rename Card used (${r.left} left)` }, { quoted: msg });
     }
     if (sub === 'desc' || sub === 'description') {
+      // Push #96h-q: ONE free rewrite with /domain desc <text> (up to 2000 chars).
+      const txt = args.slice(1).join(' ').replace(/[*_~`]/g, '').replace(/\s+/g, ' ').trim();
+      if (txt) {
+        if (d.descEdited) return sock.sendMessage(chatId, { text: `❌ You already used your one *free* description change. *${d.name}* keeps: _${d.desc || '—'}_` }, { quoted: msg });
+        if (txt.length > 2000) return sock.sendMessage(chatId, { text: `❌ Up to 2000 characters (yours is ${txt.length}).` }, { quoted: msg });
+        d.desc = txt; d.descEdited = Date.now(); saveDatabase();
+        return sock.sendMessage(chatId, { text: `📜 *${d.name}* — _${d.desc}_\n✅ Description set. That was your one free change — it is permanent now.` }, { quoted: msg });
+      }
       return sock.sendMessage(chatId, { text: d.desc ? `📜 *${d.name}* — _${d.desc}_\n⚠️ Domain descriptions are permanent.` : `📜 Your domain has no description — it is set once, in your DM, when the domain awakens.${DS.setupStep(player) ? ' Check your DM — the system is still waiting for your reply.' : ''}` }, { quoted: msg });
     }
 
@@ -80,6 +88,19 @@ module.exports = {
 
     // card
     const e = DS.scaledEffect(player); const next = DS.costToNext(d.level);
-    return sock.sendMessage(chatId, { text: [FRAME, `🌌 *${d.name.toUpperCase()}*`, FRAME, d.desc ? `_${d.desc}_` : `_No description yet — /domain desc <text>_`, `👤 ${player.name} · ${d.class} · Domain Lv.${d.level}/${DS.MAX_LEVEL} · power ${DS.power(player)}`, `⏳ ${e.turns} turns · ⚡ ${DS.costFor(d.level || 1)} energy · cast ${d.casts || 0}×`, ...DS.describe(player), ``, next != null ? `📈 Next level: *${next} UP* (you have ${player.upgradePoints || 0}) — /domain upgrade` : `🏆 Max level.`, `⚔️ /domain expand · ✏️ /domain name · /domain desc`, FRAME].join('\n') }, { quoted: msg });
+    // Push #96h-q: in battle, say whose domain stands, how long, and whether YOURS is ready.
+    const _battle = [];
+    try {
+      const b = DS.findBattle(player, sender, db);
+      if (b && b.arena) {
+        const cur = DS.active(b.arena);
+        const mine = cur && (String(cur.ownerId) === String(player.jid || player.id || player.name) || (cur.ownerKeys || []).some(k => [player.jid, player.id, player.name].filter(Boolean).map(String).includes(k)));
+        _battle.push(FRAME, `⚔️ *BATTLE (${b.kind})*`);
+        _battle.push(cur ? `🌌 Active: *${cur.name}* — ${mine ? 'YOURS' : (cur.side === 'monster' ? 'the beast' : cur.ownerName)} · *${cur.turnsLeft}* turn${cur.turnsLeft === 1 ? '' : 's'} left` : `🌫️ No domain is active right now.`);
+        const cost = DS.costFor(d.level || 1); const en = player.stats?.energy || 0;
+        _battle.push(mine ? `✅ Your domain stands — it will fade in ${cur.turnsLeft} turn${cur.turnsLeft === 1 ? '' : 's'}.` : (en >= cost ? `✅ *${d.name}* is READY — /domain expand (${cost} energy, you have ${en})` : `⏳ *${d.name}* needs ${cost} energy — you have ${en}.`));
+      }
+    } catch (e2) {}
+    return sock.sendMessage(chatId, { text: [FRAME, `🌌 *${d.name.toUpperCase()}*`, FRAME, d.desc ? `_${d.desc}_` : `_No description yet — /domain desc <text> (one free change)_`, `👤 ${player.name} · ${d.class} · Domain Lv.${d.level}/${DS.MAX_LEVEL} · power ${DS.power(player)}`, `⏳ ${e.turns} turns · ⚡ ${DS.costFor(d.level || 1)} energy · cast ${d.casts || 0}×`, ...DS.describe(player), ``, next != null ? `📈 Next level: *${next} UP* (you have ${player.upgradePoints || 0}) — /domain upgrade` : `🏆 Max level.`, `⚔️ /domain expand · ✏️ /domain name · /domain desc`, FRAME, ..._battle].join('\n') }, { quoted: msg });
   },
 };

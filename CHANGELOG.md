@@ -1,3 +1,11 @@
+## 1.0.148 — Push #96h-q: domain immunity fix · caster regen · battle status · one desc edit · /resetpro
+- **Immunity fix:** domain owner immunity matched only on `.jid`, which raid player objects don't carry — so owners were still getting statused. Now matches jid/id/name; verified statuses are refused.
+- **Caster regen:** every domain heals its caster 10% max HP per turn while it stands.
+- **Burst** stays a one-time hit on expansion (not every turn) — as intended.
+- **/domain** in battle: shows which domain is active (yours / teammate / beast), turns left, and whether yours is READY (energy vs cost).
+- **/domain desc <text>**: one free change per hunter (≤2000 chars), permanent after.
+- **/resetpro [@|reply]** (owner): wipes Pro status + perks (lock, emoji, auto-mend, tier, expiry) — Nexus, Mana Stones, items, cards, keys, boxes stay. Self when no target.
+
 ## 1.0.147 — Push #96h-p: domain duration & cost scale every 2 levels
 - Domain lasts **+1 turn every 2 levels**, no cap: Lv.1 → 2 turns, Lv.10 → 6, Lv.20 → 11, Lv.100 → 51.
 - Expansion costs **−5% energy every 2 levels** (floor 30%): Lv.1 350, Lv.10 280, Lv.20 192. `/domain` shows the live cost.
