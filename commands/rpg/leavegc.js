@@ -42,6 +42,12 @@ module.exports = {
       }
     } catch (e) {}
 
+    // Push #96h-u: EVERY bot sitting in that GC leaves (a bot added by hand, not just the one that /joingc'd).
+    const _others = [];
+    try {
+      const all = (MSM && MSM.getAllSockets && MSM.getAllSockets()) || {};
+      for (const [k, s] of Object.entries(all)) { if (!s || s === target || !s.user?.id) continue; try { await s.groupMetadata(entry.groupId); await s.groupLeave(entry.groupId); _others.push(k); } catch (e) {} }
+    } catch (e) {}
     try {
       await target.groupLeave(entry.groupId);
     } catch (e) {
@@ -53,10 +59,12 @@ module.exports = {
 
     delete joined[entry.serial];
     db.botJoinedGCs = joined;
+    // Push #96h-u: a left GC frees its serial — the next /joingc reuses the lowest free number.
+    try { const used = Object.keys(joined).map(Number).filter(Number.isFinite); db.gcSerialCounter = used.length ? Math.max(...used) : 0; } catch (e) {}
     saveDatabase();
 
     return sock.sendMessage(chatId, {
-      text: `👋 *Left GC #${entry.serial}* (${entry.name || entry.groupId}) and removed it from tracking.\n\nUse /gclist to view remaining GCs.`,
+      text: `👋 *Left GC #${entry.serial}* (${entry.name || entry.groupId}) and removed it from tracking.${_others.length ? `\n🤖 Also pulled out: ${_others.join(', ')}` : ''}\n\nUse /gclist to view remaining GCs.`,
     }, { quoted: msg });
   },
 };

@@ -1,3 +1,10 @@
+## 1.0.152 — Push #96h-u
+- `/payroll` is read-only (never pays) and lists current guild members only.
+- Group guard is PER-BOT: a `/joingc` GC counts only for the bot that joined it — a bot added by hand to that GC is swept; `/setgroup` GCs stay shared. `/leavegc` pulls every bot out of the GC.
+- Left GCs free their serial; `/joingc` reuses the lowest free number. `/gchidden` lists silent GCs.
+- Profile: raid record (entered / cleared / wiped / success %, deaths) + live raid status.
+- Daily quest "Participate in 1 Guild War" → "Earn 500 Guild Points" (existing copies update automatically).
+
 ## 1.0.151 — Push #96h-t (Master Fix List)
 - Domain: "expanded their domain against you" DM scrapped. `/domain` inside a battle = short battle card only. Domain turns in party raids now count ROUNDS (every living hunter acted once), not single attacks.
 - Multi-bot: a bot removed from a group marks itself absent and hands the group to a present bot; stale presence (bot stopped hearing the group) no longer silences the new bot.

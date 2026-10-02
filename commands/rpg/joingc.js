@@ -106,8 +106,9 @@ module.exports = {
       } catch (e) {}
     }
 
-    db.gcSerialCounter = (db.gcSerialCounter || 0) + 1;
-    const serial = db.gcSerialCounter;
+    // Push #96h-u: lowest FREE serial (left GCs no longer take up numbers).
+    let serial = 1; while (joined[serial]) serial++;
+    db.gcSerialCounter = Math.max(db.gcSerialCounter || 0, serial);
     joined[serial] = {
       serial,
       groupId,

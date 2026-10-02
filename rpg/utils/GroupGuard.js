@@ -16,9 +16,12 @@
 const _lastSweep = {};
 const SWEEP_MIN_GAP = 10 * 60 * 1000;
 
-function allowedSet(db) {
+// Push #96h-u: PER-BOT. A /joingc group is allowed only for the bot that joined
+// it (entry.botKey); a bot added by hand to the same GC is a stray and gets
+// swept. /setgroup groups (astralGroups) and explicit allows stay shared.
+function allowedSet(db, personalityKey) {
   const ok = new Set();
-  try { for (const e of Object.values(db.botJoinedGCs || {})) if (e && e.groupId) ok.add(e.groupId); } catch (e) {}
+  try { for (const e of Object.values(db.botJoinedGCs || {})) if (e && e.groupId && (!personalityKey || !e.botKey || e.botKey === personalityKey)) ok.add(e.groupId); } catch (e) {}
   try { for (const gid of Object.keys(db.astralGroups || {})) ok.add(gid); } catch (e) {}
   try { for (const [gid, v] of Object.entries(db.groupGuardAllow || {})) if (v) ok.add(gid); } catch (e) {}
   return ok;
@@ -33,8 +36,8 @@ function isCommunityLike(meta) {
  * Decide, for every group the socket is in, whether it is allowed.
  * groups = result of groupFetchAllParticipating() (id -> metadata).
  */
-function classify(db, groups) {
-  const ok = allowedSet(db);
+function classify(db, groups, personalityKey) {
+  const ok = allowedSet(db, personalityKey);
   const allowedParents = new Set();
   // Any allowed group that is linked to a community → that community is allowed.
   for (const [gid, m] of Object.entries(groups || {})) {
@@ -52,14 +55,14 @@ function classify(db, groups) {
   return out;
 }
 
-function isAllowed(db, groupId) {
+function isAllowed(db, groupId, personalityKey) {
   if (!groupId || !String(groupId).endsWith('@g.us')) return true;
   if (db && db.groupGuardDisabled) return true;
-  return allowedSet(db).has(groupId);
+  return allowedSet(db, personalityKey).has(groupId);
 }
 
-async function leaveIfUntracked(sock, db, groupId, why = 'untracked') {
-  if (isAllowed(db, groupId)) return false;
+async function leaveIfUntracked(sock, db, groupId, why = 'untracked', personalityKey) {
+  if (isAllowed(db, groupId, personalityKey)) return false;
   // Push #79: when added to a group, check community membership via metadata
   // before leaving — a sub-group of an allowed community is fine.
   try {
@@ -91,7 +94,7 @@ async function sweep(sock, db, personalityKey = '?', opts = {}) {
   _lastSweep[personalityKey] = now;
   let groups = {};
   try { groups = await sock.groupFetchAllParticipating(); } catch (e) { return { checked: 0, left: [], error: e.message }; }
-  const c = classify(db, groups);
+  const c = classify(db, groups, personalityKey && personalityKey !== '?' ? personalityKey : undefined);
   const left = [];
   if (opts.dryRun) return { checked: Object.keys(groups).length, left: [], wouldLeave: c.leave.map((id) => ({ id, name: groups[id]?.subject || '' })) };
   for (const gid of c.leave) {

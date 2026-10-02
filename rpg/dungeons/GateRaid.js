@@ -477,6 +477,7 @@ function wipeGate(gate, key, keyData, chatId, db) {
       gate._wipeSalvaged = true;
     }
   } catch (e) {}
+  try { for (const m of (gate.raid && gate.raid.members) || []) { const u = db?.users?.[m.id] || findUserByBare(db, m.id); if (u) { u.stats_history = u.stats_history || {}; u.stats_history.raidsWiped = (u.stats_history.raidsWiped || 0) + 1; } } } catch (e) {} // Push #96h-u
   try {
     if (gate.raid) { gate.raid.status = 'wiped'; gate.raid.clearedAt = Date.now(); }
     if (db?.activeGates) delete db.activeGates[gate.id];
@@ -627,6 +628,7 @@ function ensureMember(gate, sender, db) {
       ready: false,
     };
     raid.members.push(m);
+    try { if (player) { player.stats_history = player.stats_history || {}; player.stats_history.raidsEntered = (player.stats_history.raidsEntered || 0) + 1; } } catch (e) {} // Push #96h-u: profile raid record
   }
   return m;
 }

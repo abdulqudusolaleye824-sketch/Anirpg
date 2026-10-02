@@ -9,7 +9,7 @@ const AstralGroups = (() => { try { return require('../../rpg/utils/AstralGroups
 
 module.exports = {
   name: 'gclist',
-  aliases: ['gcs', 'joinedgcs'],
+  aliases: ['gcs', 'joinedgcs', 'gchidden', 'hiddengcs'],
   description: 'List tracked non-main groups (mod DM + mods GC)',
   usage: '/gclist',
 
@@ -37,13 +37,15 @@ module.exports = {
     } catch (e) {}
 
     const joined = db.botJoinedGCs || {};
+    // Push #96h-u: /gchidden lists ONLY the --silent GCs; /gclist hides them.
+    const _hiddenView = /^gchidden$|^hiddengcs$/i.test(String(this && this._invokedAs || '')) || /^\/?gchidden\b|^\/?hiddengcs\b/i.test(String(msg.message?.conversation || msg.message?.extendedTextMessage?.text || '').trim());
     const list = Object.values(joined)
-      .filter((e) => e && e.groupId && !mainIds.has(e.groupId) && !e.silent) // Push #77: --silent GCs hidden
+      .filter((e) => e && e.groupId && !mainIds.has(e.groupId) && (_hiddenView ? !!e.silent : !e.silent)) // Push #77: --silent GCs hidden
       .sort((a, b) => (a.serial || 0) - (b.serial || 0));
 
     if (list.length === 0) {
       return sock.sendMessage(chatId, {
-        text: '📋 *No tracked GCs.*\n\nMods can add one with /joingc <WhatsApp group link> in my DM.',
+        text: _hiddenView ? '🤫 *No hidden GCs.*\n\nJoin one silently with /joingc <link> --silent.' : '📋 *No tracked GCs.*\n\nMods can add one with /joingc <WhatsApp group link> in my DM.',
       }, { quoted: msg });
     }
 
@@ -58,7 +60,7 @@ module.exports = {
       }
     }
 
-    const lines = [`📋 *Tracked GCs* (${list.length})`, ``];
+    const lines = [_hiddenView ? `🤫 *Hidden GCs* (${list.length})` : `📋 *Tracked GCs* (${list.length})`, ``];
     for (const e of list) {
       const when = e.joinedAt ? new Date(e.joinedAt).toLocaleDateString() : '—';
       lines.push(`*#${e.serial}* — ${names[e.groupId] || e.name || 'Unknown group'}`);

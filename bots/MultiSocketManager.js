@@ -2032,7 +2032,7 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
         const addedMe = (participants || []).some((p) => { const b = String(typeof p === 'string' ? p : (p && (p.id || p.jid)) || '').split(':')[0].split('@')[0]; return b && (b === me || (meLid && b === meLid)); });
         if (addedMe) {
           const GG = require('../rpg/utils/GroupGuard');
-          if (!GG.isAllowed(getDatabase(), chatId)) { setTimeout(() => GG.leaveIfUntracked(sock, getDatabase(), chatId, 'added').catch(() => {}), 3000); return; }
+          if (!GG.isAllowed(getDatabase(), chatId, personalityKey)) { setTimeout(() => GG.leaveIfUntracked(sock, getDatabase(), chatId, 'added', personalityKey).catch(() => {}), 3000); return; }
         }
       } catch (e) {}
     }

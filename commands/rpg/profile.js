@@ -177,12 +177,24 @@ function buildCard(player, db, targetId, mentionedId, isOwnProfile) {
   const nextXp = UI.xpForLevel(player.level);
   const elo = player.pvpElo || 1000;
   const pw = player.pvpWins || 0, pl = player.pvpLosses || 0;
+  // Push #96h-u: raid record + live raid status.
+  let raidLine = null, raidStatus = null;
+  try {
+    const sh = player.stats_history || {}; const cleared = sh.gatesCleared || 0, wiped = sh.raidsWiped || 0, entered = Math.max(sh.raidsEntered || 0, cleared + wiped), deaths = sh.gateDeaths || 0;
+    const done = cleared + wiped; const rate = done > 0 ? Math.round((cleared / done) * 100) : null;
+    raidLine = `🚪 Raids: *${entered}* entered · ✅ ${cleared} cleared · 💀 ${wiped} wiped${rate != null ? ` · *${rate}%* success` : ''}${deaths ? ` · ☠️ ${deaths} deaths` : ''}`;
+    const RM = require('../../rpg/utils/RegenManager'); const b = RM.checkInBattle(player, db);
+    if (b && b.type === 'gateraid' && b.battle) { const g = b.battle; const r = g.raid || {}; raidStatus = `⚔️ In raid: *${g.rank}-Rank gate* · floor ${(g.currentFloor || r.floor || 1)}/${g.totalFloors || '?'} · ${r.startedAt || (g.currentFloor || 0) > 0 ? 'fighting' : 'in lobby'}${(player.stats?.hp || 0) <= 0 ? ' · DOWN' : ''}`; }
+    else if (b) raidStatus = `⚔️ In battle: ${b.type.replace('_', ' ')}`;
+    else raidStatus = `🛡️ Status: not in a raid`;
+  } catch (e) {}
   const proLines = [
     `💎 *PRO INSIGHT*`,
     `⚔️ PvP: *${UI.num(elo)}* ELO (${pw}W/${pl}L${(pw + pl) > 0 ? `, ${Math.round((pw / (pw + pl)) * 100)}%` : ''})`,
     `📊 XP: ${UI.bar(player.xp, nextXp, 10, true)} (${UI.num(player.xp)}/${UI.num(nextXp)})`,
     `🔥 Power: *${UI.num(power)}* ${powerLabel.emoji}`,
   ];
+  if (raidLine) rows.push(raidLine); if (raidStatus) rows.push(raidStatus);
   return UI.card(player, {
     icon: '👤', title: player.name, lines: rows, proLines,
     tip: isOwnProfile ? '/stats for battle detail' : `Viewing ${player.name}'s journey`,

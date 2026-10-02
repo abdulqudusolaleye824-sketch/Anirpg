@@ -17,8 +17,7 @@ module.exports = {
     if (!guild) return say('❌ You are not in a guild.');
     if (!CM.isGuildMasterOrVice(db, guild.name, sender)) return say('❌ Only the *Guild Master* or a *Vice* can see the guild payroll.');
     const guildId = Object.keys(db.guilds || {}).find(id => db.guilds[id] === guild) || guild.id;
-    // Push #96h-t: ALWAYS the live picture — settle any overdue paydays first, then skip contracts of hunters who left the guild.
-    try { if (CM.processWeeklyPay(db, guildId, null).length) saveDatabase(); } catch (e) {}
+    // Push #96h-u: READ-ONLY — never pays; shows current guild members only.
     const bucket = (db.guildContracts && db.guildContracts[guildId]) || {};
     const rows = []; let _gone = 0;
     let weekNexus = 0, weekMana = 0, owedNexus = 0, owedMana = 0, paidNexus = 0, paidMana = 0;

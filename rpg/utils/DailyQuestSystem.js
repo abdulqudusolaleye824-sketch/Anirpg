@@ -85,7 +85,7 @@ const DAILY_QUEST_POOL = [
   // ── Guild (3) ─────────────────────────────────────────────────────────────
   { id: 'dq_guild1',      name: 'Guild Contributor',     desc: 'Donate to guild treasury',                 type: 'donate',   target: 1,   reward: { gold: 250,   crystals: 3   } },
   { id: 'dq_guild5gp',    name: 'Guild Pillar',          desc: 'Earn 5 Guild Points',                      type: 'gp',       target: 5,   reward: { gold: 500,   crystals: 15  } },
-  { id: 'dq_guildwar1',   name: 'War Veteran',           desc: 'Participate in 1 Guild War',               type: 'gw',       target: 1,   reward: { gold: 1300,  crystals: 35  } },
+  { id: 'dq_guildwar1',   name: 'War Veteran',           desc: 'Earn 500 Guild Points',                    type: 'gp',       target: 500, reward: { gold: 1300,  crystals: 35  } }, // Push #96h-u: was 'Participate in 1 Guild War'
 
   // ── Reputation (1) ────────────────────────────────────────────────────────
 ];
