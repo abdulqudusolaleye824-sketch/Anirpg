@@ -109,4 +109,32 @@ async function sweep(sock, db, personalityKey = '?', opts = {}) {
   return { checked: Object.keys(groups).length, left };
 }
 
-module.exports = { allowedSet, isAllowed, classify, leaveIfUntracked, sweep };
+// Push #96h-v: an Owner adding a bot by hand == /joingc for that bot (tracked, lowest free serial).
+function trackJoin(db, groupId, personalityKey, byJid, sock) {
+  if (!db.botJoinedGCs || typeof db.botJoinedGCs !== 'object') db.botJoinedGCs = {};
+  const joined = db.botJoinedGCs;
+  const dup = Object.values(joined).find(e => e && e.groupId === groupId && (!e.botKey || e.botKey === personalityKey));
+  if (dup) return dup;
+  let serial = 1; while (joined[serial]) serial++;
+  db.gcSerialCounter = Math.max(db.gcSerialCounter || 0, serial);
+  joined[serial] = { serial, groupId, name: 'Unknown group', link: null, code: null, botKey: personalityKey, joinedAt: Date.now(), joinedBy: String(byJid || '').split(':')[0].split('@')[0], silent: false, viaAdd: true };
+  try { if (sock && typeof sock.groupMetadata === 'function') sock.groupMetadata(groupId).then(m => { if (m && m.subject && joined[serial]) joined[serial].name = m.subject; }).catch(() => {}); } catch (e) {}
+  return joined[serial];
+}
+function isMainGroup(db, groupId) {
+  try { const e = (db.astralGroups || {})[groupId]; return !!(e && e.isMain); } catch (e) { return false; }
+}
+// Push #96h-v: every connected bot leaves `groupId`; tracking entries for it are dropped.
+async function leaveAllBots(sockets, db, groupId, why = 'staff left', saveDatabase) {
+  const left = [];
+  for (const [key, s] of Object.entries(sockets || {})) {
+    if (!s || !s.user?.id) continue;
+    try { await s.groupMetadata(groupId); } catch (e) { continue; } // not in it
+    try { if (!left.length) await s.sendMessage(groupId, { text: `👋 The Astra staff have left this group — the bots are leaving too (${why}).` }, { asSelf: true }); } catch (e) {}
+    try { await s.groupLeave(groupId); left.push(key); console.log(`[GroupGuard] ${key} left ${groupId} (${why})`); } catch (e) { console.error(`[GroupGuard] ${key} leave ${groupId} failed:`, e.message); }
+    await new Promise(r => setTimeout(r, 1200));
+  }
+  try { const j = db.botJoinedGCs || {}; for (const k of Object.keys(j)) if (j[k] && j[k].groupId === groupId) delete j[k]; const used = Object.keys(j).map(Number).filter(Number.isFinite); db.gcSerialCounter = used.length ? Math.max(...used) : 0; if (typeof saveDatabase === 'function') saveDatabase(); } catch (e) {}
+  return left;
+}
+module.exports = { allowedSet, isAllowed, classify, leaveIfUntracked, sweep, trackJoin, isMainGroup, leaveAllBots };

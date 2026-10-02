@@ -2022,17 +2022,40 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
     try { backupAuthToDisk(personalityKey, authDir); } catch {}
   });
 
-  sock.ev.on('group-participants.update', async ({ id: chatId, participants, action }) => {
+  sock.ev.on('group-participants.update', async ({ id: chatId, participants, action, author }) => {
     if (action !== 'add' && action !== 'remove') return;
+    const _bareOf = (p) => String(typeof p === 'string' ? p : (p && (p.id || p.jid)) || '').split(':')[0].split('@')[0];
     // Push #77: if THIS bot was just added to an untracked group, leave.
+    // Push #96h-v: an Owner adding the bot by hand counts as /joingc (tracked for THIS bot);
+    // anyone else → leave. When the bot stays it says thanks.
     if (action === 'add') {
       try {
         const me = String(sock?.user?.id || '').split(':')[0].split('@')[0];
         const meLid = String(sock?.user?.lid || '').split(':')[0].split('@')[0];
-        const addedMe = (participants || []).some((p) => { const b = String(typeof p === 'string' ? p : (p && (p.id || p.jid)) || '').split(':')[0].split('@')[0]; return b && (b === me || (meLid && b === meLid)); });
+        const addedMe = (participants || []).some((p) => { const b = _bareOf(p); return b && (b === me || (meLid && b === meLid)); });
         if (addedMe) {
-          const GG = require('../rpg/utils/GroupGuard');
-          if (!GG.isAllowed(getDatabase(), chatId, personalityKey)) { setTimeout(() => GG.leaveIfUntracked(sock, getDatabase(), chatId, 'added', personalityKey).catch(() => {}), 3000); return; }
+          const GG = require('../rpg/utils/GroupGuard'); const db = getDatabase();
+          let allowed = GG.isAllowed(db, chatId, personalityKey);
+          if (!allowed && author && Perms.isBotOwner(db, author)) {
+            try { GG.trackJoin(db, chatId, personalityKey, author, sock); if (typeof saveDatabase === 'function') saveDatabase(); allowed = true; } catch (e) {}
+          }
+          if (!allowed) { setTimeout(() => GG.leaveIfUntracked(sock, getDatabase(), chatId, 'added', personalityKey).catch(() => {}), 3000); return; }
+          setTimeout(() => { try { sock.sendMessage(chatId, { text: `👋 *Thanks for adding me to this group!*\n\nI'm ${PersonalityManager.getDisplayName ? PersonalityManager.getDisplayName(personalityKey) : 'Astra'} — type */start ${personalityKey}* to activate me here, then */help* to see what I can do.` }, { asSelf: true }).catch(() => {}); } catch (e) {} }, 2500);
+        }
+      } catch (e) {}
+    }
+    // Push #96h-v: a mod/owner LEAVING a non-main GC → every bot leaves too,
+    // unless an Owner is still inside. If the one who left IS an Owner, all bots leave regardless.
+    if (action === 'remove') {
+      try {
+        const db = getDatabase(); const GG = require('../rpg/utils/GroupGuard');
+        const gone = (participants || []).map(_bareOf).filter(Boolean);
+        const staffGone = gone.filter(b => Perms.isBotOwner(db, b) || Perms.isBotMod(db, b));
+        if (staffGone.length && !GG.isMainGroup(db, chatId) && _bootstrapDispatcher(personalityKey, chatId)) {
+          const ownerGone = staffGone.some(b => Perms.isBotOwner(db, b));
+          let ownerStays = false;
+          if (!ownerGone) { try { const meta = await sock.groupMetadata(chatId); ownerStays = (meta.participants || []).some(p => Perms.isBotOwner(db, _bareOf(p))); } catch (e) { ownerStays = true; } }
+          if (ownerGone || !ownerStays) { setTimeout(() => GG.leaveAllBots(getAllSockets(), db, chatId, ownerGone ? 'owner left' : 'staff left', saveDatabase).catch(() => {}), 2000); return; }
         }
       } catch (e) {}
     }

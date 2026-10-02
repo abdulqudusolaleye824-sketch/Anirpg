@@ -1,3 +1,7 @@
+## 1.0.153 — Push #96h-v
+- Bot added to a group: says thanks (+ how to /start it). It stays only if added by an Owner (auto-tracked like `/joingc`, per-bot) or the GC is tracked for it; otherwise it leaves.
+- A mod/owner leaving a non-main GC: all bots leave too unless an Owner is still inside; if an Owner left, all bots leave regardless. Tracking entries dropped, serials freed.
+
 ## 1.0.152 — Push #96h-u
 - `/payroll` is read-only (never pays) and lists current guild members only.
 - Group guard is PER-BOT: a `/joingc` GC counts only for the bot that joined it — a bot added by hand to that GC is swept; `/setgroup` GCs stay shared. `/leavegc` pulls every bot out of the GC.
