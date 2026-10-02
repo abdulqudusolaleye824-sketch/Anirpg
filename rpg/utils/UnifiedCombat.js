@@ -368,6 +368,13 @@ function tickStatuses(entity) {
     for (const [k, v] of Object.entries(entity.tempBuffs || {})) {
       if (!v) { delete entity.tempBuffs[k]; continue; }
       // Push #94: regeneration (HoT) really heals every turn it is up.
+      // Push #96h-t: "converted" damage comes back as HP on the next turn.
+      if (k === 'convertHeal' && v.amount > 0 && entity.stats && (entity.stats.hp || 0) > 0) {
+        let max = entity.stats.maxHp || 100; try { max = require('./GearSystem').effectiveMaxHp(entity) || max; } catch (e) {}
+        const before = entity.stats.hp || 0; entity.stats.hp = Math.min(max, before + Math.floor(v.amount));
+        if (entity.stats.hp > before) logs.push(`🩸 ${entity.name || 'Hunter'} recovers +${entity.stats.hp - before} HP (${v.source || 'Blood Armor'})`);
+        delete entity.tempBuffs[k]; continue;
+      }
       if (k === 'regen' && v.pct > 0 && entity.stats && (entity.stats.hp || 0) > 0) {
         let max = entity.stats.maxHp || 100; try { max = require('./GearSystem').effectiveMaxHp(entity) || max; } catch (e) {}
         const amt = Math.max(1, Math.floor(max * v.pct / 100 * (v.power || 1)));
@@ -390,9 +397,12 @@ function tickStatuses(entity) {
     if (_dpct > 0) {
       if (entity.stats) {
         const dmg = Math.floor((entity.stats.maxHp || 100) * _dpct);
+        const _wasAlive = (entity.stats.hp || 0) > 0;
         entity.stats.hp = Math.max(0, (entity.stats.hp || 0) - dmg);
         const _dlabel = { bleed: '🩸 Bleeding', burn: '🔥 Burning', poison: '☠️ Poison', freeze: '❄️ Frozen' }[_dt] || `✨ ${_dd.name || e.type}`;
         logs.push(`${_dlabel} — ${dmg} dmg`);
+        // Push #96h-t: a death to a status effect SAYS so (and names the domain if the status came from one).
+        if (_wasAlive && entity.stats.hp <= 0) { const _src = e.source || e.from || ''; logs.push(`💀 *${entity.name || 'Hunter'}* dies to *${(_dd.name || e.type || 'status').toString().toUpperCase()}*${_src ? ` (${_src})` : ''} — not to a blow.`); entity._deathCause = { type: 'status', effect: _dt, source: _src || null }; }
       } else if (_dt === 'freeze') {
         logs.push(`❄️ Frozen solid`);
       }
@@ -627,7 +637,11 @@ async function playTurn(sock, chatId, o) {
   return { result, statusApplied, tier, texts };
 }
 
-module.exports = { accuracyOf, hitCheck, DODGE_CAP_VS_ACC,
+// Push #96h-t: call after a hunter takes damage — banks the converted share for next turn.
+function noteDamageTaken(entity, dmg) {
+  try { const c = entity && entity.tempBuffs && entity.tempBuffs.convert; if (!c || !(dmg > 0)) return 0; const amt = Math.floor(dmg * c.pct / 100); if (amt <= 0) return 0; const cur = entity.tempBuffs.convertHeal; entity.tempBuffs.convertHeal = { amount: (cur && cur.amount || 0) + amt, duration: 2, source: c.source || 'Blood Armor' }; return amt; } catch (e) { return 0; }
+}
+module.exports = { noteDamageTaken, accuracyOf, hitCheck, DODGE_CAP_VS_ACC,
   tempBuffPct, applyMoveBuffs, reflectDamage,
   dodgeChance, weakenTakenMult,
   isPro,

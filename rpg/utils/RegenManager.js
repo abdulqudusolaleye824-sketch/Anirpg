@@ -109,7 +109,11 @@ const POST_COMBAT_LOCK_MS = Number(process.env.REGEN_LOCK_MS || 60 * 1000);
 // A single tick may never credit more than this many seconds of recovery, so a
 // restart / long idle cannot dump an hour of regen at once and top someone up
 // from 1 HP to full in one step.
-const MAX_CATCHUP_SEC = Number(process.env.REGEN_CATCHUP_SEC || 30);
+// Push #96h-t: the old 30 s cap meant an E-rank gained 30 HP per command and
+// gear-boosted pools (thousands of HP) NEVER refilled outside raids. The post-
+// combat lock above already stops the "instant heal after a fight" symptom, so
+// idle time now counts for up to 6 hours — step away and you come back full.
+const MAX_CATCHUP_SEC = Number(process.env.REGEN_CATCHUP_SEC || 6 * 3600);
 
 function markCombatAction(player) {
   if (!player || !player.stats) return;
@@ -124,6 +128,7 @@ function markCombatAction(player) {
  */
 function endCombat(player, ms) {
   if (!player) return;
+  try { require('./ClassPower').clearBloodDebt(player); } catch (e) {} // Push #96h-t: Blood Debt is paid when the fight ends
   player.regenLockUntil = Date.now() + (ms == null ? POST_COMBAT_LOCK_MS : ms);
   markCombatAction(player);
 }
@@ -165,6 +170,7 @@ function applyPassiveRegen(player, db) {
     if ((player.stats.hp || 0) < maxHp) {
       player.stats.hp = Math.min(maxHp, (player.stats.hp || 0) + hpSec * getRegenRate(rank));
     }
+    if (player.bloodDebtStacks) { try { require('./ClassPower').clearBloodDebt(player); } catch (e) {} } // Push #96h-t: out of combat → debt settled
     player.lastRegenTime += hpSec * 1000;
   }
 

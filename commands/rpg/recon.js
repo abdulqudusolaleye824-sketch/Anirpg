@@ -113,12 +113,11 @@ module.exports = {
 
     const CS = require('../../rpg/utils/ClassSystem');
     const oldName = player.classBase || (typeof player.class === 'string' ? player.class : player.class?.name) || null;
-    if (!oldName) {
-      return sock.sendMessage(chatId, { text: `ℹ️ *${player.name}* has no class yet — nothing to re-roll.` }, { quoted: msg, mentions: [jid] });
-    }
+    // Push #96h-t: no class yet → /recon simply ASSIGNS one (same roll/pin rules). Hunters who never awakened get a class.
+    const _firstClass = !oldName;
 
     // The owner keeps Senku — never strip an exclusive class from the person it belongs to.
-    if (CS.isExclusiveClass(oldName) && CS.hardcodedClassFor(player) === oldName) {
+    if (oldName && CS.isExclusiveClass(oldName) && CS.hardcodedClassFor(player) === oldName) {
       return sock.sendMessage(chatId, { text: `❌ *${player.name}* is the rightful holder of *${oldName}* — /recon refused.` }, { quoted: msg, mentions: [jid] });
     }
 
@@ -144,7 +143,7 @@ module.exports = {
         `🎭 *CLASS RECONSTITUTED*`,
         FRAME,
         `👤 Hunter: *${player.name}*`,
-        `🗑️ Removed: *${oldName}*${CS.isExclusiveClass(oldName) ? ' _(exclusive — not rollable)_' : ''}`,
+        _firstClass ? `🆕 First awakening — no previous class` : `🗑️ Removed: *${oldName}*${CS.isExclusiveClass(oldName) ? ' _(exclusive — not rollable)_' : ''}`,
         `✨ New class: *${data.emoji || '🎭'} ${shown}* (${(data.rarity || 'common').toUpperCase()})`,
         `⭐ Quality: *${res.quality || player.classQuality || 0}%*${pinClass || pinQuality != null ? '  _(custom)_' : ''}`,
         ...(res.variant ? [`👹 Unique Monster variant — *${res.uniqueLeft}* of 50 still unclaimed`] : []),

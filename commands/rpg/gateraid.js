@@ -557,7 +557,7 @@ module.exports = {
             try { require('../../rpg/utils/QuestDispatcher').trackAndNotify(player, 'heal', 1, sock, sender, chatId); } catch (e) {}
             return sock.sendMessage(chatId, { text: [
               ...(pro ? [UI.PRO_BAR, `${_sc.isHeal ? '💚' : '✨'} *SUPPORT — ${_sc.skill.name}* 💎`, UI.PRO_BAR] : [`${_sc.isHeal ? '💚' : '✨'} *SUPPORT — ${_sc.skill.name}*`, UI.FREE_BAR]),
-              `🙌 *${player.name}* ${_sc.isHeal ? 'heals' : 'buffs'} ${_sc.party ? 'the *whole party*' : _self ? 'themself' : `*${tgt.name}*`}!`,
+              `🙌 *${(/[\p{L}\p{N}]/u.test(String(player.name || '')) ? player.name : (msg.pushName || 'Hunter'))}* ${_sc.isHeal ? 'heals' : 'buffs'} ${_sc.party ? 'the *whole party*' : _self ? 'themself' : `*${tgt.name}*`}!`,
               ..._sc.lines,
               ``,
               `🕊️ Support casts don't use your turn — the monster does not counter.`,
@@ -915,7 +915,7 @@ module.exports = {
         try { const _fx = require('../../rpg/utils/MonsterSkillFX').apply(target, _victim, monsterSkill, dmg, { skipStatus: true }); if (_fx.lines.length) await sock.sendMessage(chatId, { text: _fx.lines.join('\n') }); } catch (e) {}
       }
       // Push #95: DOMAINS — bosses / B-rank+ monsters may expand a domain over the party.
-      try { const DS = require('../../rpg/utils/DomainSystem'); const _hunters = GR.livingMembers ? GR.livingMembers(gate, db) : [player]; const _tl = DS.tick(DS.arenaOf(gate)); if (_tl) await sock.sendMessage(chatId, { text: _tl }); const _dl = DS.monsterTry(DS.arenaOf(gate), target, _hunters, { boss: !!_fightingBoss, rank: gate.rank }); if (_dl) await DS.sendDomain(sock, chatId, _dl); } catch (e) {}
+      try { const DS = require('../../rpg/utils/DomainSystem'); const _hunters = GR.livingMembers ? GR.livingMembers(gate, db) : [player]; const _nj = (j) => { try { return GR.GKM.normaliseJid(j) || String(j); } catch (e) { return String(j); } }; const _tl = DS.tick(DS.arenaOf(gate), { actor: _nj(sender), roster: ((gate.raid && gate.raid.members) || []).filter(m => (m.hp || 0) > 0).map(m => _nj(m.id)) }); if (_tl) await sock.sendMessage(chatId, { text: _tl }); const _dl = DS.monsterTry(DS.arenaOf(gate), target, _hunters, { boss: !!_fightingBoss, rank: gate.rank }); if (_dl) await DS.sendDomain(sock, chatId, _dl); } catch (e) {}
 
       try { const _lg = require('../../rpg/utils/PetManager').tickLastGift(player); if (_lg && _lg.healed > 0) await sock.sendMessage(chatId, { text: `✨ *Last Gift* (${_lg.from}): +${_lg.healed} HP regen · ${_lg.turnsLeft} turn${_lg.turnsLeft === 1 ? '' : 's'} left` }); } catch (e) {}
       if (_guardHit) {

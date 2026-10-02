@@ -458,7 +458,11 @@ function checkClassAwakening(player) {
   if (!player || player.class) return { shouldAwaken: false };
   // Use LIFETIME XP (player.totalXp) — level-progress `player.xp` resets every
   // level-up, so a 50k–150k threshold would never trigger on the old counter.
-  const totalXp = player.totalXp || 0;
+  // Push #96h-t: some XP rails never bumped totalXp, so hunters sat at 300k XP
+  // with no class. Lifetime XP is now the BEST of: totalXp, current xp, and the
+  // XP it took to reach the current level.
+  let totalXp = Math.max(player.totalXp || 0, player.xp || 0);
+  try { const SLC = require('./SoloLevelingCore'); let acc = 0; for (let l = 1; l < Math.min(200, player.level || 1); l++) acc += SLC.getXpRequired(l); totalXp = Math.max(totalXp, acc + (player.xp || 0)); } catch (e) {}
   if (!player.classAwakeningThreshold) {
     player.classAwakeningThreshold = MIN_AWAKEN_XP + Math.floor(Math.random() * (MAX_AWAKEN_XP - MIN_AWAKEN_XP));
   }

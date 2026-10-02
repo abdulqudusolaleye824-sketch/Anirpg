@@ -427,9 +427,13 @@ function getPersonalityForJid(jid) {
   return linkedNumbers[jid] || null;
 }
 
+const presentSeen = {};  // Push #96h-t: { chatId: { personalityKey: lastInboundMs } }
+const STALE_PRESENCE_MS = 3 * 60 * 1000;
 function markPresent(chatId, personalityKey) {
   if (!presentBots[chatId]) presentBots[chatId] = new Set();
   presentBots[chatId].add(personalityKey);
+  if (!presentSeen[chatId]) presentSeen[chatId] = {};
+  presentSeen[chatId][personalityKey] = Date.now();
   // Touch the chat so the periodic cleanup doesn't reap it
   if (!activeBots.__lastTouch) activeBots.__lastTouch = {};
   activeBots.__lastTouch[chatId] = Date.now();
@@ -438,6 +442,7 @@ function markPresent(chatId, personalityKey) {
 
 function markAbsent(chatId, personalityKey) {
   if (presentBots[chatId]) presentBots[chatId].delete(personalityKey);
+  if (presentSeen[chatId]) delete presentSeen[chatId][personalityKey];
   if (presentBots[chatId]?.size === 0) delete presentBots[chatId];
   _persistActive();
 }
@@ -481,8 +486,24 @@ function isStopped(chatId) {
   return !!stoppedBots[chatId];
 }
 
-function getPresentBots(chatId) {
-  return presentBots[chatId] ? [...presentBots[chatId]] : [];
+// Push #96h-t: optional `refKey` — the socket that just HEARD this group. Every
+// bot in a group hears every message, so a bot whose last inbound here is far
+// older than refKey's has left (or been kicked) and is dropped from the list.
+function getPresentBots(chatId, refKey) {
+  const all = presentBots[chatId] ? [...presentBots[chatId]] : [];
+  if (!refKey) return all;
+  const seen = presentSeen[chatId] || {}; const ref = seen[refKey];
+  if (!ref) return all;
+  return all.filter(k => k === refKey || !seen[k] || (ref - seen[k]) < STALE_PRESENCE_MS);
+}
+function lastSeenIn(chatId, personalityKey) { return (presentSeen[chatId] || {})[personalityKey] || 0; }
+// Push #96h-t: the active bot left → hand the group to another present, usable bot.
+function handoff(chatId, leavingKey, usable) {
+  const cands = getPresentBots(chatId).filter(k => k !== leavingKey && (!usable || usable(k))).sort();
+  if (cands.length) { activeBots[chatId] = cands[0]; if (!activeBots.__lastTouch) activeBots.__lastTouch = {}; activeBots.__lastTouch[chatId] = Date.now(); }
+  else if (activeBots[chatId] === leavingKey) delete activeBots[chatId];
+  _persistActive();
+  return activeBots[chatId] || null;
 }
 
 function getDisplayName(personalityKey) {
@@ -579,7 +600,7 @@ module.exports = {
   linkedNumbers,
   registerLinkedNumber,
   getPersonalityForJid,
-  markPresent,
+  markPresent, handoff, lastSeenIn, STALE_PRESENCE_MS,
   markAbsent,
   getActiveBot,
   anyActive,

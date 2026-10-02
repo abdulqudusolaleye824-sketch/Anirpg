@@ -448,6 +448,8 @@ module.exports = async (sock, msg, messageText, config, getDatabase, saveDatabas
   if (db?.users?.[sender]) {
     const player = db.users?.[sender];
     applyPassiveRegen(player, db);
+    // Push #96h-t: class awakening safety net — a hunter past the XP threshold with no class gets one now.
+    try { if (!player.class) { const r = require('../rpg/utils/ClassSystem').tryClassAwaken(player, sock, chatId); if (r) saveDatabase(); } } catch (e) {}
     // Push #88f: lapsed Pro → strip every perk before anything reads them.
     try { if (require('../rpg/utils/ProGuard').enforce(player).stripped) saveDatabase(); } catch (e) {}
     // Push #95: hunters already past Lv.20 when domains arrived awaken theirs on their next command (DM for Pro, GC otherwise).
@@ -803,7 +805,7 @@ module.exports = async (sock, msg, messageText, config, getDatabase, saveDatabas
   const AstralGroups = require('../rpg/utils/AstralGroups');
   const manageCmds = new Set([
     'start', 'switch', 'stopbot', 'bots', 'hi', 'setainame',
-    'setgroup', 'setgc', 'ssub', 'renew', 'allowgc', 'groupinfo', 'groupstatus',
+    'setgroup', 'setgc', 'ssub', 'renew', 'allowgc', 'groupinfo', 'groupstatus', 'sub', 'subscription', 'substatus',
     'setdungeon', 'removedungeon', 'dungeons', 'set', 'settings', 'gcset',
     'help', 'menu', 'reset', 'spawnstatus', 'spawnsstatus', 'killspawn',
     'cctv', 'statusreport', 'botid', 'disable', 'enable', 'restart'

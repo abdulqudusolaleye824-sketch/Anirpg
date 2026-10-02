@@ -182,7 +182,7 @@ function _max(p) { try { return require('./GearSystem').effectiveMaxHp(p) || p.s
 
 // Apply a status to a hunter with every defence layer (class resistance,
 // armory gear, job perks) and return a log line or null.
-function applyStatus(player, type, duration, damage) {
+function applyStatus(player, type, duration, damage, source) {
   if (!player || !type) return null;
   const t = String(type).toLowerCase();
   try {
@@ -196,6 +196,7 @@ function applyStatus(player, type, duration, damage) {
     if (!ok) return player._lastStatusBlock ? `🛡️ *${player.name}* resisted ${t.toUpperCase()} (${player._lastStatusBlock})` : `🛡️ *${player.name}* resisted ${t.toUpperCase()}!`;
     const fx = (player.statusEffects || []).find(e => e.type === t);
     if (fx && damage) fx.damage = Math.max(fx.damage || 0, damage);
+    if (fx && source) fx.source = source; // Push #96h-t: who inflicted it (domain) — named on a status death
     return `${(fx && fx.emoji) || '☠️'} *${player.name}* is ${(fx && fx.name) || t.toUpperCase()} (${(fx && fx.duration) || duration}t)`;
   } catch (e) { return null; }
 }

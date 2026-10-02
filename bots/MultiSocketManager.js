@@ -1618,7 +1618,9 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
       // — the message still lands, just from the right personality.
       try {
         if (String(jid || '').endsWith('@g.us') && !(options && options.asSelf) && !(content && (content.delete || content.react))) {
-          const act = PersonalityManager.getActiveBot(jid);
+          let act = PersonalityManager.getActiveBot(jid);
+          // Push #96h-t: the mapped bot stopped hearing this group while we still do → it left; hand the group over.
+          try { const mine = PersonalityManager.lastSeenIn(jid, personalityKey), theirs = PersonalityManager.lastSeenIn(jid, act); if (act && act !== personalityKey && mine && theirs && (mine - theirs) > PersonalityManager.STALE_PRESENCE_MS) { PersonalityManager.markAbsent(jid, act); act = PersonalityManager.handoff(jid, act, isBotUsable); } } catch (e) {}
           if (act && act !== personalityKey && isBotUsable(act) && botSockets[act]) {
             return await botSockets[act].sendMessage(jid, content, options);
           }
@@ -2035,6 +2037,19 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
       } catch (e) {}
     }
 
+    // Push #96h-t: THIS bot removed from the group → it is no longer present
+    // there, and if it was the group's active bot the next present bot takes
+    // over. Without this a departed bot stayed "present/active" forever and
+    // the newly added bot was silenced ("commands break unless the old bot leaves").
+    if (action === 'remove') {
+      try {
+        const me = String(sock?.user?.id || '').split(':')[0].split('@')[0];
+        const meLid = String(sock?.user?.lid || '').split(':')[0].split('@')[0];
+        const removedMe = (participants || []).some((p) => { const b = String(typeof p === 'string' ? p : (p && (p.id || p.jid)) || '').split(':')[0].split('@')[0]; return b && (b === me || (meLid && b === meLid)); });
+        if (removedMe) { PersonalityManager.markAbsent(chatId, personalityKey); if (PersonalityManager.getActiveBot(chatId) === personalityKey) PersonalityManager.handoff(chatId, personalityKey, isBotUsable); return; }
+      } catch (e) {}
+    }
+
     // Push #87: Pro GC — remove non-eligible joiners (dispatcher bot only).
     if (action === 'add' && _bootstrapDispatcher(personalityKey, chatId)) {
       try { await require('../rpg/utils/ProGC').onParticipantsAdded(sock, getDatabase(), chatId, participants); } catch (e) {}
@@ -2287,7 +2302,8 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
     // the lowest-key PRESENT usable socket answers instead — never silence.
     if (isGroup && isCommand) {
       try {
-        let present = (PersonalityManager.getPresentBots(chatId) || []).filter(isBotUsable);
+        // Push #96h-t: a bot that stopped hearing this group (left/kicked) while THIS socket still does is not present.
+        let present = (PersonalityManager.getPresentBots(chatId, personalityKey) || []).filter(isBotUsable);
         if (!present.includes(personalityKey) && isBotUsable(personalityKey)) present.push(personalityKey);
         if (!responderKey || !present.includes(responderKey)) {
           const pick = (rawActiveKey && present.includes(rawActiveKey)) ? rawActiveKey : present.sort()[0];

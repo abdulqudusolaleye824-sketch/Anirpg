@@ -69,7 +69,7 @@ const REGULAR_SHOP_POOL = [
   { id: 'crit_gem', name: 'Crit Gem', category: 'Stat Orbs', type: 'stat', currency: 'crystals', basePrice: 800, description: '+3% Crit permanently', stat: 'crit', amount: 3 },
 
   // Bundles (Nexus)
-  { id: 'starter_pack', name: 'Starter Pack', category: 'Bundles', type: 'bundle', currency: 'gold', basePrice: 105000, description: '5 HP Pots + 5 Energy Pots + 1 Revive Token', bundleId: 1 },
+  { id: 'starter_pack', name: 'Starter Pack', category: 'Bundles', type: 'bundle', currency: 'gold', basePrice: 105000, description: '5 HP Pots + 1 Revive Token', bundleId: 1 },
   { id: 'dungeon_kit', name: 'Dungeon Kit', category: 'Bundles', type: 'bundle', currency: 'gold', basePrice: 500000, description: '10 HP Pots + 5 Revive Tokens + 2 Luck Potions', bundleId: 2 },
   { id: 'pvp_bundle', name: 'PvP Bundle', category: 'Bundles', type: 'bundle', currency: 'gold', basePrice: 20000, description: 'Elixir of Might + Shield Scroll + 2 Luck Potions', bundleId: 3 },
 

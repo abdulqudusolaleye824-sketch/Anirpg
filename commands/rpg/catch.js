@@ -202,6 +202,14 @@ module.exports = {
       }
       saveDatabase();
       if (!fled) {
+        // Push #96h-t: retry button — one tap to /catch again while attempts remain.
+        try { const B = require('../../utils/buttons'); if (B && B.sendButtons) { await B.sendButtons(sock, chatId, { text: [
+          ...(pro ? [UI.PRO_BAR, `💨 *BROKE FREE!* 💎`, UI.PRO_BAR] : [`💨 *BROKE FREE!*`, UI.FREE_BAR]),
+          `${petTemplate.emoji} *${petTemplate.name}* slipped out of the net!`,
+          `💸 Cost Paid: ${cost.gold.toLocaleString()} 💠 + ${cost.crystals.toLocaleString()} 💎`,
+          ``, ...rolls, ``,
+          `🪤 *${attemptsLeft} shared attempt${attemptsLeft === 1 ? '' : 's'} left* — anyone in the raid can try again before it flees!`,
+          FRAME].join('\n'), buttons: B.quickReplies([[`🪤 Catch again`, `/catch`]]) }, msg); return; } } catch (e) {}
         return sock.sendMessage(chatId, { text: [
           ...(pro ? [UI.PRO_BAR, `💨 *BROKE FREE!* 💎`, UI.PRO_BAR] : [`💨 *BROKE FREE!*`, UI.FREE_BAR]),
           `${petTemplate.emoji} *${petTemplate.name}* slipped out of the net!`,

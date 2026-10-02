@@ -161,10 +161,12 @@ function join(db, player) {
   st.joined = true; st.joinedAt = Date.now(); st.afk = false;
   const d = domainState(player); let arch = null;
   try { const DS = require('./DomainSystem'); const cls = (player.class || player.className || 'Hunter'); const idx = Math.abs([...String(player.jid || player.name || '')].reduce((a, c) => a + c.charCodeAt(0), 0)) % 10; const eff = DS.effectFor(cls, idx); d.archetype = eff.arch && eff.arch.key; d.suggested = eff.name; arch = eff.arch; } catch (e) {}
+  // Push #96h-t: hunters who ALREADY own a domain keep it — same name, description and level on the island (never below the event's Lv.10).
+  try { const rd = player.domain; if (rd && rd.unlocked && rd.name) { d.name = rd.name; d.desc = rd.desc || rd.description || d.desc || `${rd.name} — ${_name(player)}'s own domain, carried onto the island.`; d.ownLevel = Math.max(DOMAIN_LEVEL, Number(rd.level) || 1); d.own = true; } else { d.own = false; d.ownLevel = 0; } } catch (e) {}
   d.setup = d.name ? (d.desc ? null : 'desc') : 'name';
   const archLine = arch ? `Your island domain leans *${arch.key}* — allies ${Object.entries(arch.ally || {}).map(([k, v]) => `${k} ${v > 0 ? '+' : ''}${v}%`).join(', ') || '—'}; enemies ${Object.entries(arch.enemy || {}).map(([k, v]) => `${k} ${v > 0 ? '+' : ''}${v}%`).join(', ') || '—'}.` : '';
   const msgs = [`🏝️ *${_name(player)} lands on Jeju Island!* Wave ${ev.wave} · ${alive(ev).length} beasts alive.`,
-    `🌌 *Your Lv.${DOMAIN_LEVEL} EVENT DOMAIN awakens.* It works only here: 12% burst on every beast, −20% ATK/DEF on beasts and rival hunters for 10 min, +25% own damage. ${archLine}${d.suggested ? ` (suggested name: *${d.suggested}*)` : ''}`];
+    d.own ? `🌌 *Your own domain — ${d.name} (Lv.${d.ownLevel}) — answers on the island.* It keeps its name, description and level here; outside the Events GC nothing changes. On Jeju it also grants:` : `🌌 *Your Lv.${DOMAIN_LEVEL} EVENT DOMAIN awakens.* It works only here: 12% burst on every beast, −20% ATK/DEF on beasts and rival hunters for 10 min, +25% own damage. ${archLine}${d.suggested ? ` (suggested name: *${d.suggested}*)` : ''}`];
   if (d.setup === 'name') msgs.push(`✍️ *Name your domain.* Reply with the name (3–40 characters).`);
   else if (d.setup === 'desc') msgs.push(`✍️ *Describe ${d.name}.* Reply with the description (5–220 characters).`);
   else msgs.push(`Your domain *${d.name}* is ready — */event domain* to expand it. Attack: */event attack*, or tag a hunter in your attack to duel them.`);
@@ -332,12 +334,13 @@ function castDomain(db, player, chatId) {
   const energy = player.stats.energy || 0; if (energy < DOMAIN_ENERGY) return { ok: false, error: `Domain Expansion costs *${DOMAIN_ENERGY} ${player.energyType || 'energy'}* — you have ${energy}.` };
   player.stats.energy = energy - DOMAIN_ENERGY; d.lastCast = Date.now(); d.activeUntil = Date.now() + DOMAIN_EFFECT_MS; d.casts++; st.domainCasts++;
   const h = _hunterStats(player); let hit = 0, total = 0; const until = Date.now() + DOMAIN_EFFECT_MS;
-  for (const m of alive(ev)) { const burst = Math.floor(Math.min(m.maxHp * 0.12, h.atk * 3)); m.hp = Math.max(1, m.hp - burst); m.lastHit = Date.now(); m._regenAt = 0; m.domDebuffUntil = until; hit++; total += burst; }
+  const _lvMult = d.own ? Math.min(2, 1 + (Math.max(0, (d.ownLevel || DOMAIN_LEVEL) - DOMAIN_LEVEL)) * 0.05) : 1; // Push #96h-t: a carried domain hits harder per level above 10 (cap ×2)
+  for (const m of alive(ev)) { const burst = Math.floor(Math.min(m.maxHp * 0.12 * _lvMult, h.atk * 3 * _lvMult)); m.hp = Math.max(1, m.hp - burst); m.lastHit = Date.now(); m._regenAt = 0; m.domDebuffUntil = until; hit++; total += burst; }
   let hunters = 0; const me = player.jid || player.id;
   for (const u of Object.values(db.users || {})) { if (!u || u === player || (u.jid || u.id) === me || (u.level || 0) < DOMAIN_LEVEL) continue; const us = u.eventStats; if (!us || us.id !== ev.id || us.afk || _isDead(us)) continue; us.debuffUntil = until; hunters++; }
   st.dmg += total;
   const msgs = [`🌌 *DOMAIN EXPANSION — ${d.name.toUpperCase()}*`, `_${d.desc}_`,
-    `👤 ${_name(player)} · Event Domain Lv.${DOMAIN_LEVEL}\n💥 ${hit} beasts take *${total.toLocaleString()}* total damage and lose 20% ATK/DEF for 10 min.\n🗡️ ${hunters} rival hunter${hunters === 1 ? '' : 's'} weakened 20% for 10 min.\n⚡ You deal +25% damage for 10 min. 🛡️ Inside your domain you are immune to new status effects.`];
+    `👤 ${_name(player)} · ${d.own ? `Domain Lv.${d.ownLevel}` : `Event Domain Lv.${DOMAIN_LEVEL}`}\n💥 ${hit} beasts take *${total.toLocaleString()}* total damage and lose 20% ATK/DEF for 10 min.\n🗡️ ${hunters} rival hunter${hunters === 1 ? '' : 's'} weakened 20% for 10 min.\n⚡ You deal +25% damage for 10 min. 🛡️ Inside your domain you are immune to new status effects.`];
   return { ok: true, messages: msgs };
 }
 

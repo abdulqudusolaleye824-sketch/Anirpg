@@ -511,7 +511,7 @@ const skillDatabase = {
       cooldown: 2,
       manaCost: 25
     },
-    'Summon Undead': {
+    'Undead Summon': {
       description: '☠️ Raise skeletal warriors from the ground',
       effect: '• Summon 2 skeletons\n• Each has 30% your stats\n• Last until destroyed',
       animation: '⚰️ Bones burst from the ground...\n💀 SUMMON UNDEAD! They rise!\n🧟 Skeletal warriors stand ready!',
@@ -1827,7 +1827,9 @@ function describeSkill(className, skillName) {
   return { className: className || 'Unknown', description: `${skillName} — a ${className || 'class'} technique.`, effect: '', animation: direct.animation, cooldown: direct.cooldown, cost: direct.cost, energyCost: direct.cost };
 }
 
+const SKILL_RENAMES = { 'Summon Undead': 'Undead Summon' }; // Push #96h-t
 function getSkillDescription(className, skillName) {
+  if (SKILL_RENAMES[skillName]) skillName = SKILL_RENAMES[skillName];
   // First check if the class and skill exist
   if (skillDatabase[className] && skillDatabase[className][skillName]) {
     return {

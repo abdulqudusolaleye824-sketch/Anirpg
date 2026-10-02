@@ -1,3 +1,15 @@
+## 1.0.151 — Push #96h-t (Master Fix List)
+- Domain: "expanded their domain against you" DM scrapped. `/domain` inside a battle = short battle card only. Domain turns in party raids now count ROUNDS (every living hunter acted once), not single attacks.
+- Multi-bot: a bot removed from a group marks itself absent and hands the group to a present bot; stale presence (bot stopped hearing the group) no longer silences the new bot.
+- `/sub` (anyone): subscribed date, expiry date, days remaining. `/e` alias for `/event` — `/e join` works any time while an event is active.
+- Mana drain (monster domain law) hits ONE hunter only. Out-of-combat regen cap raised (30 s → 6 h of idle credit) so gear-sized HP pools actually refill. Necromancer "Summon Undead" → "Undead Summon".
+- Heal descriptions show the real cost (non-Healers: doubled number). Blood Armor now does what it says (converts 40% of damage taken into HP next turn); buff notices never show a blank name.
+- Energy potion wording gone from Starter Pack; `/market sell` finds counter-based potions (lower/medium/higher HP potions, revive tokens).
+- Deaths to status effects are announced ("dies to BURN (Domain: …)"). Class awakening safety net (lifetime XP derived from level; checked every command). `/recon` assigns a class to hunters with none.
+- Berserker **Blood Debt** passive: each 5% max HP taken = 1 stack (max 15): +3% ATK, +1% lifesteal per stack; settles when the fight ends.
+- Event: hunters who own a domain keep its name/description/level on Jeju (≥ Lv10); others get the Lv10 event domain. `/payroll` settles due pay first and skips contracts of hunters who left.
+- `/gates` carries BUY buttons; failed `/catch` offers a Catch-again button.
+
 ## 1.0.150 — Push #96h-s: gear HP applies instantly · domain caster moves first
 - **Gear HP:** equipping a piece adds its HP bonus to your CURRENT HP immediately (2k/2k + 2k gear → 4k/4k), net of the piece it replaces; unequip/swap trims HP under the new max. No more "4k on the card, 2k in the fight".
 - **Initiative:** while a hunter's own domain stands, the caster always moves first — no raid-monster initiative against them, PvP order forced (announced).

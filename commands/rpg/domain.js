@@ -82,7 +82,7 @@ module.exports = {
       const _parts = DS.splitMessages(r.text); const _last = _parts.length - 1;
       for (let i = 0; i < _parts.length; i++) { const _t = i === 0 ? `${FRAME}\n${_parts[i]}` : i === _last ? `${_parts[i]}\n${FRAME}\n⚡ ${player.stats.energy}/${player.stats.maxEnergy} ${player.energyType || 'energy'} left` : _parts[i]; await sock.sendMessage(chatId, { text: _t }, i === 0 ? { quoted: msg } : undefined); }
       // PvP: tell the opponent too (they may be in another chat / DM).
-      if (battle.kind === 'pvp') { try { const opp = battle.enemies[0]; const to = opp && (opp.jid || opp.id); if (to && to !== chatId) await sock.sendMessage(to, { text: `🌌 *${player.name}* expanded their domain against you!\n${r.text}` }); } catch (e) {} }
+      // Push #96h-t: the 'expanded their domain against you' DM is scrapped — the expansion plays out in the battle chat only.
       return;
     }
 
@@ -96,11 +96,13 @@ module.exports = {
         const cur = DS.active(b.arena);
         const mine = cur && (String(cur.ownerId) === String(player.jid || player.id || player.name) || (cur.ownerKeys || []).some(k => [player.jid, player.id, player.name].filter(Boolean).map(String).includes(k)));
         _battle.push(FRAME, `⚔️ *BATTLE (${b.kind})*`);
-        _battle.push(cur ? `🌌 Active: *${cur.name}* — ${mine ? 'YOURS' : (cur.side === 'monster' ? 'the beast' : cur.ownerName)} · *${cur.turnsLeft}* turn${cur.turnsLeft === 1 ? '' : 's'} left` : `🌫️ No domain is active right now.`);
+        _battle.push(cur ? `🌌 Active: *${cur.name}* — ${mine ? 'YOURS' : (cur.side === 'monster' ? 'the beast' : cur.ownerName)} · *${cur.turnsLeft}* round${cur.turnsLeft === 1 ? '' : 's'} left` : `🌫️ No domain is active right now.`);
         const cost = DS.costFor(d.level || 1); const en = player.stats?.energy || 0;
-        _battle.push(mine ? `✅ Your domain stands — it will fade in ${cur.turnsLeft} turn${cur.turnsLeft === 1 ? '' : 's'}.` : (en >= cost ? `✅ *${d.name}* is READY — /domain expand (${cost} energy, you have ${en})` : `⏳ *${d.name}* needs ${cost} energy — you have ${en}.`));
+        _battle.push(mine ? `✅ Your domain stands — it will fade in ${cur.turnsLeft} round${cur.turnsLeft === 1 ? '' : 's'} (a round = every living hunter acted once).` : (en >= cost ? `✅ *${d.name}* is READY — /domain expand (${cost} energy, you have ${en})` : `⏳ *${d.name}* needs ${cost} energy — you have ${en}.`));
       }
     } catch (e2) {}
+    // Push #96h-t: inside a battle, /domain is the SHORT battle card only — no lore spiel.
+    if (_battle.length) return sock.sendMessage(chatId, { text: [..._battle, `🌌 *${d.name}* · Lv.${d.level} · lasts ${e.turns} round${e.turns === 1 ? '' : 's'} · ⚡ ${DS.costFor(d.level || 1)} energy`, FRAME].join('\n') }, { quoted: msg });
     return sock.sendMessage(chatId, { text: [FRAME, `🌌 *${d.name.toUpperCase()}*`, FRAME, d.desc ? `_${d.desc}_` : `_No description yet — /domain desc <text> (one free change)_`, `👤 ${player.name} · ${d.class} · Domain Lv.${d.level}/${DS.MAX_LEVEL} · power ${DS.power(player)}`, `⏳ ${e.turns} turns · ⚡ ${DS.costFor(d.level || 1)} energy · cast ${d.casts || 0}×`, ...DS.describe(player), ``, next != null ? `📈 Next level: *${next} UP* (you have ${player.upgradePoints || 0}) — /domain upgrade` : `🏆 Max level.`, `⚔️ /domain expand · ✏️ /domain name · /domain desc`, FRAME, ..._battle].join('\n') }, { quoted: msg });
   },
 };

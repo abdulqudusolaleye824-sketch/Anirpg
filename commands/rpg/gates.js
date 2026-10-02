@@ -141,6 +141,16 @@ const gate = {
       })[0];
 
       const imagePath = GateManager.getGateImage(topGate?.rank || 'E');
+      // Push #96h-t: /gates carries BUY buttons too (up to 3 gates, best rank first).
+      try {
+        const B = require('../../utils/buttons');
+        const _un = active.filter(g => !g.owned && !g.purchased).slice(0, 3);
+        if (B && B.sendButtons && _un.length) {
+          const _img = fs.existsSync(imagePath) ? fs.readFileSync(imagePath) : null;
+          await B.sendButtons(sock, chatId, { text: txt, ...(_img ? { image: _img, mimetype: 'image/jpeg' } : {}), buttons: B.quickReplies(_un.map(g => [`🛒 Buy ${g.rank}-Rank Gate`.slice(0, 20), `/gate buy ${g.id}`])) }, msg);
+          return;
+        }
+      } catch (e) {}
       if (fs.existsSync(imagePath)) {
         return sock.sendMessage(chatId, {
           image: fs.readFileSync(imagePath),

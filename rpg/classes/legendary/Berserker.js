@@ -34,5 +34,6 @@ module.exports = {
     { name: 'Blood Frenzy',        type: 'passive', maxPotency: 60,  desc: 'Below 30% HP: ATK +{p}%, lifesteal +10%' },
     { name: 'Unbreakable Will',    type: 'passive', maxPotency: 25,  desc: 'Cannot be killed below 1 HP once per fight' },
     { name: 'Pain is Power',       type: 'passive', maxPotency: 30,  desc: 'ATK +{p}% per 10% HP missing (max 3 stacks)' },
+    { name: 'Blood Debt',          type: 'passive', maxPotency: 0,   desc: 'Every hit taken is banked as debt — each 5 percent of max HP lost is a stack (max 15). Per stack: 3 percent more ATK and 1 percent more lifesteal. Settled when the fight ends.' }, // Push #96h-t (engine: ClassPower.bloodDebt)
   ],
 };

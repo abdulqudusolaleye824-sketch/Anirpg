@@ -265,6 +265,8 @@ function monsterDamage(monster, def, player = null) {
 // per-turn regen. Returns lines. Call AFTER the damage was applied.
 function afterMonsterHit(player, monster, dmg) {
   const lines = [];
+  try { const _bdl = require('../utils/ClassPower').noteBloodDebt(player, dmg); if (_bdl) lines.push(_bdl); } catch (e) {}
+  try { const UCc = require('../utils/UnifiedCombat'); const banked = UCc.noteDamageTaken(player, dmg); if (banked > 0) lines.push(`🩸 *${player.name}* banks ${banked} HP of that hit — it returns next turn (${player.tempBuffs.convert.source}).`); } catch (e) {}
   let pm = null; try { pm = require('../utils/ClassPower').passiveMultipliers(player); } catch (e) { return lines; }
   if (!pm) return lines;
   if (pm.surviveLethal && (player.stats?.hp ?? 1) <= 0 && (!player._lethalUsedAt || Date.now() - player._lethalUsedAt > 2 * 3600e3)) {

@@ -30,15 +30,32 @@ function cleanExpired(market, db) {
       // Return the item to the seller's inventory
       if (db && l.sellerId && db.users[l.sellerId]) {
         const seller = db.users[l.sellerId];
-        if (!seller.inventory) seller.inventory = { items: [] };
-        if (!Array.isArray(seller.inventory.items)) seller.inventory.items = [];
-        seller.inventory.items.push({ ...l.item, _returnedFromMarket: true });
+        _giveListingItem(seller, { ...l.item, _returnedFromMarket: true });
         console.log(`📦 Returned expired listing #${l.id} (${l.item.name}) to ${seller.name}`);
       }
     }
   });
 }
 
+
+// Push #96h-t: counter-based consumables (health potion tiers, revive tokens) can be listed too.
+const COUNTER_ITEMS = [
+  { key: 'lowerHealthPotions',  name: 'Lower Health Potion',  aliases: ['lower health potion', 'lower potion', 'health potion', 'hp potion', 'lower hp'] },
+  { key: 'mediumHealthPotions', name: 'Medium Health Potion', aliases: ['medium health potion', 'medium potion', 'medium hp'] },
+  { key: 'higherHealthPotions', name: 'Higher Health Potion', aliases: ['higher health potion', 'higher potion', 'high health potion', 'higher hp'] },
+  { key: 'reviveTokens',        name: 'Revive Token',         aliases: ['revive token', 'revive', 'token'] },
+];
+function _counterMatch(player, q) {
+  const inv = player.inventory || {}; const n = String(q || '').toLowerCase().trim();
+  for (const c of COUNTER_ITEMS) if ((inv[c.key] || 0) > 0 && (c.aliases.includes(n) || c.name.toLowerCase().includes(n))) return c;
+  return null;
+}
+function _giveListingItem(player, item) {
+  if (!player.inventory) player.inventory = { items: [] };
+  if (!Array.isArray(player.inventory.items)) player.inventory.items = [];
+  if (item && item._counterKey) { player.inventory[item._counterKey] = (player.inventory[item._counterKey] || 0) + (item.qty || 1); return; }
+  player.inventory.items.push({ ...item });
+}
 module.exports = {
   name: 'market',
   aliases: ['shop2', 'bazaar', 'store'],
@@ -173,9 +190,7 @@ module.exports = {
       }
 
       // Give item to buyer
-      if (!player.inventory) player.inventory = { items: [] };
-      if (!player.inventory.items) player.inventory.items = [];
-      player.inventory.items.push({ ...listing.item });
+      _giveListingItem(player, listing.item);
 
       // Handle artifact separately
       if (listing.item.type === 'artifact' || listing.item.bonus) {
@@ -231,12 +246,14 @@ module.exports = {
         );
       }
 
-      if (itemIdx === -1 && artIdx === -1) {
+      const _cm = (itemIdx === -1 && artIdx === -1) ? _counterMatch(player, itemName) : null;
+      if (itemIdx === -1 && artIdx === -1 && !_cm) {
         return sock.sendMessage(chatId, { text: `❌ Item "*${itemName}*" not found in your inventory!\n/inventory to see what you have.` }, { quoted: msg });
       }
 
       let item;
-      if (itemIdx !== -1) {
+      if (_cm) { player.inventory[_cm.key] -= 1; item = { name: _cm.name, type: 'potion', _counterKey: _cm.key, qty: 1 }; }
+      else if (itemIdx !== -1) {
         item = inv.splice(itemIdx, 1)[0];
       } else {
         const raw = artInv.splice(artIdx, 1)[0];
@@ -304,9 +321,7 @@ module.exports = {
 
       // Return item to seller
       listing.status = 'cancelled';
-      if (!player.inventory) player.inventory = { items: [] };
-      if (!player.inventory.items) player.inventory.items = [];
-      player.inventory.items.push({ ...listing.item });
+      _giveListingItem(player, listing.item);
 
       saveDatabase();
       return sock.sendMessage(chatId, { text: `✅ Listing #${id} cancelled!\n📦 *${listing.item.name}* returned to your inventory.` }, { quoted: msg });

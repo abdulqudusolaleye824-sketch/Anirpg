@@ -12,7 +12,7 @@ function _findUser(db, jid) {
 
 module.exports = {
   name: 'event',
-  aliases: ['jeju', 'ea'],
+  aliases: ['jeju', 'ea', 'e'],
   description: '🏝️ Jeju Island Raid — /event start|status|attack|hit|domain|lb|end',
   async execute(sock, msg, args, getDatabase, saveDatabase, sender) {
     const chatId = msg.key.remoteJid; const db = getDatabase();

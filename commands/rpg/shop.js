@@ -53,7 +53,7 @@ const CRYSTAL_ITEMS = [
 ];
 
 const BUNDLES = [
-  {id:1,name:'Starter Pack',emoji:'🎁',desc:'5 HP Pots + 5 Energy Pots + 1 Revive Token',cost:105000},
+  {id:1,name:'Starter Pack',emoji:'🎁',desc:'5 HP Pots + 1 Revive Token',cost:105000},
   {id:2,name:'Dungeon Kit',emoji:'⚔️',desc:'10 HP Pots + 5 Revive Tokens + 2 Luck Potions',cost:500000},
   {id:3,name:'PvP Bundle',emoji:'🏆',desc:'Elixir of Might + Shield Scroll + 2 Luck Potions',cost:20000},
   {id:4,name:'Mana Stone Bundle',emoji:'💎',desc:'250 Mana Stones',cost:150000},

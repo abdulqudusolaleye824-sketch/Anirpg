@@ -17,13 +17,16 @@ module.exports = {
     if (!guild) return say('❌ You are not in a guild.');
     if (!CM.isGuildMasterOrVice(db, guild.name, sender)) return say('❌ Only the *Guild Master* or a *Vice* can see the guild payroll.');
     const guildId = Object.keys(db.guilds || {}).find(id => db.guilds[id] === guild) || guild.id;
+    // Push #96h-t: ALWAYS the live picture — settle any overdue paydays first, then skip contracts of hunters who left the guild.
+    try { if (CM.processWeeklyPay(db, guildId, null).length) saveDatabase(); } catch (e) {}
     const bucket = (db.guildContracts && db.guildContracts[guildId]) || {};
-    const rows = [];
+    const rows = []; let _gone = 0;
     let weekNexus = 0, weekMana = 0, owedNexus = 0, owedMana = 0, paidNexus = 0, paidMana = 0;
     for (const [key, c] of Object.entries(bucket)) {
       if (!c || c.active === false || c.completedAt || c.defaultedAt) continue;
       const weeksLeft = Math.max(0, (c.weeks || 0) - (c.weeksPaid || 0)); if (!weeksLeft) continue;
       const bare = _bare(c.jid || key);
+      if (!CM.isGuildMember(db, guild.name, c.jid || key)) { _gone++; continue; }
       weekNexus += c.weeklyNexus || 0; weekMana += c.weeklyMana || 0;
       owedNexus += (c.weeklyNexus || 0) * weeksLeft; owedMana += (c.weeklyMana || 0) * weeksLeft;
       paidNexus += (c.weeklyNexus || 0) * (c.weeksPaid || 0); paidMana += (c.weeklyMana || 0) * (c.weeksPaid || 0);
@@ -34,7 +37,8 @@ module.exports = {
     const tre = guild.treasury || 0, treM = guild.manaTreasury || 0;
     const cover = weekNexus || weekMana ? Math.min(weekNexus ? Math.floor(tre / weekNexus) : 99, weekMana ? Math.floor(treM / weekMana) : 99) : null;
     const lines = [FRAME, `💼 *${guild.name} — PAYROLL*`, FRAME,
-      `👥 Contracted members: *${rows.length}*`,
+      `👥 Contracted members: *${rows.length}*${_gone ? ` _(＋${_gone} contract${_gone === 1 ? '' : 's'} of hunters who left — not counted)_` : ''}`,
+      `👥 Guild roster now: *${((guild.members || guild.memberData || []).length) || '—'}* · 🏅 Lv.${guild.level || 1}`,
       `📅 *Weekly total:* 💠 ${weekNexus.toLocaleString()} · 💎 ${weekMana.toLocaleString()}`,
       `📊 *Still owed (all remaining weeks):* 💠 ${owedNexus.toLocaleString()} · 💎 ${owedMana.toLocaleString()}`,
       `✅ *Paid out so far:* 💠 ${paidNexus.toLocaleString()} · 💎 ${paidMana.toLocaleString()}`,

@@ -260,13 +260,15 @@ const EXPLICIT = {
 function isPassive0(effect) { return /•\s*passive/i.test(String(effect || '')); }
 // ── Push #94: parse the SUPPORT CONTRACT out of an effect text ───────────────
 function parseSupportFields(effect, parsed) {
-  const out = { shieldPct: 0, shieldMode: 'pool', shieldTurns: 3, immuneTurns: 0, energyPct: 0, regen: null, damageTakenPct: 0, damageTakenTurns: 3, reflectPct: 0, reflectTurns: 3, cleanse: false, party: false, any: false, extraBuffs: [] };
+  const out = { convertPct: 0, convertTurns: 2, shieldPct: 0, shieldMode: 'pool', shieldTurns: 3, immuneTurns: 0, energyPct: 0, regen: null, damageTakenPct: 0, damageTakenTurns: 3, reflectPct: 0, reflectTurns: 3, cleanse: false, party: false, any: false, extraBuffs: [] };
   const lines = String(effect || '').split('\n').map(l => l.toLowerCase().replace(/\*\*/g, ''));
   const whole = lines.join(' ');
   const turnsIn = (l, dflt) => { const m = l.match(/(\d+)\s*(?:turns?|rounds?)/); return m ? Math.max(1, Math.min(10, parseInt(m[1], 10))) : dflt; };
   const pctIn = (l) => { const m = l.match(/(\d{1,3})\s*%/); return m ? Math.max(1, Math.min(100, parseInt(m[1], 10))) : 0; };
   for (const l of lines) {
     if (!l.trim() || /^\s*•?\s*passive/.test(l)) continue;
+    // Push #96h-t: "Converts 40% of damage taken into HP recovery next turn" → convertPct contract
+    { const cm = l.match(/converts?\s+(\d{1,3})\s*%\s*of\s+(?:the\s+)?damage\s+taken\s+into\s+(?:hp|health)/); if (cm) { out.convertPct = Math.max(1, Math.min(100, parseInt(cm[1], 10))); out.convertTurns = turnsIn(l, 2); continue; } }
     const aboutEnemy = (/\b(enemy|enemies|foe|opponent)\b/.test(l) || (/\btarget'?s?\b/.test(l) && /deals?|damage|dmg|drain|steal|inflict|debuff|-\s*\d+%/.test(l) && !/gains?|shield|heal|restor|regen/.test(l))) && !/\b(you|your|self|ally|allies|party|team)\b/.test(l);
     // "+40% ATK/DEF" / "+30% ATK & DEF" → BOTH stats (the parser only reads the first)
     {
@@ -347,6 +349,10 @@ function applySupportFields(entry, caster, target, opts = {}) {
   const max = (() => { try { return (opts.effMaxOf && opts.effMaxOf(u)) || require('./GearSystem').effectiveMaxHp(u); } catch (e) { return u.stats.maxHp || 100; } })();
   const power = Number(opts.healPower) || 1;
   u.tempBuffs = u.tempBuffs || {};
+  if (entry.convertPct > 0) {
+    u.tempBuffs.convert = { pct: entry.convertPct, duration: (entry.convertTurns || 2) + 1, source: entry.name };
+    lines.push(`🩸 *${who}* converts ${entry.convertPct}% of damage taken into HP next turn (${entry.convertTurns || 2} turns)`);
+  }
   if (entry.immuneTurns > 0) {
     u.tempBuffs.shield = { amount: 1e9, pct: 1, duration: entry.immuneTurns + 1, source: `${entry.name} (immunity)`, immune: true };
     lines.push(`🛡️ *${who}* is IMMUNE to damage for ${entry.immuneTurns} turn${entry.immuneTurns === 1 ? '' : 's'}`);
@@ -653,10 +659,12 @@ function normalise(className, raw, index) {
   if (support.energyPct) _mech.push(`restores ${support.energyPct}% max energy`);
   if (support.regen) _mech.push(`regenerates ${support.regen.pct}% max HP per turn for ${support.regen.turns} turns`);
   if (support.damageTakenPct) _mech.push(`damage taken -${support.damageTakenPct}% for ${support.damageTakenTurns} turns`);
+  if (support.convertPct) _mech.push(`converts ${support.convertPct}% of damage taken into HP next turn (${support.convertTurns} turns)`);
   if (support.reflectPct) _mech.push(`reflects ${support.reflectPct}% of damage taken for ${support.reflectTurns} turns`);
   if (support.cleanse) _mech.push(`cleanses status effects`);
   if (support.party && !isPassive && !(parsed.buffs || []).length && !_healingPct) _mech.push(`reaches the whole party`);
-  if (!isPassive) _mech.push(`${energyCostFinal} energy${type === 'heal' && className !== 'Healer' ? ' (×2 for non-Healers)' : ''}`);
+  // Push #96h-t: show the REAL number — a non-Healer's heal lists the doubled cost it actually pays.
+  if (!isPassive) _mech.push(type === 'heal' && className !== 'Healer' ? `${energyCostFinal * 2} energy (heals cost ×2 outside the Healer class)` : `${energyCostFinal} energy`);
   if (_mech.length && !/Mechanics:/.test(desc)) desc = `${desc.replace(/\s+$/, '')}${/[.!?]["”]?$/.test(desc) ? '' : '.'} Mechanics: ${_mech.join(' · ')}.`;
   else if (!_mech.length && isPassive && !/Mechanics:/.test(desc)) desc = `${desc.replace(/\s+$/, '')}${/[.!?]$/.test(desc) ? '' : '.'} Mechanics: passive — ${effect.split('\n')[0].replace(/^[•\s]*(?:passive:\s*)?/i, '').replace(/\*\*/g, '')}.`;
 
@@ -689,6 +697,7 @@ function normalise(className, raw, index) {
     regen: support.regen,
     damageTakenPct: support.damageTakenPct, damageTakenTurns: support.damageTakenTurns,
     reflectPct: support.reflectPct, reflectTurns: support.reflectTurns,
+    convertPct: support.convertPct || 0, convertTurns: support.convertTurns || 2,
     cleanse: support.cleanse,
     party: support.party,
     unlocksAtLevel: Math.min(100, (index + 1) * UNLOCK_STEP),

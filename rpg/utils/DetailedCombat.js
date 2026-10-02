@@ -42,7 +42,7 @@ const SKILL_TYPES = {
   
   // Necromancer Skills
   'Life Drain': { type: 'Dark', emoji: '🩸', pp: 12 },
-  'Summon Undead': { type: 'Death', emoji: '☠️', pp: 8 },
+  'Undead Summon': { type: 'Death', emoji: '☠️', pp: 8 },
   'Bone Spear': { type: 'Death', emoji: '🦴', pp: 10 },
   'Corpse Explosion': { type: 'Death', emoji: '💥', pp: 8 },
   'Death Coil': { type: 'Death', emoji: '🌀', pp: 5 },

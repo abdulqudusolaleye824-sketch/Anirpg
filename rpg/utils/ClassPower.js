@@ -260,6 +260,34 @@ function _parsePassive(text, out, hpPct, q) {
  * Percent multipliers from every unlocked passive skill of this player,
  * scaled by class quality. All values are PERCENT (e.g. atk: 15 → ×1.15).
  */
+// ── Push #96h-t: BLOOD DEBT (Berserker) ──────────────────────────────────────
+// Damage taken is banked as debt. Every 5% of max HP taken = 1 stack
+// (max 15). Each stack: +3% ATK, +1% lifesteal → cap +45% ATK / +15% lifesteal.
+// Debt clears when the fight ends (hp back to full / endBloodDebt).
+const BLOOD_DEBT = { STEP_PCT: 5, MAX_STACKS: 15, ATK_PER: 3, LS_PER: 1 };
+function isBerserker(player) { try { return /^berserker$/i.test(String(baseClassName(player) || '')); } catch (e) { return false; } }
+function bloodDebt(player) {
+  if (!player || !isBerserker(player)) return { stacks: 0, atkPct: 0, lifestealPct: 0 };
+  const stacks = Math.min(BLOOD_DEBT.MAX_STACKS, Math.max(0, Math.floor(Number(player.bloodDebtStacks) || 0)));
+  return { stacks, atkPct: stacks * BLOOD_DEBT.ATK_PER, lifestealPct: stacks * BLOOD_DEBT.LS_PER };
+}
+// Call when a Berserker takes `dmg`. Returns a line when a new stack lands, else null.
+function noteBloodDebt(player, dmg) {
+  if (!player || !(dmg > 0) || !isBerserker(player)) return null;
+  let max = (player.stats && player.stats.maxHp) || 100; try { max = require('./GearSystem').effectiveMaxHp(player) || max; } catch (e) {}
+  const before = Math.min(BLOOD_DEBT.MAX_STACKS, Math.floor(Number(player.bloodDebtStacks) || 0));
+  player.bloodDebtPool = (Number(player.bloodDebtPool) || 0) + dmg;
+  const step = Math.max(1, Math.floor(max * BLOOD_DEBT.STEP_PCT / 100));
+  const gained = Math.floor(player.bloodDebtPool / step);
+  if (gained <= 0) return null;
+  player.bloodDebtPool -= gained * step;
+  player.bloodDebtStacks = Math.min(BLOOD_DEBT.MAX_STACKS, before + gained);
+  if (player.bloodDebtStacks === before) return null;
+  const bd = bloodDebt(player);
+  return `🩸 *BLOOD DEBT* ×${bd.stacks} — *${player.name}* grows stronger from the wound: ATK +${bd.atkPct}%, lifesteal +${bd.lifestealPct}%${bd.stacks >= BLOOD_DEBT.MAX_STACKS ? ' (MAX)' : ''}.`;
+}
+function clearBloodDebt(player) { if (!player) return; delete player.bloodDebtStacks; delete player.bloodDebtPool; }
+
 function passiveMultipliers(player) {
   const out = { atk: 0, def: 0, speed: 0, crit: 0, dodge: 0, dmgTaken: 0, skillDmg: 0, lifesteal: 0,
     // Push #88: the rest of the class-file passives are real now.
@@ -294,6 +322,9 @@ function passiveMultipliers(player) {
     }
   } catch (e) {}
   for (const p of player.classSkills || []) if (String(p.type || '').toLowerCase() === 'passive') consider(p);
+  // Push #96h-t: BLOOD DEBT — Berserker passive. Every hit a Berserker takes
+  // becomes debt: +ATK and a little lifesteal per stack (see bloodDebt()).
+  try { const bd = bloodDebt(player); if (bd.stacks) { out.atk += bd.atkPct; out.lifesteal += bd.lifestealPct; } } catch (e) {}
   // Push #95: JOB modifiers ride on the same rails (real numbers, every engine).
   try {
     const JS = require('./JobSystem'); const jm = JS.mods(player);
@@ -452,4 +483,4 @@ function formatBonuses(b) {
   return parts.length ? parts.join(' · ') : 'none';
 }
 
-module.exports = { isMonsterClass, _remove, _add, classWeaponPrice, ownsClassWeapon, buyClassWeapon, bestOwnedClassWeapon, ensureClassBonuses, classBonuses, passiveMultipliers, recalibrate, formatBonuses, className, baseClassName, quality, scaled, ensureClassWeapon };
+module.exports = { BLOOD_DEBT, bloodDebt, noteBloodDebt, clearBloodDebt, isBerserker, isMonsterClass, _remove, _add, classWeaponPrice, ownsClassWeapon, buyClassWeapon, bestOwnedClassWeapon, ensureClassBonuses, classBonuses, passiveMultipliers, recalibrate, formatBonuses, className, baseClassName, quality, scaled, ensureClassWeapon };

@@ -292,7 +292,7 @@ class LevelUpManager {
         5: "Bone Wall",
         10: "Soul Drain",
         15: "Curse of Ruin",
-        20: "Summon Undead",
+        20: "Undead Summon",
         25: "Bone Spear",
         30: "Corpse Explosion",
         35: "Death Coil",

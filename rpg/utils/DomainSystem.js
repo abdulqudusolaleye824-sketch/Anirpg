@@ -260,8 +260,19 @@ function shatter(arena, allies = [], enemies = []) {
   return d;
 }
 // Per-round bookkeeping: call once per combat round from every engine.
-function tick(arena) {
+// Push #96h-t: in a PARTY raid a "turn" is one full ROUND (every living hunter
+// acted once), not every single attack — a 6-turn domain used to vanish after
+// six swings from a six-man party. Pass { actor, roster } to count rounds.
+function tick(arena, opts) {
   const d = active(arena); if (!d) return null;
+  if (opts && opts.actor && Array.isArray(opts.roster) && opts.roster.length > 1) {
+    const key = String(opts.actor); d._acted = Array.isArray(d._acted) ? d._acted : [];
+    const repeat = d._acted.includes(key);
+    d._acted.push(key);
+    const everyone = opts.roster.every(r => d._acted.includes(String(r)));
+    if (!repeat && !everyone) return null;      // round still in progress
+    d._acted = repeat ? [key] : [];              // new round starts (with this actor if they opened it)
+  }
   d.turnsLeft -= 1;
   if (d.turnsLeft <= 0) { arena.domain = null; return `🌫️ *${d.name}* fades — the field returns to normal.`; }
   return null;
@@ -351,8 +362,8 @@ const FAMILY_DOMAINS = {
   undead:    { name: 'Grave Dominion',    emoji: '⚰️', desc: 'The dead do not tire. Every wound you deal is quietly undone.',                        law: 'regen',  lawText: 'The beast regenerates' },
   reptile:   { name: 'Scalebound Marsh',  emoji: '🐊', desc: 'Mud swallows your boots; cold eyes watch from the still water.',                        law: 'slow',   lawText: 'Hunters are SLOWED' },
   construct: { name: 'Iron Sanctum',      emoji: '🪨', desc: 'The walls themselves are the beast. Stone answers to it, not to you.',                   law: 'pierce', lawText: 'Armour counts for less' },
-  demon:     { name: 'Infernal Covenant', emoji: '😈', desc: 'Your mana is siphoned into the flame the moment it leaves your hands.',                  law: 'drain',  lawText: 'Hunters lose energy' },
-  elf:       { name: 'Whispering Glade',  emoji: '🧝', desc: 'Every rune on the trees is aimed at you. Spells unravel before they land.',             law: 'drain',  lawText: 'Hunters lose energy' },
+  demon:     { name: 'Infernal Covenant', emoji: '😈', desc: 'Your mana is siphoned into the flame the moment it leaves your hands.',                  law: 'drain',  lawText: 'One hunter loses energy' },
+  elf:       { name: 'Whispering Glade',  emoji: '🧝', desc: 'Every rune on the trees is aimed at you. Spells unravel before they land.',             law: 'drain',  lawText: 'One hunter loses energy' },
   slime:     { name: 'Dissolving Pool',   emoji: '🟢', desc: 'Acid mist eats at steel and skin alike — and feeds the thing beneath.',                  law: 'regen',  lawText: 'The beast regenerates' },
   insect:    { name: 'Hive Mind Field',   emoji: '🐜', desc: 'A thousand eyes share one hunger. Nowhere you stand is unseen.',                         law: 'slow',   lawText: 'Hunters are SLOWED' },
 };
@@ -373,12 +384,12 @@ const SKILL_DOMAINS = {
   blind:    { name: 'Veil of Blindness',   emoji: '🌫️', desc: 'Light dies here. You swing at sounds and shadows.',                                            law: 'blind',  lawText: 'Hunters are BLINDED (accuracy halved)', status: 'blind' },
   paralyze: { name: 'Thunder Cage',        emoji: '⚡', desc: 'Static crawls over your skin; your muscles answer to the storm, not to you.',                   law: 'slow',   lawText: 'Hunters are SLOWED', status: 'paralyze' },
   stun:     { name: 'Crushing Quake',      emoji: '🪨', desc: 'The ground heaves with every step the beast takes. Standing is a skill.',                      law: 'pierce', lawText: 'Armour counts for less', status: 'stun' },
-  curse:    { name: 'Cursed Expanse',      emoji: '🌑', desc: 'Old hexes hang in the air like smoke. Your luck is the first thing to die.',                    law: 'drain',  lawText: 'Hunters lose energy', status: 'curse' },
+  curse:    { name: 'Cursed Expanse',      emoji: '🌑', desc: 'Old hexes hang in the air like smoke. Your luck is the first thing to die.',                    law: 'drain',  lawText: 'One hunter loses energy', status: 'curse' },
   fear:     { name: 'Terror Dominion',     emoji: '😱', desc: 'The roar never ends. Your own heartbeat betrays you.',                                          law: 'slow',   lawText: 'Hunters are SLOWED (frozen by fear)', status: 'fear' },
-  drain:    { name: 'Siphon Field',        emoji: '🌀', desc: 'Mana bleeds out of you the moment you gather it — and flows to the beast.',                      law: 'drain',  lawText: 'Hunters lose energy', status: 'weaken' },
+  drain:    { name: 'Siphon Field',        emoji: '🌀', desc: 'Mana bleeds out of you the moment you gather it — and flows to the beast.',                      law: 'drain',  lawText: 'One hunter loses energy', status: 'weaken' },
   regen:    { name: 'Undying Ground',      emoji: '💚', desc: 'Wounds close as fast as you open them. The beast is rooted in something that will not die.',  law: 'regen',  lawText: 'The beast regenerates', status: 'weaken' },
   pierce:   { name: 'Armour-Breaking Zone',emoji: '🗡️', desc: 'Plate splits like bark. Nothing you wear means anything here.',                                law: 'pierce', lawText: 'Armour counts for less', status: 'bleed' },
-  weaken:   { name: 'Field of Despair',    emoji: '🥀', desc: 'Strength drains out through your boots into the ground.',                                      law: 'drain',  lawText: 'Hunters lose energy', status: 'weaken' },
+  weaken:   { name: 'Field of Despair',    emoji: '🥀', desc: 'Strength drains out through your boots into the ground.',                                      law: 'drain',  lawText: 'One hunter loses energy', status: 'weaken' },
   trueslow: { name: 'Binding Web',         emoji: '🕸️', desc: 'Threads you cannot see hold every limb a half-second too long.',                             law: 'slow',   lawText: 'Hunters are SLOWED', status: 'trueslow' },
 };
 function _skillList(monster) { const l = []; for (const k of ['abilities', 'skills']) if (Array.isArray(monster && monster[k])) l.push(...monster[k]); return l; }
@@ -456,18 +467,21 @@ function monsterTry(arena, monster, hunters = [], ctx = {}) {
   const lawLines = [];
   const src = `Domain: ${name}`;
   const hurt = []; const afflicted = [];
+  // Push #96h-t: mana drain is SINGLE-TARGET — the law siphons one hunter (the one in the beast's sights), never the whole party.
+  const _alive = hunters.filter(h => h && h.stats && (h.stats.hp || 0) > 0);
+  const _drainTarget = _alive.length ? _alive[Math.floor(Math.random() * _alive.length)] : null;
   for (const h of hunters) {
     if (!h || !h.stats || (h.stats.hp || 0) <= 0) continue;
     _applyBuffs(h, { atk: -mag, def: -mag, damageTaken: mag }, turns, 'domain', src);
     // Push #96h: the family's LAW
     if (info.law === 'slow') _applyBuffs(h, { speed: -Math.round(mag * 0.75) }, turns, 'domain', src);
     if (info.law === 'pierce') { const k = h.tempBuffs && h.tempBuffs['domain:def']; if (k) k.amount -= Math.round(mag * 0.5); }
-    if (info.law === 'blind') { try { const l = require('./MonsterSkillFX').applyStatus(h, 'blind', turns); if (l) lawLines.push(l); } catch (e) {} } // Push #96h-j
-    if (info.law === 'drain' && h.stats && typeof h.stats.energy === 'number') { const lost = Math.floor(h.stats.energy * Math.min(0.35, 0.10 + info.ri * 0.04)); h.stats.energy = Math.max(0, h.stats.energy - lost); if (lost) lawLines.push(`${h.name} −${lost} energy`); }
+    if (info.law === 'blind') { try { const l = require('./MonsterSkillFX').applyStatus(h, 'blind', turns, undefined, src); if (l) lawLines.push(l); } catch (e) {} } // Push #96h-j
+    if (info.law === 'drain' && h === _drainTarget && h.stats && typeof h.stats.energy === 'number') { const lost = Math.floor(h.stats.energy * Math.min(0.35, 0.10 + info.ri * 0.04)); h.stats.energy = Math.max(0, h.stats.energy - lost); if (lost) lawLines.push(`${h.name} −${lost} energy`); }
     const burst = Math.max(1, Math.floor(_max(h) * info.burst / 100));
     h.stats.hp = Math.max(1, h.stats.hp - burst); // devastating, never a kill on its own
     hurt.push(`${h.name} −${burst}`);
-    try { const MSFX = require('./MonsterSkillFX'); if (Math.random() < info.statusChance) { const l = MSFX.applyStatus(h, info.status, 2); if (l) afflicted.push(l); } } catch (e) {}
+    try { const MSFX = require('./MonsterSkillFX'); if (Math.random() < info.statusChance) { const l = MSFX.applyStatus(h, info.status, 2, undefined, src); if (l) afflicted.push(l); } } catch (e) {}
   }
   _applyBuffs(monster, { atk: info.self, def: info.self }, turns, 'domain', src);
   if (info.law === 'regen') _applyBuffs(monster, { regen: 3 + info.ri }, turns, 'domain', src); // Push #96h
