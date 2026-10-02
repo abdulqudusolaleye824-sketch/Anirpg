@@ -73,7 +73,7 @@ function _dmg(atk, def, mult = 1) { return Math.max(5, Math.floor(atk * (1 - _mi
 
 // ── wave building ─────────────────────────────────────────────
 function _party(db) {
-  const users = Object.values(db.users || {}).filter(u => u && (u.level || 0) >= DOMAIN_LEVEL && u.stats);
+  const users = Object.values(db.users || {}).filter(u => u && u.stats);
   users.sort((a, b) => (b.level || 0) - (a.level || 0));
   const top = users.slice(0, 40); if (!top.length) return { atk: 100, hp: 1000, def: 40, speed: 150 };
   const acc = { atk: 0, hp: 0, def: 0, speed: 0 };
@@ -156,7 +156,7 @@ function _autoSkill(player) {
 // ── /ejoin: enter the island, get your domain, then name + describe it ─────
 function join(db, player) {
   const ev = tick(db); if (!ev) return { ok: false, error: 'No event is running right now.' };
-  if ((player.level || 0) < DOMAIN_LEVEL) return { ok: false, error: `The Jeju Island Raid is open to hunters *Lv.${DOMAIN_LEVEL}+*.` };
+  // Push #96h-x: hunters of ALL levels may join (the event domain itself is a Lv.10 domain).
   const st = _p(db, player); if (st.joined) return { ok: false, error: 'You are already on the island — /event status.' };
   st.joined = true; st.joinedAt = Date.now(); st.afk = false;
   const d = domainState(player); let arch = null;
@@ -184,7 +184,6 @@ function setupStep(player) { return (player && player.eventDomain && player.even
 // ── actions ───────────────────────────────────────────────────
 function _guard(db, player) {
   const ev = tick(db); if (!ev) return { error: 'No event is running right now.' };
-  if ((player.level || 0) < DOMAIN_LEVEL) return { error: `The Jeju Island Raid is open to hunters *Lv.${DOMAIN_LEVEL}+*.` };
   const st = _p(db, player);
   if (!st.joined) return { error: '🏝️ You have not joined the raid yet — */ejoin*.' };
   if (st.afk) return { error: '🛌 You are AFK — /eventafk to rejoin the fight.' };
@@ -212,8 +211,14 @@ function attackMonster(db, player, targetId, skillName = null) {
   let dmg = Math.max(0, Math.floor((res.damage || 0) * _domainMult(player, 'atk'))); const crit = !!res.isCrit;
   if (res.healed > 0) lines.push(`💚 *${res.skillUsed ? res.skillUsed.name : 'Recovery'}* restored *${res.healed}* HP`);
   if (res.skillUsed) st.skillsUsed++; if (crit) st.crits++;
+  const _mHpBefore = m.hp;
   m.hp = Math.max(0, m.hp - dmg); m.lastHit = Date.now(); m._regenAt = 0; st.dmg += dmg;
-  lines.push(`${res.skillUsed ? `✨ *${res.skillUsed.name}*` : '⚔️'} *${_name(player)}* hits *${m.name}* #${m.id} for *${dmg.toLocaleString()}*${crit ? ' 💥CRIT' : ''} — ${m.hp.toLocaleString()}/${m.maxHp.toLocaleString()} HP`);
+  // Push #96h-x: full dungeon-style presentation — the command layer plays this through UnifiedCombat.playTurn.
+  const flow = { hunter: { name: _name(player), player }, monster: { name: `${m.name} #${m.id}`, hp: _mHpBefore, maxHp: m.maxHp, statusEffects: m.statusEffects || [] },
+    move: res.skillUsed ? { name: res.skillUsed.name, description: res.skillUsed.description || 'A class skill unleashed on the island.', cooldownMs: (res.skillUsed.cooldown || 3) * 1000, effect: (res.skillUsed.effect && typeof res.skillUsed.effect === 'object' && res.skillUsed.effect.type) ? res.skillUsed.effect : null, isSkill: true } : null,
+    result: { damage: dmg, crit, missed: !!res.missed, dodged: !!res.dodged, missWhy: res.missWhy || null }, counter: null };
+  const strikeLine = `${res.skillUsed ? `✨ *${res.skillUsed.name}*` : '⚔️'} *${_name(player)}* hits *${m.name}* #${m.id} for *${dmg.toLocaleString()}*${crit ? ' 💥CRIT' : ''} — ${m.hp.toLocaleString()}/${m.maxHp.toLocaleString()} HP`;
+  lines.push(strikeLine);
   if (m.hp <= 0) {
     m.defeated = true; m.by = player.jid || player.id; const pts = m.isBoss ? BOSS_POINTS : (KILL_POINTS[m.rank] || 10);
     st.points += pts; st.kills++; if (m.isBoss) st.bossKills++;
@@ -225,11 +230,15 @@ function attackMonster(db, player, targetId, skillName = null) {
     const mc = (10 + (m.critBonus || 0) + (m.isBoss ? 8 : 0)) > Math.random() * 100;
     let back = 0; try { back = require('../dungeons/GateRaid').monsterDamage({ ...m, atk: Math.floor(m.atk * _monDebuff(ev, m) * (m.isBoss ? 1.3 : 1)), _raid: false }, h.def, player) || 0; } catch (e) { back = 0; }
     if (!back) back = _dmg(m.atk * _monDebuff(ev, m) * (m.isBoss ? 1.3 : 1), h.def, mc ? 1.5 : 1);
+    const _pHpBefore = player.stats.hp || 0;
     player.stats.hp = Math.max(0, (player.stats.hp || 0) - back); st.dmgTaken += back;
-    lines.push(`🩸 *${m.name}* counters for *${back.toLocaleString()}*${mc ? ' 💥' : ''} — you: ${player.stats.hp}/${h.maxHp} HP`);
+    const counterLine = `🩸 *${m.name}* counters for *${back.toLocaleString()}*${mc ? ' 💥' : ''} — you: ${player.stats.hp}/${h.maxHp} HP`;
+    lines.push(counterLine);
+    flow.counter = { line: counterLine, dmg: back, crit: mc, playerHpBefore: _pHpBefore, playerMaxHp: h.maxHp, monsterHp: m.hp, monsterMaxHp: m.maxHp, monsterSkill: (Array.isArray(m.skills) && m.skills.length) ? m.skills[Math.floor(Math.random() * m.skills.length)] : null };
     if (player.stats.hp <= 0) { st.deaths++; st.diedAt = Date.now(); player.stats.hp = 0; lines.push(`💀 *You were slain by ${m.name}!* Respawn in 60 min.`); }
   }
-  return { ok: true, text: lines.join('\n'), monster: m };
+  const tail = lines.filter(l => l !== strikeLine && !(flow.counter && l === flow.counter.line));
+  return { ok: true, text: lines.join('\n'), tailText: tail.join('\n'), flow, monster: m };
 }
 // ── HUNTER vs HUNTER: tag a hunter in your attack/skill. They get a 20s window to
 //    retaliate (their own attack/skill on you); then BOTH moves resolve at once.
@@ -240,7 +249,7 @@ function pendingFor(db, player) { const ev = _ev(db); if (!ev) return null; cons
 function attackHunter(db, player, victim, skillName = null) {
   const g = _guard(db, player); if (g.error) return { ok: false, error: g.error }; const { ev, st } = g;
   if (!victim || victim === player) return { ok: false, error: 'Tag the hunter you want to strike in your attack: */event attack @hunter [skill]*.' };
-  if ((victim.level || 0) < DOMAIN_LEVEL) return { ok: false, error: `${_name(victim)} is not part of the raid (Lv.${DOMAIN_LEVEL}+ only).` };
+  // Push #96h-x: no level gate on the island (join check below covers participation).
   const vs = _p(db, victim);
   if (!vs.joined) return { ok: false, error: `*${_name(victim)}* is not on the island (they have not /ejoin-ed).` };
   if (vs.afk) return { ok: false, error: `🛌 *${_name(victim)}* is AFK — untouchable.` };
@@ -337,7 +346,7 @@ function castDomain(db, player, chatId) {
   const _lvMult = d.own ? Math.min(2, 1 + (Math.max(0, (d.ownLevel || DOMAIN_LEVEL) - DOMAIN_LEVEL)) * 0.05) : 1; // Push #96h-t: a carried domain hits harder per level above 10 (cap ×2)
   for (const m of alive(ev)) { const burst = Math.floor(Math.min(m.maxHp * 0.12 * _lvMult, h.atk * 3 * _lvMult)); m.hp = Math.max(1, m.hp - burst); m.lastHit = Date.now(); m._regenAt = 0; m.domDebuffUntil = until; hit++; total += burst; }
   let hunters = 0; const me = player.jid || player.id;
-  for (const u of Object.values(db.users || {})) { if (!u || u === player || (u.jid || u.id) === me || (u.level || 0) < DOMAIN_LEVEL) continue; const us = u.eventStats; if (!us || us.id !== ev.id || us.afk || _isDead(us)) continue; us.debuffUntil = until; hunters++; }
+  for (const u of Object.values(db.users || {})) { if (!u || u === player || (u.jid || u.id) === me) continue; const us = u.eventStats; if (!us || us.id !== ev.id || us.afk || _isDead(us)) continue; us.debuffUntil = until; hunters++; }
   st.dmg += total;
   const msgs = [`🌌 *DOMAIN EXPANSION — ${d.name.toUpperCase()}*`, `_${d.desc}_`,
     `👤 ${_name(player)} · ${d.own ? `Domain Lv.${d.ownLevel}` : `Event Domain Lv.${DOMAIN_LEVEL}`}\n💥 ${hit} beasts take *${total.toLocaleString()}* total damage and lose 20% ATK/DEF for 10 min.\n🗡️ ${hunters} rival hunter${hunters === 1 ? '' : 's'} weakened 20% for 10 min.\n⚡ You deal +25% damage for 10 min. 🛡️ Inside your domain you are immune to new status effects.`];
@@ -386,7 +395,7 @@ function infoText(db) {
     `👹 Alive by rank: ${RANKS.map(r => byRank[r] ? `${r}:${byRank[r]}` : null).filter(Boolean).join(' · ') || 'none'}`, `👑 Boss: ${boss ? `${boss.name} — ${boss.defeated ? 'slain' : `${boss.hp.toLocaleString()}/${boss.maxHp.toLocaleString()} HP${live.length > 1 ? ' (locked until the beasts fall)' : ' — OUT NOW'}`}` : '—'}`,
     ``, `👥 *PARTICIPANTS* — ${parts.length} hunters`, `⚔️ active ${active} · 🛌 AFK ${afk} · 💀 respawning ${dead}`, `☠️ beast kills ${tot.k.toLocaleString()} · 🗡️ hunter kills ${tot.hk} · deaths ${tot.d} · 💥 damage ${tot.dmg.toLocaleString()} · 🏅 points held ${tot.pts.toLocaleString()}`,
     ``, `🏆 *TOP 10*`, ...(lb.length ? lb.map((e, i) => `${['🥇', '🥈', '🥉'][i] || `${i + 1}.`} ${e.name} — ${e.points.toLocaleString()} pts · ${e.kills}☠️ ${e.hunterKills}🗡️`) : ['_Nobody has scored yet._']),
-    ``, `📜 *RULES*`, `• */ejoin* to enter (Lv.${DOMAIN_LEVEL}+) · 10 days · ${WAVE_SIZE} beasts + 1 boss per wave`, `• Beasts never start a fight — they counter; idle 30s → +5% HP per 30s`, `• Friendly fire: tag a hunter in your attack (/event attack @hunter [skill]); they get 20s to retaliate, then both moves land · kill = 50% of their points, theirs reset to 0`, `• Death = 1h respawn · /eventafk = untouchable, no attacking, free to raid — any message here brings you back`, `• Attack with plain */attack [#|@hunter] [skill]* or */skill <skill>* in this GC (reply to a hunter = target them)`, `• Lv.10 event domain: /event domain (name + desc first) · ${DOMAIN_ENERGY} energy · 1h cooldown`, `• Points: E${KILL_POINTS.E} D${KILL_POINTS.D} C${KILL_POINTS.C} B${KILL_POINTS.B} A${KILL_POINTS.A} S${KILL_POINTS.S} · boss ${BOSS_POINTS} · hunter kill +${HUNTER_KILL_BONUS} · spend in /eshop`].join('\n');
+    ``, `📜 *RULES*`, `• */ejoin* to enter (all levels) · 10 days · ${WAVE_SIZE} beasts + 1 boss per wave`, `• Beasts never start a fight — they counter; idle 30s → +5% HP per 30s`, `• Friendly fire: tag a hunter in your attack (/event attack @hunter [skill]); they get 20s to retaliate, then both moves land · kill = 50% of their points, theirs reset to 0`, `• Death = 1h respawn · /eventafk = untouchable, no attacking, free to raid — any message here brings you back`, `• Attack with plain */attack [#|@hunter] [skill]* or */skill <skill>* in this GC (reply to a hunter = target them)`, `• Lv.10 event domain: /event domain (name + desc first) · ${DOMAIN_ENERGY} energy · 1h cooldown`, `• Points: E${KILL_POINTS.E} D${KILL_POINTS.D} C${KILL_POINTS.C} B${KILL_POINTS.B} A${KILL_POINTS.A} S${KILL_POINTS.S} · boss ${BOSS_POINTS} · hunter kill +${HUNTER_KILL_BONUS} · spend in /eshop`].join('\n');
 }
 
 module.exports = { infoText, blocksRaids, breakAfk, pullFromDungeons, RETALIATE_MS, pendingFor, resolvePending, resolveExpired, join, isJoined, handleSetupReply, setupStep, _autoSkill, EVENT_LENGTH_MS, WAVE_SIZE, RESPAWN_MS, REGEN_IDLE_MS, REGEN_PCT, STEAL_PCT, DOMAIN_LEVEL, DOMAIN_ENERGY, SHOP, KILL_POINTS, BOSS_POINTS, gcId, isEventGC, buildWave, start, end, tick, alive, attackMonster, attackHunter, toggleAfk, domainState, setDomainName, setDomainDesc, castDomain, leaderboard, status, pointsText, statsText, shopText, buy, _p };

@@ -1,3 +1,7 @@
+## 1.0.155 — Push #96h-x
+- Jeju Island Raid: hunters of ALL levels may join and fight (the event domain stays a Lv.10 domain).
+- `/event attack` now plays the full dungeon-style battle flow (move card, effectiveness, damage, HP bars) for the strike and the beast's counter, instead of two one-liners.
+
 ## 1.0.154 — Push #96h-w
 - A monster that dies to its status (bleed/burn/poison) at the start of your turn is settled as a kill — your strike no longer plays against a corpse.
 - One monster at a time: a hunter's domain in a raid lands on the current target only.

@@ -35,7 +35,7 @@ module.exports = {
       if (!inGC) return needGC();
       const r = EventSystem.start(db, sender); if (!r.ok) return say(`❌ ${r.error}`);
       saveDatabase(db);
-      return say([`🏝️ *THE JEJU ISLAND RAID HAS BEGUN!*`, `For *10 days* the island belongs to whoever takes it.`, ``, `🌊 Each wave: *${EventSystem.WAVE_SIZE} beasts + 1 boss*. Clear it and a stronger wave rises.`, `🏝️ */ejoin* — enter the island (you get your event domain, then name + describe it).`, `⚔️ */event attack [#] [skill]* — strike a beast; gear, passives and class skills are wired in (no skill named → your strongest ready skill). Beasts only counter, never start a fight; left alone 30s they regenerate.`, `🗡️ */event attack @hunter [skill]* — tag a hunter in your attack. They get *20 seconds* to retaliate with their own attack, then both moves land at once. Kill a hunter: take *50%* of their points, theirs reset to *0*.`, `💀 Die and you wait *1 hour* to respawn.`, `🛌 */eventafk* — untouchable, but you cannot attack.`, `🌌 */event domain* — your *Lv.10 event domain* (name it: /event domain name …).`, `🏅 */epoints* · */estats* · */eshop* · */event lb*`, ``, `Hunters Lv.${EventSystem.DOMAIN_LEVEL}+ only. Good hunting.`].join('\n'));
+      return say([`🏝️ *THE JEJU ISLAND RAID HAS BEGUN!*`, `For *10 days* the island belongs to whoever takes it.`, ``, `🌊 Each wave: *${EventSystem.WAVE_SIZE} beasts + 1 boss*. Clear it and a stronger wave rises.`, `🏝️ */ejoin* — enter the island (you get your event domain, then name + describe it).`, `⚔️ */event attack [#] [skill]* — strike a beast; gear, passives and class skills are wired in (no skill named → your strongest ready skill). Beasts only counter, never start a fight; left alone 30s they regenerate.`, `🗡️ */event attack @hunter [skill]* — tag a hunter in your attack. They get *20 seconds* to retaliate with their own attack, then both moves land at once. Kill a hunter: take *50%* of their points, theirs reset to *0*.`, `💀 Die and you wait *1 hour* to respawn.`, `🛌 */eventafk* — untouchable, but you cannot attack.`, `🌌 */event domain* — your *Lv.10 event domain* (name it: /event domain name …).`, `🏅 */epoints* · */estats* · */eshop* · */event lb*`, ``, `Hunters of *all levels* may join. Good hunting.`].join('\n'));
     }
     if (sub === 'end' || sub === 'stop') {
       if (!Perms.isBotOwner(db, sender)) return say('❌ Only an owner can end the event.');
@@ -62,11 +62,27 @@ module.exports = {
       }
       const _hasId = rest[0] && /^#?\d+$/.test(rest[0]); const _skill = rest.slice(_hasId ? 1 : 0).join(' ').trim() || null;
       const r = EventSystem.attackMonster(db, player, _hasId ? rest[0].replace('#', '') : null, _skill);
-      if (!r.ok) return say(`❌ ${r.error}`); saveDatabase(db); return say(r.text);
+      if (!r.ok) return say(`❌ ${r.error}`); saveDatabase(db);
+      // Push #96h-x: the island fights read exactly like a dungeon — the shared step-by-step battle flow.
+      if (r.flow) {
+        try {
+          const UC = require('../../rpg/utils/UnifiedCombat'); const f = r.flow;
+          const monWrap = { name: f.monster.name, stats: { hp: f.monster.hp, maxHp: f.monster.maxHp }, statusEffects: f.monster.statusEffects };
+          const move = f.move || UC.basicStrike();
+          await UC.playTurn(sock, chatId, { attacker: player, defender: monWrap, move, result: { ...f.result, preAbsorbed: true }, tag: f.move ? `✨ *EVENT SKILL*` : `⚔️ *EVENT ATTACK*`, defenderBar: 'monster', gapMs: 600 });
+          if (f.counter) {
+            const c = f.counter; const sk = c.monsterSkill; const skName = sk ? (sk.name || 'Strike') : 'Savage Counter';
+            const meWrap = { name: player.name, stats: { hp: c.playerHpBefore, maxHp: c.playerMaxHp }, statusEffects: player.statusEffects || [] };
+            await UC.playTurn(sock, chatId, { attacker: { name: f.monster.name, stats: { hp: c.monsterHp, maxHp: c.monsterMaxHp }, statusEffects: f.monster.statusEffects }, defender: meWrap, move: { name: skName, description: sk ? `A ferocious ${String(skName).replace(/^[^\s]+\s/, '')} technique.` : 'The beast answers the blow with one of its own.', cooldownMs: 0, effect: null }, result: { damage: c.dmg, crit: !!c.crit, missed: false, preAbsorbed: true }, tag: `🩸 *BEAST COUNTERS*`, defenderBar: 'player', gapMs: 600 });
+          }
+          if (r.tailText && r.tailText.trim()) await say(r.tailText);
+          return;
+        } catch (e) { console.error('[event] rich flow:', e.message); }
+      }
+      return say(r.text);
     }
     if (sub === 'domain' || sub === 'de') {
       const what = (args[1] || '').toLowerCase();
-      if ((player.level || 0) < EventSystem.DOMAIN_LEVEL) return say(`🌌 Your event domain awakens at *Lv.${EventSystem.DOMAIN_LEVEL}*.`);
       if (what === 'name') { const r = EventSystem.setDomainName(player, args.slice(2).join(' ')); if (r.ok) saveDatabase(db); return say(r.ok ? `${r.text}\n_Now: /event domain desc <description>_` : `❌ ${r.error}`); }
       if (what === 'desc' || what === 'description') { const r = EventSystem.setDomainDesc(player, args.slice(2).join(' ')); if (r.ok) saveDatabase(db); return say(r.ok ? `${r.text}\n_Cast it in the Events GC with /event domain_` : `❌ ${r.error}`); }
       if (what === 'info' || what === 'show') { const d = EventSystem.domainState(player); return say(`🌌 *EVENT DOMAIN (Lv.${EventSystem.DOMAIN_LEVEL})*\nName: ${d.name || '— (/event domain name <name>)'}\nDescription: ${d.desc || '— (/event domain desc <text>)'}\nCasts: ${d.casts || 0} · Cost ${EventSystem.DOMAIN_ENERGY} energy · 1h cooldown\n_Works only inside the Events GC during an event._`); }
