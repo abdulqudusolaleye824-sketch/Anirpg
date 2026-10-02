@@ -723,7 +723,9 @@ async function resolveTurn(sock, chatId, p1, p2, db, saveDatabase) {
   };
   const p1Spd = (_effSpd(p1) + (PetCombat.spdBonus(id1) || 0)) * (m1?.speedMult || 1);
   const p2Spd = (_effSpd(p2) + (PetCombat.spdBonus(id2) || 0)) * (m2?.speedMult || 1);
-  const p1First = p1Spd > p2Spd || (p1Spd === p2Spd && Math.random() < 0.5);
+  let p1First = p1Spd > p2Spd || (p1Spd === p2Spd && Math.random() < 0.5);
+  // Push #96h-s: while a hunter's own domain stands, that caster ALWAYS moves first.
+  let _domFirst = null; try { const DS = require('../../rpg/utils/DomainSystem'); const s1 = !!DS.isShielded(p1), s2 = !!DS.isShielded(p2); if (s1 && !s2) { p1First = true; _domFirst = name1; } else if (s2 && !s1) { p1First = false; _domFirst = name2; } } catch (e) {}
   // Push #95: the shared domain record for this pair counts down once per round.
   try { const DS = require('../../rpg/utils/DomainSystem'); const _df = DS.tick(DS.pvpArena(id1, id2)); if (_df) await sock.sendMessage(chatId, { text: _df }); } catch (e) {}
   const order = p1First ? [{p:p1,opp:p2,move:m1,res:res1,name:name1,oppName:name2,skipped:p1Skipped,skipMsg:skipMsg1},
@@ -733,6 +735,7 @@ async function resolveTurn(sock, chatId, p1, p2, db, saveDatabase) {
 
   let accumulated = '';
   let battleEnded = false;
+  if (_domFirst) { try { await sock.sendMessage(chatId, { text: `🌌 *${_domFirst}*'s domain stands — the caster moves first.` }); } catch (e) {} }
   let winner = null, loser = null, winnerId = null, loserId = null;
 
   for (let idx = 0; idx < order.length; idx++) {

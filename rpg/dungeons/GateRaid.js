@@ -175,6 +175,7 @@ function raidMonsterGoesFirst(monster, player) {
   const heldFx = (monster.statusEffects || []).find(e => /^(stun|stunned|freeze|frozen|paralyze|paralyzed|paralysis|sleep|asleep|petrify|petrified)$/i.test(String(e.type || '')));
   raidMonsterGoesFirst.lastHeld = heldFx ? String(heldFx.type) : null;
   if (heldFx) return false;
+  try { if (require('../utils/DomainSystem').isShielded(player)) return false; } catch (e) {} // Push #96h-s: a domain caster always moves first
   return Math.random() * 100 < raidInitiativeChance(monster, player);
 }
 function monsterDodgeChance(monster, player) {

@@ -1,3 +1,7 @@
+## 1.0.150 — Push #96h-s: gear HP applies instantly · domain caster moves first
+- **Gear HP:** equipping a piece adds its HP bonus to your CURRENT HP immediately (2k/2k + 2k gear → 4k/4k), net of the piece it replaces; unequip/swap trims HP under the new max. No more "4k on the card, 2k in the fight".
+- **Initiative:** while a hunter's own domain stands, the caster always moves first — no raid-monster initiative against them, PvP order forced (announced).
+
 ## 1.0.149 — Push #96h-r: monster domain power nerfed + variance · phantom domain fix
 - **Monster domain power** (clash only — effects untouched): rank×45 + level×0.5 + boss 40 + elite 15. A Lv.2 hunter domain (~78 power at Lv.20) now beats any E-rank beast, boss included.
 - **Variance:** every beast rolls a domain strength multiplier 0.70–1.30 once — some come out weaker, some stronger.

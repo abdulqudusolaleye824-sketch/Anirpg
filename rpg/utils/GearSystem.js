@@ -190,8 +190,13 @@ function regenUnequippedDurability(player, now = Date.now()) {
 function equipGear(player, gearItem) {
   if (!player.equippedGear) player.equippedGear = {};
   const slot = gearItem.slot;
+  // Push #96h-s: the piece's HP bonus is ADDED to current HP right away (2k/2k + 2k gear → 4k/4k),
+  // net of whatever the replaced piece gave. Unequip trims current HP back under the new max.
+  const _oldHp = Number((player.equippedGear[slot] && player.equippedGear[slot].stats && player.equippedGear[slot].stats.hp) || 0);
+  const _newHp = Number((gearItem.stats && gearItem.stats.hp) || 0);
   // Old piece just gets deleted — no return to inventory
   player.equippedGear[slot] = gearItem;
+  try { if (player.stats && typeof player.stats.hp === 'number' && player.stats.hp > 0) { const delta = _newHp - _oldHp; if (delta > 0) player.stats.hp += delta; const em = effectiveMaxHp(player); if (player.stats.hp > em) player.stats.hp = em; } } catch (e) {}
   // Remove from inventory
   if (player.inventory?.items) {
     const idx = player.inventory.items.findIndex(i => i.id === gearItem.id);
@@ -205,6 +210,7 @@ function unequipGear(player, slot) {
   if (!player.equippedGear?.[slot]) return false;
   const piece = player.equippedGear[slot];
   delete player.equippedGear[slot];
+  try { if (player.stats && typeof player.stats.hp === 'number') { const em = effectiveMaxHp(player); if (player.stats.hp > em) player.stats.hp = em; } } catch (e) {}
   return piece;
 }
 
