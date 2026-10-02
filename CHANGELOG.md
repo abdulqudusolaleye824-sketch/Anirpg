@@ -1,3 +1,8 @@
+## 1.0.149 — Push #96h-r: monster domain power nerfed + variance · phantom domain fix
+- **Monster domain power** (clash only — effects untouched): rank×45 + level×0.5 + boss 40 + elite 15. A Lv.2 hunter domain (~78 power at Lv.20) now beats any E-rank beast, boss included.
+- **Variance:** every beast rolls a domain strength multiplier 0.70–1.30 once — some come out weaker, some stronger.
+- **Phantom domain fix** (screenshot): a domain from an earlier fight that was never ticked to zero kept shielding/regenerating its owner in the next battle. Domains now expire 20 min after casting if the battle doesn't tick them out; PvP arenas drop expired domains on start.
+
 ## 1.0.148 — Push #96h-q: domain immunity fix · caster regen · battle status · one desc edit · /resetpro
 - **Immunity fix:** domain owner immunity matched only on `.jid`, which raid player objects don't carry — so owners were still getting statused. Now matches jid/id/name; verified statuses are refused.
 - **Caster regen:** every domain heals its caster 10% max HP per turn while it stands.

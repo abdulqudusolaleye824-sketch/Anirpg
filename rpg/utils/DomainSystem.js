@@ -212,7 +212,8 @@ function upgrade(player, want = 1) {
 // arenaOf(x): any battle container (gate, dungeon, pvp battle, instance) — we
 // store `domain` on it. Returns the container itself.
 function arenaOf(x) { return x && typeof x === 'object' ? x : null; }
-function active(arena) { const d = arena && arena.domain; return d && d.turnsLeft > 0 ? d : null; }
+const DOMAIN_TTL_MS = 20 * 60e3; // Push #96h-r: a domain nobody ticks (battle ended / left) cannot haunt the next fight
+function active(arena) { const d = arena && arena.domain; if (!d || !(d.turnsLeft > 0)) return null; if (d.expiresAt && Date.now() > d.expiresAt) { arena.domain = null; return null; } return d; }
 
 // ── Push #96g: the owner of an ACTIVE domain is immune to NEW status effects
 // cast inside it (effects already on them keep ticking). Registry: owner key → arena.
@@ -314,7 +315,7 @@ function expand(arena, player, allies = [player], enemies = [], ctx = {}) {
       _fxLines.push(`💥 *${f.name || 'Enemy'}* — ${dealt.toLocaleString()} burst${hit.length ? ` · ${hit.join(' + ')}` : ''}`);
     }
   } catch (e3) {}
-  arena.domain = { ownerId: myId, ownerKeys: _ownerKeys(player), ownerName: player.name, side: 'hunter', name: e.shown, effectName: e.name, level: e.level, turnsLeft: e.turns, power: myPow, quality: _quality(player), className: player.domain.class };
+  arena.domain = { ownerId: myId, ownerKeys: _ownerKeys(player), ownerName: player.name, side: 'hunter', name: e.shown, expiresAt: Date.now() + DOMAIN_TTL_MS, effectName: e.name, level: e.level, turnsLeft: e.turns, power: myPow, quality: _quality(player), className: player.domain.class };
   _register(arena, myId); for (const k of _ownerKeys(player)) _register(arena, k);
   player.domain.casts = (player.domain.casts || 0) + 1;
   const d = player.domain;
@@ -407,9 +408,18 @@ const MD_BURST  = [6, 8, 10, 13, 16, 20, 24];     // % max HP burst on expansion
 const MD_TURNS  = [2, 2, 2, 3, 3, 4, 4];
 const MD_STATUS = ['weaken', 'weaken', 'bleed', 'burn', 'poison', 'curse', 'curse'];
 const MD_STATUS_CHANCE = [0.40, 0.45, 0.50, 0.60, 0.70, 0.85, 1.0];
+// Push #96h-r: NERFED for low ranks (effects untouched) + a per-beast variance (0.70–1.30, rolled once)
+// so every monster's domain can come out weaker or stronger. A Lv.2 hunter domain (power ~78 at
+// Lv.20) now beats any E-rank beast (E boss Lv.20 ≈ 50 × ≤1.30 = 65).
+function domainVariance(monster) {
+  if (!monster) return 1;
+  if (!(monster._domainVar > 0)) monster._domainVar = Math.round((0.70 + Math.random() * 0.60) * 100) / 100;
+  return monster._domainVar;
+}
 function monsterPower(monster, ctx = {}) {
   const rank = String(ctx.rank || monster.rank || 'E').toUpperCase();
-  return (RANK_IDX[rank] || 0) * 40 + (Number(monster.level) || 1) + (ctx.boss || monster.isBoss ? 90 : 0) + (monster.elite || monster.isElite ? 30 : 0);
+  const base = (RANK_IDX[rank] || 0) * 45 + Math.floor((Number(monster.level) || 1) * 0.5) + (ctx.boss || monster.isBoss ? 40 : 0) + (monster.elite || monster.isElite ? 15 : 0);
+  return Math.max(1, Math.round(base * domainVariance(monster)));
 }
 function monsterEligible(monster, ctx = {}) {
   if (ctx.boss || monster.isBoss || monster.leaked) return true; // Push #96h-m: leaked beasts always eligible
@@ -461,7 +471,7 @@ function monsterTry(arena, monster, hunters = [], ctx = {}) {
   }
   _applyBuffs(monster, { atk: info.self, def: info.self }, turns, 'domain', src);
   if (info.law === 'regen') _applyBuffs(monster, { regen: 3 + info.ri }, turns, 'domain', src); // Push #96h
-  arena.domain = { ownerId: monster.id || monster.name, ownerName: monster.name, side: 'monster', name, level: 0, turnsLeft: turns, power: pow, rank: info.rank };
+  arena.domain = { expiresAt: Date.now() + DOMAIN_TTL_MS, variance: domainVariance(monster), ownerId: monster.id || monster.name, ownerName: monster.name, side: 'monster', name, level: 0, turnsLeft: turns, power: pow, rank: info.rank };
   _register(arena, monster.id || monster.name); for (const k of _ownerKeys(monster)) _register(arena, k);
   lines.unshift(
     `${info.emoji} *DOMAIN EXPANSION — ${name.toUpperCase()}* [${info.rank}${isBoss ? ' BOSS' : ''}]\u2063`,
@@ -512,7 +522,8 @@ const _pvpArenas = new Map();
 function pvpArena(a, b) {
   const k = [String(a || ''), String(b || '')].sort().join('|');
   if (!_pvpArenas.has(k)) _pvpArenas.set(k, { kind: 'pvp', key: k, domain: null });
-  return _pvpArenas.get(k);
+  const ar = _pvpArenas.get(k); active(ar); // Push #96h-r: drops an expired domain from an old duel
+  return ar;
 }
 function endPvpArena(a, b) { _pvpArenas.delete([String(a || ''), String(b || '')].sort().join('|')); }
 
@@ -555,4 +566,4 @@ function findBattle(player, sender, db) {
   return null;
 }
 
-module.exports = { CASTER_REGEN_PCT, costFor, CLASS_KITS, kitFor, SKILL_DOMAINS, BREAK, splitMessages, sendDomain, FAMILY_DOMAINS, isShielded, shieldLine, monsterDomainInfo, MONSTER_DOMAINS, setupStep, setupPrompt, handleSetupReply, rename, pvpArena, endPvpArena, findBattle, CAST_ENERGY, MAX_LEVEL, UP_SHARE_CAP, ARCHETYPES, CLASS_DOMAINS, STAT_LABEL, effectFor, scale, turnsFor, costToNext, ensure, has, unlock, scaledEffect, describe, power, upgrade, arenaOf, active, shatter, tick, expand, monsterPower, monsterEligible, monsterTry, onLevelUp, shareUP };
+module.exports = { domainVariance, DOMAIN_TTL_MS, CASTER_REGEN_PCT, costFor, CLASS_KITS, kitFor, SKILL_DOMAINS, BREAK, splitMessages, sendDomain, FAMILY_DOMAINS, isShielded, shieldLine, monsterDomainInfo, MONSTER_DOMAINS, setupStep, setupPrompt, handleSetupReply, rename, pvpArena, endPvpArena, findBattle, CAST_ENERGY, MAX_LEVEL, UP_SHARE_CAP, ARCHETYPES, CLASS_DOMAINS, STAT_LABEL, effectFor, scale, turnsFor, costToNext, ensure, has, unlock, scaledEffect, describe, power, upgrade, arenaOf, active, shatter, tick, expand, monsterPower, monsterEligible, monsterTry, onLevelUp, shareUP };
