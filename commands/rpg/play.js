@@ -142,9 +142,9 @@ function _scoreCandidate(c, title, artist) {
   return { score, artistOk };
 }
 
-function _pickBest(rows, title, artist) {
+function _pickBest(rows, title, artist, minScore = MIN_SCORE) {
   const scored = rows.map((c) => ({ c, ..._scoreCandidate(c, title, artist) }))
-    .filter((s) => s.artistOk && s.score >= MIN_SCORE)
+    .filter((s) => s.artistOk && s.score >= minScore)
     .sort((a, b) => b.score - a.score);
   return scored.map((s) => s.c);
 }
@@ -262,9 +262,23 @@ module.exports = {
         return say(`❌ Search failed — try again in a bit.`);
       }
 
-      const rows = _parseSearchRows(search.stdout);
-      const best = _pickBest(rows, title, artist);
+      let rows = _parseSearchRows(search.stdout);
+      let best = _pickBest(rows, title, artist);
       ytTitle = title; ytArtist = artist; ytRowCount = rows.length;
+      // Push #96h-w: "official audio" biases YouTube away from remixes / fan drill tracks
+      // ("minato uk drill" exists on YouTube but never surfaced). Second pass: the raw query,
+      // more rows; then a relaxed match (≥ 0.5) flagged as "closest match".
+      if (!best.length) {
+        try {
+          const s2 = await ToolRunner.ytDlpRun([
+            ...ToolRunner.YOUTUBE_EXTRACTOR_ARGS_FULL, ...ToolRunner.YOUTUBE_EJS_ARGS, ...ToolRunner.youtubeCookiesArgs(),
+            '--flat-playlist', '--print', '%(id)s | %(title)s | %(duration)s | %(channel)s',
+            `ytsearch10:${title}${artist ? ' ' + artist : ''}`,
+          ]);
+          if (s2 && s2.ok) { const r2 = _parseSearchRows(s2.stdout); rows = rows.concat(r2.filter(r => !rows.some(x => x.id === r.id))); best = _pickBest(rows, title, artist); ytRowCount = rows.length; }
+        } catch (e) {}
+      }
+      if (!best.length) { const relaxed = _pickBest(rows, title, artist, 0.5); if (relaxed.length) { best = relaxed; best[0]._closest = true; } }
       if (best.length) {
         pick = best[0];
         // Keep a backup in case the best download fails.
@@ -404,7 +418,7 @@ module.exports = {
       if (cover) {
         await sock.sendMessage(chatId, {
           image: cover,
-          caption: `🎵 *${label}*${durTxt}`,
+          caption: `🎵 *${label}*${durTxt}${pick && pick._closest ? `\n_closest match to "${ytTitle}" — add the artist for an exact hit_` : ""}`,
         }, { quoted: msg });
       }
       const outExt = (String(voicePath).split('.').pop() || 'mp3').toLowerCase();

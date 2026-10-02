@@ -1,3 +1,10 @@
+## 1.0.154 — Push #96h-w
+- A monster that dies to its status (bleed/burn/poison) at the start of your turn is settled as a kill — your strike no longer plays against a corpse.
+- One monster at a time: a hunter's domain in a raid lands on the current target only.
+- Red Gate / Double Dungeon: affiliates can neither be hired into nor accept into a sealed gate.
+- Buttons: affiliate offers (Accept / Reject); attack patterns (Equip after buying, Equip on /attacks all).
+- `/play`: second raw YouTube search (no "official audio" bias) and a flagged closest match before giving up.
+
 ## 1.0.153 — Push #96h-v
 - Bot added to a group: says thanks (+ how to /start it). It stays only if added by an Owner (auto-tracked like `/joingc`, per-bot) or the GC is tracked for it; otherwise it leaves.
 - A mod/owner leaving a non-main GC: all bots leave too unless an Owner is still inside; if an Owner left, all bots leave regardless. Tracking entries dropped, serials freed.

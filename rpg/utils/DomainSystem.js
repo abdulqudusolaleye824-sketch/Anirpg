@@ -560,6 +560,7 @@ function findBattle(player, sender, db) {
       const floor = g.currentFloor;
       let enemies = (g.monsters || []).filter(mm => mm.floor === floor && !mm.defeated && (mm.hp || 0) > 0);
       if (!enemies.length && g.boss && !g.boss.defeated && (g.boss.hp || 0) > 0) enemies = [g.boss];
+      if (enemies.length > 1) enemies = [enemies[0]]; // Push #96h-w: ONE monster is fought at a time — the domain's burst/statuses land on the current target only
       return { kind: 'gate', arena: g, allies, enemies, gate: g };
     }
   } catch (e) {}

@@ -91,6 +91,7 @@ module.exports = {
 
       const raid = resolved.gate.raid;
       if (!raid) return sock.sendMessage(chatId, { text: '❌ Party raid not active.' }, { quoted: msg });
+      { const _sr = GR.sealedReason(resolved.gate); if (_sr) return sock.sendMessage(chatId, { text: `${_sr}\n\n_No affiliate can be hired into a sealed gate._` }, { quoted: msg }); } // Push #96h-w
 
       if (raid.leader !== sender && normaliseJid(keyData.ownedBy) !== normaliseJid(sender)) {
         return sock.sendMessage(chatId, { text: '❌ Only the party leader can hire affiliates!' }, { quoted: msg });
@@ -133,6 +134,22 @@ module.exports = {
       const targetPlayer = db.users?.[targetJid];
       const targetName   = targetPlayer?.name || targetJid.split('@')[0];
 
+      // Push #96h-w: Accept / Reject buttons on the offer.
+      const _offerText = [
+          ...(pro ? [UI.PRO_BAR, `🤝 *AFFILIATE HIRE OFFER SENT* 💎`, UI.PRO_BAR] : [`🤝 *AFFILIATE HIRE OFFER SENT*`, UI.FREE_BAR]),
+          `👑 Leader: *${player.name}*`,
+          `👤 Target: *@${targetJid.split('@')[0]}*`,
+          `🔑 Party Key: \`${activeKey}\``,
+          ``,
+          `📊 *LOOT SPLIT:*`,
+          `• Party/Leader Cut: *${leaderPct}%*`,
+          `• Affiliate Cut: *${affiliatePct}%*`,
+          FRAME,
+          `📩 *@${targetJid.split('@')[0]}*, tap a button (or */affiliate accept* / */affiliate reject*).`,
+          FRAME,
+          ...(pro ? [UI.PRO_MINI, `💎 *PRO DEAL* — ${affiliatePct}% cut offered`] : [UI.upsell()]),
+        ].join('\n');
+      try { const B = require('../../utils/buttons'); if (B && B.sendButtons) { await B.sendButtons(sock, chatId, { text: _offerText, mentions: [targetJid], buttons: B.quickReplies([[`✅ Accept`, `/affiliate accept`], [`❌ Reject`, `/affiliate reject`]]) }, msg); return; } } catch (e) {}
       return sock.sendMessage(chatId, {
         text: [
           ...(pro ? [UI.PRO_BAR, `🤝 *AFFILIATE HIRE OFFER SENT* 💎`, UI.PRO_BAR] : [`🤝 *AFFILIATE HIRE OFFER SENT*`, UI.FREE_BAR]),
@@ -344,6 +361,8 @@ module.exports = {
             delete db.affiliateOffers[sender]; saveDatabase();
             return sock.sendMessage(chatId, { text: `❌ ${GR.FALLEN_TEXT}` }, { quoted: msg });
           }
+          // Push #96h-w: a sealed gate (Red Gate / Double Dungeon) admits NOBODY — not even a hired affiliate.
+          { const _sr = GR.sealedReason(resolved.gate); const _in = (resolved.gate.raid.members || []).some(m => normaliseJid(m.id) === normaliseJid(sender)); if (_sr && !_in) { delete db.affiliateOffers[sender]; saveDatabase(); return sock.sendMessage(chatId, { text: `${_sr}\n\n_The affiliate offer was cancelled._` }, { quoted: msg }); } }
           if (resolved.gate.raid.status === 'recruiting' || resolved.gate.raid.status === 'active') { _seated = !!GR.ensureMember(resolved.gate, sender, db); try { if (db.activeGates && db.activeGates[resolved.gate.id]) db.activeGates[resolved.gate.id] = resolved.gate; } catch (e) {} }
         } else if (resolved.ok) {
           try { if (!Array.isArray(resolved.gate.raiders)) resolved.gate.raiders = []; if (!resolved.gate.raiders.includes(sender)) resolved.gate.raiders.push(sender); _seated = true; } catch (e) {}

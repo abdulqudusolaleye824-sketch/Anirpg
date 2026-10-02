@@ -575,9 +575,10 @@ module.exports = {
       }
       // Show status at start of turn — tick damage/effects then display
       let _gateStatus = null;
-      let _tickLogs = [];
+      let _tickLogs = []; let _statusKilled = false;
       try {
         const UCgTick = require('../../rpg/utils/UnifiedCombat');
+        _statusKilled = false;
         // Push #92: pack context — other living Monsters on this raid team.
         let _packAllies = [];
         try { _packAllies = (gate.raid?.members || []).map(m => db.users[m.id] || Object.values(db.users).find(x => x && x.jid && GR.GKM.normaliseJid(x.jid) === GR.GKM.normaliseJid(m.id))).filter(Boolean); } catch (e) {}
@@ -588,6 +589,8 @@ module.exports = {
           const tl2 = UCgTick.tickStatuses(_tgt);
           target.hp = Math.max(0, _tgt.stats.hp); // write tick damage back — the temp object is discarded
           if (tl2 && tl2.length) _tickLogs = _tickLogs.concat(tl2);
+          // Push #96h-w: the beast died to its status this tick → no strike plays; the kill settles below.
+          if (target.hp <= 0 && !target.defeated) { _statusKilled = true; _tickLogs.push(`⚔️ *${player.name}* lowers their weapon — nothing left to strike.`); }
         }
       } catch(e){}
       _gateStatus = statusSummary(player) || (target && target.statusEffects ? statusSummary(target) : null);
@@ -659,7 +662,9 @@ module.exports = {
       if (_grCanAct.canAct) {
       let result;
       let atkPattern = null;
-      if (patternId) {
+      if (_statusKilled) {
+        result = { damage: 0, isCrit: false, statusKill: true }; // Push #96h-w: no strike on a corpse
+      } else if (patternId) {
         const DBp = require('../../rpg/utils/AttackPatternDB');
         const UCg = require('../../rpg/utils/UnifiedCombat');
         const atk = DBp.generateAttack(patternId);
@@ -734,7 +739,7 @@ module.exports = {
       }
       const atkTitle = atkPattern ? `🥋 *ATTACK PATTERN #${atkPattern.id} — ${atkPattern.name}* [${atkPattern.rank}]` : `⚔️ *PLAYER ATTACK*`;
       const monWrap = { name: target.name, stats: { hp: target.hp, maxHp: target.maxHp }, statusEffects: target.statusEffects };
-      await UCgFlow.playTurn(sock, chatId, {
+      if (!_statusKilled) await UCgFlow.playTurn(sock, chatId, {
         attacker: player, defender: monWrap, move: _gmMove, result: _gmResult,
         tag: atkTitle, defenderBar: 'monster', gapMs: 600,
       });
@@ -771,7 +776,7 @@ module.exports = {
       // below) — when the player is stunned this whole block is skipped and
       // the counter-attack epilogue still reads _petLines.
       try {
-        const _ps = PetCombat.abilityStrike(sender, target, { owner: player });
+        const _ps = _statusKilled ? null : PetCombat.abilityStrike(sender, target, { owner: player });
         if (_ps) _petLines.push(_ps.line);
       } catch (e) {}
 

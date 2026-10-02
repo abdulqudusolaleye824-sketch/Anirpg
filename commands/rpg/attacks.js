@@ -181,6 +181,18 @@ module.exports = {
       const chunk = lines.slice(0, 20);
       const more  = lines.length > 20 ? `\n...and ${lines.length - 20} more` : '';
 
+      // Push #96h-w: Equip buttons for the first unequipped patterns you own.
+      try {
+        const _un = ap.owned.filter(id => !ap.equipped.includes(id)).slice(0, 3);
+        if (Buttons && _un.length && ap.equipped.length < MAX_EQUIPPED) {
+          const _allText = [
+            ...(pro ? [UI.PRO_BAR, `🥋 *ALL OWNED PATTERNS (${ap.owned.length})* 💎`, UI.PRO_BAR] : [`🥋 *ALL OWNED PATTERNS (${ap.owned.length})*`, UI.FREE_BAR]),
+            `✅ = equipped · slots ${ap.equipped.length}/${MAX_EQUIPPED}`, ``, ...chunk, more, FRAME,
+            ...(pro ? [UI.PRO_MINI, `💎 *PRO ARSENAL* — ${ap.owned.length} owned`] : [UI.upsell()]),
+          ].join('\n');
+          return await Buttons.sendButtons(sock, chatId, { text: _allText, buttons: Buttons.quickReplies(_un.map(id => [`⚔️ Equip #${id}`, `/attacks equip ${id}`])) }, msg);
+        }
+      } catch (e) {}
       return sock.sendMessage(chatId, {
         text: [
           ...(pro ? [UI.PRO_BAR, `🥋 *ALL OWNED PATTERNS (${ap.owned.length})* 💎`, UI.PRO_BAR] : [`🥋 *ALL OWNED PATTERNS (${ap.owned.length})*`, UI.FREE_BAR]),
@@ -366,6 +378,15 @@ module.exports = {
       const atk = result.attack;
       const re  = DB.RANK_EMOJI[atk.rank];
 
+      // Push #96h-w: tap-to-equip right after buying.
+      try { if (Buttons) { const _buyCard = [
+          ...(pro ? [UI.PRO_BAR, `🥋 *ATTACK PATTERN ACQUIRED* 💎`, UI.PRO_BAR] : [`🥋 *ATTACK PATTERN ACQUIRED*`, UI.FREE_BAR]),
+          ``, `${re} *#${atk.id} — ${atk.name}*`, `Rank: ${atk.rank}-Rank | ×${atk.dmgMult} ATK`,
+          atk.effect ? `${atk.effect.emoji} ${atk.effect.label} (${atk.effect.chance}% | ${atk.effect.duration}t)` : `No special effect`,
+          ``, `_${atk.flavour}_`, ``, `📌 /attack ${num} — use in active combat (once equipped)`, FRAME,
+          ...(pro ? [UI.PRO_MINI, `💎 *PRO ARSENAL* — #${atk.id} · ${ap.owned.length} owned`] : [UI.upsell()]),
+        ].join('\n');
+        return await Buttons.sendButtons(sock, chatId, { text: _buyCard, buttons: Buttons.quickReplies([[`⚔️ Equip #${num}`, `/attacks equip ${num}`], [`📋 My patterns`, `/attacks all`]]) }, msg); } } catch (e) {}
       return sock.sendMessage(chatId, {
         text: [
           ...(pro ? [UI.PRO_BAR, `🥋 *ATTACK PATTERN ACQUIRED* 💎`, UI.PRO_BAR] : [`🥋 *ATTACK PATTERN ACQUIRED*`, UI.FREE_BAR]),
@@ -383,6 +404,7 @@ module.exports = {
         ].join('\n'),
       }, { quoted: msg });
     }
+    // (Push #96h-w: the ACQUIRED card above is sent with an Equip button — see _buyCard)
 
     // ── Push #88d: /attacks sell <#> — 10% of what you paid (a 90% loss) ──────
     if (sub === 'sell') {
