@@ -11,7 +11,7 @@ const AWAKENING_RANKS = {
     label: 'E-Rank', emoji: '⚫', color: 'grey',
     gateAccess: ['F', 'E'],
     statMultiplier: 1.0,
-    spawnChance: 0.10, // 10% of players awaken as E-rank
+    spawnChance: 0.22, // 22% (Push #96h-z8: rarity curve — A-rank was 19.9%)
     baseStats: { hp: 80, atk: 8, def: 5, speed: 90, maxEnergy: 80 },
     description: 'The weakest awakeners. Most people who awaken are E-rank.',
     xpMultiplier: 1.0,
@@ -20,7 +20,7 @@ const AWAKENING_RANKS = {
     label: 'D-Rank', emoji: '🟤', color: 'brown',
     gateAccess: ['F', 'E', 'D'],
     statMultiplier: 1.3,
-    spawnChance: 0.10, // 10%
+    spawnChance: 0.32, // 32% (Push #96h-z8)
     baseStats: { hp: 110, atk: 12, def: 8, speed: 95, maxEnergy: 100 },
     description: 'Below-average awakeners. Still weak, but more potential.',
     xpMultiplier: 1.1,
@@ -29,7 +29,7 @@ const AWAKENING_RANKS = {
     label: 'C-Rank', emoji: '🔵', color: 'blue',
     gateAccess: ['F', 'E', 'D', 'C'],
     statMultiplier: 1.7,
-    spawnChance: 0.35, // 35%
+    spawnChance: 0.30, // 30% (Push #96h-z8)
     baseStats: { hp: 150, atk: 18, def: 12, speed: 100, maxEnergy: 120 },
     description: 'Mid-tier awakeners. Respected, but not feared.',
     xpMultiplier: 1.2,
@@ -38,7 +38,7 @@ const AWAKENING_RANKS = {
     label: 'B-Rank', emoji: '🟢', color: 'green',
     gateAccess: ['F', 'E', 'D', 'C', 'B'],
     statMultiplier: 2.2,
-    spawnChance: 0.25, // 25%
+    spawnChance: 0.13, // 13% (Push #96h-z8)
     baseStats: { hp: 200, atk: 26, def: 18, speed: 108, maxEnergy: 145 },
     description: 'Above-average awakeners. Known by name in the industry.',
     xpMultiplier: 1.35,
@@ -47,7 +47,7 @@ const AWAKENING_RANKS = {
     label: 'A-Rank', emoji: '🟡', color: 'gold',
     gateAccess: ['F', 'E', 'D', 'C', 'B', 'A'],
     statMultiplier: 3.0,
-    spawnChance: 0.199, // 19.9% (Push #68: 17% + the 2.9% freed by the S nerf)
+    spawnChance: 0.029, // 2.9% (Push #96h-z8: A-rank is rare again — was 19.9%)
     baseStats: { hp: 280, atk: 38, def: 28, speed: 118, maxEnergy: 175 },
     description: 'Elite awakeners. Roughly 20% of hunters.',
     xpMultiplier: 1.5,

@@ -90,6 +90,8 @@ module.exports = {
     let code = (args[0] || '').toUpperCase().replace(/^--/, '').trim();
     let action = (args[1] || '').toLowerCase() || 'enter';
     let skillArg = args.slice(2).join(' ');
+    // Push #96h-z8: hunters on Jeju Island cannot act in gate raids at all (not only enter/join) until /eventafk.
+    try { const _db = typeof getDatabase === 'function' ? getDatabase() : null; const _pl = _db && _db.users ? _db.users[sender] : null; const _a0 = String(code || '').toLowerCase(), _a1 = String(action || '').toLowerCase(); if (!['status', 'help'].includes(_a0) && !['status', 'help'].includes(_a1)) { const _eb = require('../../rpg/utils/EventSystem').blocksRaids(_db, _pl); if (_eb) return sock.sendMessage(chatId, { text: _eb }, { quoted: msg }); } } catch (e) {}
 
     // Shorthand: /gateraid attack  OR  /gateraid skill <name>  OR  /attack routing via attacks.js
     // Also support /attack or /attack <id> directly in gate raid (via attacks.js detective)

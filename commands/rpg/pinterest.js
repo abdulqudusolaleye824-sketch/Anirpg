@@ -243,6 +243,7 @@ module.exports = {
 
   async execute(sock, msg, args, getDatabase, saveDatabase, sender) {
     const chatId = msg.key.remoteJid;
+    const db = (typeof getDatabase === 'function' ? getDatabase() : null) || {}; // Push #96h-z8: fix 'db is not defined' (no-repeat history needs the db)
 
     if (!args.length) {
       return sock.sendMessage(chatId, {

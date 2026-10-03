@@ -39,7 +39,9 @@ const BEAST_ANCHOR = { atk: 90, hp: 900, def: 35, speed: 60 }; // beasts are bui
 const ELVL_STEP = 0.035, ELVL_MAX = 60; // Lv.11 ≈ D-Rank beast, Lv.21 ≈ C … Lv.51 ≈ S
 const EXP_KILL = { E: 20, D: 30, C: 45, B: 65, A: 90, S: 120 }, EXP_BOSS = 300, EXP_HUNTER = 60;
 const ARTIFACT_DROP = 0.15, ARTIFACT_SLOTS = 6, ARTIFACT_SPAWN_MS = Math.floor(24 * 60 * 60 * 1000 / 5); // 5 island spawns per day
-const AFK_LOCK_MS = 10 * 60 * 1000; // once you are in (join / back from AFK) you fight for 10 min before /eventafk
+const AFK_LOCK_MS = 10 * 60 * 1000;
+const TF_COOLDOWN_MS = 60 * 60 * 1000; // Push #96h-z7: Monster transformation (cast or innate rampage) once per hour on the island — 30 min for Pro
+const MON_FX_TICK_MS = 20 * 1000; // beast statuses count down once per 20 s, not once per hit (many hunters hit the same beast) // once you are in (join / back from AFK) you fight for 10 min before /eventafk
 const HUNTER_REGEN_IDLE_MS = 60 * 1000, HUNTER_REGEN_PCT = 0.05; // idle hunters heal 5% per minute
 function _elvlMult(L) { return 1 + (Math.max(1, L) - 1) * ELVL_STEP; }
 function _erank(L) { return RANKS[Math.min(5, Math.floor((Math.max(1, L) - 1) / 10))]; }
@@ -138,6 +140,7 @@ function _mWrap(m) { if (!m.statusEffects) m.statusEffects = []; if (!m.tempBuff
 function _tickEntity(wrap, lines) { try { const UC = require('./UnifiedCombat'); const logs = UC.tickStatuses(wrap) || []; for (const l of logs) if (l) lines.push(typeof l === 'string' ? l : (l.text || String(l))); } catch (e) {} }
 function _applyStatuses(res, attacker, defender, lines, extra = []) {
   const out = []; if (!res || res.missed) return out;
+  { const dr = defender && (defender._real || defender); const dd = dr && dr.eventDomain ? domainActive(dr) : null; if (dd) { lines.push(`🌌 *${defender.name}* stands inside *${dd.name}* — no new status can take hold.`); return out; } }
   let UC; try { UC = require('./UnifiedCombat'); } catch (e) { return out; }
   const list = []; const sk = res.skillUsed;
   if (sk && sk.effect && typeof sk.effect === 'object' && sk.effect.type) list.push(sk.effect);
@@ -148,7 +151,9 @@ function _applyStatuses(res, attacker, defender, lines, extra = []) {
 }
 // ── Push #96h-z3: event domains stand 20 min / N turns, affect every foe the owner meets, and CLASH ──
 function domainActive(player) { const d = player && player.eventDomain; if (!d || !d.activeUntil) return null; if (d.activeUntil < Date.now() || (d.turnsLeft != null && d.turnsLeft <= 0)) { d.activeUntil = 0; return null; } return d; }
-function _domainTurn(player, lines) { const d = domainActive(player); if (!d) return; if (d.turnsLeft != null) { d.turnsLeft -= 1; if (d.turnsLeft <= 0) { d.activeUntil = 0; lines.push(`🌫️ *${d.name}* fades — its turns are spent.`); } else lines.push(`🌌 _${d.name}_ — ${d.turnsLeft} turn${d.turnsLeft === 1 ? '' : 's'} left`); } }
+function _domainTurn(player, lines, P = null) { const d = domainActive(player); if (!d) return;
+  if (P && P.stats && P.stats.hp > 0 && P.stats.hp < P.stats.maxHp) { const heal = Math.floor(P.stats.maxHp * 0.10); P.stats.hp = Math.min(P.stats.maxHp, P.stats.hp + heal); lines.push(`💚 *${d.name}* mends ${_name(player)} +${heal} (10%/turn)`); }
+  if (d.turnsLeft != null) { d.turnsLeft -= 1; if (d.turnsLeft <= 0) { d.activeUntil = 0; lines.push(`🌫️ *${d.name}* fades — its turns are spent.`); } else lines.push(`🌌 _${d.name}_ — ${d.turnsLeft} turn${d.turnsLeft === 1 ? '' : 's'} left`); } }
 function _domainStatuses(player) { try { const DS = require('./DomainSystem'); const e = DS.scaledEffect(player); return (e && e.statuses) || []; } catch (e) { return []; } }
 function _refine(player) { let q = 100, pw = 0; try { q = require('./ClassPower').quality(player); } catch (e) {} try { pw = require('./DomainSystem').power(player); } catch (e) {} const d = player.eventDomain || {}; return { q, pw: pw + (d.ownLevel || DOMAIN_LEVEL) * 4 }; }
 function domainClash(attacker, victim) {
@@ -156,6 +161,15 @@ function domainClash(attacker, victim) {
   const ra = _refine(attacker), rv = _refine(victim); const win = ra.q !== rv.q ? ra.q > rv.q : ra.pw > rv.pw;
   const loser = win ? victim : attacker; loser.eventDomain.activeUntil = 0; loser.eventDomain.turnsLeft = 0;
   return { win, text: `🌌 *DOMAIN CLASH!* ${_name(attacker)}'s *${a.name}* meets ${_name(victim)}'s *${v.name}* — the more refined domain wins: *${win ? a.name : v.name}* holds the field; *${win ? v.name : a.name}* shatters.` };
+}
+// Push #96h-z7: transformation cooldown (cast or innate surge) — 1 h, Pro 30 min.
+function _tfCdMs(st) { return st && st._pro ? TF_COOLDOWN_MS / 2 : TF_COOLDOWN_MS; }
+function _tfGuard(P, st, lines) {
+  if (!P.transform) return; const t = P.transform;
+  if (t._evAt) return; // already accounted
+  const left = _tfCdMs(st) - (Date.now() - (st.tfAt || 0));
+  if (st.tfAt && left > 0) { try { require('./Transformation').end(P, false); } catch (e) { P.transform = null; } lines.push(`🧬 The surge fizzles — ${_name(P)}'s transformation is recovering (${Math.ceil(left / 60000)} min left).`); return; }
+  t._evAt = Date.now(); st.tfAt = Date.now();
 }
 function _mit(def, atk) { return Math.min(0.70, def / Math.max(1, def + atk)); }
 function _dmg(atk, def, mult = 1) { return Math.max(5, Math.floor(atk * (1 - _mit(def, atk)) * mult * (0.9 + Math.random() * 0.2))); }
@@ -266,8 +280,10 @@ function _patternStrike(player, targetWrap, pat) {
 function supportSkill(db, player, skillName) {
   const g = _guard(db, player); if (g.error) return { ok: false, error: g.error };
   const P = _avatar(db, player); // Push #96h-z: heals/shields land on the EVENT HP pool
+  try { const TF = require('./Transformation'); const SC = require('./SkillCatalog'); const rs = SC.resolveSkill(player, skillName, { allowLibrary: true }); if (rs.ok && TF.isTransformSkill(rs.entry || rs.skill)) { const left = _tfCdMs(g.st) - (Date.now() - (g.st.tfAt || 0)); if (g.st.tfAt && left > 0 && !(P.transform && P.transform._evAt)) return { ok: false, error: `🧬 Your transformation is recovering — *${Math.ceil(left / 60000)} min* left (1 h on the island, 30 min for Pro).` }; } } catch (e) {}
   let r = null; try { const GR = require('../dungeons/GateRaid'); r = GR.supportCast(P, _pid(P), P, _pid(P), skillName, null, db); } catch (e) { r = { ok: false, error: e.message }; }
   if (!r || !r.ok) return { ok: false, error: (r && r.error) || 'That skill cannot be cast here.', notSupport: !!(r && r.notSupport) };
+  { const tl = []; _tfGuard(P, g.st, tl); if (tl.length) r.lines = [...(r.lines || []), ...tl]; }
   _commit(P); g.st.skillsUsed++;
   return { ok: true, text: [...(g.note ? [g.note] : []), `✨ *${_name(player)}* casts *${r.skill.name}* on the island`, ...(r.lines || []), `❤️ ${_name(player)}: ${g.st.hp}/${P.stats.maxHp}`].join('\n') };
 }
@@ -288,6 +304,7 @@ function join(db, player) {
   // Push #96h-x: hunters of ALL levels may join (the event domain itself is a Lv.10 domain).
   const st = _p(db, player); if (st.joined) return { ok: false, error: 'You are already on the island — /event status.' };
   st.joined = true; st.joinedAt = Date.now(); st.afk = false; st.activeSince = Date.now(); st.lastAct = Date.now(); st.regenMark = Date.now();
+  const pulledIn = pullFromDungeons(db, player); // Push #96h-z8: joining the island pulls you out of any raid / dungeon you were in
   const d = domainState(player); let arch = null;
   try { const DS = require('./DomainSystem'); const cls = (player.class || player.className || 'Hunter'); const idx = Math.abs([...String(player.jid || player.name || '')].reduce((a, c) => a + c.charCodeAt(0), 0)) % 10; const eff = DS.effectFor(cls, idx); d.archetype = eff.arch && eff.arch.key; d.suggested = eff.name; arch = eff.arch; } catch (e) {}
   // Push #96h-t: hunters who ALREADY own a domain keep it — same name, description and level on the island (never below the event's Lv.10).
@@ -300,6 +317,7 @@ function join(db, player) {
   if (d.setup === 'name') msgs.push(`✍️ *Name your domain.* Reply with the name (3–40 characters).`);
   else if (d.setup === 'desc') msgs.push(`✍️ *Describe ${d.name}.* Reply with the description (5–220 characters).`);
   else msgs.push(`Your domain *${d.name}* is ready — */event domain* to expand it. Attack: */event attack*, or tag a hunter in your attack to duel them.`);
+  if (pulledIn.length) msgs.push(`🏝️ Pulled out of: ${pulledIn.join(', ')} — the island holds you now. */eventafk* before you raid again.`);
   return { ok: true, messages: msgs };
 }
 // Plain replies after /ejoin are consumed here (event GC or DM). Returns a reply string or null.
@@ -336,15 +354,17 @@ function attackMonster(db, player, targetId, skillName = null) {
   if (m && m.defeated) return { ok: false, error: `*${m.name}* is already dead.` };
   if (!m) { const live = alive(ev).filter(x => !x.isBoss); m = live.sort((a, b) => a.hp / a.maxHp - b.hp / b.maxHp)[0] || alive(ev)[0]; }
   if (!m) return { ok: false, error: 'Nothing left alive on this wave.' };
+  st.lastTarget = m.id;
   if (m.isBoss && alive(ev).length > 1) return { ok: false, error: `👑 *${m.name}* only comes out when the ${alive(ev).length - 1} remaining beasts are dead.` };
   const P = _avatar(db, player); const h = { ...P.stats, crit: P.stats.critChance }; const lines = g.note ? [g.note] : [];
-  const MW = _mWrap(m); _tickEntity(P, lines); _tickEntity(MW, lines); // Push #96h-z3: burns/bleeds/regen tick for both
+  const MW = _mWrap(m); _tickEntity(P, lines); _tfGuard(P, st, lines);
+  if (Date.now() - (m._fxTickAt || 0) >= MON_FX_TICK_MS) { m._fxTickAt = Date.now(); _tickEntity(MW, lines); } // Push #96h-z7: beast statuses last their turns in TIME, not per hit
   if (m.hp <= 0) { // Push #96h-z5: a DOT kill belongs to the hunter who inflicted the effect
     const dots = (m.statusEffects || []).filter(x => x && x.by); const dot = dots[dots.length - 1]; const killer = dot ? (_find(db, dot.by) || player) : player; const ks = _p(db, killer);
     _awardKill(db, ev, m, killer, ks, lines, dot ? `${String(dot.type).toUpperCase()} (inflicted by ${_name(killer)})` : 'its wounds');
     if (!alive(ev).length) lines.push(_nextWave(db, ev)); else if (alive(ev).length === 1 && alive(ev)[0].isBoss) lines.push(`👑 *The wave boss emerges:* ${alive(ev)[0].name} — ${alive(ev)[0].maxHp.toLocaleString()} HP.`);
     _commit(P); return { ok: true, text: lines.join('\n'), tailText: '', flow: null, monster: m }; }
-  { const UC = require('./UnifiedCombat'); const ca = UC.canAct(P); if (!ca.canAct) { _domainTurn(player, lines); _commit(P); const fx = (P.statusEffects || []).find(e => String(e.type || '').toLowerCase() === { stunned: 'stun', frozen: 'freeze', paralyzed: 'paralyze' }[ca.reason]); return { ok: true, text: [...lines, `😵 *${_name(player)}* is ${ca.reason}${fx && fx.duration ? ` (${fx.duration} more turn${fx.duration === 1 ? '' : 's'})` : ''} and cannot act this turn.${P.stats.hp <= 0 ? '' : ' The beast watches…'}`].join('\n'), tailText: '', flow: null, monster: m }; } }
+  { const UC = require('./UnifiedCombat'); const ca = UC.canAct(P); if (!ca.canAct) { _domainTurn(player, lines, P); _commit(P); const fx = (P.statusEffects || []).find(e => String(e.type || '').toLowerCase() === { stunned: 'stun', frozen: 'freeze', paralyzed: 'paralyze' }[ca.reason]); return { ok: true, text: [...lines, `😵 *${_name(player)}* is ${ca.reason}${fx && fx.duration ? ` (${fx.duration} more turn${fx.duration === 1 ? '' : 's'})` : ''} and cannot act this turn.${P.stats.hp <= 0 ? '' : ' The beast watches…'}`].join('\n'), tailText: '', flow: null, monster: m }; } }
   if (P.stats.hp <= 0) { st.deaths++; st.diedAt = Date.now(); st.statusEffects = []; st.tempBuffs = {}; st.transform = null; P.transform = null; _commit(P); return { ok: true, text: [...lines, `💀 *${_name(player)}* bleeds out! Respawn in ${st._pro ? 30 : 60} min.`].join('\n'), tailText: '', flow: null, monster: m }; }
   // Push #96h-c: AUTO-WIRED. The strike runs through the real raid engine (gear, weapon,
   // title, passives, buffs, class skills). No skill named → the strongest READY skill the
@@ -391,7 +411,7 @@ function attackMonster(db, player, targetId, skillName = null) {
     if (P.stats.hp <= 0) { st.deaths++; st.diedAt = Date.now(); P.stats.hp = 0; st.statusEffects = []; st.tempBuffs = {}; lines.push(`💀 *${_name(player)} was slain by ${m.name}!* Respawn in ${st._pro ? 30 : 60} min.`); }
     }
   }
-  _domainTurn(player, lines);
+  _domainTurn(player, lines, P);
   _commit(P);
   const _pre = new Set([...(flow.preLines || []), ...statusLines]);
   const tail = lines.filter(l => l !== strikeLine && !(flow.counter && l === flow.counter.line) && !_pre.has(l));
@@ -445,7 +465,7 @@ function _strike(db, ev, atkP, defP, skillName, lines) { // atkP/defP are event 
   as.dmg += dmg; ds.dmgTaken += dmg;
   lines.push(`${res.skillUsed ? `✨ *${res.skillUsed.name}*` : '🗡️'} *${_name(atkP)}* → *${_name(defP)}*: *${dmg.toLocaleString()}*${crit ? ' 💥CRIT' : ''}${res.missed ? ' (missed)' : ''}`);
   _applyStatuses(res, atkP, defP, lines, domainActive(_ar) ? _domainStatuses(_ar) : []);
-  _domainTurn(_ar, lines);
+  _domainTurn(_ar, lines, atkP);
   return dmg;
 }
 function resolvePending(db, victimId) {
@@ -481,7 +501,8 @@ function fleePending(db, player) {
   const A = _find(db, open.attackerId); const st = _p(db, player);
   // Push #96h-z4: no escape from a hunter whose domain stands — unless YOUR domain stands too (break theirs first).
   if (A && domainActive(A) && !domainActive(player)) return { ok: false, error: `🌌 *${domainActive(A).name}* holds you — you cannot flee from ${_name(A)} while their domain stands. Counter, dodge, or open your own domain.` };
-  // Flee = speed + event level + luck (never guaranteed).
+  if (domainActive(player)) { delete _pend(ev)[me]; st.flees = (st.flees || 0) + 1; return { ok: true, fled: true, pct: 100, text: `🏃 *${_name(player)}* steps back into *${domainActive(player).name}* — ${A ? `${_name(A)}'s` : 'the'} strike cannot follow. (A standing domain guarantees the escape.)`, attackerId: open.attackerId }; }
+  // Flee = speed + event level + luck (never guaranteed without a domain).
   const vs = eventStats(db, player), as = A ? eventStats(db, A) : { speed: vs.speed, level: vs.level };
   const sv = Math.max(1, vs.speed), sa = Math.max(1, as.speed); const luck = Math.round((Math.random() - 0.5) * 20);
   const pct = Math.round(Math.max(10, Math.min(90, 40 + ((sv - sa) / (sv + sa)) * 50 + (vs.level - as.level) * 2 + luck)));
@@ -539,7 +560,7 @@ function toggleAfk(db, player) {
 function domainState(player) { if (!player.eventDomain) player.eventDomain = { name: null, desc: null, casts: 0, lastCast: 0, activeUntil: 0 }; return player.eventDomain; }
 function setDomainName(player, name) { const n = String(name || '').trim().slice(0, 40); if (n.length < 3) return { ok: false, error: 'Name must be 3–40 characters.' }; domainState(player).name = n; return { ok: true, text: `🌌 Event domain named *${n}*.` }; }
 function setDomainDesc(player, desc) { const d = String(desc || '').trim().slice(0, 220); if (d.length < 5) return { ok: false, error: 'Description must be 5–220 characters.' }; domainState(player).desc = d; return { ok: true, text: `📜 Event domain description saved.` }; }
-function castDomain(db, player, chatId) {
+function castDomain(db, player, chatId, victim = null) {
   if (!isEventGC(db, chatId)) return { ok: false, error: 'Your event domain only answers inside the Events GC.' };
   const g = _guard(db, player); if (g.error) return { ok: false, error: g.error }; const { ev, st } = g;
   const d = domainState(player);
@@ -549,15 +570,31 @@ function castDomain(db, player, chatId) {
   if (Date.now() - (d.lastCast || 0) < _cdMs) return { ok: false, error: `Your domain is still recovering — ${Math.ceil((_cdMs - (Date.now() - d.lastCast)) / 60000)} min left${st._pro ? ' (Pro: 30 min cooldown)' : ' (60 min; Pro 30)'}.` };
   const energy = player.stats.energy || 0; if (energy < DOMAIN_ENERGY) return { ok: false, error: `Domain Expansion costs *${DOMAIN_ENERGY} ${player.energyType || 'energy'}* — you have ${energy}.` };
   player.stats.energy = energy - DOMAIN_ENERGY; d.lastCast = Date.now(); d.activeUntil = Date.now() + DOMAIN_EFFECT_MS; d.casts++; st.domainCasts++;
-  try { d.turnsLeft = require('./DomainSystem').turnsFor(d.own ? (d.ownLevel || DOMAIN_LEVEL) : DOMAIN_LEVEL); } catch (e) { d.turnsLeft = 6; } // Push #96h-z3: Lv.10 → 6 turns, higher domains more; 20 min cap
-  const h = _realStats(player); let hit = 0, total = 0; const until = Date.now() + DOMAIN_EFFECT_MS; // Push #96h-z: the domain keeps its real buff and weight
-  const _lvMult = d.own ? Math.min(2, 1 + (Math.max(0, (d.ownLevel || DOMAIN_LEVEL) - DOMAIN_LEVEL)) * 0.05) : 1; // Push #96h-t: a carried domain hits harder per level above 10 (cap ×2)
-  for (const m of alive(ev)) { const burst = Math.floor(Math.min(m.maxHp * 0.12 * _lvMult, h.atk * 3 * _lvMult)); m.hp = Math.max(1, m.hp - burst); m.lastHit = Date.now(); m._regenAt = 0; m.domDebuffUntil = until; hit++; total += burst; }
-  let hunters = 0; const me = player.jid || player.id;
-  for (const u of Object.values(db.users || {})) { if (!u || u === player || (u.jid || u.id) === me) continue; const us = u.eventStats; if (!us || us.id !== ev.id || us.afk || _isDead(us)) continue; us.debuffUntil = until; hunters++; }
+  try { const rd = player.domain; if (rd && rd.unlocked) { d.own = true; d.ownLevel = Math.max(DOMAIN_LEVEL, Number(rd.level) || 1); } } catch (e) {} // Push #96h-z7: always the CURRENT real domain level
+  try { d.turnsLeft = require('./DomainSystem').turnsFor(d.own ? (d.ownLevel || DOMAIN_LEVEL) : DOMAIN_LEVEL); } catch (e) { d.turnsLeft = 6; } // Lv.10 → 6 turns, +1 per 2 levels; 20 min cap
+  st.statusEffects = []; // Push #96h-z7: expanding your domain erases every status on you; inside it none can take hold
+  const h = _realStats(player); let hit = 0, total = 0; const until = Date.now() + DOMAIN_EFFECT_MS; // the domain keeps its real buff and weight
+  const _lvMult = d.own ? Math.min(2, 1 + (Math.max(0, (d.ownLevel || DOMAIN_LEVEL) - DOMAIN_LEVEL)) * 0.05) : 1; // a carried domain hits harder per level above 10 (cap ×2)
+  let burstPct = 150; try { const e = require('./DomainSystem').scaledEffect(player); if (e && e.burst) burstPct = e.burst; } catch (e) {}
+  const burst = Math.floor(h.atk * (burstPct / 100) * _lvMult * 3); // ALL of the opening burst lands on ONE target
+  let burstLine = ''; let hunters = 0; const me = _pid(player);
+  if (victim && victim !== player) { // tagged hunter: full burst + domain statuses on THEM
+    const V = _avatar(db, victim); const vs = _p(db, victim);
+    const dmg = Math.max(1, Math.floor(burst * (1 - _mit(V.stats.def, h.atk)))); V.stats.hp = Math.max(0, V.stats.hp - dmg); vs.dmgTaken += dmg; total = dmg; vs.debuffUntil = until; hunters = 1;
+    const fxl = []; _applyStatuses({ missed: false, statuses: [] }, _avatar(db, player), V, fxl, _domainStatuses(player));
+    burstLine = `💥 Opening burst: *${_name(victim)}* takes *${dmg.toLocaleString()}* (${V.stats.hp}/${V.stats.maxHp} HP)${fxl.length ? '\n' + fxl.join('\n') : ''}`;
+    if (V.stats.hp <= 0) { vs.deaths++; vs.diedAt = Date.now(); vs.statusEffects = []; vs.tempBuffs = {}; const stolen = Math.floor((vs.points || 0) * STEAL_PCT); st.points += stolen + HUNTER_KILL_BONUS; st.hunterKills++; vs.points = 0; burstLine += `\n💀 *${_name(victim)} is crushed by the domain!* +${stolen} stolen points (+${HUNTER_KILL_BONUS} bounty).`; const el = []; _gainExp(db, player, st, EXP_HUNTER, el); burstLine += '\n' + el.join('\n'); }
+    _commit(V);
+  } else { // no tag: the ACTIVE beast (your last target, else the weakest alive) takes the whole burst
+    const live = alive(ev); let m = live.find(x => x.id === st.lastTarget && !x.defeated) || null;
+    if (!m) { const nb = live.filter(x => !x.isBoss); m = nb.sort((a, b) => a.hp / a.maxHp - b.hp / b.maxHp)[0] || live[0]; }
+    if (m) { const dmg = Math.max(1, Math.floor(burst * (1 - _mit(m.def, h.atk)))); m.hp = Math.max(0, m.hp - dmg); m.lastHit = Date.now(); m._regenAt = 0; m.domDebuffUntil = until; hit = 1; total = dmg; const fxl = []; _applyStatuses({ missed: false, statuses: [] }, _avatar(db, player), _mWrap(m), fxl, _domainStatuses(player));
+      burstLine = `💥 Opening burst: *${m.name}* #${m.id} takes *${dmg.toLocaleString()}* (${m.hp.toLocaleString()}/${m.maxHp.toLocaleString()} HP)${fxl.length ? '\n' + fxl.join('\n') : ''}`;
+      if (m.hp <= 0) { const kl = []; _awardKill(db, ev, m, player, st, kl, `the domain`); burstLine += '\n' + kl.join('\n'); if (!alive(ev).length) burstLine += '\n' + _nextWave(db, ev); } }
+  }
   st.dmg += total;
   const msgs = [`🌌 *DOMAIN EXPANSION — ${d.name.toUpperCase()}*`, `_${d.desc}_`,
-    `👤 ${_name(player)} · ${d.own ? `Domain Lv.${d.ownLevel}` : `Event Domain Lv.${DOMAIN_LEVEL}`}\n💥 Opening burst: ${hit} beasts take *${total.toLocaleString()}* total damage.\n🌌 *${d.name}* stands for *${d.turnsLeft} turns* (max 20 min): every foe you meet inside it loses 20% ATK/DEF${_domainStatuses(player).length ? ` and risks ${_domainStatuses(player).map(x => `${x.chance}% ${String(x.type).toUpperCase()}`).join(', ')}` : ''}; your moves cannot miss and deal +25%.\n🗡️ ${hunters} rival hunter${hunters === 1 ? '' : 's'} on the island weakened 20%. Strike a hunter whose domain is up → *domain clash* (most refined wins).`];
+    `👤 ${_name(player)} · ${d.own ? `Domain Lv.${d.ownLevel}` : `Event Domain Lv.${DOMAIN_LEVEL}`}\n${burstLine}\n🌌 *${d.name}* stands for *${d.turnsLeft} turns* (max 20 min): every foe you meet inside it loses 20% ATK/DEF${_domainStatuses(player).length ? ` and risks ${_domainStatuses(player).map(x => `${x.chance}% ${String(x.type).toUpperCase()}`).join(', ')}` : ''}; your moves cannot miss and deal +25%.\n💚 You regenerate 10% HP every turn and no status can touch you inside it; your flee always succeeds. Strike a hunter whose domain is up → *domain clash* (most refined wins).`];
   return { ok: true, messages: msgs };
 }
 
@@ -622,4 +659,4 @@ function infoText(db) {
     ``, `📜 *RULES*`, `• */ejoin* to enter (all levels) · 10 days · ${WAVE_SIZE} beasts + 1 boss per wave`, `• Beasts never start a fight — they counter; idle 30s → +5% HP per 30s`, `• Friendly fire: tag a hunter in your attack (/event attack @hunter [skill]); they get 20s to retaliate, then both moves land · kill = 50% of their points, theirs reset to 0`, `• Death = 1h respawn · /eventafk = untouchable, no attacking, free to raid — any message here brings you back`, `• Attack with plain */attack [#|@hunter] [skill]* or */skill <skill>* in this GC (reply to a hunter = target them)`, `• Lv.10 event domain: /event domain (name + desc first) · ${DOMAIN_ENERGY} energy · 1h cooldown`, `• Points: E${KILL_POINTS.E} D${KILL_POINTS.D} C${KILL_POINTS.C} B${KILL_POINTS.B} A${KILL_POINTS.A} S${KILL_POINTS.S} · boss ${BOSS_POINTS} · hunter kill +${HUNTER_KILL_BONUS} · spend in /eshop`].join('\n');
 }
 
-module.exports = { domainActive, domainClash, DOMAIN_EFFECT_MS, leaderboardText, loadoutText, eventStats, expNeed, grabArtifact, artifactAlert, _avatar, _commit, EVENT_BASE, ELVL_MAX, EXP_KILL, EXP_BOSS, EXP_HUNTER, ARTIFACT_SLOTS, ARTIFACT_SPAWN_MS, AFK_LOCK_MS, HUNTER_REGEN_PCT, supportSkill, counterPending, fleePending, dodgePending, PRO_RESPAWN_MS, BEAST_MULT, KILL_POINTS, BOSS_POINTS, infoText, blocksRaids, breakAfk, pullFromDungeons, RETALIATE_MS, pendingFor, resolvePending, resolveExpired, join, isJoined, handleSetupReply, setupStep, _autoSkill, EVENT_LENGTH_MS, WAVE_SIZE, RESPAWN_MS, REGEN_IDLE_MS, REGEN_PCT, STEAL_PCT, DOMAIN_LEVEL, DOMAIN_ENERGY, SHOP, KILL_POINTS, BOSS_POINTS, gcId, isEventGC, buildWave, start, end, tick, alive, attackMonster, attackHunter, toggleAfk, domainState, setDomainName, setDomainDesc, castDomain, leaderboard, status, pointsText, statsText, shopText, buy, _p };
+module.exports = { TF_COOLDOWN_MS, MON_FX_TICK_MS, domainActive, domainClash, DOMAIN_EFFECT_MS, leaderboardText, loadoutText, eventStats, expNeed, grabArtifact, artifactAlert, _avatar, _commit, EVENT_BASE, ELVL_MAX, EXP_KILL, EXP_BOSS, EXP_HUNTER, ARTIFACT_SLOTS, ARTIFACT_SPAWN_MS, AFK_LOCK_MS, HUNTER_REGEN_PCT, supportSkill, counterPending, fleePending, dodgePending, PRO_RESPAWN_MS, BEAST_MULT, KILL_POINTS, BOSS_POINTS, infoText, blocksRaids, breakAfk, pullFromDungeons, RETALIATE_MS, pendingFor, resolvePending, resolveExpired, join, isJoined, handleSetupReply, setupStep, _autoSkill, EVENT_LENGTH_MS, WAVE_SIZE, RESPAWN_MS, REGEN_IDLE_MS, REGEN_PCT, STEAL_PCT, DOMAIN_LEVEL, DOMAIN_ENERGY, SHOP, KILL_POINTS, BOSS_POINTS, gcId, isEventGC, buildWave, start, end, tick, alive, attackMonster, attackHunter, toggleAfk, domainState, setDomainName, setDomainDesc, castDomain, leaderboard, status, pointsText, statsText, shopText, buy, _p };

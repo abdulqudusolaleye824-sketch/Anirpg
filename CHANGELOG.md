@@ -1,3 +1,15 @@
+## 1.0.162 — Push #96h-z7/z8: Domain owner perks, single-target domain burst, lasting beast statuses, transformation cooldown
+
+- **Event domain lasts its turns** — turns are taken from your CURRENT real domain level at cast (Lv.30 → 16, Lv.40 → 21) and only tick on the owner's own moves; `/eprofile` and every message show the countdown.
+- **Domain owner perks** — casting erases every status on you; inside a standing domain you are **immune to new statuses** (🌌 line), **regenerate 10% HP per turn** (💚 line) and your **flee is guaranteed (100%)**.
+- **Single-target opening burst** — `/domain` without a tag puts the WHOLE burst on the beast you last hit (or the weakest live one), not spread over the wave. `/domain @player` lands the whole burst **plus** your domain's statuses on that hunter. No caps — a strong enough domain one-shots a boss or a hunter.
+- **Beast statuses last** — stun / weaken / bleed / freeze on mana beasts now count down in time (one tick per 20 s), not once per hunter hit, so a wave of hunters no longer strips them in seconds.
+- **Monster class is RARE** — 2% of awakenings (it used to share an equal slot with every other class, ~4%). Innate 100% quality unchanged.
+- **Registration ranks rebalanced** — E 22% · D 32% · C 30% · B 13% · **A 2.9%** (was 19.9%) · S 0.1%.
+- **Island vs raids** — `/e join` now pulls you out of any gate raid / solo dungeon / party / instance you were in, and while on the island EVERY raid or dungeon action (attack, skill, advance, boss, ready, item…) is refused — not only entering. `/eventafk` first.
+- **`/pinterest` fixed** — crashed with `db is not defined` since the no-repeat history was added.
+- **Monster transformation cooldown** — Quarter / Half / Full transformations (innate rampage surges included) can be used once per **1 h** on the island, **30 min for Pro**; the cast is refused with the time left.
+
 ## 1.0.161 — Push #96h-z6
 - Monster-class STRAIN (weaken 10t / stun 2t / bleed 7t) fires on the island when a transformation ends; stunned/frozen turns are reported as normal messages (bleed still ticks), bleeding out is handled.
 

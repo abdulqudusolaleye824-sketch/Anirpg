@@ -232,8 +232,14 @@ function isExclusiveClass(name) {
 function rollableClasses() {
   return ALL_CLASSES.filter(n => !isExclusiveClass(n));
 }
+const MONSTER_AWAKEN_CHANCE = 0.02; // Push #96h-z8: Monster class is RARE — 2% of awakenings (was a flat 1-in-N share with every other class)
 function rollClassAwakening() {
   const pool = rollableClasses();
+  if (pool.includes('Monster')) {
+    if (Math.random() < MONSTER_AWAKEN_CHANCE) return 'Monster';
+    const rest = pool.filter(n => n !== 'Monster');
+    return rest[Math.floor(Math.random() * rest.length)];
+  }
   const idx = Math.floor(Math.random() * pool.length);
   return pool[idx];
 }
@@ -616,7 +622,7 @@ module.exports = {
 
   // Core functions
   hardcodedClassFor,
-  rollClassAwakening, rollableClasses, isExclusiveClass, stripClassFromPlayer, reconClass,
+  rollClassAwakening, MONSTER_AWAKEN_CHANCE, rollableClasses, isExclusiveClass, stripClassFromPlayer, reconClass,
   rollMonsterVariant,
   ensureMonsterVariant,
   applyClassToPlayer,

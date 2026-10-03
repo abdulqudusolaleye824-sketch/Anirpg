@@ -241,7 +241,7 @@ module.exports = {
 
     const sub = args[0]?.toLowerCase();
     // Push #96h-h: hunters on Jeju Island must /eventafk before dungeons.
-    if (['party', 'start', 'join', 'create', 'solo'].includes(sub)) { try { const _eb = require('../../rpg/utils/EventSystem').blocksRaids(db, player); if (_eb) return sock.sendMessage(chatId, { text: _eb }, { quoted: msg }); } catch (e) {} }
+    if (['party', 'start', 'join', 'create', 'solo', 'ready', 'advance', 'attack', 'boss', 'classcmd', 'item', 'enter', 'open'].includes(sub)) { try { const _eb = require('../../rpg/utils/EventSystem').blocksRaids(db, player); if (_eb) return sock.sendMessage(chatId, { text: _eb }, { quoted: msg }); } catch (e) {} }
     const OWNER_ID = '221951679328499@lid';
     const isOwner  = sender === OWNER_ID;
 

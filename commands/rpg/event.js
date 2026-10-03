@@ -133,7 +133,8 @@ module.exports = {
       if (what === 'desc' || what === 'description') { const r = EventSystem.setDomainDesc(player, args.slice(2).join(' ')); if (r.ok) saveDatabase(db); return say(r.ok ? `${r.text}\n_Cast it in the Events GC with /event domain_` : `❌ ${r.error}`); }
       if (what === 'info' || what === 'show') { const d = EventSystem.domainState(player); return say(`🌌 *EVENT DOMAIN (Lv.${EventSystem.DOMAIN_LEVEL})*\nName: ${d.name || '— (/event domain name <name>)'}\nDescription: ${d.desc || '— (/event domain desc <text>)'}\nCasts: ${d.casts || 0} · Cost ${EventSystem.DOMAIN_ENERGY} energy · 1h cooldown\n_Works only inside the Events GC during an event._`); }
       if (!inGC) return needGC();
-      const r = EventSystem.castDomain(db, player, chatId); if (!r.ok) return say(`❌ ${r.error}`);
+      const _dtj = Target.resolve(msg, []); const _dv = _dtj ? _findUser(db, _dtj) : null; // Push #96h-z7: tag a hunter → the whole burst + effects land on them
+      const r = EventSystem.castDomain(db, player, chatId, _dv && _dv !== player ? _dv : null); if (!r.ok) return say(`❌ ${r.error}`);
       saveDatabase(db);
       // The name, the description and the effect go out as SEPARATE messages.
       for (const t of r.messages) { await send({ text: t }, false); }
