@@ -2631,7 +2631,7 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
             // Push #24: if our own socket is dead, a LIVE sibling reports the error (no silent failures).
             const _fbKey = getFirstOnlineSocketKey();
             const _fbSock = (_fbKey && botSockets[_fbKey]) || sock;
-            await _fbSock.sendMessage(chatId, { text: `❌ Error: ${e.message}` }, { quoted: msg });
+            if (!/rate-overlimit|overlimit|timed out|Timed Out|Connection Closed|Connection Terminated|not-authorized|rate limit|too many|socket hang up|ECONNRESET|ETIMEDOUT/i.test(String(e && e.message))) await _fbSock.sendMessage(chatId, { text: `❌ Error: ${e.message}` }, { quoted: msg }); // Push #96h-z11: transport errors silent
           } catch {}
         }
       }

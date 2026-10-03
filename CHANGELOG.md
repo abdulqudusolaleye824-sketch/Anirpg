@@ -1,3 +1,7 @@
+## 1.0.165 — Push #96h-z11: transport errors are silent
+
+- **No more "send timed out after 20s" / rate-overlimit error cards** — any failure caused by WhatsApp throttling, spam limits, send/handler timeouts or a dropped connection is swallowed silently (logged only). Real command bugs still show the error card.
+
 ## 1.0.164 — Push #96h-z10: Admin notices, silent bot auto-admin, /starts gate, 30-day dungeon subs, no double replies
 
 - **Admin promotions / demotions announced** — 20 promotion + 20 demotion messages; ONE bot (the dispatcher) posts it and tags the member. Bots being promoted are never announced.

@@ -1016,7 +1016,7 @@ module.exports = async (sock, msg, messageText, config, getDatabase, saveDatabas
       console.error(`❌ Error executing ${resolvedCommand}:`, error);
       // Push #73: a WhatsApp send throttle must never be reported to the
       // community as a command failure — the game state already advanced.
-      if (/rate-overlimit|overlimit/i.test(String(error && error.message))) return;
+      if (/rate-overlimit|overlimit|send timed out|timed out|Timed Out|Connection Closed|Connection Terminated|not-authorized|rate limit|too many|socket hang up|ECONNRESET|ETIMEDOUT/i.test(String(error && error.message))) return; // Push #96h-z11: transport/spam/rate errors are SILENT
 
       // Hardened: if the error card itself can't send (e.g. WhatsApp
       // rate-overlimit), swallow it instead of rejecting unhandled (which
