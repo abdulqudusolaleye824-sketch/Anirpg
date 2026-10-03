@@ -1,3 +1,11 @@
+## 1.0.163 — Push #96h-z9: Events ×2.5 vs beasts, stun retaliation, domain ATK/DEF buffs, gate tuning, 10×5 instances, main-GC auto-join
+
+- **Events** — hunter damage against mana beasts is **×2.5** (hunter-vs-hunter unchanged). A **stunned/frozen** hunter who swings at a beast is punished: the beast retaliates on the helpless hunter.
+- **Event domains buff ATK and DEF** — a standing domain gives ATK +25% +1%/level and DEF +15% +0.5%/level (Lv.30 → +55% / +30%). `/eprofile` shows the buffed numbers and a `🌌 Domain Lv.N standing` line; the DEF buff is applied to beast counters and hunter hits against you.
+- **Gates** — regular gates **−15%** (monsters + boss HP/ATK/DEF); **Red gates +15%**; a leaked beast a further **+15%**.
+- **Instance dungeons rebuilt** — **10 floors × 5 monsters** (the 5th of each floor is its boss; floor 10's is the Overlord). Clearing floor 10 clears the Job Change Quest and the instance closes with a summary. **2 h hard limit** — it closes itself. **No auto-attacks.** Combat uses the regular dungeon commands routed into the instance while you are inside (DM): `/attack`, `/attack <id>` (equipped pattern), `/skillcmd <skill>` (also `/cast`, `/skill`) — with the same multi-message detail flow (move card, effect, result, HP bars). Beasts open a domain at most once each (boss 50%, others 15%). `/instance start [job]`, `/instance` (status with time left), `/instance leave`.
+- **Bots & main GCs** — a bot that connects **auto-joins every `--main` group** it is not in yet (45 s after linking; invite link from the registry or fetched through a bot already inside). **`/joinmain`** (alias of `/joinmains`, works from any bot's DM) joins all online bots to all main groups.
+
 ## 1.0.162 — Push #96h-z7/z8: Domain owner perks, single-target domain burst, lasting beast statuses, transformation cooldown
 
 - **Event domain lasts its turns** — turns are taken from your CURRENT real domain level at cast (Lv.30 → 16, Lv.40 → 21) and only tick on the owner's own moves; `/eprofile` and every message show the countdown.

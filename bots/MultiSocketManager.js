@@ -1958,6 +1958,15 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
             .catch(() => {});
         } catch (e) {}
       }, 20000);
+      // Push #96h-z9: a freshly connected bot joins every --main group it is not in yet (45 s after open, so the session settles).
+      setTimeout(() => {
+        try {
+          if (botSockets[personalityKey] !== sock) return;
+          require('../rpg/utils/MainJoin').joinOneToMains(getDatabase(), sock, personalityKey)
+            .then((r) => { const j = (r || []).filter((x) => x.status === 'joined'); if (j.length) console.log(`[MainJoin] ${personalityKey} auto-joined ${j.length} main group(s): ${j.map((x) => x.group).join(', ')}`); })
+            .catch(() => {});
+        } catch (e) {}
+      }, 45000);
       reconnectAttempts[personalityKey] = 0; // Reset reconnect count on successful connection!
       _loggedOut.delete(personalityKey);
       _logout401s[personalityKey] = 0;        // a clean connect clears the 401 streak

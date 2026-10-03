@@ -117,29 +117,36 @@ function openBox(player, kind) {
 }
 
 // ── Instance dungeon ─────────────────────────────────────────────────────
-const RANK_BY_FLOOR = (f) => f >= 21 ? 'S' : f >= 17 ? 'A' : f >= 13 ? 'B' : f >= 9 ? 'C' : f >= 5 ? 'D' : 'E';
-function targetFloorFor(job) { const i = JS.JOBS.findIndex(j => j.key === job.key); return 5 + Math.max(0, i); }
+// Push #96h-z9: a Job Change Quest instance is 10 FLOORS × 5 MONSTERS (the 5th of every floor is that floor's boss;
+// floor 10's boss is the Overlord). Clearing floor 10 clears the quest and the instance closes. 2 h hard limit — then it closes itself.
+const FLOORS = 10, PER_FLOOR = 5, TIME_LIMIT_MS = 2 * 3600e3;
+const RANK_BY_FLOOR = (f) => f >= 10 ? 'S' : f >= 8 ? 'A' : f >= 6 ? 'B' : f >= 4 ? 'C' : f >= 2 ? 'D' : 'E';
+function targetFloorFor(job) { return FLOORS; }
+function timeLeftMs(inst) { return inst && inst.active ? Math.max(0, (inst.startedAt || 0) + TIME_LIMIT_MS - Date.now()) : 0; }
+// Auto-close an instance that ran past its 2 h limit. Returns the summary (or null if still open).
+function expireCheck(player) { const inst = player && player.instance; if (!inst || !inst.active) return null; if (Date.now() - (inst.startedAt || 0) < TIME_LIMIT_MS) return null; const sm = end(player, false); sm.lines.unshift('⏰ *Time is up — the instance closed itself after 2 hours.*'); sm.expired = true; return sm; }
 
-function makeMonster(player, floor) {
+function makeMonster(player, floor, slot = 1) {
   const rank = RANK_BY_FLOOR(floor);
   let def = null; try { def = require('../data/SoloLevelingMonsters').pickForStrength(rank, 100); } catch (e) {}
   const lvl = Math.max(1, player.level || 1);
-  const isBoss = floor % 5 === 0;
-  const fm = 1 + (floor - 1) * 0.12;
+  const isBoss = slot >= PER_FLOOR; const finalBoss = isBoss && floor >= FLOORS;
+  const fm = (1 + (floor - 1) * 0.09 + (slot - 1) * 0.02) * (finalBoss ? 1.3 : 1); // Push #96h-z9: 10-floor curve (50 kills in < 2 h)
   const pAtk = (player.stats && player.stats.atk) || 50, pHp = _max(player), pDef = (player.stats && player.stats.def) || 20;
   // Scaled to the hunter: ~3–4 hits per floor, ~25–35% of their HP lost per
   // floor at Lv.1 of the ladder; deeper floors (and bosses) climb steadily.
-  const hp = Math.floor((pAtk * 2 + pHp * 0.2) * fm * (isBoss ? 1.5 : 1));
+  const hp = Math.floor((pAtk * 1.3 + pHp * 0.12) * fm * (isBoss ? 1.5 : 1));
   const atk = Math.floor((pDef * 0.5 + pHp * 0.025 + lvl * 1.5) * fm * (isBoss ? 1.2 : 1));
-  const dfn = Math.floor((pAtk * 0.2 + lvl * 2) * fm);
+  const dfn = Math.floor((pAtk * 0.1 + lvl * 1.2) * fm);
   const name = (def && def.name) || _pick(['Shade', 'Ghoul', 'Warg', 'Imp', 'Sentinel']);
-  return { id: `inst_${floor}`, name: isBoss ? `${name} Overlord` : name, emoji: isBoss ? '👑' : '👹', level: lvl + floor, rank, isBoss, floor,
+  return { id: `inst_${floor}_${slot}`, name: finalBoss ? `${name} Overlord` : isBoss ? `${name} Alpha` : name, emoji: isBoss ? '👑' : '👹', level: lvl + floor, rank, isBoss, finalBoss, floor, slot,
     abilities: (def && def.skills && def.skills.length) ? def.skills : ['Strike', 'Rend'],
     stats: { hp, maxHp: hp, atk, def: dfn, speed: Math.round((90 + floor * 3) * 1.4) /* Push #96h-c: +40% */ }, statusEffects: [], tempBuffs: {} };
 }
 
 function start(player, jobQuery) {
-  if (player.instance && player.instance.active) return { ok: false, error: 'You are already inside an instance — /instance attack, or /instance leave.' };
+  expireCheck(player);
+  if (player.instance && player.instance.active) return { ok: false, error: 'You are already inside an instance — /attack, /attack <id>, /skillcmd <skill>, or /instance leave.' };
   if (keys(player) < 1) return { ok: false, error: 'You need an *Instance Key* — Pro hunters find them in their daily boxes, regular hunters in the daily-quest bonus (when a job change is open to you).' };
   const elig = eligibleJobs(player);
   if (!elig.length) return { ok: false, error: 'No job change is open to you yet — level up to unlock more jobs (/job list).' };
@@ -149,13 +156,22 @@ function start(player, jobQuery) {
   if ((player.stats?.hp || 0) <= 0) return { ok: false, error: 'You cannot enter an instance while fallen.' };
   player.jobKeys = keys(player) - 1;
   const target = targetFloorFor(job);
-  player.instance = { active: true, job: job.key, floor: 1, target, kills: 0, startedAt: Date.now(), monster: makeMonster(player, 1), passed: false, gold: 0, jobXp: 0, domain: null, turn: 0 };
+  player.instance = { active: true, job: job.key, floor: 1, slot: 1, target, kills: 0, startedAt: Date.now(), expiresAt: Date.now() + TIME_LIMIT_MS, monster: makeMonster(player, 1, 1), passed: false, gold: 0, jobXp: 0, domain: null, turn: 0 };
   return { ok: true, job, target, inst: player.instance };
 }
 
 function _buildMove(player, skillQuery) {
   const UC = require('./UnifiedCombat');
   if (!skillQuery) return { move: { ...UC.basicStrike(), name: 'Strike' }, entry: null };
+  // Push #96h-z9: /attack <id> — an owned + equipped attack pattern, same rules as regular dungeons.
+  if (/^#?\d+$/.test(String(skillQuery).trim())) {
+    const n = parseInt(String(skillQuery).replace('#', ''), 10); const ap = player.attackPatterns || { owned: [], equipped: [] };
+    if (!(ap.owned || []).includes(n)) return { error: `You don't own Attack Pattern *#${n}* — /attacks shop` };
+    if (!(ap.equipped || []).includes(n)) return { error: `Attack Pattern *#${n}* is not equipped — /attacks equip ${n}` };
+    const atk = require('./AttackPatternDB').generateAttack(n); if (!atk) return { error: 'Invalid attack pattern number.' };
+    try { const cd = UC.isOnCooldown(player, atk.id); if (cd && cd.onCd) return { error: `*${atk.name}* is still on cooldown — ${UC.formatCd(cd.remaining)} left (your turn was NOT used).` }; } catch (e) {}
+    return { entry: null, pattern: atk, move: { ...atk, name: atk.name || `Attack #${n}` } };
+  }
   const SC = require('./SkillCatalog');
   const r = SC.resolveSkill(player, skillQuery, { allowLibrary: true });
   if (!r.ok) return { error: r.error };
@@ -170,7 +186,8 @@ function _buildMove(player, skillQuery) {
 }
 
 // One full round: hunter acts, monster answers. Returns { lines, ended, passed, floorCleared }.
-function act(player, skillQuery) {
+async function act(player, skillQuery, hooks = null) {
+  { const ex = expireCheck(player); if (ex) return { ok: true, lines: ex.lines, ended: true, passed: ex.passed, expired: true }; }
   const inst = player.instance;
   if (!inst || !inst.active) return { ok: false, error: 'You are not inside an instance — /instance start' };
   const UC = require('./UnifiedCombat'); const SC = require('./SkillCatalog'); const MSFX = require('./MonsterSkillFX'); const DS = require('./DomainSystem');
@@ -181,6 +198,7 @@ function act(player, skillQuery) {
   if (canAct && canAct.canAct === false) lines.push(`💫 *${player.name}* is ${canAct.reason || 'held'} and cannot act!`);
   else {
     if (built.entry) { player.stats.energy = Math.max(0, (player.stats.energy || 0) - built.cost); try { SC.setCooldown && SC.setCooldown(player, built.entry); } catch (e) {} }
+    if (built.pattern) { try { UC.setCooldown(player, built.pattern.id, built.pattern); } catch (e) {} }
     if (built.isSupport) {
       const e = built.entry;
       if (e.type === 'heal' || (e.healingPct || 0) > 0) { const amt = Math.floor(_max(player) * ((e.healingPct || 20) / 100) * (SC.levelBonus(e).healMult || 1)); const b = player.stats.hp; player.stats.hp = Math.min(_max(player), b + amt); lines.push(`💚 *${e.name}* — +${player.stats.hp - b} HP → ${player.stats.hp}/${_max(player)}`); }
@@ -188,15 +206,16 @@ function act(player, skillQuery) {
       try { const sf = SC.applySupportFields(e, player, player, { name: player.name }); lines.push(...sf.lines); } catch (er) {}
       try { const TF = require('./Transformation'); if (TF.isTransformSkill(e)) { const tr = TF.cast(player, e); lines.push(...(tr.ok ? tr.lines : [`❌ ${tr.error}`])); } } catch (er) {}
     } else {
-      const res = UC.calcMoveDamage(player, m, built.move);
-      if (!res.damage || res.missed) { lines.push(`💨 *${built.move.name}* misses ${m.name}!`); try { JS.noteHit(player, false); } catch (e) {} }
+      // Push #96h-z9: with hooks.strike the command layer plays the strike through UnifiedCombat.playTurn
+      // (the same multi-message detail flow as regular dungeons) — damage/statuses are applied there.
+      const played = hooks && typeof hooks.strike === 'function' ? await hooks.strike(built.move, m) : null;
+      const res = played ? played.result : UC.calcMoveDamage(player, m, built.move);
+      if (!res.damage || res.missed) { if (!played) lines.push(`💨 *${built.move.name}* misses ${m.name}!`); try { JS.noteHit(player, false); } catch (e) {} }
       else {
         let dmg = res.damage;
-        m.stats.hp = Math.max(0, m.stats.hp - dmg);
-        try { JS.noteHit(player, true); } catch (e) {}
-        lines.push(`⚔️ *${built.move.name}* hits ${m.emoji} ${m.name} for *${dmg}*${res.crit ? ' 💥 CRIT' : ''} → ${m.stats.hp}/${m.stats.maxHp}`);
-        try { const fx = UC.tryApplyEffect(built.move, player, m); if (fx) lines.push(`${fx.emoji || '☠️'} ${m.name} is ${fx.name || fx.type} (${fx.duration}t)`); } catch (e) {}
-        try { for (const n of UC.applyMoveBuffs(built.move, player, m)) lines.push(n); } catch (e) {}
+        if (!played) { m.stats.hp = Math.max(0, m.stats.hp - dmg); try { JS.noteHit(player, true); } catch (e) {} lines.push(`⚔️ *${built.move.name}* hits ${m.emoji} ${m.name} for *${dmg}*${res.crit ? ' 💥 CRIT' : ''} → ${m.stats.hp}/${m.stats.maxHp}`); }
+        if (!played) { try { const fx = UC.tryApplyEffect(built.move, player, m); if (fx) lines.push(`${fx.emoji || '☠️'} ${m.name} is ${fx.name || fx.type} (${fx.duration}t)`); } catch (e) {} }
+        if (!played) { try { for (const n of UC.applyMoveBuffs(built.move, player, m)) lines.push(n); } catch (e) {} }
         try { const pm = require('./ClassPower').passiveMultipliers(player); const ls = ((player.stats.lifesteal || 0) + (pm.lifesteal || 0)) / 100; if (ls > 0) { const h = Math.floor(dmg * ls); const b = player.stats.hp; player.stats.hp = Math.min(_max(player), b + h); if (player.stats.hp > b) lines.push(`🩸 Lifesteal +${player.stats.hp - b} HP`); } } catch (e) {}
         if (built.entry) { try { const sf = SC.applySupportFields(built.entry, player, player, { name: player.name }); lines.push(...sf.lines); } catch (e) {} }
       }
@@ -208,17 +227,25 @@ function act(player, skillQuery) {
     const reward = Math.floor((300 + inst.floor * 250 + (player.level || 1) * 20) * (m.isBoss ? 3 : 1));
     player.gold = (player.gold || 0) + reward; inst.gold += reward;
     const jx = JS.gainXp(player, JS.xpFor(m.isBoss ? 'boss' : 'floor'), 'instance'); if (jx) { inst.jobXp += jx.gained; if (jx.levelUp) lines.push(`🧭 *JOB LEVEL UP!* ${jx.name} → Job Lv.${jx.to} — *${jx.title}*`); }
-    if (inst.floor % 5 === 0) { player.upgradePoints = (player.upgradePoints || 0) + 1; lines.push(`📈 +1 Upgrade Point (floor ${inst.floor} boss)`); }
-    lines.push(`☠️ *${m.name} falls!* +${reward.toLocaleString()} Mana Stones${jx ? ` · +${jx.gained} Job XP` : ''}`);
+    if (m.isBoss) { player.upgradePoints = (player.upgradePoints || 0) + 1; lines.push(`📈 +1 Upgrade Point (floor ${inst.floor} boss)`); }
+    lines.push(`☠️ *${m.name} falls!* +${reward.toLocaleString()} Mana Stones${jx ? ` · +${jx.gained} Job XP` : ''} · floor ${inst.floor}: ${Math.min(PER_FLOOR, inst.slot)}/${PER_FLOOR} down`);
     try { player.statusEffects = []; } catch (e) {}
     inst.domain = null;
     const job = JS.BY_KEY[inst.job];
-    if (!inst.passed && inst.floor >= inst.target) { inst.passed = true; player.jobQuest = { cleared: inst.job, at: Date.now(), floor: inst.floor }; try { JS.unlock(player, JS.findJob(inst.job)); } catch (e) {} lines.push(`🏆 *JOB CHANGE QUEST CLEARED!* Floor ${inst.floor} reached — *${job.name}* is yours: /job change ${job.name}`, `Keep climbing for extra rewards, or /instance leave.`); }
-    // Breather between floors: +20% HP (a boss floor: +35%).
-    { const b = player.stats.hp; player.stats.hp = Math.min(_max(player), b + Math.floor(_max(player) * (m.isBoss ? 0.35 : 0.2))); if (player.stats.hp > b) lines.push(`💞 You catch your breath: +${player.stats.hp - b} HP`); }
-    inst.floor++; inst.monster = makeMonster(player, inst.floor);
-    lines.push(`➡️ *Floor ${inst.floor}* — ${inst.monster.emoji} *${inst.monster.name}* [${inst.monster.rank}] HP ${inst.monster.stats.maxHp}${inst.monster.isBoss ? ' · 👑 BOSS' : ''}${!inst.passed ? ` · target floor ${inst.target}` : ''}`);
-    return { ok: true, lines, floorCleared: true, bossKill: !!m.isBoss, ended: false };
+    const floorCleared = inst.slot >= PER_FLOOR;
+    if (floorCleared && inst.floor >= FLOORS) {
+      inst.passed = true; player.jobQuest = { cleared: inst.job, at: Date.now(), floor: inst.floor }; try { JS.unlock(player, JS.findJob(inst.job)); } catch (e) {}
+      lines.push(`🏆 *JOB CHANGE QUEST CLEARED!* All ${FLOORS} floors conquered — *${job.name}* is yours: /job change ${job.name}`);
+      const summary = end(player, false); return { ok: true, lines: [...lines, ...summary.lines], floorCleared: true, bossKill: !!m.isBoss, ended: true, passed: true };
+    }
+    if (floorCleared) {
+      // Breather between floors: +20% HP (after a boss: +35%).
+      { const b = player.stats.hp; player.stats.hp = Math.min(_max(player), b + Math.floor(_max(player) * (m.isBoss ? 0.35 : 0.2))); if (player.stats.hp > b) lines.push(`💞 You catch your breath: +${player.stats.hp - b} HP`); }
+      inst.floor++; inst.slot = 1;
+    } else inst.slot++;
+    inst.monster = makeMonster(player, inst.floor, inst.slot);
+    lines.push(`➡️ *Floor ${inst.floor} · ${inst.slot}/${PER_FLOOR}* — ${inst.monster.emoji} *${inst.monster.name}* [${inst.monster.rank}] HP ${inst.monster.stats.maxHp}${inst.monster.isBoss ? (inst.monster.finalBoss ? ' · 👑 FINAL BOSS' : ' · 👑 FLOOR BOSS') : ''} · ⏰ ${Math.ceil(timeLeftMs(inst) / 60000)} min left`);
+    return { ok: true, lines, floorCleared, bossKill: !!m.isBoss, ended: false };
   }
   // Monster turn
   const mc = UC.canAct ? UC.canAct(m) : { canAct: true };
@@ -255,7 +282,8 @@ function act(player, skillQuery) {
       try { if (dmg > 0) { const rf = UC.reflectDamage(player, m, dmg); if (rf && rf.back > 0) lines.push(rf.line); } } catch (e) {}
       if (ability && player.stats.hp > 0) { try { const fx = MSFX.apply(m, player, ability, dmg); lines.push(...fx.lines); } catch (e) {} }
     }
-    try { const dl = DS.monsterTry(inst, m, [player], { boss: m.isBoss, rank: m.rank }); if (dl) lines.push(dl); } catch (e) {}
+    // Push #96h-z9: in a solo instance a beast expands its domain at most ONCE (boss 50%, others 15%) — a 10-floor run must stay clearable with every move chosen by hand.
+    try { if (!m._domCast) { const dl = DS.monsterTry(inst, m, [player], { boss: m.isBoss, rank: m.rank, forceChance: m.isBoss ? 0.5 : 0.15 }); if (dl) { m._domCast = true; lines.push(dl); } else if (Math.random() < 0.5) m._domCast = true; } } catch (e) {}
   }
   if ((player.stats.hp || 0) <= 0) {
     player.stats.hp = 1; // the instance is a trial, not a grave
@@ -268,17 +296,18 @@ function act(player, skillQuery) {
 function end(player, voluntary) {
   const inst = player.instance; if (!inst || !inst.active) return { lines: ['Not inside an instance.'], floor: inst && inst.last ? inst.last.floor : 0, passed: !!(inst && inst.last && inst.last.passed) };
   const job = JS.BY_KEY[inst.job];
-  const lines = [`📜 *INSTANCE ${voluntary ? 'LEFT' : 'OVER'}* — ${job ? job.emoji + ' ' + job.name : ''} quest · floor ${inst.floor} · ${inst.kills} kills`, `💠 ${inst.gold.toLocaleString()} Mana Stones · 🧭 ${inst.jobXp} Job XP`, inst.passed ? `🏆 Quest cleared — /job change ${job ? job.name : ''}` : `❌ Quest failed — target was floor ${inst.target}. Another key, another try.`];
+  const lines = [`📜 *INSTANCE ${voluntary ? 'LEFT' : 'OVER'}* — ${job ? job.emoji + ' ' + job.name : ''} quest · floor ${inst.floor} · ${inst.kills} kills`, `💠 ${inst.gold.toLocaleString()} Mana Stones · 🧭 ${inst.jobXp} Job XP`, inst.passed ? `🏆 Quest cleared — /job change ${job ? job.name : ''}` : `❌ Quest failed — all ${FLOORS} floors (${PER_FLOOR} monsters each) must fall within 2 h. Another key, another try.`];
   player.instance = { active: false, last: { job: inst.job, floor: inst.floor, passed: inst.passed, at: Date.now() } };
   try { player.statusEffects = []; if (player.tempBuffs) for (const k of Object.keys(player.tempBuffs)) if (k.startsWith('domain:')) delete player.tempBuffs[k]; } catch (e) {}
   return { lines, floor: inst.floor, passed: inst.passed };
 }
 
 function status(player) {
+  expireCheck(player);
   const inst = player.instance;
   if (!inst || !inst.active) return null;
   const job = JS.BY_KEY[inst.job]; const m = inst.monster;
-  return [`🏚️ *INSTANCE — ${job.emoji} ${job.name.toUpperCase()} QUEST*`, `Floor *${inst.floor}* · target ${inst.target}${inst.passed ? ' ✅' : ''} · kills ${inst.kills}`, `${m.emoji} *${m.name}* [${m.rank}]${m.isBoss ? ' 👑' : ''} — HP ${m.stats.hp}/${m.stats.maxHp}`, `❤️ You: ${player.stats.hp}/${_max(player)} · ⚡ ${player.stats.energy}/${player.stats.maxEnergy}`, `⚔️ /instance attack · ✨ /instance skill <name> · 🌌 /domain expand · 🚪 /instance leave`].join('\n');
+  return [`🏚️ *INSTANCE — ${job.emoji} ${job.name.toUpperCase()} QUEST*`, `Floor *${inst.floor}/${FLOORS}* · monster ${inst.slot || 1}/${PER_FLOOR} · kills ${inst.kills} · ⏰ ${Math.ceil(timeLeftMs(inst) / 60000)} min left`, `⚔️ /attack · /attack <id> · /skillcmd <skill> · /instance leave`, `${m.emoji} *${m.name}* [${m.rank}]${m.isBoss ? ' 👑' : ''} — HP ${m.stats.hp}/${m.stats.maxHp}`, `❤️ You: ${player.stats.hp}/${_max(player)} · ⚡ ${player.stats.energy}/${player.stats.maxEnergy}`, `⚔️ /instance attack · ✨ /instance skill <name> · 🌌 /domain expand · 🚪 /instance leave`].join('\n');
 }
 
-module.exports = { regularBonus, REGULAR_BONUS_CHANCE, KEY_CHANCE, eligibleJobs, keys, onDailyComplete, openBox, targetFloorFor, makeMonster, start, act, end, status };
+module.exports = { FLOORS, PER_FLOOR, TIME_LIMIT_MS, timeLeftMs, expireCheck, regularBonus, REGULAR_BONUS_CHANCE, KEY_CHANCE, eligibleJobs, keys, onDailyComplete, openBox, targetFloorFor, makeMonster, start, act, end, status };

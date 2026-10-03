@@ -8,7 +8,7 @@ const Perms = require('../../utils/permissions');
 
 module.exports = {
   name: 'joinmains',
-  aliases: ['mainjoin'],
+  aliases: ['mainjoin', 'joinmain'],
   description: '🤖 [Owner] Join all online bots to every --main group',
 
   async execute(sock, msg, args, getDatabase, saveDatabase, sender) {

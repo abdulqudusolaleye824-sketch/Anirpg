@@ -979,6 +979,7 @@ const MON_ATK_BUFF = 1.7 * RAID_X2, MON_DEF_BUFF = 1.4 * RAID_X2 * 1.75 * 2.2, M
 // Push #89: A–E gates are 25% softer (monsters AND boss); S+ untouched.
 const RANK_SOFTEN = { A: 0.75, B: 0.75, C: 0.75, D: 0.75, E: 0.75 };
 function rankSoften(rank) { return RANK_SOFTEN[String(rank || '').toUpperCase()] || 1; }
+const GATE_TUNE = 0.85, RED_GATE_TUNE = 1.15, LEAK_TUNE = 1.15; // Push #96h-z9
 const LEAK_MULT = 5; // Push #96h-m: 5× (silent — never stated in text)
 const LEAK_ATK_CUT = 0.30; // Push #96h-n: leaked ATK −70% (5× × 0.3 = 1.5× habitat ATK)
 const SPEED_RANK_FACTOR = { E: 0.55, D: 0.65, C: 0.75, B: 0.85, A: 0.95, S: 1.10, SS: 1.25 };
@@ -1015,6 +1016,8 @@ function applyMonsterScaling(gate) {
     { const TM = _types(); if (TM) { const tm = TM.mults(mon); mon.maxHp = Math.floor(mon.maxHp * tm.hp); mon.hp = Math.max(1, Math.floor(mon.maxHp * hpPct)); mon.atk = Math.floor(mon.atk * tm.atk); mon.def = Math.floor(mon.def * tm.def); mon.speed = Math.round(mon.speed * tm.speed); mon.critBonus = tm.crit; mon.typeLabel = tm.label; } }
     // Push #96h-m: a LEAKED beast is 5× what it would be in its own habitat (kept silent in-chat).
     if (mon.leaked) { mon.maxHp = Math.floor(mon.maxHp * LEAK_MULT); mon.hp = Math.max(1, Math.floor(mon.maxHp * hpPct)); mon.atk = Math.floor(mon.atk * LEAK_MULT * LEAK_ATK_CUT); mon.def = Math.floor(mon.def * LEAK_MULT); mon.speed = Math.round(mon.speed * 1.5); } // Push #96h-n: ATK cut 70%
+    // Push #96h-z9: tuning — regular gates −15%; RED gates +15%; a leaked beast a further +15% (HP/ATK/DEF).
+    { const _gt = (gate.redGate ? RED_GATE_TUNE : GATE_TUNE) * (mon.leaked ? LEAK_TUNE : 1); mon.maxHp = Math.max(5, Math.floor(mon.maxHp * _gt)); mon.hp = Math.max(1, Math.floor(mon.maxHp * hpPct)); mon.atk = Math.max(1, Math.floor(mon.atk * _gt)); mon.def = Math.floor(mon.def * _gt); }
     mon._raid = true; mon.rank = mon.rank || gate.rank; // Push #88q: raid ×2 package + initiative
   }
   // Push #88z: elites are ALWAYS exactly 2× the (scaled) monsters of the floor before them.
@@ -1051,6 +1054,7 @@ function applyMonsterScaling(gate) {
     gate.boss.speed = Math.max(gate.boss.speed, Math.round(_anchorSpeed(gate, 1, true)));
     { const TM = _types(); if (TM && !gate.boss._typedBoss) { const tm = TM.mults(gate.boss); gate.boss._typedBoss = true; gate.boss.typeLabel = tm.label; gate.boss.critBonus = tm.crit; gate.boss._typeMult = tm; }
       const tm = gate.boss._typeMult; if (tm) { gate.boss.maxHp = Math.floor(gate.boss.maxHp * tm.hp); gate.boss.hp = Math.max(1, Math.floor(gate.boss.maxHp * hpPct)); gate.boss.atk = Math.floor(gate.boss.atk * tm.atk); gate.boss.def = Math.floor(gate.boss.def * tm.def); gate.boss.speed = Math.round(gate.boss.speed * tm.speed); } }
+      { const _gt = gate.redGate ? RED_GATE_TUNE : GATE_TUNE; gate.boss.maxHp = Math.max(50, Math.floor(gate.boss.maxHp * _gt)); gate.boss.hp = Math.max(1, Math.floor(gate.boss.maxHp * hpPct)); gate.boss.atk = Math.max(1, Math.floor(gate.boss.atk * _gt)); gate.boss.def = Math.floor(gate.boss.def * _gt); } // Push #96h-z9
   }
 }
 
@@ -1764,7 +1768,7 @@ function spawnWildPet(gate) {
 
 module.exports = { LEAK_MULT, LEAK_ATK_CUT, LEAK_REGEN_CHANCE: 0.90, LEAK_DOMAIN_CHANCE: 0.80,
   findOtherRaid,
-  RED_GATE_CHANCE, DOUBLE_DUNGEON_CHANCE, LEAK_CHANCE, RED_GATE_TEXT, sealedReason, leakMonster, succeedLeader, takeLeaderNotice, doublePending, evolveDouble, grantDoubleBoxes, // Push #96d
+  GATE_TUNE, RED_GATE_TUNE, LEAK_TUNE, RED_GATE_CHANCE, DOUBLE_DUNGEON_CHANCE, LEAK_CHANCE, RED_GATE_TEXT, sealedReason, leakMonster, succeedLeader, takeLeaderNotice, doublePending, evolveDouble, grantDoubleBoxes, // Push #96d
   livingMembers,
   calibrateToParty, partyLuck, RANK_EXPECTED_POWER, totalStatsOf,
   MAX_PARTY,

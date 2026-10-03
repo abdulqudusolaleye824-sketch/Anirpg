@@ -29,7 +29,7 @@ const UI = require('../../rpg/utils/UI');
 module.exports = {
   name: 'classcmd',   // Primary name (gets aliased to all class cmdNames below)
   description: 'Class-specific skill command — use your class abilities',
-  aliases: [...Object.values(DEFAULT_CMD_NAMES), 'call'],  // 'heal', 'call', 'cast', 'rage', etc.
+  aliases: [...Object.values(DEFAULT_CMD_NAMES), 'call', 'skillcmd'], // Push #96h-z9: /skillcmd <skill> universal  // 'heal', 'call', 'cast', 'rage', etc.
 
   // ── Main dispatch ──────────────────────────────────────────────
   async execute(sock, msg, args, getDatabase, saveDatabase, sender) {
@@ -67,7 +67,7 @@ module.exports = {
     const usedCmd = extractCommandName(msg, sender);
 
     // /skill (+aliases) is the universal entry point (skill.js forwards here) — always allowed through
-    const UNIVERSAL_CMDS = new Set(['skill', 'skills', 'useskill', 'castskill', 'classcmd']);
+    const UNIVERSAL_CMDS = new Set(['skill', 'skills', 'useskill', 'castskill', 'classcmd', 'skillcmd']);
     const isMatchingCmd = UNIVERSAL_CMDS.has(usedCmd) || (usedCmd === playerCmd) || (className === 'Mage' && (usedCmd === 'call' || usedCmd === 'cast'));
 
     if (usedCmd && !isMatchingCmd) {
@@ -138,6 +138,13 @@ ${FRAME}` + (pro ? '' : `\n${UI.upsell()}`)
         return GateRaidCmd.execute(sock, msg, [_gkey, 'skill', skill.name], getDatabase, saveDatabase, sender);
       }
     } catch(e){}
+    // Push #96h-z9: inside an INSTANCE (DM) — /skillcmd <skill> routes to the instance, same as dungeons.
+    try {
+      if (player.instance && player.instance.active && !String(chatId).endsWith('@g.us')) {
+        const InstanceCmd = require('./instance');
+        return InstanceCmd.execute(sock, msg, ['skill', skill.name], getDatabase, saveDatabase, sender);
+      }
+    } catch (e) {}
     // Dungeon solo / party (modern managers)
     try {
       const DungeonPartyManager = require('../../rpg/dungeons/DungeonPartyManager');

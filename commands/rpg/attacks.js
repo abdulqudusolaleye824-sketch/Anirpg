@@ -39,6 +39,9 @@ function detectActiveCombat(player, chatId, db, sender) {
     return { type: 'pvp', battle: player.pvpBattle };
   }
 
+  // Push #96h-z9: Instance dungeon (DM only) — /attack and /attack <id> route into it.
+  if (player.instance && player.instance.active && !String(chatId || '').endsWith('@g.us')) return { type: 'instance' };
+
   // 2. Solo Dungeon
   if (player.dungeon && (player.dungeon.currentBattle || player.dungeon.inDungeon)) {
     return { type: 'dungeon', dungeon: player.dungeon };
@@ -109,6 +112,10 @@ module.exports = {
         if (combat.type === 'pvp') {
           const PvpCmd = require('./pvp');
           return PvpCmd.execute(sock, msg, ['attack', ...args], getDatabase, saveDatabase, sender);
+        }
+        if (combat.type === 'instance') {
+          const InstanceCmd = require('./instance');
+          return InstanceCmd.execute(sock, msg, ['attack', ...args], getDatabase, saveDatabase, sender);
         }
         if (combat.type === 'dungeon') {
           const DungeonCmd = require('./dungeon');

@@ -73,4 +73,43 @@ function formatResults(results) {
   return (results || []).map((r) => `${emoji[r.status] || '•'} *${r.name}*: ${r.detail}`).join('\n');
 }
 
-module.exports = { joinAllToMain, formatResults };
+// Push #96h-z9: ONE bot (just connected) joins EVERY --main group it is not yet in.
+// Invite code: the stored link, else a fresh code fetched through any other connected bot
+// that is already a member (and the fresh link is persisted for next time).
+async function joinOneToMains(db, sock, key) {
+  const out = [];
+  let mains = [];
+  try { mains = (require('./AstralGroups').getAll(db) || []).filter((g) => g && g.isMain && g.groupId); } catch {}
+  if (!mains.length || !sock || !sock.user?.id) return out;
+  let sockets = {}; try { sockets = MSM.getAllSockets() || {}; } catch {}
+  for (const g of mains) {
+    const label = g.groupName || g.type || String(g.groupId).slice(-12);
+    try { await sock.groupMetadata(g.groupId); out.push({ group: label, status: 'already' }); continue; } catch {}
+    let code = _codeFromLink(g.inviteLink);
+    if (!code) {
+      for (const [k2, s2] of Object.entries(sockets)) {
+        if (k2 === key || !s2 || !s2.user?.id || typeof s2.groupInviteCode !== 'function') continue;
+        try { const fresh = await s2.groupInviteCode(g.groupId); if (fresh) { code = String(fresh).split('/').pop(); if (db.astralGroups && db.astralGroups[g.groupId]) db.astralGroups[g.groupId].inviteLink = `https://chat.whatsapp.com/${code}`; break; } } catch {}
+      }
+    }
+    if (!code) { out.push({ group: label, status: 'failed', detail: 'no invite link' }); continue; }
+    try { await sock.groupAcceptInvite(code); out.push({ group: label, status: 'joined' }); }
+    catch (e) { out.push({ group: label, status: _alreadyInMsg(e) ? 'already' : 'failed', detail: String((e && e.message) || e).slice(0, 100) }); }
+    await sleep(1200);
+  }
+  return out;
+}
+
+// Push #96h-z9: every connected bot → every --main group (used by /joinmain from any bot's DM).
+async function joinAllToAllMains(db, opts = {}) {
+  const results = [];
+  let mains = [];
+  try { mains = (require('./AstralGroups').getAll(db) || []).filter((g) => g && g.isMain && g.groupId); } catch {}
+  for (const g of mains) {
+    const r = await joinAllToMain(db, g.groupId, g.inviteLink || null, opts);
+    results.push({ group: g.groupName || g.type || String(g.groupId).slice(-12), results: r });
+  }
+  return results;
+}
+
+module.exports = { joinAllToMain, joinOneToMains, joinAllToAllMains, formatResults };
