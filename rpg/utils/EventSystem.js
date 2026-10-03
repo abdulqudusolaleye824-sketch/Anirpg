@@ -344,7 +344,8 @@ function attackMonster(db, player, targetId, skillName = null) {
     _awardKill(db, ev, m, killer, ks, lines, dot ? `${String(dot.type).toUpperCase()} (inflicted by ${_name(killer)})` : 'its wounds');
     if (!alive(ev).length) lines.push(_nextWave(db, ev)); else if (alive(ev).length === 1 && alive(ev)[0].isBoss) lines.push(`👑 *The wave boss emerges:* ${alive(ev)[0].name} — ${alive(ev)[0].maxHp.toLocaleString()} HP.`);
     _commit(P); return { ok: true, text: lines.join('\n'), tailText: '', flow: null, monster: m }; }
-  { const UC = require('./UnifiedCombat'); const ca = UC.canAct(P); if (!ca.canAct) { _commit(P); return { ok: false, error: `${lines.length ? lines.join('\n') + '\n' : ''}😵 *${_name(player)}* is ${ca.reason} and cannot act this turn.` }; } }
+  { const UC = require('./UnifiedCombat'); const ca = UC.canAct(P); if (!ca.canAct) { _domainTurn(player, lines); _commit(P); const fx = (P.statusEffects || []).find(e => String(e.type || '').toLowerCase() === { stunned: 'stun', frozen: 'freeze', paralyzed: 'paralyze' }[ca.reason]); return { ok: true, text: [...lines, `😵 *${_name(player)}* is ${ca.reason}${fx && fx.duration ? ` (${fx.duration} more turn${fx.duration === 1 ? '' : 's'})` : ''} and cannot act this turn.${P.stats.hp <= 0 ? '' : ' The beast watches…'}`].join('\n'), tailText: '', flow: null, monster: m }; } }
+  if (P.stats.hp <= 0) { st.deaths++; st.diedAt = Date.now(); st.statusEffects = []; st.tempBuffs = {}; st.transform = null; P.transform = null; _commit(P); return { ok: true, text: [...lines, `💀 *${_name(player)}* bleeds out! Respawn in ${st._pro ? 30 : 60} min.`].join('\n'), tailText: '', flow: null, monster: m }; }
   // Push #96h-c: AUTO-WIRED. The strike runs through the real raid engine (gear, weapon,
   // title, passives, buffs, class skills). No skill named → the strongest READY skill the
   // hunter can afford is cast automatically; nothing ready → a basic strike.

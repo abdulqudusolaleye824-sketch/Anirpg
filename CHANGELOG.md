@@ -1,3 +1,6 @@
+## 1.0.161 — Push #96h-z6
+- Monster-class STRAIN (weaken 10t / stun 2t / bleed 7t) fires on the island when a transformation ends; stunned/frozen turns are reported as normal messages (bleed still ticks), bleeding out is handled.
+
 ## 1.0.160 — Push #96h-z5
 - Statuses name the hunter who inflicted them; a beast that dies to bleed/poison/burn is credited (points, EXP, artifact) to that hunter.
 - Monster-class transformations now multiply island stats (ATK/DEF/SPD/HP) against beasts and hunters; they tick per island action. Real stats untouched.
