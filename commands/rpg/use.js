@@ -286,6 +286,20 @@ ${FRAME}`;
         }, { quoted: msg });
       }
 
+      // ── Push #96h-z3: on JEJU ISLAND (Events GC, joined) a potion heals your EVENT HP pool ──
+      try {
+        const ES = require('../../rpg/utils/EventSystem');
+        if (ES.isEventGC(db, chatId) && player.eventStats && db.event && player.eventStats.id === db.event.id && player.eventStats.joined) {
+          const es = ES.eventStats(db, player); const st = player.eventStats; if (st.hp == null) st.hp = es.maxHp;
+          if (st.hp <= 0) return sock.sendMessage(chatId, { text: `💀 You are down on the island — potions cannot revive you. Wait for your respawn.`, mentions: [sender] }, { quoted: msg });
+          if (st.hp >= es.maxHp) return sock.sendMessage(chatId, { text: `❌ Your island HP is already full!\n\n❤️ Event HP: ${st.hp}/${es.maxHp}`, mentions: [sender] }, { quoted: msg });
+          let _pp = 1; try { _pp = 1 + require('../../rpg/utils/JobSystem').mod(player, 'potionPower') / 100; } catch (e) {}
+          const before = st.hp; st.hp = Math.min(es.maxHp, st.hp + Math.floor(es.maxHp * pct * _pp));
+          if (chosenTier === 'lower') require('../../rpg/utils/PotionTiers').consume(player, 'lower', 1); else if (chosenTier === 'medium') player.inventory.mediumHealthPotions--; else if (chosenTier === 'higher') player.inventory.higherHealthPotions--;
+          saveDatabase();
+          return sock.sendMessage(chatId, { text: [`${FRAME}`, `💚 *${tierName.toUpperCase()} USED — JEJU ISLAND* 💚`, `${FRAME}`, `${tierEmoji} *${player.name}* drinks on the island.`, ``, `✨ Event HP restored: *+${st.hp - before}* (+${Math.floor(pct * 100)}%)`, `❤️ Event HP: *${st.hp}/${es.maxHp}* (real HP untouched)`, `${FRAME}`].join('\n'), mentions: [sender] }, { quoted: msg });
+        }
+      } catch (e) { if (e && /down on the island|already full/.test(String(e.message))) throw e; }
       // ── STANDARD HEAL OUTSIDE PVP ─────────────────────────────
       if (player.stats.hp >= _effMax(player)) { // Push #94b: gear-boosted max, same number the message shows
         return sock.sendMessage(chatId, {

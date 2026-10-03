@@ -1,3 +1,10 @@
+## 1.0.158 — Push #96h-z3
+- Events GC is event-only: `/attack`, `/cast`, `/hunt`, `/huntreply` → event attack; `/heal`, `/buff` → event support; `/domain` → event domain; `/lb` → `/elb`; `/eprofile`/`/stats` → event stats; `/use` potions heal EVENT HP.
+- Battle flow: `/attack 24 7` (beast 24, skill 7) · `/cast 24 <skill>` · reply/tag + `/attack 7` on hunters (20 s window) · `/huntreply <skill>` · hunters can be named (`/attack Alpha 7`). Support skills ignore tags (always self). Turn goes out as THREE messages.
+- Status effects really land on beasts and hunters (poison/burn/stun…), tick each turn, stunned/frozen cannot act or counter.
+- Island has its OWN statuses/buffs; normal-world artifacts/auras/buffs/statuses have no effect there (energy shared).
+- Event domains last normally: N turns (6 at Lv.10, more for carried domains) up to 20 min; every foe met inside is −20% ATK/DEF + domain statuses; owner cannot miss, +25% dmg. Striking a hunter whose domain is up → DOMAIN CLASH (most refined wins, loser shatters).
+
 ## 1.0.157 — Push #96h-z / #96h-z2
 - Bosses CARRY their artifact (shown when the boss emerges; the killer takes it). 5 island artifact spawns per day with a 🔮 Claim button.
 - `/elb` — top participants: points, event level, kills (boss), hunter kills, deaths, artifacts. `/event skills` — your usable skills + equipped patterns.

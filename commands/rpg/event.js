@@ -3,6 +3,7 @@ const EventSystem = require('../../rpg/utils/EventSystem');
 const Perms = require('../../utils/permissions');
 const Target = require('../../utils/target');
 
+function _isOwnBot(db, jid) { try { const b = String(jid).split('@')[0].split(':')[0]; const bots = Object.values((db && db.botJoinedGCs) || {}); return bots.some(x => x && String(x.jid || x.number || '').split('@')[0].split(':')[0] === b); } catch (e) { return false; } }
 function _findUser(db, jid) {
   if (!jid || !db.users) return null; if (db.users[jid]) return db.users[jid];
   const b = String(jid).split('@')[0].split(':')[0];
@@ -40,7 +41,7 @@ module.exports = {
       if (!inGC) return needGC();
       const r = EventSystem.start(db, sender); if (!r.ok) return say(`❌ ${r.error}`);
       saveDatabase(db);
-      return say([`🏝️ *THE JEJU ISLAND RAID HAS BEGUN!*`, `For *10 days* the island belongs to whoever takes it.`, ``, `🌊 Each wave: *${EventSystem.WAVE_SIZE} beasts + 1 boss*. Clear it and a stronger wave rises.`, `🏝️ */ejoin* — enter the island (you get your event domain, then name + describe it).`, `⚔️ */event attack [beast] [skill | #pattern]* — strike a beast with a class skill or an equipped attack pattern (nothing named → your strongest ready skill). */event buff <skill>* — heals, shields, buffs. Beasts: *10 pts*, wave boss: *100 pts*. Everyone fights at *Event Lv.1* (E-Rank beast stats) — kills give event EXP (Pro ×2), levels raise your island stats, 🔮 artifacts drop from beasts (*/event grab* the island spawn). */event stats* shows your event level, HP, ATK, DEF, SPD, CRIT · */event skills* lists your usable skills + patterns · */elb* top hunters. Bosses carry artifacts; 5 surface on the island per day (Claim button). Beasts only counter, never start a fight; left alone 30s they regenerate.`, `🗡️ */event attack @hunter [skill]* — tag a hunter in your attack. They get *20 seconds* to retaliate with their own attack, then both moves land at once. Kill a hunter: take *50%* of their points, theirs reset to *0*.`, `💀 Die and you wait *1 hour* to respawn (*30 min* for Pro).`, `🛌 */eventafk* — untouchable, but you cannot attack.`, `🌌 */event domain* — your *Lv.10 event domain* (name it: /event domain name …).`, `🏅 */epoints* · */estats* · */eshop* · */event lb*`, ``, `Hunters of *all levels* may join. Good hunting.`].join('\n'));
+      return say([`🏝️ *THE JEJU ISLAND RAID HAS BEGUN!*`, `For *10 days* the island belongs to whoever takes it.`, ``, `🌊 Each wave: *${EventSystem.WAVE_SIZE} beasts + 1 boss*. Clear it and a stronger wave rises.`, `🏝️ */ejoin* — enter the island (you get your event domain, then name + describe it).`, `⚔️ *BATTLE FLOW (Events GC)* — beasts: */attack 24 7* (beast #24 with skill #7 from /skills) or */cast 24 <skill name>*; patterns: */attack 24 #12*. Hunters: reply/tag + */attack 7* → they get 20 s (buttons: Counter · Flee · Dodge+counter) or */huntreply <skill>*. Heals/shields/buffs: */heal <skill>* (tags ignored, always you). Nothing named → your strongest ready skill. */event buff <skill>* — heals, shields, buffs. Beasts: *10 pts*, wave boss: *100 pts*. Everyone fights at *Event Lv.1* (E-Rank beast stats) — kills give event EXP (Pro ×2), levels raise your island stats, 🔮 artifacts drop from beasts (*/event grab* the island spawn). */event stats* shows your event level, HP, ATK, DEF, SPD, CRIT · */event skills* lists your usable skills + patterns · */elb* top hunters. Bosses carry artifacts; 5 surface on the island per day (Claim button). Beasts only counter, never start a fight; left alone 30s they regenerate.`, `🗡️ */event attack @hunter [skill]* — tag a hunter in your attack. They get *20 seconds* to retaliate with their own attack, then both moves land at once. Kill a hunter: take *50%* of their points, theirs reset to *0*.`, `💀 Die and you wait *1 hour* to respawn (*30 min* for Pro).`, `🛌 */eventafk* — untouchable, but you cannot attack.`, `🌌 */event domain* — your *Lv.10 event domain* (name it: /event domain name …).`, `🏅 */epoints* · */estats* · */eshop* · */event lb*`, ``, `Hunters of *all levels* may join. Good hunting.`].join('\n'));
     }
     if (sub === 'end' || sub === 'stop') {
       if (!Perms.isBotOwner(db, sender)) return say('❌ Only an owner can end the event.');
@@ -69,11 +70,17 @@ module.exports = {
       const name = args.slice(1).join(' ').trim(); if (!name) return say('✨ Usage: */event buff <support skill>* — heals, shields and buffs from your /skills.');
       const r = EventSystem.supportSkill(db, player, name); if (!r.ok) return say(`❌ ${r.error}`); saveDatabase(db); return say(r.text);
     }
-    if (sub === 'attack' || sub === 'a' || sub === 'strike' || sub === 'hit' || sub === 'pk' || sub === 'skill' || sub === 's') {
+    if (sub === 'attack' || sub === 'a' || sub === 'strike' || sub === 'hit' || sub === 'pk' || sub === 'skill' || sub === 's' || sub === 'cast' || sub === 'hunt' || sub === 'huntreply') {
       if (!inGC) return needGC();
-      const tj = Target.resolve(msg, []); // a TAGGED hunter inside your attack = hunter vs hunter
-      const rest = args.slice(1).filter(a => !a.startsWith('@'));
-      const victim = tj ? _findUser(db, tj) : null; // a reply to a bot card / unregistered → beast attack
+      let tj = Target.resolve(msg, []); // a TAGGED / replied hunter inside your attack = hunter vs hunter
+      let rest = args.slice(1).filter(a => !a.startsWith('@'));
+      let victim = tj ? _findUser(db, tj) : null; // a reply to a bot card / unregistered → beast attack
+      // Push #96h-z3: a hunter can also be named — /attack Alpha 24 (unique name match among hunters on the island)
+      if (!victim && rest[0] && !/^#?\d+$/.test(rest[0])) { const q = rest[0].toLowerCase(); const hits = Object.values(db.users).filter(u => u && u !== player && u.eventStats && db.event && u.eventStats.id === db.event.id && u.eventStats.joined && String(u.name || '').toLowerCase() === q); if (hits.length === 1) { victim = hits[0]; tj = victim.jid; rest = rest.slice(1); } }
+      if (tj && !victim && !_isOwnBot(db, tj)) return say(`❌ I could not match that hunter to a registered player. Ask them to send a message here, or name them: */attack <name> <skill>*.`);
+      // Push #96h-z3: SUPPORT skills ignore tags — a heal/shield/buff always lands on YOU.
+      { const hv = !!(tj && victim && victim !== player); const sk0 = (hv ? rest : (rest[0] && /^\d+$/.test(rest[0]) ? rest.slice(1) : rest)).join(' ').trim();
+        if (sk0 && !/^#\d+$/.test(sk0)) { const sr = EventSystem.supportSkill(db, player, sk0); if (sr.ok) { saveDatabase(db); return say(sr.text); } if (!sr.notSupport && /on cooldown|Not enough energy/i.test(sr.error || '')) return say(`❌ ${sr.error}`); } }
       if (tj && victim && victim !== player) {
         const skill = rest.join(' ').trim() || null; // Push #96h-y: "#12" = attack pattern, otherwise a skill name
         const r = EventSystem.attackHunter(db, player, victim, skill); if (!r.ok) return say(`❌ ${r.error}`);
@@ -103,8 +110,9 @@ module.exports = {
           // Push #96h-z: the whole turn (strike + counter + results) goes out as ONE message — the old 11-message
           // burst is what made busy sockets time out ("send timed out after 20s").
           const me = f.hunter.player || player; const meName = f.hunter.name || player.name;
-          const t1 = await UC.playTurn(sock, chatId, { attacker: { ...me, name: meName }, defender: monWrap, move, result: { ...f.result, preAbsorbed: true }, tag: f.move ? `✨ *EVENT SKILL*` : `⚔️ *EVENT ATTACK*`, defenderBar: 'monster', silent: true });
-          const parts = [t1.texts.join('\n')];
+          // Push #96h-z3: statuses are applied by EventSystem (so they stick to the beast) — no double roll here.
+          const t1 = await UC.playTurn(sock, chatId, { attacker: { ...me, name: meName }, defender: monWrap, move: { ...move, effect: null, statuses: [], buffs: [], debuffs: [], selfDebuffs: [] }, result: { ...f.result, preAbsorbed: true }, tag: f.move ? `✨ *EVENT SKILL*` : `⚔️ *EVENT ATTACK*`, defenderBar: 'monster', silent: true });
+          const parts = [[...(f.preLines || []), t1.texts.join('\n'), ...(f.statusLines || [])].join('\n')];
           if (f.counter) {
             const c = f.counter; const sk = c.monsterSkill; const skName = sk ? (sk.name || 'Strike') : 'Savage Counter';
             const meWrap = { name: meName, stats: { hp: c.playerHpBefore, maxHp: c.playerMaxHp }, statusEffects: player.statusEffects || [] };
@@ -112,7 +120,8 @@ module.exports = {
             parts.push(t2.texts.join('\n'));
           }
           if (r.tailText && r.tailText.trim()) parts.push(r.tailText);
-          await say(parts.join('\n\n'));
+          // Push #96h-z3: THREE messages — your strike · the beast's answer · the outcome (kill/EXP/artifact/wave).
+          for (let i = 0; i < parts.length; i++) { await say(parts[i]); if (i < parts.length - 1) await new Promise(r => setTimeout(r, 400)); }
           return;
         } catch (e) { console.error('[event] rich flow:', e.message); }
       }

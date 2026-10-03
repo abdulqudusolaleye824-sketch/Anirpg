@@ -24,7 +24,7 @@ const STEAL_PCT = 0.5;
 const DOMAIN_LEVEL = 10;
 const DOMAIN_ENERGY = 350;
 const DOMAIN_COOLDOWN_MS = 60 * 60 * 1000;
-const DOMAIN_EFFECT_MS = 10 * 60 * 1000;
+const DOMAIN_EFFECT_MS = 20 * 60 * 1000; // Push #96h-z3: a domain stands 20 min or until its turns run out
 const RANKS = ['E', 'D', 'C', 'B', 'A', 'S'];
 const KILL_POINTS = { E: 10, D: 10, C: 10, B: 10, A: 10, S: 10 }; // Push #96h-y: 10 per beast
 const BOSS_POINTS = 100; // Push #96h-y: 100 per wave boss
@@ -57,9 +57,11 @@ function _sync(st, es) {
 }
 function _avatar(db, player) {
   const st = _p(db, player); const es = eventStats(db, player); _sync(st, es);
-  for (const k of ['skillCooldowns', 'attackCooldowns', 'tempBuffs']) if (!player[k]) player[k] = {};
-  if (!player.statusEffects) player.statusEffects = [];
-  const av = Object.assign({}, player, { stats: { ...(player.stats || {}), hp: st.hp, maxHp: es.maxHp, atk: es.atk, def: es.def, speed: es.speed, critChance: es.crit }, elvl: es.level, equippedGear: {}, equippedTitle: null, weapon: null, _eventAvatar: true, _real: player, _st: st });
+  for (const k of ['skillCooldowns', 'attackCooldowns']) if (!player[k]) player[k] = {};
+  // Push #96h-z3: the island has its OWN statuses and buffs (normal-world artifacts, auras, buffs and
+  // statuses stay outside). Only energy is shared with the normal world.
+  if (!st.statusEffects) st.statusEffects = []; if (!st.tempBuffs) st.tempBuffs = {};
+  const av = Object.assign({}, player, { stats: { ...(player.stats || {}), hp: st.hp, maxHp: es.maxHp, atk: es.atk, def: es.def, speed: es.speed, critChance: es.crit }, elvl: es.level, equippedGear: {}, equippedTitle: null, weapon: null, artifacts: { equipped: [], inventory: [], enhanced: {} }, aura: null, auras: null, statusEffects: st.statusEffects, tempBuffs: st.tempBuffs, _eventAvatar: true, _real: player, _st: st });
   return av;
 }
 function _commit(av) { const p = av._real, st = av._st; if (!p || !st) return; st.hp = Math.max(0, Math.floor(av.stats.hp || 0)); if (p.stats) { p.stats.energy = av.stats.energy; if (av.stats.mana != null) p.stats.mana = av.stats.mana; } st.lastAct = Date.now(); st.regenMark = Date.now(); }
@@ -129,6 +131,30 @@ function _hunterStats(p) {
   const wAtk = (p.weapon && (p.weapon.attack || p.weapon.bonus)) || 0;
   // Push #96h-g: base + gear + title + weapon + pet — the same pool the raid engine reads.
   return { atk: (s.atk || 10) + (g.atk || 0) + (tb.atk || 0) + wAtk + pet.atk, def: (s.def || 0) + (g.def || 0) + (tb.def || 0) + pet.def, speed: (s.speed || 50) + (g.speed || 0) + (tb.speed || 0) + pet.spd, crit: (s.critChance || 5) + (g.crit || 0) + (tb.crit || 0), maxHp };
+}
+// ── Push #96h-z3: statuses really land on the island ──────────
+function _mWrap(m) { if (!m.statusEffects) m.statusEffects = []; if (!m.tempBuffs) m.tempBuffs = {}; return { name: m.name, stats: m, statusEffects: m.statusEffects, tempBuffs: m.tempBuffs, isBoss: !!m.isBoss, rank: m.rank }; }
+function _tickEntity(wrap, lines) { try { const UC = require('./UnifiedCombat'); const logs = UC.tickStatuses(wrap) || []; for (const l of logs) if (l) lines.push(typeof l === 'string' ? l : (l.text || String(l))); } catch (e) {} }
+function _applyStatuses(res, attacker, defender, lines, extra = []) {
+  const out = []; if (!res || res.missed) return out;
+  let UC; try { UC = require('./UnifiedCombat'); } catch (e) { return out; }
+  const list = []; const sk = res.skillUsed;
+  if (sk && sk.effect && typeof sk.effect === 'object' && sk.effect.type) list.push(sk.effect);
+  for (const st of (res.statuses || [])) if (st && st.type) list.push({ type: st.type, chance: st.chance != null ? st.chance : 50, duration: st.duration || 2 });
+  for (const st of extra) if (st && st.type) list.push(st);
+  for (const fx of list) { try { const got = UC.tryApplyEffect({ id: 'event', effect: { type: fx.type, chance: fx.chance != null ? fx.chance : 50, duration: fx.duration || 2 } }, attacker, defender); if (got) { out.push(got); lines.push(`✨ *${defender.name}* is ${String(got.type || fx.type).toUpperCase()} (${got.duration || fx.duration || 2}t)!`); } else if (defender._lastStatusBlock) { lines.push(`🛡️ ${defender._lastStatusBlock}.`); defender._lastStatusBlock = null; } } catch (e) {} }
+  return out;
+}
+// ── Push #96h-z3: event domains stand 20 min / N turns, affect every foe the owner meets, and CLASH ──
+function domainActive(player) { const d = player && player.eventDomain; if (!d || !d.activeUntil) return null; if (d.activeUntil < Date.now() || (d.turnsLeft != null && d.turnsLeft <= 0)) { d.activeUntil = 0; return null; } return d; }
+function _domainTurn(player, lines) { const d = domainActive(player); if (!d) return; if (d.turnsLeft != null) { d.turnsLeft -= 1; if (d.turnsLeft <= 0) { d.activeUntil = 0; lines.push(`🌫️ *${d.name}* fades — its turns are spent.`); } else lines.push(`🌌 _${d.name}_ — ${d.turnsLeft} turn${d.turnsLeft === 1 ? '' : 's'} left`); } }
+function _domainStatuses(player) { try { const DS = require('./DomainSystem'); const e = DS.scaledEffect(player); return (e && e.statuses) || []; } catch (e) { return []; } }
+function _refine(player) { let q = 100, pw = 0; try { q = require('./ClassPower').quality(player); } catch (e) {} try { pw = require('./DomainSystem').power(player); } catch (e) {} const d = player.eventDomain || {}; return { q, pw: pw + (d.ownLevel || DOMAIN_LEVEL) * 4 }; }
+function domainClash(attacker, victim) {
+  const a = domainActive(attacker), v = domainActive(victim); if (!a || !v) return null;
+  const ra = _refine(attacker), rv = _refine(victim); const win = ra.q !== rv.q ? ra.q > rv.q : ra.pw > rv.pw;
+  const loser = win ? victim : attacker; loser.eventDomain.activeUntil = 0; loser.eventDomain.turnsLeft = 0;
+  return { win, text: `🌌 *DOMAIN CLASH!* ${_name(attacker)}'s *${a.name}* meets ${_name(victim)}'s *${v.name}* — the more refined domain wins: *${win ? a.name : v.name}* holds the field; *${win ? v.name : a.name}* shatters.` };
 }
 function _mit(def, atk) { return Math.min(0.70, def / Math.max(1, def + atk)); }
 function _dmg(atk, def, mult = 1) { return Math.max(5, Math.floor(atk * (1 - _mit(def, atk)) * mult * (0.9 + Math.random() * 0.2))); }
@@ -212,9 +238,9 @@ function _nextWave(db, ev) {
 function _respawnMs(st) { return st && st._pro ? PRO_RESPAWN_MS : RESPAWN_MS; }
 function _isDead(st) { return st.diedAt && Date.now() - st.diedAt < _respawnMs(st); }
 function _respawnIn(st) { const ms = _respawnMs(st) - (Date.now() - st.diedAt); return `${Math.ceil(ms / 60000)} min`; }
-function _domainMult(player, kind) { const d = player.eventDomain; if (!d || !d.activeUntil || d.activeUntil < Date.now()) return 1; return kind === 'atk' ? 1.25 : 1; }
-function _monDebuff(ev, m) { return (m.domDebuffUntil && m.domDebuffUntil > Date.now()) ? 0.8 : 1; }
-function _hunterDebuff(p) { return (p.eventStats && p.eventStats.debuffUntil && p.eventStats.debuffUntil > Date.now()) ? 0.8 : 1; }
+function _domainMult(player, kind) { return domainActive(player) ? (kind === 'atk' ? 1.25 : 1) : 1; }
+function _monDebuff(ev, m, attacker) { return ((m.domDebuffUntil && m.domDebuffUntil > Date.now()) || (attacker && domainActive(attacker))) ? 0.8 : 1; }
+function _hunterDebuff(p, attacker) { return ((p.eventStats && p.eventStats.debuffUntil && p.eventStats.debuffUntil > Date.now()) || (attacker && domainActive(attacker))) ? 0.8 : 1; }
 
 // ── auto skill: strongest READY, affordable, damaging class skill ─────────
 // Push #96h-y: attack patterns on the island — "#12" / "12" → an owned + equipped pattern.
@@ -240,7 +266,7 @@ function supportSkill(db, player, skillName) {
   const g = _guard(db, player); if (g.error) return { ok: false, error: g.error };
   const P = _avatar(db, player); // Push #96h-z: heals/shields land on the EVENT HP pool
   let r = null; try { const GR = require('../dungeons/GateRaid'); r = GR.supportCast(P, _pid(P), P, _pid(P), skillName, null, db); } catch (e) { r = { ok: false, error: e.message }; }
-  if (!r || !r.ok) return { ok: false, error: (r && r.error) || 'That skill cannot be cast here.' };
+  if (!r || !r.ok) return { ok: false, error: (r && r.error) || 'That skill cannot be cast here.', notSupport: !!(r && r.notSupport) };
   _commit(P); g.st.skillsUsed++;
   return { ok: true, text: [...(g.note ? [g.note] : []), `✨ *${_name(player)}* casts *${r.skill.name}* on the island`, ...(r.lines || []), `❤️ ${_name(player)}: ${g.st.hp}/${P.stats.maxHp}`].join('\n') };
 }
@@ -304,10 +330,13 @@ function attackMonster(db, player, targetId, skillName = null) {
   if (!m) return { ok: false, error: 'Nothing left alive on this wave.' };
   if (m.isBoss && alive(ev).length > 1) return { ok: false, error: `👑 *${m.name}* only comes out when the ${alive(ev).length - 1} remaining beasts are dead.` };
   const P = _avatar(db, player); const h = { ...P.stats, crit: P.stats.critChance }; const lines = g.note ? [g.note] : [];
+  const MW = _mWrap(m); _tickEntity(P, lines); _tickEntity(MW, lines); // Push #96h-z3: burns/bleeds/regen tick for both
+  if (m.hp <= 0) { m.defeated = true; m.by = m.by || _pid(player); _commit(P); return { ok: true, text: [...lines, `☠️ *${m.name}* succumbs to its wounds.`].join('\n'), tailText: '', flow: null, monster: m }; }
+  { const UC = require('./UnifiedCombat'); const ca = UC.canAct(P); if (!ca.canAct) { _commit(P); return { ok: false, error: `${lines.length ? lines.join('\n') + '\n' : ''}😵 *${_name(player)}* is ${ca.reason} and cannot act this turn.` }; } }
   // Push #96h-c: AUTO-WIRED. The strike runs through the real raid engine (gear, weapon,
   // title, passives, buffs, class skills). No skill named → the strongest READY skill the
   // hunter can afford is cast automatically; nothing ready → a basic strike.
-  const target = { name: m.name, def: Math.floor(m.def * _monDebuff(ev, m)), isBoss: !!m.isBoss, statusEffects: m.statusEffects || (m.statusEffects = []), rank: m.rank };
+  const target = { name: m.name, def: Math.floor(m.def * _monDebuff(ev, m, P)), isBoss: !!m.isBoss, statusEffects: m.statusEffects, rank: m.rank };
   const pick = skillName || _autoSkill(player);
   let res = null;
   const pat = _patternOf(player, skillName); if (pat && pat.error) return { ok: false, error: pat.error };
@@ -315,7 +344,9 @@ function attackMonster(db, player, targetId, skillName = null) {
   else { try { res = require('../dungeons/GateRaid').playerDamage(P, pick, target); } catch (e) { res = null; } }
   if (res && res.blocked && skillName) return { ok: false, error: res.reason || 'That skill cannot be used now.' };
   if (!res || res.blocked) { const c = Math.random() * 100 < h.crit + 5; res = { damage: _dmg(h.atk, target.def, c ? 1.6 : 1), isCrit: c, skillUsed: null }; }
+  if (res.missed && domainActive(player)) { res.missed = false; res.dodged = false; res.damage = res.damage || _dmg(h.atk, target.def, 1); lines.push(`🌌 Inside *${domainActive(player).name}* your moves cannot miss.`); }
   let dmg = Math.max(0, Math.floor((res.damage || 0) * _domainMult(player, 'atk'))); const crit = !!res.isCrit;
+  const statusLines = []; _applyStatuses(res, P, MW, statusLines, domainActive(player) ? _domainStatuses(player) : []);
   if (res.healed > 0) { P.stats.hp = Math.min(P.stats.maxHp, (P.stats.hp || 0) + res.healed); lines.push(`💚 *${res.skillUsed ? res.skillUsed.name : 'Recovery'}* restored *${res.healed}* HP`); }
   if (res.skillUsed) st.skillsUsed++; if (crit) st.crits++;
   const _mHpBefore = m.hp;
@@ -323,7 +354,8 @@ function attackMonster(db, player, targetId, skillName = null) {
   // Push #96h-x: full dungeon-style presentation — the command layer plays this through UnifiedCombat.playTurn.
   const flow = { hunter: { name: _name(player), player: P }, monster: { name: `${m.name} #${m.id}`, hp: _mHpBefore, maxHp: m.maxHp, statusEffects: m.statusEffects || [] },
     move: res.skillUsed ? { name: res.skillUsed.name, description: res.skillUsed.description || 'A class skill unleashed on the island.', cooldownMs: (res.skillUsed.cooldown || 3) * 1000, effect: (res.skillUsed.effect && typeof res.skillUsed.effect === 'object' && res.skillUsed.effect.type) ? res.skillUsed.effect : null, isSkill: true } : null,
-    result: { damage: dmg, crit, missed: !!res.missed, dodged: !!res.dodged, missWhy: res.missWhy || null }, counter: null };
+    result: { damage: dmg, crit, missed: !!res.missed, dodged: !!res.dodged, missWhy: res.missWhy || null }, counter: null, statusLines, preLines: lines.slice() };
+  lines.push(...statusLines);
   const strikeLine = `${res.skillUsed ? `✨ *${res.skillUsed.name}*` : '⚔️'} *${_name(player)}* hits *${m.name}* #${m.id} for *${dmg.toLocaleString()}*${crit ? ' 💥CRIT' : ''} — ${m.hp.toLocaleString()}/${m.maxHp.toLocaleString()} HP`;
   lines.push(strikeLine);
   if (m.hp <= 0) {
@@ -336,18 +368,24 @@ function attackMonster(db, player, targetId, skillName = null) {
     else if (alive(ev).length === 1 && alive(ev)[0].isBoss) lines.push(`👑 *The wave boss emerges:* ${alive(ev)[0].name} — ${alive(ev)[0].maxHp.toLocaleString()} HP.${alive(ev)[0].artifact ? ` It carries 🔮 *${alive(ev)[0].artifact.name}* (${_artDesc(alive(ev)[0].artifact)}).` : ''}`);
   } else {
     // counter-strike: beasts never start a fight, but they answer one.
+    const _ca = require('./UnifiedCombat').canAct(MW);
+    if (!_ca.canAct) lines.push(`😵 *${m.name}* is ${_ca.reason} — no counter this turn.`);
+    else {
     const mc = (10 + (m.critBonus || 0) + (m.isBoss ? 8 : 0)) > Math.random() * 100;
-    let back = 0; try { back = require('../dungeons/GateRaid').monsterDamage({ ...m, atk: Math.floor(m.atk * _monDebuff(ev, m) * (m.isBoss ? 1.3 : 1)), _raid: false }, h.def, P) || 0; } catch (e) { back = 0; }
-    if (!back) back = _dmg(m.atk * _monDebuff(ev, m) * (m.isBoss ? 1.3 : 1), h.def, mc ? 1.5 : 1);
+    let back = 0; try { back = require('../dungeons/GateRaid').monsterDamage({ ...m, atk: Math.floor(m.atk * _monDebuff(ev, m, P) * (m.isBoss ? 1.3 : 1)), _raid: false }, h.def, P) || 0; } catch (e) { back = 0; }
+    if (!back) back = _dmg(m.atk * _monDebuff(ev, m, P) * (m.isBoss ? 1.3 : 1), h.def, mc ? 1.5 : 1);
     const _pHpBefore = P.stats.hp || 0;
     P.stats.hp = Math.max(0, (P.stats.hp || 0) - back); st.dmgTaken += back;
     const counterLine = `🩸 *${m.name}* counters for *${back.toLocaleString()}*${mc ? ' 💥' : ''} — ${_name(player)}: ${P.stats.hp}/${h.maxHp} HP`;
     lines.push(counterLine);
     flow.counter = { line: counterLine, dmg: back, crit: mc, playerHpBefore: _pHpBefore, playerMaxHp: h.maxHp, monsterHp: m.hp, monsterMaxHp: m.maxHp, monsterSkill: (Array.isArray(m.skills) && m.skills.length) ? m.skills[Math.floor(Math.random() * m.skills.length)] : null };
-    if (P.stats.hp <= 0) { st.deaths++; st.diedAt = Date.now(); P.stats.hp = 0; lines.push(`💀 *${_name(player)} was slain by ${m.name}!* Respawn in ${st._pro ? 30 : 60} min.`); }
+    if (P.stats.hp <= 0) { st.deaths++; st.diedAt = Date.now(); P.stats.hp = 0; st.statusEffects = []; st.tempBuffs = {}; lines.push(`💀 *${_name(player)} was slain by ${m.name}!* Respawn in ${st._pro ? 30 : 60} min.`); }
+    }
   }
+  _domainTurn(player, lines);
   _commit(P);
-  const tail = lines.filter(l => l !== strikeLine && !(flow.counter && l === flow.counter.line));
+  const _pre = new Set([...(flow.preLines || []), ...statusLines]);
+  const tail = lines.filter(l => l !== strikeLine && !(flow.counter && l === flow.counter.line) && !_pre.has(l));
   return { ok: true, text: lines.join('\n'), tailText: tail.join('\n'), flow, monster: m };
 }
 // ── HUNTER vs HUNTER: tag a hunter in your attack/skill. They get a 20s window to
@@ -373,12 +411,14 @@ function attackHunter(db, player, victim, skillName = null) {
   if (pend[you]) return { ok: false, error: `*${_name(victim)}* is already being challenged — wait for that clash to resolve.` };
   if (Object.values(pend).some(x => x.attackerId === me)) return { ok: false, error: 'Your previous strike has not resolved yet (20s window).' };
   pend[you] = { attackerId: me, victimId: you, attackerSkill: skillName, at: Date.now(), resolveAt: Date.now() + RETALIATE_MS };
-  return { ok: true, pending: true, attackerId: me, victimId: you, resolveAt: pend[you].resolveAt, text: `${g.note ? g.note + '\n' : ''}🗡️ *${_name(player)}* targets *${_name(victim)}*${skillName ? ` with *${skillName}*` : ''}!\n⏳ *${_name(victim)}* has *20 seconds* to retaliate — */event attack @${String(you).split('@')[0]} [skill]* — then both moves land at once.` };
+  const clash = domainClash(player, victim);
+  return { ok: true, pending: true, attackerId: me, victimId: you, resolveAt: pend[you].resolveAt, clash, text: `${g.note ? g.note + '\n' : ''}${clash ? clash.text + '\n' : ''}🗡️ *${_name(player)}* targets *${_name(victim)}*${skillName ? ` with *${skillName}*` : ''}!\n⏳ *${_name(victim)}* has *20 seconds* to retaliate — */event attack @${String(you).split('@')[0]} [skill]* — then both moves land at once.` };
 }
 function _find(db, id) { if (!id) return null; if (db.users[id]) return db.users[id]; const b = String(id).split('@')[0]; return Object.values(db.users || {}).find(u => u && (_pid(u) === id || String(_pid(u)).split('@')[0] === b)) || null; }
 function _strike(db, ev, atkP, defP, skillName, lines) { // atkP/defP are event avatars (Push #96h-z)
   const h = { ...atkP.stats, crit: atkP.stats.critChance }, v = { ...defP.stats }; const as = _p(db, atkP._real || atkP), ds = _p(db, defP._real || defP);
-  const vt = { name: _name(defP), def: Math.floor(v.def * _hunterDebuff(defP)), statusEffects: defP.statusEffects || [] };
+  const vt = { name: _name(defP), def: Math.floor(v.def * _hunterDebuff(defP._real || defP, atkP._real || atkP)), statusEffects: defP.statusEffects || [] };
+  { const UC = require('./UnifiedCombat'); const ca = UC.canAct(atkP); if (!ca.canAct) { lines.push(`😵 *${_name(atkP)}* is ${ca.reason} — no move this clash.`); return 0; } }
   let res = null;
   const pat = skillName === BASIC ? null : _patternOf(atkP, skillName);
   if (pat && pat.error) { lines.push(`⚠️ ${_name(atkP)}: ${pat.error} — basic strike instead.`); }
@@ -386,10 +426,14 @@ function _strike(db, ev, atkP, defP, skillName, lines) { // atkP/defP are event 
   else if (skillName !== BASIC) { try { res = require('../dungeons/GateRaid').playerDamage(atkP, skillName || _autoSkill(atkP), vt); } catch (e) { res = null; } }
   if (res && res.blocked) { lines.push(`⚠️ ${_name(atkP)}: ${res.reason || 'skill unavailable'} — basic strike instead.`); res = null; }
   if (!res) { const c = Math.random() * 100 < h.crit; res = { damage: _dmg(h.atk, vt.def, c ? 1.6 : 1), isCrit: c }; }
-  const crit = !!res.isCrit; const dmg = Math.max(0, Math.floor((res.damage || 0) * _domainMult(atkP, 'atk') * _hunterDebuff(atkP)));
+  const _ar = atkP._real || atkP;
+  if (res.missed && domainActive(_ar)) { res.missed = false; res.damage = res.damage || _dmg(h.atk, vt.def, 1); lines.push(`🌌 Inside *${domainActive(_ar).name}* ${_name(atkP)}'s moves cannot miss.`); }
+  const crit = !!res.isCrit; const dmg = Math.max(0, Math.floor((res.damage || 0) * _domainMult(_ar, 'atk') * _hunterDebuff(_ar, defP._real || defP)));
   if (res.skillUsed) as.skillsUsed++; if (crit) as.crits++;
   as.dmg += dmg; ds.dmgTaken += dmg;
   lines.push(`${res.skillUsed ? `✨ *${res.skillUsed.name}*` : '🗡️'} *${_name(atkP)}* → *${_name(defP)}*: *${dmg.toLocaleString()}*${crit ? ' 💥CRIT' : ''}${res.missed ? ' (missed)' : ''}`);
+  _applyStatuses(res, atkP, defP, lines, domainActive(_ar) ? _domainStatuses(_ar) : []);
+  _domainTurn(_ar, lines);
   return dmg;
 }
 function resolvePending(db, victimId) {
@@ -398,6 +442,7 @@ function resolvePending(db, victimId) {
   delete pend[victimId];
   const Ar = _find(db, c.attackerId), Br = _find(db, c.victimId); if (!Ar || !Br) return { ok: false, error: 'A duelist vanished.' };
   const A = _avatar(db, Ar), B = _avatar(db, Br); const as = _p(db, Ar), bs = _p(db, Br); const lines = [`⚔️ *CLASH — ${_name(A)} vs ${_name(B)}*${c.victimAnswered ? '' : ` (${_name(B)} did not retaliate)`}`];
+  _tickEntity(A, lines); _tickEntity(B, lines);
   // Both moves are computed from the SAME starting state, then applied together.
   // Push #96h-y: Dodge+counter — speed-based evasion of the opener, then a base-ATK counter.
   let dA;
@@ -406,7 +451,7 @@ function resolvePending(db, victimId) {
   const dB = c.victimAnswered ? _strike(db, ev, B, A, c.victimSkill, lines) : 0;
   B.stats.hp = Math.max(0, (B.stats.hp || 0) - dA); if (dB) A.stats.hp = Math.max(0, (A.stats.hp || 0) - dB);
   lines.push(`❤️ ${_name(A)} ${A.stats.hp}/${A.stats.maxHp} · ${_name(B)} ${B.stats.hp}/${B.stats.maxHp}`);
-  const kill = (winner, loser, ws, ls) => { const stolen = Math.floor((ls.points || 0) * STEAL_PCT); ws.points += stolen + HUNTER_KILL_BONUS; ws.hunterKills++; ls.points = 0; ls.deaths++; ls.diedAt = Date.now(); lines.push(`💀 *${_name(loser)} is slain!* ${_name(winner)} takes *${stolen} points* (+${HUNTER_KILL_BONUS} bounty) — ${_name(loser)}'s points reset to *0*, respawn in ${ls._pro ? 30 : 60} min.`); _gainExp(db, winner._real || winner, ws, EXP_HUNTER, lines); };
+  const kill = (winner, loser, ws, ls) => { const stolen = Math.floor((ls.points || 0) * STEAL_PCT); ws.points += stolen + HUNTER_KILL_BONUS; ws.hunterKills++; ls.points = 0; ls.deaths++; ls.diedAt = Date.now(); ls.statusEffects = []; ls.tempBuffs = {}; lines.push(`💀 *${_name(loser)} is slain!* ${_name(winner)} takes *${stolen} points* (+${HUNTER_KILL_BONUS} bounty) — ${_name(loser)}'s points reset to *0*, respawn in ${ls._pro ? 30 : 60} min.`); _gainExp(db, winner._real || winner, ws, EXP_HUNTER, lines); };
   if (B.stats.hp <= 0 && A.stats.hp <= 0) { lines.push(`☠️ *Double knockout!* Both fall — no points change hands.`); as.deaths++; bs.deaths++; as.diedAt = bs.diedAt = Date.now(); }
   else { if (B.stats.hp <= 0) kill(A, B, as, bs); if (A.stats.hp <= 0) kill(B, A, bs, as); }
   _commit(A); _commit(B);
@@ -484,6 +529,7 @@ function castDomain(db, player, chatId) {
   if (Date.now() - (d.lastCast || 0) < DOMAIN_COOLDOWN_MS) return { ok: false, error: `Your domain is still recovering — ${Math.ceil((DOMAIN_COOLDOWN_MS - (Date.now() - d.lastCast)) / 60000)} min left.` };
   const energy = player.stats.energy || 0; if (energy < DOMAIN_ENERGY) return { ok: false, error: `Domain Expansion costs *${DOMAIN_ENERGY} ${player.energyType || 'energy'}* — you have ${energy}.` };
   player.stats.energy = energy - DOMAIN_ENERGY; d.lastCast = Date.now(); d.activeUntil = Date.now() + DOMAIN_EFFECT_MS; d.casts++; st.domainCasts++;
+  try { d.turnsLeft = require('./DomainSystem').turnsFor(d.own ? (d.ownLevel || DOMAIN_LEVEL) : DOMAIN_LEVEL); } catch (e) { d.turnsLeft = 6; } // Push #96h-z3: Lv.10 → 6 turns, higher domains more; 20 min cap
   const h = _realStats(player); let hit = 0, total = 0; const until = Date.now() + DOMAIN_EFFECT_MS; // Push #96h-z: the domain keeps its real buff and weight
   const _lvMult = d.own ? Math.min(2, 1 + (Math.max(0, (d.ownLevel || DOMAIN_LEVEL) - DOMAIN_LEVEL)) * 0.05) : 1; // Push #96h-t: a carried domain hits harder per level above 10 (cap ×2)
   for (const m of alive(ev)) { const burst = Math.floor(Math.min(m.maxHp * 0.12 * _lvMult, h.atk * 3 * _lvMult)); m.hp = Math.max(1, m.hp - burst); m.lastHit = Date.now(); m._regenAt = 0; m.domDebuffUntil = until; hit++; total += burst; }
@@ -491,7 +537,7 @@ function castDomain(db, player, chatId) {
   for (const u of Object.values(db.users || {})) { if (!u || u === player || (u.jid || u.id) === me) continue; const us = u.eventStats; if (!us || us.id !== ev.id || us.afk || _isDead(us)) continue; us.debuffUntil = until; hunters++; }
   st.dmg += total;
   const msgs = [`🌌 *DOMAIN EXPANSION — ${d.name.toUpperCase()}*`, `_${d.desc}_`,
-    `👤 ${_name(player)} · ${d.own ? `Domain Lv.${d.ownLevel}` : `Event Domain Lv.${DOMAIN_LEVEL}`}\n💥 ${hit} beasts take *${total.toLocaleString()}* total damage and lose 20% ATK/DEF for 10 min.\n🗡️ ${hunters} rival hunter${hunters === 1 ? '' : 's'} weakened 20% for 10 min.\n⚡ You deal +25% damage for 10 min. 🛡️ Inside your domain you are immune to new status effects.`];
+    `👤 ${_name(player)} · ${d.own ? `Domain Lv.${d.ownLevel}` : `Event Domain Lv.${DOMAIN_LEVEL}`}\n💥 Opening burst: ${hit} beasts take *${total.toLocaleString()}* total damage.\n🌌 *${d.name}* stands for *${d.turnsLeft} turns* (max 20 min): every foe you meet inside it loses 20% ATK/DEF${_domainStatuses(player).length ? ` and risks ${_domainStatuses(player).map(x => `${x.chance}% ${String(x.type).toUpperCase()}`).join(', ')}` : ''}; your moves cannot miss and deal +25%.\n🗡️ ${hunters} rival hunter${hunters === 1 ? '' : 's'} on the island weakened 20%. Strike a hunter whose domain is up → *domain clash* (most refined wins).`];
   return { ok: true, messages: msgs };
 }
 
@@ -556,4 +602,4 @@ function infoText(db) {
     ``, `📜 *RULES*`, `• */ejoin* to enter (all levels) · 10 days · ${WAVE_SIZE} beasts + 1 boss per wave`, `• Beasts never start a fight — they counter; idle 30s → +5% HP per 30s`, `• Friendly fire: tag a hunter in your attack (/event attack @hunter [skill]); they get 20s to retaliate, then both moves land · kill = 50% of their points, theirs reset to 0`, `• Death = 1h respawn · /eventafk = untouchable, no attacking, free to raid — any message here brings you back`, `• Attack with plain */attack [#|@hunter] [skill]* or */skill <skill>* in this GC (reply to a hunter = target them)`, `• Lv.10 event domain: /event domain (name + desc first) · ${DOMAIN_ENERGY} energy · 1h cooldown`, `• Points: E${KILL_POINTS.E} D${KILL_POINTS.D} C${KILL_POINTS.C} B${KILL_POINTS.B} A${KILL_POINTS.A} S${KILL_POINTS.S} · boss ${BOSS_POINTS} · hunter kill +${HUNTER_KILL_BONUS} · spend in /eshop`].join('\n');
 }
 
-module.exports = { leaderboardText, loadoutText, eventStats, expNeed, grabArtifact, artifactAlert, _avatar, _commit, EVENT_BASE, ELVL_MAX, EXP_KILL, EXP_BOSS, EXP_HUNTER, ARTIFACT_SLOTS, ARTIFACT_SPAWN_MS, AFK_LOCK_MS, HUNTER_REGEN_PCT, supportSkill, counterPending, fleePending, dodgePending, PRO_RESPAWN_MS, BEAST_MULT, KILL_POINTS, BOSS_POINTS, infoText, blocksRaids, breakAfk, pullFromDungeons, RETALIATE_MS, pendingFor, resolvePending, resolveExpired, join, isJoined, handleSetupReply, setupStep, _autoSkill, EVENT_LENGTH_MS, WAVE_SIZE, RESPAWN_MS, REGEN_IDLE_MS, REGEN_PCT, STEAL_PCT, DOMAIN_LEVEL, DOMAIN_ENERGY, SHOP, KILL_POINTS, BOSS_POINTS, gcId, isEventGC, buildWave, start, end, tick, alive, attackMonster, attackHunter, toggleAfk, domainState, setDomainName, setDomainDesc, castDomain, leaderboard, status, pointsText, statsText, shopText, buy, _p };
+module.exports = { domainActive, domainClash, DOMAIN_EFFECT_MS, leaderboardText, loadoutText, eventStats, expNeed, grabArtifact, artifactAlert, _avatar, _commit, EVENT_BASE, ELVL_MAX, EXP_KILL, EXP_BOSS, EXP_HUNTER, ARTIFACT_SLOTS, ARTIFACT_SPAWN_MS, AFK_LOCK_MS, HUNTER_REGEN_PCT, supportSkill, counterPending, fleePending, dodgePending, PRO_RESPAWN_MS, BEAST_MULT, KILL_POINTS, BOSS_POINTS, infoText, blocksRaids, breakAfk, pullFromDungeons, RETALIATE_MS, pendingFor, resolvePending, resolveExpired, join, isJoined, handleSetupReply, setupStep, _autoSkill, EVENT_LENGTH_MS, WAVE_SIZE, RESPAWN_MS, REGEN_IDLE_MS, REGEN_PCT, STEAL_PCT, DOMAIN_LEVEL, DOMAIN_ENERGY, SHOP, KILL_POINTS, BOSS_POINTS, gcId, isEventGC, buildWave, start, end, tick, alive, attackMonster, attackHunter, toggleAfk, domainState, setDomainName, setDomainDesc, castDomain, leaderboard, status, pointsText, statsText, shopText, buy, _p };

@@ -309,9 +309,19 @@ module.exports = async (sock, msg, messageText, config, getDatabase, saveDatabas
   let resolvedCommand = (commandName && commands[commandName]) ? commandName : (ALIASES[commandName] || commandName);
   // Push #96h-h: in the EVENTS GC a plain /attack, /skill, /hit (…) IS the event attack.
   try {
-    if (chatId.endsWith('@g.us') && ['attack', 'attacks', 'a', 'skill', 's', 'hit', 'strike', 'pk'].includes(commandName) && commands.event) {
+    // Push #96h-z3: in the Events GC EVERYTHING is event-related — attack/cast/hunt → event attack, buff/heal → event buff,
+    // domain → event domain, lb → /elb, profile/stats → event stats, use (potion) → heals event HP (handled in /use).
+    if (chatId.endsWith('@g.us') && commands.event) {
       const _edb = getDatabase(); const ES = require('../rpg/utils/EventSystem');
-      if (ES.isEventGC(_edb, chatId)) { resolvedCommand = 'event'; args = ['attack', ...args]; }
+      if (ES.isEventGC(_edb, chatId)) {
+        const _c = String(commandName || '').toLowerCase();
+        if (['attack', 'attacks', 'a', 'skill', 's', 'hit', 'strike', 'pk', 'cast', 'hunt', 'huntreply', 'fight', 'pvp', 'duel'].includes(_c)) { resolvedCommand = 'event'; args = ['attack', ...args]; }
+        else if (['buff', 'heal', 'support', 'shield'].includes(_c)) { resolvedCommand = 'event'; args = ['buff', ...args]; }
+        else if (['domain', 'domainexpansion', 'expand', 'de'].includes(_c)) { resolvedCommand = 'event'; args = ['domain', ...args]; }
+        else if (['lb', 'leaderboard', 'top', 'rank', 'ranking'].includes(_c) && commands.elb) { resolvedCommand = 'elb'; }
+        else if (['stats', 'mystats', 'eprofile'].includes(_c) && commands.estats) { resolvedCommand = 'estats'; }
+        else if (['grab', 'claim'].includes(_c)) { resolvedCommand = 'event'; args = ['grab', ...args]; }
+      }
     }
     // Push #96h-z: other commands in the Events GC no longer break event-AFK (that blocked AFK hunters from raiding). Event actions auto-return you.
   } catch (e) {}
