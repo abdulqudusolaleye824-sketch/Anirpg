@@ -630,6 +630,7 @@ async function playTurn(sock, chatId, o) {
   const _blk = defender._lastStatusBlock ? `🛡️ ${defender._lastStatusBlock}.` : null; defender._lastStatusBlock = null;
   const _extra4 = [].concat(_buffNotes || [], (o._broke && o._broke.length) ? o._broke : []);
   const texts = [t1, t2, _blk ? `${t3}\n${_blk}` : t3, _extra4.length ? `${t4}\n${_extra4.join('\n')}` : t4, t5];
+  if (o.silent) return { result, statusApplied, tier, texts }; // Push #96h-z: caller sends (lets the event pack a whole turn into ONE message)
   for (let i = 0; i < texts.length; i++) {
     await sock.sendMessage(chatId, { text: texts[i], ...(mentions.length ? { mentions } : {}) });
     if (i < texts.length - 1 && gap > 0) await new Promise((r) => setTimeout(r, gap));

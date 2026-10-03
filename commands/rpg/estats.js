@@ -5,6 +5,6 @@ module.exports = {
   async execute(sock, msg, args, getDatabase, saveDatabase, sender) {
     const chatId = msg.key.remoteJid; const db = getDatabase(); const player = db.users[sender];
     if (!player) return sock.sendMessage(chatId, { text: '❌ Not registered! Use /register first.' }, { quoted: msg });
-    EventSystem.tick(db); return sock.sendMessage(chatId, { text: EventSystem.statsText(db, player) }, { quoted: msg });
+    EventSystem.tick(db); return sock.sendMessage(chatId, { text: EventSystem.statsText(db, player), mentions: [sender] }, { quoted: msg });
   },
 };

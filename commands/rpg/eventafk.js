@@ -6,6 +6,6 @@ module.exports = {
     const chatId = msg.key.remoteJid; const db = getDatabase(); const player = db.users[sender];
     if (!player) return sock.sendMessage(chatId, { text: '❌ Not registered! Use /register first.' }, { quoted: msg });
     const r = EventSystem.toggleAfk(db, player); if (r.ok) saveDatabase(db);
-    return sock.sendMessage(chatId, { text: r.ok ? r.text : `❌ ${r.error}` }, { quoted: msg });
+    return sock.sendMessage(chatId, { text: r.ok ? r.text : `❌ ${r.error}`, mentions: [sender] }, { quoted: msg });
   },
 };

@@ -313,10 +313,7 @@ module.exports = async (sock, msg, messageText, config, getDatabase, saveDatabas
       const _edb = getDatabase(); const ES = require('../rpg/utils/EventSystem');
       if (ES.isEventGC(_edb, chatId)) { resolvedCommand = 'event'; args = ['attack', ...args]; }
     }
-    if (chatId.endsWith('@g.us') && !['eventafk', 'eafk'].includes(commandName)) {
-      const _edb = getDatabase(); const ES = require('../rpg/utils/EventSystem');
-      if (ES.isEventGC(_edb, chatId)) { const _bk = ES.breakAfk(_edb, _edb.users?.[sender]); if (_bk) { try { saveDatabase(); } catch (e) {} await sock.sendMessage(chatId, { text: _bk.text, mentions: [sender] }); } }
-    }
+    // Push #96h-z: other commands in the Events GC no longer break event-AFK (that blocked AFK hunters from raiding). Event actions auto-return you.
   } catch (e) {}
   console.log(`[COMMAND] ${resolvedCommand}${resolvedCommand !== commandName ? ` (alias: ${commandName})` : ''} | Sender: ${sender} | Chat: ${chatId}`);
 

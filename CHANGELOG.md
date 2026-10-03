@@ -1,3 +1,20 @@
+## 1.0.157 — Push #96h-z / #96h-z2
+- Bosses CARRY their artifact (shown when the boss emerges; the killer takes it). 5 island artifact spawns per day with a 🔮 Claim button.
+- `/elb` — top participants: points, event level, kills (boss), hunter kills, deaths, artifacts. `/event skills` — your usable skills + equipped patterns.
+- Hunter kill: victim loses points only (event level kept); killer gets event EXP. HP artifacts also fill the pool.
+- Jeju Island: **event levels** — everyone lands at Event Lv.1 with E-Rank beast stats (separate from real level/HP/gear); class skills, Monster skills, attack patterns and your real domain still come with you.
+- Beast kills give event EXP (Pro ×2); level-ups raise island HP/ATK/DEF/SPD. `/event stats` shows level, EXP, HP, ATK, DEF, SPD, CRIT, artifacts.
+- 🔮 Event artifacts: 15% drop from beasts, always from bosses, one surfaces on the island every 30 min (`/event grab`). 6 slots; they buff event stats only.
+- Event HP pool: damage, heals (`/event buff`) and idle regen (5%/min) use island HP — real HP untouched.
+- `/eventafk`: 10-min lock after joining/returning; chatter and other commands no longer break AFK (this was blocking AFK hunters from raids). Any event action auto-returns you.
+- Every event message tags the hunters it names (Name @number).
+- Event attack now goes out as ONE message (fixes "send timed out after 20s" command errors); event sends never throw.
+
+## 1.0.156 — Push #96h-y
+- Jeju Island: every class skill, all Monster-variant skills, equipped attack patterns (`#id`) and support buffs (`/event buff <skill>`) usable.
+- Targeted hunter gets buttons: ⚔️ Counter (base ATK) · 🏃 Flee (guaranteed) · 💨 Dodge + counter (speed-based 15–85%).
+- Pro respawn 30 min (free 60). Beasts stronger (HP ×1.6, ATK ×1.5, DEF ×1.3). Points: 10 per beast, 100 per wave boss.
+
 ## 1.0.155 — Push #96h-x
 - Jeju Island Raid: hunters of ALL levels may join and fight (the event domain stays a Lv.10 domain).
 - `/event attack` now plays the full dungeon-style battle flow (move card, effectiveness, damage, HP bars) for the strike and the beast's counter, instead of two one-liners.
