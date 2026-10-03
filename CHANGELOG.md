@@ -1,3 +1,9 @@
+## 1.0.159 — Push #96h-z4
+- Hunter vs hunter: a plain number is an ATTACK PATTERN (`/attack @x 7` → pattern #7, must be owned); skills by name (`/cast @x Fireball`).
+- Flee is rolled from speed + event level + luck (10–90%), never guaranteed; a failed flee lets the opener land.
+- You cannot flee from a hunter whose domain stands — unless your own domain stands (break theirs first).
+- Pro: domain cooldown halved (30 min).
+
 ## 1.0.158 — Push #96h-z3
 - Events GC is event-only: `/attack`, `/cast`, `/hunt`, `/huntreply` → event attack; `/heal`, `/buff` → event support; `/domain` → event domain; `/lb` → `/elb`; `/eprofile`/`/stats` → event stats; `/use` potions heal EVENT HP.
 - Battle flow: `/attack 24 7` (beast 24, skill 7) · `/cast 24 <skill>` · reply/tag + `/attack 7` on hunters (20 s window) · `/huntreply <skill>` · hunters can be named (`/attack Alpha 7`). Support skills ignore tags (always self). Turn goes out as THREE messages.

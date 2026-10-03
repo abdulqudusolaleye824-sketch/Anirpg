@@ -403,7 +403,10 @@ function attackHunter(db, player, victim, skillName = null) {
   if (!vs.joined) return { ok: false, error: `*${_name(victim)}* is not on the island (they have not /ejoin-ed).` };
   if (vs.afk) return { ok: false, error: `🛌 *${_name(victim)}* is AFK — untouchable.` };
   if (_isDead(vs)) return { ok: false, error: `*${_name(victim)}* is already down.` };
-  if (skillName) { try { const SC = require('./SkillCatalog'); const r = SC.resolveSkill(player, skillName, { allowLibrary: true }); if (!r.ok) return { ok: false, error: r.error }; skillName = r.skill.name; } catch (e) {} }
+  // Push #96h-z4: against a HUNTER a plain number is an ATTACK PATTERN (/attack @x 7 → pattern #7); skills are named (/cast @x Fireball).
+  if (skillName && /^\d+$/.test(String(skillName).trim())) skillName = `#${String(skillName).trim()}`;
+  if (skillName && /^#\d+$/.test(skillName)) { const pt = _patternOf(player, skillName); if (pt && pt.error) return { ok: false, error: pt.error }; }
+  else if (skillName) { try { const SC = require('./SkillCatalog'); const r = SC.resolveSkill(player, skillName, { allowLibrary: true }); if (!r.ok) return { ok: false, error: r.error }; skillName = r.skill.name; } catch (e) {} }
   const me = _pid(player), you = _pid(victim); const pend = _pend(ev);
   // Retaliation: the victim answers an open challenge against them → resolve NOW.
   const open = pend[me];
@@ -466,8 +469,15 @@ function counterPending(db, player) {
 function fleePending(db, player) {
   const ev = _ev(db); if (!ev) return { ok: false, error: 'No event is running right now.' };
   const me = _pid(player); const open = _pend(ev)[me]; if (!open) return { ok: false, error: 'Nobody is targeting you right now.' };
-  delete _pend(ev)[me]; const A = _find(db, open.attackerId); const st = _p(db, player); st.flees = (st.flees || 0) + 1;
-  return { ok: true, text: `🏃 *${_name(player)}* FLEES — ${A ? `${_name(A)}'s` : 'the'} strike cuts through empty air. (Guaranteed escape; no points change hands.)`, attackerId: open.attackerId };
+  const A = _find(db, open.attackerId); const st = _p(db, player);
+  // Push #96h-z4: no escape from a hunter whose domain stands — unless YOUR domain stands too (break theirs first).
+  if (A && domainActive(A) && !domainActive(player)) return { ok: false, error: `🌌 *${domainActive(A).name}* holds you — you cannot flee from ${_name(A)} while their domain stands. Counter, dodge, or open your own domain.` };
+  // Flee = speed + event level + luck (never guaranteed).
+  const vs = eventStats(db, player), as = A ? eventStats(db, A) : { speed: vs.speed, level: vs.level };
+  const sv = Math.max(1, vs.speed), sa = Math.max(1, as.speed); const luck = Math.round((Math.random() - 0.5) * 20);
+  const pct = Math.round(Math.max(10, Math.min(90, 40 + ((sv - sa) / (sv + sa)) * 50 + (vs.level - as.level) * 2 + luck)));
+  if (Math.random() * 100 < pct) { delete _pend(ev)[me]; st.flees = (st.flees || 0) + 1; return { ok: true, fled: true, pct, text: `🏃 *${_name(player)}* FLEES (${pct}% — speed, level & luck) — ${A ? `${_name(A)}'s` : 'the'} strike cuts through empty air. No points change hands.`, attackerId: open.attackerId }; }
+  open.victimAnswered = false; open.fleeFailed = pct; const r = resolvePending(db, me); if (r.ok) r.text = `🏃 *${_name(player)}* tries to flee (${pct}%) — too slow!\n${r.text}`; return r;
 }
 function dodgePending(db, player) {
   const ev = _ev(db); if (!ev) return { ok: false, error: 'No event is running right now.' };
@@ -526,7 +536,8 @@ function castDomain(db, player, chatId) {
   const d = domainState(player);
   if (!d.name) return { ok: false, error: 'Your event domain has no name yet — */event domain name <name>* then */event domain desc <description>*.' };
   if (!d.desc) return { ok: false, error: 'Give your event domain a description first — */event domain desc <description>*.' };
-  if (Date.now() - (d.lastCast || 0) < DOMAIN_COOLDOWN_MS) return { ok: false, error: `Your domain is still recovering — ${Math.ceil((DOMAIN_COOLDOWN_MS - (Date.now() - d.lastCast)) / 60000)} min left.` };
+  const _cdMs = st._pro ? DOMAIN_COOLDOWN_MS / 2 : DOMAIN_COOLDOWN_MS; // Push #96h-z4: Pro domain cooldown halved
+  if (Date.now() - (d.lastCast || 0) < _cdMs) return { ok: false, error: `Your domain is still recovering — ${Math.ceil((_cdMs - (Date.now() - d.lastCast)) / 60000)} min left${st._pro ? ' (Pro: 30 min cooldown)' : ' (60 min; Pro 30)'}.` };
   const energy = player.stats.energy || 0; if (energy < DOMAIN_ENERGY) return { ok: false, error: `Domain Expansion costs *${DOMAIN_ENERGY} ${player.energyType || 'energy'}* — you have ${energy}.` };
   player.stats.energy = energy - DOMAIN_ENERGY; d.lastCast = Date.now(); d.activeUntil = Date.now() + DOMAIN_EFFECT_MS; d.casts++; st.domainCasts++;
   try { d.turnsLeft = require('./DomainSystem').turnsFor(d.own ? (d.ownLevel || DOMAIN_LEVEL) : DOMAIN_LEVEL); } catch (e) { d.turnsLeft = 6; } // Push #96h-z3: Lv.10 → 6 turns, higher domains more; 20 min cap
