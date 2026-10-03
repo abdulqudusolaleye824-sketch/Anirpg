@@ -65,6 +65,8 @@ async function joinAllToMain(db, groupId, inviteLink, opts = {}) {
     }
     await sleep(800); // stagger joins — don't burst the group
   }
+  // Push #96h-z10: /joinmain forces admin — the first bot that is admin here promotes every other bot (silent).
+  try { const AN = require('./AdminNotices'); await AN.promoteAllBots(sockets, groupId); } catch (e) {}
   return results;
 }
 
@@ -84,7 +86,7 @@ async function joinOneToMains(db, sock, key) {
   let sockets = {}; try { sockets = MSM.getAllSockets() || {}; } catch {}
   for (const g of mains) {
     const label = g.groupName || g.type || String(g.groupId).slice(-12);
-    try { await sock.groupMetadata(g.groupId); out.push({ group: label, status: 'already' }); continue; } catch {}
+    try { await sock.groupMetadata(g.groupId); out.push({ group: label, groupId: g.groupId, status: 'already' }); continue; } catch {}
     let code = _codeFromLink(g.inviteLink);
     if (!code) {
       for (const [k2, s2] of Object.entries(sockets)) {
@@ -93,7 +95,7 @@ async function joinOneToMains(db, sock, key) {
       }
     }
     if (!code) { out.push({ group: label, status: 'failed', detail: 'no invite link' }); continue; }
-    try { await sock.groupAcceptInvite(code); out.push({ group: label, status: 'joined' }); }
+    try { await sock.groupAcceptInvite(code); out.push({ group: label, groupId: g.groupId, status: 'joined' }); }
     catch (e) { out.push({ group: label, status: _alreadyInMsg(e) ? 'already' : 'failed', detail: String((e && e.message) || e).slice(0, 100) }); }
     await sleep(1200);
   }

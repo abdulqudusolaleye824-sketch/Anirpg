@@ -158,9 +158,9 @@ module.exports = {
     const info = AstralGroups.typeInfo(type);
     const mainLine = result.status === 'main'
       ? `👑 *MAIN GROUP* — the bot works here immediately and never expires.`
-      : result.status === 'pending'
-        ? `⏳ *Subscription pending.* An owner must run:\n   /ssub | <subscriber name>\n   to start the 30-day window (the bot stays silent until then).`
-        : `✅ The bot is active in this group.`;
+      : (result.group && result.group.expiresAt && result.group.expiresAt > Date.now())
+        ? `✅ Subscription active — ${AstralGroups.daysLeft(db, chatId)} day(s) left.`
+        : `⏳ *Subscription pending.* An owner must run:\n   /ssub | <subscriber name>\n   to start the 30-day window (the bot stays silent to players until then).`;
 
     return sock.sendMessage(chatId, {
       text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n${info.emoji} *GROUP REGISTERED!*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n🎮 Server: ✦ 𝐀𝐬𝐭𝐫𝐚™\n📋 *Type:* ${type}${isMain ? ' 👑 (--main)' : ''}\n🆔 *Group ID:* saved\n${inviteLink ? `🔗 *Invite link:* ${inviteLink}` : ''}\n\n${mainLine}${joinLines}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━`

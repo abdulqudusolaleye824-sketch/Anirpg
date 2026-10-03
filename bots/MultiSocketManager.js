@@ -531,6 +531,7 @@ let _badMacHits = [];
 const _lastInboundAt = {};      // key -> ts of last FRESH inbound (decrypted, not stale)
 const _lastOpenAt = {};         // key -> ts the current socket opened
 const _lastStaleAt = {};        // key -> ts of last stale-dropped inbound (lagging socket)
+const _seenInbound = new Map(); const SEEN_INBOUND_TTL_MS = 10 * 60000; // Push #96h-z10: per-process inbound dedupe (chat|id → ts)
 const _deafRecycles = {};       // key -> consecutive recycles without recovery
 const _deafHealAt = {};         // key -> ts of last recycle
 function noteFreshInbound(key, msg) {
@@ -1963,7 +1964,7 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
         try {
           if (botSockets[personalityKey] !== sock) return;
           require('../rpg/utils/MainJoin').joinOneToMains(getDatabase(), sock, personalityKey)
-            .then((r) => { const j = (r || []).filter((x) => x.status === 'joined'); if (j.length) console.log(`[MainJoin] ${personalityKey} auto-joined ${j.length} main group(s): ${j.map((x) => x.group).join(', ')}`); })
+            .then((r) => { const j = (r || []).filter((x) => x.status === 'joined'); if (j.length) console.log(`[MainJoin] ${personalityKey} auto-joined ${j.length} main group(s): ${j.map((x) => x.group).join(', ')}`); try { const AN = require('../rpg/utils/AdminNotices'); for (const x of (r || [])) if (x.groupId) AN.promoteAllBots(getAllSockets(), x.groupId).catch(() => {}); } catch (e) {} })
             .catch(() => {});
         } catch (e) {}
       }, 45000);
@@ -2032,7 +2033,25 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
   });
 
   sock.ev.on('group-participants.update', async ({ id: chatId, participants, action, author }) => {
+    // Push #96h-z10: admin promotions / demotions are announced by ONE bot (the dispatcher), member tagged.
+    if (action === 'promote' || action === 'demote') {
+      try {
+        if (!_bootstrapDispatcher(personalityKey, chatId)) return;
+        const bares = _botBares(); const humans = (participants || []).filter((p) => { const b = String(typeof p === 'string' ? p : (p && (p.id || p.jid)) || '').split(':')[0].split('@')[0]; return b && !bares.has(b); });
+        if (!humans.length) return; // bots being (auto-)promoted stay silent
+        const AN = require('../rpg/utils/AdminNotices'); const built = AN.build(action, humans, getDatabase());
+        if (built) await sock.sendMessage(chatId, { text: built.text, mentions: built.mentions });
+      } catch (e) {}
+      return;
+    }
     if (action !== 'add' && action !== 'remove') return;
+    // Push #96h-z10: a bot that lands in a GC is promoted to admin SILENTLY by any sibling bot already admin there.
+    if (action === 'add') {
+      try {
+        const bares = _botBares(); const botsIn = (participants || []).map((p) => (typeof p === 'string' ? p : (p && (p.id || p.jid)) || '')).filter((j) => j && bares.has(String(j).split(':')[0].split('@')[0]));
+        if (botsIn.length) setTimeout(() => { try { require('../rpg/utils/AdminNotices').promoteBots(sock, chatId, botsIn).catch(() => {}); } catch (e) {} }, 4000 + Math.floor(Math.random() * 3000));
+      } catch (e) {}
+    }
     const _bareOf = (p) => String(typeof p === 'string' ? p : (p && (p.id || p.jid)) || '').split(':')[0].split('@')[0];
     // Push #77: if THIS bot was just added to an untracked group, leave.
     // Push #96h-v: an Owner adding the bot by hand counts as /joingc (tracked for THIS bot);
@@ -2198,6 +2217,9 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
       }
     } catch (e) {}
 
+    // Push #96h-z10: INBOUND DEDUPE. After a re-link WhatsApp can hand the SAME message to the socket twice
+    // (retry receipts / replayed upserts) — the bot then answered every command twice. One id → one handling.
+    try { const _k = `${personalityKey}|${msg.key?.remoteJid || ''}|${msg.key?.id || ''}`; if (msg.key?.id) { const _now = Date.now(); const _prev = _seenInbound.get(_k); if (_prev && _now - _prev < SEEN_INBOUND_TTL_MS) { _dropped('duplicate', msg); return; } _seenInbound.set(_k, _now); if (_seenInbound.size > 5000) { for (const [kk, tt] of _seenInbound) { if (_now - tt > SEEN_INBOUND_TTL_MS) _seenInbound.delete(kk); if (_seenInbound.size <= 4000) break; } } } } catch (e) {}
     noteFreshInbound(personalityKey, msg); // Push #86: a decrypted, non-stale message = this socket hears
     try { noteDecryptSuccess(msg.key?.participant || msg.key?.remoteJid); } catch (e) {}
 

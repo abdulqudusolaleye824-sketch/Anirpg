@@ -74,6 +74,7 @@ class AstralGroups {
       expiresAt: existing?.expiresAt || null,
       subscriber: existing?.subscriber || null,
       features: Array.from(new Set([...(existing?.features || [])])),
+      started: true, // Push #96h-z10: /setgc by an Owner implies /starts
     };
     if (isMain) {
       try {
@@ -112,11 +113,12 @@ class AstralGroups {
 
   // Batch-47: dungeon GCs NEVER expire (owner order) — raids must not
   // die to subscription timers. Self-heals stale 'expired' flags on read.
+  // Push #96h-z10: ONLY --main groups never expire. A private dungeon GC started with /ssub
+  // runs its 30 days like every other subscribed group (the old batch-47 dungeon exemption is gone).
   static isNeverExpiring(entry) {
-    if (!entry) return false;
-    if (entry.type === 'dungeon') return true;
-    return Array.isArray(entry.features) && entry.features.includes('dungeon');
+    return !!(entry && entry.isMain);
   }
+
 
   static isExpired(db, groupId, now = Date.now()) {
     const e = this.getEntry(db, groupId);
@@ -138,21 +140,38 @@ class AstralGroups {
     return true;
   }
 
-  static gate(db, groupId, now = Date.now()) {
+  // Push #96h-z10: /starts — wakes the bot in a group. Before it the bot is DEAD SILENT there (no replies at all).
+  static start(db, groupId, by) {
+    if (!db.gcStarted || typeof db.gcStarted !== 'object') db.gcStarted = {};
+    const was = !!db.gcStarted[groupId];
+    db.gcStarted[groupId] = { at: Date.now(), by: by || null };
+    const e = this.getEntry(db, groupId); if (e) e.started = true;
+    return { success: true, already: was };
+  }
+  static isStarted(db, groupId) {
     const e = this.getEntry(db, groupId);
-    if (!e) return { allow: true, silent: false, expired: false };
+    if (e && (e.isMain || e.started || e.expiresAt)) return true; // legacy: main / already-subscribed groups count as started
+    return !!(db.gcStarted && db.gcStarted[groupId]);
+  }
+
+  // Push #96h-z10: group gate.
+  //   not /starts'ed            → silent for everyone except an Owner (so they can /starts, /setgc, /ssub)
+  //   --main                    → open
+  //   /setgc without --main     → silent to non-owners until /ssub opens the 30-day run
+  //   subscribed, in date       → open
+  //   subscribed, past the date → expired notice (non-owners), owners may /renew
+  static gate(db, groupId, now = Date.now(), opts = {}) {
+    const isOwner = !!opts.isOwner;
+    const e = this.getEntry(db, groupId);
+    if (!this.isStarted(db, groupId)) return isOwner ? { allow: true, silent: false, expired: false } : { allow: false, silent: true, expired: false, reason: 'not-started' };
+    if (!e) return isOwner ? { allow: true, silent: false, expired: false } : { allow: false, silent: true, expired: false, reason: 'no-type' };
     if (e.isMain) return { allow: true, silent: false, expired: false };
-    if (this.isNeverExpiring(e)) return { allow: true, silent: false, expired: false }; // batch-47
-    if (this.isExpired(db, groupId, now)) {
-      return { allow: false, silent: false, expired: true, msg: EXPIRED_MSG };
+    if (!e.expiresAt) return isOwner ? { allow: true, silent: false, expired: false } : { allow: false, silent: true, expired: false, reason: 'no-sub' };
+    if (this.isExpired(db, groupId, now) || now >= e.expiresAt) {
+      e.status = 'expired';
+      return isOwner ? { allow: true, silent: false, expired: true, msg: EXPIRED_MSG } : { allow: false, silent: false, expired: true, msg: EXPIRED_MSG };
     }
-    if (e.status === 'pending') {
-      e.status = 'active';
-      return { allow: true, silent: false, expired: false };
-    }
-    if (e.status === 'active' && e.expiresAt && now >= e.expiresAt) {
-      return { allow: false, silent: false, expired: true, msg: EXPIRED_MSG };
-    }
+    if (e.status !== 'active') e.status = 'active';
     return { allow: true, silent: false, expired: false };
   }
 

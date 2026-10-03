@@ -805,12 +805,24 @@ module.exports = async (sock, msg, messageText, config, getDatabase, saveDatabas
   }
 
   const BOOTSTRAP_COMMANDS = new Set([
-    'start', 'switch', 'stop', 'stopbot', 'bots', 'hi', 'setainame',
+    'start', 'starts', 'switch', 'stop', 'stopbot', 'bots', 'hi', 'setainame',
     'setgroup', 'setgc', 'ssub', 'renew', 'allowgc', 'groupinfo', 'groupstatus',
     'setdungeon', 'removedungeon', 'dungeons', 'set', 'settings', 'gcset',
     'help', 'menu', 'reset', 'spawnstatus', 'spawnsstatus', 'killspawn',
     'cctv', 'statusreport', 'botid', 'disable', 'enable', 'restart', 'clearactivebots'
   ]);
+
+  // Push #96h-z10: GROUP GATE first — an un-/starts'ed, un-typed or un-subscribed group is DEAD SILENT for
+  // everyone but an Owner (who still gets every command so they can /starts → /setgc → /ssub).
+  const AstralGroups = require('../rpg/utils/AstralGroups');
+  if (chatId.endsWith('@g.us')) {
+    let _isOwner = false; try { _isOwner = require('../utils/permissions').isBotOwner(db, sender); } catch (e) {}
+    const gate = AstralGroups.gate(db, chatId, Date.now(), { isOwner: _isOwner });
+    if (!gate.allow) {
+      if (gate.silent) return;
+      if (gate.expired && !['sub', 'subscription', 'substatus'].includes(commandName) && !['sub', 'subscription', 'substatus'].includes(resolvedCommand)) return sock.sendMessage(chatId, { text: gate.msg }, { quoted: msg }); // #96h-t: /sub still readable when expired
+    }
+  }
 
   if (chatId.endsWith('@g.us') && !activeKey && !BOOTSTRAP_COMMANDS.has(commandName) && !BOOTSTRAP_COMMANDS.has(resolvedCommand)) {
     return sock.sendMessage(
@@ -820,24 +832,6 @@ module.exports = async (sock, msg, messageText, config, getDatabase, saveDatabas
       },
       { quoted: msg }
     );
-  }
-
-  const AstralGroups = require('../rpg/utils/AstralGroups');
-  const manageCmds = new Set([
-    'start', 'switch', 'stopbot', 'bots', 'hi', 'setainame',
-    'setgroup', 'setgc', 'ssub', 'renew', 'allowgc', 'groupinfo', 'groupstatus', 'sub', 'subscription', 'substatus',
-    'setdungeon', 'removedungeon', 'dungeons', 'set', 'settings', 'gcset',
-    'help', 'menu', 'reset', 'spawnstatus', 'spawnsstatus', 'killspawn',
-    'cctv', 'statusreport', 'botid', 'disable', 'enable', 'restart'
-  ]);
-  if (chatId.endsWith('@g.us') && !manageCmds.has(commandName) && !manageCmds.has(resolvedCommand)) {
-    const gate = AstralGroups.gate(db, chatId);
-    if (!gate.allow) {
-      if (gate.silent) return;
-      if (gate.expired) {
-        return sock.sendMessage(chatId, { text: gate.msg }, { quoted: msg });
-      }
-    }
   }
 
   const adminOnlyCommands = ['disable', 'enable', 'maintenance', 'groupinfo'];

@@ -1,3 +1,11 @@
+## 1.0.164 — Push #96h-z10: Admin notices, silent bot auto-admin, /starts gate, 30-day dungeon subs, no double replies
+
+- **Admin promotions / demotions announced** — 20 promotion + 20 demotion messages; ONE bot (the dispatcher) posts it and tags the member. Bots being promoted are never announced.
+- **Bots auto-promote silently** — whenever a bot lands in a GC (added by hand, connect-time main auto-join, `/joinmain`) any sibling bot already admin there promotes it, no message. `/joinmain` forces it for every bot in every main GC.
+- **Group flow** — `/starts` (Owner) wakes the bot in a group; before it the group is **dead silent** (Owners excepted). `/setgc <type> [--main]` sets the type (`--main` = open to everyone, never expires). Without `--main` the group stays silent to players until `/ssub | <subscriber>` opens the **30-day** run; after it expires players see the expired notice and an Owner can `/renew`. `/sub` stays readable.
+- **Dungeon GCs expire again** — the old "dungeon groups never expire" exemption is gone: a private dungeon GC started with `/ssub` shows its subscribed/expiry dates and runs 30 days. Only `--main` never expires.
+- **No more double replies** — inbound dedupe per (bot, chat, message id): a message WhatsApp hands the socket twice after a re-link is handled once.
+
 ## 1.0.163 — Push #96h-z9: Events ×2.5 vs beasts, stun retaliation, domain ATK/DEF buffs, gate tuning, 10×5 instances, main-GC auto-join
 
 - **Events** — hunter damage against mana beasts is **×2.5** (hunter-vs-hunter unchanged). A **stunned/frozen** hunter who swings at a beast is punished: the beast retaliates on the helpless hunter.
