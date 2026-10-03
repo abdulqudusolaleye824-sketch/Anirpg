@@ -375,6 +375,19 @@ module.exports = async (sock, msg, messageText, config, getDatabase, saveDatabas
   const Perms = require('../utils/permissions');
   let _isSiblingBot = false; try { const MSM = require('../bots/MultiSocketManager'); _isSiblingBot = [sender, msg.key?.participant, msg.participant].some(f => f && MSM.isOwnBotNumber(String(f).split(':')[0].split('@')[0])); } catch (e) {} // Push #96b
   const isPrivilegedUser = Perms.isBotOwner(db, sender) || Perms.isBotMod(db, sender);
+  // Push #96h-z5: the Events GC is for the raid ONLY — every non-event command is refused there (owners/mods keep their tools).
+  try {
+    if (chatId.endsWith('@g.us') && !isPrivilegedUser) {
+      const ES = require('../rpg/utils/EventSystem');
+      if (ES.isEventGC(db, chatId)) {
+        const EVENT_OK = new Set(['event', 'jeju', 'ea', 'e', 'elb', 'eventlb', 'eventleaderboard', 'etop', 'estats', 'eventstats', 'eprofile', 'eventprofile', 'ejoin', 'eshop', 'epoints', 'einfo', 'eventafk', 'eafk', 'use', 'skills', 'skill', 'attacks', 'attackpattern', 'attackpatterns', 'help', 'menu', 'register', 'link', 'sub', 'ping', 'rules']);
+        if (!EVENT_OK.has(String(resolvedCommand || '').toLowerCase()) && !EVENT_OK.has(String(commandName || '').toLowerCase())) {
+          await sock.sendMessage(chatId, { text: `🏝️ *Events GC is for the Jeju Island Raid only.* Use */${commandName}* in the main GC.\nHere: /attack · /cast · /heal · /domain · /grab · /estats · /elb · /eshop · /eventafk`, mentions: [sender] }, { quoted: msg });
+          return;
+        }
+      }
+    }
+  } catch (e) {}
   const _modExempt = isPrivilegedUser || _isSiblingBot; // moderation (anti-link / slowmode / spam) never targets our own bots
 
   // Push #88k: a /silence'd mod may only run moderation commands.

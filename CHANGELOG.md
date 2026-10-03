@@ -1,3 +1,8 @@
+## 1.0.160 — Push #96h-z5
+- Statuses name the hunter who inflicted them; a beast that dies to bleed/poison/burn is credited (points, EXP, artifact) to that hunter.
+- Monster-class transformations now multiply island stats (ATK/DEF/SPD/HP) against beasts and hunters; they tick per island action. Real stats untouched.
+- Events GC refuses every non-event command (owners/mods exempt). Event sends retry once on a slow socket.
+
 ## 1.0.159 — Push #96h-z4
 - Hunter vs hunter: a plain number is an ATTACK PATTERN (`/attack @x 7` → pattern #7, must be owned); skills by name (`/cast @x Fireball`).
 - Flee is rolled from speed + event level + luck (10–90%), never guaranteed; a failed flee lets the opener land.

@@ -20,7 +20,7 @@ module.exports = {
     // Push #96h-z: every event message carries the hunters' tags (names are rendered "Name @number"),
     // and a slow socket ("send timed out") can never surface as a command error.
     const _mentionsOf = (text) => { const out = new Set(); for (const m of String(text || '').matchAll(/@(\d{5,})/g)) { const d = m[1]; const key = Object.keys(db.users || {}).find(k => k.split('@')[0].split(':')[0] === d); out.add(key || `${d}@s.whatsapp.net`); } return [...out]; };
-    const send = async (content, quoted = true) => { try { const ms = [...new Set([...(content.mentions || []), ..._mentionsOf(content.text)])]; return await sock.sendMessage(chatId, { ...content, ...(ms.length ? { mentions: ms } : {}) }, quoted ? { quoted: msg } : undefined); } catch (e) { console.error('[event] send:', e.message); return null; } };
+    const send = async (content, quoted = true) => { try { const ms = [...new Set([...(content.mentions || []), ..._mentionsOf(content.text)])]; const payload = { ...content, ...(ms.length ? { mentions: ms } : {}) }; try { return await sock.sendMessage(chatId, payload, quoted ? { quoted: msg } : undefined); } catch (e1) { await new Promise(r => setTimeout(r, 700)); return await sock.sendMessage(chatId, payload, quoted ? { quoted: msg } : undefined); } } catch (e) { console.error('[event] send:', e.message); return null; } };
     const say = (text, extra = {}) => send({ text, ...extra });
     const player = db.users[sender];
     if (!player) return say('❌ Not registered! Use /register first.');

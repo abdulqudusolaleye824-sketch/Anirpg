@@ -45,7 +45,8 @@ function _elvlMult(L) { return 1 + (Math.max(1, L) - 1) * ELVL_STEP; }
 function _erank(L) { return RANKS[Math.min(5, Math.floor((Math.max(1, L) - 1) / 10))]; }
 function expNeed(L) { return Math.floor(100 * Math.pow(1.12, Math.max(1, L) - 1)); }
 function _artBonus(st) { const a = { hp: 0, atk: 0, def: 0, speed: 0, crit: 0 }; for (const x of (st.artifacts || [])) for (const k in a) a[k] += Number(x[k]) || 0; return a; }
-function eventStats(db, player) { const st = _p(db, player); const L = st.elvl || 1, m = _elvlMult(L), a = _artBonus(st); return { level: L, rank: _erank(L), atk: Math.floor(EVENT_BASE.atk * m) + a.atk, def: Math.floor(EVENT_BASE.def * m) + a.def, speed: Math.floor(EVENT_BASE.speed * m) + a.speed, crit: EVENT_BASE.crit + a.crit, maxHp: Math.floor(EVENT_BASE.hp * m) + a.hp, exp: st.exp || 0, need: expNeed(L) }; }
+function _tfMult(st) { const t = st && st.transform; if (!t || !((t.turnsLeft || 0) > 0) || Date.now() - (t.startedAt || 0) > 2 * 60 * 60 * 1000) return 1; return Number(t.mult) || 1; } // Push #96h-z5: Monster-class transformations multiply ISLAND stats
+function eventStats(db, player) { const st = _p(db, player); const L = st.elvl || 1, m = _elvlMult(L), a = _artBonus(st), tf = _tfMult(st); return { level: L, rank: _erank(L), atk: Math.floor((Math.floor(EVENT_BASE.atk * m) + a.atk) * tf), def: Math.floor((Math.floor(EVENT_BASE.def * m) + a.def) * tf), speed: Math.floor((Math.floor(EVENT_BASE.speed * m) + a.speed) * tf), crit: EVENT_BASE.crit + a.crit, maxHp: Math.floor((Math.floor(EVENT_BASE.hp * m) + a.hp) * tf), exp: st.exp || 0, need: expNeed(L), transform: tf > 1 ? st.transform : null }; }
 // event HP pool lives in eventStats.hp — never the real HP.
 function _sync(st, es) {
   const now = Date.now();
@@ -61,10 +62,10 @@ function _avatar(db, player) {
   // Push #96h-z3: the island has its OWN statuses and buffs (normal-world artifacts, auras, buffs and
   // statuses stay outside). Only energy is shared with the normal world.
   if (!st.statusEffects) st.statusEffects = []; if (!st.tempBuffs) st.tempBuffs = {};
-  const av = Object.assign({}, player, { stats: { ...(player.stats || {}), hp: st.hp, maxHp: es.maxHp, atk: es.atk, def: es.def, speed: es.speed, critChance: es.crit }, elvl: es.level, equippedGear: {}, equippedTitle: null, weapon: null, artifacts: { equipped: [], inventory: [], enhanced: {} }, aura: null, auras: null, statusEffects: st.statusEffects, tempBuffs: st.tempBuffs, _eventAvatar: true, _real: player, _st: st });
+  const av = Object.assign({}, player, { stats: { ...(player.stats || {}), hp: st.hp, maxHp: es.maxHp, atk: es.atk, def: es.def, speed: es.speed, critChance: es.crit }, elvl: es.level, equippedGear: {}, equippedTitle: null, weapon: null, artifacts: { equipped: [], inventory: [], enhanced: {} }, aura: null, auras: null, statusEffects: st.statusEffects, tempBuffs: st.tempBuffs, transform: st.transform || null, _eventAvatar: true, _real: player, _st: st });
   return av;
 }
-function _commit(av) { const p = av._real, st = av._st; if (!p || !st) return; st.hp = Math.max(0, Math.floor(av.stats.hp || 0)); if (p.stats) { p.stats.energy = av.stats.energy; if (av.stats.mana != null) p.stats.mana = av.stats.mana; } st.lastAct = Date.now(); st.regenMark = Date.now(); }
+function _commit(av) { const p = av._real, st = av._st; if (!p || !st) return; st.transform = av.transform || null; st.hp = Math.max(0, Math.floor(av.stats.hp || 0)); if (p.stats) { p.stats.energy = av.stats.energy; if (av.stats.mana != null) p.stats.mana = av.stats.mana; } st.lastAct = Date.now(); st.regenMark = Date.now(); }
 function _gainExp(db, player, st, amount, lines) {
   amount = Math.floor(amount * (st._pro ? 2 : 1)); st.exp = (st.exp || 0) + amount; let ups = 0; const before = eventStats(db, player).maxHp;
   while ((st.elvl || 1) < ELVL_MAX && st.exp >= expNeed(st.elvl || 1)) { st.exp -= expNeed(st.elvl || 1); st.elvl = (st.elvl || 1) + 1; ups++; }
@@ -116,7 +117,7 @@ function _ev(db) { return db && db.event && db.event.active ? db.event : null; }
 function _gc(db) { try { return require('./AstralGroups').primaryOf(db, 'events') || null; } catch (e) { return null; } }
 function gcId(db) { const g = _gc(db); return g ? (g.groupId || g) : null; }
 function isEventGC(db, chatId) { const id = gcId(db); return !!(id && chatId && id === chatId); }
-function _p(db, player) { if (!player.eventStats) player.eventStats = {}; const id = _ev(db) ? _ev(db).id : (db.event ? db.event.id : 'none'); if (player.eventStats.id !== id) player.eventStats = { id, points: 0, kills: 0, bossKills: 0, hunterKills: 0, deaths: 0, dmg: 0, diedAt: 0, afk: false, spent: 0, joined: false, joinedAt: 0, dmgTaken: 0, skillsUsed: 0, crits: 0, domainCasts: 0, elvl: 1, exp: 0, hp: null, artifacts: [], activeSince: 0, lastAct: 0, regenMark: 0 }; try { player.eventStats._pro = !!require('./UI').isPro(player); } catch (e) {} return player.eventStats; }
+function _p(db, player) { if (!player.eventStats) player.eventStats = {}; const id = _ev(db) ? _ev(db).id : (db.event ? db.event.id : 'none'); if (player.eventStats.id !== id) player.eventStats = { id, points: 0, kills: 0, bossKills: 0, hunterKills: 0, deaths: 0, dmg: 0, diedAt: 0, afk: false, spent: 0, joined: false, joinedAt: 0, dmgTaken: 0, skillsUsed: 0, crits: 0, domainCasts: 0, elvl: 1, exp: 0, hp: null, transform: null, artifacts: [], activeSince: 0, lastAct: 0, regenMark: 0 }; try { player.eventStats._pro = !!require('./UI').isPro(player); } catch (e) {} return player.eventStats; }
 function isJoined(db, player) { const ev = _ev(db); return !!(ev && player && player.eventStats && player.eventStats.id === ev.id && player.eventStats.joined); }
 function _tag(p) { const id = String(_pid(p) || ''); const d = id.split('@')[0].split(':')[0]; return /^\d{5,}$/.test(d) ? `@${d}` : ''; }
 // Push #96h-z: every name carries the hunter's tag so everyone knows who is who.
@@ -142,7 +143,7 @@ function _applyStatuses(res, attacker, defender, lines, extra = []) {
   if (sk && sk.effect && typeof sk.effect === 'object' && sk.effect.type) list.push(sk.effect);
   for (const st of (res.statuses || [])) if (st && st.type) list.push({ type: st.type, chance: st.chance != null ? st.chance : 50, duration: st.duration || 2 });
   for (const st of extra) if (st && st.type) list.push(st);
-  for (const fx of list) { try { const got = UC.tryApplyEffect({ id: 'event', effect: { type: fx.type, chance: fx.chance != null ? fx.chance : 50, duration: fx.duration || 2 } }, attacker, defender); if (got) { out.push(got); lines.push(`✨ *${defender.name}* is ${String(got.type || fx.type).toUpperCase()} (${got.duration || fx.duration || 2}t)!`); } else if (defender._lastStatusBlock) { lines.push(`🛡️ ${defender._lastStatusBlock}.`); defender._lastStatusBlock = null; } } catch (e) {} }
+  for (const fx of list) { try { const got = UC.tryApplyEffect({ id: 'event', effect: { type: fx.type, chance: fx.chance != null ? fx.chance : 50, duration: fx.duration || 2 } }, attacker, defender); if (got) { try { got.by = _pid(attacker._real || attacker); got.byName = _name(attacker); } catch (e) {} out.push(got); lines.push(`✨ *${defender.name}* is ${String(got.type || fx.type).toUpperCase()} (${got.duration || fx.duration || 2}t) — by ${_name(attacker)}!`); } else if (defender._lastStatusBlock) { lines.push(`🛡️ ${defender._lastStatusBlock}.`); defender._lastStatusBlock = null; } } catch (e) {} }
   return out;
 }
 // ── Push #96h-z3: event domains stand 20 min / N turns, affect every foe the owner meets, and CLASH ──
@@ -321,6 +322,13 @@ function _guard(db, player) {
   _sync(st, eventStats(db, player));
   return { ev, st, note };
 }
+function _awardKill(db, ev, m, player, st, lines, how = null) {
+  m.defeated = true; m.by = _pid(player); const pts = m.isBoss ? BOSS_POINTS : (KILL_POINTS[m.rank] || 10);
+  st.points += pts; st.kills++; if (m.isBoss) st.bossKills++;
+  lines.push(`☠️ *${m.name}* falls${how ? ` to ${how}` : ''}! *${_name(player)}* +${pts} points (${st.points} total)`);
+  _gainExp(db, player, st, m.isBoss ? EXP_BOSS : (EXP_KILL[m.rank] || 20), lines);
+  if (m.isBoss) _giveArtifact(st, m.artifact || _rollArtifact(ev, true), lines, _name(player)); else if (Math.random() < ARTIFACT_DROP) _giveArtifact(st, _rollArtifact(ev, false), lines, _name(player));
+}
 function attackMonster(db, player, targetId, skillName = null) {
   const g = _guard(db, player); if (g.error) return { ok: false, error: g.error }; const { ev, st } = g;
   let m = targetId ? ev.monsters.find(x => x.id === Number(targetId)) : null;
@@ -331,7 +339,11 @@ function attackMonster(db, player, targetId, skillName = null) {
   if (m.isBoss && alive(ev).length > 1) return { ok: false, error: `👑 *${m.name}* only comes out when the ${alive(ev).length - 1} remaining beasts are dead.` };
   const P = _avatar(db, player); const h = { ...P.stats, crit: P.stats.critChance }; const lines = g.note ? [g.note] : [];
   const MW = _mWrap(m); _tickEntity(P, lines); _tickEntity(MW, lines); // Push #96h-z3: burns/bleeds/regen tick for both
-  if (m.hp <= 0) { m.defeated = true; m.by = m.by || _pid(player); _commit(P); return { ok: true, text: [...lines, `☠️ *${m.name}* succumbs to its wounds.`].join('\n'), tailText: '', flow: null, monster: m }; }
+  if (m.hp <= 0) { // Push #96h-z5: a DOT kill belongs to the hunter who inflicted the effect
+    const dots = (m.statusEffects || []).filter(x => x && x.by); const dot = dots[dots.length - 1]; const killer = dot ? (_find(db, dot.by) || player) : player; const ks = _p(db, killer);
+    _awardKill(db, ev, m, killer, ks, lines, dot ? `${String(dot.type).toUpperCase()} (inflicted by ${_name(killer)})` : 'its wounds');
+    if (!alive(ev).length) lines.push(_nextWave(db, ev)); else if (alive(ev).length === 1 && alive(ev)[0].isBoss) lines.push(`👑 *The wave boss emerges:* ${alive(ev)[0].name} — ${alive(ev)[0].maxHp.toLocaleString()} HP.`);
+    _commit(P); return { ok: true, text: lines.join('\n'), tailText: '', flow: null, monster: m }; }
   { const UC = require('./UnifiedCombat'); const ca = UC.canAct(P); if (!ca.canAct) { _commit(P); return { ok: false, error: `${lines.length ? lines.join('\n') + '\n' : ''}😵 *${_name(player)}* is ${ca.reason} and cannot act this turn.` }; } }
   // Push #96h-c: AUTO-WIRED. The strike runs through the real raid engine (gear, weapon,
   // title, passives, buffs, class skills). No skill named → the strongest READY skill the
@@ -359,11 +371,7 @@ function attackMonster(db, player, targetId, skillName = null) {
   const strikeLine = `${res.skillUsed ? `✨ *${res.skillUsed.name}*` : '⚔️'} *${_name(player)}* hits *${m.name}* #${m.id} for *${dmg.toLocaleString()}*${crit ? ' 💥CRIT' : ''} — ${m.hp.toLocaleString()}/${m.maxHp.toLocaleString()} HP`;
   lines.push(strikeLine);
   if (m.hp <= 0) {
-    m.defeated = true; m.by = player.jid || player.id; const pts = m.isBoss ? BOSS_POINTS : (KILL_POINTS[m.rank] || 10);
-    st.points += pts; st.kills++; if (m.isBoss) st.bossKills++;
-    lines.push(`☠️ *${m.name}* falls! +${pts} points (${st.points} total)`);
-    _gainExp(db, player, st, m.isBoss ? EXP_BOSS : (EXP_KILL[m.rank] || 20), lines);
-    if (m.isBoss) _giveArtifact(st, m.artifact || _rollArtifact(ev, true), lines, _name(player)); else if (Math.random() < ARTIFACT_DROP) _giveArtifact(st, _rollArtifact(ev, false), lines, _name(player));
+    _awardKill(db, ev, m, player, st, lines);
     if (!alive(ev).length) lines.push(_nextWave(db, ev));
     else if (alive(ev).length === 1 && alive(ev)[0].isBoss) lines.push(`👑 *The wave boss emerges:* ${alive(ev)[0].name} — ${alive(ev)[0].maxHp.toLocaleString()} HP.${alive(ev)[0].artifact ? ` It carries 🔮 *${alive(ev)[0].artifact.name}* (${_artDesc(alive(ev)[0].artifact)}).` : ''}`);
   } else {
