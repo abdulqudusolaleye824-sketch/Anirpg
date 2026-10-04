@@ -105,7 +105,7 @@ function absorb(entity, dmg) {
   if (sh.amount <= 0) { delete entity.tempBuffs.shield; broke = true; }
   return { dmg: Math.max(0, dmg - cut), absorbed: cut, broke, source: sh.source || 'Shield' };
 }
-function shieldLine(res, name) { return res && res.absorbed > 0 ? `${/bone/i.test(res.source || '') ? '🦴' : '🛡️'} ${res.source || 'Shield'} absorbs ${res.absorbed} of the hit on *${name}*${res.broke ? ' — and shatters!' : ''}` : null; }
+function shieldLine(res, name) { return res && res.absorbed > 0 ? `${/bone/i.test(res.source || '') ? '🦴' : '🛡️'} ${res.source || 'Shield'} absorbs ${res.absorbed} of the hit on *${name}*${res.dmg > 0 ? ` — *${res.dmg}* still gets through` : ' — nothing gets through'}${res.broke ? ' — and shatters!' : ''}` : null; } // Push #96h-z12: say what still lands (Mana Shield absorbs only a % of the hit)
 
 // ── Soul Drain on an ally ────────────────────────────────────────────────────
 function soulDrainAlly(caster, ally, level = 1) {

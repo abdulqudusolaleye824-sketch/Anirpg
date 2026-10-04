@@ -531,11 +531,12 @@ let _badMacHits = [];
 const _lastInboundAt = {};      // key -> ts of last FRESH inbound (decrypted, not stale)
 const _lastOpenAt = {};         // key -> ts the current socket opened
 const _lastStaleAt = {};        // key -> ts of last stale-dropped inbound (lagging socket)
+const _gmCache = new Map(); const GM_CACHE_MS = 5 * 60000; // Push #96h-z12: group metadata cache (bot|jid → {meta, at})
 const _seenInbound = new Map(); const SEEN_INBOUND_TTL_MS = 10 * 60000; // Push #96h-z10: per-process inbound dedupe (chat|id → ts)
 const _deafRecycles = {};       // key -> consecutive recycles without recovery
 const _deafHealAt = {};         // key -> ts of last recycle
 function noteFreshInbound(key, msg) {
-  _lastInboundAt[key] = Date.now(); _deafRecycles[key] = 0;
+  _lastInboundAt[key] = Date.now(); _deafRecycles[key] = 0; _wakeTriedAt[key] = 0;
   // Push #88t: per-message cross-check bookkeeping (see _crossCheckDeaf).
   try {
     const chat = msg?.key?.remoteJid; const id = msg?.key?.id;
@@ -593,11 +594,16 @@ function chatHealthy(chatId, windowMs = 90 * 1000) {
   try {
     const now = Date.now();
     if (_badMacHits.filter(t => now - t < 60 * 1000).length >= 20) return false; // decrypt storm in progress
-    if (now - (_chatInboundAt[chatId] || 0) < windowMs) return true;             // heard this chat recently
+    // Push #96h-z12: judge the bot that SERVES this chat, not the fleet. Live on 10-04 a hearing peer kept
+    // _chatInboundAt fresh while the serving bot was deaf → "the gate attacks us but ignores our commands".
     const sk = getActiveSocket(chatId); if (!sk) return false;
     const key = Object.keys(botSockets).find(k => botSockets[k] === sk);
     if (!key) return false;
-    return now - (_lastInboundAt[key] || 0) < 60 * 1000;                          // heard *something* in the last minute
+    if (now - (_lastOpenAt[key] || 0) < 60 * 1000) return false;                 // just (re)connected — let it settle
+    if (now - ((_groupHeardAt[key] || {})[chatId] || 0) < windowMs) return true; // THIS bot heard THIS chat recently
+    const othersHeard = now - (_chatInboundAt[chatId] || 0) < windowMs;
+    if (othersHeard) return false;                                               // peers hear the chat, this bot does not → deaf here
+    return now - (_lastInboundAt[key] || 0) < 60 * 1000;                          // quiet chat: this bot heard *something* in the last minute
   } catch (e) { return false; }
 }
 function _crossCheckDeaf(live, now) {
@@ -667,11 +673,30 @@ function _purgeSignalSessions(authDir, key) {
   } catch (e) {}
   return n;
 }
+const _wakeTriedAt = {};
+async function _wakeDeaf(key, why) {
+  const s = botSockets[key]; if (!s?.user?.id) return;
+  console.warn(`👂 AstraLink [${key}] looks deaf (${why}) — trying to wake it before recycling`);
+  try { const up = s.uploadPreKeys || s.uploadPreKeysToServerIfRequired; if (typeof up === 'function') await Promise.resolve(up.call(s)).catch(() => {}); } catch (e) {}
+  try { await s.sendPresenceUpdate('available'); } catch (e) {}
+  const me = String(s.user.id).split(':')[0] + '@s.whatsapp.net';
+  try { await s.sendMessage(me, { text: `🔄 wake ${new Date().toISOString().slice(11, 16)}Z` }); } catch (e) {}
+  // a hearing peer pokes the deaf bot in DM — fresh session from the peer's side
+  const peer = Object.keys(botSockets).find(k => k !== key && botSockets[k]?.user?.id && !_loggedOut.has(k) && Date.now() - (_lastInboundAt[k] || 0) < DEAF_AFTER_MS);
+  if (peer) { try { await botSockets[peer].sendMessage(me, { text: `👂 ping ${new Date().toISOString().slice(11, 16)}Z` }); } catch (e) {} }
+}
 function recycleDeafSocket(key, why, minGapMs) {
   const bp = _bootParams[key];
   if (!bp) return false;
   const now = Date.now();
   if (now - (_deafHealAt[key] || 0) < (minGapMs || DEAF_AFTER_MS)) return false;
+  // Push #96h-z12: WAKE BEFORE RECYCLE. Field finding (Baileys #1769): a stuck inbound stream wakes on
+  // outbound traffic, and a peer DM forces WhatsApp to deliver a fresh-session message to us. Recycling
+  // alone kept 3 bots deaf for 5+ h on 10-04. So: first detection → self nudge + pre-key refresh + a DM
+  // from a hearing peer; only if still deaf 90 s later do we recycle the socket.
+  const wakeAge = now - (_wakeTriedAt[key] || 0);
+  if (wakeAge > 10 * 60 * 1000) { _wakeTriedAt[key] = now; _wakeDeaf(key, why).catch(() => {}); return false; }
+  if (wakeAge < 90 * 1000) return false;
   _deafHealAt[key] = now;
   _deafRecycles[key] = (_deafRecycles[key] || 0) + 1;
   const n = _deafRecycles[key];
@@ -706,6 +731,7 @@ async function _nudgeSocket(k, sinceMs) {
   const s = botSockets[k]; if (!s?.user?.id) return false;
   const me = String(s.user.id).split(':')[0] + '@s.whatsapp.net';
   console.warn(`👂 AstraLink [${k}] no fresh inbound for ${Math.round(sinceMs / 60000)} min and no peer to compare — sending a wake nudge`);
+  try { const up = s.uploadPreKeys || s.uploadPreKeysToServerIfRequired; if (typeof up === 'function') await Promise.resolve(up.call(s)).catch(() => {}); } catch (e) {} // Push #96h-z12: fresh pre-keys so peers can re-key to us
   try { await s.sendPresenceUpdate('available'); } catch (e) {}
   try { await s.sendMessage(me, { text: `🔄 keepalive ${new Date().toISOString().slice(11, 16)}Z` }); } catch (e) { return false; }
   return true;
@@ -1564,6 +1590,15 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
     enableAutoSessionRecreation: true, // rebuild the per-contact session on retry #2 (explicit)
     enableRecentMessageCache: true,    // required for the retry manager above
     getMessage: _getMessageForRetry, // Push #88h: real store — never resend an empty proto
+    // Push #96h-z12: GROUP METADATA CACHE for sends. Without it Baileys fetches the full participant
+    // list from WhatsApp on EVERY group message (sender-key distribution) — slow sends, "send timed
+    // out after 20s", rate-overlimit. 5-min TTL, invalidated on participant changes.
+    cachedGroupMetadata: async (jid) => {
+      const k = `${personalityKey}|${jid}`; const c = _gmCache.get(k); const now = Date.now();
+      if (c && now - c.at < GM_CACHE_MS) return c.meta;
+      const s0 = botSockets[personalityKey]; if (!s0 || typeof s0.groupMetadata !== 'function') return c ? c.meta : undefined;
+      try { const meta = await s0.groupMetadata(jid); _gmCache.set(k, { meta, at: now }); return meta; } catch (e) { return c ? c.meta : undefined; }
+    },
     // Identity patch — plain text/media sends need no wrapping; interactive
     // sends are built + MD-patched explicitly inside utils/buttons.
     patchMessageBeforeSending: (msg) => msg,
@@ -1968,6 +2003,10 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
             .catch(() => {});
         } catch (e) {}
       }, 45000);
+      // Push #96h-z12: make sure WhatsApp holds fresh pre-keys for this device. When the disk was full the
+      // pre-key uploads failed silently → peers could not build sessions → every inbound = Bad MAC / No session
+      // (the "bot sends but never hears" state). Re-upload on every clean connect (cheap, idempotent).
+      setTimeout(() => { try { if (botSockets[personalityKey] !== sock) return; const up = sock.uploadPreKeys || sock.uploadPreKeysToServerIfRequired; if (typeof up === 'function') Promise.resolve(up.call(sock)).then(() => console.log(`🔑 [${personalityKey}] pre-keys refreshed`)).catch(() => {}); } catch (e) {} }, 8000);
       reconnectAttempts[personalityKey] = 0; // Reset reconnect count on successful connection!
       _loggedOut.delete(personalityKey);
       _logout401s[personalityKey] = 0;        // a clean connect clears the 401 streak
@@ -2033,6 +2072,7 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
   });
 
   sock.ev.on('group-participants.update', async ({ id: chatId, participants, action, author }) => {
+    try { _gmCache.delete(`${personalityKey}|${chatId}`); } catch (e) {} // Push #96h-z12
     // Push #96h-z10: admin promotions / demotions are announced by ONE bot (the dispatcher), member tagged.
     if (action === 'promote' || action === 'demote') {
       try {

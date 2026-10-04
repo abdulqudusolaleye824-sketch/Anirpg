@@ -1,3 +1,11 @@
+## 1.0.166 — Push #96h-z12: deaf-bot wake-up, faster group sends, honest shield lines
+
+- **Faster commands / fewer send timeouts** — group metadata is now cached (5 min, refreshed on member changes). Before, every group message fetched the full member list from WhatsApp first → slow replies, "send timed out", rate limits.
+- **Deaf bots wake instead of staying dead** — on first deaf detection the bot refreshes its pre-keys, sends a self nudge and a hearing peer DMs it; only if still deaf 90 s later is the socket recycled. Pre-keys are also re-uploaded on every clean connect and in the lonely-nudge path.
+- **Gates no longer strike while the bot is deaf** — the idle-strike check now judges the bot that actually serves the group (before, a *different* bot hearing the chat counted as "healthy", so the gate attacked while your commands were ignored). A freshly reconnected bot also waits 60 s before striking.
+- **Monster transformation cooldown everywhere** — 1 h (30 min Pro) between transformations in raids, instances, PvP and dungeons, same as the island. Upgrading tiers while still transformed is free.
+- **Mana Shield (and every partial shield) now says what still lands** — "absorbs 120 of the hit — *180* still gets through" (Mana Shield only absorbs its % of the hit; the rest is real damage).
+
 ## 1.0.165 — Push #96h-z11: transport errors are silent
 
 - **No more "send timed out after 20s" / rate-overlimit error cards** — any failure caused by WhatsApp throttling, spam limits, send/handler timeouts or a dropped connection is swallowed silently (logged only). Real command bugs still show the error card.

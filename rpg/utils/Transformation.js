@@ -177,8 +177,17 @@ function cast(player, entry) {
   if (!tier) return { ok: false, lines: [], error: 'Not a transformation.' };
   if (!isMonster(player)) return { ok: false, lines: [], error: 'Only Monster-class hunters can transform.' };
   if ((player.level || 1) < tier.level) return { ok: false, lines: [], error: `*${tier.name}* unlocks at Lv.${tier.level}.` };
-  return apply(player, tier, 'cast');
+  // Push #96h-z12: ONE transformation cooldown everywhere (raids, instances, PvP, dungeons — the island has
+  // the same rule in EventSystem): 1 h, 30 min for Pro. Upgrading tiers while still transformed stays free.
+  const cdLeft = cooldownLeftMs(player);
+  if (cdLeft > 0 && !active(player)) return { ok: false, lines: [], error: `🧬 Your transformation is recovering — *${Math.ceil(cdLeft / 60000)} min* left (1 h, 30 min for Pro).` };
+  const r = apply(player, tier, 'cast');
+  if (r && r.ok && !cdLeft) player.tfCastAt = Date.now();
+  return r;
 }
+const TF_COOLDOWN_MS = 60 * 60 * 1000;
+function cooldownMsFor(player) { let pro = false; try { pro = require('./UI').isPro(player); } catch (e) {} return pro ? TF_COOLDOWN_MS / 2 : TF_COOLDOWN_MS; }
+function cooldownLeftMs(player) { const at = Number(player && player.tfCastAt) || 0; if (!at) return 0; return Math.max(0, cooldownMsFor(player) - (Date.now() - at)); }
 
 function isBerserk(player) { const t = active(player); return !!(t && t.berserk); }
 const BERSERK_TEXT = '😈 You are BERSERK — the beast controls your body. You cannot command it until the transformation fades.';
@@ -230,4 +239,4 @@ function rosterEntries(variant) {
   }));
 }
 
-module.exports = { PACK_CHANCE_MULT, PACK_COMBO_MULT, withPack, packmates, TIERS, PASSIVE_CHANCE, BERSERK_CHANCE, BERSERK_LEVEL, AFTERMATH, MAX_AGE_MS, isBerserk, BERSERK_TEXT, berserkPick, applyAftermath, isMonster, variantName, skillName, tierByName, isTransformSkill, active, apply, end, tick, cast, sweep, rosterEntries };
+module.exports = { cooldownLeftMs, cooldownMsFor, TF_COOLDOWN_MS, PACK_CHANCE_MULT, PACK_COMBO_MULT, withPack, packmates, TIERS, PASSIVE_CHANCE, BERSERK_CHANCE, BERSERK_LEVEL, AFTERMATH, MAX_AGE_MS, isBerserk, BERSERK_TEXT, berserkPick, applyAftermath, isMonster, variantName, skillName, tierByName, isTransformSkill, active, apply, end, tick, cast, sweep, rosterEntries };
