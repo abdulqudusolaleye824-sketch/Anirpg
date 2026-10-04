@@ -1627,6 +1627,37 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
     patchMessageBeforeSending: (msg) => msg,
   });
   try { const ST = require('../rpg/utils/SlowTask'); const _on = sock.ev.on.bind(sock.ev); sock.ev.on = (ev, fn) => _on(ev, ST.wrap(`${personalityKey} ev:${ev}`, fn)); } catch (e) {} // Push #96h-z13: time every Baileys event handler
+  // Push #96h-z16: BOTS IGNORE EACH OTHER AT THE SIGNAL LAYER. Six bots in the same groups each decrypted every
+  // other bot's announcements (gate strikes, raids, notices) — five useless decrypts per bot message, and when a
+  // bot↔bot pairwise session desynced it was a permanent Bad-MAC storm (10-04: 189/246 failures from one peer).
+  // Group stanzas whose participant is one of our own numbers/LIDs are ACKed and dropped BEFORE decryption.
+  // DMs between bots still flow (the deaf-wake ping relies on them).
+  try {
+    const ws = sock.ws; const evName = 'CB:message';
+    const orig = ws && typeof ws.listeners === 'function' ? ws.listeners(evName) : [];
+    if (orig.length) {
+      ws.removeAllListeners(evName);
+      let dropped = 0, lastLog = 0;
+      ws.on(evName, (node) => {
+        try {
+          const a = (node && node.attrs) || {};
+          const from = String(a.from || '');
+          if (from.endsWith('@g.us')) {
+            const p = String(a.participant || a.participant_pn || a.participant_lid || '');
+            const bare = p.split(':')[0].split('@')[0];
+            const alt = String(a.participant_pn || a.participant_lid || '').split(':')[0].split('@')[0];
+            if ((bare && _isOwnBotNumber(bare)) || (alt && _isOwnBotNumber(alt))) {
+              dropped++;
+              try { const ack = { tag: 'ack', attrs: { id: a.id, to: from, class: 'message' } }; if (a.participant) ack.attrs.participant = a.participant; if (a.recipient) ack.attrs.recipient = a.recipient; if (a.type) ack.attrs.type = a.type; const me = sock.authState?.creds?.me?.id; if (me) ack.attrs.from = me; Promise.resolve(sock.sendNode(ack)).catch(() => {}); } catch (e) {}
+              const now = Date.now(); if (now - lastLog > 10 * 60 * 1000) { lastLog = now; console.log(`🤐 [${personalityKey}] ignoring sibling-bot group traffic at the Signal layer (${dropped} so far)`); }
+              return;
+            }
+          }
+        } catch (e) {}
+        for (const fn of orig) { try { fn(node); } catch (e) {} }
+      });
+    } else console.warn(`⚠️ [${personalityKey}] no ${evName} listener to wrap — sibling filter inactive`);
+  } catch (e) { console.warn(`⚠️ [${personalityKey}] sibling filter failed: ${e.message}`); }
 
   // ── Send wrapper: empty-guard + own-send registry ────────────────
   // Any text/caption payload that is empty (and carries no media or other

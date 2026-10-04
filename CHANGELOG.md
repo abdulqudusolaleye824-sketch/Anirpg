@@ -1,3 +1,7 @@
+## 1.0.172 — Push #96h-z16: bots ignore each other at the Signal layer
+
+- Group messages whose sender is one of our own bots (phone number or LID) are ACKed and dropped **before decryption**. Six bots in the same groups no longer spend five decrypts per bot announcement, and a desynced bot↔bot session can no longer turn into a Bad-MAC storm. Bot↔bot DMs still flow (deaf-wake ping).
+
 ## 1.0.171 — Push #96h-z15: targeted Signal session reset, gear lore compaction
 
 - **Bad-MAC storms from ONE peer get fixed, not endured** — live on 10-04, 189 of 246 decrypt failures in 10 min came from a single @lid address; such a desynced pairwise session never heals by itself and the bot looks deaf. Now after 12 failures/min from the same address, that one session is dropped on every socket so the peer's next message arrives as a fresh pre-key bundle (throttled: once per address per 10 min).
