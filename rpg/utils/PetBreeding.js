@@ -74,9 +74,11 @@ function ensureGenders(playerId) {
 function findPet(playerId, ref) {
   const pets = ensureGenders(playerId);
   const n = parseInt(ref, 10);
-  if (!isNaN(n) && pets[n - 1]) return pets[n - 1];
+  const cap = PetManager.slotCap(playerId); // Push #96h-z14: locked slots can't breed / be gifted
+  if (!isNaN(n) && pets[n - 1]) return n <= cap ? pets[n - 1] : null;
   const q = String(ref || '').toLowerCase();
-  return pets.find(p => (p.nickname || '').toLowerCase() === q || (p.name || '').toLowerCase() === q) || null;
+  const f = pets.find(p => (p.nickname || '').toLowerCase() === q || (p.name || '').toLowerCase() === q) || null;
+  return f && pets.indexOf(f) < cap ? f : null;
 }
 
 function compatibility(a, b) {
@@ -221,9 +223,10 @@ function givePet(fromJid, pet, toJid) {
   if (!pet) return { success: false, message: '❌ Pet not found.' };
   if (fromJid === toJid) return { success: false, message: '❌ You already own that pet.' };
   const fpd = PetManager.getPlayerData(fromJid); const tpd = PetManager.getPlayerData(toJid);
-  if ((tpd.pets || []).length >= 20) return { success: false, message: '❌ Their pet storage is full (20/20).' };
+  { const cap = PetManager.slotCap(toJid); if ((tpd.pets || []).length >= cap) return { success: false, message: `❌ Their pet slots are full (${cap}/${cap}).` }; }
   const i = fpd.pets.findIndex(x => x.instanceId === pet.instanceId);
   if (i < 0) return { success: false, message: '❌ Pet not found.' };
+  if (PetManager.isLocked(fromJid, pet.instanceId)) return { success: false, message: PetManager.lockedMsg(fromJid, pet.instanceId) }; // Push #96h-z14
   fpd.pets.splice(i, 1);
   if (fpd.activePet === pet.instanceId) fpd.activePet = fpd.pets[0] ? fpd.pets[0].instanceId : null;
   pet.giftedFrom = fromJid; pet.giftedAt = Date.now();

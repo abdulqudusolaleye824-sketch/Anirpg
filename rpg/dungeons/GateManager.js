@@ -429,8 +429,9 @@ class GateManager {
       else if (!g.owned && !g.purchased) drop = !!g.breakTime && now - g.breakTime > H2 && !raidLive;
       else {
         const k = keyFor(id);
-        if (k) drop = !!(k.expired || k.raidComplete) && !raidLive;
+        if (k) drop = !!(k.expired || k.raidComplete || (k.expiresAt && now > k.expiresAt + H2)) && !raidLive;
         else drop = now - (g.purchasedAt || now) > D7 && !raidLive;
+        if (!drop && g.raid && /^(complete|completed|ended|failed|wiped)$/.test(String(g.raid.status || '')) && now - (g.raid.endedAt || g.raid.lastTurnAt || 0) > H2) drop = true;
       }
       if (!drop) continue;
       delete this.activeGates[id];

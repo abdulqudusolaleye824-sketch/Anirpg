@@ -14,9 +14,12 @@ const UI = require('../../rpg/utils/UI');
 
 // ── Sticker packs: durable per-user storage (base64 webp, capped) ──
 const MAX_PACKS = 5, MAX_PER_PACK = 15, MAX_STICKER_BYTES = 1_000_000;
+// Push #96h-z14: STICKER STORAGE REMOVED. Packs of base64 webp lived inside player documents — live on
+// 10-04 three players alone held 4.3 MB of stickers in a 12.7 MB database that is serialised every save.
+// /steal still rebrands + sends; nothing is stored. Any leftover packs are dropped on sight.
 function getPacks(player) {
-  if (!player.stickerPacks || typeof player.stickerPacks !== 'object') player.stickerPacks = {};
-  return player.stickerPacks;
+  try { if (player && player.stickerPacks) delete player.stickerPacks; } catch (e) {}
+  return {};
 }
 
 // ── Batch-38: whole-pack steal (💎 Pro). Bare /steal replying to a sticker
@@ -53,7 +56,10 @@ function findStoredPack(db, quotedSender, stealer, tag) {
 async function handlePackSubcommand(sock, chatId, msg, sender, db, saveDatabase, rawText, subWord) {
   const player = db?.users?.[sender];
   if (!player) return sock.sendMessage(chatId, { text: '❌ You are not registered! Use /register' }, { quoted: msg });
-  const packs = getPacks(player);
+  getPacks(player);
+  return sock.sendMessage(chatId, { text: `📦 Sticker packs are no longer stored by the bot.\n\nReply to any sticker with */s <Pack Name> | <Author>* to rebrand and resend it.` }, { quoted: msg });
+  // eslint-disable-next-line no-unreachable
+  const packs = {};
   const names = Object.keys(packs);
   const sPro = UI.isPro(player);
   const sFRAME = sPro ? UI.PRO_BAR : UI.FREE_BAR;
@@ -330,7 +336,8 @@ module.exports = {
       // ── Save into the named pack (durable, capped — never breaks the steal) ──
       try {
         const _pl = db?.users?.[sender];
-        if (_pl && rebrandedWebp.length <= MAX_STICKER_BYTES) {
+        if (_pl) getPacks(_pl); // Push #96h-z14: drop any leftover stored packs, store nothing
+        if (false && _pl && rebrandedWebp.length <= MAX_STICKER_BYTES) {
           const _packs = getPacks(_pl);
           if (!_packs[packName] && Object.keys(_packs).length >= MAX_PACKS) {
             await sock.sendMessage(chatId, { text: `⚠️ Pack limit reached (${MAX_PACKS})! Sticker sent but not saved.\nDelete one: */s delete <pack>*` }, { quoted: msg });
@@ -346,8 +353,6 @@ module.exports = {
               await sock.sendMessage(chatId, { text: `✅ Saved to pack *${packName}* (${_packs[packName].stickers.length}/${MAX_PER_PACK}).` }, { quoted: msg });
             }
           }
-        } else if (_pl) {
-          await sock.sendMessage(chatId, { text: `⚠️ Sticker too large to save (>1MB) — sent but not stored.` }, { quoted: msg });
         }
       } catch (e) { /* saving must never break the steal */ }
 

@@ -1686,8 +1686,13 @@ async function startup() {
     const { GateManager } = require('./rpg/dungeons/GateManager');
     GateManager.rehydrateFromDb(getDatabase());
     // Push #96h-z13: drop dead gates at boot and every 10 min (1016 stale gates = 19 MB doc + loop stalls).
-    try { if (GateManager.sweepStale(getDatabase())) saveDatabase(); } catch (e) {}
-    setInterval(() => { try { if (GateManager.sweepStale(getDatabase())) saveDatabase(); } catch (e) {} }, 10 * 60 * 1000).unref?.();
+    const _docDiet = () => { // Push #96h-z14: stored sticker packs gone, reset backups expire after 30 days
+      let n = 0; try { const db = getDatabase();
+        for (const u of Object.values(db.users || {})) if (u && u.stickerPacks) { delete u.stickerPacks; n++; }
+        for (const [j, b] of Object.entries(db.userResetBackups || {})) if (!b || Date.now() - (b.resetAt || 0) > 30 * 86400e3) { delete db.userResetBackups[j]; n++; }
+      } catch (e) {} return n; };
+    try { const n = GateManager.sweepStale(getDatabase()) + _docDiet(); if (n) { console.log(`🧹 document diet: ${n} item(s) removed`); saveDatabase(); } } catch (e) {}
+    setInterval(() => { try { if (GateManager.sweepStale(getDatabase()) + _docDiet()) saveDatabase(); } catch (e) {} }, 10 * 60 * 1000).unref?.();
   } catch (e) {
     console.error('⚠️ Could not rehydrate gates:', e.message);
   }

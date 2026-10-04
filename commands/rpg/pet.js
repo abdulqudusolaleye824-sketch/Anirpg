@@ -38,11 +38,12 @@ module.exports = {
         const roleEmoji = { attack: '⚔️', support: '💚', scavenger: '💰' };
         let txt = pro ? `${UI.PRO_BAR}\n🐾 *YOUR PETS* 💎\n${UI.PRO_BAR}\n` : `🐾 *YOUR PETS*\n${UI.FREE_BAR}\n`;
 
+        const _cap = PetManager.slotCap(sender); // Push #96h-z14: 3 slots, 5 Pro — the rest locked
         pets.forEach((pet, i) => {
           const isActive = active?.instanceId === pet.instanceId;
           const re = roleEmoji[pet.role] || '⚔️';
           let _g = ''; try { _g = require('../../rpg/utils/PetBreeding').genderIcon(pet); } catch (e) {}
-          txt += `${isActive ? '▶️' : `${i+1}.`} ${pet.emoji} *${pet.nickname || pet.name}* ${_g} ${re}\n`;
+          txt += `${i + 1 > _cap ? `🔒${i+1}.` : isActive ? '▶️' : `${i+1}.`} ${pet.emoji} *${pet.nickname || pet.name}* ${_g} ${re}${i + 1 > _cap ? ' _(locked slot)_' : ''}\n`;
           txt += `   Lv.${pet.level} | ${pet.rarity.toUpperCase()} | ${pet.role?.toUpperCase()}\n`;
           txt += `   💕 ${pet.bonding}/100 | 😊 ${pet.happiness}/100 | 🍖 ${pet.hunger}/100\n\n`;
         });
@@ -55,7 +56,7 @@ module.exports = {
           txt += `/pet hatch [#] to hatch an egg\n`;
         }
 
-        txt += `${FRAME}\n/pet info [#] | /pet active [#]\n/pet feed [#] [food] | /pet evolve [#]` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO PACK* — ${pets.length} pets · active: ${active ? (active.nickname || active.name) : 'none'}` : `\n${UI.upsell()}`);
+        txt += `${FRAME}\n🎒 Slots: *${Math.min(pets.length, _cap)}/${_cap}*${pets.length > _cap ? ` · 🔒 ${pets.length - _cap} locked (renew 💎 Pro for 5 slots)` : ''} · /petswap <a> <b>\n/pet info [#] | /pet active [#]\n/pet feed [#] [food] | /pet evolve [#]` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO PACK* — ${pets.length} pets · active: ${active ? (active.nickname || active.name) : 'none'}` : `\n${UI.upsell()}`);
         return sock.sendMessage(chatId, { text: txt }, { quoted: msg });
       }
 

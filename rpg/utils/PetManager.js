@@ -109,7 +109,7 @@ class PetManager {
   hatchEgg(playerId, eggIndex) {
     const pd = this.getPlayerData(playerId);
     if (!pd.eggs[eggIndex]) return { success: false, message: '❌ No egg at that slot!' };
-    if (pd.pets.length >= 20) return { success: false, message: '❌ Pet storage full! (Max 20)' };
+    { const cap = this.slotCap(playerId); if (pd.pets.length >= cap) return { success: false, message: `❌ Pet slots full (*${cap}*: ${PetManager.FREE_SLOTS} per hunter, ${PetManager.PRO_SLOTS} with 💎 Pro). Release or gift one first.` }; }
     const eggInst = pd.eggs[eggIndex];
     // Push #74: bred eggs carry a fixed species (lineage) — honour it.
     let template = (eggInst.bred && eggInst.childId && PET_DATABASE[eggInst.childId]) ? PET_DATABASE[eggInst.childId] : hatchEgg(eggInst.eggId);
@@ -142,7 +142,7 @@ class PetManager {
     const petTemplate = PET_DATABASE[petId];
     if (!petTemplate) return { success: false, message: '❌ Unknown pet!' };
     const pd = this.getPlayerData(playerId);
-    if (pd.pets.length >= 20) return { success: false, message: '❌ Pet storage full! (Max 20)' };
+    { const cap = this.slotCap(playerId); if (pd.pets.length >= cap) return { success: false, message: `❌ Pet slots full (*${cap}*: ${PetManager.FREE_SLOTS} per hunter, ${PetManager.PRO_SLOTS} with 💎 Pro). Release or gift one first.` }; }
 
     if (guaranteed) {
       const newPet = this.createPet(petTemplate);
@@ -204,6 +204,7 @@ class PetManager {
     const pd = this.getPlayerData(playerId);
     const pet = pd.pets.find(p => p.instanceId === petInstanceId);
     if (!pet) return { success: false, message: '❌ Pet not found!' };
+    if (this.isLocked(playerId, petInstanceId)) return { success: false, message: this.lockedMsg(playerId, petInstanceId) };
     if (!pet.evolution) return { success: false, message: '❌ This pet cannot evolve!' };
     if (pet.level < pet.evolution.level) return { success: false, message: `❌ Need level ${pet.evolution.level} to evolve!` };
     const opt = pet.evolution.options.find(o => o.id === evolutionChoice);
@@ -234,6 +235,7 @@ class PetManager {
     const pd = this.getPlayerData(playerId);
     const pet = pd.pets.find(p => p.instanceId === petInstanceId);
     if (!pet) return { success: false, message: '❌ Pet not found!' };
+    if (this.isLocked(playerId, petInstanceId)) return { success: false, message: this.lockedMsg(playerId, petInstanceId) };
     const PDB = require('./PetDatabase');
     const food = PDB.resolvePetFood(foodName);
     if (!food) return { success: false, message: `❌ Unknown food: ${foodName}\nSee /pet foods` };
@@ -273,6 +275,7 @@ class PetManager {
     const pd = this.getPlayerData(playerId);
     const pet = pd.pets.find(p => p.instanceId === petInstanceId);
     if (!pet) return { success: false, message: '❌ Pet not found!' };
+    if (this.isLocked(playerId, petInstanceId)) return { success: false, message: this.lockedMsg(playerId, petInstanceId) };
     if ((pet.hunger || 0) >= 80) return { success: false, message: `❌ ${pet.name} is too hungry to play! Feed it first.` };
     let gain = 3 + Math.floor(Math.random() * 4);
     try { gain = Math.max(1, Math.round(gain * require('./JobSystem').bondMult(playerId))); } catch (e) {} // Push #96: Beast Tamer
@@ -288,6 +291,7 @@ class PetManager {
     const pd = this.getPlayerData(playerId);
     const pet = pd.pets.find(p => p.instanceId === petInstanceId);
     if (!pet) return { success: false, message: '❌ Pet not found!' };
+    if (this.isLocked(playerId, petInstanceId)) return { success: false, message: this.lockedMsg(playerId, petInstanceId) };
     if ((pet.hunger || 0) >= 80) return { success: false, message: `❌ ${pet.name} is too hungry to train!` };
     const xpGain = 100 + Math.floor(Math.random() * 100);
     pet.hunger = Math.min(100, (pet.hunger || 0) + 15);
@@ -445,9 +449,32 @@ class PetManager {
   }
 
   // ── OTHER METHODS ─────────────────────────────────────────
+  // Push #96h-z14: PET SLOTS — 3 per hunter, 5 for 💎 Pro. Slots beyond the cap are LOCKED (pets kept,
+  // untouchable: no active/feed/train/play/evolve/rename/release/swap); a locked active pet is deactivated.
+  slotCap(playerId) { try { const o = require('./JobSystem').byId(playerId); return o && require('./UI').isPro(o) ? PetManager.PRO_SLOTS : PetManager.FREE_SLOTS; } catch (e) { return PetManager.FREE_SLOTS; } }
+  slotOf(playerId, petInstanceId) { const pd = this.getPlayerData(playerId); return pd.pets.findIndex(p => p.instanceId === petInstanceId) + 1; }
+  isLocked(playerId, petInstanceId) { const sl = this.slotOf(playerId, petInstanceId); return sl > 0 && sl > this.slotCap(playerId); }
+  lockedMsg(playerId, petInstanceId) { const sl = this.slotOf(playerId, petInstanceId); return `🔒 Slot ${sl} is locked — you have *${this.slotCap(playerId)}* pet slots (${PetManager.FREE_SLOTS} per hunter, ${PetManager.PRO_SLOTS} with 💎 Pro). The pet is safe but can't be touched. Use */petswap* within your open slots or renew Pro.`; }
+  enforceSlots(playerId) {
+    const pd = this.getPlayerData(playerId);
+    if (pd.activePet && this.isLocked(playerId, pd.activePet)) { pd.activePet = null; this.save(); return true; }
+    return false;
+  }
+  swapPets(playerId, slotA, slotB) {
+    const pd = this.getPlayerData(playerId); const cap = this.slotCap(playerId); const n = pd.pets.length;
+    const a = Number(slotA), b = Number(slotB);
+    if (!Number.isInteger(a) || !Number.isInteger(b) || a < 1 || b < 1) return { success: false, message: '❌ Usage: /petswap <slot 1> <slot 2>' };
+    if (a === b) return { success: false, message: '❌ Pick two different slots.' };
+    if (a > n || b > n) return { success: false, message: `❌ You only have ${n} pet${n === 1 ? '' : 's'}.` };
+    if (a > cap || b > cap) return { success: false, message: `🔒 Slot ${Math.max(a, b)} is locked — you have *${cap}* open slots (${PetManager.FREE_SLOTS} per hunter, ${PetManager.PRO_SLOTS} with 💎 Pro).` };
+    const t = pd.pets[a - 1]; pd.pets[a - 1] = pd.pets[b - 1]; pd.pets[b - 1] = t; this.save();
+    const nm = (x) => `${x.emoji} *${x.nickname || x.name}*`;
+    return { success: true, message: `🔁 Swapped slots ${a} ↔ ${b}:\n  ${a}. ${nm(pd.pets[a - 1])}\n  ${b}. ${nm(pd.pets[b - 1])}` };
+  }
   getActivePet(playerId) {
     const pd = this.getPlayerData(playerId);
     if (!pd.activePet) return null;
+    if (this.isLocked(playerId, pd.activePet)) { this.enforceSlots(playerId); return null; }
     return pd.pets.find(p => p.instanceId === pd.activePet) || null;
   }
 
@@ -455,6 +482,8 @@ class PetManager {
     const pd = this.getPlayerData(playerId);
     const pet = pd.pets.find(p => p.instanceId === petInstanceId);
     if (!pet) return { success: false, message: '❌ Pet not found!' };
+    if (this.isLocked(playerId, petInstanceId)) return { success: false, message: this.lockedMsg(playerId, petInstanceId) };
+    if (this.isLocked(playerId, petInstanceId)) return { success: false, message: this.lockedMsg(playerId, petInstanceId) };
     pd.activePet = petInstanceId;
     this.save();
     return { success: true, message: `${pet.emoji} *${pet.nickname || pet.name}* is now your active pet!\nRole: *${pet.role?.toUpperCase() || 'ATTACK'}*` };
@@ -464,6 +493,7 @@ class PetManager {
     const pd = this.getPlayerData(playerId);
     const pet = pd.pets.find(p => p.instanceId === petInstanceId);
     if (!pet) return { success: false, message: '❌ Pet not found!' };
+    if (this.isLocked(playerId, petInstanceId)) return { success: false, message: this.lockedMsg(playerId, petInstanceId) };
     if (name.length > 20) return { success: false, message: '❌ Max 20 characters!' };
     pet.nickname = name;
     this.save();
@@ -474,6 +504,7 @@ class PetManager {
     const pd = this.getPlayerData(playerId);
     const idx = pd.pets.findIndex(p => p.instanceId === petInstanceId);
     if (idx === -1) return { success: false, message: '❌ Pet not found!' };
+    if (this.isLocked(playerId, petInstanceId)) return { success: false, message: this.lockedMsg(playerId, petInstanceId) };
     const pet = pd.pets[idx];
     pd.pets.splice(idx, 1);
     if (pd.activePet === petInstanceId) pd.activePet = pd.pets[0]?.instanceId || null;
@@ -514,4 +545,5 @@ class PetManager {
   }
 }
 
+PetManager.FREE_SLOTS = 3; PetManager.PRO_SLOTS = 5;
 module.exports = new PetManager();

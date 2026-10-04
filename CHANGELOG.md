@@ -1,3 +1,11 @@
+## 1.0.170 — Push #96h-z14: document diet (stickers gone, backups expire), pet slots + /petswap
+
+- **Sticker storage removed** — packs of base64 stickers lived inside player documents (3 players = 4.3 MB of the 12.7 MB DB). `/steal` / `/s` still rebrands and resends; nothing is stored. All stored packs are wiped at boot. `/s packs|pack|delete` explain the change.
+- **Reset backups expire after 30 days** (`userResetBackups`).
+- **Gate sweep tightened** — purchased gates also go when their key's time ran out 2 h ago or the raid finished 2 h ago.
+- **Pet slots: 3 per hunter, 5 with 💎 Pro.** Slots past the cap are 🔒 locked — pets are kept but can't be set active, fed, trained, played, evolved, renamed, released, bred or gifted; a locked active pet is deactivated automatically when the pass expires. Hatching/catching/receiving a pet needs a free slot. `/pet list` marks locked slots.
+- **`/petswap <slot 1> <slot 2>`** — reorder pets within your open slots.
+
 ## 1.0.169 — Push #96h-z13c: /dbstatus shows where the bytes are
 
 - `/dbstatus` now lists the 8 biggest sections, the 3 heaviest players (and their heaviest field), and the heaviest gate — to finish shrinking the 12.7 MB document.
