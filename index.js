@@ -1685,6 +1685,9 @@ async function startup() {
   try {
     const { GateManager } = require('./rpg/dungeons/GateManager');
     GateManager.rehydrateFromDb(getDatabase());
+    // Push #96h-z13: drop dead gates at boot and every 10 min (1016 stale gates = 19 MB doc + loop stalls).
+    try { if (GateManager.sweepStale(getDatabase())) saveDatabase(); } catch (e) {}
+    setInterval(() => { try { if (GateManager.sweepStale(getDatabase())) saveDatabase(); } catch (e) {} }, 10 * 60 * 1000).unref?.();
   } catch (e) {
     console.error('⚠️ Could not rehydrate gates:', e.message);
   }

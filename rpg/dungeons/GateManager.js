@@ -410,13 +410,45 @@ class GateManager {
     return n;
   }
 
+  // Push #96h-z13: STALE GATE SWEEP. Broken / cleared / long-expired gates were never removed from
+  // activeGates (nor db.activeGates) — live 10-04: 1016 "active" gates for 134 players, a 19 MB document,
+  // every sweeper walking a thousand dead raids, and the Mongo mirror refused (>16 MB). Conservative:
+  //  • cleared or broken → gone 2 h after it ended
+  //  • free gate whose break time passed 2 h ago → gone
+  //  • purchased/owned gate → gone when its key is expired / raid complete (or no key and 7 days old), never mid-raid
+  static sweepStale(db, now = Date.now()) {
+    const H2 = 2 * 3600e3, D7 = 7 * 86400e3; let n = 0;
+    const keyFor = (gid) => { try { for (const k of Object.values((db && db.gateKeys) || {})) if (k && k.gateId === gid) return k; } catch (e) {} return null; };
+    const all = new Set([...Object.keys(this.activeGates || {}), ...Object.keys((db && db.activeGates) || {})]);
+    for (const id of all) {
+      const g = this.activeGates[id] || (db && db.activeGates && db.activeGates[id]);
+      if (!g) continue;
+      const raidLive = !!(g.raid && g.raid.status === 'active' && now - (g.raid.lastTurnAt || g.raid.startedAt || 0) < H2);
+      let drop = false;
+      if (g.cleared || g.broken) drop = now - (g.clearedAt || g.brokenAt || g.breakTime || g.purchasedAt || 0) > H2 && !raidLive;
+      else if (!g.owned && !g.purchased) drop = !!g.breakTime && now - g.breakTime > H2 && !raidLive;
+      else {
+        const k = keyFor(id);
+        if (k) drop = !!(k.expired || k.raidComplete) && !raidLive;
+        else drop = now - (g.purchasedAt || now) > D7 && !raidLive;
+      }
+      if (!drop) continue;
+      delete this.activeGates[id];
+      try { if (db && db.activeGates) delete db.activeGates[id]; } catch (e) {}
+      try { const c = g.chatId; if (c && this.gatesByChat[c]) this.gatesByChat[c] = this.gatesByChat[c].filter(x => x !== id); } catch (e) {}
+      n++;
+    }
+    if (n) console.log(`[GATE] swept ${n} stale gate(s) — ${Object.keys(this.activeGates).length} remain`);
+    return n;
+  }
+
   static checkGateBreaks(chatId, sock) {
     for (const gateId of (this.gatesByChat[chatId] || [])) {
       const gate = this.activeGates[gateId];
       if (!gate || gate.cleared || gate.broken) continue;
       if (gate.purchased || gate.owned) continue; // FIX: purchased gates governed by key expiry, not break time (fixes codes expiring early)
       if (Date.now() >= gate.breakTime) {
-        gate.broken = true; gate.active = false;
+        gate.broken = true; gate.active = false; gate.brokenAt = Date.now();
         if (sock) {
           const txt = `💥 *GATE BREAK!*\nThe ${gate.rank}-Rank gate [${gate.id}] was not cleared in time and has shattered.`;
           sock.sendMessage(chatId, { text: txt });

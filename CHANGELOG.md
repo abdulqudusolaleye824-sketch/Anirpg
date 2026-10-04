@@ -1,3 +1,8 @@
+## 1.0.168 — Push #96h-z13b: stale gate sweep (the 19 MB database)
+
+- **Root cause of the slow bot found:** broken / cleared / expired gates were never removed — live there were **1016 "active" gates for 134 players**, a 19 MB document, every 10-s sweeper walking a thousand dead raids, 160 ms per save, and the Mongo mirror refused (>16 MB).
+- **Sweep** at boot and every 10 min: cleared/broken gates go 2 h after they end, free gates 2 h after their break time, purchased gates when their key is expired/complete (or keyless after 7 days). Never touches a gate with a raid that moved in the last 2 h.
+
 ## 1.0.167 — Push #96h-z13: find the loop blocker, fewer DB serializations
 
 - **Slow-task attribution** — every timer and every Baileys event handler is timed; any run over 250 ms logs `🐢 SLOW TASK <ms> — <origin>` with heap/RSS, and the lag watchdog now prints the 3 most recent slow tasks. This names the thing behind the 1.5–3.7 s event-loop stalls instead of guessing.
