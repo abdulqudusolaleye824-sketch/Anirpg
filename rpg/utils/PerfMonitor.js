@@ -45,7 +45,7 @@ function tick() {
       if (drift > counters.maxLagMs) counters.maxLagMs = drift;
       if (drift > LAG_WARN_MS && now - _warnAt > LAG_THROTTLE_MS) {
         _warnAt = now;
-        console.error(`🐌 EVENT LOOP LAG ${drift}ms — blocked the loop (last serialize ${counters.lastSerializeMs}ms, writes ${counters.writes}, saves merged ${counters.coalescedSaves}). If this repeats, check DB size and inline blobs: /dbstatus`);
+        const _mu = process.memoryUsage(); const _st = (() => { try { const r = require('./SlowTask').recent; return r.slice(-3).map(x => `${x.ms}ms ${x.label.slice(0, 60)}`).join(' | ') || 'no slow task seen (GC?)'; } catch (e) { return '?'; } })(); console.error(`🐌 EVENT LOOP LAG ${drift}ms — heap ${Math.round(_mu.heapUsed / 1048576)}MB rss ${Math.round(_mu.rss / 1048576)}MB — recent slow: ${_st} (last serialize ${counters.lastSerializeMs}ms, writes ${counters.writes}, saves merged ${counters.coalescedSaves}). If this repeats, check DB size and inline blobs: /dbstatus`);
       }
     }
     _last = now;

@@ -1,5 +1,6 @@
 // Load .env file FIRST — before any other code reads process.env
 require('dotenv').config();
+try { require('./rpg/utils/SlowTask').installTimers(); } catch (e) {} // Push #96h-z13: name the task that blocks the loop
 
 const fs = require('fs');
 let cachedConfig = JSON.parse(fs.readFileSync('./config.json', 'utf-8'));
@@ -244,8 +245,8 @@ function maybeHourlySnapshot() {
 // minimum interval with a bounded maximum wait (so a busy group can never
 // starve persistence, and an idle one never spins).
 // ═══════════════════════════════════════════════════════════════
-const SAVE_MIN_INTERVAL_MS = parseInt(process.env.SAVE_MIN_INTERVAL_MS || '1200', 10);
-const SAVE_MAX_WAIT_MS     = parseInt(process.env.SAVE_MAX_WAIT_MS || '6000', 10);
+const SAVE_MIN_INTERVAL_MS = parseInt(process.env.SAVE_MIN_INTERVAL_MS || '3000', 10);
+const SAVE_MAX_WAIT_MS     = parseInt(process.env.SAVE_MAX_WAIT_MS || '10000', 10);
 let _snap = { str: null, at: 0, bytes: 0 };
 let _saveDirty = false;
 let _saveFirstDirtyAt = 0;

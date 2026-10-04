@@ -1603,6 +1603,7 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
     // sends are built + MD-patched explicitly inside utils/buttons.
     patchMessageBeforeSending: (msg) => msg,
   });
+  try { const ST = require('../rpg/utils/SlowTask'); const _on = sock.ev.on.bind(sock.ev); sock.ev.on = (ev, fn) => _on(ev, ST.wrap(`${personalityKey} ev:${ev}`, fn)); } catch (e) {} // Push #96h-z13: time every Baileys event handler
 
   // ── Send wrapper: empty-guard + own-send registry ────────────────
   // Any text/caption payload that is empty (and carries no media or other

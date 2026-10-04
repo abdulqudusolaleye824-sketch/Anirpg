@@ -1,3 +1,8 @@
+## 1.0.167 — Push #96h-z13: find the loop blocker, fewer DB serializations
+
+- **Slow-task attribution** — every timer and every Baileys event handler is timed; any run over 250 ms logs `🐢 SLOW TASK <ms> — <origin>` with heap/RSS, and the lag watchdog now prints the 3 most recent slow tasks. This names the thing behind the 1.5–3.7 s event-loop stalls instead of guessing.
+- **DB writes coalesced harder** — min 3 s between full serializations (was 1.2 s), max wait 10 s. Each serialization blocked the loop ~160 ms, ~17×/min.
+
 ## 1.0.166 — Push #96h-z12: deaf-bot wake-up, faster group sends, honest shield lines
 
 - **Faster commands / fewer send timeouts** — group metadata is now cached (5 min, refreshed on member changes). Before, every group message fetched the full member list from WhatsApp first → slow replies, "send timed out", rate limits.
