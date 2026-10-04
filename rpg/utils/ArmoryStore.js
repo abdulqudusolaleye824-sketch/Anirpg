@@ -213,13 +213,14 @@ function instantiate(stockItem, player) {
     lore: stockItem.lore, fromStore: true, storeDay: dayKey(), acquiredAt: Date.now(),
     durability: maxDurability, maxDurability, transferable: true,
   };
+  const _fin = (o) => { try { require('./InventoryCompactor').attach(o); } catch (e) {} return o; }; // Push #96h-z15: lore → index + getter
   if (stockItem.kind === 'weapon') {
-    return { ...base, isWeapon: true, type: 'Weapon', weaponType: stockItem.weaponType,
-      attack: stockItem.atk, bonus: stockItem.atk, effects: stockItem.effects.map(e => ({ ...e })) };
+    return _fin({ ...base, isWeapon: true, type: 'Weapon', weaponType: stockItem.weaponType,
+      attack: stockItem.atk, bonus: stockItem.atk, effects: stockItem.effects.map(e => ({ ...e })) });
   }
-  return { ...base, isGear: true, type: 'Armor', slot: stockItem.slot, stats: { ...stockItem.stats },
+  return _fin({ ...base, isGear: true, type: 'Armor', slot: stockItem.slot, stats: { ...stockItem.stats },
     resist: stockItem.resist.map(r => ({ ...r })), immune: stockItem.immune.slice(), turnReduce: stockItem.turnReduce,
-    special: describeGearSpecial(stockItem) };
+    special: describeGearSpecial(stockItem) });
 }
 function describeGearSpecial(g) {
   const parts = [];
@@ -270,6 +271,7 @@ function equipWeapon(player, inst) {
   // Old store weapon goes BACK to the bag (it is an item, not a stat sponge).
   if (old && old.fromStore) items.push(old);
   player.weapon = { ...inst, name: inst.name, bonus: inst.attack, attack: inst.attack };
+  try { require('./InventoryCompactor').attach(player.weapon); } catch (e) {}
   // Weapon on-hit statuses are read from player.weapon.effects in combat.
   return { ok: true, old };
 }
@@ -278,7 +280,7 @@ function unequipWeapon(player) {
   if (!w || !w.fromStore) return { ok: false, error: 'No store weapon equipped.' };
   if (!player.inventory) player.inventory = {};
   if (!Array.isArray(player.inventory.items)) player.inventory.items = [];
-  player.inventory.items.push({ ...w });
+  { const c = { ...w }; try { require('./InventoryCompactor').attach(c); } catch (e) {} player.inventory.items.push(c); }
   player.weapon = null;
   return { ok: true, weapon: w };
 }
@@ -427,6 +429,7 @@ function renderDetail(it) {
 }
 
 module.exports = {
+  LORE_W, LORE_G,
   lowDurabilityCheck, autoMendEnabled, LOW_DUR,
   RANKS, RANK_EMOJI, RANK_RARITY, BANDS, STATUS_EMOJI, STATUSES,
   dayKey, msUntilRotation, getStock, findStock, buy, instantiate, maxDurabilityFor, grantRandom,

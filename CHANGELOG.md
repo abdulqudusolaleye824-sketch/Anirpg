@@ -1,3 +1,8 @@
+## 1.0.171 — Push #96h-z15: targeted Signal session reset, gear lore compaction
+
+- **Bad-MAC storms from ONE peer get fixed, not endured** — live on 10-04, 189 of 246 decrypt failures in 10 min came from a single @lid address; such a desynced pairwise session never heals by itself and the bot looks deaf. Now after 12 failures/min from the same address, that one session is dropped on every socket so the peer's next message arrives as a fresh pre-key bundle (throttled: once per address per 10 min).
+- **Gear lore stored as an index** — rolled weapons/armour carried an 80-char lore string each; hoarders made `inventory` the heaviest field. Lore is now a tiny `loreIdx` with an invisible getter (`item.lore` still works everywhere). Existing items are migrated at boot and every 10 min.
+
 ## 1.0.170 — Push #96h-z14: document diet (stickers gone, backups expire), pet slots + /petswap
 
 - **Sticker storage removed** — packs of base64 stickers lived inside player documents (3 players = 4.3 MB of the 12.7 MB DB). `/steal` / `/s` still rebrands and resends; nothing is stored. All stored packs are wiped at boot. `/s packs|pack|delete` explain the change.

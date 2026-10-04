@@ -629,6 +629,28 @@ function _crossCheckDeaf(live, now) {
   if (ok) { (_crossRecycles[worst[0]] = _crossRecycles[worst[0]] || []).push(now); }
   return ok;
 }
+// Push #96h-z15: TARGETED SESSION RESET. Live on 10-04: 189 of 246 decrypt failures in 10 min came from ONE
+// sender (a @lid address). A pairwise Signal session that is out of sync never heals by itself — every message
+// from that peer fails, the retry-receipt dance repeats, CPU drowns, the bot looks deaf. Baileys issue #2234
+// suggests exactly this: after N consecutive failures for the same address, drop OUR copy of that session so
+// the peer's next message arrives as a fresh pre-key bundle and a new session is built. Per-address, throttled.
+const _badBySender = {}; const _senderResetAt = {};
+const BAD_SENDER_N = Number(process.env.BOT_BAD_SENDER_N || 12);
+function _noteBadSender(args, now) {
+  const txt = args.map(a => (a && a.stack) ? a.stack : String(a)).join(' ');
+  const m = txt.match(/async (\d+(?:_\d+)?\.\d+) \[as awaitable\]/) || txt.match(/\b(\d{8,}(?:_\d+)?\.\d+)\b/);
+  if (!m) return;
+  const addr = m[1];
+  const arr = (_badBySender[addr] = (_badBySender[addr] || []).filter(t => now - t < 60 * 1000)); arr.push(now);
+  if (arr.length < BAD_SENDER_N) return;
+  if (now - (_senderResetAt[addr] || 0) < 10 * 60 * 1000) return;
+  _senderResetAt[addr] = now; _badBySender[addr] = [];
+  let n = 0;
+  for (const [k, s] of Object.entries(botSockets)) {
+    try { const keys = s && s.authState && s.authState.keys; if (keys && typeof keys.set === 'function') { Promise.resolve(keys.set({ session: { [addr]: null } })).catch(() => {}); n++; } } catch (e) {}
+  }
+  console.warn(`🔐 AstraLink: ${arr.length} decrypt failures/min from ${addr} — dropped that Signal session on ${n} socket(s) so it rebuilds from the peer's next pre-key bundle`);
+}
 (function _hookLibsignalNoise() {
   try {
     const origErr = console.error.bind(console);
@@ -638,6 +660,7 @@ function _crossCheckDeaf(live, now) {
         if (/Bad MAC|Failed to decrypt message with any known session|No matching sessions found|No session record/i.test(first)) {
           const now = Date.now();
           _badMacHits.push(now);
+          try { _noteBadSender(args, now); } catch (e) {}
           if (_badMacHits.length > 500) _badMacHits = _badMacHits.slice(-300);
           if (_badMacHits.length % 100 !== 1) return;
           return origErr(`🔐 libsignal decrypt failures ×${_badMacHits.length} (Bad MAC) — per-contact sessions rebuilding via retry receipts`);

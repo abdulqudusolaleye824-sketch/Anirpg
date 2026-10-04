@@ -1690,6 +1690,7 @@ async function startup() {
       let n = 0; try { const db = getDatabase();
         for (const u of Object.values(db.users || {})) if (u && u.stickerPacks) { delete u.stickerPacks; n++; }
         for (const [j, b] of Object.entries(db.userResetBackups || {})) if (!b || Date.now() - (b.resetAt || 0) > 30 * 86400e3) { delete db.userResetBackups[j]; n++; }
+        try { n += require('./rpg/utils/InventoryCompactor').compactAll(db); } catch (e) {} // Push #96h-z15: gear lore → index
       } catch (e) {} return n; };
     try { const n = GateManager.sweepStale(getDatabase()) + _docDiet(); if (n) { console.log(`🧹 document diet: ${n} item(s) removed`); saveDatabase(); } } catch (e) {}
     setInterval(() => { try { if (GateManager.sweepStale(getDatabase()) + _docDiet()) saveDatabase(); } catch (e) {} }, 10 * 60 * 1000).unref?.();
