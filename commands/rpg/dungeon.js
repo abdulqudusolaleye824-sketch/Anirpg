@@ -949,10 +949,12 @@ module.exports = {
           const PetCombat = require('../../rpg/utils/PetCombat');
           const _st = PetCombat.abilityStrike(sender, monster.stats, { owner: player });
           if (_st?.damage) { monster.stats.hp = Math.max(0, (monster.stats.hp || 0) - _st.damage); log += _st.line + '\n'; }
+          try { if ((monster.stats.hp || 0) > 0) { const _sa = require('../../rpg/utils/ShadowArmy').strike(player, monster); if (_sa.lines.length) log += _sa.lines.join('\n') + '\n'; } } catch (e) {} // Push #96h-z19
           const _ph = PetCombat.healPlayer(sender, player);
           if (_ph.healed > 0) log += `💚 *${_ph.petName}* mended *${_ph.healed}* HP\n`;
           try { const _lg = require('../../rpg/utils/PetManager').tickLastGift(player); if (_lg && _lg.healed > 0) log += `✨ *Last Gift* (${_lg.from}): +${_lg.healed} HP · ${_lg.turnsLeft} turns left\n`; } catch (e) {}
           if ((monster.stats.hp || 0) <= 0) {
+            try { const _sc = require('../../rpg/utils/ShadowArmy').registerCorpse(player, monster, 'dungeon'); if (_sc) { log += _sc + '\n'; const SA = require('../../rpg/utils/ShadowArmy'); const B = require('../../utils/buttons'); const pr = SA.buttonFor(player); if (pr) setTimeout(() => B.sendButtons(sock, chatId, { text: `👤 *${player.name}* — the shadow awaits your word.`, buttons: B.quickReplies(pr) }).catch(() => {}), 1500); } } catch (e) {} // Push #96h-z19
             const _pr = PetCombat.rewardPet(sender, { won: true, exp: 25 + (monster.level || 1) * 5 });
             if (_pr) log += _pr.join('\n') + '\n';
             const _sv = PetCombat.scavenge(sender, monster.rewardGold || monster.gold || 500);
@@ -1121,10 +1123,12 @@ module.exports = {
           const PetCombat = require('../../rpg/utils/PetCombat');
           const _st = PetCombat.abilityStrike(sender, monster.stats, { owner: player });
           if (_st?.damage) { monster.stats.hp = Math.max(0, (monster.stats.hp || 0) - _st.damage); log += _st.line + '\n'; }
+          try { if ((monster.stats.hp || 0) > 0) { const _sa = require('../../rpg/utils/ShadowArmy').strike(player, monster); if (_sa.lines.length) log += _sa.lines.join('\n') + '\n'; } } catch (e) {} // Push #96h-z19
           const _ph = PetCombat.healPlayer(sender, player);
           if (_ph.healed > 0) log += `💚 *${_ph.petName}* mended *${_ph.healed}* HP\n`;
           try { const _lg = require('../../rpg/utils/PetManager').tickLastGift(player); if (_lg && _lg.healed > 0) log += `✨ *Last Gift* (${_lg.from}): +${_lg.healed} HP · ${_lg.turnsLeft} turns left\n`; } catch (e) {}
           if ((monster.stats.hp || 0) <= 0) {
+            try { const _sc = require('../../rpg/utils/ShadowArmy').registerCorpse(player, monster, 'dungeon'); if (_sc) { log += _sc + '\n'; const SA = require('../../rpg/utils/ShadowArmy'); const B = require('../../utils/buttons'); const pr = SA.buttonFor(player); if (pr) setTimeout(() => B.sendButtons(sock, chatId, { text: `👤 *${player.name}* — the shadow awaits your word.`, buttons: B.quickReplies(pr) }).catch(() => {}), 1500); } } catch (e) {} // Push #96h-z19
             const _pr = PetCombat.rewardPet(sender, { won: true, exp: 25 + (monster.level || 1) * 5 });
             if (_pr) log += _pr.join('\n') + '\n';
             const _sv = PetCombat.scavenge(sender, monster.rewardGold || monster.gold || 500);

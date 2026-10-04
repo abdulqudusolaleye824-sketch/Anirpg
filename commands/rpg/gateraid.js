@@ -618,7 +618,7 @@ module.exports = {
       }
       // Push #68: pet round output declared at execute scope so the stunned
       // path (which skips the strike block) can't hit "_petLines is not defined".
-      let _petStrike = null, _petLines = [];
+      let _petStrike = null, _petLines = []; let _shadowOffer = false; // Push #96h-z19
       const UCgFlow = require('../../rpg/utils/UnifiedCombat');
       try { GR.noteRaidTurn(gate, chatId); } catch (e) {} // Push #88q: idle-pressure clock
       // Push #88q: INITIATIVE — a faster raid monster can strike BEFORE the
@@ -781,6 +781,8 @@ module.exports = {
         const _ps = _statusKilled ? null : PetCombat.abilityStrike(sender, target, { owner: player });
         if (_ps) _petLines.push(_ps.line);
       } catch (e) {}
+      // Push #96h-z19: the Shadow Army fights beside its Monarch.
+      try { if (!_statusKilled && target.hp > 0) { const _sa = require('../../rpg/utils/ShadowArmy').strike(player, target); if (_sa.lines.length) _petLines.push(..._sa.lines); } } catch (e) {}
 
       if (target.hp <= 0) {
         // The 5 strike messages are already live — rewards go in their own message.
@@ -796,7 +798,8 @@ module.exports = {
         // advancing) give NO rewards — no Nexus/EXP, no drops, no pet XP, no treasure.
         const _revivedKill = !!target.revived;
         if (_revivedKill) killLines.push(``, `💀 *${target.name}* (revived) defeated — *no rewards*, it was already beaten once.`);
-        else try { const BR=require('../../rpg/utils/BattleRewards'); const w=BR.giveBattleWinRewards(player, db, 'gate', player.level, sock, chatId); killLines.push(``, `💀 *${target.name}* defeated!`, BR.formatRewards(w)); try { const _sx = BR.shareRaidExp(gate, sender, db, sock, chatId); if (_sx) killLines.push(_sx); } catch (e) {} } catch(e){ awardXP(player, 'gate_complete', saveDatabase, sock, chatId); killLines.push(``, `💀 *${target.name}* defeated!`); }
+        try { const _sc = require('../../rpg/utils/ShadowArmy').registerCorpse(player, target, 'gate'); if (_sc) { killLines.push(_sc); _shadowOffer = true; } } catch (e) {} // Push #96h-z19
+        if (!_revivedKill) try { const BR=require('../../rpg/utils/BattleRewards'); const w=BR.giveBattleWinRewards(player, db, 'gate', player.level, sock, chatId); killLines.push(``, `💀 *${target.name}* defeated!`, BR.formatRewards(w)); try { const _sx = BR.shareRaidExp(gate, sender, db, sock, chatId); if (_sx) killLines.push(_sx); } catch (e) {} } catch(e){ awardXP(player, 'gate_complete', saveDatabase, sock, chatId); killLines.push(``, `💀 *${target.name}* defeated!`); }
 
         const heal = GR.lifeSteal(player, result.damage);
         if (heal > 0) { player.stats.hp = Math.min(_effMax(player), (player.stats.hp || 0) + heal); killLines.push(`💚 Lifesteal: +${heal} HP`); }
@@ -842,6 +845,7 @@ module.exports = {
 
         try { GR.saveGateState(db, gate); } catch (e) {}
       saveDatabase();
+        try { if (_shadowOffer) { const SA = require('../../rpg/utils/ShadowArmy'); const B = require('../../utils/buttons'); const pr = SA.buttonFor(player); if (pr) setTimeout(() => B.sendButtons(sock, chatId, { text: `👤 *${player.name}* — the shadow awaits your word.`, buttons: B.quickReplies(pr) }).catch(() => {}), 1200); } } catch (e) {} // Push #96h-z19
         return sock.sendMessage(chatId, { text: killLines.filter(Boolean).join('\n') }, { quoted: msg });
       }
 
@@ -1051,6 +1055,7 @@ module.exports = {
         if (topRaider && topRaider[0] === sender) AuraSystem.addAura(player, 'topRaider');
 
         awardXP(player, 'gate_boss', saveDatabase, sock, chatId);
+        try { const _sc = require('../../rpg/utils/ShadowArmy').registerCorpse(player, { ...boss, isBoss: true }, 'gate-boss'); if (_sc) { out.push(_sc); _shadowOffer = true; } } catch (e) {} // Push #96h-z19
         try { const BRb=require('../../rpg/utils/BattleRewards'); const wb=BRb.giveBattleWinRewards(player, db, 'gate', player.level, sock, chatId, { boss: true }); out.push(BRb.formatRewards(wb)); try { const _sx = BRb.shareRaidExp(gate, sender, db, sock, chatId); if (_sx) out.push(_sx); } catch (e) {} } catch(e){}
 
         // Final-blow boss loot → the killer
@@ -1106,6 +1111,7 @@ module.exports = {
         } catch (e) {}
 
         out.push(``, `💚 *All members: +50% max HP recovery, no cooldown.*`);
+        try { if (_shadowOffer) { const SA = require('../../rpg/utils/ShadowArmy'); const B = require('../../utils/buttons'); const pr = SA.buttonFor(player); if (pr) setTimeout(() => B.sendButtons(sock, chatId, { text: `👤 *${player.name}* — the boss's shadow awaits your word.`, buttons: B.quickReplies(pr) }).catch(() => {}), 1500); } } catch (e) {} // Push #96h-z19
         if (_double) {
           const _ldr = db.users?.[gate.raid?.leader]; const _ln = _ldr ? _ldr.name : 'Leader';
           out.push(``, `🌀 *THE GATE DOES NOT CLOSE…*`, `A *DOUBLE DUNGEON* yawns open behind the fallen boss — rank unknown (B, A or S). Once entered it is sealed: nobody joins, nobody flees.`, `👑 *${_ln}* decides: */party proceed* or */party leave*`);
@@ -1164,6 +1170,7 @@ module.exports = {
           result.petLine = _bstrike.line;
         }
       } catch (e) {}
+      try { const _sa = require('../../rpg/utils/ShadowArmy').strike(player, boss); if (_sa.lines.length) result.shadowLines = _sa.lines; } catch (e) {} // Push #96h-z19
 
       if (!gate.damageDealt) gate.damageDealt = {};
       gate.damageDealt[sender] = (gate.damageDealt[sender] || 0) + result.damage;
@@ -1193,7 +1200,7 @@ module.exports = {
       else if (result.healed > 0) lines.push(`💚 *${result.skillUsed?.name || 'Recovery'}* restored *${result.healed}* HP → ${player.stats.hp}/${_effMax(player)}`);
       if ((result.synergyNotes || []).length) lines.push(`⚡ *SYNERGY* ${result.synergyNotes.join(' · ')}`);
       // Push #55: the boss round reports what the pet did too.
-      try { if (result.petLine) lines.push(result.petLine); } catch (e) {}
+      try { if (result.petLine) lines.push(result.petLine); if (result.shadowLines) lines.push(...result.shadowLines); } catch (e) {}
       try {
         const _bh = PetCombat.healPlayer(sender, player);
         if (_bh.healed > 0) lines.push(`💚 *${_bh.petName}* mended *${_bh.healed}* HP → ${_bh.hp}/${_effMax(player)}`);

@@ -347,6 +347,7 @@ function _awardKill(db, ev, m, player, st, lines, how = null) {
   m.defeated = true; m.by = _pid(player); const pts = m.isBoss ? BOSS_POINTS : (KILL_POINTS[m.rank] || 10);
   st.points += pts; st.kills++; if (m.isBoss) st.bossKills++;
   lines.push(`☠️ *${m.name}* falls${how ? ` to ${how}` : ''}! *${_name(player)}* +${pts} points (${st.points} total)`);
+  try { const _sc = require('./ShadowArmy').registerCorpse(player, { name: m.name, emoji: m.emoji, rank: m.rank, isBoss: !!m.isBoss, level: m.level || ev.level, stats: { atk: m.atk, def: m.def, maxHp: m.maxHp, hp: m.maxHp }, moves: m.moves || m.skills }, 'jeju'); if (_sc) lines.push(_sc); } catch (e) {} // Push #96h-z19
   _gainExp(db, player, st, m.isBoss ? EXP_BOSS : (EXP_KILL[m.rank] || 20), lines);
   if (m.isBoss) _giveArtifact(st, m.artifact || _rollArtifact(ev, true), lines, _name(player)); else if (Math.random() < ARTIFACT_DROP) _giveArtifact(st, _rollArtifact(ev, false), lines, _name(player));
 }
@@ -402,6 +403,8 @@ function attackMonster(db, player, targetId, skillName = null) {
   lines.push(...statusLines);
   const strikeLine = `${res.skillUsed ? `✨ *${res.skillUsed.name}*` : '⚔️'} *${_name(player)}* hits *${m.name}* #${m.id} for *${dmg.toLocaleString()}*${crit ? ' 💥CRIT' : ''} — ${m.hp.toLocaleString()}/${m.maxHp.toLocaleString()} HP`;
   lines.push(strikeLine);
+  // Push #96h-z19: the Shadow Army strikes the beast after its Monarch.
+  try { if (m.hp > 0) { const _sa = require('./ShadowArmy').strike(player, m); if (_sa.damage) { st.dmg += _sa.damage; lines.push(..._sa.lines); } } } catch (e) {}
   if (m.hp <= 0) {
     _awardKill(db, ev, m, player, st, lines);
     if (!alive(ev).length) lines.push(_nextWave(db, ev));

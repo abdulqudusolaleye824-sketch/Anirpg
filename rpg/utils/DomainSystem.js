@@ -235,6 +235,9 @@ function isShielded(entity) {
   }
   return null;
 }
+// Push #96h-z19: drop an owner's domain shield (called by CombatReset) — a domain cast in one fight
+// must not keep its owner status-immune / unmissable in the next one.
+function releaseShield(entity) { let n = 0; for (const k of _ownerKeys(entity)) { if (_shield.delete(k)) n++; } return n; }
 function shieldLine(entity) { const d = isShielded(entity); return d ? `🌌 *${entity.name}* stands inside *${d.name}* — the status cannot take hold.` : null; }
 
 function _applyBuffs(entity, buffs, turns, tag, source) {
@@ -581,4 +584,4 @@ function findBattle(player, sender, db) {
   return null;
 }
 
-module.exports = { domainVariance, DOMAIN_TTL_MS, CASTER_REGEN_PCT, costFor, CLASS_KITS, kitFor, SKILL_DOMAINS, BREAK, splitMessages, sendDomain, FAMILY_DOMAINS, isShielded, shieldLine, monsterDomainInfo, MONSTER_DOMAINS, setupStep, setupPrompt, handleSetupReply, rename, pvpArena, endPvpArena, findBattle, CAST_ENERGY, MAX_LEVEL, UP_SHARE_CAP, ARCHETYPES, CLASS_DOMAINS, STAT_LABEL, effectFor, scale, turnsFor, costToNext, ensure, has, unlock, scaledEffect, describe, power, upgrade, arenaOf, active, shatter, tick, expand, monsterPower, monsterEligible, monsterTry, onLevelUp, shareUP };
+module.exports = { releaseShield, domainVariance, DOMAIN_TTL_MS, CASTER_REGEN_PCT, costFor, CLASS_KITS, kitFor, SKILL_DOMAINS, BREAK, splitMessages, sendDomain, FAMILY_DOMAINS, isShielded, shieldLine, monsterDomainInfo, MONSTER_DOMAINS, setupStep, setupPrompt, handleSetupReply, rename, pvpArena, endPvpArena, findBattle, CAST_ENERGY, MAX_LEVEL, UP_SHARE_CAP, ARCHETYPES, CLASS_DOMAINS, STAT_LABEL, effectFor, scale, turnsFor, costToNext, ensure, has, unlock, scaledEffect, describe, power, upgrade, arenaOf, active, shatter, tick, expand, monsterPower, monsterEligible, monsterTry, onLevelUp, shareUP };

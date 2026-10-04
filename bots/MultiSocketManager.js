@@ -539,6 +539,7 @@ async function _metaCached(personalityKey, jid) {
   try { const meta = await s0.groupMetadata(jid); _gmCache.set(k, { meta, at: now }); return meta; } catch (e) { return c ? c.meta : undefined; }
 }
 const _pBare = (v) => String(v || '').split(':')[0].split('@')[0];
+const _notAdminSaidAt = new Map(); // Push #96h-z19: "make me admin" nag, once per 5 min per group
 function _rowOf(meta, jid) { const b = _pBare(jid); if (!b) return null; return ((meta && meta.participants) || []).find((p) => _pBare(p.id) === b || _pBare(p.phoneNumber) === b || _pBare(p.lid) === b || _pBare(p.jid) === b) || null; }
 // Push #96h-z18: is `jid` an admin of the group (null = unknown/no metadata)?
 async function _isGroupAdmin(personalityKey, chatId, jid) { const meta = await _metaCached(personalityKey, chatId); if (!meta) return null; const r = _rowOf(meta, jid); return !!(r && (r.admin === 'admin' || r.admin === 'superadmin')); }
@@ -2575,7 +2576,7 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
 
     // Push #96h-z18: NON-ADMIN BOTS ARE SILENT in groups — except to the Owner/co-owner. (No metadata → assume admin, never go deaf.)
     if (isGroup && isActive && !Perms.isBotOwner(db, sender)) {
-      try { const adm = await _isGroupAdmin(personalityKey, chatId, sock?.user?.lid || sock?.user?.id); const adm2 = adm === false ? await _isGroupAdmin(personalityKey, chatId, sock?.user?.id) : adm; if (adm2 === false) { _dropped('bot-not-admin', msg); return; } } catch (e) {}
+      try { const adm = await _isGroupAdmin(personalityKey, chatId, sock?.user?.lid || sock?.user?.id); const adm2 = adm === false ? await _isGroupAdmin(personalityKey, chatId, sock?.user?.id) : adm; if (adm2 === false) { _dropped('bot-not-admin', msg); if (isCommand) { const k = `${personalityKey}|${chatId}`; const last = _notAdminSaidAt.get(k) || 0; if (Date.now() - last > 5 * 60000) { _notAdminSaidAt.set(k, Date.now()); try { await sock.sendMessage(chatId, { text: '⚠️ *Please make me admin before using commands.*' }, { quoted: msg }); } catch (e) {} } } return; } } catch (e) {}
     }
     // Push #96h-z18: GROUP MODERATION on EVERY group message (anti-link / anti-mention) — one bot acts per group.
     if (isGroup) {

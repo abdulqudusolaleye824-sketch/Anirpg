@@ -11,6 +11,7 @@ function clearForBattle(player, opts = {}) {
   try {
     // End a running transformation cleanly (stats revert, no aftermath statuses).
     try { const TF = require('./Transformation'); if (player.transform) TF.end(player, false, false); } catch (e) {}
+    try { require('./DomainSystem').releaseShield(player); } catch (e) {} // Push #96h-z19: domain immunity never outlives the fight
     player.statusEffects = [];
     player.tempBuffs = {};
     player.buffs = [];

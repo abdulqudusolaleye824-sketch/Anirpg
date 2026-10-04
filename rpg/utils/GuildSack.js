@@ -75,6 +75,20 @@ function list(db, guild) {
   return [`📋 *PENDING SACKS — ${guild.name}*`, ...ks.map(k => { const p = s[k]; const idx = rows.findIndex(r => _same(r.id, k)); const left = Math.max(0, p.due - Date.now()); return `• #${idx + 1} *${p.name}* — ${Math.ceil(left / 3600e3)}h left`; }), ``, `*/guild sack cancel <#>* to withdraw`].join('\n');
 }
 
+// Push #96h-z19: /sackstatus <serial> — one member's sack standing (GM / Vice).
+function statusOf(db, guild, serial) {
+  const rows = roster(guild, db); const n = Number(String(serial || '').replace('#', ''));
+  if (!n || n < 1 || n > rows.length) return { ok: false, error: `❌ Pick a serial from */guild members* (1–${rows.length}).\nUsage: */sackstatus <#>*` };
+  const t = rows[n - 1]; const p = pendingFor(guild, t.id); const u = db.users?.[t.id];
+  const lastSeen = u ? Math.max(Number(u.lastActive) || 0, Number(u.lastSeen) || 0, Number(u.lastCommandAt) || 0, Number(u.lastDailyAt) || 0) : 0;
+  const ago = lastSeen ? `${Math.max(0, Math.floor((Date.now() - lastSeen) / 3600e3))}h ago` : 'unknown';
+  const L = [`🪓 *SACK STATUS — ${guild.name}*`, `👤 #${n} *${t.name}* · ${t.guildRank} · Lv.${t.level} · GP ${t.tgp}`, `🕒 Last activity: ${ago}`];
+  if (t.isLeader) L.push('👑 Guild Master — cannot be sacked.');
+  else if (p) { const left = Math.max(0, p.due - Date.now()); const h = Math.floor(left / 3600e3), m = Math.floor((left % 3600e3) / 60000); L.push(`⏳ *Sack notice ACTIVE* — served ${new Date(p.at).toUTCString().slice(5, 22)} UTC`, `⌛ ${h}h ${m}m left for them to run */guild active*`, `✍️ Served by: ${String(p.by || '').split('@')[0]}`); }
+  else L.push('✅ No sack notice — in good standing.');
+  return { ok: true, text: L.join('\n'), pending: p, target: t };
+}
+
 // Remove a member cleanly — no payout, no penalty, no orphan rows.
 function removeClean(db, guild, jid) {
   const before = (guild.members || []).length;
@@ -102,4 +116,4 @@ function processDue(db, now = Date.now()) {
   return out;
 }
 
-module.exports = { SACK_MS, roster, sack, clear, cancel, list, pendingFor, removeClean, processDue };
+module.exports = { SACK_MS, statusOf, roster, sack, clear, cancel, list, pendingFor, removeClean, processDue };

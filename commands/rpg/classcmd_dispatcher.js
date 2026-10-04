@@ -604,6 +604,8 @@ function showClassSkillMenu(sock, msg, player, className) {
       if (s.description) lines.push(`     📖 ${s.description.slice(0, 60)}...`);
     });
   }
+  // Push #96h-z19: the active job's three skills ride on the same menu.
+  try { const JSk = require('../../rpg/utils/JobSkills'); const jl = JSk.listFor(player); if (jl.job) { lines.push('', `🧭 *JOB SKILLS* — ${jl.job.emoji} ${jl.job.name} Lv.${jl.level}`); jl.skills.forEach(({ def, tier }, i) => lines.push(`  J${i + 1}. ${JSk.KIND_ICON[def.kind]} *${def.name}*${tier ? ` — T${tier}/5` : ' 🔒'}`)); lines.push(`  📌 /jobskill for details`); } } catch (e) {}
   lines.push('');
   lines.push(`💡 */${playerCmd} <skill>* — use a skill`);
   lines.push(`💡 */${playerCmd} <skill> @user* — target an ally (for heals/buffs)`);

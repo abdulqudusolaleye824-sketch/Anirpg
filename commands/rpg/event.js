@@ -122,6 +122,8 @@ module.exports = {
           if (r.tailText && r.tailText.trim()) parts.push(r.tailText);
           // Push #96h-z3: THREE messages — your strike · the beast's answer · the outcome (kill/EXP/artifact/wave).
           for (let i = 0; i < parts.length; i++) { await say(parts[i]); if (i < parts.length - 1) await new Promise(r => setTimeout(r, 400)); }
+          // Push #96h-z19: a fresh corpse → the Monarch's button.
+          try { if (r.monster && r.monster.defeated) { const SA = require('../../rpg/utils/ShadowArmy'); const pr = SA.buttonFor(player); if (pr && player.shadow.pending.length && Date.now() - player.shadow.pending[player.shadow.pending.length - 1].at < 5000) { const B = require('../../utils/buttons'); await B.sendButtons(sock, chatId, { text: `👤 *${player.name}* — the shadow awaits your word.`, buttons: B.quickReplies(pr) }); } } } catch (e) {}
           return;
         } catch (e) { console.error('[event] rich flow:', e.message); }
       }

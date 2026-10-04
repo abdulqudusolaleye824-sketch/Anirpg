@@ -381,7 +381,8 @@ module.exports = async (sock, msg, messageText, config, getDatabase, saveDatabas
       const ES = require('../rpg/utils/EventSystem');
       if (ES.isEventGC(db, chatId)) {
         const EVENT_OK = new Set(['event', 'jeju', 'ea', 'e', 'elb', 'eventlb', 'eventleaderboard', 'etop', 'estats', 'eventstats', 'eprofile', 'eventprofile', 'ejoin', 'eshop', 'epoints', 'einfo', 'eventafk', 'eafk', 'use', 'skills', 'skill', 'attacks', 'attackpattern', 'attackpatterns', 'help', 'menu', 'register', 'link', 'sub', 'ping', 'rules']);
-        if (!EVENT_OK.has(String(resolvedCommand || '').toLowerCase()) && !EVENT_OK.has(String(commandName || '').toLowerCase())) {
+        let _isWord = false; try { _isWord = !!require('../rpg/utils/ShadowArmy').ownerOfWord(getDatabase(), sender, commandName); } catch (e) {} // Push #96h-z19: your supplication word works on the island
+        if (!_isWord && !EVENT_OK.has(String(resolvedCommand || '').toLowerCase()) && !EVENT_OK.has(String(commandName || '').toLowerCase())) {
           await sock.sendMessage(chatId, { text: `🏝️ *Events GC is for the Jeju Island Raid only.* Use */${commandName}* in the main GC.\nHere: /attack · /cast · /heal · /domain · /grab · /estats · /elb · /eshop · /eventafk`, mentions: [sender] }, { quoted: msg });
           return;
         }
@@ -848,6 +849,13 @@ module.exports = async (sock, msg, messageText, config, getDatabase, saveDatabas
     }
   }
 
+  // Push #96h-z19: SUPPLICATION WORD — `/<word>` is the Shadow Monarch's own command (extract / call / name / release).
+  if (!commands[resolvedCommand]) {
+    try {
+      const SA = require('../rpg/utils/ShadowArmy'); const _owner = SA.ownerOfWord(db, sender, commandName);
+      if (_owner) { const _txt = SA.handle(_owner, args); try { saveDatabase(); } catch (e) {} await sock.sendMessage(chatId, { text: _txt }, { quoted: msg }); return; }
+    } catch (e) {}
+  }
   if (commands[resolvedCommand] && typeof commands[resolvedCommand].execute === 'function') {
     if (db.users?.[sender]) {
       db.users[sender].lastActive = Date.now();

@@ -865,8 +865,14 @@ function computeDamage(player, skill, opts = {}) {
   const pct = ((skill.damagePct || 100) / 100) * b.dmgMult;
   let dmg = base * pct + (skill.flatDamage || 0) * b.dmgMult;
   if (opts.crit) dmg = dmg * (1 + (Number(st.critDamage || 150) - 100) / 100);
+  // Push #96h-z19: job-skill riders (elite / execute bonuses, armor pen)
+  if (skill.jobSkill && opts.target) {
+    const tg = opts.target; const thp = tg.stats ? tg.stats.hp : tg.hp, tmax = tg.stats ? tg.stats.maxHp : tg.maxHp;
+    if (skill.eliteBonus && (tg.isBoss || tg.boss || tg.elite)) dmg *= 1 + skill.eliteBonus / 100;
+    if (skill.executeBonus && tmax > 0 && thp / tmax <= 0.35) dmg *= 1 + skill.executeBonus / 100;
+  }
   dmg = Math.max(1, Math.floor(dmg));
-  if (opts.def) dmg = Math.max(1, dmg - Math.floor(Number(opts.def) * 0.35));
+  if (opts.def) dmg = Math.max(1, dmg - Math.floor(Number(opts.def) * (1 - Math.min(0.6, (Number(skill.armorPen) || 0) / 100)) * 0.35));
   if (opts.target) { // Push #72: status synergy
     try { const syn = require('./StatusSynergy').bonusFor(skill, opts.target); if (syn.mult !== 1) { dmg = Math.max(1, Math.floor(dmg * syn.mult)); if (opts.notes) opts.notes.push(...syn.notes); } } catch (e) {}
   }
@@ -1104,17 +1110,21 @@ function resolveSkill(player, query, opts = {}) {
   const qRaw = String(query ?? '').trim();
   if (!qRaw) return { ok: false, error: 'Which skill? Use /skill <name> or /skill <number>.' };
 
+  // Push #96h-z19: JOB SKILLS resolve by exact name / key / "j1".."j3" before class skills (fuzzy after).
+  let _jobFuzzy = null;
+  try { const JSk = require('./JobSkills'); const jr = JSk.resolve(player, qRaw, { exactOnly: true }); if (jr) return jr; _jobFuzzy = JSk; } catch (e) {}
+
   const asNum = parseInt(qRaw, 10);
   if (!isNaN(asNum) && String(asNum) === qRaw.split(' ')[0]) {
     const equipped = player.skills.active || [];
     const library  = player.availableSkills || [];
     if (asNum >= 1 && asNum <= equipped.length) {
       const s = equipped[asNum - 1];
-      return { ok: true, skill: s, source: 'active', entry: findBy(s.name, roster) };
+      return { ok: true, skill: s, source: 'active', entry: scaleEntry(findBy(s.name, roster), s.level) };
     }
     if (opts.allowLibrary !== false && asNum - equipped.length >= 1 && asNum - equipped.length <= library.length) {
       const s = library[asNum - equipped.length - 1];
-      return { ok: true, skill: s, source: 'library', entry: findBy(s.name, roster) };
+      return { ok: true, skill: s, source: 'library', entry: scaleEntry(findBy(s.name, roster), s.level) };
     }
   }
 
@@ -1126,11 +1136,11 @@ function resolveSkill(player, query, opts = {}) {
     : null;
 
   const active = byName(player.skills.active);
-  if (active) return { ok: true, skill: active, source: 'active', entry: findBy(active.name, roster) };
+  if (active) return { ok: true, skill: active, source: 'active', entry: scaleEntry(findBy(active.name, roster), active.level) };
 
   if (opts.allowLibrary !== false) {
     const lib = byName(player.availableSkills);
-    if (lib) return { ok: true, skill: lib, source: 'library', entry: findBy(lib.name, roster) };
+    if (lib) return { ok: true, skill: lib, source: 'library', entry: scaleEntry(findBy(lib.name, roster), lib.level) };
   }
 
   const lock = byName(player.skills.locked);
@@ -1150,10 +1160,34 @@ function resolveSkill(player, query, opts = {}) {
              error: `🔒 *${cat.name}* unlocks at *Lv.${cat.unlocksAtLevel}* (you are Lv.${player.level || 1}).` };
   }
 
+  try { if (_jobFuzzy) { const jr = _jobFuzzy.resolve(player, qRaw); if (jr) return jr; } } catch (e) {}
   const unlockedN = roster.filter(r => !r.isPassive && isUnlockedFor(player, r)).length;
   return { ok: false, error: `❌ Skill *${qRaw}* not found.\nYou have ${unlockedN} unlocked skills — list them with /skill.` };
 }
 
+// ── Push #96h-z19: SUPPORT EFFECTS GROW WITH SKILL LEVEL ─────────────────────
+// Damage already scales via levelBonus().dmgMult; every buff / shield / regen /
+// damage-reduction / reflect / energy / heal promise now scales too:
+// ×1 → ×1.17 → ×1.33 → ×1.5 → ×1.67 (a 150% boost becomes 175% → 200% → 225% → 250%).
+function supportMult(level) { const lv = Math.max(1, Math.min(MAX_SKILL_LEVEL, Number(level) || 1)); return 1 + (lv - 1) / 6; }
+function scaleEntry(entry, level) {
+  const lv = Math.max(1, Math.min(MAX_SKILL_LEVEL, Number(level) || 1));
+  if (!entry || lv <= 1) return entry;
+  const m = supportMult(lv); const up = (v, cap) => Math.min(cap, Math.round((Number(v) || 0) * m));
+  const sb = (arr) => (arr || []).map(b => b && typeof b === 'object' ? { ...b, amount: Math.round((Number(b.amount) || 0) * m) } : b);
+  const out = { ...entry, level: lv, _scaled: m,
+    buffs: sb(entry.buffs), debuffs: sb(entry.debuffs), extraBuffs: sb(entry.extraBuffs),
+    shieldPct: entry.shieldPct ? up(entry.shieldPct, 100) : entry.shieldPct,
+    regen: entry.regen && entry.regen.pct ? { ...entry.regen, pct: up(entry.regen.pct, 30) } : entry.regen,
+    damageTakenPct: entry.damageTakenPct ? up(entry.damageTakenPct, 85) : entry.damageTakenPct,
+    reflectPct: entry.reflectPct ? up(entry.reflectPct, 100) : entry.reflectPct,
+    energyPct: entry.energyPct ? up(entry.energyPct, 100) : entry.energyPct,
+    convertPct: entry.convertPct ? up(entry.convertPct, 100) : entry.convertPct,
+    healingPct: entry.healingPct ? up(entry.healingPct, 100) : entry.healingPct,
+    immuneTurns: entry.immuneTurns ? entry.immuneTurns + (lv >= 5 ? 2 : lv >= 3 ? 1 : 0) : entry.immuneTurns,
+  };
+  return out;
+}
 function findBy(name, roster) {
   const n = String(name || '').toLowerCase();
   return roster.find(r => r.name.toLowerCase() === n) || null;
@@ -1268,7 +1302,7 @@ function carrySkillProgress(player, snap) {
   }
   return { applied, count: now.length, wanted: snap.count };
 }
-module.exports = { CLASS_POWER,
+module.exports = { CLASS_POWER, supportMult, scaleEntry,
   augmentContract,
   parseSupportFields, applySupportFields,
   snapshotSkillProgress, carrySkillProgress,

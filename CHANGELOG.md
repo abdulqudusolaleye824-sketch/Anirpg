@@ -1,3 +1,12 @@
+## 1.0.175 — Push #96h-z19 (2026-10-05)
+- **Job skills:** 3 unique lore-rich skills per job (support / attack / special), unlocked at Job Lv1/2/4, tiers grow with job level, usable only while the job is active. `/jobskill`, class menu section, resolves through `/skillcmd`.
+- **Support scaling:** all support skills (general + job) grow with upgrade level (`supportMult`).
+- **Shadow Army (Shadow Monarch, Lv50+):** `/supplication <word>` binds a command word; defeated monsters linger → `/<word> extract` (3 tries, chance by strength gap). Low ranks merge into Shadow Infantry; high ranks become named soldiers (`call <name>` / `call all`, `name`, `dismiss`). Soldiers keep their movesets, no growth; capacity grows with level + job. Army strikes in gates, dungeons and Jeju.
+- **Domain leak fix:** domain shield registry released on every combat reset (no status-immunity / unmissable carry-over after a fight).
+- **Non-admin bot:** replies "Please make me admin before using commands" (once per 5 min per group).
+- **/sackstatus <#>:** Guild Master / Vice view a member's sack standing.
+- /help updated.
+
 ## 1.0.174 — Push #96h-z18: group moderation, replay fix, bot admin rules, backups, events, pets, help
 
 - **No more replies to old messages** — stale cap 5 → 2 min, nothing sent before the current boot is ever handled, and handled message ids are persisted (`auth/seen-inbound.json`) so a restart cannot replay them (players were being yanked out of raids by re-run commands).
