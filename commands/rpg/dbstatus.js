@@ -91,6 +91,17 @@ module.exports = {
         (inlineBytes > 256 * 1024
           ? `\n  ⚠️ *${(inlineBytes / 1048576).toFixed(1)}MB of base64 still inside the document.* These migrate to disk on the next /profile of each player, or move them now: see rpg/utils/BlobStore.`
           : `\n  ✅ no large inline blobs in the document`);
+      // Push #96h-z13c: WHERE are the bytes? top sections + heaviest users/gates.
+      try {
+        const sz = (v) => { try { return Buffer.byteLength(JSON.stringify(v) || ''); } catch (e) { return 0; } };
+        const kb = (b) => `${(b / 1024).toFixed(0)}KB`;
+        const secs = Object.entries(db).map(([k, v]) => [k, sz(v)]).sort((a, b) => b[1] - a[1]).slice(0, 8);
+        perfSection += `\n\n📦 *BIGGEST SECTIONS*\n` + secs.map(([k, b]) => `  • ${k}: *${kb(b)}*`).join('\n');
+        const topU = Object.entries(db.users || {}).map(([j, u]) => [u?.name || j.split('@')[0], sz(u), u]).sort((a, b) => b[1] - a[1]).slice(0, 3);
+        if (topU.length) perfSection += `\n👤 heaviest players: ` + topU.map(([n, b, u]) => { const f = Object.entries(u || {}).map(([k, v]) => [k, sz(v)]).sort((a, b) => b[1] - a[1])[0]; return `*${n}* ${kb(b)} (${f ? f[0] + ' ' + kb(f[1]) : ''})`; }).join(' · ');
+        const gates = Object.values(db.activeGates || {});
+        if (gates.length) { const tg = gates.map(g => [g.id, sz(g), g]).sort((a, b) => b[1] - a[1])[0]; const f = Object.entries(tg[2] || {}).map(([k, v]) => [k, sz(v)]).sort((a, b) => b[1] - a[1])[0]; perfSection += `\n🌀 gates total *${kb(sz(db.activeGates))}* · heaviest ${tg[0]} ${kb(tg[1])} (${f ? f[0] + ' ' + kb(f[1]) : ''}) · ${gates.filter(g => g.purchased || g.owned).length} purchased`; }
+      } catch (e) {}
     } catch (e) { perfSection = `\n⚠️ perf readout unavailable: ${e.message}`; }
 
     return sock.sendMessage(chatId, {

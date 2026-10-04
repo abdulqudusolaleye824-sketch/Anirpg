@@ -1,3 +1,7 @@
+## 1.0.169 — Push #96h-z13c: /dbstatus shows where the bytes are
+
+- `/dbstatus` now lists the 8 biggest sections, the 3 heaviest players (and their heaviest field), and the heaviest gate — to finish shrinking the 12.7 MB document.
+
 ## 1.0.168 — Push #96h-z13b: stale gate sweep (the 19 MB database)
 
 - **Root cause of the slow bot found:** broken / cleared / expired gates were never removed — live there were **1016 "active" gates for 134 players**, a 19 MB document, every 10-s sweeper walking a thousand dead raids, 160 ms per save, and the Mongo mirror refused (>16 MB).
