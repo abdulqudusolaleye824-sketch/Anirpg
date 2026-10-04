@@ -63,7 +63,7 @@ const pairingSessions = {};
 // Push #64 — /link <bot> (owner DM). Throttle: one deliberate pairing start per
 // personality per 30s, so a double-tap can't burn QR refs back-to-back.
 const _linkKickAt = {};
-const MAX_MSG_AGE_MS = Number(process.env.MAX_MSG_AGE_MS || 5 * 60 * 1000);
+const MAX_MSG_AGE_MS = Number(process.env.MAX_MSG_AGE_MS || 2 * 60 * 1000); // Push #96h-z18: 5 → 2 min (reconnect replays were answering old commands)
 
 // ── Push #75: OUTBOUND PACING ────────────────────────────────────────────────
 // WhatsApp rate-limits a number that bursts; a rate-limited send used to be
@@ -532,7 +532,24 @@ const _lastInboundAt = {};      // key -> ts of last FRESH inbound (decrypted, n
 const _lastOpenAt = {};         // key -> ts the current socket opened
 const _lastStaleAt = {};        // key -> ts of last stale-dropped inbound (lagging socket)
 const _gmCache = new Map(); const GM_CACHE_MS = 5 * 60000; // Push #96h-z12: group metadata cache (bot|jid → {meta, at})
+async function _metaCached(personalityKey, jid) {
+  const k = `${personalityKey}|${jid}`; const c = _gmCache.get(k); const now = Date.now();
+  if (c && now - c.at < GM_CACHE_MS) return c.meta;
+  const s0 = botSockets[personalityKey]; if (!s0 || typeof s0.groupMetadata !== 'function') return c ? c.meta : undefined;
+  try { const meta = await s0.groupMetadata(jid); _gmCache.set(k, { meta, at: now }); return meta; } catch (e) { return c ? c.meta : undefined; }
+}
+const _pBare = (v) => String(v || '').split(':')[0].split('@')[0];
+function _rowOf(meta, jid) { const b = _pBare(jid); if (!b) return null; return ((meta && meta.participants) || []).find((p) => _pBare(p.id) === b || _pBare(p.phoneNumber) === b || _pBare(p.lid) === b || _pBare(p.jid) === b) || null; }
+// Push #96h-z18: is `jid` an admin of the group (null = unknown/no metadata)?
+async function _isGroupAdmin(personalityKey, chatId, jid) { const meta = await _metaCached(personalityKey, chatId); if (!meta) return null; const r = _rowOf(meta, jid); return !!(r && (r.admin === 'admin' || r.admin === 'superadmin')); }
 const _seenInbound = new Map(); const SEEN_INBOUND_TTL_MS = 10 * 60000; // Push #96h-z10: per-process inbound dedupe (chat|id → ts)
+// Push #96h-z18: the dedupe set survives restarts — a message handled before a restart is never handled again after it.
+const _SEEN_FILE = path.join(process.env.DATA_DIR || path.join(__dirname, '..'), 'auth', 'seen-inbound.json');
+try { const raw = JSON.parse(fs.readFileSync(_SEEN_FILE, 'utf8')); const now = Date.now(); for (const [k, t] of Object.entries(raw || {})) if (now - t < SEEN_INBOUND_TTL_MS) _seenInbound.set(k, t); } catch (e) {}
+let _seenDirty = false;
+function _persistSeen() { if (!_seenDirty) return; _seenDirty = false; try { const now = Date.now(); const o = {}; for (const [k, t] of _seenInbound) if (now - t < SEEN_INBOUND_TTL_MS) o[k] = t; fs.mkdirSync(path.dirname(_SEEN_FILE), { recursive: true }); fs.writeFileSync(_SEEN_FILE, JSON.stringify(o)); } catch (e) {} }
+setInterval(_persistSeen, 15000).unref?.();
+process.once('SIGTERM', _persistSeen); process.once('SIGINT', _persistSeen);
 const _deafRecycles = {};       // key -> consecutive recycles without recovery
 const _deafHealAt = {};         // key -> ts of last recycle
 function noteFreshInbound(key, msg) {
@@ -801,7 +818,7 @@ setInterval(() => {
 
 // Push #74: /restart hooks — drop everything queued before the restart and
 // reset per-group takeover state so groups answer through their own bot.
-let _ignoreBeforeTs = 0;
+let _ignoreBeforeTs = Date.now(); // Push #96h-z18: nothing sent before THIS boot is ever handled (deploy/restart replay)
 function markRestart() {
   _ignoreBeforeTs = Date.now();
   try { for (const k of Object.keys(_deafRecycles)) _deafRecycles[k] = 0; for (const k of Object.keys(_deafHealAt)) _deafHealAt[k] = 0; } catch (e) {}
@@ -1616,12 +1633,7 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
     // Push #96h-z12: GROUP METADATA CACHE for sends. Without it Baileys fetches the full participant
     // list from WhatsApp on EVERY group message (sender-key distribution) — slow sends, "send timed
     // out after 20s", rate-overlimit. 5-min TTL, invalidated on participant changes.
-    cachedGroupMetadata: async (jid) => {
-      const k = `${personalityKey}|${jid}`; const c = _gmCache.get(k); const now = Date.now();
-      if (c && now - c.at < GM_CACHE_MS) return c.meta;
-      const s0 = botSockets[personalityKey]; if (!s0 || typeof s0.groupMetadata !== 'function') return c ? c.meta : undefined;
-      try { const meta = await s0.groupMetadata(jid); _gmCache.set(k, { meta, at: now }); return meta; } catch (e) { return c ? c.meta : undefined; }
-    },
+    cachedGroupMetadata: async (jid) => _metaCached(personalityKey, jid),
     // Identity patch — plain text/media sends need no wrapping; interactive
     // sends are built + MD-patched explicitly inside utils/buttons.
     patchMessageBeforeSending: (msg) => msg,
@@ -2126,6 +2138,30 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
     try { backupAuthToDisk(personalityKey, authDir); } catch {}
   });
 
+  // Push #96h-z18: ONE place for "bot landed in a group" — fired by group-participants.update (someone added us)
+  // AND groups.upsert (we were added/joined via link). Guard → thanks (EVERY time, deduped 60s) → sibling promotion.
+  const _thanksAt = new Map();
+  async function _onAddedHere(chatId, author) {
+    try {
+      const GG = require('../rpg/utils/GroupGuard'); const db = getDatabase();
+      let allowed = GG.isAllowed(db, chatId, personalityKey);
+      if (!allowed && author && Perms.isBotOwner(db, author)) {
+        try { GG.trackJoin(db, chatId, personalityKey, author, sock); if (typeof saveDatabase === 'function') saveDatabase(); allowed = true; } catch (e) {}
+      }
+      if (!allowed) { setTimeout(() => GG.leaveIfUntracked(sock, getDatabase(), chatId, 'added', personalityKey).catch(() => {}), 3000); return; }
+      const last = _thanksAt.get(chatId) || 0; if (Date.now() - last < 60000) return; _thanksAt.set(chatId, Date.now());
+      setTimeout(() => { try { sock.sendMessage(chatId, { text: `👋 *Thanks for adding me to this group!*\n\nI'm ${PersonalityManager.getDisplayName ? PersonalityManager.getDisplayName(personalityKey) : 'Astra'} — type */start ${personalityKey}* to activate me here, then */help* to see what I can do.` }, { asSelf: true }).catch(() => {}); } catch (e) {} }, 2500);
+      setTimeout(() => { try { require('../rpg/utils/AdminNotices').promoteAllBots(getAllSockets(), chatId).catch(() => {}); } catch (e) {} }, 6000 + Math.floor(Math.random() * 3000));
+    } catch (e) {}
+  }
+  sock.ev.on('groups.upsert', async (groups) => {
+    for (const g of groups || []) {
+      const chatId = g && g.id; if (!chatId || !String(chatId).endsWith('@g.us')) continue;
+      try { _gmCache.delete(`${personalityKey}|${chatId}`); } catch (e) {}
+      // author of the add is not in the upsert payload — fall back to the group owner / last known adder
+      await _onAddedHere(chatId, g.author || null);
+    }
+  });
   sock.ev.on('group-participants.update', async ({ id: chatId, participants, action, author }) => {
     try { _gmCache.delete(`${personalityKey}|${chatId}`); } catch (e) {} // Push #96h-z12
     // Push #96h-z10: admin promotions / demotions are announced by ONE bot (the dispatcher), member tagged.
@@ -2144,27 +2180,17 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
     if (action === 'add') {
       try {
         const bares = _botBares(); const botsIn = (participants || []).map((p) => (typeof p === 'string' ? p : (p && (p.id || p.jid)) || '')).filter((j) => j && bares.has(String(j).split(':')[0].split('@')[0]));
-        if (botsIn.length) setTimeout(() => { try { require('../rpg/utils/AdminNotices').promoteBots(sock, chatId, botsIn).catch(() => {}); } catch (e) {} }, 4000 + Math.floor(Math.random() * 3000));
+        if (botsIn.length) setTimeout(() => { try { const AN = require('../rpg/utils/AdminNotices'); AN.promoteBots(sock, chatId, botsIn).catch(() => {}); if (_bootstrapDispatcher(personalityKey, chatId)) setTimeout(() => AN.promoteAllBots(getAllSockets(), chatId).catch(() => {}), 5000); } catch (e) {} }, 4000 + Math.floor(Math.random() * 3000));
       } catch (e) {}
     }
     const _bareOf = (p) => String(typeof p === 'string' ? p : (p && (p.id || p.jid)) || '').split(':')[0].split('@')[0];
-    // Push #77: if THIS bot was just added to an untracked group, leave.
-    // Push #96h-v: an Owner adding the bot by hand counts as /joingc (tracked for THIS bot);
-    // anyone else → leave. When the bot stays it says thanks.
+    // Push #77 / #96h-v / #96h-z18: THIS bot was just added → shared handler (also fed by groups.upsert).
     if (action === 'add') {
       try {
         const me = String(sock?.user?.id || '').split(':')[0].split('@')[0];
         const meLid = String(sock?.user?.lid || '').split(':')[0].split('@')[0];
         const addedMe = (participants || []).some((p) => { const b = _bareOf(p); return b && (b === me || (meLid && b === meLid)); });
-        if (addedMe) {
-          const GG = require('../rpg/utils/GroupGuard'); const db = getDatabase();
-          let allowed = GG.isAllowed(db, chatId, personalityKey);
-          if (!allowed && author && Perms.isBotOwner(db, author)) {
-            try { GG.trackJoin(db, chatId, personalityKey, author, sock); if (typeof saveDatabase === 'function') saveDatabase(); allowed = true; } catch (e) {}
-          }
-          if (!allowed) { setTimeout(() => GG.leaveIfUntracked(sock, getDatabase(), chatId, 'added', personalityKey).catch(() => {}), 3000); return; }
-          setTimeout(() => { try { sock.sendMessage(chatId, { text: `👋 *Thanks for adding me to this group!*\n\nI'm ${PersonalityManager.getDisplayName ? PersonalityManager.getDisplayName(personalityKey) : 'Astra'} — type */start ${personalityKey}* to activate me here, then */help* to see what I can do.` }, { asSelf: true }).catch(() => {}); } catch (e) {} }, 2500);
-        }
+        if (addedMe) { await _onAddedHere(chatId, author); return; }
       } catch (e) {}
     }
     // Push #96h-v: a mod/owner LEAVING a non-main GC → every bot leaves too,
@@ -2176,9 +2202,10 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
         const staffGone = gone.filter(b => Perms.isBotOwner(db, b) || Perms.isBotMod(db, b));
         if (staffGone.length && !GG.isMainGroup(db, chatId) && _bootstrapDispatcher(personalityKey, chatId)) {
           const ownerGone = staffGone.some(b => Perms.isBotOwner(db, b));
+          // Push #96h-z18: bots stay while ANY owner/co-owner is still inside — even if one owner just left.
           let ownerStays = false;
-          if (!ownerGone) { try { const meta = await sock.groupMetadata(chatId); ownerStays = (meta.participants || []).some(p => Perms.isBotOwner(db, _bareOf(p))); } catch (e) { ownerStays = true; } }
-          if (ownerGone || !ownerStays) { setTimeout(() => GG.leaveAllBots(getAllSockets(), db, chatId, ownerGone ? 'owner left' : 'staff left', saveDatabase).catch(() => {}), 2000); return; }
+          try { const meta = await sock.groupMetadata(chatId); ownerStays = (meta.participants || []).some(p => { const b = _bareOf(p), pn = String(p && p.phoneNumber || '').split(':')[0].split('@')[0]; return !gone.includes(b) && !gone.includes(pn) && (Perms.isBotOwner(db, b) || (pn && Perms.isBotOwner(db, pn))); }); } catch (e) { ownerStays = true; }
+          if (!ownerStays) { setTimeout(() => GG.leaveAllBots(getAllSockets(), db, chatId, ownerGone ? 'owner left' : 'staff left', saveDatabase).catch(() => {}), 2000); return; }
         }
       } catch (e) {}
     }
@@ -2314,7 +2341,7 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
 
     // Push #96h-z10: INBOUND DEDUPE. After a re-link WhatsApp can hand the SAME message to the socket twice
     // (retry receipts / replayed upserts) — the bot then answered every command twice. One id → one handling.
-    try { const _k = `${personalityKey}|${msg.key?.remoteJid || ''}|${msg.key?.id || ''}`; if (msg.key?.id) { const _now = Date.now(); const _prev = _seenInbound.get(_k); if (_prev && _now - _prev < SEEN_INBOUND_TTL_MS) { _dropped('duplicate', msg); return; } _seenInbound.set(_k, _now); if (_seenInbound.size > 5000) { for (const [kk, tt] of _seenInbound) { if (_now - tt > SEEN_INBOUND_TTL_MS) _seenInbound.delete(kk); if (_seenInbound.size <= 4000) break; } } } } catch (e) {}
+    try { const _k = `${personalityKey}|${msg.key?.remoteJid || ''}|${msg.key?.id || ''}`; if (msg.key?.id) { const _now = Date.now(); const _prev = _seenInbound.get(_k); if (_prev && _now - _prev < SEEN_INBOUND_TTL_MS) { _dropped('duplicate', msg); return; } _seenInbound.set(_k, _now); _seenDirty = true; if (_seenInbound.size > 5000) { for (const [kk, tt] of _seenInbound) { if (_now - tt > SEEN_INBOUND_TTL_MS) _seenInbound.delete(kk); if (_seenInbound.size <= 4000) break; } } } } catch (e) {}
     noteFreshInbound(personalityKey, msg); // Push #86: a decrypted, non-stale message = this socket hears
     try { noteDecryptSuccess(msg.key?.participant || msg.key?.remoteJid); } catch (e) {}
 
@@ -2546,6 +2573,22 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
       isActive = !!(rawActiveKey && isBotUsable(rawActiveKey)) && (personalityKey === rawActiveKey);
     }
 
+    // Push #96h-z18: NON-ADMIN BOTS ARE SILENT in groups — except to the Owner/co-owner. (No metadata → assume admin, never go deaf.)
+    if (isGroup && isActive && !Perms.isBotOwner(db, sender)) {
+      try { const adm = await _isGroupAdmin(personalityKey, chatId, sock?.user?.lid || sock?.user?.id); const adm2 = adm === false ? await _isGroupAdmin(personalityKey, chatId, sock?.user?.id) : adm; if (adm2 === false) { _dropped('bot-not-admin', msg); return; } } catch (e) {}
+    }
+    // Push #96h-z18: GROUP MODERATION on EVERY group message (anti-link / anti-mention) — one bot acts per group.
+    if (isGroup) {
+      try {
+        const _modKey = (rawActiveKey && isBotUsable(rawActiveKey)) ? rawActiveKey : (activeKey || getFirstUsableSocketKey());
+        if (personalityKey === _modKey) {
+          const GMod = require('../rpg/utils/GroupModeration');
+          const exempt = Perms.isBotOwner(db, sender) || Perms.isBotMod(db, sender) || _botBares().has(bareSender);
+          const hit = await GMod.check(sock, msg, db, saveDatabase, { sender, exempt, isGroupAdmin: (j) => _isGroupAdmin(personalityKey, chatId, j).then((v) => v !== false) });
+          if (hit) return;
+        }
+      } catch (e) {}
+    }
     if (isGroup) {
       try {
         const Mod = require('../rpg/utils/ModerationUtils');

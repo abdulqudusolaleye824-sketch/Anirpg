@@ -568,78 +568,7 @@ module.exports = async (sock, msg, messageText, config, getDatabase, saveDatabas
   if (chatId.endsWith('@g.us')) {
     const settings = db.groupSettings?.[chatId];
 
-    let antiLinkOn = !!settings?.antiLink;
-    if (!antiLinkOn) {
-      try {
-        const AG = require('../rpg/utils/AstralGroups');
-        const entry = AG.getEntry(db, chatId);
-        if (entry && entry.isMain) antiLinkOn = true;
-      } catch (e) { /* ignore */ }
-    }
-
-    if (antiLinkOn && !_modExempt) {
-      const text =
-        msg.message?.conversation ||
-        msg.message?.extendedTextMessage?.text ||
-        msg.message?.imageMessage?.caption ||
-        msg.message?.videoMessage?.caption ||
-        '';
-
-      const anyLinkRegex = /(https?:\/\/|www\.)/i;
-      const allowedDomains = (settings?.allowed && settings.allowed.length)
-        ? settings.allowed
-        : ['instagram.com', 'pinterest.', 'pinterest.com', 'youtube.com', 'youtu.be', 'tiktok.com', 'chat.whatsapp.com', 'wa.me'];
-      const whitelistRegex = new RegExp('(' + allowedDomains.map(d => d.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|') + ')', 'i');
-
-      if (anyLinkRegex.test(text) && !whitelistRegex.test(text)) {
-        try {
-          await sock.sendMessage(chatId, { delete: msg.key });
-
-          if (!db.antiLinkStrikes[sender]) {
-            db.antiLinkStrikes[sender] = { count: 0 };
-          }
-
-          db.antiLinkStrikes[sender].count++;
-          const strikes = db.antiLinkStrikes[sender].count;
-          saveDatabase();
-
-          if (strikes === 1) {
-            await sock.sendMessage(chatId, {
-              text:
-                `⚠️ *@${sender.split('@')[0]} WARNING*\n` +
-                `Links are not allowed here. Please send it to my DM instead.\n\n` +
-                `⛔ Next: *Mute (5 mins)*`,
-              mentions: [sender]
-            }, { quoted: msg });
-          } else if (strikes === 2) {
-            if (!db.mutedUsers) db.mutedUsers = {};
-            db.mutedUsers[sender] = { endsAt: Date.now() + 5 * 60 * 1000 };
-            saveDatabase();
-            await sock.sendMessage(chatId, {
-              text: `🔇 *@${sender.split('@')[0]} muted for 5 minutes*\nReason: Repeated links`,
-              mentions: [sender]
-            });
-          } else if (strikes >= 3) {
-            await sock.groupParticipantsUpdate(chatId, [sender], 'remove');
-            delete db.antiLinkStrikes[sender];
-            saveDatabase();
-            await sock.sendMessage(chatId, {
-              text: `🪓 *@${sender.split('@')[0]} kicked*\nReason: Repeated link spam`,
-              mentions: [sender]
-            });
-          }
-          console.log(`🔗 AntiLink strike ${strikes} → ${sender}`);
-          return;
-        } catch (err) {
-          console.error('❌ AntiLink failed:', err);
-        }
-      }
-    }
-  }
-
-  if (chatId.endsWith('@g.us')) {
-    const settings = db.groupSettings?.[chatId];
-
+    // Push #96h-z18: anti-link / anti-mention moved to rpg/utils/GroupModeration (runs for EVERY group message in MultiSocketManager).
     if (settings?.slowmode && !_modExempt) {
       if (!db.userCooldowns) db.userCooldowns = {};
 

@@ -79,14 +79,17 @@ async function promoteBots(sock, chatId, targets) {
   const me = _bare(sock.user && sock.user.id), meLid = _bare(sock.user && sock.user.lid);
   const parts = (meta && meta.participants) || [];
   const isAdmin = (p) => !!(p && (p.admin === 'admin' || p.admin === 'superadmin'));
-  const iAmAdmin = parts.some((p) => isAdmin(p) && (_bare(p.id) === me || (meLid && _bare(p.id) === meLid) || _bare(p.lid) === me || (meLid && _bare(p.lid) === meLid)));
+  // Push #96h-z18: rc14 participants carry `id` = LID and `phoneNumber` = PN — match every form.
+  const _same = (p, b) => !!b && (_bare(p.id) === b || _bare(p.lid) === b || _bare(p.jid) === b || _bare(p.phoneNumber) === b);
+  const iAmAdmin = parts.some((p) => isAdmin(p) && (_same(p, me) || _same(p, meLid)));
   if (!iAmAdmin) return out;
   const todo = [];
   for (const t of targets) {
-    const tb = _bare(t);
-    const row = parts.find((p) => _bare(p.id) === tb || _bare(p.lid) === tb || _bare(p.jid) === tb);
+    const tb = _bare(typeof t === 'string' ? t : (t && t.id) || '');
+    const tl = typeof t === 'object' && t ? _bare(t.lid) : '';
+    const row = parts.find((p) => _same(p, tb) || _same(p, tl));
     if (!row || isAdmin(row)) continue;
-    todo.push(row.id || t);
+    todo.push(row.id);
   }
   if (!todo.length) return out;
   try { await sock.groupParticipantsUpdate(chatId, todo, 'promote'); out.push(...todo); } catch (e) {}
@@ -96,10 +99,9 @@ async function promoteBots(sock, chatId, targets) {
 // Every bot in `sockets` (key → sock) that is NOT admin in chatId gets promoted by the first bot that is.
 async function promoteAllBots(sockets, chatId) {
   const list = Object.values(sockets || {}).filter((s) => s && s.user && s.user.id);
-  const targets = list.map((s) => s.user.id);
+  const targets = list.map((s) => ({ id: s.user.id, lid: s.user.lid })); // Push #96h-z18: PN + LID per bot
   for (const s of list) {
-    const done = await promoteBots(s, chatId, targets);
-    if (done.length || s === list[list.length - 1]) return done;
+    try { const done = await promoteBots(s, chatId, targets); if (done.length) return done; } catch (e) {}
   }
   return [];
 }

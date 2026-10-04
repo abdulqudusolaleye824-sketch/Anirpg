@@ -65,6 +65,8 @@ class OfflineBackupManager {
         fs.writeFileSync(BACKUP_FILE, jsonStr, 'utf8');
 
         console.log(`✅ [OFFLINE BACKUP] Offline JSON database backup created successfully: ${BACKUP_FILE} (${Math.round(jsonStr.length / 1024)} KB)`);
+        // Push #96h-z18: the backup is also DELIVERED as a .txt document to the Owner AND the co-owner.
+        try { await OfflineBackupManager.deliverToOwners(db, jsonStr); } catch (e) { console.error('[OFFLINE BACKUP] deliver failed:', e.message); }
       }
     } catch (err) {
       console.error('❌ [OFFLINE BACKUP] Backup error:', err.message);
@@ -74,6 +76,22 @@ class OfflineBackupManager {
       backupStartedAt = 0;
       console.log('🔓 [OFFLINE BACKUP] Backup complete. Command lockdown lifted.');
     }
+  }
+
+  // Push #96h-z18: send the backup text to every owner (Owner LID + co-owner phone + db.botOwners), one DM each,
+  // from the first usable bot socket. Returns the list of jids it was sent to.
+  static async deliverToOwners(db, jsonStr, socketsOverride) {
+    const { OWNER_JID, COOWNER_JID, COOWNER_PHONE } = require('../../utils/constants');
+    const bareOf = (j) => String(j || '').split('@')[0].split(':')[0];
+    const targets = []; const seen = new Set([bareOf(COOWNER_JID)]); // co-owner gets ONE copy (phone form)
+    for (const j of [OWNER_JID, COOWNER_PHONE, ...((db && db.botOwners) || [])]) { const b = bareOf(j); if (!j || !b || seen.has(b)) continue; seen.add(b); targets.push(j); }
+    let sockets = socketsOverride; if (!sockets) { try { sockets = require('../../bots/MultiSocketManager').getAllSockets(); } catch (e) { sockets = {}; } }
+    const sock = Object.values(sockets || {}).find((s) => s && s.user && typeof s.sendMessage === 'function'); if (!sock) return [];
+    const day = new Date().toISOString().slice(0, 10); const fileName = `anirpg-backup-${day}.txt`; const buf = Buffer.from(jsonStr, 'utf8');
+    const caption = `🗄️ *3-DAY OFFLINE BACKUP* — ${day}\n📦 ${Math.round(buf.length / 1024)} KB · ${Object.keys((db && db.users) || {}).length} players\nKeep this file safe — it is the full database snapshot.`;
+    const sent = [];
+    for (const jid of targets) { try { await sock.sendMessage(jid, { document: buf, mimetype: 'text/plain', fileName, caption }); sent.push(jid); } catch (e) { console.error('[OFFLINE BACKUP] send to', jid, 'failed:', e.message); } }
+    return sent;
   }
 
   static startScheduler(getDatabase, saveDatabase) {

@@ -1,3 +1,18 @@
+## 1.0.174 — Push #96h-z18: group moderation, replay fix, bot admin rules, backups, events, pets, help
+
+- **No more replies to old messages** — stale cap 5 → 2 min, nothing sent before the current boot is ever handled, and handled message ids are persisted (`auth/seen-inbound.json`) so a restart cannot replay them (players were being yanked out of raids by re-run commands).
+- **Anti-link actually works** — moved out of the command handler (which only ever saw `/` messages) into `rpg/utils/GroupModeration.js`, run on EVERY group message. ON by default (bare domains caught, socials whitelisted); `/antilink off` to disable. 3 strikes: warn → 5-min mute → kick.
+- **Anti-mention (new)** — a non-admin who mentions the group in their status is deleted + kicked. ON by default; `/antimention on|off`.
+- **Non-admin bots are silent** in groups (still answer the Owner/co-owner). No metadata → treated as admin, never deaf.
+- **"Thanks for adding me" every time** — `groups.upsert` + participant add share one handler (guard → thanks → sibling promotion).
+- **Bot self-promotion fixed** — rc14 participant rows are matched on `phoneNumber` + LID; any admin sibling promotes all bots.
+- **Bots stay while any Owner/co-owner remains** — leave only when none is left in a non-main GC.
+- `/setspace announcement --main` — announcements GC is tracked as main; bots never auto-leave it.
+- **3-day offline backup is DM'd as a `.txt` document** to the Owner and co-owner (plus `db.botOwners`).
+- **Events** — `/attack 7` with no beast #7 is your equipped pattern #7 (the 2.5× event ATK already applied to patterns; the UX treated plain numbers as beast ids). Monsters no longer surge every turn: the innate transformation roll respects the cooldown, and event avatars carry `tfCastAt`.
+- **Pets** — 💎 Pro slots are unlimited (free stays 3).
+- **Help** — compact names-only menu by category; details only via `/help <cmd>`; Owner-only commands hidden.
+
 ## 1.0.173 — Push #96h-z17: payroll only pays actual members
 
 - Hunters who left / were kicked / moved to another guild kept drawing wages from the old treasury. Every pay run now checks the roster first: not a current member → contract closed on the spot, nothing paid, guild master notified.

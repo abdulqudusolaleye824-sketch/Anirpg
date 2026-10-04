@@ -148,7 +148,8 @@ module.exports = {
       const allCommands = getAllCommands();
       const command = allCommands.get(cmdName);
 
-      if (!command) {
+      const _ownerOnly = command && /\[owner\]|owner[: -]only|\bowner:|^👑 owner/i.test(String(command.description || '')) && !require('../../utils/permissions').isBotOwner(getDatabase(), sender);
+      if (!command || _ownerOnly) {
         return sock.sendMessage(
           chatId,
           { text: `❌ Unknown command: *${cmdName}*\nUse /help to see all commands.` },
@@ -196,41 +197,34 @@ module.exports = {
 
     // 🔹 Main Help Page (Categorized list of all main commands)
     const viewerH = getDatabase()?.users?.[sender];
+    // Push #96h-z18: COMPACT MENU — command names only (details live in /help <cmd>); Owner-only commands are hidden.
     const menuLines = [
-      `👤 *BASIC & PLAYER:*`,
-      `  /register, /profile (/p, /me), /stats, /inventory (/inv), /balance (/bal), /daily, /quest, /cooldowns, /achievements`,
+      `👤 *PLAYER:* /register /profile /stats /rank /inventory /balance /daily /quest /weekly /challenges /cooldowns /achievements /title /settings /timezone /xp`,
       ``,
-      `⚔️ *COMBAT & DUNGEONS:*`,
-      `  /party (create/join/ready/raid/advance/boss/proceed) — 🟥 Red Gates (15%, revealed on /party raid, nobody enters or leaves) · 🌀 Double Dungeons (5%, after the boss the leader picks Proceed/Leave; hidden B/A/S rank, sealed, survivors pick a Blessed/Cursed box) · 17% a higher-rank beast leaks in, /dungeon (monsters are fast, armoured and 💚 Regenerate), /gate (/gates), /pvp (challenge/accept/attack/skill), /teampvp (team battles up to 5v5 fought one-on-one · handicap on = uneven teams allowed, no stat bonus · switch <n> · record), /leaderboard (/top), /coop, /affiliate`,
+      `⚔️ *COMBAT:* /party /gateraid /gate /dungeon /instance /boss /skill /classcmd /attacks /flee /guard /revive /pvp /teampvp /creator`,
       ``,
-      `🔧 *PROGRESSION & GEAR:*`,
-      `  /store (/armory) — daily weapons & gear (the ONLY source), /inv <#> · /equip <#> · /mend <#> · /equip gift <#> @p, /class, /awaken, /attacks, /craft, /forge, /enchant, /upgrade, /pet, /artifact, /aura, /constellation, /skin, /title`,
+      `🏝️ *JEJU RAID:* /event /ejoin /einfo /estats /epoints /elb /eshop /eventafk /attack`,
       ``,
-      `🧭 *JOBS & DOMAINS:*`,
-      `  /job (list/info/switch/change) — 20 Jobs × 5 Job Levels, unlocked IN ORDER via Job Change Quests, switch freely between unlocked jobs · /domain (expand/upgrade/rename) — your permanent Lv.20 domain, named & described in your DM when it awakens (rename = Rename Card, description permanent), 350 energy · /instance (DM) — Job Change Quest dungeon, keys from finishing all 4 dailies · /box (Pro, DM) — Blessed/Cursed daily box (Nexus, UP, B/C-Rank weapons, Instance Keys…) · regular hunters: finishing all 4 dailies rolls a hidden daily bonus (UP ≤7, Nexus, Mana Stones, D/E weapon or gear, Instance Key) — you are told either way · /giveup @p <n> — share UP (20/day) · 🏝️ /ejoin · /event (status/attack/hit/domain/lb) · /eventafk · /epoints · /estats · /eshop — the Jeju Island Raid in the Events GC (Lv.10+, 10 days, waves of 100 beasts + boss, friendly fire, Lv.10 event domain)`,
+      `🔧 *GEAR & PROGRESSION:* /store /equip /unequip /gear /weapon /swap /mend /find /use /buff /craft /recycle /scroll /enchant /upgrade /giveup /class /skills /job /domain /awaken /artifact /aura /constellation /skin`,
       ``,
-      `🏰 *GUILD & ECONOMY:*`,
-      `  /guild (icon: reply to image with /guild icon), /guildwar (/gw), /market, /trade, /shop, /bank, /casino, /contract, /wages`,
+      `🐾 *PETS:* /pet /catch /petswap /eggs /food`,
       ``,
-      `🎮 *MINI-GAMES (games GC):*`,
-      `  /games, /quiz, /a, /ttt, /chess (/ch), /move, /forfeit, /emoji, /guess, /hangman, /hang, /typerace — play in a GC set up with /setgroup games --main`,
+      `🏰 *GUILD & ECONOMY:* /guild /guildwar /myguild /gtag /guildwages /contract /wages /affiliate /market /trade /shop /bank /send /history /casino /cashout /rob /code`,
       ``,
-      `🌍 *SOCIAL & UTILITY:*`,
-      `  /steal (/s), /sticker, /quote (/q), /rob, /imagine, /lyrics, /play (/song), /ytmp3, /ytmp4, /tt, /facebook (/fb), /insta (/ig), /pinterest, /afk, /friend, /setbio, /support, /gclink, /suggest, /bug`,
+      `💎 *PRO:* /prostore /prosub /profaq /procoin /box /battlepass /pass /lockprofile /unlockprofile /setcustom /getpp`,
       ``,
-      `👑 *ADMIN & MODERATION:*`,
-      `  /kick, /promote, /demote, /mute, /unmute, /ban, /unban, /tagall, /chatbot, /killspawn, /reset, /spawnstatus, /restart`,
-      `  /forcequest [@hunter | reply] (owner) — instantly complete today's 4 daily quests · 💡 every tag command also accepts a *reply* to the hunter's message`,
-      `  /joingc [--silent] <link> · /leavegc <#> · /gclist (mod DM) — /gcsweep [confirm] (owner) — leave groups not added via /joingc or /setgroup (communities of allowed GCs are kept)`,
+      `🎮 *MINI-GAMES:* /games /quiz /a /ttt /chess /move /forfeit /emoji /guess /hangman /hang /typerace`,
       ``,
-      `🤖 *SYSTEM & CONFIG:*`,
-      `  /setgroup, /allowgc, /setserf, /approveserf, /renew, /ssub, /bots, /start, /switch, /aimode, /restart`,
+      `🌍 *SOCIAL & MEDIA:* /steal /sticker /quote /retrieve /seticon /setbio /afk /friend /leaderboard /ranking /top /mods /community /support /gclink /rules /subscribe /suggest /bug`,
+      `  /imagine /ai /lyrics /play /ytmp3 /ytmp4 /tt /facebook /insta /pinterest /pindl`,
+      ``,
+      `🛡️ *GROUP ADMIN:* /kick /promote /demote /pm /mute /unmute /ban /unban /tagall /antilink /antimention /slowmode /chatbot /welcome /goodbye /close /open /delete /disable /enable /groupcmd /announce /setgroup /sub /gclist /joingc /leavegc /spawnstatus /killspawn /closegate /reset /restart /start /switch /aimode /setserf /approveserf /bots`,
     ];
     const message = UI.card(viewerH, {
       icon: '📋', title: '✦ 𝐀𝐬𝐭𝐫𝐚™ COMMAND MENU',
       lines: menuLines,
       proLines: [`${viewerH?.name ? `👋 Hey *${viewerH.name}*! ` : ''}🌟 PRO active — every card is deluxe.`],
-      tip: 'Type */help <command>* (or */h <cmd>*) for subcommands & details!',
+      tip: '*/help <command>* for usage, aliases & subcommands',
     });
 
     try {

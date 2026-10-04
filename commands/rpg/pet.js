@@ -56,7 +56,7 @@ module.exports = {
           txt += `/pet hatch [#] to hatch an egg\n`;
         }
 
-        txt += `${FRAME}\n🎒 Slots: *${Math.min(pets.length, _cap)}/${_cap}*${pets.length > _cap ? ` · 🔒 ${pets.length - _cap} locked (renew 💎 Pro for 5 slots)` : ''} · /petswap <a> <b>\n/pet info [#] | /pet active [#]\n/pet feed [#] [food] | /pet evolve [#]` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO PACK* — ${pets.length} pets · active: ${active ? (active.nickname || active.name) : 'none'}` : `\n${UI.upsell()}`);
+        txt += `${FRAME}\n🎒 Slots: *${Math.min(pets.length, _cap)}/${_cap === Infinity ? '∞' : _cap}*${pets.length > _cap ? ` · 🔒 ${pets.length - _cap} locked (renew 💎 Pro for unlimited slots)` : ''} · /petswap <a> <b>\n/pet info [#] | /pet active [#]\n/pet feed [#] [food] | /pet evolve [#]` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO PACK* — ${pets.length} pets · active: ${active ? (active.nickname || active.name) : 'none'}` : `\n${UI.upsell()}`);
         return sock.sendMessage(chatId, { text: txt }, { quoted: msg });
       }
 

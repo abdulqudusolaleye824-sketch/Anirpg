@@ -109,7 +109,7 @@ class PetManager {
   hatchEgg(playerId, eggIndex) {
     const pd = this.getPlayerData(playerId);
     if (!pd.eggs[eggIndex]) return { success: false, message: '❌ No egg at that slot!' };
-    { const cap = this.slotCap(playerId); if (pd.pets.length >= cap) return { success: false, message: `❌ Pet slots full (*${cap}*: ${PetManager.FREE_SLOTS} per hunter, ${PetManager.PRO_SLOTS} with 💎 Pro). Release or gift one first.` }; }
+    { const cap = this.slotCap(playerId); if (pd.pets.length >= cap) return { success: false, message: `❌ Pet slots full (*${cap}*: ${PetManager.FREE_SLOTS} per hunter, ${PetManager.PRO_LABEL} with 💎 Pro). Release or gift one first.` }; }
     const eggInst = pd.eggs[eggIndex];
     // Push #74: bred eggs carry a fixed species (lineage) — honour it.
     let template = (eggInst.bred && eggInst.childId && PET_DATABASE[eggInst.childId]) ? PET_DATABASE[eggInst.childId] : hatchEgg(eggInst.eggId);
@@ -142,7 +142,7 @@ class PetManager {
     const petTemplate = PET_DATABASE[petId];
     if (!petTemplate) return { success: false, message: '❌ Unknown pet!' };
     const pd = this.getPlayerData(playerId);
-    { const cap = this.slotCap(playerId); if (pd.pets.length >= cap) return { success: false, message: `❌ Pet slots full (*${cap}*: ${PetManager.FREE_SLOTS} per hunter, ${PetManager.PRO_SLOTS} with 💎 Pro). Release or gift one first.` }; }
+    { const cap = this.slotCap(playerId); if (pd.pets.length >= cap) return { success: false, message: `❌ Pet slots full (*${cap}*: ${PetManager.FREE_SLOTS} per hunter, ${PetManager.PRO_LABEL} with 💎 Pro). Release or gift one first.` }; }
 
     if (guaranteed) {
       const newPet = this.createPet(petTemplate);
@@ -454,7 +454,7 @@ class PetManager {
   slotCap(playerId) { try { const o = require('./JobSystem').byId(playerId); return o && require('./UI').isPro(o) ? PetManager.PRO_SLOTS : PetManager.FREE_SLOTS; } catch (e) { return PetManager.FREE_SLOTS; } }
   slotOf(playerId, petInstanceId) { const pd = this.getPlayerData(playerId); return pd.pets.findIndex(p => p.instanceId === petInstanceId) + 1; }
   isLocked(playerId, petInstanceId) { const sl = this.slotOf(playerId, petInstanceId); return sl > 0 && sl > this.slotCap(playerId); }
-  lockedMsg(playerId, petInstanceId) { const sl = this.slotOf(playerId, petInstanceId); return `🔒 Slot ${sl} is locked — you have *${this.slotCap(playerId)}* pet slots (${PetManager.FREE_SLOTS} per hunter, ${PetManager.PRO_SLOTS} with 💎 Pro). The pet is safe but can't be touched. Use */petswap* within your open slots or renew Pro.`; }
+  lockedMsg(playerId, petInstanceId) { const sl = this.slotOf(playerId, petInstanceId); return `🔒 Slot ${sl} is locked — you have *${this.slotCap(playerId)}* pet slots (${PetManager.FREE_SLOTS} per hunter, ${PetManager.PRO_LABEL} with 💎 Pro). The pet is safe but can't be touched. Use */petswap* within your open slots or renew Pro.`; }
   enforceSlots(playerId) {
     const pd = this.getPlayerData(playerId);
     if (pd.activePet && this.isLocked(playerId, pd.activePet)) { pd.activePet = null; this.save(); return true; }
@@ -466,7 +466,7 @@ class PetManager {
     if (!Number.isInteger(a) || !Number.isInteger(b) || a < 1 || b < 1) return { success: false, message: '❌ Usage: /petswap <slot 1> <slot 2>' };
     if (a === b) return { success: false, message: '❌ Pick two different slots.' };
     if (a > n || b > n) return { success: false, message: `❌ You only have ${n} pet${n === 1 ? '' : 's'}.` };
-    if (a > cap || b > cap) return { success: false, message: `🔒 Slot ${Math.max(a, b)} is locked — you have *${cap}* open slots (${PetManager.FREE_SLOTS} per hunter, ${PetManager.PRO_SLOTS} with 💎 Pro).` };
+    if (a > cap || b > cap) return { success: false, message: `🔒 Slot ${Math.max(a, b)} is locked — you have *${cap}* open slots (${PetManager.FREE_SLOTS} per hunter, ${PetManager.PRO_LABEL} with 💎 Pro).` };
     const t = pd.pets[a - 1]; pd.pets[a - 1] = pd.pets[b - 1]; pd.pets[b - 1] = t; this.save();
     const nm = (x) => `${x.emoji} *${x.nickname || x.name}*`;
     return { success: true, message: `🔁 Swapped slots ${a} ↔ ${b}:\n  ${a}. ${nm(pd.pets[a - 1])}\n  ${b}. ${nm(pd.pets[b - 1])}` };
@@ -545,5 +545,5 @@ class PetManager {
   }
 }
 
-PetManager.FREE_SLOTS = 3; PetManager.PRO_SLOTS = 5;
+PetManager.FREE_SLOTS = 3; PetManager.PRO_SLOTS = Infinity; PetManager.PRO_LABEL = 'unlimited'; // Push #96h-z18: Pro = unlimited
 module.exports = new PetManager();

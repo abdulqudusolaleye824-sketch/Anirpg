@@ -122,7 +122,7 @@ function trackJoin(db, groupId, personalityKey, byJid, sock) {
   return joined[serial];
 }
 function isMainGroup(db, groupId) {
-  try { const e = (db.astralGroups || {})[groupId]; return !!(e && e.isMain); } catch (e) { return false; }
+  try { if (db.announceGC === groupId && db.groupGuardAllow && db.groupGuardAllow[groupId]) return true; const e = (db.astralGroups || {})[groupId]; return !!(e && e.isMain); } catch (e) { return false; } // Push #96h-z18: `/setspace announcement --main` counts as main
 }
 // Push #96h-v: every connected bot leaves `groupId`; tracking entries for it are dropped.
 async function leaveAllBots(sockets, db, groupId, why = 'staff left', saveDatabase) {

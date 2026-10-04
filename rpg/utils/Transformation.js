@@ -133,13 +133,15 @@ function tick(player) {
   // a combo bonus (+25% ATK for the duration).
   const pack = packmates(player);
   if (pack.length) chance *= PACK_CHANCE_MULT;
+  if (isMonster(player) && cooldownLeftMs(player) > 0) return lines; // Push #96h-z18: no innate surge while the transformation cooldown runs (was spamming transform→fizzle every turn)
   if (isMonster(player) && Math.random() < chance) {
     const r = apply(player, TIERS[0], 'passive');
+    if (r.ok) player.tfCastAt = Date.now();
     if (r.ok) {
       lines.push(...r.lines);
       if (pack.length) {
         const joined = [player];
-        for (const m of pack) { const rr = apply(m, TIERS[0], 'passive'); if (rr.ok) { joined.push(m); lines.push(...rr.lines); } }
+        for (const m of pack) { if (cooldownLeftMs(m) > 0) continue; const rr = apply(m, TIERS[0], 'passive'); if (rr.ok) { m.tfCastAt = Date.now(); joined.push(m); lines.push(...rr.lines); } }
         if (joined.length > 1) {
           for (const m of joined) _comboBoost(m);
           lines.push(`🐺 *PACK RAMPAGE!* ${joined.map(m => `*${m.name || 'Hunter'}*`).join(' & ')} rampage TOGETHER — combo strikes: +${Math.round((PACK_COMBO_MULT - 1) * 100)}% ATK while the pack rages!`);

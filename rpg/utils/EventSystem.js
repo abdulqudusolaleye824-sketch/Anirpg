@@ -65,7 +65,7 @@ function _avatar(db, player) {
   // Push #96h-z3: the island has its OWN statuses and buffs (normal-world artifacts, auras, buffs and
   // statuses stay outside). Only energy is shared with the normal world.
   if (!st.statusEffects) st.statusEffects = []; if (!st.tempBuffs) st.tempBuffs = {};
-  const av = Object.assign({}, player, { stats: { ...(player.stats || {}), hp: st.hp, maxHp: es.maxHp, atk: es.atk, def: es.def, speed: es.speed, critChance: es.crit }, elvl: es.level, equippedGear: {}, equippedTitle: null, weapon: null, artifacts: { equipped: [], inventory: [], enhanced: {} }, aura: null, auras: null, statusEffects: st.statusEffects, tempBuffs: st.tempBuffs, transform: st.transform || null, _eventAvatar: true, _real: player, _st: st });
+  const av = Object.assign({}, player, { tfCastAt: Math.max(Number(player.tfCastAt) || 0, Number(st.tfAt) || 0) || undefined }, { stats: { ...(player.stats || {}), hp: st.hp, maxHp: es.maxHp, atk: es.atk, def: es.def, speed: es.speed, critChance: es.crit }, elvl: es.level, equippedGear: {}, equippedTitle: null, weapon: null, artifacts: { equipped: [], inventory: [], enhanced: {} }, aura: null, auras: null, statusEffects: st.statusEffects, tempBuffs: st.tempBuffs, transform: st.transform || null, _eventAvatar: true, _real: player, _st: st });
   return av;
 }
 function _commit(av) { const p = av._real, st = av._st; if (!p || !st) return; st.transform = av.transform || null; st.hp = Math.max(0, Math.floor(av.stats.hp || 0)); if (p.stats) { p.stats.energy = av.stats.energy; if (av.stats.mana != null) p.stats.mana = av.stats.mana; } st.lastAct = Date.now(); st.regenMark = Date.now(); }
@@ -353,8 +353,11 @@ function _awardKill(db, ev, m, player, st, lines, how = null) {
 function attackMonster(db, player, targetId, skillName = null) {
   const g = _guard(db, player); if (g.error) return { ok: false, error: g.error }; const { ev, st } = g;
   let m = targetId ? ev.monsters.find(x => x.id === Number(targetId)) : null;
-  if (targetId && !m) return { ok: false, error: `No beast #${targetId} on this wave.` };
   if (m && m.defeated) return { ok: false, error: `*${m.name}* is already dead.` };
+  // Push #96h-z18: "/attack 7" — if 7 is not a live beast but IS your equipped attack pattern, it's the pattern.
+  if (targetId && !m && !skillName && /^\d+$/.test(String(targetId))) { const pt = _patternOf(player, `#${targetId}`); if (pt && !pt.error) { skillName = `#${targetId}`; targetId = null; } }
+  if (targetId && !m) return { ok: false, error: `No beast #${targetId} on this wave.` };
+  if (skillName && /^\d+$/.test(String(skillName).trim())) skillName = `#${String(skillName).trim()}`;
   if (!m) { const live = alive(ev).filter(x => !x.isBoss); m = live.sort((a, b) => a.hp / a.maxHp - b.hp / b.maxHp)[0] || alive(ev)[0]; }
   if (!m) return { ok: false, error: 'Nothing left alive on this wave.' };
   st.lastTarget = m.id;

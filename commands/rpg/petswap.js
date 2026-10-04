@@ -15,6 +15,6 @@ module.exports = {
     const bar = pro ? UI.PRO_BAR : UI.FREE_BAR;
     const pets = PetManager.getPlayerPets(sender); const cap = PetManager.slotCap(sender); const active = PetManager.getActivePet(sender);
     const lines = pets.map((p, i) => `${i + 1 > cap ? '🔒' : (active && active.instanceId === p.instanceId ? '▶️' : `${i + 1}.`)} ${p.emoji} *${p.nickname || p.name}* Lv.${p.level}`);
-    return sock.sendMessage(chatId, { text: [pro ? `${bar}\n🔁 *PET SLOTS* 💎\n${bar}` : `🔁 *PET SLOTS*\n${bar}`, r.message, '', ...lines, bar, `Open slots: *${cap}* (${PetManager.FREE_SLOTS} per hunter, ${PetManager.PRO_SLOTS} with 💎 Pro)`].join('\n') }, { quoted: msg });
+    return sock.sendMessage(chatId, { text: [pro ? `${bar}\n🔁 *PET SLOTS* 💎\n${bar}` : `🔁 *PET SLOTS*\n${bar}`, r.message, '', ...lines, bar, `Open slots: *${cap === Infinity ? '∞' : cap}* (${PetManager.FREE_SLOTS} per hunter, ${PetManager.PRO_LABEL} with 💎 Pro)`].join('\n') }, { quoted: msg });
   },
 };

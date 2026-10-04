@@ -10,7 +10,7 @@ const DEFAULT_ALLOWED = ['instagram.com', 'pinterest.', 'pinterest.com', 'youtub
 
 module.exports = {
   name: 'antilink',
-  description: '🔗 Enable/disable anti-link for this group (auto-on for --main groups)',
+  description: '🔗 Anti-link for this group (on by default)',
   aliases: ['no links', 'antilinkon'],
 
   async execute(sock, msg, args, getDatabase, saveDatabase, sender) {
@@ -24,8 +24,8 @@ module.exports = {
 
     // Ensure per-group settings exist and default the whitelist.
     if (!db.groupSettings) db.groupSettings = {};
-    if (!db.groupSettings[chatId]) db.groupSettings[chatId] = { antiLink: false, allowed: [] };
-    const gs = db.groupSettings[chatId];
+    if (!db.groupSettings[chatId]) db.groupSettings[chatId] = { allowed: [] };
+    const gs = db.groupSettings[chatId]; const GMod = require('../../rpg/utils/GroupModeration'); // Push #96h-z18: ON by default
     if (!Array.isArray(gs.allowed)) gs.allowed = [];
     const allowed = gs.allowed.length ? gs.allowed : DEFAULT_ALLOWED.slice();
 
@@ -37,7 +37,7 @@ module.exports = {
         text: [
           (proL ? UI.PRO_BAR : UI.FREE_BAR),
           `🔗 *ANTI-LINK — ${chatId}`,
-          `Status: *${gs.antiLink ? 'ON ⛔' : 'OFF'}*`,
+          `Status: *${GMod.antiLinkOn(db, chatId) ? 'ON ⛔ (default)' : 'OFF'}*`,
           proL ? (UI.PRO_MINI + '\n🔗 PRO SHIELD') : null,
           proL ? `✅ *${allowed.length}* domains whitelisted` : null,
           ``,
@@ -53,8 +53,8 @@ module.exports = {
     }
 
     // ── on / off ────────────────────────────────────────────────
-    if (sub === 'on') { gs.antiLink = true; saveDatabase(); return sock.sendMessage(chatId, { text: '✅ Anti-link enabled for this group.' }, { quoted: msg }); }
-    if (sub === 'off') { gs.antiLink = false; saveDatabase(); return sock.sendMessage(chatId, { text: '🔕 Anti-link disabled for this group.' }, { quoted: msg }); }
+    if (sub === 'on') { gs.antiLinkOff = false; gs.antiLink = true; saveDatabase(); return sock.sendMessage(chatId, { text: '✅ Anti-link enabled for this group.' }, { quoted: msg }); }
+    if (sub === 'off') { gs.antiLinkOff = true; gs.antiLink = false; saveDatabase(); return sock.sendMessage(chatId, { text: '🔕 Anti-link disabled for this group.' }, { quoted: msg }); }
 
     // ── add / rm allowed domain ─────────────────────────────────
     if (sub === 'add' || sub === 'allow') {
