@@ -1,3 +1,7 @@
+## 1.0.173 — Push #96h-z17: payroll only pays actual members
+
+- Hunters who left / were kicked / moved to another guild kept drawing wages from the old treasury. Every pay run now checks the roster first: not a current member → contract closed on the spot, nothing paid, guild master notified.
+
 ## 1.0.172 — Push #96h-z16: bots ignore each other at the Signal layer
 
 - Group messages whose sender is one of our own bots (phone number or LID) are ACKed and dropped **before decryption**. Six bots in the same groups no longer spend five decrypts per bot announcement, and a desynced bot↔bot session can no longer turn into a Bad-MAC storm. Bot↔bot DMs still flow (deaf-wake ping).

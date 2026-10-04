@@ -391,6 +391,17 @@ function _recordWeek(c, rec) {
   if (c.payHistory.length > 12) c.payHistory.splice(0, c.payHistory.length - 12);
 }
 
+// Push #96h-z17: pure roster check — no side effects (resolvePlayerGuild may re-add people; this never does).
+function isActualMember(db, guild, bare) {
+  const me = normaliseJid(bare); if (!guild || !me) return false;
+  const user = findUserInDb(db, me);
+  if (user && user.guild && guild.name && String(user.guild).toLowerCase() !== String(guild.name).toLowerCase()) return false;
+  if (normaliseJid(guild.leader) === me) return true;
+  for (const arr of [guild.members, guild.memberData, guild.officers]) {
+    for (const m of (arr || [])) { const id = (m && typeof m === 'object') ? (m.id || m.jid) : m; if (normaliseJid(id) === me) return true; }
+  }
+  return false;
+}
 // Pay exactly one elapsed week. Returns { paid, defaulted, nexus, mana, user }.
 function payOneWeek(db, guild, bare, c, now = Date.now()) {
   const reqNexus = c.weeklyNexus || 0;
@@ -596,6 +607,16 @@ function processWeeklyPay(db, guildRef, saveDatabase) {
 
   for (const [bare, c] of Object.entries(recs)) {
     if (!c.active) continue;
+    // Push #96h-z17: ONLY current members get paid by their guild. A hunter who left (or was kicked, or moved
+    // to another guild) kept drawing wages from the old treasury. Their contract ends on the spot, unpaid.
+    if (!isActualMember(db, guild, bare)) {
+      const user = findUserInDb(db, bare);
+      c.active = false; c.endedAt = now; c.endReason = 'left_guild';
+      _recordWeek(c, { status: 'ended_left', reason: 'No longer a member of this guild' });
+      _notifyMaster(db, guild, [`📜 *CONTRACT ENDED — ${guild.name || guildId}*`, ``, `👤 *${user?.name || bare}* is no longer in the guild — their payroll contract was closed (no wage paid).`].join('\n'));
+      summaries.push({ bare, user, ended: true, reason: 'left_guild' });
+      continue;
+    }
     let totalNexusPaid = 0;
     let totalManaPaid = 0;
 
@@ -814,6 +835,7 @@ function getSalaryStatus(db, playerJid) {
 }
 
 module.exports = {
+  isActualMember,
   _dmPlayer, _notifyMaster,
   Week, normaliseJid, rankOf, findUserInDb, findGuild, resolvePlayerGuild, mergeDuplicateGuilds,
   isGuildMasterOrVice, isGuildMember,
