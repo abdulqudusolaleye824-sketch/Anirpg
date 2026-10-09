@@ -1,3 +1,8 @@
+## 1.0.180
+- Contact card sent to owners now reads `<Bot> ✦ 𝐀𝐬𝐭𝐫𝐚™` (was "(AniRPG)"); re-sent once to owner + co-owner on next connect.
+- `/hi` identifies the bot by its own phone number — never by the phone's WhatsApp display name (fixes "I'm Favy").
+- After the WhatsApp profile name is set to the bot name, the in-memory socket name is updated too.
+
 ## 1.0.179 — Push #96h-z22 (2026-10-09)
 - **/hi:** every linked bot greets as itself with a plain message (no quoted reply); exempt from the one-message-one-bot dedupe.
 - **First-link setup:** a newly linked number sets its WhatsApp profile name to its bot name, makes its profile photo visible to everyone, turns read receipts off, remembers the owner + co-owner as trusted contacts and DMs them a link confirmation with its contact card (once per linked number; existing bots do it once on next boot).

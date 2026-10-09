@@ -1138,19 +1138,20 @@ async function _firstLinkSetup(key, displayName, sock, jid, getDatabase, saveDat
   if (!db.linkedBots) db.linkedBots = {};
   const rec = db.linkedBots[key] || (db.linkedBots[key] = {});
   const bareJid = String(jid).split(':')[0].split('@')[0];
-  if (rec.setupDoneFor === bareJid) return;
-  rec.setupDoneFor = bareJid; rec.setupAt = Date.now();
+  const SETUP_VER = 'v2'; // bump to re-send the contact card to owners (v2: ✦ 𝐀𝐬𝐭𝐫𝐚™ branding)
+  if (rec.setupDoneFor === bareJid && rec.setupVer === SETUP_VER) return;
+  rec.setupDoneFor = bareJid; rec.setupVer = SETUP_VER; rec.setupAt = Date.now();
   try { if (saveDatabase) saveDatabase(); } catch (e) {}
   await new Promise(r => setTimeout(r, 4000)); // let the socket settle
   const done = [];
-  try { await sock.updateProfileName(displayName); done.push('name'); } catch (e) { console.warn(`[${key}] profile name:`, e.message); }
+  try { await sock.updateProfileName(displayName); done.push('name'); try { if (sock.user) sock.user.name = displayName; } catch (e) {} } catch (e) { console.warn(`[${key}] profile name:`, e.message); }
   try { await sock.updateProfilePicturePrivacy('all'); done.push('pfp-all'); } catch (e) { console.warn(`[${key}] pfp privacy:`, e.message); }
   try { await sock.updateReadReceiptsPrivacy('none'); done.push('read-receipts-off'); } catch (e) { console.warn(`[${key}] read receipts:`, e.message); }
   try { await sock.updateLastSeenPrivacy('all'); } catch (e) {}
   // Owner + co-owner: remember them as trusted contacts on this bot and DM a confirmation + contact card.
   const owners = []; try { owners.push(...Perms.getBotOwners(db)); } catch (e) {}
   const pn = `${bareJid.replace(/[^0-9]/g, '')}`;
-  const vcard = `BEGIN:VCARD\nVERSION:3.0\nFN:${displayName} (AniRPG)\nORG:AniRPG;\nTEL;type=CELL;type=VOICE;waid=${pn}:+${pn}\nEND:VCARD`;
+  const vcard = `BEGIN:VCARD\nVERSION:3.0\nFN:${displayName} ✦ 𝐀𝐬𝐭𝐫𝐚™\nORG:✦ 𝐀𝐬𝐭𝐫𝐚™;\nTEL;type=CELL;type=VOICE;waid=${pn}:+${pn}\nEND:VCARD`;
   if (!db.botContacts) db.botContacts = {}; db.botContacts[key] = { owners: owners.slice(), savedAt: Date.now() };
   const seen = new Set();
   for (const o of owners) {
@@ -1158,7 +1159,7 @@ async function _firstLinkSetup(key, displayName, sock, jid, getDatabase, saveDat
     const target = to.includes('@') ? to : `${to}@s.whatsapp.net`;
     try {
       await sock.sendMessage(target, { text: `🔗 *${displayName} is linked and online.*\n📱 Number: +${pn}\n⚙️ Setup: ${done.length ? done.join(' · ') : 'profile tweaks pending'}\n\nSave my contact below so my messages always reach you.` }, { asSelf: true });
-      await sock.sendMessage(target, { contacts: { displayName: `${displayName} (AniRPG)`, contacts: [{ vcard }] } }, { asSelf: true });
+      await sock.sendMessage(target, { contacts: { displayName: `${displayName} ✦ 𝐀𝐬𝐭𝐫𝐚™`, contacts: [{ vcard }] } }, { asSelf: true });
     } catch (e) { console.warn(`[${key}] link DM to ${b}:`, e.message); }
   }
   console.log(`🪪 [${key}] first-link setup done: ${done.join(', ') || 'nothing applied'}; notified ${seen.size} owner(s)`);

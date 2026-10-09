@@ -231,13 +231,20 @@ const hi = {
       const MSM = require('../../bots/MultiSocketManager');
       const all = MSM.getAllSockets() || {};
       myKey = Object.keys(all).find(k => all[k] === sock) || null;
+      // z23: fall back to matching by phone number — the socket object may be wrapped/proxied.
+      if (!myKey && sock?.user?.id) {
+        const me = String(sock.user.id).split(':')[0].split('@')[0];
+        myKey = Object.keys(all).find(k => String(all[k]?.user?.id || '').split(':')[0].split('@')[0] === me) || null;
+      }
     } catch (e) {}
     if (!myKey) { try { myKey = PersonalityManager.getPersonalityForSocket?.(sock) || null; } catch (e) {} }
+    if (!myKey) { try { const db = getDatabase?.(); const lb = db?.linkedBots || {}; const me = String(sock?.user?.id || '').split(':')[0].split('@')[0]; myKey = Object.keys(lb).find(k => String(lb[k]?.phone || lb[k]?.jid || lb[k]?.setupDoneFor || '').replace(/[^0-9]/g,'') === me) || null; } catch (e) {} }
     if (!sock?.user?.id) return;
+    if (!myKey) return; // never introduce ourselves by the phone's WhatsApp name
     const senderName = msg.pushName || sender.split('@')[0];
     const greeting = args.length > 0 ? `Hi ${senderName}! ${args.join(' ')}` : `Hi ${senderName}!`;
     const info = myKey ? PersonalityManager.getPersonalityInfo(myKey) : null;
-    const displayName = myKey ? PersonalityManager.getDisplayName(myKey) : (sock.user?.name || 'Bot');
+    const displayName = PersonalityManager.getDisplayName(myKey);
     const emoji = info?.emoji || '🤖';
     try { if (myKey && chatId.endsWith('@g.us')) PersonalityManager.markPresent(chatId, myKey); } catch (e) {}
     try {
