@@ -1,3 +1,7 @@
+## 1.0.179 — Push #96h-z22 (2026-10-09)
+- **/hi:** every linked bot greets as itself with a plain message (no quoted reply); exempt from the one-message-one-bot dedupe.
+- **First-link setup:** a newly linked number sets its WhatsApp profile name to its bot name, makes its profile photo visible to everyone, turns read receipts off, remembers the owner + co-owner as trusted contacts and DMs them a link confirmation with its contact card (once per linked number; existing bots do it once on next boot).
+
 ## 1.0.178 — Push #96h-z21b (2026-10-09)
 - **Raid / shop lockout, verified piece by piece:** a raid whose members are all dead, a lobby older than 30 min, or a party battle untouched for 45 min no longer counts as "in battle" (shop, /party leave etc. open up). Undated battle records now age from first sight instead of living forever. A double-dungeon wipe can never hold the dungeon GC ("already has an active gate raid").
 - **/banned:** one line per hunter, names instead of raw ids, GC name only (no group id), real @mentions; `/ban` no longer writes the duplicate full-jid record.

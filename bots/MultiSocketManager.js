@@ -1132,6 +1132,37 @@ function formatPairingCode(code) {
   return String(code);
 }
 
+async function _firstLinkSetup(key, displayName, sock, jid, getDatabase, saveDatabase) {
+  const db = typeof getDatabase === 'function' ? getDatabase() : null;
+  if (!db || !sock || !jid) return;
+  if (!db.linkedBots) db.linkedBots = {};
+  const rec = db.linkedBots[key] || (db.linkedBots[key] = {});
+  const bareJid = String(jid).split(':')[0].split('@')[0];
+  if (rec.setupDoneFor === bareJid) return;
+  rec.setupDoneFor = bareJid; rec.setupAt = Date.now();
+  try { if (saveDatabase) saveDatabase(); } catch (e) {}
+  await new Promise(r => setTimeout(r, 4000)); // let the socket settle
+  const done = [];
+  try { await sock.updateProfileName(displayName); done.push('name'); } catch (e) { console.warn(`[${key}] profile name:`, e.message); }
+  try { await sock.updateProfilePicturePrivacy('all'); done.push('pfp-all'); } catch (e) { console.warn(`[${key}] pfp privacy:`, e.message); }
+  try { await sock.updateReadReceiptsPrivacy('none'); done.push('read-receipts-off'); } catch (e) { console.warn(`[${key}] read receipts:`, e.message); }
+  try { await sock.updateLastSeenPrivacy('all'); } catch (e) {}
+  // Owner + co-owner: remember them as trusted contacts on this bot and DM a confirmation + contact card.
+  const owners = []; try { owners.push(...Perms.getBotOwners(db)); } catch (e) {}
+  const pn = `${bareJid.replace(/[^0-9]/g, '')}`;
+  const vcard = `BEGIN:VCARD\nVERSION:3.0\nFN:${displayName} (AniRPG)\nORG:AniRPG;\nTEL;type=CELL;type=VOICE;waid=${pn}:+${pn}\nEND:VCARD`;
+  if (!db.botContacts) db.botContacts = {}; db.botContacts[key] = { owners: owners.slice(), savedAt: Date.now() };
+  const seen = new Set();
+  for (const o of owners) {
+    const to = String(o || ''); const b = to.split('@')[0].split(':')[0]; if (!b || seen.has(b)) continue; seen.add(b);
+    const target = to.includes('@') ? to : `${to}@s.whatsapp.net`;
+    try {
+      await sock.sendMessage(target, { text: `🔗 *${displayName} is linked and online.*\n📱 Number: +${pn}\n⚙️ Setup: ${done.length ? done.join(' · ') : 'profile tweaks pending'}\n\nSave my contact below so my messages always reach you.` }, { asSelf: true });
+      await sock.sendMessage(target, { contacts: { displayName: `${displayName} (AniRPG)`, contacts: [{ vcard }] } }, { asSelf: true });
+    } catch (e) { console.warn(`[${key}] link DM to ${b}:`, e.message); }
+  }
+  console.log(`🪪 [${key}] first-link setup done: ${done.join(', ') || 'nothing applied'}; notified ${seen.size} owner(s)`);
+}
 function persistLinkedBot(getDatabase, saveDatabase, personalityKey, sock, phoneNumber) {
   try {
     const db = getDatabase?.();
@@ -2119,6 +2150,10 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
       _lastOpenAt[personalityKey] = Date.now(); // Push #86: deaf detector grace period starts now
       try { backupAuthToDisk(personalityKey, authDir, { force: true }); } catch {}
       console.log(`✅ AstraLink [${displayName}] connection VERIFIED & ACTIVE! (JID: ${jid})`);
+      // Push #96h-z22: FIRST-LINK SETUP — a freshly linked number dresses itself: WhatsApp profile name = bot
+      // name, profile photo visible to everyone, read receipts off; then the owner + co-owner get a link
+      // confirmation DM with the bot's contact card. Runs once per linked jid (re-runs only after a re-link).
+      try { _firstLinkSetup(personalityKey, displayName, sock, jid, getDatabase, saveDatabase).catch(() => {}); } catch (e) {}
 
       // Deliver pending restart completion notice if present in DB
       try {
@@ -2579,7 +2614,7 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
     // responder is for a split second (presence map still filling after a reconnect) — then BOTH handled the
     // same message: double replies, /afk toggled straight back off, reactions landing twice. One message id is
     // handled by exactly ONE socket in this process, whoever claims it first.
-    if (isGroup && isActive && msg.key?.id) {
+    if (isGroup && isActive && msg.key?.id && commandName !== 'hi') { // /hi is answered by EVERY bot on purpose
       const _hk = `${chatId}|${msg.key.id}`;
       const _hprev = _handledInbound.get(_hk);
       if (_hprev && _hprev !== personalityKey) { _dropped('handledBySibling', msg); return; }

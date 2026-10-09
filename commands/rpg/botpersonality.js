@@ -241,7 +241,7 @@ const hi = {
     const emoji = info?.emoji || '🤖';
     try { if (myKey && chatId.endsWith('@g.us')) PersonalityManager.markPresent(chatId, myKey); } catch (e) {}
     try {
-      await sock.sendMessage(chatId, { text: `${greeting} — ${emoji} I'm ${displayName}!` }, { quoted: msg, asSelf: true });
+      await sock.sendMessage(chatId, { text: `${greeting} — ${emoji} I'm ${displayName}!` }, { asSelf: true }); // Push #96h-z22: plain greeting, never a quoted reply
     } catch (e) { /* stays silent — never impersonate */ }
   },
 };
