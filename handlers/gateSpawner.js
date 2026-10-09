@@ -275,8 +275,29 @@ class GateSpawner {
     console.log(`[GATE] ${gate.chatId}: gate ${gate.id} unbought 23h → −70% XP penalty on ${marked} member(s)`);
   }
 
+  // z24: timers capture the socket that was alive when spawning was enabled. After a reconnect that
+  // object is dead ("Connection Closed" on relay) → the image went out via a fallback and the Buy
+  // button never rendered (two messages). Always resolve a LIVE socket at spawn time: same bot if it
+  // reconnected, otherwise the host bot.
+  static liveSocket(sock) {
+    try {
+      const MSM = require('../bots/MultiSocketManager');
+      const all = MSM.getAllSockets ? (MSM.getAllSockets() || {}) : {};
+      const alive = (s) => !!(s && s.user && s.user.id && !(s.ws && typeof s.ws.isOpen === 'boolean' && !s.ws.isOpen) && !(s.ws && typeof s.ws.readyState === 'number' && s.ws.readyState !== 1));
+      const me = String(sock?.user?.id || '').split(':')[0].split('@')[0];
+      const same = Object.values(all).find((s) => s && alive(s) && String(s.user.id).split(':')[0].split('@')[0] === me);
+      if (same) return same;
+      const host = MSM.getHostSocket ? MSM.getHostSocket() : null;
+      if (alive(host)) return host;
+      const any = Object.values(all).find(alive);
+      if (any) return any;
+    } catch (e) {}
+    return sock;
+  }
+
   static async spawnGate(sock, chatId, getDatabase, saveDatabase) {
     const db = getDatabase();
+    sock = this.liveSocket(sock);
 
     if (this.checkUnboughtLock(chatId, db)) {
       this.activeTimers[chatId] = setTimeout(() => {

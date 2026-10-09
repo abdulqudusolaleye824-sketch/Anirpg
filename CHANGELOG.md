@@ -1,3 +1,9 @@
+## 1.0.181 — Push #96h-z24 (2026-10-09)
+- **Contact-card spam fixed:** the "already set up" marker lived in a record that is rebuilt on every reconnect, so bots re-sent the card each time they reconnected. Marker moved to its own table — once per linked number.
+- **Gate spawn = ONE message with a Buy button:** spawn timers held a dead socket after reconnects ("Connection Closed" on the button relay → image went out via fallback, then a second text). Spawns now use a live socket; fallbacks never re-send the image.
+- **Dead monsters drop their domains + buffs** at every solo / party dungeon kill site and on status-tick kills in gate raids (was only on some paths).
+- **/weekly:** finishing a gate raid counts as a dungeon clear for every member; wallet payouts count toward "Earn 1M Nexus".
+
 ## 1.0.180
 - Contact card sent to owners now reads `<Bot> ✦ 𝐀𝐬𝐭𝐫𝐚™` (was "(AniRPG)"); re-sent once to owner + co-owner on next connect.
 - `/hi` identifies the bot by its own phone number — never by the phone's WhatsApp display name (fixes "I'm Favy").

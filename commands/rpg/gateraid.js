@@ -593,7 +593,7 @@ module.exports = {
           target.hp = Math.max(0, _tgt.stats.hp); // write tick damage back — the temp object is discarded
           if (tl2 && tl2.length) _tickLogs = _tickLogs.concat(tl2);
           // Push #96h-w: the beast died to its status this tick → no strike plays; the kill settles below.
-          if (target.hp <= 0 && !target.defeated) { _statusKilled = true; _tickLogs.push(`⚔️ *${player.name}* lowers their weapon — nothing left to strike.`); }
+          if (target.hp <= 0 && !target.defeated) { _statusKilled = true; _tickLogs.push(`⚔️ *${player.name}* lowers their weapon — nothing left to strike.`); try { const _df = require('../../rpg/utils/DomainSystem').ownerFell(gate, target, GR.livingMembers ? GR.livingMembers(gate, db) : [player]); if (_df) _tickLogs.push(_df); } catch (e) {} }
         }
       } catch(e){}
       _gateStatus = statusSummary(player) || (target && target.statusEffects ? statusSummary(target) : null);
@@ -1051,6 +1051,10 @@ module.exports = {
           const WK = require('./weekly');
           const hitters = new Set([sender, ...Object.keys(gate.damageDealt || {})]);
           for (const jid of hitters) { const u = db.users[jid]; if (u) WK.trackWeeklyProgress(u, 'boss_kill', 1); }
+          // z24: a finished gate raid is a dungeon clear for /weekly too (every member who took part),
+          // and the Nexus payout counts toward "Earn 1M Nexus this week".
+          const members = new Set([...hitters, ...(((gate.raid && gate.raid.members) || []).map(m => (m && (m.id || m.jid)) || m).filter(Boolean))]);
+          for (const jid of members) { const u = db.users[jid]; if (u) WK.trackWeeklyProgress(u, 'dungeon_clear', 1); }
         } catch (e) {}
         // Gate clear: +15 GP to the killer's guild (weekly + lifetime + quest)
         try { require('../../rpg/utils/GuildPointsSystem').addGuildGP(db, sender, 15, 'Gate clear (' + (gate.rank || '?') + '-Rank)', { quest: true, sock, jid: sender, chatId }); } catch(e){}
@@ -1081,6 +1085,7 @@ module.exports = {
         if (bossDropLines.length) out.push(...bossDropLines);
         out.push(``, `🎁 *LOOT → ${loot.destinationText}*`);
         out.push(`💠 ${loot.nexus.toLocaleString()} Nexus | 💎 ${loot.crystals.toLocaleString()} Mana Stones`);
+        try { if (loot && loot.nexus > 0 && !/treasury/i.test(String(loot.destinationText || ''))) require('./weekly').trackWeeklyProgress(player, 'earn_gold', Math.floor(loot.nexus)); } catch (e) {} // z24: raid payout counts for the weekly Nexus goal
         if (loot.affiliatePayouts && Object.keys(loot.affiliatePayouts).length) {
         out.push(``, `🤝 *Affiliate / recruiter payouts:*`);
           for (const [jid, p] of Object.entries(loot.affiliatePayouts)) {

@@ -783,6 +783,7 @@ module.exports = {
           const note = trackAndNotify(player, 'pattern', 1, sock, sender, chatId);
           if (note) questNotes.push(note);
           if (monster.stats.hp <= 0) {
+            try { const _DS = require('../../rpg/utils/DomainSystem'); const _ar = _DS.arenaOf(dunPty || dunSd); if (_ar) { const _df = _DS.ownerFell(_ar, monster, [player]); const _cur = _DS.active(_ar); if (!_df && _cur && _cur.side === 'monster') _DS.shatter(_ar, [player], [monster]); } } catch (e) {} // z24: a dead monster's domain + its buffs are dispelled
             const kn = trackAndNotify(player, 'kill', 1, sock, sender, chatId);
             if (kn) questNotes.push(kn);
             if (dunSd && dunSd.currentFloor % 5 === 0) {
@@ -817,6 +818,7 @@ module.exports = {
         for (const n of questNotes) sections.push({ text: n });
 
         if (monster.stats.hp <= 0) {
+          try { const _DS = require('../../rpg/utils/DomainSystem'); const _ar = _DS.arenaOf(dunPty || dunSd); if (_ar) { const _df = _DS.ownerFell(_ar, monster, [player]); const _cur = _DS.active(_ar); if (!_df && _cur && _cur.side === 'monster') _DS.shatter(_ar, [player], [monster]); } } catch (e) {} // z24: a dead monster's domain + its buffs are dispelled
           // ── Victory ─────────────────────────────────────────
           let rewardLine = '';
           if (dunSd) {
@@ -975,6 +977,7 @@ module.exports = {
         log += `💥 Dealt *${playerDmg}* damage!\n`;
 
         if (monster.stats.hp <= 0) {
+          try { const _DS = require('../../rpg/utils/DomainSystem'); const _ar = _DS.arenaOf(sd); if (_ar) { const _df = _DS.ownerFell(_ar, monster, [player]); const _cur = _DS.active(_ar); if (!_df && _cur && _cur.side === 'monster') _DS.shatter(_ar, [player], [monster]); } } catch (e) {} // z24: a dead monster's domain + its buffs are dispelled
           // Monster defeated
           const isBossSolo = sd.currentFloor % 5 === 0;
           const rewards = DungeonManager.getFloorRewards(sd.currentFloor, player.level, isBossSolo);
@@ -1233,6 +1236,7 @@ module.exports = {
         log += result.message + '\n\n';
 
         if (monster.stats.hp <= 0) {
+          try { const _DS = require('../../rpg/utils/DomainSystem'); const _ar = _DS.arenaOf(sd); if (_ar) { const _df = _DS.ownerFell(_ar, monster, [player]); const _cur = _DS.active(_ar); if (!_df && _cur && _cur.side === 'monster') _DS.shatter(_ar, [player], [monster]); } } catch (e) {} // z24: a dead monster's domain + its buffs are dispelled
           const isBossSk = sd.currentFloor % 5 === 0;
           const rewards  = DungeonManager.getFloorRewards(sd.currentFloor, player.level, isBossSk);
           const xpGain   = Math.floor(rewards.xp);

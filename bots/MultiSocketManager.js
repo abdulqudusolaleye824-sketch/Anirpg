@@ -1135,8 +1135,10 @@ function formatPairingCode(code) {
 async function _firstLinkSetup(key, displayName, sock, jid, getDatabase, saveDatabase) {
   const db = typeof getDatabase === 'function' ? getDatabase() : null;
   if (!db || !sock || !jid) return;
-  if (!db.linkedBots) db.linkedBots = {};
-  const rec = db.linkedBots[key] || (db.linkedBots[key] = {});
+  // z24: marker lives in its own table — db.linkedBots[key] is REBUILT by persistLinkedBot on every
+  // reconnect, which wiped the marker and made bots re-send the contact card each time they reconnected.
+  if (!db.botSetup) db.botSetup = {};
+  const rec = db.botSetup[key] || (db.botSetup[key] = {});
   const bareJid = String(jid).split(':')[0].split('@')[0];
   const SETUP_VER = 'v2'; // bump to re-send the contact card to owners (v2: ✦ 𝐀𝐬𝐭𝐫𝐚™ branding)
   if (rec.setupDoneFor === bareJid && rec.setupVer === SETUP_VER) return;

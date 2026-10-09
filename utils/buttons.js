@@ -265,6 +265,7 @@ async function sendButtons(sock, chatId, opts, quoted) {
   }
 
   // ── Primary: native interactive ──
+  let _imageAlreadySent = false;
   const canInteractive = typeof _genWA === 'function' && sock && typeof sock.relayMessage === 'function';
   if (canInteractive) {
     try {
@@ -285,6 +286,7 @@ async function sendButtons(sock, chatId, opts, quoted) {
       }
       if (image && !headerMedia) {
         await sock.sendMessage(chatId, { image, caption: text || '', mimetype, ...(mentions.length ? { mentions } : {}) }, quoted ? { quoted } : {});
+        _imageAlreadySent = true; // z24: never re-send the image in the fallback (that was the duplicate gate message)
       }
       const chunks = _chunk(clean);
       const ids = [];
@@ -304,7 +306,7 @@ async function sendButtons(sock, chatId, opts, quoted) {
 
   // ── Fallback: numbered menu / links / plain from the same buttons ──
   const plan = _fallbackPlan(text, clean);
-  let body = text || '';
+  let body = _imageAlreadySent ? '' : (text || ''); // z24: caption already went out with the image
   if (plan.extra.length) body += (body ? '\n\n' : '') + plan.extra.join('\n');
   body += _linkBlock(plan.links);
   if (!body) body = '.';
@@ -319,7 +321,7 @@ async function sendButtons(sock, chatId, opts, quoted) {
     try {
       const TextMenu = require('./textMenu');
       if (TextMenu && typeof TextMenu.sendMenu === 'function') {
-        const id = await TextMenu.sendMenu(sock, chatId, { body, options: plan.options, footer, image: image || null, mimetype, mentions }, quoted);
+        const id = await TextMenu.sendMenu(sock, chatId, { body, options: plan.options, footer, image: _imageAlreadySent ? null : (image || null), mimetype, mentions }, quoted);
         return { mode: 'menu', chunks: 0, ids: [id] };
       }
     } catch (e) {
@@ -328,6 +330,7 @@ async function sendButtons(sock, chatId, opts, quoted) {
   }
   let sent;
   const _m2 = mentions.length ? { mentions } : {};
+  if (_imageAlreadySent) { sent = await sock.sendMessage(chatId, { text: body, ..._m2 }); return { mode: 'plain', chunks: 0, ids: [(sent && sent.key && sent.key.id) || null] }; }
   if (image) sent = await sock.sendMessage(chatId, { image, caption: body, mimetype, ..._m2 }, quoted ? { quoted } : {});
   else sent = await sock.sendMessage(chatId, { text: body, ..._m2 }, quoted ? { quoted } : {});
   return { mode: 'plain', chunks: 0, ids: [(sent && sent.key && sent.key.id) || null] };
