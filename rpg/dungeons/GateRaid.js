@@ -326,6 +326,8 @@ function keyStillLive(key, db = null) {
     const st = String((g.raid && g.raid.status) || '');
     if (g.raid && !/^(recruiting|active)$/.test(st)) return false;
     if (g.raid && st === 'active' && Date.now() - (g.raid.lastTurnAt || g.raid.startedAt || 0) > 3 * 3600e3) return false; // abandoned for 3 h
+    // Push #96h-z21: every member dead (double-dungeon wipe that never got flagged) = the raid is over.
+    if (g.raid && st === 'active' && Array.isArray(g.raid.members) && g.raid.members.length && g.raid.members.every(m => m && Number(m.hp) <= 0)) return false;
     return true;
   } catch (e) { return false; }
 }

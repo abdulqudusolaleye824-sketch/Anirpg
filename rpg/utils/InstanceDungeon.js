@@ -21,6 +21,50 @@ function dayKey(player) { try { return player.dailyQuests && player.dailyQuests.
 function eligibleJobs(player) { return JS.questable(player); } // Push #96d: jobs unlock in order — only the next one is questable
 function keys(player) { return Math.max(0, Number(player && player.jobKeys) || 0); }
 
+// ── Push #96h-z21: NAMED INSTANCE KEYS ─────────────────────────────────────
+// Every key is forged for the boss that guards a specific job's trial. The key carries the boss's name,
+// the final floor spawns THAT boss, and /inv lists the keys by name. Keys stay soulbound.
+const INSTANCE_BOSSES = {
+  wolf_assassin:   { boss: 'Fenrir, the Moonfang',        key: 'Moonfang Key',     emoji: '🐺' },
+  brawler:         { boss: 'Gorran the Ironjaw',          key: 'Ironjaw Key',      emoji: '👊' },
+  bounty_hunter:   { boss: 'Vesh, the Thousand-Eyed',     key: 'Thousand-Eye Key', emoji: '🏹' },
+  beast_tamer:     { boss: 'Mother Kaelith of the Den',   key: 'Den-Mother Key',   emoji: '🐾' },
+  alchemist:       { boss: 'Orvax the Quicksilver Lich',  key: 'Quicksilver Key',  emoji: '⚗️' },
+  blacksmith:      { boss: 'Brannoc, Forge-Tyrant',       key: 'Forge-Tyrant Key', emoji: '⚒️' },
+  enchanter:       { boss: 'Seraphine the Runebound',     key: 'Runebound Key',    emoji: '✨' },
+  treasure_hunter: { boss: 'Khazrim, Hoard-Warden',       key: 'Hoard-Warden Key', emoji: '🗺️' },
+  dungeon_delver:  { boss: 'The Hollow King',             key: 'Hollow Crown Key', emoji: '🏚️' },
+  relic_hunter:    { boss: 'Anzu, Keeper of the Reliquary', key: 'Reliquary Key',  emoji: '🧿' },
+  void_walker:     { boss: 'Null, the Unmade',            key: 'Unmade Key',       emoji: '🌑' },
+  beast_king:      { boss: 'Ouroboros Primeval',          key: 'Primeval Key',     emoji: '🐉' },
+};
+const DEFAULT_BOSS = { boss: 'The Gatekeeper', key: 'Gatekeeper Key', emoji: '🗝️' };
+function bossFor(jobKey) { return INSTANCE_BOSSES[jobKey] || DEFAULT_BOSS; }
+function _keyList(player) { if (!Array.isArray(player.jobKeyList)) player.jobKeyList = []; return player.jobKeyList; }
+// Keep the named list and the legacy counter in step (old saves only have the counter).
+function syncKeys(player) {
+  if (!player) return [];
+  const list = _keyList(player); const n = keys(player);
+  if (list.length < n) { const el = eligibleJobs(player); const jk = el.length ? el[el.length - 1].key : null; while (list.length < n) list.push(_mkKey(jk)); }
+  else if (list.length > n) player.jobKeys = list.length;
+  return list;
+}
+function _mkKey(jobKey) { const b = bossFor(jobKey); return { id: `key-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`, job: jobKey || null, name: b.key, boss: b.boss, emoji: b.emoji, soulbound: true, at: Date.now() }; }
+// Grant one key (for the hunter's NEXT questable job unless a job is given). Returns the key record.
+function grantKey(player, jobKey = null) {
+  if (!player) return null;
+  syncKeys(player);
+  if (!jobKey) { const el = eligibleJobs(player); jobKey = el.length ? el[el.length - 1].key : null; }
+  const k = _mkKey(jobKey); _keyList(player).push(k); player.jobKeys = _keyList(player).length;
+  return k;
+}
+function keyLine(k) { return k ? `🗝️ +1 *${k.name}* (bound) — opens the trial of ${k.emoji} *${k.boss}* · /instance start` : `🗝️ +1 Instance Key (bound)`; }
+// Named key summary for /inv: [{ name, boss, emoji, count, job }]
+function keySummary(player) {
+  const out = {}; for (const k of syncKeys(player)) { const n = k.name || 'Instance Key'; if (!out[n]) out[n] = { name: n, boss: k.boss || DEFAULT_BOSS.boss, emoji: k.emoji || '🗝️', job: k.job || null, count: 0 }; out[n].count++; }
+  return Object.values(out);
+}
+
 // ── Daily completion hook ─────────────────────────────────────────────────
 // Returns { lines } to append to the daily message; sends Pro box buttons.
 function onDailyComplete(player, sock, jid, chatId) {
@@ -35,7 +79,7 @@ function onDailyComplete(player, sock, jid, chatId) {
   // or a bound Instance Key) opened with /box open. No more hidden 50% coin-flip.
   if (!_pro(player)) {
     player.regularBoxes = (Number(player.regularBoxes) || 0) + 1;
-    lines.push(`📦 *REGULAR BOX* earned — open it with */box open* (rare-or-below item, or an Instance Key)`);
+    lines.push(`📦 *REGULAR BOX* earned — open it with */box open 1 confirm* (rare-or-below item, or an Instance Key)`);
   }
   // Pro: Blessed / Cursed box choice — buttons posted IN THE GROUP (Push #96h-z20: no DM detour).
   if (_pro(player)) {
@@ -68,7 +112,7 @@ function regularBonus(player) {
   if (kind === 'up') { const up = 1 + Math.floor(Math.random() * 7); player.upgradePoints = (player.upgradePoints || 0) + up; what = `📈 +${up} Upgrade Point${up === 1 ? '' : 's'}`; }
   else if (kind === 'nexus') { const g = Math.floor((3000 + lvl * 400) * (0.8 + Math.random() * 0.6)); player.gold = (player.gold || 0) + g; what = `💠 +${g.toLocaleString()} Nexus`; }
   else if (kind === 'stones') { const c = Math.floor((150 + lvl * 20) * (0.8 + Math.random() * 0.6)); player.manaCrystals = (player.manaCrystals || 0) + c; what = `💎 +${c.toLocaleString()} Mana Stones`; }
-  else if (kind === 'key') { player.jobKeys = keys(player) + 1; what = `🗝️ +1 Instance Key (bound) — /instance start`; }
+  else if (kind === 'key') { what = keyLine(grantKey(player)); }
   else {
     const rank = Math.random() < 0.6 ? 'E' : 'D';
     let inst = null; try { inst = require('./ArmoryStore').grantRandom(player, rank, null, 'daily_bonus'); } catch (e) {}
@@ -90,7 +134,7 @@ function openRegularBox(player) {
   const out = [];
   const r = Math.random();
   const canKey = eligibleJobs(player).length > 0;
-  if (canKey && r < 0.18) { player.jobKeys = keys(player) + 1; out.push(`🗝️ +1 Instance Key (bound) — /instance start`); }
+  if (canKey && r < 0.18) { out.push(keyLine(grantKey(player))); }
   else if (r < 0.50) {
     const rank = Math.random() < 0.45 ? 'E' : Math.random() < 0.7 ? 'D' : 'C'; // C-rank = rare ceiling
     let inst = null; try { inst = require('./ArmoryStore').grantRandom(player, rank, null, 'regular_box'); } catch (e) {}
@@ -125,7 +169,7 @@ function openBox(player, kind) {
     else if (r < 0.60) { const up = 2 + Math.floor(Math.random() * 4); player.upgradePoints = (player.upgradePoints || 0) + up; out.push(`📈 +${up} Upgrade Points`); }
     else if (r < 0.85) { inv.mediumHealthPotions = (inv.mediumHealthPotions || 0) + 2; out.push(`🧪 +2 Medium Health Potions`); }
     else { inv.higherHealthPotions = (inv.higherHealthPotions || 0) + 1; inv.reviveTokens = (inv.reviveTokens || 0) + 1; out.push(`🧪 +1 Higher Health Potion · ✨ +1 Revive Token`); }
-    if (eligibleJobs(player).length && Math.random() < 0.12) { player.jobKeys = keys(player) + 1; out.push(`🗝️ +1 Instance Key (bound)`); }
+    if (eligibleJobs(player).length && Math.random() < 0.12) { out.push(keyLine(grantKey(player))); }
     if (player.stats) { player.stats.hp = _max(player); out.push(`💚 Fully healed`); }
     return { ok: true, kind, lines: out, title: '✨ BLESSED BOX' };
   }
@@ -143,7 +187,7 @@ function openBox(player, kind) {
     try { require('./StatusEffectManager').applyEffect(player, 'curse', 3); } catch (e) {}
     out.push(`☠️ The box bites back: −${loss.toLocaleString()} 💠 Nexus and a 3-turn CURSE clings to you.`);
   }
-  if (eligibleJobs(player).length && Math.random() < 0.20) { player.jobKeys = keys(player) + 1; out.push(`🗝️ +1 Instance Key (bound)`); }
+  if (eligibleJobs(player).length && Math.random() < 0.20) { out.push(keyLine(grantKey(player))); }
   return { ok: true, kind, lines: out, title: '🖤 CURSED BOX' };
 }
 
@@ -170,7 +214,7 @@ function makeMonster(player, floor, slot = 1) {
   const atk = Math.floor((pDef * 0.5 + pHp * 0.025 + lvl * 1.5) * fm * (isBoss ? 1.2 : 1));
   const dfn = Math.floor((pAtk * 0.1 + lvl * 1.2) * fm);
   const name = (def && def.name) || _pick(['Shade', 'Ghoul', 'Warg', 'Imp', 'Sentinel']);
-  return { id: `inst_${floor}_${slot}`, name: finalBoss ? `${name} Overlord` : isBoss ? `${name} Alpha` : name, emoji: isBoss ? '👑' : '👹', level: lvl + floor, rank, isBoss, finalBoss, floor, slot,
+  return { id: `inst_${floor}_${slot}`, name: finalBoss ? ((player.instance && player.instance.bossName) || bossFor(player.instance && player.instance.job).boss) : isBoss ? `${name} Alpha` : name, emoji: isBoss ? '👑' : '👹', level: lvl + floor, rank, isBoss, finalBoss, floor, slot,
     abilities: (def && def.skills && def.skills.length) ? def.skills : ['Strike', 'Rend'],
     stats: { hp, maxHp: hp, atk, def: dfn, speed: Math.round((90 + floor * 3) * 1.4) /* Push #96h-c: +40% */ }, statusEffects: [], tempBuffs: {} };
 }
@@ -185,9 +229,13 @@ function start(player, jobQuery) {
   if (!job) return { ok: false, error: 'Unknown job — /job list' };
   if (!elig.some(j => j.key === job.key)) return { ok: false, error: `${job.emoji} *${job.name}* is not open to you (${JS.isAvailable(player, job) ? 'already your job' : `unlocks at Lv.${job.unlock}`}).` };
   if ((player.stats?.hp || 0) <= 0) return { ok: false, error: 'You cannot enter an instance while fallen.' };
-  player.jobKeys = keys(player) - 1;
+  // Push #96h-z21: spend the key forged for THIS job if the hunter has one, else the oldest key.
+  const _list = syncKeys(player); let _ki = _list.findIndex(k => k && k.job === job.key); if (_ki < 0) _ki = 0;
+  const _usedKey = _list.splice(_ki, 1)[0] || _mkKey(job.key);
+  player.jobKeys = _list.length;
+  const _boss = bossFor(job.key);
   const target = targetFloorFor(job);
-  player.instance = { active: true, job: job.key, floor: 1, slot: 1, target, kills: 0, startedAt: Date.now(), expiresAt: Date.now() + TIME_LIMIT_MS, monster: makeMonster(player, 1, 1), passed: false, gold: 0, jobXp: 0, domain: null, turn: 0 };
+  player.instance = { active: true, job: job.key, bossName: _boss.boss, keyName: _usedKey.name, floor: 1, slot: 1, target, kills: 0, startedAt: Date.now(), expiresAt: Date.now() + TIME_LIMIT_MS, monster: makeMonster(player, 1, 1), passed: false, gold: 0, jobXp: 0, domain: null, turn: 0 };
   return { ok: true, job, target, inst: player.instance };
 }
 
@@ -349,4 +397,4 @@ function status(player) {
   return [`🏚️ *INSTANCE — ${job.emoji} ${job.name.toUpperCase()} QUEST*`, `Floor *${inst.floor}/${FLOORS}* · monster ${inst.slot || 1}/${PER_FLOOR} · kills ${inst.kills} · ⏰ ${Math.ceil(timeLeftMs(inst) / 60000)} min left`, `⚔️ /attack · /attack <id> · /skillcmd <skill> · /instance leave`, `${m.emoji} *${m.name}* [${m.rank}]${m.isBoss ? ' 👑' : ''} — HP ${m.stats.hp}/${m.stats.maxHp}`, `❤️ You: ${player.stats.hp}/${_max(player)} · ⚡ ${player.stats.energy}/${player.stats.maxEnergy}`, `⚔️ /instance attack · ✨ /instance skill <name> · 🌌 /domain expand · 🚪 /instance leave`].join('\n');
 }
 
-module.exports = { FLOORS, PER_FLOOR, TIME_LIMIT_MS, timeLeftMs, expireCheck, regularBonus, REGULAR_BONUS_CHANCE, KEY_CHANCE, eligibleJobs, keys, onDailyComplete, openBox, openRegularBox, targetFloorFor, makeMonster, start, act, end, status };
+module.exports = { FLOORS, PER_FLOOR, TIME_LIMIT_MS, timeLeftMs, expireCheck, regularBonus, REGULAR_BONUS_CHANCE, KEY_CHANCE, eligibleJobs, keys, onDailyComplete, openBox, openRegularBox, INSTANCE_BOSSES, bossFor, grantKey, syncKeys, keySummary, keyLine, targetFloorFor, makeMonster, start, act, end, status };

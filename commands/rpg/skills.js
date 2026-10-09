@@ -62,6 +62,20 @@ function getMaxSlots(player) {
   return player.maxSkillSlots || 5;
 }
 
+// Push #96h-z21: job skills live in the loadout too (view-only slots; cast with /skill <name> or /skillcmd <name>).
+function jobSkillBlock(player, FRAME) {
+  try {
+    const JSK = require('../../rpg/utils/JobSkills');
+    const r = JSK.listFor(player); if (!r.job) return '';
+    const open = r.skills.filter(x => x.tier > 0); const locked = r.skills.filter(x => !(x.tier > 0));
+    let t = `${FRAME}\n🧭 JOB SKILLS — ${r.job.emoji} ${r.job.name} Lv.${r.level}\n${FRAME}\n`;
+    if (!open.length) t += `(none yet — first job skill at Job Lv.1)\n`;
+    for (const x of open) { const e = JSK.toEntry(x.def, x.tier); t += `${JSK.KIND_ICON[x.def.kind] || '✨'} *${x.def.name}* T${x.tier} — ${String(e.effect || '').split('\n')[0]}\n`; }
+    for (const x of locked) t += `🔒 ${x.def.name} — Job Lv.${x.def.unlock}\n`;
+    t += `_Use in battle: /skill <name> · /skillcmd <name> — only while this job is active._\n`;
+    return t;
+  } catch (e) { return ''; }
+}
 function fmtSkillLine(skill, idx, player, compact=false) {
   const lv = skill.level || 1;
   const max = skill.maxLevel || 5;
@@ -118,6 +132,7 @@ module.exports = {
         library.forEach((s, i) => { txt += fmtSkillLine(s, i, player, true); });
       }
 
+      txt += jobSkillBlock(player, FRAME);
       const nextUnlock = Math.ceil((player.level + 1) / 5) * 5;
       txt += `\n${FRAME}\n📌 COMMANDS\n${FRAME}\n/skills swap [slot#] [library#] — Hotswap skill\n/skills equip [library#] — Add to empty slot\n/skills remove [slot#] — Unequip to library\n/skills upgrade [slot#] — Level up a skill (gold)\n/skills info [slot# or name] — Full skill details\n/skills passives — View passive abilities\n${FRAME}\n${nextUnlock<=90?`💡 Next skill unlocks at Lv *${nextUnlock}*`:''}\n${player.pendingSkillChoice?'🌟 SKILL CHOICE PENDING! Use /choose':''}\n${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO LOADOUT* — ${equipped.length}/${maxSlots} slots` : `\n${UI.upsell()}`);
       return sock.sendMessage(chatId, { text: txt }, { quoted: msg });
@@ -272,6 +287,7 @@ module.exports = {
       if (!equipped.length) return sock.sendMessage(chatId, { text: `No skills equipped!\nUse /skills equip [#] to add them.` }, { quoted: msg });
       let txt = pro ? `${UI.PRO_BAR}\n🔮 ACTIVE LOADOUT (${equipped.length}/${maxSlots}) 💎\n${UI.PRO_BAR}\n\n` : `🔮 ACTIVE LOADOUT (${equipped.length}/${maxSlots})\n${UI.FREE_BAR}\n\n`;
       equipped.forEach((s, i) => { txt += fmtSkillLine(s, i, player, false) + '\n'; });
+      txt += jobSkillBlock(player, FRAME);
       txt += `${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO LOADOUT* — ${equipped.length}/${maxSlots} equipped` : `\n${UI.upsell()}`);
       return sock.sendMessage(chatId, { text: txt }, { quoted: msg });
     }

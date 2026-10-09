@@ -83,7 +83,11 @@ function banUser(db, targetJid, bannedBy, reason, extra = {}) {
     bannedAtGMT: new Date().toUTCString(),
     gc: extra.gc || null,
     gcName: extra.gcName || null,
-    reason: reason || 'No reason provided'
+    reason: reason || 'No reason provided',
+    // Push #96h-z21: keep names + the real jid so /banned can show people, not ids
+    name: extra.name || (db.users && db.users[targetJid] && db.users[targetJid].name) || (db.users && db.users[key] && db.users[key].name) || null,
+    bannedByName: extra.bannedByName || (db.users && db.users[bannedBy] && db.users[bannedBy].name) || null,
+    jid: String(targetJid || ''),
   };
   db.bannedUsers[key] = rec;
   return { key, rec };

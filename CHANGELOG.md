@@ -1,3 +1,11 @@
+## 1.0.178 — Push #96h-z21b (2026-10-09)
+- **Raid / shop lockout, verified piece by piece:** a raid whose members are all dead, a lobby older than 30 min, or a party battle untouched for 45 min no longer counts as "in battle" (shop, /party leave etc. open up). Undated battle records now age from first sight instead of living forever. A double-dungeon wipe can never hold the dungeon GC ("already has an active gate raid").
+- **/banned:** one line per hunter, names instead of raw ids, GC name only (no group id), real @mentions; `/ban` no longer writes the duplicate full-jid record.
+- **Crafting:** the result is always announced — text card fallback whenever the image card fails.
+- **Named Instance Keys:** every key is forged for a specific job trial boss (Moonfang Key → Fenrir, Ironjaw Key → Gorran, … 12 bosses). The final floor spawns that boss; `/inv` lists keys by name; old key counters migrate automatically.
+- **/box UI:** `/box` lists owned boxes (1 = 📦 Regular, 2 = 🎁 Pro); `/box open 1` → confirm button → `/box open 1 confirm`; `/box open 2` → ✨ Blessed / 🖤 Cursed buttons.
+- **/skills:** shows a JOB SKILLS block (unlocked tiers + locked ones) in the loadout; cast with `/skill <name>` or `/skillcmd <name>` while the job is active.
+
 ## 1.0.177 — Push #96h-z21 (2026-10-09)
 - **Guild ghost-membership fix:** a stale `player.guild` on an affiliate (or on a hunter who was kicked / left / sacked) used to be silently "restored" into the roster on the next command — players were told "you are already in a guild" while not being members. Affiliates are never re-added; kick / leave / sack now clear every identity row (lid + phone) and stamp `guildLeftAt`.
 

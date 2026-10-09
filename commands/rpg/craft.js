@@ -94,7 +94,15 @@ module.exports = {
     const statObj = {};
     for (const k of statKeys) if (item[k]) statObj[k] = item[k];
 
-    return sendImageCard(sock, chatId, {
+    // Push #96h-z21: the craft result must ALWAYS be announced. The image card can fail (canvas / media upload
+    // hiccups) — players then saw nothing and thought the craft vanished. Text fallback on any failure.
+    const _textCard = () => {
+      const FRAME = UI.isPro(player) ? UI.PRO_BAR : UI.FREE_BAR;
+      const st = Object.entries(statObj).map(([k, v]) => `${k.toUpperCase()} +${v}`).join(' · ');
+      return sock.sendMessage(chatId, { text: [FRAME, `🔨 *CRAFTED!* ${item.emoji || '✨'} *${item.name}*`, FRAME, `⭐ Rarity: ${(item.rarity || 'common').toUpperCase()}${item.type ? ` · ${item.type}` : ''}`, st ? `📊 ${st}` : null, item.durability ? `🔧 Durability ${item.durability}/${item.maxDurability}` : null, stolenKey ? `🔑 (crafted with someone else's scroll key)` : null, `🎒 It is in your bag — /inv`, FRAME].filter(Boolean).join('\n') }, { quoted: msg });
+    };
+    try {
+      const _sent = await sendImageCard(sock, chatId, {
       kind: 'item',
       name: item.name,
       rarity: (item.rarity || 'common').toLowerCase(),
@@ -108,5 +116,8 @@ module.exports = {
         stolen: stolenKey,
       },
     }, { quoted: msg });
+      if (!_sent) return _textCard();
+      return _sent;
+    } catch (e) { return _textCard(); }
   }
 };

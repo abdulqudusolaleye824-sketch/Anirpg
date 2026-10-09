@@ -26,7 +26,9 @@ module.exports = {
 
     if (!db.bannedUsers) db.bannedUsers = {};
 
-    const entries = Object.entries(db.bannedUsers); // [key, rec]
+    // Push #96h-z21: one line per hunter — old builds stored both the bare number and the full jid.
+    const _seenBare = new Set();
+    const entries = Object.entries(db.bannedUsers).filter(([k]) => { const b = String(k).split('@')[0].split(':')[0]; if (_seenBare.has(b)) return false; _seenBare.add(b); return true; }); // [key, rec]
     if (entries.length === 0) {
       return sock.sendMessage(chatId, {
         text: [
@@ -41,20 +43,26 @@ module.exports = {
       ...(proB ? [(UI.PRO_MINI + '\n🚫 PRO GAVEL'), `📊 *${entries.length}* banned users on record`, ''] : [])];
     const mentions = [];
 
+    // Push #96h-z21: clean formatting — real @mentions (phone or lid), names instead of raw ids, GC NAME only
+    // (no group id), banner shown by name.
+    const _jidOf = (k) => { const b = String(k || '').split('@')[0].split(':')[0]; if (!b) return null; if (String(k).includes('@lid') || b.length >= 15) return `${b}@lid`; return `${b}@s.whatsapp.net`; };
+    const _nameOf = (k) => { const u = Mod.getUser(db, k); return (u && u.name) ? u.name : null; };
     entries.forEach(([key, rec], i) => {
-      const u = Mod.getUser(db, key);
-      const n = u?.name || key;
-      const bannedBy = rec.bannedBy ? '@' + rec.bannedBy.split('@')[0].split(':')[0] : 'Unknown';
+      const bare = String(key).split('@')[0].split(':')[0];
+      const jid = _jidOf(rec.jid || key);
+      const n = _nameOf(key) || rec.name || 'Unknown hunter';
+      const byName = rec.bannedByName || _nameOf(rec.bannedBy) || null;
+      const byJid = rec.bannedBy ? _jidOf(rec.bannedBy) : null;
+      const gcInfo = rec.gcName || 'Unknown GC';
       const gmt = rec.bannedAtGMT || (rec.bannedAt ? new Date(rec.bannedAt).toUTCString() : '?');
-      const gcInfo = rec.gcName ? `${rec.gcName} (${rec.gc || '?'})` : (rec.gc || 'Unknown GC');
-      lines.push(`${i + 1}. ${n} (@${key})`);
-      lines.push(`   👮 Banned by: ${bannedBy}`);
+      lines.push(`${i + 1}. *${n}* — @${bare}`);
+      lines.push(`   👮 Banned by: ${byName ? `*${byName}*` : (byJid ? '@' + byJid.split('@')[0] : 'Unknown')}`);
       lines.push(`   📝 Reason: ${rec.reason || 'No reason'}`);
       lines.push(`   📍 GC: ${gcInfo}`);
       lines.push(`   🕒 Time (GMT): ${gmt}`);
       lines.push('');
-      mentions.push(`${key}@s.whatsapp.net`);
-      if (rec.bannedBy) mentions.push(rec.bannedBy);
+      if (jid) mentions.push(jid);
+      if (!byName && byJid) mentions.push(byJid);
     });
 
     lines.push('Use /unban [user] to unban someone.');

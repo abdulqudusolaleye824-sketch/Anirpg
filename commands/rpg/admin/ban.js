@@ -62,21 +62,15 @@ Reply to their message:
     }
     const targetUser = db.users[targetId];
     const targetName = targetUser?.name || targetId.split('@')[0];
-    let gcName2 = chatId;
+    let gcName2 = null; // Push #96h-z21: never show a raw group id in the ban list
     try { const gmd2 = await sock.groupMetadata(chatId).catch(()=>null); if(gmd2&&gmd2.subject) gcName2=gmd2.subject; } catch {}
     const bannedAtGMT2 = new Date().toUTCString();
     // Ban user (bare key for consistency)
     const Mod2 = require('../../rpg/utils/ModerationUtils');
-    Mod2.banUser(db, targetId, sender, reason, { gc: chatId, gcName: gcName2, bannedAtGMT: bannedAtGMT2 });
-    // also store with full JID for legacy compatibility
-    db.bannedUsers[targetId] = {
-      bannedBy: sender,
-      bannedAt: Date.now(),
-      bannedAtGMT: bannedAtGMT2,
-      gc: chatId,
-      gcName: gcName2,
-      reason: reason
-    };
+    Mod2.banUser(db, targetId, sender, reason, { gc: chatId, gcName: gcName2, bannedAtGMT: bannedAtGMT2, name: targetName, bannedByName: (db.users[sender] && db.users[sender].name) || null });
+    // Push #96h-z21: ONE record per hunter (bare key). The old second "full JID" copy made /banned list everyone twice
+    // with a raw id line. Drop any legacy duplicate.
+    try { const _bare = String(targetId).split('@')[0].split(':')[0]; for (const k of Object.keys(db.bannedUsers)) { if (k !== _bare && String(k).split('@')[0].split(':')[0] === _bare) delete db.bannedUsers[k]; } } catch (e) {}
     
     saveDatabase();
     

@@ -111,8 +111,9 @@ function serialList(player) {
   }
 
   // Push #96h-z20: bound Instance Keys live in the bag too (soulbound — never gifted / sold / listed).
-  const _jk = Math.max(0, Number(player.jobKeys) || 0);
-  if (_jk > 0) entries.push({ kind: 'key', name: 'Instance Key', rarity: 'rare', count: _jk, acquiredAt: 0, ref: { soulbound: true, useHint: '🗝️ Opens a job instance (5 floors × 10 monsters, 2 h) — /instance start' } });
+  try { // Push #96h-z21: keys are NAMED after the boss they open
+    for (const k of require('../../rpg/utils/InstanceDungeon').keySummary(player)) entries.push({ kind: 'key', name: k.name, rarity: 'rare', count: k.count, acquiredAt: 0, ref: { soulbound: true, boss: k.boss, emoji: k.emoji, useHint: `${k.emoji} Opens the trial of *${k.boss}* (10 floors × 5 monsters, 2 h) — /instance start` } });
+  } catch (e) { const _jk = Math.max(0, Number(player.jobKeys) || 0); if (_jk > 0) entries.push({ kind: 'key', name: 'Instance Key', rarity: 'rare', count: _jk, acquiredAt: 0, ref: { soulbound: true, useHint: '🗝️ Opens a job instance — /instance start' } }); }
 
   // Stable newest-first: dated by stamp desc, undated keep insertion order at the end
   const dated = entries.filter(e => e.acquiredAt > 0).sort((a, b) => b.acquiredAt - a.acquiredAt);
@@ -453,7 +454,7 @@ module.exports = {
     try {
       const _runes = (player.inventory?.items || []).filter(i => i && i.isRuneStone);
       if (_runes.length) message += `  🪨 Rune Stones: ${_runes.length} (soulbound skills) — /skills\n`;
-      if ((Number(player.jobKeys) || 0) > 0) message += `  🗝️ Instance Keys: ${Number(player.jobKeys)} (bound) — /instance start\n`;
+      try { const _ks = require('../../rpg/utils/InstanceDungeon').keySummary(player); if (_ks.length) message += `  🗝️ Instance Keys: ${_ks.map(k => `${k.name}${k.count > 1 ? ` ×${k.count}` : ''}`).join(', ')} (bound) — /instance start\n`; } catch (e) {}
     } catch (e) {}
     const mending = player.inventory?.mendingStones || 0;
     if (mending>0) message += `  🛠️ Mending Stones: ${mending} — use /use mending stone to restore durability\n`;

@@ -19,7 +19,7 @@
 // finished, a PvP challenge from last night, a wiped raid still listing a member) used to lock hunters out of
 // the shop and tell them they were "in a raid" forever. Stale records are cleared, not honoured.
 const STALE_SOLO_MS = 45 * 60e3, STALE_PVP_MS = 30 * 60e3, STALE_RAID_MS = 3 * 3600e3;
-function _age(rec) { if (!rec || typeof rec !== 'object') return 0; const t = Number(rec.lastActionAt || rec.lastTurnAt || rec.updatedAt || rec.startedAt || rec.createdAt || rec.timestamp || rec.at) || 0; return t ? Date.now() - t : 0; }
+function _age(rec) { if (!rec || typeof rec !== 'object') return 0; const t = Number(rec.lastActionAt || rec.lastTurnAt || rec.updatedAt || rec.startedAt || rec.createdAt || rec.timestamp || rec.at || rec._firstSeenAt) || 0; if (!t) { try { rec._firstSeenAt = Date.now(); } catch (e) {} return 0; } return Date.now() - t; } // Push #96h-z21: undated records age from first sight
 
 function checkInBattle(player, db) {
   if (!player) return null;
@@ -63,6 +63,10 @@ function checkInBattle(player, db) {
       const raid = gate.raid;
       if (!raid || !/^(recruiting|active)$/.test(String(raid.status || ''))) continue;
       if (raid.status === 'active' && _age(raid) > STALE_RAID_MS) continue;
+      // Push #96h-z21: a lobby that never started does not lock the shop (recruiting > 30 min = abandoned);
+      // a raid whose every member is dead is over, whatever its status says.
+      if (raid.status === 'recruiting' && _age(raid) > STALE_PVP_MS) continue;
+      if (raid.status === 'active' && (raid.members || []).length && (raid.members || []).every(m => m && Number(m.hp) <= 0)) continue;
       if ((raid.members || []).some(m => m && _me(m.id)) || (gate.raiders || []).some(r => _me(r))) {
         return { type: 'gateraid', battle: gate };
       }
@@ -71,9 +75,12 @@ function checkInBattle(player, db) {
 
   // Party Dungeon
   if (db?.parties) {
-    const party = Object.values(db.parties).find(p => p.members?.includes(pId));
+    const party = Object.values(db.parties).find(p => p && (p.members || []).some(m => _me(typeof m === 'object' ? (m.id || m.jid) : m)));
     if (party && db.partyBattles?.[party.id]) {
-      return { type: 'dungeon_party', battle: db.partyBattles[party.id] };
+      const pb = db.partyBattles[party.id];
+      // Push #96h-z21: a party battle nobody has touched for 45 min is dead state — drop it instead of locking everyone out.
+      if (_age(pb) > STALE_SOLO_MS || pb.ended || pb.finished || pb.status === 'ended') { delete db.partyBattles[party.id]; }
+      else return { type: 'dungeon_party', battle: pb };
     }
   }
 

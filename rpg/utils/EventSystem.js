@@ -111,7 +111,7 @@ const SHOP = [
   { key: 'gearb',   cat: 'Armoury',  name: '🛡️ B-Rank gear (random)',    cost: 1200, give: (p) => _grant(p, 'B', 'gear') },
   { key: 'weapona', cat: 'Armoury',  name: '🗡️ A-Rank weapon (random)',  cost: 3000, give: (p) => _grant(p, 'A', 'weapon') },
   { key: 'geara',   cat: 'Armoury',  name: '🛡️ A-Rank gear (random)',    cost: 3000, give: (p) => _grant(p, 'A', 'gear') },
-  { key: 'key',     cat: 'Special',  name: '🗝️ Instance Key',             cost: 400,  give: (p) => { p.jobKeys = (p.jobKeys || 0) + 1; } },
+  { key: 'key',     cat: 'Special',  name: '🗝️ Instance Key',             cost: 400,  give: (p) => { try { require('./InstanceDungeon').grantKey(p); } catch (e) { p.jobKeys = (p.jobKeys || 0) + 1; } } },
   { key: 'title',   cat: 'Special',  name: '🏝️ Title: Jeju Conqueror',    cost: 2500, give: (p) => { p.titles = Array.isArray(p.titles) ? p.titles : []; if (!p.titles.includes('Jeju Conqueror')) p.titles.push('Jeju Conqueror'); } },
 ];
 
