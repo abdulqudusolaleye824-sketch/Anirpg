@@ -74,6 +74,7 @@ module.exports = {
 
     // ── Find active gate in current chat ──────────────────────────
     const gc = GKM.getDungeonGC(chatId);
+    try { GR.releaseStaleGC(chatId, db); } catch (e) {} // Push #96h-z20
     let activeKey = gc?.activeKeyId || null;
 
     if (!activeKey && rawKey && rawKey.length === 8) {
@@ -573,9 +574,12 @@ module.exports = {
         return sock.sendMessage(chatId, { text: `🚪 *${player.name}* leads the party out. The second gate seals shut behind you — *GATE ${gate.id} CLEARED*.`, mentions: raid.members.map(m => m.id) }, { quoted: msg });
       }
       { const sr = GR.sealedReason(gate); if (sr) return sock.sendMessage(chatId, { text: sr }, { quoted: msg }); }
+      // Push #96h-z20: you can only leave a party you are in.
+      { const _nj = normaliseJid(sender); const _in = (raid.members || []).some(m => m.id === sender || normaliseJid(m.id) === _nj) || (gate.raiders || []).some(r => r === sender || normaliseJid(r) === _nj);
+        if (!_in) return sock.sendMessage(chatId, { text: `❌ You are not in this party, *${player.name}*.` }, { quoted: msg }); }
 
-      raid.members = (raid.members || []).filter(m => m.id !== sender);
-      gate.raiders = (gate.raiders || []).filter(r => r !== sender);
+      raid.members = (raid.members || []).filter(m => m.id !== sender && normaliseJid(m.id) !== normaliseJid(sender));
+      gate.raiders = (gate.raiders || []).filter(r => r !== sender && normaliseJid(r) !== normaliseJid(sender));
 
       try { GR.saveGateState(db, gate); } catch (e) {}
       saveDatabase();

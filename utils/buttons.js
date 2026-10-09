@@ -309,6 +309,12 @@ async function sendButtons(sock, chatId, opts, quoted) {
   body += _linkBlock(plan.links);
   if (!body) body = '.';
 
+  // Push #96h-z20: opts.noMenuFallback — never degrade to the numbered "reply with 1/2" menu (e.g. gate
+  // spawns): one plain message listing the commands instead.
+  if (plan.options.length && o.noMenuFallback) {
+    body += '\n\n' + plan.options.map(op => `${op.label} → ${op.command}`).join('\n');
+    plan.options.length = 0;
+  }
   if (plan.options.length) {
     try {
       const TextMenu = require('./textMenu');

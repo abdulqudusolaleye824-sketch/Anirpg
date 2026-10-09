@@ -562,7 +562,10 @@ async function playTurn(sock, chatId, o) {
       if (result.preAbsorbed) { if (result.absorbedNote) _buffNotes.push(result.absorbedNote); }
       else { const NX = require('./Necromancy'); const _ab = NX.absorb(defender, result.damage); if (_ab.absorbed) { result.damage = _ab.dmg; result.absorbed = _ab.absorbed; _buffNotes.push(NX.shieldLine(_ab, defender.name || 'Target')); } }
     } catch (e) {}
+    const _defHpBefore = defender.stats ? (defender.stats.hp || 0) : result.damage;
     if (defender.stats) defender.stats.hp = Math.max(0, (defender.stats.hp || 0) - result.damage);
+    // Push #96h-z20: LIFESTEAL contract on the move (PvP / dungeon moves carry entry.lifestealPct) — paid on the HP that was actually there.
+    try { if ((Number(move.lifestealPct) || 0) > 0 && !o.lifestealHandled) { const _ls = require('./SkillCatalog').applyLifesteal({ name: moveName, lifestealPct: move.lifestealPct }, attacker, Math.min(result.damage, _defHpBefore), (u) => { try { return require('./GearSystem').effectiveMaxHp(u); } catch (e) { return u.stats.maxHp; } }); if (_ls.line) _buffNotes.push(_ls.line); } } catch (e) {}
     // Push #94: reflect — the defender's mirror sends part of the hit back.
     try { const _rf = reflectDamage(defender, attacker, result.damage); if (_rf) _buffNotes.push(_rf.line); } catch (e) {}
     try { statusApplied = tryApplyEffect(move, attacker, defender); } catch (e) { statusApplied = null; }

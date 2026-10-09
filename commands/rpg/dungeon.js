@@ -1490,6 +1490,7 @@ async function handleMonsterDefeat(sock, chatId, party, monster, dungeon, db, sa
     const player = db.users[sender];
     if (!player) return;
     const dPro = UI.isPro(player);
+    try { const _df = require('../../rpg/utils/DomainSystem').ownerFell(dungeon, monster, (party && party.members || []).map(x => db.users[x && x.id ? x.id : x]).filter(Boolean)); if (_df) log += `\n${_df}\n`; } catch (e) {} // Push #96h-z20
     const FRAME = dPro ? UI.PRO_BAR : UI.FREE_BAR;
     dungeon.monstersDefeated = (dungeon.monstersDefeated || 0) + 1;
     const _nextQ = _dngQueueNext(dungeon); // Push #88z: elites → boss on boss floors
@@ -1554,6 +1555,7 @@ async function handleMonsterDefeat(sock, chatId, party, monster, dungeon, db, sa
 }
 
 async function handlePlayerDeath(sock, chatId, party, dungeon, db, saveDatabase, msg, sender, log) {
+  try { require('../../rpg/utils/CombatReset').clearParty(db, [sender]); } catch (e) {} // Push #96h-z20: a fallen hunter leaves every buff/debuff behind
   try {
     const player = db.users[sender];
     if (!player) return;

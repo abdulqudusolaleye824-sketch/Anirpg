@@ -110,6 +110,7 @@ class LevelUpManager {
             if (unlockedSkill) {
               newSkills.push(unlockedSkill);
               skillUnlockLevels.push(player.level);
+              try { const _rs = require('./RuneStones').onClassSkill(player, unlockedSkill.name, player.level); if (_rs) unlockedSkill.runeStone = _rs.name; } catch (e) {} // Push #96h-z20
             }
           } catch (error) {
             console.error('❌ Error unlocking skill:', error.message);
@@ -726,6 +727,7 @@ class LevelUpManager {
       newSkills.forEach((skill, i) => {
         lines.push(`🔮 *${skill.name}*`);
         lines.push(`   💥 DMG: ${skill.damage}  |  💙 Cost: ${skill.energyCost}  |  ⏱ CD: ${skill.cooldown}s`);
+        if (skill.runeStone) lines.push(`   🪨 *${skill.runeStone}* forged — soulbound, in your bag`);
       });
       lines.push(``);
     }

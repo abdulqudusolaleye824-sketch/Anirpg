@@ -1,3 +1,16 @@
+## 1.0.176 — Push #96h-z20 (2026-10-09)
+- **Lifesteal contract:** every skill whose text says it heals a % of damage dealt now actually does — in gate raids (target + boss), instances, Jeju, PvP and generic combat (one heal per hit, capped at max HP). Parser ignores "damage taken"/"no heal" lines; Curse of Ruin no longer counts as lifesteal; Soul Drain stays with Necromancy.
+- **Devourer buffed:** HP 210 / ATK 62 / DEF 26 / SPD 14 / lifesteal 16 at max quality; Consume 220% + 30% lifesteal; Void Maw 290%; new passive **Abyssal Hide** (−18% damage taken, +25 HP/turn); Hunger +24 ATK/kill.
+- **Monster class:** transformations keep ×5 offense but HP only ×2 with a small per-turn regen.
+- **Rune stones & keys:** class / job skills arrive as soulbound 🪨 Rune Stones (listed in /inv with 🔒, announced on level-up, job level-up and job change); bound 🗝️ Instance Keys show in /inv. Neither can be gifted, sold or listed.
+- **Boxes:** regular hunters earn a 📦 **Regular Box** on daily completion (`/box open` → rare-or-below item or an Instance Key; never money). Pro Blessed/Cursed buttons post in the **group**, not DM. Cursed box penalty is charged in — and now says — Nexus.
+- **Drops:** monster drop chance 47% (48% Pro) everywhere.
+- **Gate loot:** Double Dungeon / Red Gate +50% (clear + per-kill); 0.01% JACKPOT multiplies a clear by ×2 up to ×10; B-rank gates no longer pay fewer Mana Stones than C-rank.
+- **Leaks:** a leaked beast may hit for insta-kill numbers but never one-shots a hunter above 25% HP.
+- **Bots:** one message id is handled by exactly one sibling socket (no double replies / AFK toggled straight back off); the `/afk` command itself and messages sent before going AFK never end AFK.
+- **Gate spawn:** single message with a Buy button — never the numbered "reply with" menu (`noMenuFallback`).
+- Sender/recipient canonicalisation (PlayerKey), stale gate / party cleanups, domain owner-fell hooks, battle buffs cleared on every combat end, market buy artifact dedupe, soulbound gift blocks.
+
 ## 1.0.175 — Push #96h-z19 (2026-10-05)
 - **Job skills:** 3 unique lore-rich skills per job (support / attack / special), unlocked at Job Lv1/2/4, tiers grow with job level, usable only while the job is active. `/jobskill`, class menu section, resolves through `/skillcmd`.
 - **Support scaling:** all support skills (general + job) grow with upgrade level (`supportMult`).

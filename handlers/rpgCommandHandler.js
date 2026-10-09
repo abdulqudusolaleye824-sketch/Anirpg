@@ -284,7 +284,24 @@ module.exports = async (sock, msg, messageText, config, getDatabase, saveDatabas
     ? (msg.key.participant || msg.participant || contextInfo?.participant || msg.key.remoteJid)
     : msg.key.remoteJid;
 
-  const sender = cleanJid(rawSender);
+  let sender = cleanJid(rawSender);
+  // Push #96h-z20: ONE record per hunter. Baileys hands us a sender as @lid in LID-mode groups and as the
+  // phone number elsewhere; if the registered row lives under the OTHER form, resolve to it — otherwise items,
+  // party/raid state, transfers and AFK flags split across two ghost records.
+  try {
+    const _db0 = getDatabase();
+    if (_db0 && _db0.users) {
+      const _alt = cleanJid(msg.key?.participantAlt || msg.key?.remoteJidAlt || '');
+      const _bare = sender.split('@')[0];
+      const _mapped = _db0.lidMap && _db0.lidMap[_bare];
+      const _cands = [_alt, _bare + '@s.whatsapp.net', _bare + '@lid', _mapped && `${_mapped}@s.whatsapp.net`, _mapped && `${_mapped}@lid`].filter(Boolean);
+      const _hit = _cands.find(k => k !== sender && _db0.users[k]);
+      if (_hit && !_db0.users[sender]) sender = _hit;
+      // Both forms registered (a ghost twin was created before this fix): play the REAL one — higher level,
+      // then the older row — so progress never splits again.
+      else if (_hit && _db0.users[sender]) { const a = _db0.users[sender], b = _db0.users[_hit]; const _age = (u) => Number(u.registeredAt || u.createdAt || u.joinedAt) || Infinity; if ((b.level || 0) > (a.level || 0) || ((b.level || 0) === (a.level || 0) && _age(b) < _age(a))) sender = _hit; }
+    }
+  } catch (e) {}
 
   const isValidSender = isGroup
     ? !!sender

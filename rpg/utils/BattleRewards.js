@@ -25,9 +25,12 @@ function giveBattleWinRewards(player, db, type='generic', baseLevel=1, sock=null
   let bp = (type==='pvp'? 100 : type==='dungeon'? 60 : type==='gate'? 60 : 50);
   let pass = (type==='pvp'? 50 : type==='dungeon'? 30 : type==='gate'? 40 : 25);
   let xp = (type==='pvp'? 500 : 300) + lvl*30;
-  aura = Math.floor(aura * mult * auraMult);
-  pass = Math.floor(pass * mult);
-  xp = Math.floor(xp * mult);
+  // Push #96h-z20: Double Dungeon / Red Gate kills pay +50% (opts.lootMult, set by the gate raid).
+  const _lm = Number.isFinite(opts.lootMult) && opts.lootMult > 0 ? opts.lootMult : 1;
+  aura = Math.floor(aura * mult * auraMult * _lm);
+  pass = Math.floor(pass * mult * _lm);
+  xp = Math.floor(xp * mult * _lm);
+  bp = Math.floor(bp * _lm);
   try { xp = Math.floor(xp * require('./AuraSystem').AuraSystem.expMult(player)); } catch (e) {} // Push #96f: aura title EXP%
   // Push #95: Dungeon Delver XP / Bounty Hunter reward multipliers + Job XP.
   let jobLine = '';
@@ -40,7 +43,7 @@ function giveBattleWinRewards(player, db, type='generic', baseLevel=1, sock=null
       player._lastJobXp = jr.gained;
       if (jr.levelUp) {
         jobLine = `🧭 *JOB LEVEL UP!* ${jr.name} → Job Lv.${jr.to} — *${jr.title}*`;
-        if (sock && chatId) { try { sock.sendMessage(chatId, { text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🧭 *JOB LEVEL UP!*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n👤 *${player.name}* — ${jr.name} reached *Job Lv.${jr.to}*\n⭐ New Job Level: *${jr.title}*\n_${(JS.BY_KEY[player.job.key] || {}).lore?.[jr.to - 1] || ''}_\n${JS.describeMods(JS.BY_KEY[player.job.key], jr.to).join('\n')}` }).catch(() => {}); } catch (e) {} }
+        if (sock && chatId) { try { sock.sendMessage(chatId, { text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🧭 *JOB LEVEL UP!*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n👤 *${player.name}* — ${jr.name} reached *Job Lv.${jr.to}*\n⭐ New Job Level: *${jr.title}*\n_${(JS.BY_KEY[player.job.key] || {}).lore?.[jr.to - 1] || ''}_\n${JS.describeMods(JS.BY_KEY[player.job.key], jr.to).join('\n')}${JS.runeLines(jr).length ? '\n' + JS.runeLines(jr).join('\n') : ''}` }).catch(() => {}); } catch (e) {} }
       }
     }
   } catch (e) {}

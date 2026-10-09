@@ -608,7 +608,7 @@ async function resolveTurn(sock, chatId, p1, p2, db, saveDatabase) {
       }
       // Push #76: buffs/debuffs/statuses ride on the move; UnifiedCombat.playTurn applies them.
       return {
-        buffs: entry.buffs || [], debuffs: entry.debuffs || [], statuses: entry.statuses || [],
+        buffs: entry.buffs || [], debuffs: entry.debuffs || [], statuses: entry.statuses || [], lifestealPct: entry.lifestealPct || 0, // Push #96h-z20
         id: 0,
         rank: pct >= 3 ? 'S' : pct >= 2.4 ? 'A' : pct >= 1.8 ? 'B' : pct >= 1.2 ? 'C' : 'D',
         name: entry.name,
@@ -1078,7 +1078,7 @@ function handlePvpVictory(sock, chatId, winner, loser, wId, lId, db, saveDatabas
     const JS = require('../../rpg/utils/JobSystem');
     const jmW = JS.mods(winner); if (jmW.xpMult) rewardXP = Math.floor(rewardXP * (1 + jmW.xpMult / 100));
     const jw = JS.gainXp(winner, JS.xpFor('pvp'), 'pvp_win'); const jl = JS.gainXp(loser, 20, 'pvp_loss');
-    for (const [pl, jr] of [[winner, jw], [loser, jl]]) if (jr && jr.levelUp) { _jobLine += `\n🧭 *JOB LEVEL UP!* ${pl.name} — ${jr.name} → Job Lv.${jr.to} *${jr.title}*`; }
+    for (const [pl, jr] of [[winner, jw], [loser, jl]]) if (jr && jr.levelUp) { _jobLine += `\n🧭 *JOB LEVEL UP!* ${pl.name} — ${jr.name} → Job Lv.${jr.to} *${jr.title}*`; for (const _rl of JS.runeLines(jr)) _jobLine += `\n${_rl}`; }
     if (jw) _jobLine = `\n🧭 Job XP: +${jw.gained}` + _jobLine;
   } catch (e) {}
   winner.xp = (winner.xp || 0) + rewardXP;

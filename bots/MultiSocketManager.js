@@ -543,6 +543,7 @@ const _notAdminSaidAt = new Map(); // Push #96h-z19: "make me admin" nag, once p
 function _rowOf(meta, jid) { const b = _pBare(jid); if (!b) return null; return ((meta && meta.participants) || []).find((p) => _pBare(p.id) === b || _pBare(p.phoneNumber) === b || _pBare(p.lid) === b || _pBare(p.jid) === b) || null; }
 // Push #96h-z18: is `jid` an admin of the group (null = unknown/no metadata)?
 async function _isGroupAdmin(personalityKey, chatId, jid) { const meta = await _metaCached(personalityKey, chatId); if (!meta) return null; const r = _rowOf(meta, jid); return !!(r && (r.admin === 'admin' || r.admin === 'superadmin')); }
+const _handledInbound = new Map(); // Push #96h-z20: chat|id → personalityKey that handled it (cross-socket)
 const _seenInbound = new Map(); const SEEN_INBOUND_TTL_MS = 10 * 60000; // Push #96h-z10: per-process inbound dedupe (chat|id → ts)
 // Push #96h-z18: the dedupe set survives restarts — a message handled before a restart is never handled again after it.
 const _SEEN_FILE = path.join(process.env.DATA_DIR || path.join(__dirname, '..'), 'auth', 'seen-inbound.json');
@@ -2574,6 +2575,18 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
       isActive = !!(rawActiveKey && isBotUsable(rawActiveKey)) && (personalityKey === rawActiveKey);
     }
 
+    // Push #96h-z20: CROSS-SOCKET DEDUPE. Two sibling sockets in the same group can disagree about who the
+    // responder is for a split second (presence map still filling after a reconnect) — then BOTH handled the
+    // same message: double replies, /afk toggled straight back off, reactions landing twice. One message id is
+    // handled by exactly ONE socket in this process, whoever claims it first.
+    if (isGroup && isActive && msg.key?.id) {
+      const _hk = `${chatId}|${msg.key.id}`;
+      const _hprev = _handledInbound.get(_hk);
+      if (_hprev && _hprev !== personalityKey) { _dropped('handledBySibling', msg); return; }
+      _handledInbound.set(_hk, personalityKey);
+      if (_handledInbound.size > 5000) { const _cut = _handledInbound.size - 4000; let _i = 0; for (const k of _handledInbound.keys()) { if (_i++ >= _cut) break; _handledInbound.delete(k); } }
+    }
+
     // Push #96h-z18: NON-ADMIN BOTS ARE SILENT in groups — except to the Owner/co-owner. (No metadata → assume admin, never go deaf.)
     if (isGroup && isActive && !Perms.isBotOwner(db, sender)) {
       try { const adm = await _isGroupAdmin(personalityKey, chatId, sock?.user?.lid || sock?.user?.id); const adm2 = adm === false ? await _isGroupAdmin(personalityKey, chatId, sock?.user?.id) : adm; if (adm2 === false) { _dropped('bot-not-admin', msg); if (isCommand) { const k = `${personalityKey}|${chatId}`; const last = _notAdminSaidAt.get(k) || 0; if (Date.now() - last > 5 * 60000) { _notAdminSaidAt.set(k, Date.now()); try { await sock.sendMessage(chatId, { text: '⚠️ *Please make me admin before using commands.*' }, { quoted: msg }); } catch (e) {} } } return; } } catch (e) {}
@@ -2638,7 +2651,20 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
 
     // ── AFK SELF WELCOME-BACK ──────────────────────────────────────────
     // Push #88r: speaking in the ANNOUNCEMENTS GC (db.announceGC, set via /setspace) never ends AFK.
-    if (isGroup && isActive && db.afkUsers && db.afkUsers[sender] && chatId !== db.announceGC) {
+    // Push #96h-z20: the /afk command itself (and anything the player sent BEFORE going AFK that arrives late /
+    // replayed) must never end the AFK it just started.
+    let _afkSelfOk = true;
+    try {
+      if (isCommand && /^(afk|eventafk)$/i.test(String(commandName || ''))) _afkSelfOk = false;
+      const _a = db.afkUsers && db.afkUsers[sender];
+      if (_a && _a.since) {
+        const _r = msg.messageTimestamp; let _n = 0;
+        if (_r && typeof _r === 'object') _n = typeof _r.toNumber === 'function' ? _r.toNumber() : Number(_r.low || 0); else _n = Number(_r) || 0;
+        const _ms = _n > 1e12 ? _n : _n * 1000;
+        if (_ms > 1.7e12 && _ms < Number(_a.since) + 3000) _afkSelfOk = false;
+      }
+    } catch (e) {}
+    if (isGroup && isActive && _afkSelfOk && db.afkUsers && db.afkUsers[sender] && chatId !== db.announceGC) {
       const afk = db.afkUsers[sender];
       const duration = _fmtHMS(Date.now() - (afk.since || Date.now())); // Push #88j: h/m/s
       const mentionText = `@${sender.split('@')[0]}`;

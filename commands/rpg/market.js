@@ -167,7 +167,7 @@ module.exports = {
       if (isNaN(id)) return sock.sendMessage(chatId, { text: '❌ Usage: /market buy [#]' }, { quoted: msg });
       const listing = getActiveListing(market, id);
       if (!listing) return sock.sendMessage(chatId, { text: `❌ Listing #${id} not found or expired!` }, { quoted: msg });
-      if (listing.sellerId === sender) return sock.sendMessage(chatId, { text: '❌ You cannot buy your own listing!' }, { quoted: msg });
+      if (listing.sellerId === sender || (() => { try { return require('../../rpg/utils/PlayerKey').same(db, listing.sellerId, sender); } catch (e) { return false; } })()) return sock.sendMessage(chatId, { text: '❌ You cannot buy your own listing!' }, { quoted: msg });
       if ((player.gold || 0) < listing.price) {
         return sock.sendMessage(chatId, { text: `❌ Not enough Nexus!\nNeed: ${listing.price.toLocaleString()} 💠 | Have: ${(player.gold||0).toLocaleString()} 💠` }, { quoted: msg });
       }
@@ -177,7 +177,7 @@ module.exports = {
       const sellerGet = listing.price - tax;
       player.gold    -= listing.price;
       try { require('../../rpg/utils/TransactionLog').logTransaction(player, { type: 'market_buy', amount: listing.price, currency: '💠', note: `bought ${listing.item?.name || `item #${listing.id}`}` }); } catch (e) {};
-      const seller    = db.users[listing.sellerId];
+      const seller    = db.users[listing.sellerId] || (() => { try { return require('../../rpg/utils/PlayerKey').player(db, listing.sellerId); } catch (e) { return null; } })();
       if (seller) {
         seller.gold = (seller.gold || 0) + sellerGet;
         try { require('../../rpg/utils/TransactionLog').logTransaction(seller, { type: 'market_sell', amount: sellerGet, currency: '💠', note: `sold ${listing.item?.name || `item #${listing.id}`}` }); } catch (e) {};
@@ -189,14 +189,13 @@ module.exports = {
         } catch(e){}
       }
 
-      // Give item to buyer
-      _giveListingItem(player, listing.item);
-
-      // Handle artifact separately
+      // Give item to buyer — artifacts go to the artifact pouch, everything else to the bag (never both; Push #96h-z20)
       if (listing.item.type === 'artifact' || listing.item.bonus) {
         if (!player.artifacts) player.artifacts = { inventory: [], equipped: {} };
         if (!player.artifacts.inventory) player.artifacts.inventory = [];
         player.artifacts.inventory.push({ ...listing.item });
+      } else {
+        _giveListingItem(player, listing.item);
       }
 
       listing.status     = 'sold';
@@ -251,6 +250,7 @@ module.exports = {
         return sock.sendMessage(chatId, { text: `❌ Item "*${itemName}*" not found in your inventory!\n/inventory to see what you have.` }, { quoted: msg });
       }
 
+      if (itemIdx !== -1 && require('../../rpg/utils/RuneStones').isSoulbound(inv[itemIdx])) return sock.sendMessage(chatId, { text: `🔒 *${inv[itemIdx].name}* is soulbound — it cannot be listed, given or traded.` }, { quoted: msg }); // Push #96h-z20
       let item;
       if (_cm) { player.inventory[_cm.key] -= 1; item = { name: _cm.name, type: 'potion', _counterKey: _cm.key, qty: 1 }; }
       else if (itemIdx !== -1) {

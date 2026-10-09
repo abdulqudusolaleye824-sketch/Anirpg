@@ -10,10 +10,13 @@ module.exports = {
   name: 'Devourer',
   emoji: '🕳️',
     lore: 'Grows stronger with each kill. Has never stopped eating.',
-    maxBonuses: { hp: 160, atk: 55, def: 15, speed: 10, maxEnergy: 30, lifesteal: 12 },
+    // Push #96h-z20: the Devourer was the softest legendary on the floor (Lv.12 Devourers folding to Lv.10
+    // Berserkers). It is a legendary APEX PREDATOR: thick hide, real sustain, and a maw that gets hungrier.
+    maxBonuses: { hp: 210, atk: 62, def: 26, speed: 14, maxEnergy: 35, lifesteal: 16 },
     skills: [
-      { name: 'Consume',       type: 'damage',  maxPotency: 200, desc: 'Deals {p}% ATK + absorbs {p/5}% of target max HP permanently' },
-      { name: 'Hunger',        type: 'passive', maxPotency: 20,  desc: 'Each kill increases ATK by {p} permanently (this run)' },
-      { name: 'Void Maw',      type: 'damage',  maxPotency: 260, desc: 'Pulls enemies inward: {p}% ATK, ignores dodge' },
+      { name: 'Consume',       type: 'damage',  maxPotency: 220, desc: 'Deals {p}% ATK + absorbs {p/5}% of target max HP permanently · heals 30% of damage dealt' },
+      { name: 'Hunger',        type: 'passive', maxPotency: 24,  desc: 'Each kill increases ATK by {p} permanently (this run)' },
+      { name: 'Void Maw',      type: 'damage',  maxPotency: 290, desc: 'Pulls enemies inward: {p}% ATK, ignores dodge, armor penetration 30%' },
+      { name: 'Abyssal Hide',  type: 'passive', maxPotency: 18,  desc: 'Reduces all damage taken by {p}% · immune to fear · each turn restores 25 HP' },
     ],
 };

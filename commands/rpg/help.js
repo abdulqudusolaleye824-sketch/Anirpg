@@ -204,7 +204,7 @@ module.exports = {
     const viewerH = getDatabase()?.users?.[sender];
     // Push #96h-z18: COMPACT MENU — command names only (details live in /help <cmd>); Owner-only commands are hidden.
     const menuLines = [
-      `👤 *PLAYER:* /register /profile /stats /rank /inventory /balance /daily /quest /weekly /challenges /cooldowns /achievements /title /settings /timezone /xp`,
+      `👤 *PLAYER:* /register /profile /stats /rank /inventory /balance /daily /quest /box /weekly /challenges /cooldowns /achievements /title /settings /timezone /xp`,
       ``,
       `⚔️ *COMBAT:* /party /gateraid /gate /dungeon /instance /boss /skill /classcmd /attacks /flee /guard /revive /pvp /teampvp /creator`,
       ``,

@@ -25,6 +25,8 @@ const BERSERK_LEVEL = 10;
 const AFTERMATH = [{ type: 'weaken', duration: 10 }, { type: 'stun', duration: 2 }, { type: 'bleed', duration: 7 }];
 const MAX_AGE_MS = 20 * 60 * 1000;    // safety: no form outlives 20 minutes
 const STATS = ['atk', 'def', 'speed', 'maxHp'];
+const HP_MULT = 2;      // Push #96h-z20: max HP only doubles in every form (ATK/DEF/SPD keep the tier multiplier)
+const REGEN_PCT = 4;    // Push #96h-z20: +4% max HP every transformed turn
 
 function baseClass(player) {
   try { return String(require('./ClassPower').baseClassName(player) || ''); } catch (e) { return String(player?.classBase || player?.class || ''); }
@@ -61,22 +63,23 @@ function apply(player, tier, source = 'cast') {
     end(player); // upgrade: drop the weaker form first
   }
   const mult = Number(tier.mult) || 1;
+  const hpMult = HP_MULT; // Push #96h-z20: offence ×mult, but max HP only ×2 (+ a regen pulse every turn instead)
   const applied = {};
   for (const k of STATS) {
     const v = Number(player.stats[k]) || 0;
-    const add = Math.floor(v * (mult - 1));
+    const add = Math.floor(v * ((k === 'maxHp' ? hpMult : mult) - 1));
     applied[k] = add;
     player.stats[k] = v + add;
   }
   const hpBefore = Math.max(0, Number(player.stats.hp) || 0);
-  player.stats.hp = Math.min(require('./GearSystem').effectiveMaxHp(player), Math.floor(hpBefore * mult));
+  player.stats.hp = Math.min(require('./GearSystem').effectiveMaxHp(player), Math.floor(hpBefore * hpMult));
   const berserk = source === 'passive' && (player.level || 1) < BERSERK_LEVEL;
   player.transform = {
-    key: tier.key, name: skillName(tier, player), tierName: tier.name, mult, turnsLeft: tier.turns + 1, // +1: the casting turn's tick
+    key: tier.key, name: skillName(tier, player), tierName: tier.name, mult, hpMult, regenPct: REGEN_PCT, turnsLeft: tier.turns + 1, // +1: the casting turn's tick
     variant: variantName(player), startedAt: Date.now(), applied, source, berserk,
   };
   const lines = [
-    `🧬 *${player.name || 'Hunter'}* transforms — *${player.transform.name}*! ${source === 'passive' ? '(innate surge) ' : ''}×${mult} ALL STATS for ${tier.turns} turns`,
+    `🧬 *${player.name || 'Hunter'}* transforms — *${player.transform.name}*! ${source === 'passive' ? '(innate surge) ' : ''}×${mult} ATK/DEF/SPD · ×${hpMult} HP · 💚 +${REGEN_PCT}% HP regen/turn for ${tier.turns} turns`,
     ...(berserk ? [`😈 *BERSERK!* The beast is in control — *${player.name || 'Hunter'}* attacks on their own and cannot be commanded. Teammates: stand clear during their turns!`] : []),
     `⚔️ ATK ${player.stats.atk} · 🛡️ DEF ${player.stats.def} · 💨 SPD ${player.stats.speed} · ❤️ ${player.stats.hp}/${player.stats.maxHp}`,
   ];
@@ -105,7 +108,7 @@ function end(player, aftermath = false, fromTick = false) {
       player.stats[k] = Math.max(k === 'maxHp' ? 1 : 0, v - (Number(a[k]) || 0));
     }
     const hp = Number(player.stats.hp) || 0;
-    player.stats.hp = Math.max(hp > 0 ? 1 : 0, Math.min(require('./GearSystem').effectiveMaxHp(player), Math.ceil(hp / mult)));
+    player.stats.hp = Math.max(hp > 0 ? 1 : 0, Math.min(require('./GearSystem').effectiveMaxHp(player), Math.ceil(hp / (Number(t.hpMult) || mult))));
   } catch (e) {}
   delete player.transform;
   let line = `🧬 *${player.name || 'Hunter'}*'s ${t.tierName || 'transformation'} fades — back to normal form.`;
@@ -122,7 +125,12 @@ function tick(player) {
     if (Date.now() - (t.startedAt || 0) > MAX_AGE_MS) { const l = end(player, true, true); if (l) lines.push(l); return lines; }
     t.turnsLeft = (t.turnsLeft || 0) - 1;
     if (t.turnsLeft <= 0) { const l = end(player, true, true); if (l) lines.push(l); }
-    else lines.push(`🧬 ${t.tierName}${t.berserk ? ' (BERSERK)' : ''} — ${t.turnsLeft} turn${t.turnsLeft === 1 ? '' : 's'} left`);
+    else {
+      // Push #96h-z20: the transformed body knits itself — a slight regen pulse every turn (replaces the old ×5 HP pool).
+      let regenTxt = '';
+      try { const pct = Number(t.regenPct) || 0; if (pct > 0 && (player.stats.hp || 0) > 0) { const max = require('./GearSystem').effectiveMaxHp(player); const heal = Math.max(1, Math.floor(max * pct / 100)); const before = player.stats.hp; player.stats.hp = Math.min(max, before + heal); const got = player.stats.hp - before; if (got > 0) regenTxt = ` · 💚 +${got} HP`; } } catch (e) {}
+      lines.push(`🧬 ${t.tierName}${t.berserk ? ' (BERSERK)' : ''} — ${t.turnsLeft} turn${t.turnsLeft === 1 ? '' : 's'} left${regenTxt}`);
+    }
     return lines;
   }
   // Innate passive: random Quarter Transformation for any Monster-class hunter.

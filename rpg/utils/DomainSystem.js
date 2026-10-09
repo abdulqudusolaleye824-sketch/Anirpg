@@ -262,6 +262,16 @@ function shatter(arena, allies = [], enemies = []) {
   arena.domain = null;
   return d;
 }
+// Push #96h-z20: a domain dies with its owner. Call at every kill site with the fallen entity; if the arena's
+// active domain belongs to it, the field collapses at once (buffs tagged 'domain' are stripped from everyone).
+function ownerFell(arena, entity, allies = [], enemies = []) {
+  const d = active(arena); if (!d || !entity) return null;
+  const keys = new Set([entity.id, entity.jid, entity.name].filter(Boolean).map(String));
+  if (!keys.has(String(d.ownerId)) && !(d.ownerName && keys.has(String(d.ownerName)))) return null;
+  shatter(arena, allies, [...enemies, entity]);
+  releaseShield(entity);
+  return `🌫️ *${d.name}* collapses with its master — the field returns to normal.`;
+}
 // Per-round bookkeeping: call once per combat round from every engine.
 // Push #96h-t: in a PARTY raid a "turn" is one full ROUND (every living hunter
 // acted once), not every single attack — a 6-turn domain used to vanish after
@@ -584,4 +594,4 @@ function findBattle(player, sender, db) {
   return null;
 }
 
-module.exports = { releaseShield, domainVariance, DOMAIN_TTL_MS, CASTER_REGEN_PCT, costFor, CLASS_KITS, kitFor, SKILL_DOMAINS, BREAK, splitMessages, sendDomain, FAMILY_DOMAINS, isShielded, shieldLine, monsterDomainInfo, MONSTER_DOMAINS, setupStep, setupPrompt, handleSetupReply, rename, pvpArena, endPvpArena, findBattle, CAST_ENERGY, MAX_LEVEL, UP_SHARE_CAP, ARCHETYPES, CLASS_DOMAINS, STAT_LABEL, effectFor, scale, turnsFor, costToNext, ensure, has, unlock, scaledEffect, describe, power, upgrade, arenaOf, active, shatter, tick, expand, monsterPower, monsterEligible, monsterTry, onLevelUp, shareUP };
+module.exports = { releaseShield, ownerFell, domainVariance, DOMAIN_TTL_MS, CASTER_REGEN_PCT, costFor, CLASS_KITS, kitFor, SKILL_DOMAINS, BREAK, splitMessages, sendDomain, FAMILY_DOMAINS, isShielded, shieldLine, monsterDomainInfo, MONSTER_DOMAINS, setupStep, setupPrompt, handleSetupReply, rename, pvpArena, endPvpArena, findBattle, CAST_ENERGY, MAX_LEVEL, UP_SHARE_CAP, ARCHETYPES, CLASS_DOMAINS, STAT_LABEL, effectFor, scale, turnsFor, costToNext, ensure, has, unlock, scaledEffect, describe, power, upgrade, arenaOf, active, shatter, tick, expand, monsterPower, monsterEligible, monsterTry, onLevelUp, shareUP };

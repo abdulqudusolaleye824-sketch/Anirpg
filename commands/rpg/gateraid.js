@@ -187,6 +187,7 @@ module.exports = {
     // Bind the raid to this dungeon GC
     keyData.dungeonChatId = chatId;
     const gc = GR.GKM.getDungeonGC(chatId);
+    if (gc && gc.activeKeyId && gc.activeKeyId !== key) GR.releaseStaleGC(chatId, db); // Push #96h-z20: dead key never blocks a new raid
     if (gc && gc.activeKeyId && gc.activeKeyId !== key) {
       return sock.sendMessage(chatId, { text: '❌ This dungeon GC already has an active gate raid. Clear it first.' }, { quoted: msg });
     }
@@ -741,6 +742,7 @@ module.exports = {
       }
       const atkTitle = atkPattern ? `🥋 *ATTACK PATTERN #${atkPattern.id} — ${atkPattern.name}* [${atkPattern.rank}]` : `⚔️ *PLAYER ATTACK*`;
       const monWrap = { name: target.name, stats: { hp: target.hp, maxHp: target.maxHp }, statusEffects: target.statusEffects };
+      const _hpBeforeHit = target.hp; // Push #96h-z20: overkill never heals more than the HP that was there
       if (!_statusKilled) await UCgFlow.playTurn(sock, chatId, {
         attacker: player, defender: monWrap, move: _gmMove, result: _gmResult,
         tag: atkTitle, defenderBar: 'monster', gapMs: 600,
@@ -752,6 +754,8 @@ module.exports = {
         if (_su && NX.isRuin(_su)) { const _liv = (gate.raid?.members || []).length || 1; const _d = NX.scaleRuinToRounds(target, _liv); if (_d) _nl.push(`💀 *CURSE OF RUIN* on *${target.name}* — ATK −${NX.RUIN.atkCut}% · takes +${NX.RUIN.takenUp}% damage for ${NX.RUIN.rounds} rounds (${_d - 1} hunter turns)`); }
         if (_nl.length) await sock.sendMessage(chatId, { text: _nl.join('\n') });
       } catch (e) {}
+      // Push #96h-z20: lifesteal contract ("heals for X% of damage dealt") — paid on the damage that actually landed.
+      try { if (result.lifestealPct > 0 && (result.damage || 0) > 0 && !result.missed) { const _ls = require('../../rpg/utils/SkillCatalog').applyLifesteal({ name: result.entryName || result.skillUsed?.name, lifestealPct: result.lifestealPct }, player, Math.min(result.damage, _hpBeforeHit || result.damage), _effMax); if (_ls.line) await sock.sendMessage(chatId, { text: _ls.line }); } } catch (e) {}
       // Push #71: recovery skills report the HP they actually restored.
       if (Array.isArray(result.hpPercentLines) && result.hpPercentLines.length) await sock.sendMessage(chatId, { text: result.hpPercentLines.join('\n') });
       else if (result.healed > 0) await sock.sendMessage(chatId, { text: `💚 *${result.skillUsed?.name || 'Recovery'}* restored *${result.healed}* HP → ${player.stats.hp}/${_effMax(player)}` });
@@ -798,8 +802,9 @@ module.exports = {
         // advancing) give NO rewards — no Nexus/EXP, no drops, no pet XP, no treasure.
         const _revivedKill = !!target.revived;
         if (_revivedKill) killLines.push(``, `💀 *${target.name}* (revived) defeated — *no rewards*, it was already beaten once.`);
+        try { const _df = require('../../rpg/utils/DomainSystem').ownerFell(gate, target, GR.livingMembers ? GR.livingMembers(gate, db) : [player]); if (_df) killLines.push(_df); } catch (e) {} // Push #96h-z20: domain dies with its master
         try { const _sc = require('../../rpg/utils/ShadowArmy').registerCorpse(player, target, 'gate'); if (_sc) { killLines.push(_sc); _shadowOffer = true; } } catch (e) {} // Push #96h-z19
-        if (!_revivedKill) try { const BR=require('../../rpg/utils/BattleRewards'); const w=BR.giveBattleWinRewards(player, db, 'gate', player.level, sock, chatId); killLines.push(``, `💀 *${target.name}* defeated!`, BR.formatRewards(w)); try { const _sx = BR.shareRaidExp(gate, sender, db, sock, chatId); if (_sx) killLines.push(_sx); } catch (e) {} } catch(e){ awardXP(player, 'gate_complete', saveDatabase, sock, chatId); killLines.push(``, `💀 *${target.name}* defeated!`); }
+        if (!_revivedKill) try { const BR=require('../../rpg/utils/BattleRewards'); const w=BR.giveBattleWinRewards(player, db, 'gate', player.level, sock, chatId, { lootMult: (gate.isDouble || gate.redGate) ? 1.5 : 1 }); killLines.push(``, `💀 *${target.name}* defeated!`, BR.formatRewards(w)); try { const _sx = BR.shareRaidExp(gate, sender, db, sock, chatId); if (_sx) killLines.push(_sx); } catch (e) {} } catch(e){ awardXP(player, 'gate_complete', saveDatabase, sock, chatId); killLines.push(``, `💀 *${target.name}* defeated!`); }
 
         const heal = GR.lifeSteal(player, result.damage);
         if (heal > 0) { player.stats.hp = Math.min(_effMax(player), (player.stats.hp || 0) + heal); killLines.push(`💚 Lifesteal: +${heal} HP`); }
@@ -1055,8 +1060,9 @@ module.exports = {
         if (topRaider && topRaider[0] === sender) AuraSystem.addAura(player, 'topRaider');
 
         awardXP(player, 'gate_boss', saveDatabase, sock, chatId);
+        try { const _df = require('../../rpg/utils/DomainSystem').ownerFell(gate, boss, GR.livingMembers ? GR.livingMembers(gate, db) : [player]); if (_df) out.push(_df); } catch (e) {} // Push #96h-z20
         try { const _sc = require('../../rpg/utils/ShadowArmy').registerCorpse(player, { ...boss, isBoss: true }, 'gate-boss'); if (_sc) { out.push(_sc); _shadowOffer = true; } } catch (e) {} // Push #96h-z19
-        try { const BRb=require('../../rpg/utils/BattleRewards'); const wb=BRb.giveBattleWinRewards(player, db, 'gate', player.level, sock, chatId, { boss: true }); out.push(BRb.formatRewards(wb)); try { const _sx = BRb.shareRaidExp(gate, sender, db, sock, chatId); if (_sx) out.push(_sx); } catch (e) {} } catch(e){}
+        try { const BRb=require('../../rpg/utils/BattleRewards'); const wb=BRb.giveBattleWinRewards(player, db, 'gate', player.level, sock, chatId, { boss: true, lootMult: (gate.isDouble || gate.redGate) ? 1.5 : 1 }); out.push(BRb.formatRewards(wb)); try { const _sx = BRb.shareRaidExp(gate, sender, db, sock, chatId); if (_sx) out.push(_sx); } catch (e) {} } catch(e){}
 
         // Final-blow boss loot → the killer
         const bossDropLines = [];
@@ -1189,9 +1195,10 @@ module.exports = {
         result: { damage: result.damage, crit: !!result.isCrit, missed: false },
         tag: `🏆 *BOSS BATTLE*\n💀 *${boss.name}*`, defenderBar: 'boss', gapMs: 600,
       });
-      boss.hp = Math.max(0, bossWrap.stats.hp);
+      const _bossHpBefore = boss.hp; boss.hp = Math.max(0, bossWrap.stats.hp);
 
       const lines = [];
+      try { if (result.lifestealPct > 0 && (result.damage || 0) > 0 && !result.missed) { const _ls = require('../../rpg/utils/SkillCatalog').applyLifesteal({ name: result.entryName || result.skillUsed?.name, lifestealPct: result.lifestealPct }, player, Math.min(result.damage, _bossHpBefore || result.damage), _effMax); if (_ls.line) lines.push(_ls.line); } } catch (e) {} // Push #96h-z20
       try { const NX = require('../../rpg/utils/Necromancy'); const _su = result.skillUsed;
         if (_su && NX.isSoulDrain(_su) && (result.damage || 0) > 0 && !result.missed) { const _h = Math.floor(result.damage * 0.5); const _bh = player.stats.hp; player.stats.hp = Math.min(_effMax(player), _bh + _h); lines.push(`🩸 Soul Drain: +${player.stats.hp - _bh} HP`); }
         if (_su && NX.isRuin(_su)) { const _tg = boss; const _liv = (gate.raid?.members || []).length || 1; const _d = NX.scaleRuinToRounds(_tg, _liv); if (_d) lines.push(`💀 *CURSE OF RUIN* — ATK −${NX.RUIN.atkCut}% · takes +${NX.RUIN.takenUp}% damage for ${NX.RUIN.rounds} rounds (${_d - 1} hunter turns)`); }

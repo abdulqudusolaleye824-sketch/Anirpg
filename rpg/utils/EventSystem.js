@@ -396,6 +396,7 @@ function attackMonster(db, player, targetId, skillName = null) {
   if (res.skillUsed) st.skillsUsed++; if (crit) st.crits++;
   const _mHpBefore = m.hp;
   m.hp = Math.max(0, m.hp - dmg); m.lastHit = Date.now(); m._regenAt = 0; st.dmg += dmg;
+  try { if (res.lifestealPct > 0 && dmg > 0 && !res.missed) { const _ls = require('./SkillCatalog').applyLifesteal({ name: res.entryName || (res.skillUsed && res.skillUsed.name), lifestealPct: res.lifestealPct }, P, Math.min(dmg, _mHpBefore)); if (_ls.line) lines.push(_ls.line); } } catch (e) {} // Push #96h-z20
   // Push #96h-x: full dungeon-style presentation — the command layer plays this through UnifiedCombat.playTurn.
   const flow = { hunter: { name: _name(player), player: P }, monster: { name: `${m.name} #${m.id}`, hp: _mHpBefore, maxHp: m.maxHp, statusEffects: m.statusEffects || [] },
     move: res.skillUsed ? { name: res.skillUsed.name, description: res.skillUsed.description || 'A class skill unleashed on the island.', cooldownMs: (res.skillUsed.cooldown || 3) * 1000, effect: (res.skillUsed.effect && typeof res.skillUsed.effect === 'object' && res.skillUsed.effect.type) ? res.skillUsed.effect : null, isSkill: true } : null,

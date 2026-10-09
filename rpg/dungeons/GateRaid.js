@@ -119,6 +119,7 @@ function playerDamage(player, skillName = null, target = null) {
       healingPct: _healPct,
       healed: healed + (_hpx.healed || 0),
       hpPercentLines: _hpx.lines, drained: _hpx.drained, hpCost: _hpx.cost,
+      lifestealPct: Number(entry && entry.lifestealPct) || 0, entryName: entry && entry.name, // Push #96h-z20: engines siphon AFTER the real hit lands
       synergyNotes,
       buffs: (entry && entry.buffs) || [],
       debuffs: (entry && entry.debuffs) || [], selfDebuffs: (entry && entry.selfDebuffs) || [], // Push #96h-k: "-40% enemy DEF" lands
@@ -252,6 +253,12 @@ function monsterDamage(monster, def, player = null) {
       // Push #93: a monster under Curse of Ruin hits for −70%; Bone Wall / shields absorb.
       try { const NX = require('../utils/Necromancy'); raw = raw * NX.ruinAtkMult(monster); const ab = NX.absorb(player, Math.floor(raw)); if (ab.absorbed) { monsterDamage.last.absorbed = ab.absorbed; monsterDamage.last.shieldLine = NX.shieldLine(ab, player.name || 'Hunter'); raw = ab.dmg; } } catch (e) {}
       // Push #94: reflect — part of the landed hit bounces back onto the monster.
+      // Push #96h-z20: a LEAKED beast may carry insta-kill stats, but it never one-shots. A hunter standing
+      // above 25% HP always survives a leak's hit with at least 1 HP (a mortally wounded hunter can still fall).
+      if (monster.leaked) {
+        const _hpNow = Number(player.stats?.hp) || 0, _mx = Number(player.stats?.maxHp) || 100;
+        if (_hpNow > _mx * 0.25 && Math.floor(raw) >= _hpNow) { raw = Math.max(1, _hpNow - 1); monsterDamage.last.leakSpared = true; }
+      }
       try { if (raw > 0 && player.tempBuffs && player.tempBuffs.reflect) { const _rf = require('../utils/UnifiedCombat').reflectDamage(player, monster, Math.floor(raw)); if (_rf) { monsterDamage.last.reflected = _rf.back; monsterDamage.last.shieldLine = [monsterDamage.last.shieldLine, _rf.line].filter(Boolean).join('\n'); if (monster.hp <= 0) monster.hp = 1; } } } catch (e) {}
       return Math.max(0, Math.floor(raw));
     } catch (e) {}
@@ -303,6 +310,34 @@ function saveGateState(db, gate) {
     if (!db.activeGates) db.activeGates = {};
     db.activeGates[gate.id] = gate; // live ref — serialised at save time
   } catch (e) {}
+}
+
+// Push #96h-z20: is the key a dungeon GC is holding still a LIVE raid? A wiped / cleared / expired / vanished
+// gate must never hold a GC hostage ("already has an active gate raid" after everyone died in a double dungeon).
+function keyStillLive(key, db = null) {
+  try {
+    const k = String(key || '').toUpperCase(); if (!k) return false;
+    const kd = GKM.getKey(k, db) || (db && db.gateKeys && db.gateKeys[k]) || null;
+    if (!kd) return false;
+    if (kd.claimed || kd.raidComplete || kd.expired || kd.burnedAt || (kd.expiresAt && Date.now() > kd.expiresAt)) return false;
+    const g = GateManager.getGate(kd.gateId) || (db && db.activeGates && db.activeGates[kd.gateId]) || null;
+    if (!g) return !!kd.raidStarted && Date.now() - (kd.raidStartedAt || kd.usedAt || kd.createdAt || 0) < 2 * 3600e3; // no snapshot: give a fresh raid 2 h
+    if (g.cleared || g.broken) return false;
+    const st = String((g.raid && g.raid.status) || '');
+    if (g.raid && !/^(recruiting|active)$/.test(st)) return false;
+    if (g.raid && st === 'active' && Date.now() - (g.raid.lastTurnAt || g.raid.startedAt || 0) > 3 * 3600e3) return false; // abandoned for 3 h
+    return true;
+  } catch (e) { return false; }
+}
+// Free a dungeon GC whose held key is dead. Returns true when it was released.
+function releaseStaleGC(chatId, db) {
+  try {
+    const gc = GKM.getDungeonGC(chatId); if (!gc || !gc.activeKeyId) return false;
+    if (keyStillLive(gc.activeKeyId, db)) return false;
+    gc.activeKeyId = null; try { if (db && db.dungeonGCs && db.dungeonGCs[chatId]) db.dungeonGCs[chatId].activeKeyId = null; } catch (e) {}
+    try { GKM.saveGCsToDb(db); } catch (e) {}
+    return true;
+  } catch (e) { return false; }
 }
 
 function resolveCode(code, db = null) {
@@ -382,7 +417,7 @@ function resolveCode(code, db = null) {
     }
   }
   // FIX: if gate was marked broken but key still valid, revive it (fixes premature break)
-  if (gate.broken && !gate.cleared && keyData && !keyData.expired && Date.now() < keyData.expiresAt && !keyData.raidComplete) {
+  if (gate.broken && !gate.wiped && !gate.cleared && keyData && !keyData.expired && Date.now() < keyData.expiresAt && !keyData.raidComplete) {
     gate.broken = false;
     gate.active = true;
     gate.breakTime = keyData.expiresAt;
@@ -479,7 +514,8 @@ function wipeGate(gate, key, keyData, chatId, db) {
   } catch (e) {}
   try { for (const m of (gate.raid && gate.raid.members) || []) { const u = db?.users?.[m.id] || findUserByBare(db, m.id); if (u) { u.stats_history = u.stats_history || {}; u.stats_history.raidsWiped = (u.stats_history.raidsWiped || 0) + 1; } } } catch (e) {} // Push #96h-u
   try {
-    if (gate.raid) { gate.raid.status = 'wiped'; gate.raid.clearedAt = Date.now(); }
+    if (gate.raid) { gate.raid.status = 'wiped'; gate.raid.clearedAt = Date.now(); gate.raid.endedAt = Date.now(); }
+    gate.active = false; gate.broken = true; gate.wiped = true; gate.brokenAt = Date.now(); gate.doublePending = false; // Push #96h-z20: a wiped gate is DONE wherever a reference lingers
     if (db?.activeGates) delete db.activeGates[gate.id];
     try { delete GateManager.activeGates[gate.id]; } catch (e) {}
     try {
@@ -493,8 +529,8 @@ function wipeGate(gate, key, keyData, chatId, db) {
       || (keyData?.dungeonChatId ? GKM.getDungeonGC(keyData.dungeonChatId) : null);
     if (gc) { gc.activeKeyId = null; try { GKM.saveGCsToDb(db); } catch (e) {} }
     if (keyData) {
-      keyData.raidStarted = false;
-      try { if (db?.gateKeys?.[key]) db.gateKeys[key].raidStarted = false; } catch (e) {}
+      keyData.raidStarted = false; keyData.raidComplete = true; keyData.wiped = true; // Push #96h-z20: single-use — a wiped key can't revive the gate
+      try { if (db?.gateKeys?.[key]) { db.gateKeys[key].raidStarted = false; db.gateKeys[key].raidComplete = true; db.gateKeys[key].wiped = true; } } catch (e) {}
     }
   } catch (e) { console.error('wipeGate error:', e.message); }
   return [
@@ -1306,8 +1342,18 @@ function clearGate(gate, key, keyData, db, saveDatabase, opts = {}) {
   const raiders = raid.members?.length ? raid.members : [];
   try { require('../utils/CombatReset').clearParty(db, raiders); } catch (e) {} // Push #92: battle over → clean slate
 
-  const nexus   = Math.floor(gate.nexusLoot || 0);
-  const crystals = Math.floor(gate.crystalLoot || 0);
+  // Push #96h-z20: LOOT MULTIPLIERS — Double Dungeon / Red Gate pay +50%; and a 0.01% JACKPOT multiplies the
+  // clear by anything from ×2 UP TO ×10 (never a flat ×10). Rolled once per clear, shown in the loot card.
+  let _lootMult = 1; const _lootNotes = [];
+  if (gate.isDouble) { _lootMult *= 1.5; _lootNotes.push('🚫 Double Dungeon +50%'); }
+  else if (gate.redGate) { _lootMult *= 1.5; _lootNotes.push('🟥 Red Gate +50%'); }
+  if (!keepOpen && !gate._jackpotRolled) {
+    gate._jackpotRolled = true;
+    if (Math.random() < 0.0001) { const jx = 2 + Math.floor(Math.random() * 9); _lootMult *= jx; _lootNotes.push(`🎰 *JACKPOT ×${jx}!*`); gate.jackpotMult = jx; }
+  }
+  gate.lootMult = _lootMult; gate.lootNotes = _lootNotes;
+  const nexus   = Math.floor((gate.nexusLoot || 0) * _lootMult);
+  const crystals = Math.floor((gate.crystalLoot || 0) * _lootMult);
 
   const guild = keyData?.guildName ? GKM.findGuild(db, keyData.guildName) : null;
   const participantIds = new Set(raiders.map(m => m.id));
@@ -1400,6 +1446,7 @@ function clearGate(gate, key, keyData, db, saveDatabase, opts = {}) {
     }
   }
 
+  if (_lootNotes.length && destinationText) destinationText += ` · ${_lootNotes.join(' · ')}`;
   const wildPet = spawnWildPet(gate);
   let wildToken = null;
   if (wildPet && db) {
@@ -1615,6 +1662,7 @@ function hunterFalls(gate, memberId, u, db) {
   const _n = GKM.normaliseJid(memberId);
   const m = (raid.members || []).find(x => x.id === memberId || GKM.normaliseJid(x.id) === _n);
   u.stats.hp = 1;
+  try { require('../utils/CombatReset').clearForBattle(u); } catch (e) {} // Push #96h-z20
   u.stats_history = u.stats_history || {}; u.stats_history.gateDeaths = (u.stats_history.gateDeaths || 0) + 1;
   const loss = Math.floor((u.manaCrystals || 0) * 0.15); u.manaCrystals = Math.max(0, (u.manaCrystals || 0) - loss);
   raid.members = (raid.members || []).filter(x => x !== m && (!_n || GKM.normaliseJid(x.id) !== _n));
@@ -1795,7 +1843,7 @@ module.exports = { LEAK_MULT, LEAK_ATK_CUT, LEAK_REGEN_CHANCE: 0.90, LEAK_DOMAIN
   tryCombatLock,
   hunterFalls, markFallen, isFallen, clearFallen, reviveFallen, FALLEN_TEXT, effectiveDef, IDLE_STRIKE_BY_RANK, rankSoften, reviveFloor, reviveStaleFloors, FLOOR_REVIVE_MS, FLOOR_REVIVE_MULT, berserkHunters, monsterCritChance, monsterDodgeChance, monsterDodges, critMultFor, noteRaidTurn, autoStrikeIdleRaids, IDLE_STRIKE_MS, IDLE_STRIKE_OTHER_MS, idleStrikeMsFor, raidInitiativeChance, raidMonsterGoesFirst, RAID_X2,
   releaseCombatLock,
-  wipeGate,
+  wipeGate, keyStillLive, releaseStaleGC,
   applyMonsterScaling, floorMultiplier, severityLabel, markHealerAggro, pickAggroTarget, supportCast,
   GKM,
   GateManager,

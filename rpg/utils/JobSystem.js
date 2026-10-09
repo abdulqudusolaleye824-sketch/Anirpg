@@ -166,7 +166,9 @@ function gainXp(player, amount, why) {
   let to = from;
   while (to < 5 && j.xp >= JOB_XP_PER_LEVEL[to]) to++;
   j.level = to;
-  return { gained: add, levelUp: to > from, from, to, why: why || '', name: BY_KEY[j.key].name, title: BY_KEY[j.key].levels[to - 1] };
+  let runeStones = [];
+  if (to > from) { try { runeStones = require('./RuneStones').onJobLevel(player, j.key, from, to); } catch (e) {} } // Push #96h-z20: job skills arrive as soulbound rune stones
+  return { gained: add, levelUp: to > from, from, to, why: why || '', name: BY_KEY[j.key].name, title: BY_KEY[j.key].levels[to - 1], runeStones };
 }
 const XP_FOR = { pvp: 60, dungeon: 45, gate: 55, instance: 30, kill: 6, floor: 12, boss: 120, generic: 25 };
 function xpFor(type) { return XP_FOR[type] || XP_FOR.generic; }
@@ -191,7 +193,8 @@ function setJob(player, job, opts = {}) {
   if (j.key) j.history.push({ key: j.key, level: j.level, xp: j.xp, left: Date.now() });
   const prev = j.history.find(h => h.key === job.key); // returning to an old job keeps its progress
   j.key = job.key; j.level = prev ? Math.max(1, prev.level) : 1; j.xp = prev ? prev.xp : 0; j.since = Date.now();
-  return { ok: true, job, level: j.level };
+  let runeStones = []; try { runeStones = require('./RuneStones').onJobLevel(player, job.key, 0, j.level); } catch (e) {} // Push #96h-z20: Job Lv1 skill → rune stone
+  return { ok: true, job, level: j.level, runeStones };
 }
 
 function describeMods(job, lv) {
@@ -241,4 +244,6 @@ function petMult(playerId) { const p = byId(playerId); return p ? 1 + mod(p, 'pe
 function bondMult(playerId) { const p = playerId && typeof playerId === 'object' ? playerId : byId(playerId); return p ? 1 + mod(p, 'bondGain') / 100 : 1; } // Push #96: Beast Tamer bonds faster
 function petHealMult(playerId) { const p = byId(playerId); return p ? 1 + mod(p, 'petHeal') / 100 : 1; }
 
-module.exports = { unlockedKeys, isUnlocked, nextQuestJob, questable, unlock, setPlayerLookup, byId, petMult, petHealMult, bondMult, noteStruck, targetMult, noteHit, JOBS, BY_KEY, JOB_XP_PER_LEVEL, MOD_LABEL, findJob, ensure, current, level, available, isAvailable, mods, mod, gainXp, xpFor, xpToNext, setJob, describeMods, card };
+// Push #96h-z20: one line per rune stone granted by a job level-up / job change (announce in chat).
+function runeLines(r) { try { return ((r && r.runeStones) || []).filter(Boolean).map(st => `🪨 *Rune Stone forged:* ${st.skill} — soulbound, in your bag (/skills)`); } catch (e) { return []; } }
+module.exports = { runeLines, unlockedKeys, isUnlocked, nextQuestJob, questable, unlock, setPlayerLookup, byId, petMult, petHealMult, bondMult, noteStruck, targetMult, noteHit, JOBS, BY_KEY, JOB_XP_PER_LEVEL, MOD_LABEL, findJob, ensure, current, level, available, isAvailable, mods, mod, gainXp, xpFor, xpToNext, setJob, describeMods, card };

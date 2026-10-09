@@ -686,6 +686,7 @@ function normalise(className, raw, index) {
     drainPct: _hpPct.drain || 0,
     drainHealPct: _hpPct.drainHeal || 0,
     selfCostPct: _hpPct.cost || 0,
+    lifestealPct: _lifestealPct(effect, desc, parsed), // Push #96h-z20: "heals for X% of damage dealt" is a CONTRACT every engine pays
     buffs: parsed.buffs || [],
     debuffs: parsed.debuffs || [],
     selfDebuffs: parsed.selfDebuffs || [],
@@ -807,7 +808,7 @@ function buildRoster(className, variant = null) {
       const idx = roster.findIndex(e => e && String(e.name).toLowerCase() === oldName.toLowerCase());
       if (idx < 0) continue;
       const { rename, ...rest } = o;
-      roster[idx] = { ...roster[idx], ...rest, name: rename || roster[idx].name, isPassive: false, reforged: true };
+      roster[idx] = { ...roster[idx], ...rest, name: rename || roster[idx].name, isPassive: false, reforged: true, lifestealPct: _lifestealPct(rest.effect || roster[idx].effect, '', null) };
     }
   } catch (e) {}
   _rosterCache.set(cacheKey, roster);
@@ -900,7 +901,7 @@ function toPlayerSkill(player, entry) {
     buffs: entry.buffs,
     debuffs: entry.debuffs, selfDebuffs: entry.selfDebuffs || [],
     healingPct: entry.healingPct,
-    drainPct: entry.drainPct || 0, drainHealPct: entry.drainHealPct || 0, selfCostPct: entry.selfCostPct || 0,
+    drainPct: entry.drainPct || 0, drainHealPct: entry.drainHealPct || 0, selfCostPct: entry.selfCostPct || 0, lifestealPct: entry.lifestealPct || 0,
     isPassive: entry.isPassive,
   };
 }
@@ -1232,6 +1233,39 @@ function resetPlayerSkills(player) {
 }
 
 
+// ── Push #96h-z20: LIFESTEAL contract ──────────────────────────────────────
+// "Heal for 50% of damage dealt", "heals you for half the damage dealt", "35% lifesteal", "restores 20% of
+// damage as HP" → lifestealPct. Applied by every engine AFTER the real damage is known (applyLifesteal).
+function _lifestealPct(effect, desc, parsed) {
+  const txt = `${effect || ''}\n${desc || ''}`;
+  const lines = txt.split('\n');
+  let pct = 0;
+  for (const raw of lines) {
+    const l = raw.toLowerCase();
+    if (!/damage|lifesteal|leech|siphon/.test(l)) continue;
+    if (/per turn|\/turn|over time|enemy heal|target heal|their heal|reduces? heal|damage taken|no heal|cannot heal|can't heal/.test(l)) continue;
+    let m = l.match(/(?:heal|heals|restore|restores|recover|recovers|regain|regains|gain|gains|drain|drains|steal|steals|siphon|siphons|absorb|absorbs|converts?)[^%\n]{0,24}?(\d{1,3})\s*%\s*(?:of\s+)?(?:the\s+)?(?:total\s+)?damage(?:\s+dealt)?/);
+    if (!m) m = l.match(/(\d{1,3})\s*%\s*(?:of\s+)?(?:the\s+)?damage(?:\s+dealt)?\s*(?:is\s+)?(?:(?:as|into|to)\s+(?:hp|health|life)|returned|back|restored|healed|heals|lifesteal)/);
+    if (!m) m = l.match(/(\d{1,3})\s*%\s*lifesteal|lifesteal[^%\n]{0,12}?(\d{1,3})\s*%/);
+    if (m) { pct = Math.max(pct, parseInt(m[1] || m[2], 10) || 0); continue; }
+    if (/(?:heal|heals|restore|restores|recover|recovers)[^\n]{0,20}?\b(?:half|50%)\b[^\n]{0,12}?damage/.test(l)) { pct = Math.max(pct, 50); continue; }
+    if (/(?:heal|heals|restore|restores|recover|recovers)[^\n]{0,20}?\b(?:a third|third)\b[^\n]{0,12}?damage/.test(l)) { pct = Math.max(pct, 33); continue; }
+    if (/(?:heal|heals|restore|restores|recover|recovers)[^\n]{0,20}?\b(?:a quarter|quarter)\b[^\n]{0,12}?damage/.test(l)) { pct = Math.max(pct, 25); continue; }
+    if (/\blifesteal\b/.test(l) && !/\d\s*%/.test(l)) pct = Math.max(pct, 30);
+  }
+  if (!pct && /\blifesteal\b|\bvampiric\b/i.test(txt) && !/no heal/i.test(txt)) { try { const sp = (parsed && parsed.special || []).find(x => x && x.type === 'lifesteal'); if (sp && sp.amount) pct = Number(sp.amount) || 0; } catch (e) {} }
+  return Math.max(0, Math.min(100, pct));
+}
+function applyLifesteal(entry, caster, dmg, effMaxOf) {
+  const pct = Number(entry && entry.lifestealPct) || 0; const d = Math.floor(Number(dmg) || 0);
+  if (/soul drain/i.test(String(entry && entry.name || ''))) return { healed: 0, line: '' }; // Necromancy pays Soul Drain itself
+  if (!pct || d <= 0 || !caster || !caster.stats || (caster.stats.hp || 0) <= 0) return { healed: 0, line: '' };
+  let max = caster.stats.maxHp || 100; try { max = (effMaxOf && effMaxOf(caster)) || max; } catch (e) {}
+  const before = caster.stats.hp || 0; caster.stats.hp = Math.min(max, before + Math.max(1, Math.floor(d * pct / 100)));
+  const healed = caster.stats.hp - before;
+  return { healed, line: healed > 0 ? `🩸 *${entry.name}* siphons *${healed}* HP (${pct}% of damage) → ${caster.stats.hp}/${max}` : '' };
+}
+
 // ── Push #88b: exact %-HP contract applied by every engine ──────────────────
 // Returns { drained, healed, cost, lines[] }. Applies ONLY the stated numbers:
 //   drainPct     → removes that % of TARGET max HP (never below 1 HP)
@@ -1306,7 +1340,7 @@ module.exports = { CLASS_POWER, supportMult, scaleEntry,
   augmentContract,
   parseSupportFields, applySupportFields,
   snapshotSkillProgress, carrySkillProgress,
-  applyHpPercents,
+  applyHpPercents, applyLifesteal, _lifestealPct,
   SKILLS_PER_CLASS, UNLOCK_STEP, MAX_SKILL_LEVEL, SUPPORTED_STATUS,
   canonicalClassName, buildRoster, getRoster, EXPLICIT,
   isUnlockedFor, syncPlayerSkills, resolveSkill,

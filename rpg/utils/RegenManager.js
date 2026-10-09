@@ -15,41 +15,56 @@
  * ═══════════════════════════════════════════════════════════════
  */
 
+// Push #96h-z20: a battle record is only "live" for so long. Abandoned / orphaned state (a solo fight nobody
+// finished, a PvP challenge from last night, a wiped raid still listing a member) used to lock hunters out of
+// the shop and tell them they were "in a raid" forever. Stale records are cleared, not honoured.
+const STALE_SOLO_MS = 45 * 60e3, STALE_PVP_MS = 30 * 60e3, STALE_RAID_MS = 3 * 3600e3;
+function _age(rec) { if (!rec || typeof rec !== 'object') return 0; const t = Number(rec.lastActionAt || rec.lastTurnAt || rec.updatedAt || rec.startedAt || rec.createdAt || rec.timestamp || rec.at) || 0; return t ? Date.now() - t : 0; }
+
 function checkInBattle(player, db) {
   if (!player) return null;
   const pId = player.id || player.jid;
+  const _bare = String(pId || '').split(':')[0].split('@')[0];
+  const _me = (j) => j === pId || String(j || '').split(':')[0].split('@')[0] === _bare || !!(db && db.lidMap && db.lidMap[String(j || '').split(':')[0].split('@')[0]] === _bare);
 
   // Solo dungeon battle
   if (player.dungeon?.currentBattle) {
-    return { type: 'dungeon_solo', battle: player.dungeon.currentBattle };
+    const b = player.dungeon.currentBattle;
+    if (_age(b) > STALE_SOLO_MS || (b.monster && b.monster.hp <= 0 && !b.monster.alive)) player.dungeon.currentBattle = null;
+    else return { type: 'dungeon_solo', battle: b };
   }
 
   // Boss battle
   if (player.boss?.currentBattle || player.currentBossBattle) {
-    return { type: 'boss', battle: player.boss?.currentBattle || player.currentBossBattle };
+    const b = player.boss?.currentBattle || player.currentBossBattle;
+    if (_age(b) > STALE_SOLO_MS) { if (player.boss) player.boss.currentBattle = null; player.currentBossBattle = null; }
+    else return { type: 'boss', battle: b };
   }
 
   // PvP battle
   if (player.pvpBattle) {
-    return { type: 'pvp', battle: player.pvpBattle };
+    if (_age(player.pvpBattle) > STALE_PVP_MS) player.pvpBattle = null;
+    else return { type: 'pvp', battle: player.pvpBattle };
   }
 
   if (db?.pendingChallenges) {
-    const activeChallenge = Object.values(db.pendingChallenges).find(
-      c => c.active && (c.challenger === pId || c.target === pId)
-    );
-    if (activeChallenge) return { type: 'pvp', battle: activeChallenge };
+    for (const [k, c] of Object.entries(db.pendingChallenges)) {
+      if (!c || !c.active || !(_me(c.challenger) || _me(c.target))) continue;
+      if (_age(c) > STALE_PVP_MS) { delete db.pendingChallenges[k]; continue; }
+      return { type: 'pvp', battle: c };
+    }
   }
 
-  // Gate Raid
+  // Gate Raid — only a raid that is actually running counts.
   try {
-    const GateRaid = require('../dungeons/GateRaid');
     const { GateManager } = require('../dungeons/GateManager');
     for (const gate of Object.values(GateManager.activeGates || {})) {
-      if (gate && !gate.cleared && !gate.broken) {
-        if (gate.raid?.members?.some(m => m.id === pId) || (gate.raiders || []).includes(pId)) {
-          return { type: 'gateraid', battle: gate };
-        }
+      if (!gate || gate.cleared || gate.broken || gate.wiped || gate.active === false) continue;
+      const raid = gate.raid;
+      if (!raid || !/^(recruiting|active)$/.test(String(raid.status || ''))) continue;
+      if (raid.status === 'active' && _age(raid) > STALE_RAID_MS) continue;
+      if ((raid.members || []).some(m => m && _me(m.id)) || (gate.raiders || []).some(r => _me(r))) {
+        return { type: 'gateraid', battle: gate };
       }
     }
   } catch (_) {}

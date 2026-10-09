@@ -204,6 +204,7 @@ module.exports = {
       }
 
       const selected = sorted[itemNum - 1];
+      if (require('../../rpg/utils/RuneStones').isSoulbound(selected)) return sock.sendMessage(chatId, { text: `🔒 *${selected.name}* is soulbound — it cannot be given, traded or sold.` }, { quoted: msg }); // Push #96h-z20
 
       // Batch-48: counter/card items transfer 1 unit (sender→recipient).
       // Everything is transferable now — no more "bound supply".

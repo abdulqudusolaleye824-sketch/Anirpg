@@ -110,6 +110,10 @@ function serialList(player) {
     if ((cards[ckey] || 0) > 0) entries.push({ kind: 'card', name: clabel, rarity: crarity, count: cards[ckey], acquiredAt: 0, ref: { cardKey: ckey, useHint: chint } });
   }
 
+  // Push #96h-z20: bound Instance Keys live in the bag too (soulbound — never gifted / sold / listed).
+  const _jk = Math.max(0, Number(player.jobKeys) || 0);
+  if (_jk > 0) entries.push({ kind: 'key', name: 'Instance Key', rarity: 'rare', count: _jk, acquiredAt: 0, ref: { soulbound: true, useHint: '🗝️ Opens a job instance (5 floors × 10 monsters, 2 h) — /instance start' } });
+
   // Stable newest-first: dated by stamp desc, undated keep insertion order at the end
   const dated = entries.filter(e => e.acquiredAt > 0).sort((a, b) => b.acquiredAt - a.acquiredAt);
   const undated = entries.filter(e => !e.acquiredAt);
@@ -202,6 +206,14 @@ module.exports = {
         const isEquipped   = !!entry.equipped || (equippedSlot && equippedSlot === entry.ref);
         detail += `\n${isEquipped ? '✅ *EQUIPPED*' : '⭕ Not equipped'}\n`;
         if (!isEquipped) detail += `💡 /equip ${slotArg} to equip this item\n`;
+      } else if (entry.kind === 'key') {
+        detail += `\n🗝️ *INSTANCE KEY* — soulbound (cannot be gifted, sold or listed)\n${item.useHint}\n`;
+      } else if (item && item.isRuneStone) {
+        // Push #96h-z20: skills are soulbound rune stones.
+        detail += `\n🪨 *RUNE STONE* — soulbound (cannot be gifted, sold or listed)\n`;
+        detail += `✨ Skill: *${item.skill}*${item.skillKind === 'job' ? ` (job skill — ${item.job || 'job'} Lv.${item.unlockJobLevel || 1}, usable while that job is active)` : ` (class skill — Lv.${item.unlockLevel || 1})`}\n`;
+        if (item.lore) detail += `_${item.lore}_\n`;
+        detail += `💡 Cast it with /skill or /skillcmd — see /skills\n`;
       } else if (entry.kind === 'card') {
         // Registration / pro cards (batch-22) — point at the command that spends them.
         detail += `\n🃏 *CARD*\n`;
@@ -262,8 +274,9 @@ module.exports = {
           const slot = e.kind === 'gear' ? ` [${e.slot || '?'}]` : e.kind === 'weapon' ? ` [${e.ref?.weaponType || 'weapon'}]` : '';
           const dur = (e.kind === 'gear' || e.kind === 'weapon') && e.ref && e.ref.maxDurability != null ? ` 🔧${e.ref.durability ?? '?'}/${e.ref.maxDurability}` : '';
           const rk = e.ref && e.ref.rank ? ` ${e.ref.rank}` : '';
-          const emo = e.kind === 'card' ? `${rarityEmoji[e.rarity] || '⚪'}🃏` : e.kind === 'weapon' ? `${rarityEmoji[e.rarity] || '⚪'}${e.ref?.emoji || '🗡️'}` : IE.tag(e.ref || e);
-          simple += `  *${i + 1}.* ${emo}${rk} ${e.name}${slot}${cnt}${dur}${eq}\n`;
+          const emo = e.kind === 'key' ? `${rarityEmoji[e.rarity] || '⚪'}🗝️` : (e.ref && e.ref.isRuneStone) ? `${rarityEmoji[e.rarity] || '⚪'}🪨` : e.kind === 'card' ? `${rarityEmoji[e.rarity] || '⚪'}🃏` : e.kind === 'weapon' ? `${rarityEmoji[e.rarity] || '⚪'}${e.ref?.emoji || '🗡️'}` : IE.tag(e.ref || e);
+          const bound = (e.kind === 'key' || (e.ref && (e.ref.isRuneStone || e.ref.soulbound))) ? ' 🔒' : '';
+          simple += `  *${i + 1}.* ${emo}${rk} ${e.name}${slot}${cnt}${dur}${eq}${bound}\n`;
         });
       }
       simple += `\n${FRAME}\n`;
@@ -436,6 +449,12 @@ module.exports = {
       const matStr = matKeys.slice(0,5).map(k=> `${k} x${mats[k]}`).join(', ');
       message += `  🧱 Materials: ${matStr}${matKeys.length>5? ' ...':''}\n`;
     }
+    // Push #96h-z20: soulbound summary — rune stones (skills) + bound instance keys.
+    try {
+      const _runes = (player.inventory?.items || []).filter(i => i && i.isRuneStone);
+      if (_runes.length) message += `  🪨 Rune Stones: ${_runes.length} (soulbound skills) — /skills\n`;
+      if ((Number(player.jobKeys) || 0) > 0) message += `  🗝️ Instance Keys: ${Number(player.jobKeys)} (bound) — /instance start\n`;
+    } catch (e) {}
     const mending = player.inventory?.mendingStones || 0;
     if (mending>0) message += `  🛠️ Mending Stones: ${mending} — use /use mending stone to restore durability\n`;
     message += `  🎁 Item Spawns: common→epic 1/day globally (requires /set spawn --true) — claim with /claim\n`;

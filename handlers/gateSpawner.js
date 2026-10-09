@@ -345,7 +345,7 @@ class GateSpawner {
       try {
         const B = require('../utils/buttons');
         const _img = fs.existsSync(imagePath) ? fs.readFileSync(imagePath) : null;
-        if (B && B.sendButtons) { await B.sendButtons(sock, chatId, { text: caption, ...(_img ? { image: _img, mimetype: 'image/jpeg' } : {}), buttons: B.quickReplies([[`🛒 Buy ${gate.rank}-Rank Gate`.slice(0, 20), `/gate buy ${gate.id}`]]) }); _btnSent = true; }
+        if (B && B.sendButtons) { await B.sendButtons(sock, chatId, { text: caption, ...(_img ? { image: _img, mimetype: 'image/jpeg' } : {}), buttons: B.quickReplies([[`🛒 Buy ${gate.rank}-Rank Gate`.slice(0, 20), `/gate buy ${gate.id}`]]), noMenuFallback: true }); _btnSent = true; }
       } catch (e) { _btnSent = false; }
       if (!_btnSent) {
         if (fs.existsSync(imagePath)) {

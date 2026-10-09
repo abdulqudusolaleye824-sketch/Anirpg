@@ -425,6 +425,7 @@ module.exports = {
       const recipient = db.users[recipientId];
       if (!recipient) return sock.sendMessage(chatId, { text: `❌ That player is not registered!` }, { quoted: msg });
 
+      if (require('../../rpg/utils/RuneStones').isSoulbound(sorted[itemNum - 1])) return sock.sendMessage(chatId, { text: `🔒 *${sorted[itemNum - 1].name}* is soulbound — it cannot be given, traded or sold.` }, { quoted: msg }); // Push #96h-z20
       // Batch-48: counter/card items gift 1 unit — everything is transferable.
       if (sorted[itemNum - 1]._synthetic) {
         const _t = require('./items')._transferSynthetic(player, recipient, sorted[itemNum - 1]);

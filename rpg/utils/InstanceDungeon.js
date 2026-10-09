@@ -31,21 +31,25 @@ function onDailyComplete(player, sock, jid, chatId) {
   player._dailyDoneRewarded = dk;
   // Push #96e: Pro hunters get their keys from the boxes; regular hunters roll a
   // hidden 50% daily bonus (UP ≤7 · Nexus · Mana Stones · D/E weapon or gear · key).
+  // Push #96h-z20: REGULAR hunters now get a real box every day — a 📦 Regular Box (rare-and-below item
+  // or a bound Instance Key) opened with /box open. No more hidden 50% coin-flip.
   if (!_pro(player)) {
-    const b = regularBonus(player);
-    lines.push(b.line);
+    player.regularBoxes = (Number(player.regularBoxes) || 0) + 1;
+    lines.push(`📦 *REGULAR BOX* earned — open it with */box open* (rare-or-below item, or an Instance Key)`);
   }
-  // Pro: Blessed / Cursed box choice in DM.
+  // Pro: Blessed / Cursed box choice — buttons posted IN THE GROUP (Push #96h-z20: no DM detour).
   if (_pro(player)) {
     player.pendingBoxes = (Number(player.pendingBoxes) || 0) + 1;
-    lines.push(`🎁 *PRO BOX* — choose Blessed or Cursed in your DM 💎`);
-    if (sock && jid) {
+    lines.push(`🎁 *PRO BOX* — choose ✨ Blessed or 🖤 Cursed below (or /box blessed · /box cursed) 💎`);
+    const target = chatId || jid;
+    if (sock && target) {
       (async () => {
         try {
           const Buttons = require('../../utils/buttons');
           const text = [`🎁 *DAILY BOX* 💎`, `All 4 daily quests done, *${player.name}*. Fate offers two boxes:`, ``, `✨ *Blessed* — light: Nexus, UP, Mending Stones, potions, a C-Rank weapon, maybe a key.`, `🖤 *Cursed* — dark: bigger jackpots, B/C-Rank weapons, rare materials, keys… or a price.`, ``, `Boxes waiting: ${player.pendingBoxes}`].join('\n');
-          await Buttons.sendButtons(sock, jid, { text, buttons: Buttons.quickReplies([['✨ Blessed box', '/box blessed'], ['🖤 Cursed box', '/box cursed']]) });
-        } catch (e) { try { await sock.sendMessage(jid, { text: `🎁 Daily box ready — /box blessed or /box cursed` }); } catch (e2) {} }
+          await new Promise(r => setTimeout(r, 1200)); // land after the quest summary
+          await Buttons.sendButtons(sock, target, { text, buttons: Buttons.quickReplies([['✨ Blessed box', '/box blessed'], ['🖤 Cursed box', '/box cursed']]), mentions: jid ? [jid] : [] });
+        } catch (e) { try { await sock.sendMessage(target, { text: `🎁 Daily box ready — /box blessed or /box cursed` }); } catch (e2) {} }
       })();
     }
   }
@@ -76,6 +80,33 @@ function regularBonus(player) {
 
 // ── Boxes ─────────────────────────────────────────────────────────────────
 function _pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+// Push #96h-z20: 📦 REGULAR BOX — every hunter's daily box. Contents: ONE rare-or-below item (E/D/C gear or
+// weapon, potions, mending stone, materials) OR a bound Instance Key (when a job change is open). Never money.
+function openRegularBox(player) {
+  if (!player) return { ok: false, error: 'No player.' };
+  if ((Number(player.regularBoxes) || 0) < 1) return { ok: false, error: 'No regular box waiting — finish all 4 daily quests.' };
+  player.regularBoxes -= 1;
+  const inv = player.inventory || (player.inventory = {});
+  const out = [];
+  const r = Math.random();
+  const canKey = eligibleJobs(player).length > 0;
+  if (canKey && r < 0.18) { player.jobKeys = keys(player) + 1; out.push(`🗝️ +1 Instance Key (bound) — /instance start`); }
+  else if (r < 0.50) {
+    const rank = Math.random() < 0.45 ? 'E' : Math.random() < 0.7 ? 'D' : 'C'; // C-rank = rare ceiling
+    let inst = null; try { inst = require('./ArmoryStore').grantRandom(player, rank, null, 'regular_box'); } catch (e) {}
+    if (inst) out.push(`${inst.emoji} *${inst.name}* (${rank}-Rank ${inst.isWeapon ? 'weapon' : 'gear'}) — in your bag, /equip`);
+    else { inv.mendingStones = (inv.mendingStones || 0) + 1; out.push(`🪨 +1 Mending Stone`); }
+  }
+  else if (r < 0.68) { inv.mediumHealthPotions = (inv.mediumHealthPotions || 0) + 1; out.push(`🧪 +1 Medium Health Potion`); }
+  else if (r < 0.80) { inv.mendingStones = (inv.mendingStones || 0) + 1; out.push(`🪨 +1 Mending Stone`); }
+  else {
+    const rank = Math.random() < 0.5 ? 'D' : 'C';
+    let mat = `${rank}-Rank Mana Essence`; try { const { rollBaseMaterial } = require('../data/MonsterDrops'); mat = rollBaseMaterial(rank) || mat; } catch (e) {}
+    try { require('./RewardInventory').grantItem(player, { name: mat, type: 'material', rarity: rank === 'C' ? 'rare' : 'uncommon' }, 'regular_box'); } catch (e) {}
+    out.push(`🧱 Material: *${mat}*`);
+  }
+  return { ok: true, kind: 'regular', lines: out, title: '📦 REGULAR BOX' };
+}
 function openBox(player, kind) {
   const free = (Number(player.freeBoxes) || 0) > 0; // Push #96d: double-dungeon survivor boxes — any tier
   if (!free && !_pro(player)) return { ok: false, error: 'Daily boxes are a *Pro* feature 💎' };
@@ -110,7 +141,7 @@ function openBox(player, kind) {
   } else {
     const loss = Math.floor((player.gold || 0) * 0.05); player.gold = Math.max(0, (player.gold || 0) - loss);
     try { require('./StatusEffectManager').applyEffect(player, 'curse', 3); } catch (e) {}
-    out.push(`☠️ The box bites back: −${loss.toLocaleString()} Mana Stones and a 3-turn CURSE clings to you.`);
+    out.push(`☠️ The box bites back: −${loss.toLocaleString()} 💠 Nexus and a 3-turn CURSE clings to you.`);
   }
   if (eligibleJobs(player).length && Math.random() < 0.20) { player.jobKeys = keys(player) + 1; out.push(`🗝️ +1 Instance Key (bound)`); }
   return { ok: true, kind, lines: out, title: '🖤 CURSED BOX' };
@@ -208,6 +239,7 @@ async function act(player, skillQuery, hooks = null) {
     } else {
       // Push #96h-z9: with hooks.strike the command layer plays the strike through UnifiedCombat.playTurn
       // (the same multi-message detail flow as regular dungeons) — damage/statuses are applied there.
+      const _mHpBefore = m.stats.hp;
       const played = hooks && typeof hooks.strike === 'function' ? await hooks.strike(built.move, m) : null;
       const res = played ? played.result : UC.calcMoveDamage(player, m, built.move);
       if (!res.damage || res.missed) { if (!played) lines.push(`💨 *${built.move.name}* misses ${m.name}!`); try { JS.noteHit(player, false); } catch (e) {} }
@@ -218,15 +250,22 @@ async function act(player, skillQuery, hooks = null) {
         if (!played) { try { for (const n of UC.applyMoveBuffs(built.move, player, m)) lines.push(n); } catch (e) {} }
         try { const pm = require('./ClassPower').passiveMultipliers(player); const ls = ((player.stats.lifesteal || 0) + (pm.lifesteal || 0)) / 100; if (ls > 0) { const h = Math.floor(dmg * ls); const b = player.stats.hp; player.stats.hp = Math.min(_max(player), b + h); if (player.stats.hp > b) lines.push(`🩸 Lifesteal +${player.stats.hp - b} HP`); } } catch (e) {}
         if (built.entry) { try { const sf = SC.applySupportFields(built.entry, player, player, { name: player.name }); lines.push(...sf.lines); } catch (e) {} }
+        // Push #96h-z20: the %-HP and lifesteal CONTRACTS are paid here too (drain X% max HP · heal X% of damage · hybrid heals).
+        if (built.entry) {
+          try { const hx = SC.applyHpPercents(built.entry, player, m, _max); lines.push(...(hx.lines || [])); } catch (e) {}
+          try { const ls = SC.applyLifesteal(built.entry, player, Math.min(dmg, Math.max(0, _mHpBefore || dmg)), _max); if (ls.line) lines.push(ls.line); } catch (e) {}
+          try { const hp = Number(built.entry.healingPct) || 0; if (hp > 0 && built.entry.type !== 'heal') { const b = player.stats.hp; player.stats.hp = Math.min(_max(player), b + Math.floor(_max(player) * hp / 100)); if (player.stats.hp > b) lines.push(`💚 *${built.entry.name}* restores *${player.stats.hp - b}* HP → ${player.stats.hp}/${_max(player)}`); } } catch (e) {}
+        }
       }
     }
   }
   // Monster falls?
   if (m.stats.hp <= 0) {
     inst.kills++;
+    try { const _df = DS.ownerFell(inst, m, [player]); if (_df) lines.push(_df); } catch (e) {} // Push #96h-z20
     const reward = Math.floor((300 + inst.floor * 250 + (player.level || 1) * 20) * (m.isBoss ? 3 : 1));
     player.gold = (player.gold || 0) + reward; inst.gold += reward;
-    const jx = JS.gainXp(player, JS.xpFor(m.isBoss ? 'boss' : 'floor'), 'instance'); if (jx) { inst.jobXp += jx.gained; if (jx.levelUp) lines.push(`🧭 *JOB LEVEL UP!* ${jx.name} → Job Lv.${jx.to} — *${jx.title}*`); }
+    const jx = JS.gainXp(player, JS.xpFor(m.isBoss ? 'boss' : 'floor'), 'instance'); if (jx) { inst.jobXp += jx.gained; if (jx.levelUp) { lines.push(`🧭 *JOB LEVEL UP!* ${jx.name} → Job Lv.${jx.to} — *${jx.title}*`); lines.push(...JS.runeLines(jx)); } }
     if (m.isBoss) { player.upgradePoints = (player.upgradePoints || 0) + 1; lines.push(`📈 +1 Upgrade Point (floor ${inst.floor} boss)`); }
     lines.push(`☠️ *${m.name} falls!* +${reward.toLocaleString()} Mana Stones${jx ? ` · +${jx.gained} Job XP` : ''} · floor ${inst.floor}: ${Math.min(PER_FLOOR, inst.slot)}/${PER_FLOOR} down`);
     try { player.statusEffects = []; } catch (e) {}
@@ -298,7 +337,7 @@ function end(player, voluntary) {
   const job = JS.BY_KEY[inst.job];
   const lines = [`📜 *INSTANCE ${voluntary ? 'LEFT' : 'OVER'}* — ${job ? job.emoji + ' ' + job.name : ''} quest · floor ${inst.floor} · ${inst.kills} kills`, `💠 ${inst.gold.toLocaleString()} Mana Stones · 🧭 ${inst.jobXp} Job XP`, inst.passed ? `🏆 Quest cleared — /job change ${job ? job.name : ''}` : `❌ Quest failed — all ${FLOORS} floors (${PER_FLOOR} monsters each) must fall within 2 h. Another key, another try.`];
   player.instance = { active: false, last: { job: inst.job, floor: inst.floor, passed: inst.passed, at: Date.now() } };
-  try { player.statusEffects = []; if (player.tempBuffs) for (const k of Object.keys(player.tempBuffs)) if (k.startsWith('domain:')) delete player.tempBuffs[k]; } catch (e) {}
+  try { require('./CombatReset').clearForBattle(player); } catch (e) {} // Push #96h-z20: nothing from the instance carries out
   return { lines, floor: inst.floor, passed: inst.passed };
 }
 
@@ -310,4 +349,4 @@ function status(player) {
   return [`🏚️ *INSTANCE — ${job.emoji} ${job.name.toUpperCase()} QUEST*`, `Floor *${inst.floor}/${FLOORS}* · monster ${inst.slot || 1}/${PER_FLOOR} · kills ${inst.kills} · ⏰ ${Math.ceil(timeLeftMs(inst) / 60000)} min left`, `⚔️ /attack · /attack <id> · /skillcmd <skill> · /instance leave`, `${m.emoji} *${m.name}* [${m.rank}]${m.isBoss ? ' 👑' : ''} — HP ${m.stats.hp}/${m.stats.maxHp}`, `❤️ You: ${player.stats.hp}/${_max(player)} · ⚡ ${player.stats.energy}/${player.stats.maxEnergy}`, `⚔️ /instance attack · ✨ /instance skill <name> · 🌌 /domain expand · 🚪 /instance leave`].join('\n');
 }
 
-module.exports = { FLOORS, PER_FLOOR, TIME_LIMIT_MS, timeLeftMs, expireCheck, regularBonus, REGULAR_BONUS_CHANCE, KEY_CHANCE, eligibleJobs, keys, onDailyComplete, openBox, targetFloorFor, makeMonster, start, act, end, status };
+module.exports = { FLOORS, PER_FLOOR, TIME_LIMIT_MS, timeLeftMs, expireCheck, regularBonus, REGULAR_BONUS_CHANCE, KEY_CHANCE, eligibleJobs, keys, onDailyComplete, openBox, openRegularBox, targetFloorFor, makeMonster, start, act, end, status };

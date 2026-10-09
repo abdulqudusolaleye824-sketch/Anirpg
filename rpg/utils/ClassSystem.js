@@ -547,7 +547,7 @@ function tryClassAwaken(player, sock, chatId) {
       ``,
       `Your class skills and stat multipliers are now active!`,
       ...(player.classSkills || []).map((s, i) => `  ${i+1}. *${s.name}* — ${s.desc}`),
-      ...(_isMon ? [``, `🧬 *TRANSFORMATIONS* (Lv.10 → 60): Quarter ×5 · Complete Quarter ×5 · Half ×10 · Complete Half ×10 · Full ×15 · Complete Full ×15 — all stats, named after your ${shown} form.`, `😈 Below Lv.10 the beast may take over in battle (47%/turn BERSERK surge). Every form ends in Weaken/Stun/Bleed.`] : []),
+      ...(_isMon ? [``, `🧬 *TRANSFORMATIONS* (Lv.10 → 60): Quarter ×5 · Complete Quarter ×5 · Half ×10 · Complete Half ×10 · Full ×15 · Complete Full ×15 — ATK/DEF/SPD; HP only ×2 with a +4%/turn regen pulse — named after your ${shown} form.`, `😈 Below Lv.10 the beast may take over in battle (47%/turn BERSERK surge). Every form ends in Weaken/Stun/Bleed.`] : []),
       ``,
       `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
       `💡 Use */class* to inspect your full class mastery!`,

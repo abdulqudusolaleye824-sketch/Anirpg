@@ -121,6 +121,8 @@ module.exports = {
       || db.users[bareRecipient]
       || db.users[String(recipientId).split(':')[0]]
       || Object.values(db.users || {}).find((u) => String(u.id || '').split('@')[0] === bareRecipient);
+    // Push #96h-z20: lid↔phone pair — the hunter's row may live under their other address.
+    if (!recipient) { try { const PK = require('../../rpg/utils/PlayerKey'); const k = PK.resolve(db, recipientId); if (k) { recipient = db.users[k]; recipientId = k; } } catch (e) {} }
 
     if (!recipient) {
       // Push #88f: NEVER auto-register a stranger from a transfer — block instead.
