@@ -1,3 +1,6 @@
+## 1.0.177 — Push #96h-z21 (2026-10-09)
+- **Guild ghost-membership fix:** a stale `player.guild` on an affiliate (or on a hunter who was kicked / left / sacked) used to be silently "restored" into the roster on the next command — players were told "you are already in a guild" while not being members. Affiliates are never re-added; kick / leave / sack now clear every identity row (lid + phone) and stamp `guildLeftAt`.
+
 ## 1.0.176 — Push #96h-z20 (2026-10-09)
 - **Lifesteal contract:** every skill whose text says it heals a % of damage dealt now actually does — in gate raids (target + boss), instances, Jeju, PvP and generic combat (one heal per hit, capped at max HP). Parser ignores "damage taken"/"no heal" lines; Curse of Ruin no longer counts as lifesteal; Soul Drain stays with Necromancy.
 - **Devourer buffed:** HP 210 / ATK 62 / DEF 26 / SPD 14 / lifesteal 16 at max quality; Consume 220% + 30% lifesteal; Void Maw 290%; new passive **Abyssal Hide** (−18% damage taken, +25 HP/turn); Hunger +24 ATK/kill.

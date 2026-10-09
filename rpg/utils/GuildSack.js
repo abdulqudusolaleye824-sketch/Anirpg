@@ -95,7 +95,7 @@ function removeClean(db, guild, jid) {
   guild.members = (guild.members || []).filter(m => !_same(typeof m === 'object' ? (m.id || m.jid) : m, jid));
   if (Array.isArray(guild.memberData)) guild.memberData = guild.memberData.filter(m => !_same(m && (m.id || m.jid), jid));
   const u = db.users?.[jid] || Object.values(db.users || {}).find(x => x && x.jid && _same(x.jid, jid));
-  if (u && u.guild && (_same(u.guild, guild.id) || String(u.guild) === String(guild.name) || (typeof u.guild === 'object' && (_same(u.guild.id, guild.id) || u.guild.name === guild.name)))) u.guild = null;
+  if (u && u.guild && (_same(u.guild, guild.id) || String(u.guild) === String(guild.name) || (typeof u.guild === 'object' && (_same(u.guild.id, guild.id) || u.guild.name === guild.name)))) { u.guild = null; u.guildLeftAt = Date.now(); }
   try { const b = db.guildContracts && db.guildContracts[guild.id]; if (b) for (const k of Object.keys(b)) if (_same(k, jid)) delete b[k]; } catch (e) {}
   try { if (guild.pendingApprovals) for (const k of Object.keys(guild.pendingApprovals)) if (_same(k, jid)) delete guild.pendingApprovals[k]; } catch (e) {}
   return before !== guild.members.length || !!u;

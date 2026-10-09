@@ -58,6 +58,15 @@ function findGuild(db, ref) {
 // player.guild or by normalised number. A dual identity (lid vs phone) or a
 // stale/duplicate guild record therefore made /guild info read a DIFFERENT
 // object than the one the Nexus landed in.
+// Push #96h-z21: clear guild membership on EVERY row that belongs to this hunter (lid + phone identities).
+function clearPlayerGuild(db, jid) {
+  const me = normaliseJid(jid); let n = 0;
+  for (const [k, u] of Object.entries((db && db.users) || {})) {
+    if (!u || typeof u !== 'object') continue;
+    if (normaliseJid(k) === me || (u.jid && normaliseJid(u.jid) === me) || (u.id && normaliseJid(u.id) === me)) { u.guild = null; u.guildRank = null; u.guildLeftAt = Date.now(); n++; }
+  }
+  return n;
+}
 function resolvePlayerGuild(db, sender, playerRow = null) {
   if (!db?.guilds) return null;
   const me = normaliseJid(sender);
@@ -78,6 +87,13 @@ function resolvePlayerGuild(db, sender, playerRow = null) {
   let hit = wantName ? all.find(([, g]) => g.name && g.name.toLowerCase() === wantName && inRoster(g)) : null;
   if (!hit) hit = all.find(([, g]) => inRoster(g));
   if (!hit && wantName) {
+    // Push #96h-z21: NEVER silently re-add a hunter from a stale `player.guild` when they are an AFFILIATE
+    // (affiliates cannot be members) or were removed (kick / leave / sack stamp `guildLeftAt`). A dual-identity
+    // kick used to leave `player.guild` set on the other row, and the next command "restored" the membership —
+    // players who had left were told they were still in the guild.
+    let _aff = false;
+    try { const n = String(me || '').split(':')[0].split('@')[0]; _aff = Object.values(db.affiliates || {}).some(a => a && a.jid && String(a.jid).split(':')[0].split('@')[0] === n && a.guildName); } catch (e) {}
+    if (_aff || (player && player.guildLeftAt)) { if (player) { player.guild = null; player.guildRank = null; } return null; }
     hit = all.find(([, g]) => g.name && g.name.toLowerCase() === wantName);
     if (hit && player) {
       const g = hit[1];
@@ -834,7 +850,7 @@ function getSalaryStatus(db, playerJid) {
   };
 }
 
-module.exports = {
+module.exports = { clearPlayerGuild,
   isActualMember,
   _dmPlayer, _notifyMaster,
   Week, normaliseJid, rankOf, findUserInDb, findGuild, resolvePlayerGuild, mergeDuplicateGuilds,

@@ -1457,6 +1457,7 @@ ${FRAME}\n`;
       playerGuild.members.splice(idx, 1);
       const kicked = (kickSev && kickSev.user) || db.users?.[targetId];
       if (kicked) kicked.guild = null;
+      try { _CM71.clearPlayerGuild(db, targetId); } catch (e) {} // Push #96h-z21: every identity row
       saveDatabase();
 
       const kName = kicked?.name || ('@' + targetId.split('@')[0]);
@@ -1504,6 +1505,7 @@ ${FRAME}\n`;
         playerGuild.guildPoints = Math.max(0, t);
       } catch (e) {}
       player.guild = null;
+      try { _CM71.clearPlayerGuild(db, sender); } catch (e) {} // Push #96h-z21
       saveDatabase();
 
       return sock.sendMessage(chatId, {
