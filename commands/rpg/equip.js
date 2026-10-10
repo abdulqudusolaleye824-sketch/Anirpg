@@ -251,9 +251,9 @@ module.exports = {
         if (mi !== -1) items.splice(mi, 1);
         else if ((player.inventory?.mendingStones || 0) > 0) player.inventory.mendingStones--;
         else return sock.sendMessage(chatId, { text: '❌ No Mending Stone found.' }, { quoted: msg });
-        let n = 0; try { n = require('../../rpg/utils/ArmoryStore').mendAll(player); } catch (e) {}
+        let r = { items: 0, eachPct: 0, repaired: 0 }; try { r = require('../../rpg/utils/ArmoryStore').mendShare(player, 100); } catch (e) {}
         saveDatabase();
-        return sock.sendMessage(chatId, { text: `🛠️ *Mending Stone used!*\n\n✨ ${n} item${n === 1 ? '' : 's'} restored to *100% durability* — weapon, equipped gear and everything in your bag.\n💡 To fix ONE item with one stone: /mend <inv#>` }, { quoted: msg });
+        return sock.sendMessage(chatId, { text: `🛠️ *Mending Stone used!*\n\n✨ 100% durability shared across *${r.items}* gear item${r.items === 1 ? '' : 's'} — *+${r.eachPct}%* each (${r.repaired} actually needed it).\n💡 To put the whole stone into ONE item: /mend <inv#>` }, { quoted: msg });
       }
 
       // ── Revive Token ──

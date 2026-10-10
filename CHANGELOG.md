@@ -1,3 +1,10 @@
+## 1.0.184 — Push #96h-z26 (2026-10-10)
+- **Mending Stone (/equip use):** one stone = 100% durability SHARED across every gear item (weapon + equipped + bag) — 10 items → +10% each, 5 → +20% each, added to current durability and capped. `/mend all` follows the same rule; `/mend <inv#>` still puts the whole stone into one item.
+- **Raid jackpot removed:** no 0.01% ×2–×10 roll any more; raids pay their normal Nexus / Mana Stone range (+50% Double Dungeon / Red Gate stays).
+- **Monster drops:** 40% (60% Pro); a miss is silent.
+- **Spawns in Pro GCs:** artifact + wild-pet spawns are one message with a Claim / Catch button — never the numbered "reply with" menu. `sendButtons` now swaps in the live socket when a cached one died (the cause of the fallback).
+- **Owner DMs:** bug cards and link confirmations go to phone JIDs only — the co-owner was listed as LID + phone and got every card twice.
+
 ## 1.0.183 — Push #96h-z25b (2026-10-10)
 - `/bug delete <id>` (owner) removes a bug that has been attended to; `/bug delete all` clears every verified bug. Hint shown at the bottom of `/bug list`.
 

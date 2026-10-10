@@ -332,12 +332,12 @@ const BASE_MATERIALS = {
 
 // ─── DROP LOGIC ─────────────────────────────────────────────────
 
-const MONSTER_DROP_CHANCE = 0.47;   // Push #96h-z20: 47% chance monster drops anything (48% Pro via GateManager)
+const MONSTER_DROP_CHANCE = 0.40;   // z26: 40% chance monster drops anything (60% Pro via GateManager); silent on a miss
 const BOSS_SECONDARY_CHANCE = 0.35; // 35% chance boss drops secondary item
 
 /**
  * Roll a monster drop
- * 47% (48% Pro) chance to drop 1 item randomly selected from the monster's pool
+ * 40% (60% Pro) chance to drop 1 item randomly selected from the monster's pool
  */
 function rollMonsterDrop(rank, monsterName = null, chance = null) { // Push #96h-z20: caller may pass the 47%/48% base
   const rankData = MONSTER_DROPS[rank];

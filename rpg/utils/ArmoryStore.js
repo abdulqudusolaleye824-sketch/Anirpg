@@ -351,7 +351,8 @@ function lowDurabilityCheck(player) {
  *  Returns { count, items:[{name,before,after,max}] }. */
 function mendAllShared(player) {
   const targets = [];
-  const add = (p) => { if (p && p.maxDurability != null && (p.durability || 0) < p.maxDurability) targets.push(p); };
+  // z26: the stone is shared across EVERY gear item (owner rule: 10 items → +10% each), full ones included.
+  const add = (p) => { if (p && p.maxDurability != null) targets.push(p); };
   if (player.weapon) add(player.weapon);
   for (const p of Object.values(player.equippedGear || {})) add(p);
   for (const p of (player.inventory?.items || [])) if (p && (p.isGear || p.isWeapon)) add(p);
@@ -374,6 +375,19 @@ function mendAll(player) {
   for (const p of Object.values(player.equippedGear || {})) fix(p);
   for (const p of (player.inventory?.items || [])) if (p && (p.isGear || p.isWeapon)) fix(p);
   return n;
+}
+
+// z26: ONE Mending Stone = 100% durability SHARED across every gear item (weapon + equipped + bag),
+// e.g. 10 items → +10% of max each, 5 → +20% each. Added on top of current durability, capped at max.
+function mendShare(player, totalPct = 100) {
+  const list = [];
+  if (player.weapon && player.weapon.maxDurability != null) list.push(player.weapon);
+  for (const p of Object.values(player.equippedGear || {})) if (p && p.maxDurability != null) list.push(p);
+  for (const p of (player.inventory?.items || [])) if (p && (p.isGear || p.isWeapon) && p.maxDurability != null) list.push(p);
+  if (!list.length) return { items: 0, eachPct: 0, repaired: 0 };
+  const eachPct = totalPct / list.length; let repaired = 0;
+  for (const p of list) { const add = Math.max(1, Math.round(p.maxDurability * eachPct / 100)); const before = Number(p.durability) || 0; p.durability = Math.min(p.maxDurability, before + add); if (p.durability > before) repaired++; }
+  return { items: list.length, eachPct: Math.round(eachPct * 10) / 10, repaired };
 }
 
 // ── Combat hooks ────────────────────────────────────────────────────────────
@@ -429,6 +443,7 @@ function renderDetail(it) {
 }
 
 module.exports = {
+  mendShare,
   LORE_W, LORE_G,
   lowDurabilityCheck, autoMendEnabled, LOW_DUR,
   RANKS, RANK_EMOJI, RANK_RARITY, BANDS, STATUS_EMOJI, STATUSES,

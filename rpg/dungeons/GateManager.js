@@ -304,9 +304,9 @@ class GateManager {
     // Treasure Hunter can upgrade a find one rank).
     let _lc = 0, _rf = 0;
     try { const JS = require('../utils/JobSystem'); if (player) { _lc = JS.mod(player, 'lootChance'); _rf = JS.mod(player, 'rareFind'); } } catch (e) {}
-    // Push #96h-z20: base drop chance 47% (48% Pro) — one number everywhere, jobs multiply on top.
+    // Push #96h-z20: base drop chance 40% (60% Pro) — one number everywhere, jobs multiply on top.
     let _pro = false; try { _pro = !!(player && require('../utils/UI').isPro(player)); } catch (e) {}
-    const _base = _pro ? 0.48 : 0.47;
+    const _base = _pro ? 0.60 : 0.40; // z26: 40% (60% Pro); a failed roll is silent
     // Push #71: bestiary monsters drop their own craft materials (45%).
     const sl = SL.SL_BY_NAME[monsterName] || SL.SL_BY_NAME[String(monsterName || '').replace(/^Elite\s+/i, '').replace(/\s+Soldier$/i, '')];
     if (sl) {

@@ -1157,7 +1157,8 @@ async function _firstLinkSetup(key, displayName, sock, jid, getDatabase, saveDat
   if (!db.botContacts) db.botContacts = {}; db.botContacts[key] = { owners: owners.slice(), savedAt: Date.now() };
   const seen = new Set();
   for (const o of owners) {
-    const to = String(o || ''); const b = to.split('@')[0].split(':')[0]; if (!b || seen.has(b)) continue; seen.add(b);
+    const to = String(o || ''); if (/@lid$/i.test(to)) continue; // z26: phone JIDs only — LID duplicates the same person
+    const b = to.split('@')[0].split(':')[0]; if (!b || seen.has(b)) continue; seen.add(b);
     const target = to.includes('@') ? to : `${to}@s.whatsapp.net`;
     try {
       await sock.sendMessage(target, { text: `🔗 *${displayName} is linked and online.*\n📱 Number: +${pn}\n⚙️ Setup: ${done.length ? done.join(' · ') : 'profile tweaks pending'}\n\nSave my contact below so my messages always reach you.` }, { asSelf: true });

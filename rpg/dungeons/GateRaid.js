@@ -1344,15 +1344,11 @@ function clearGate(gate, key, keyData, db, saveDatabase, opts = {}) {
   const raiders = raid.members?.length ? raid.members : [];
   try { require('../utils/CombatReset').clearParty(db, raiders); } catch (e) {} // Push #92: battle over → clean slate
 
-  // Push #96h-z20: LOOT MULTIPLIERS — Double Dungeon / Red Gate pay +50%; and a 0.01% JACKPOT multiplies the
-  // clear by anything from ×2 UP TO ×10 (never a flat ×10). Rolled once per clear, shown in the loot card.
+  // Push #96h-z20: LOOT MULTIPLIERS — Double Dungeon / Red Gate pay +50%. (Jackpot removed in z26.)
   let _lootMult = 1; const _lootNotes = [];
   if (gate.isDouble) { _lootMult *= 1.5; _lootNotes.push('🚫 Double Dungeon +50%'); }
   else if (gate.redGate) { _lootMult *= 1.5; _lootNotes.push('🟥 Red Gate +50%'); }
-  if (!keepOpen && !gate._jackpotRolled) {
-    gate._jackpotRolled = true;
-    if (Math.random() < 0.0001) { const jx = 2 + Math.floor(Math.random() * 9); _lootMult *= jx; _lootNotes.push(`🎰 *JACKPOT ×${jx}!*`); gate.jackpotMult = jx; }
-  }
+  // z26: the 0.01% JACKPOT was removed on owner order — raids pay their normal range (+50% Double/Red only).
   gate.lootMult = _lootMult; gate.lootNotes = _lootNotes;
   const nexus   = Math.floor((gate.nexusLoot || 0) * _lootMult);
   const crystals = Math.floor((gate.crystalLoot || 0) * _lootMult);

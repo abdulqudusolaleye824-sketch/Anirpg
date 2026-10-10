@@ -188,7 +188,7 @@ async function spawnArtifact(sock, chatId, db, saveDatabase, forcedArtifact) {
   try { const meta = await sock.groupMetadata(chatId); _mentions = (meta.participants || []).map(p => p.id); } catch (e) { _mentions = []; }
   // Push #96h-n: every spawn carries a tap-to-CLAIM button (text fallback keeps the ping).
   let _sentBtn = false;
-  try { const B = require('../../utils/buttons'); if (B && B.sendButtons) { await B.sendButtons(sock, chatId, { text: msg, buttons: B.quickReplies([[`🎯 Claim ${artifact.name}`.slice(0, 20), '/claim']]), mentions: _mentions }); _sentBtn = true; } } catch (e) { _sentBtn = false; }
+  try { const B = require('../../utils/buttons'); if (B && B.sendButtons) { await B.sendButtons(sock, chatId, { text: msg, buttons: B.quickReplies([[`🎯 Claim ${artifact.name}`.slice(0, 20), '/claim']]), mentions: _mentions, noMenuFallback: true }); _sentBtn = true; } } catch (e) { _sentBtn = false; }
   if (!_sentBtn) await sock.sendMessage(chatId, { text: msg, mentions: _mentions });
 
   // Expire after 5 minutes
@@ -424,7 +424,7 @@ module.exports = {
       db.wildPets.push({ token: `WP-${now}-${Math.floor(Math.random() * 999)}`, petId: chosen.id, name: chosen.name, emoji: chosen.emoji, rarity: chosen.rarity, gate: 'spawn', spawnedAt: now, expiresAt: now + 60 * 1000, caughtBy: null, attemptsUsed: 0, attemptLog: [], forJids: [sender], spawnedBy: sender });
       saveDatabase();
       { const _pt = `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🐾 *A WILD PET APPEARS!*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n${chosen.emoji} *${chosen.name}* — ${String(chosen.rarity || 'common').toUpperCase()}\n👤 Only *@${String(sender).split('@')[0]}* can catch it.\n⏰ It flees in *60 seconds*!\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🪤 */catch* — FREE & guaranteed for the spawner`;
-        try { const B = require('../../utils/buttons'); return await B.sendButtons(sock, chatId, { text: _pt, buttons: B.quickReplies([[`🪤 Catch ${chosen.name}`.slice(0, 20), '/catch']]), mentions: [sender] }, msg); } catch (e) {} // Push #96h-n: catch button
+        try { const B = require('../../utils/buttons'); return await B.sendButtons(sock, chatId, { text: _pt, buttons: B.quickReplies([[`🪤 Catch ${chosen.name}`.slice(0, 20), '/catch']]), mentions: [sender], noMenuFallback: true }, msg); } catch (e) {} // Push #96h-n: catch button
         return sock.sendMessage(chatId, { text: _pt, mentions: [sender] }, { quoted: msg }); }
     }
 

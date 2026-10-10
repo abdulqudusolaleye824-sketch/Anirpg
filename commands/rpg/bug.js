@@ -51,6 +51,7 @@ module.exports = {
     // Owners' DMs (phone JIDs; deduped by bare number) — card + buttons.
     const targets = []; const seen = new Set();
     for (const j of Perms.getBotOwners(db)) {
+      if (/@lid$/i.test(String(j))) continue; // z26: the co-owner is listed as LID + phone → one DM per person (phone only)
       const b = String(j).split('@')[0].split(':')[0];
       if (!b || seen.has(b)) continue; seen.add(b);
       targets.push(String(j).includes('@') ? j : `${j}@s.whatsapp.net`);

@@ -246,7 +246,24 @@ function _linkBlock(links) {
  * header + buttons in ONE message), 'menu' (numbered fallback),
  * or 'plain' (text/link fallback). Throws only if every layer fails.
  */
+// z26: callers (spawn timers, cached handlers) may hold a socket that died in a reconnect — relayMessage
+// then throws "Connection Closed" and the buttons degrade to a numbered menu / second message. Swap in the
+// live sibling socket for the same number when one exists.
+function _liveSock(sock) {
+  try {
+    const me = String(sock?.user?.id || '').split(':')[0].split('@')[0];
+    if (!me) return sock;
+    const open = (s) => !!(s && s.user && s.user.id && !(s.ws && typeof s.ws.isOpen === 'boolean' && !s.ws.isOpen) && !(s.ws && typeof s.ws.readyState === 'number' && s.ws.readyState !== 1));
+    if (open(sock)) return sock;
+    const MSM = require('../bots/MultiSocketManager');
+    const all = MSM.getAllSockets ? (MSM.getAllSockets() || {}) : {};
+    const same = Object.values(all).find((s) => open(s) && String(s.user.id).split(':')[0].split('@')[0] === me);
+    return same || sock;
+  } catch (e) { return sock; }
+}
+
 async function sendButtons(sock, chatId, opts, quoted) {
+  sock = _liveSock(sock);
   const o = opts || {};
   const text = o.text || '';
   const footer = o.footer || '';
