@@ -1,3 +1,6 @@
+## 1.0.185 — Push #96h-z27 (2026-10-10)
+- **Double Dungeon decision:** only the CURRENT party leader may `/party proceed` or `/party leave` while the second gate waits — hard block for members and the key owner alike (lid/phone-safe check).
+
 ## 1.0.184 — Push #96h-z26 (2026-10-10)
 - **Mending Stone (/equip use):** one stone = 100% durability SHARED across every gear item (weapon + equipped + bag) — 10 items → +10% each, 5 → +20% each, added to current durability and capped. `/mend all` follows the same rule; `/mend <inv#>` still puts the whole stone into one item.
 - **Raid jackpot removed:** no 0.01% ×2–×10 roll any more; raids pay their normal Nexus / Mana Stone range (+50% Double Dungeon / Red Gate stays).

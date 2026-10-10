@@ -21,6 +21,15 @@ const { GATE_RANKS } = require('../../rpg/dungeons/GateManager');
 const TextMenu = (()=>{ try { return require('../../utils/textMenu'); } catch(e){ return null; } })();
 const Buttons = (()=>{ try { return require('../../utils/buttons'); } catch(e){ return null; } })();
 
+// z27: DOUBLE DUNGEON decision = the CURRENT party leader only (not the key owner, not members). JID-form safe.
+function _isPartyLeader(raid, sender, db) {
+  const lead = raid && raid.leader; if (!lead || !sender) return false;
+  const b = (j) => String(j || '').split('@')[0].split(':')[0];
+  if (b(lead) === b(sender)) return true;
+  try { const PK = require('../../rpg/utils/PlayerKey'); if (PK && PK.same && db) return !!PK.same(db, lead, sender); } catch (e) {}
+  return false;
+}
+function _leaderName(raid, db) { try { const m = (raid.members || []).find(x => x.id === raid.leader); const n = (m && m.name) || (db.users[raid.leader] || {}).name; return n ? ` (👑 ${n})` : ''; } catch (e) { return ''; } }
 function normaliseJid(jid) {
   return GKM.normaliseJid(jid);
 }
@@ -567,7 +576,7 @@ module.exports = {
       if (!raid) return sock.sendMessage(chatId, { text: '❌ No active party.' }, { quoted: msg });
       // Push #96d: a DOUBLE DUNGEON is waiting → the leader's "leave" closes the gate for everyone.
       if (GR.doublePending(gate)) {
-        if (raid.leader !== sender && normaliseJid(keyData.ownedBy) !== normaliseJid(sender)) return sock.sendMessage(chatId, { text: '❌ Only the party leader decides — proceed or leave.' }, { quoted: msg });
+        if (!_isPartyLeader(raid, sender, db)) return sock.sendMessage(chatId, { text: `⛔ *Hard block.* Only the current party leader${_leaderName(raid, db)} decides whether the party proceeds into the Double Dungeon or leaves.` }, { quoted: msg });
         gate.doublePending = false; gate.doubleRoll = false;
         try { GR.clearGate(gate, activeKey, keyData, db, saveDatabase); } catch (e) {}
         saveDatabase();
@@ -635,7 +644,7 @@ module.exports = {
       if (!resolved.ok) return sock.sendMessage(chatId, { text: resolved.error }, { quoted: msg });
       const { gate, keyData } = resolved;
       if (!GR.doublePending(gate)) return sock.sendMessage(chatId, { text: '❌ No second gate is waiting here.' }, { quoted: msg });
-      if (gate.raid.leader !== sender && normaliseJid(keyData.ownedBy) !== normaliseJid(sender)) return sock.sendMessage(chatId, { text: '❌ Only the party leader decides — proceed or leave.' }, { quoted: msg });
+      if (!_isPartyLeader(gate.raid, sender, db)) return sock.sendMessage(chatId, { text: `⛔ *Hard block.* Only the current party leader${_leaderName(gate.raid, db)} decides whether the party proceeds into the Double Dungeon or leaves.` }, { quoted: msg });
       const ev = GR.evolveDouble(gate, db);
       if (!ev.ok) return sock.sendMessage(chatId, { text: `❌ ${ev.error}` }, { quoted: msg });
       try { GR.saveGateState(db, gate); } catch (e) {}
