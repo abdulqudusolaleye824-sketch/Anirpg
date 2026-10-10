@@ -16,6 +16,13 @@ module.exports = {
       return sock.sendMessage(chatId, { text: BT.listText(db) }, { quoted: msg });
     }
 
+    // ── Owner: /bug delete <id|all> ──────────────────────────────
+    if (sub === 'delete' || sub === 'del' || sub === 'remove') {
+      const r = BT.remove(db, args[1], sender);
+      if (r.ok) saveDatabase();
+      return sock.sendMessage(chatId, { text: r.text }, { quoted: msg });
+    }
+
     // ── Owner: /bug log|dismiss|ban <id>  (the DM buttons send these) ──
     if (['log', 'dismiss', 'ban'].includes(sub)) {
       if (!Perms.isBotOwner(db, sender)) return sock.sendMessage(chatId, { text: '❌ Only bot owners can handle bug reports.' }, { quoted: msg });

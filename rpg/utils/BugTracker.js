@@ -97,6 +97,20 @@ function decide(db, id, action, ownerJid) {
   return { ok: true, rec, text: `${label} — *${rec.id}* by ${rec.handledByName} · ${stamp(rec.handledAt)}.\nThe reporter has been notified.` };
 }
 
+/** /bug delete <id> — owner removes an attended-to bug (any status). Also accepts `all` to clear every verified bug. */
+function remove(db, id, ownerJid) {
+  if (!Perms.isBotOwner(db, ownerJid)) return { ok: false, text: '❌ Only bot owners can delete bug reports.' };
+  const tb = table(db);
+  if (String(id || '').toLowerCase() === 'all') {
+    const ids = Object.keys(tb).filter(k => tb[k].status === STATUS.LOGGED); for (const k of ids) delete tb[k];
+    return { ok: true, text: `🗑️ Deleted ${ids.length} verified bug${ids.length === 1 ? '' : 's'}.` };
+  }
+  const rec = get(db, id);
+  if (!rec) return { ok: false, text: `❌ No bug report *${String(id || '').toUpperCase()}*. Check */bug list*.` };
+  delete tb[rec.id];
+  return { ok: true, rec, text: `🗑️ *${rec.id}* deleted — "${rec.text.slice(0, 80)}" (reported by ${rec.reporterName}). ${stamp()}` };
+}
+
 /** /bug list — verified bugs only, one message. */
 function listText(db) {
   const all = Object.values(table(db)).filter(r => r.status === STATUS.LOGGED).sort((a, b) => a.at - b.at);
@@ -107,6 +121,7 @@ function listText(db) {
     lines.push(`   👤 ${r.reporterName} (+${_bare(r.reporter)}) · 📍 ${r.groupName}`);
     lines.push(`   🕒 reported ${stamp(r.at)} · logged by ${r.handledByName || '?'} ${stamp(r.handledAt)}`);
   });
+  lines.push(``, `🗑️ */bug delete <id>* once a bug is fixed`);
   return lines.join('\n');
 }
 
@@ -125,4 +140,4 @@ async function notifyReporter(sock, db, rec) {
   return { via: null };
 }
 
-module.exports = { STATUS, stamp, create, get, decide, listText, ownerCard, ownerButtons, reporterFeedback, notifyReporter, ownerName, table };
+module.exports = { STATUS, stamp, create, get, decide, remove, listText, ownerCard, ownerButtons, reporterFeedback, notifyReporter, ownerName, table };

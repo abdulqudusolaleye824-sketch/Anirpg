@@ -11,7 +11,7 @@ const KNOWN_SUBCOMMANDS = {
   jobskill: ['1', '2', '3', '<name>'],
   supplication: ['<word>'],
   sackstatus: ['<serial>'],
-  bug: ['<describe the bug>', 'list'],
+  bug: ['<describe the bug>', 'list', 'delete <id>'],
   antilink: ['on', 'off'],
   antimention: ['on', 'off'],
   spawnstatus: ['dm', 'gc'],
@@ -227,7 +227,7 @@ module.exports = {
       `🛡️ *GROUP ADMIN:* /kick /promote /demote /pm /mute /unmute /ban /unban /tagall /antilink /antimention /slowmode /chatbot /welcome /goodbye /close /open /delete /disable /enable /groupcmd /announce /setgroup /sub /gclist /joingc /leavegc /spawnstatus /killspawn /closegate /reset /restart /start /switch /aimode /setserf /approveserf /bots`,
     ];
     // z25: owner-only block appended at runtime (never in the public menu source).
-    try { if (require('../../utils/permissions').isBotOwner(getDatabase(), sender)) menuLines.push(['👑 *OWNER:* /bug list · /set --mod --false <serial> · /ver' + 'sion'].join('')); } catch (e) {}
+    try { if (require('../../utils/permissions').isBotOwner(getDatabase(), sender)) menuLines.push(['👑 *OWNER:* /bug list · /bug delete <id> · /set --mod --false <serial> · /ver' + 'sion'].join('')); } catch (e) {}
     const message = UI.card(viewerH, {
       icon: '📋', title: '✦ 𝐀𝐬𝐭𝐫𝐚™ COMMAND MENU',
       lines: menuLines,
