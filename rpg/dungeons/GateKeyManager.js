@@ -201,6 +201,8 @@ function purchaseGateKey(sender, gate, db, saveDatabase) {
     key,
     gateId:       gate.id,
     gateRank:     gate.rank,
+    nexusLoot:    Number(gate.nexusLoot) || 0, crystalLoot: Number(gate.crystalLoot) || 0, // z28: a rebuilt gate pays the ORIGINAL amount
+    purchasePrice: Number(gate.purchasePrice) || 0, manaPrice: Number(gate.manaPrice) || 0,
     strengthPct:  gate.strengthPct || null, // Push #71
     spawnChatId:  gate.chatId,
     ownedBy:      sender,

@@ -1,3 +1,7 @@
+## 1.0.186 — Push #96h-z28 (2026-10-10)
+- **Raid paid 0 Nexus / 0 Mana Stones — root cause fixed:** when the server restarts mid-raid (every deploy), the gate is rebuilt from the key and that rebuild hard-coded `nexusLoot:0 / crystalLoot:0`. Keys now store the gate's original payout at purchase, the rebuild restores it, and `clearGate` has a last-line guarantee: if a gate ever reaches payout with no money attached it rolls the rank's standard 3–4× payout (tagged 🛡️ guaranteed payout). Money is never luck — only drop items are.
+- **Job XP thresholds ×5:** Job Lv2–5 now at 1,500 / 4,500 / 10,000 / 20,000.
+
 ## 1.0.185 — Push #96h-z27 (2026-10-10)
 - **Double Dungeon decision:** only the CURRENT party leader may `/party proceed` or `/party leave` while the second gate waits — hard block for members and the key owner alike (lid/phone-safe check).
 

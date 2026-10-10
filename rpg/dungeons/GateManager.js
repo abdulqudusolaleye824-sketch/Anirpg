@@ -321,6 +321,21 @@ class GateManager {
     return drop ? { name: drop, type: 'material', source: 'monster', from: monster?.name || monsterName } : null;
   }
 
+  // z28: GUARANTEED currency payout for a gate of this rank — the same 3–4× formula spawnGate uses, rolled
+  // from the rank's price band. Used whenever a gate reaches payout with nexusLoot/crystalLoot missing or 0
+  // (rebuilt-after-restart gates, free gates, legacy records). Loot ITEMS stay luck-based; money never is.
+  static guaranteedLoot(rank) {
+    const rd = GATE_RANKS[rank] || GATE_RANKS['E'];
+    const [pMin, pMax] = rd.priceRange || [3000, 6000];
+    const [mMin, mMax] = rd.manaPriceRange || [0, 0];
+    const price = Math.floor(pMin + Math.random() * Math.max(0, pMax - pMin));
+    const mana = Math.floor(mMin + Math.random() * Math.max(0, mMax - mMin));
+    const mult = 3 + Math.random();
+    const nexusLoot = Math.floor(price * mult);
+    const crystalLoot = Math.max(Math.floor(mana * mult), Math.floor(price * mult * 0.25));
+    return { nexusLoot, crystalLoot };
+  }
+
   static purchaseGate(gateId, guildName, leaderJid, db) {
     const gate = this.activeGates[gateId];
     if (!gate) return { success:false, reason:'Gate not found.' };

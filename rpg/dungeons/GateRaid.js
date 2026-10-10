@@ -392,8 +392,9 @@ function resolveCode(code, db = null) {
         isFree: false, isDisaster:false,
         owned: true, ownedBy: keyData.guildName || null,
         purchasedAt: keyData.purchasedAt,
-        purchasePrice: 0, manaPrice:0,
-        nexusLoot:0, crystalLoot:0,
+        purchasePrice: Number(keyData.purchasePrice) || 0, manaPrice: Number(keyData.manaPrice) || 0,
+        // z28: a rebuilt gate used to carry nexusLoot:0 / crystalLoot:0 → the whole raid paid NOTHING after a restart.
+        ...(() => { const n = Number(keyData.nexusLoot) || 0, c = Number(keyData.crystalLoot) || 0; return (n > 0 || c > 0) ? { nexusLoot: n, crystalLoot: c } : GateManager.guaranteedLoot(rank); })(),
         cleared:false, broken:false, active:true,
         raiders: [], guildRaiders:[], externalRaiders:[], pendingApplicants:[],
         raidStarted:false, raidStartTime:null,
@@ -1350,6 +1351,9 @@ function clearGate(gate, key, keyData, db, saveDatabase, opts = {}) {
   else if (gate.redGate) { _lootMult *= 1.5; _lootNotes.push('🟥 Red Gate +50%'); }
   // z26: the 0.01% JACKPOT was removed on owner order — raids pay their normal range (+50% Double/Red only).
   gate.lootMult = _lootMult; gate.lootNotes = _lootNotes;
+  // z28: Nexus + Mana Stones are GUARANTEED on every clear — only drop items are luck. If this gate somehow
+  // reached payout with no money attached (rebuilt / free / legacy), roll the rank's standard payout now.
+  if (!(Number(gate.nexusLoot) > 0) && !(Number(gate.crystalLoot) > 0)) { const g = GateManager.guaranteedLoot(gate.rank); gate.nexusLoot = g.nexusLoot; gate.crystalLoot = g.crystalLoot; _lootNotes.push('🛡️ guaranteed payout'); }
   const nexus   = Math.floor((gate.nexusLoot || 0) * _lootMult);
   const crystals = Math.floor((gate.crystalLoot || 0) * _lootMult);
 

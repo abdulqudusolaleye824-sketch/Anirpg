@@ -13,7 +13,7 @@
 //     loot chance, XP gain, potion power, gear bonus, reward multiplier).
 // ═══════════════════════════════════════════════════════════════════════════
 
-const JOB_XP_PER_LEVEL = [0, 300, 900, 2000, 4000]; // cumulative XP to reach Job Lv 1..5 (Lv1 on take)
+const JOB_XP_PER_LEVEL = [0, 1500, 4500, 10000, 20000]; // z28: ×5 (was 300/900/2000/4000) — cumulative XP to reach Job Lv 1..5 (Lv1 on take)
 
 // tier → per-Job-level scaling helper (L = 1..5)
 // Push #96: G(minLv, a, b) — a perk that only exists from Job level `minLv` (scales a→b from there to Lv5).
