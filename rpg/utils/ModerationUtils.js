@@ -64,8 +64,10 @@ function isOwnerLike(db, jid) {
 }
 
 /** Is the target protected (owner / co-owner / another mod)? */
-function isProtected(db, targetJid) {
+function isProtected(db, targetJid, actorJid) {
   const t = bare(targetJid);
+  // z25: an OWNER may mute / kick / ban mods (never another owner, never themselves — callers check self).
+  if (actorJid && Perms.isBotOwner(db, actorJid)) return Perms.getBotOwners(db).some((o) => bare(o) === t);
   // owners & co-owners
   if (Perms.getBotOwners(db).some((o) => bare(o) === t)) return true;
   // other mods

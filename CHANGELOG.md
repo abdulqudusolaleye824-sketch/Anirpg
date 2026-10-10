@@ -1,3 +1,8 @@
+## 1.0.182 — Push #96h-z25 (2026-10-09)
+- **Interactive bug reports:** `/bug <text>` gives the reporter an id + timestamp; both owners get a DM card with buttons **Log as verified bug / Dismiss / Ban reporter**. First owner to act wins — the other is told "already being handled by <name>". Reporter gets feedback (serf DM → else the GC it was reported in) with date/time: logged = "seen and being worked on", dismissed = "after careful consideration … not a bug / not well explained", ban = permanent command ban. `/bug list` (owner) = every verified bug + reporter in one message.
+- **Moderation:** owners can mute / kick / ban mods (never another owner, never themselves); mods still can't touch mods. `/set --mod --false <serial>` demotes the mod with that number from `/mods`.
+- `/help` shows an owner-only line to owners.
+
 ## 1.0.181 — Push #96h-z24 (2026-10-09)
 - **Contact-card spam fixed:** the "already set up" marker lived in a record that is rebuilt on every reconnect, so bots re-sent the card each time they reconnected. Marker moved to its own table — once per linked number.
 - **Gate spawn = ONE message with a Buy button:** spawn timers held a dead socket after reconnects ("Connection Closed" on the button relay → image went out via fallback, then a second text). Spawns now use a live socket; fallbacks never re-send the image.

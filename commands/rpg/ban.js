@@ -15,6 +15,7 @@
 const Mod = require('../../rpg/utils/ModerationUtils');
 const UI = require('../../rpg/utils/UI');
 
+const Perms_z25 = require('../../utils/permissions');
 module.exports = {
   name: 'ban',
   description: '🚫 Ban a user from using the bot',
@@ -61,9 +62,9 @@ module.exports = {
     if (Mod.bare(targetId) === Mod.bare(sender)) {
       return sock.sendMessage(chatId, { text: '❌ You cannot ban yourself!' }, { quoted: msg });
     }
-    if (Mod.isProtected(db, targetId)) {
+    if (Mod.isProtected(db, targetId, sender)) {
       return sock.sendMessage(chatId, {
-        text: '❌ That user is an *Owner/Mod* — you cannot ban them.',
+        text: (Perms_z25.isBotOwner(db, sender) ? '❌ That user is an *Owner* — owners cannot be banned.' : '❌ That user is an *Owner/Mod* — only an owner can ban a mod.'),
       }, { quoted: msg });
     }
     if (Mod.isBanned(db, targetId)) {

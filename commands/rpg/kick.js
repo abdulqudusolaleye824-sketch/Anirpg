@@ -10,6 +10,7 @@ const Mod = require('../../rpg/utils/ModerationUtils');
 const GroupAdmin = require('../../rpg/utils/GroupAdmin');
 const UI = require('../../rpg/utils/UI');
 
+const Perms_z25 = require('../../utils/permissions');
 module.exports = {
   name: 'kick',
   aliases: ['remove'],
@@ -48,9 +49,9 @@ module.exports = {
     if (Mod.bare(targetId) === Mod.bare(sender)) {
       return sock.sendMessage(chatId, { text: '❌ You cannot kick yourself!' }, { quoted: msg });
     }
-    if (GroupAdmin.isProtected(db, targetId)) {
+    if (GroupAdmin.isProtected(db, targetId, sender)) {
       return sock.sendMessage(chatId, {
-        text: '❌ That user is an *Owner/Mod* — you cannot kick them.',
+        text: (Perms_z25.isBotOwner(db, sender) ? '❌ That user is an *Owner* — owners cannot be kicked.' : '❌ That user is an *Owner/Mod* — only an owner can kick a mod.'),
       }, { quoted: msg });
     }
 

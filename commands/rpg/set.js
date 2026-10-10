@@ -181,13 +181,20 @@ async function handleModFlag(sock, msg, db, saveDatabase, sender, rawArgs) {
   if (args.some(a => /^--true$/i.test(a)))       value = true;
   else if (args.some(a => /^--false$/i.test(a))) value = false;
 
-  const target = extractTarget(msg)
+  let target = extractTarget(msg)
     || args.find(a => /^@/.test(a))
     || null;
+  // z25: `/set --mod --false <serial>` — the number from the /mods list demotes that mod.
+  if (!target && !value) {
+    const n = parseInt((args.find(a => /^\d{1,3}$/.test(a)) || ''), 10);
+    const list = Perms.getBotMods(db);
+    if (n >= 1 && n <= list.length) target = `${Mod.bare(list[n - 1])}@s.whatsapp.net`;
+    else if (n) return sock.sendMessage(chatId, { text: `❌ No mod with serial #${n}. Check */mods* (${list.length} mod${list.length === 1 ? '' : 's'}).` }, { quoted: msg });
+  }
 
   if (!target) {
     return sock.sendMessage(chatId, {
-      text: '❌ Tag a user or reply to their message:\n`/set --mod @user --true`'
+      text: '❌ Tag a user, reply to their message, or use the serial from /mods:\n`/set --mod @user --true`\n`/set --mod --false 2`'
     }, { quoted: msg });
   }
 
