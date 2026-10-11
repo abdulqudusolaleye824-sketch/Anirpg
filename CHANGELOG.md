@@ -1,3 +1,6 @@
+## 1.0.190 — Push #98 (2026-10-11)
+- **Beast idle auto-attack ×3:** a beast only strikes an idle party after S 90 s · A 135 s · B 180 s · C 270 s · D 6 min · E 7.5 min (was 30/45/60/90/120/150 s). Repeats on the same window. Floor-revive (60 s) and player attack cooldown (30 s) unchanged.
+
 ## 1.0.189 — Push #97 MAJOR UPDATE (2026-10-11)
 **Bug fixes (verified):**
 - **BUG-007** status-ailment deaths now land in gates, instances and PvP — the "survive at 1% when beasts strike first" rule no longer shields poison/burn ticks (ailment death = normal gate death).

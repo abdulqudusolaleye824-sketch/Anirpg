@@ -1653,11 +1653,12 @@ function clearGate(gate, key, keyData, db, saveDatabase, opts = {}) {
 // last hunter action with nobody attacking, the current monster (or boss)
 // strikes the WEAKEST living member (lowest HP). Repeats every 30 s of
 // idleness. The caller (index.js ticker) sends the returned messages.
-const IDLE_STRIKE_MS = 30 * 1000;
-const IDLE_STRIKE_OTHER_MS = 45 * 1000;
+const IDLE_STRIKE_MS = 90 * 1000;
+const IDLE_STRIKE_OTHER_MS = 135 * 1000;
 // Push #89: idle auto-attack window scales with gate rank.
-const IDLE_STRIKE_BY_RANK = { S: 30, SS: 30, SSS: 30, DISASTER: 30, A: 45, B: 60, C: 90, D: 120, E: 150 };
-function idleStrikeMsFor(rank) { const sec = IDLE_STRIKE_BY_RANK[String(rank || '').toUpperCase()]; return (sec || 150) * 1000; }
+// Push #98: tripled (owner request) — beasts give the party 3× longer before striking idle hunters.
+const IDLE_STRIKE_BY_RANK = { S: 90, SS: 90, SSS: 90, DISASTER: 90, A: 135, B: 180, C: 270, D: 360, E: 450 };
+function idleStrikeMsFor(rank) { const sec = IDLE_STRIKE_BY_RANK[String(rank || '').toUpperCase()]; return (sec || 450) * 1000; }
 function noteRaidTurn(gate, chatId) {
   if (!gate || !gate.raid) return;
   gate.raid.lastTurnAt = Date.now();
