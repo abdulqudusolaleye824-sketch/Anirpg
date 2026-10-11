@@ -19,10 +19,9 @@ function skillLevelBar(level, maxLevel=5) {
 }
 
 function skillUpgradeCost(currentLevel) {
-  // Cost to upgrade FROM this level to next: lv1→2, lv2→3, lv3→4, lv4→5
-  // Balanced — early upgrades affordable, max level is a real grind
-  const costs = [45000, 150000, 360000, 900000]; // Push #74: ×3 for all classes
-  return costs[currentLevel - 1] ?? null; // null = already max level
+  // Push #97: +70% per level, compounding (45,000 → 76,500 → 130,050 → 221,085). null = already max.
+  try { return require('../../rpg/utils/SkillCatalog').skillUpgradeCost(currentLevel); } catch (e) {}
+  const lv = Number(currentLevel) || 1; if (lv < 1 || lv >= 5) return null; return Math.round(45000 * Math.pow(1.7, lv - 1));
 }
 
 // Push #96h-k: the listed cost IS the charged cost (level discount, job discount, non-Healer heal ×2).
@@ -188,6 +187,8 @@ module.exports = {
       txt += `⏰ Cooldown: ${bonuses.cooldown}t\n`;
       if (lv > 1) txt += isHealerHealSkill(player, skill) ? `⬆️ Level bonus: −${require('../../rpg/utils/HealerBacklash').reductionPct(lv)}% backlash, -${bonuses.costReduction} cost\n` : `⬆️ Level bonus: +${Math.round((bonuses.dmgMult-1)*100)}% DMG, -${bonuses.costReduction} cost\n`;
       if (info?.effect) txt += `\n💡 EFFECTS:\n${info.effect}\n`;
+      // Push #97: what the skill REALLY does at its current level (support numbers grow with every upgrade).
+      try { const _r = _SCk && _SCk.resolveSkill ? _SCk.resolveSkill(player, skill.name) : null; const _e = _r && _r.ok ? _r.entry : null; const _L = _e ? (_e.effectScaled || _SCk.scaledSummary(_e)) : []; if (_L.length) txt += `\n📐 AT LEVEL ${lv}${lv > 1 ? ` (×${(_SCk.supportMult(lv)).toFixed(2)} support · +${Math.round((lv - 1) * 8)}% damage)` : ''}:\n${_L.join('\n')}\n`; } catch (e) {}
       if (info?.animation) txt += `\n🎬 ANIMATION:\n${info.animation.split('\n')[0]}\n`;
       if (upgradeCost) txt += `\n${FRAME}\n⬆️ Upgrade to Lv ${lv+1}: 💠 ${upgradeCost.toLocaleString()} Nexus\n/skills upgrade [slot#]\n`;
       txt += `${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO LOADOUT* — Lv.${lv} ${skill.name}` : `\n${UI.upsell()}`);

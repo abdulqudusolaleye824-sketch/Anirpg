@@ -183,6 +183,11 @@ function open(player, entry) {
       } else lines.push('⚠️ The package contained no usable stat');
       break;
     }
+    case 'mining_tool': {
+      // Push #97: mining tools bought in the Guild Shop land in the hunter's tool belt (/mine info).
+      try { const got = require('./Mining').grantFromShop(player, src.toolId || String(src.id || '').replace(/^mine_/, '')); lines.push(got || `⛏️ ${src.name}`); } catch (e) { lines.push(`⛏️ ${src.name || 'Mining tool'}`); }
+      break;
+    }
     case 'ticket': {
       player.summonTickets = (player.summonTickets || 0) + (Number(src.amount) || 1);
       lines.push(`🎟️ +${Number(src.amount) || 1} summon ticket(s)`);

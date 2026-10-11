@@ -454,11 +454,16 @@ ${FRAME}`
         // TWO MATCH
         winAmount = Math.floor(betAmount * 0.5);
         message = `💫 Minor Win! 💫\n\nTwo symbols match!`;
+      } else if (require('../../rpg/utils/CasinoBoost').luckyBreak(0.56)) {
+        // Push #97: +20% win rate — the reels nudge into a minor win
+        winAmount = Math.floor(betAmount * 0.5);
+        message = `🍀 LUCKY NUDGE! 🍀\n\nThe reels settle on a pair!`;
       } else {
         // NO MATCH
         winAmount = -betAmount;
         message = `❌ No luck this time...`;
       }
+      winAmount = winAmount > 0 ? require('../../rpg/utils/CasinoBoost').boostWin(winAmount, player) : winAmount; // Push #97: +40% winnings, Pro ×2
 
       // Update Nexus
       updatePlayerNexus(player, winAmount, saveDatabase);
@@ -620,6 +625,8 @@ ${FRAME}${isJackpot ? '\n🏆 JACKPOT WINNER! 🏆' : ''}`;
         result = '🤝 Push! Tie game!';
         winAmount = 0;
       }
+      if (winAmount < 0 && require('../../rpg/utils/CasinoBoost').luckyBreak(0.42)) { result = '🍀 LUCKY DRAW! The dealer fumbles — you win!'; winAmount = betAmount * 2; } // Push #97: +20% win rate
+      winAmount = winAmount > 0 ? require('../../rpg/utils/CasinoBoost').boostWin(winAmount, player) : winAmount; // Push #97: +40% winnings, Pro ×2
 
       // Update Nexus
       updatePlayerNexus(player, winAmount, saveDatabase);
@@ -774,7 +781,10 @@ ${FRAME}`
         }
       }
 
-      const winAmount = won ? betAmount * multiplier : -betAmount;
+      let _luck = false;
+      if (!won && require('../../rpg/utils/CasinoBoost').luckyBreak(!isNaN(parseInt(choice)) ? 1 / 37 : 18 / 37)) { won = true; _luck = true; multiplier = !isNaN(parseInt(choice)) ? 36 : 2; } // Push #97: +20% win rate
+      let winAmount = won ? betAmount * multiplier : -betAmount;
+      winAmount = winAmount > 0 ? require('../../rpg/utils/CasinoBoost').boostWin(winAmount, player) : winAmount; // Push #97: +40% winnings, Pro ×2
 
       // Update Nexus
       updatePlayerNexus(player, winAmount, saveDatabase);
@@ -923,7 +933,9 @@ ${FRAME}`
 
       // Ensure win is at least the bet (principal back) plus a tiny profit on extreme boundaries
       // Math.floor at target=1 or 99 produces ~0.99x which would lose money on a "win"
-      const winAmount = won ? Math.max(betAmount + 1, Math.floor(betAmount * multiplier)) : -betAmount;
+      if (!won && require('../../rpg/utils/CasinoBoost').luckyBreak(prediction === 'over' ? (100 - target) / 100 : target / 100)) won = true; // Push #97: +20% win rate
+      let winAmount = won ? Math.max(betAmount + 1, Math.floor(betAmount * multiplier)) : -betAmount;
+      winAmount = winAmount > 0 ? require('../../rpg/utils/CasinoBoost').boostWin(winAmount, player) : winAmount; // Push #97: +40% winnings, Pro ×2
 
       // Update Nexus
       updatePlayerNexus(player, winAmount, saveDatabase);

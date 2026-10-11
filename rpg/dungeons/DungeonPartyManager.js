@@ -12,6 +12,7 @@ class DungeonPartyManager {
     
     this.parties[partyId] = {
       id: partyId,
+      botKey: (() => { try { return require('../utils/BotLane').current(); } catch (e) { return null; } })(), // Push #97: lane that opened the party
       leader: leaderId,
       leaderName: leaderName,
       members: [{ id: leaderId, name: leaderName, ready: false }],

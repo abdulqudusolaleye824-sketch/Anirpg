@@ -31,6 +31,16 @@ try {
   }
 } catch (e) { console.error('[Crafting] SL recipes not loaded:', e.message); }
 
+// Push #97 (BUG-010): recipe output → category (weapons / helmet / chest / gloves / boots / leggings / accessories / artifacts)
+let _catByName = null;
+function recipeCategoryOf(name) {
+  if (!_catByName) {
+    _catByName = {};
+    for (const pool of Object.values(RECIPES)) for (const [cat, list] of Object.entries(pool || {})) for (const r of (list || [])) if (r && r.output) _catByName[String(r.output).toLowerCase()] = cat;
+  }
+  return _catByName[String(name || '').toLowerCase()] || null;
+}
+
 const SCROLL_RARITIES = {
   Common:    { emoji: '⬜', cost: 500,    description: 'A worn scroll. Simple recipes inside.' },
   Uncommon:  { emoji: '🟩', cost: 1500,   description: 'A sealed scroll. Moderate recipes await.' },
@@ -92,28 +102,56 @@ function readScroll(scroll) {
   return scroll;
 }
 
-function attemptCraft(player, itemName, key, db) {
-  let targetScroll = null, scrollOwnerJid = null;
+// Push #97: crafting costs Nexus (by scroll rarity) and has a 90% success / 10% failure roll.
+const CRAFT_NEXUS_COST = { Common: 5000, Uncommon: 15000, Rare: 50000, Epic: 150000, Legendary: 500000, Mythic: 1500000 };
+const CRAFT_SUCCESS = 0.90;
+function craftNexusCost(rarity) { const k = String(rarity || 'Common'); return CRAFT_NEXUS_COST[k.charAt(0).toUpperCase() + k.slice(1).toLowerCase()] || 5000; }
+
+function findScroll(key, db) {
   for (const [jid, user] of Object.entries(db.users || {})) {
     const scrolls = user.inventory?.scrolls || [];
     const found = scrolls.find(s => s.key === key && !s.crafted);
-    if (found) { targetScroll = found; scrollOwnerJid = jid; break; }
+    if (found) return { scroll: found, ownerJid: jid };
   }
-  if (!targetScroll) return { success: false, reason: '❌ Invalid or already used craft key.' };
-  const recipe = targetScroll.recipe;
-  if (recipe.output.toLowerCase() !== itemName.toLowerCase())
-    return { success: false, reason: `❌ Key *${key}* is for *${recipe.output}*, not *${itemName}*.` };
-  RI.migrateLegacy(player); // pull pre-fix legacy buckets into items first
-  const missing = [];
-  let _disc = 0; try { _disc = require('./JobSystem').mod(player, 'craftDiscount'); } catch (e) {} // Push #95: crafting jobs waste less material
+  return null;
+}
+
+// Everything the craft screen / image needs: materials (have/need), essence stones, Nexus, success odds.
+function craftPreview(player, itemName, key, db) {
+  const hit = findScroll(key, db);
+  if (!hit) return { ok: false, reason: '❌ Invalid or already used craft key.' };
+  const { scroll, ownerJid } = hit;
+  const recipe = scroll.recipe;
+  if (itemName && recipe.output.toLowerCase() !== String(itemName).toLowerCase())
+    return { ok: false, reason: `❌ Key *${key}* is for *${recipe.output}*, not *${itemName}*.` };
+  try { RI.migrateLegacy(player); } catch (e) {}
+  let _disc = 0; try { _disc = require('./JobSystem').mod(player, 'craftDiscount'); } catch (e) {}
   const _need = (qty) => Math.max(1, Math.ceil(qty * (1 - _disc / 100)));
-  for (const [mat, qty] of Object.entries(recipe.materials)) {
-    const have = RI.countMaterial(player, mat);
-    if (have < _need(qty)) missing.push(`${mat} (need ${_need(qty)}, have ${have})`);
-  }
-  if (missing.length > 0) return { success: false, reason: `❌ Missing materials:\n${missing.map(m => `• ${m}`).join('\n')}` };
-  for (const [mat, qty] of Object.entries(recipe.materials)) {
-    RI.consumeMaterial(player, mat, _need(qty));
+  const mats = Object.entries(recipe.materials || {}).map(([mat, qty]) => { const need = _need(qty); const have = RI.countMaterial(player, mat); return { mat, need, have, ok: have >= need }; });
+  const ES = require('./EssenceStones');
+  const req = ES.requiredFor(recipe, scroll.rarity);
+  const essence = { name: req.name, rank: req.rank, emoji: ES.emojiFor(req.rank), need: req.count, have: ES.count(player, req.rank), get ok() { return this.have >= this.need; } };
+  const nexusCost = craftNexusCost(scroll.rarity);
+  const nexus = { need: nexusCost, have: Number(player.gold) || 0, ok: (Number(player.gold) || 0) >= nexusCost };
+  const missing = [...mats.filter(m => !m.ok).map(m => `${m.mat} (need ${m.need}, have ${m.have})`), ...(!essence.ok ? [`${essence.name} (need ${essence.need}, have ${essence.have})`] : []), ...(!nexus.ok ? [`💠 ${nexusCost.toLocaleString()} Nexus (have ${nexus.have.toLocaleString()})`] : [])];
+  return { ok: true, scroll, ownerJid, recipe, rarity: scroll.rarity, mats, essence, nexus, nexusCost, successPct: Math.round(CRAFT_SUCCESS * 100), discount: _disc, missing, canCraft: missing.length === 0 };
+}
+
+function attemptCraft(player, itemName, key, db, opts = {}) {
+  const pv = craftPreview(player, itemName, key, db);
+  if (!pv.ok) return { success: false, reason: pv.reason };
+  const { scroll: targetScroll, ownerJid: scrollOwnerJid, recipe } = pv;
+  if (!pv.canCraft) return { success: false, reason: `❌ Missing for *${recipe.output}*:\n${pv.missing.map(m => `• ${m}`).join('\n')}`, preview: pv };
+  // Pay everything up front — a failed craft burns it all (the player was warned on the preview screen).
+  for (const m of pv.mats) RI.consumeMaterial(player, m.mat, m.need);
+  require('./EssenceStones').consume(player, pv.essence.rank, pv.essence.need);
+  player.gold = (Number(player.gold) || 0) - pv.nexusCost;
+  try { require('./TransactionLog').logSpend(player, 'craft', pv.nexusCost, 0, recipe.output); } catch (e) {}
+  const rng = typeof opts.rng === 'function' ? opts.rng : Math.random;
+  if (rng() >= CRAFT_SUCCESS) {
+    player.craftFails = (player.craftFails || 0) + 1;
+    return { success: false, failed: true, preview: pv, scrollOwnerJid, spent: { mats: pv.mats, essence: pv.essence, nexus: pv.nexusCost },
+      reason: `💥 *CRAFT FAILED!* The forge rejected *${recipe.output}*.\nLost: ${pv.mats.map(m => `${m.mat} ×${m.need}`).join(', ')}, ${pv.essence.name} ×${pv.essence.need}, 💠 ${pv.nexusCost.toLocaleString()} Nexus.\n📜 The scroll (key *${key}*) survives — gather materials and try again (90% success).` };
   }
   targetScroll.crafted = true; targetScroll.craftedBy = player.jid || 'unknown'; targetScroll.craftedAt = Date.now();
   if (scrollOwnerJid && db.users[scrollOwnerJid]) {
@@ -130,15 +168,12 @@ function attemptCraft(player, itemName, key, db) {
   // Commit to the live inventory: wearables → items (normalized gear shape,
   // visible to /gear + /equip). Artifacts keep their own bucket (the artifact
   // system reads it); anything else → items as material.
-  if (recipe.type === 'artifact') {
-    if (!player.inventory) player.inventory = {};
-    if (!Array.isArray(player.inventory.artifacts)) player.inventory.artifacts = [];
-    player.inventory.artifacts.push(craftedItem);
-  } else {
-    RI.grantItem(player, { ...craftedItem, source: 'craft' }, 'craft',
-      { infusions: craftedItem.infusions || [], craftedBy: craftedItem.craftedBy, fromKey: craftedItem.fromKey, craftedAt: craftedItem.craftedAt });
-  }
-  return { success: true, item: craftedItem, scrollOwnerJid };
+  // Push #97 (BUG-010): EVERY crafted piece (artifacts included) goes into the normal inventory as gear —
+  // artifacts wear in the cloak slot; helmets/boots/gloves land in their own slots (subtype decides).
+  const _granted = RI.grantItem(player, { ...craftedItem, source: 'craft' }, 'craft',
+    { subtype: craftedItem.subtype, infusions: craftedItem.infusions || [], craftedBy: craftedItem.craftedBy, fromKey: craftedItem.fromKey, craftedAt: craftedItem.craftedAt });
+  let _invIndex = -1; try { _invIndex = (player.inventory.items || []).indexOf(_granted); } catch (e) {}
+  return { success: true, item: craftedItem, granted: _granted, slot: _granted && _granted.slot, invIndex: _invIndex, scrollOwnerJid, preview: pv, spent: { mats: pv.mats, essence: pv.essence, nexus: pv.nexusCost } };
 }
 
 function checkMaterials(player, recipe) {
@@ -189,6 +224,8 @@ function formatScrollRead(scroll, player = null) {
     `🧪 *MATERIALS REQUIRED*`,
     FRAME,
     matLines,
+    (() => { try { const ES = require('./EssenceStones'); const r = ES.requiredFor(recipe, scroll.rarity); const have = player ? ES.count(player, r.rank) : null; return `  • ${ES.emojiFor(r.rank)} ${r.name} ×${r.count}${have !== null ? ` (have ${have})` : ''}  _(${r.rank}-gate beasts/boss, mining)_`; } catch (e) { return ''; } })(),
+    `  • 💠 ${craftNexusCost(scroll.rarity).toLocaleString()} Nexus forge fee · 🎲 90% success (a fail burns the materials)`,
     ``,
     FRAME,
     `🔑 *CRAFT KEY: ${scroll.key || 'N/A'}*`,
@@ -205,7 +242,9 @@ function formatScrollRead(scroll, player = null) {
 }
 
 module.exports = {
+  recipeCategoryOf,
   RECIPES, SCROLL_RARITIES, SCROLL_SHOP_ITEMS,
   generateCraftKey, buyScroll, readScroll,
   attemptCraft, checkMaterials, formatScrollRead,
+  craftPreview, craftNexusCost, findScroll, CRAFT_NEXUS_COST, CRAFT_SUCCESS,
 };

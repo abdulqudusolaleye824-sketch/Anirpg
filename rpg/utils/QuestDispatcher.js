@@ -125,4 +125,23 @@ function ensureTodayQuests(player, sock = null, jid = null) {
   return txt;
 }
 
-module.exports = { trackAndNotify, ensureTodayQuests };
+// Push #97 (BUG-011): "Heal N times during battle" — is this hunter in a fight right now?
+// Counts gate raids, party/solo dungeons, instances, the labyrinth and PvP duels. Nothing else.
+function inBattle(player, db, sender) {
+  try {
+    if (player && player.pvpBattle && player.pvpBattle.opponentId) return 'pvp';
+    if (player && player.instance && player.instance.active) return 'instance';
+    if (player && player.labyrinth && player.labyrinth.active) return 'labyrinth';
+    if (db && db.soloDungeons && sender && db.soloDungeons[sender]) return 'dungeon';
+    try { const DPM = require('../dungeons/DungeonPartyManager'); const pt = DPM.getPartyByPlayer && DPM.getPartyByPlayer(sender); if (pt && pt.dungeon) return 'dungeon'; } catch (e) {}
+    try { const GR = require('../dungeons/GateRaid'); if (GR.findOtherRaid && GR.findOtherRaid(sender, null)) return 'gate'; } catch (e) {}
+  } catch (e) {}
+  return null;
+}
+function trackBattleHeal(player, db, sock, sender, chatId, amount = 1) {
+  if (!player) return null;
+  if (!inBattle(player, db, sender)) return null;
+  return trackAndNotify(player, 'heal', amount, sock, sender, chatId);
+}
+
+module.exports = { trackAndNotify, ensureTodayQuests, inBattle, trackBattleHeal };

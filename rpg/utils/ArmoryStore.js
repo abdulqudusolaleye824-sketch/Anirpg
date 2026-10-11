@@ -399,7 +399,7 @@ function statusDefense(defender, type) {
     if (!p) continue;
     if (Array.isArray(p.immune) && p.immune.includes(t)) return { blocked: true, reason: `${p.emoji || '🛡️'} ${p.name} is immune`, turnReduce: 0 };
     for (const r of p.resist || []) if (r.type === t && Math.random() * 100 < (r.chance || 0)) return { blocked: true, reason: `${p.emoji || '🛡️'} ${p.name} shrugged it off`, turnReduce: 0 };
-    turnReduce = Math.max(turnReduce, p.turnReduce || 0);
+    turnReduce += Number(p.turnReduce) || 0; // Push #97: stacks across every equipped piece
   }
   return { blocked: false, turnReduce };
 }

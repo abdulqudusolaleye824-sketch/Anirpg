@@ -256,6 +256,7 @@ ${FRAME}`;
         } else if (chosenTier === 'higher') {
           player.inventory.higherHealthPotions--;
         }
+        try { require('../../rpg/utils/QuestDispatcher').trackBattleHeal(player, db, sock, sender, chatId); } catch (e) {} // Push #97 (BUG-011)
 
         // Find PvP target
         const pvpState = player.pvpBattle || Object.values(db.pendingChallenges || {}).find(c => c.active && (c.challenger === sender || c.target === sender));
@@ -296,6 +297,7 @@ ${FRAME}`;
           let _pp = 1; try { _pp = 1 + require('../../rpg/utils/JobSystem').mod(player, 'potionPower') / 100; } catch (e) {}
           const before = st.hp; st.hp = Math.min(es.maxHp, st.hp + Math.floor(es.maxHp * pct * _pp));
           if (chosenTier === 'lower') require('../../rpg/utils/PotionTiers').consume(player, 'lower', 1); else if (chosenTier === 'medium') player.inventory.mediumHealthPotions--; else if (chosenTier === 'higher') player.inventory.higherHealthPotions--;
+          try { require('../../rpg/utils/QuestDispatcher').trackBattleHeal(player, db, sock, sender, chatId); } catch (e) {} // Push #97 (BUG-011)
           saveDatabase();
           return sock.sendMessage(chatId, { text: [`${FRAME}`, `💚 *${tierName.toUpperCase()} USED — JEJU ISLAND* 💚`, `${FRAME}`, `${tierEmoji} *${player.name}* drinks on the island.`, ``, `✨ Event HP restored: *+${st.hp - before}* (+${Math.floor(pct * 100)}%)`, `❤️ Event HP: *${st.hp}/${es.maxHp}* (real HP untouched)`, `${FRAME}`].join('\n'), mentions: [sender] }, { quoted: msg });
         }
@@ -323,6 +325,7 @@ ${FRAME}`;
       }
 
       saveDatabase();
+      try { require('../../rpg/utils/QuestDispatcher').trackBattleHeal(player, db, sock, sender, chatId); } catch (e) {} // Push #97 (BUG-011)
 
       return sock.sendMessage(chatId, {
         text: [

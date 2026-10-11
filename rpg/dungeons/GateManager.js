@@ -16,6 +16,15 @@ const SL = require('../data/SoloLevelingMonsters');
 // tier-5 Solo Leveling monsters allowed, boss at full HP. Lower % = weaker
 // pool + scaled HP, so a fresh E-rank party can clear a 65 % E gate while a
 // 100 % E gate needs a full squad. The % is shown on every gate/party screen.
+// Push #97: every gate rolls its own depth — 7 to 40 floors. 30+ is RARE (≈1.2% of gates ≈ a handful a week
+// across all raids); most gates run 7–15.
+function rollFloors() {
+  const r = Math.random();
+  if (r < 0.60) return 7 + Math.floor(Math.random() * 9);    // 7–15   (60%)
+  if (r < 0.87) return 16 + Math.floor(Math.random() * 7);   // 16–22  (27%)
+  if (r < 0.988) return 23 + Math.floor(Math.random() * 7);  // 23–29  (11.8%)
+  return 30 + Math.floor(Math.random() * 11);                // 30–40  (1.2%)
+}
 function rollGateStrength() {
   // Bell-ish: mostly 70–90, occasional 60 / 100.
   const r = (Math.random() + Math.random()) / 2;
@@ -245,7 +254,8 @@ class GateManager {
 
     // Push #71: Solo Leveling bestiary + gate strength %.
     const strengthPct = rollGateStrength();
-    const monsters = buildGateMonsters(rank, rankData.floors, strengthPct, bossName); // Push #88t: themed to the boss
+    const _floors = rollFloors(); // Push #97: 7–40 floors per gate
+    const monsters = buildGateMonsters(rank, _floors, strengthPct, bossName); // Push #88t: themed to the boss
     const bossHp = Math.floor(rankData.bossHp * Math.max(0.6, strengthPct / 100));
 
     const loot = this.generateBossLoot(rank, 6);
@@ -261,9 +271,10 @@ class GateManager {
       raiders: [], guildRaiders: [], externalRaiders: [], pendingApplicants: [],
       raidStarted: false, raidStartTime: null,
       strengthPct, strengthLabel: strengthLabel(strengthPct),
-      currentFloor: 0, totalFloors: rankData.floors, monsters,
+      currentFloor: 0, totalFloors: _floors, monsters,
       boss: { name: bossName, baseName: bossData.baseName || bossName, family: themed.theme || null, hp: bossHp, maxHp: bossHp, defeated: false },
       theme: themed.theme || null,
+      terrain: (() => { try { return require('../data/Terrains').pickFor(themed.theme || null).id; } catch (e) { return null; } })(), // Push #97: 20 terrains
       bossLoot: loot, lootDistributed: false,
       monstersKilled: 0, damageDealt: {},
     };
@@ -546,6 +557,7 @@ GateManager.formatGateAnnouncement = function(gate) {
 
 // Push #71 exports
 GateManager.rollGateStrength = rollGateStrength;
+GateManager.rollFloors = rollFloors;
 GateManager.strengthLabel = strengthLabel;
 GateManager.strengthText = strengthText;
 GateManager.buildGateMonsters = buildGateMonsters;
@@ -553,4 +565,4 @@ GateManager.monsterFamily = monsterFamily;
 GateManager.pickGateTheme = pickGateTheme;
 GateManager.orderFloors = orderFloors;
 
-module.exports = { GateManager, GATE_RANKS, LOOT_TABLES, GATE_MONSTERS, GATE_BOSSES, rollGateStrength, strengthLabel, strengthText, buildGateMonsters, monsterFamily, orderFloors, MONSTER_FAMILIES, pickGateTheme };
+module.exports = { GateManager, GATE_RANKS, LOOT_TABLES, GATE_MONSTERS, GATE_BOSSES, rollGateStrength, rollFloors, strengthLabel, strengthText, buildGateMonsters, monsterFamily, orderFloors, MONSTER_FAMILIES, pickGateTheme };

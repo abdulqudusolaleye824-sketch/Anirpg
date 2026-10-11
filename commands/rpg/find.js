@@ -14,6 +14,7 @@ module.exports = {
     const player = db.users[sender];
 
     if (!player) return sock.sendMessage(chatId, { text: '❌ Not registered!' }, { quoted: msg });
+    try { require('../../rpg/utils/RewardInventory').migrateLegacy(player); } catch (e) {} // Push #97 (BUG-010)
 
     const query = args.join(' ').trim().toLowerCase();
     if (!query) {

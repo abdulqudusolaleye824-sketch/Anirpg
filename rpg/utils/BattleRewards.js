@@ -148,10 +148,21 @@ function shareRaidExp(gate, killerJid, db, sock=null, chatId=null) {
 // rank, committed straight to the profile (level-ups applied by the caller).
 const FLOOR_RANK_MULT = { F: 0.8, E: 1, D: 1.5, C: 2.2, B: 3.2, A: 4.5, S: 6, SS: 8 };
 function floorXp(floor, rank) { return Math.floor((250 + Math.max(1, floor) * 180) * (FLOOR_RANK_MULT[String(rank || 'E').toUpperCase()] || 1)); }
-function grantFloorXp(player, floor, rank) {
-  if (!player) return 0; let xp = floorXp(floor, rank);
+// Push #97: gates now run 7–40 floors. The XP a rank pays stays what it was for the rank's classic depth
+// (E 3 · D 4 · C 5 · B 6 · A 7 · S 8 floors) — it is spread over however many floors the gate rolled,
+// ramping from 70% of the average on floor 1 to 130% on the last.
+const CLASSIC_FLOORS = { E: 3, D: 4, C: 5, B: 6, A: 7, S: 8, SS: 8, F: 3 };
+function floorXpSpread(floor, rank, totalFloors) {
+  const r = String(rank || 'E').toUpperCase(); const tf = Math.max(1, Number(totalFloors) || 0);
+  if (!tf) return floorXp(floor, rank);
+  const classic = CLASSIC_FLOORS[r] || 3; let base = 0; for (let f = 1; f <= classic; f++) base += floorXp(f, rank);
+  const pos = tf === 1 ? 1 : (Math.max(1, Math.min(tf, floor)) - 1) / (tf - 1);
+  return Math.max(1, Math.round(base / tf * (0.7 + 0.6 * pos)));
+}
+function grantFloorXp(player, floor, rank, totalFloors = null) {
+  if (!player) return 0; let xp = totalFloors ? floorXpSpread(floor, rank, totalFloors) : floorXp(floor, rank);
   try { xp = Math.floor(xp * require('./AuraSystem').AuraSystem.expMult(player)); } catch (e) {}
   try { const JS = require('./JobSystem'); const jm = JS.mods ? JS.mods(player) : {}; if (jm && jm.xpMult) xp = Math.floor(xp * (1 + jm.xpMult / 100)); } catch (e) {}
   player.xp = (player.xp || 0) + xp; player.lifetimeXp = (player.lifetimeXp || 0) + xp; return xp;
 }
-module.exports = { floorXp, grantFloorXp, FLOOR_RANK_MULT, giveBattleWinRewards, formatRewards, isPro, giveSharedExp, shareRaidExp };
+module.exports = { floorXp, floorXpSpread, CLASSIC_FLOORS, grantFloorXp, FLOOR_RANK_MULT, giveBattleWinRewards, formatRewards, isPro, giveSharedExp, shareRaidExp };

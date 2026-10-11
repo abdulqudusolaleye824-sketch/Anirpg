@@ -87,30 +87,13 @@ function burnKey(key, keyData, db) {
   try { if (db.gateKeys?.[key]) { db.gateKeys[key].raidComplete = true; db.gateKeys[key].used = true; } } catch (e) {}
 }
 
-module.exports = {
-  name: 'closegate',
-  aliases: ['forceclosegate', 'cleargate'],
-  description: 'Mods: force-close a stuck gate in this dungeon GC (pays loot if the raid actually won)',
-
-  async execute(sock, msg, args, getDatabase, saveDatabase, sender) {
-    const chatId = msg.key.remoteJid;
-    const db = getDatabase();
+// Push #97: one gate's close logic (shared by the GC path and the owner's DM "close ALL" path). Returns lines.
+function closeOne(gate, key, keyData, chatId, db, saveDatabase) {
     const FRAME = UI.FREE_BAR;
-
-    if (!Perms.isBotMod(db, sender)) {
-      return sock.sendMessage(chatId, { text: `❌ *MODS ONLY.*\n${FRAME}\n/closegate is a moderation tool.` }, { quoted: msg });
-    }
-
-    const res = resolveGate(args, chatId, db);
-    if (res.error) return sock.sendMessage(chatId, { text: res.error }, { quoted: msg });
-    const gate = res.gate;
-    if (!gate) return sock.sendMessage(chatId, { text: '❌ Gate could not be loaded from that code.' }, { quoted: msg });
 
     const alreadyDone = gate.raid?.status === 'done' || gate.raid?.status === 'wiped' || gate.raid?.status === 'closed';
     const won = isSuccess(gate);
     const survivors = survivorsOf(gate, db);
-    const key = res.key;
-    const keyData = res.keyData;
 
     const lines = [
       FRAME,
@@ -167,6 +150,45 @@ module.exports = {
       try { GR.releaseCombatLock(gate.id); } catch (e) {}
     } catch (e) { console.error('[closegate] cleanup:', e.message); }
 
+    return { lines, won };
+}
+
+module.exports = {
+  name: 'closegate',
+  aliases: ['forceclosegate', 'cleargate'],
+  description: 'Mods: force-close a stuck gate in this dungeon GC (pays loot if the raid actually won)',
+
+  async execute(sock, msg, args, getDatabase, saveDatabase, sender) {
+    const chatId = msg.key.remoteJid;
+    const db = getDatabase();
+    const FRAME = UI.FREE_BAR;
+
+    if (!Perms.isBotMod(db, sender)) {
+      return sock.sendMessage(chatId, { text: `❌ *MODS ONLY.*\n${FRAME}\n/closegate is a moderation tool.` }, { quoted: msg });
+    }
+
+    // Push #97: from the owner's DM, /closegate closes EVERY active raid everywhere (each settled on its own merits).
+    if (!String(chatId).endsWith('@g.us') && Perms.isBotOwner(db, sender) && !String(args[0] || '').trim()) {
+      const all = Object.values(GateManager.activeGates || {}).filter(g => g && !g.cleared && !g.broken && g.raid && /^(recruiting|active)$/.test(String(g.raid.status || '')));
+      if (!all.length) return sock.sendMessage(chatId, { text: '✅ No active raid anywhere right now.' }, { quoted: msg });
+      const out = [`🚪 *CLOSING ALL RAIDS — ${all.length}*`, FRAME];
+      for (const g of all) {
+        const key = g.raid?.key || Object.keys(db.gateKeys || {}).find(k => db.gateKeys[k]?.gateId === g.id) || null;
+        const keyData = key ? (GR.GKM.getKey(key, db) || db.gateKeys?.[key]) : null;
+        const home = keyData?.dungeonChatId || g.chatId || null;
+        let r = null; try { r = closeOne(g, key, keyData, home || chatId, db, saveDatabase); } catch (e) { out.push(`⚠️ ${g.id}: ${e.message}`); continue; }
+        out.push(`• ${g.rank || '?'}-Rank ${g.id} — ${r.won ? '✅ cleared & paid' : '❌ closed, no loot'}`);
+        if (home && String(home).endsWith('@g.us')) { try { await sock.sendMessage(home, { text: `🚪 *GATE ${g.id} CLOSED* by the bot owner (${db.users?.[sender]?.name || 'owner'}).${r.won ? ' The raid counted as cleared — loot paid.' : ' No loot was paid out.'}` }); } catch (e) {} }
+      }
+      saveDatabase();
+      return sock.sendMessage(chatId, { text: out.join('\n') }, { quoted: msg });
+    }
+
+    const res = resolveGate(args, chatId, db);
+    if (res.error) return sock.sendMessage(chatId, { text: res.error }, { quoted: msg });
+    const gate = res.gate;
+    if (!gate) return sock.sendMessage(chatId, { text: '❌ Gate could not be loaded from that code.' }, { quoted: msg });
+    const { lines } = closeOne(gate, res.key, res.keyData, chatId, db, saveDatabase);
     saveDatabase();
     lines.push(FRAME, `🛡️ Closed by ${db.users?.[sender]?.name || bare(sender)}.`);
     return sock.sendMessage(chatId, { text: lines.filter(l => l !== '').join('\n') }, { quoted: msg });

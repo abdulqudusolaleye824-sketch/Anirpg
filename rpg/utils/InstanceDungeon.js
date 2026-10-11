@@ -194,12 +194,17 @@ function openBox(player, kind) {
 // ── Instance dungeon ─────────────────────────────────────────────────────
 // Push #96h-z9: a Job Change Quest instance is 10 FLOORS × 5 MONSTERS (the 5th of every floor is that floor's boss;
 // floor 10's boss is the Overlord). Clearing floor 10 clears the quest and the instance closes. 2 h hard limit — then it closes itself.
-const FLOORS = 10, PER_FLOOR = 5, TIME_LIMIT_MS = 2 * 3600e3;
+// Push #97: instances are ENDLESS. FLOORS (10) is now only the Job-Change pass mark — the run goes on
+// until the hunter dies or /instance leave. No clock; only a 30-minute IDLE auto-exit (so a hunter who
+// walked away does not stay "not on this realm" forever). Score + exit bonus scale with the floor reached.
+const FLOORS = 10, PER_FLOOR = 5, TIME_LIMIT_MS = 0, IDLE_LIMIT_MS = 30 * 60e3;
 const RANK_BY_FLOOR = (f) => f >= 10 ? 'S' : f >= 8 ? 'A' : f >= 6 ? 'B' : f >= 4 ? 'C' : f >= 2 ? 'D' : 'E';
 function targetFloorFor(job) { return FLOORS; }
-function timeLeftMs(inst) { return inst && inst.active ? Math.max(0, (inst.startedAt || 0) + TIME_LIMIT_MS - Date.now()) : 0; }
-// Auto-close an instance that ran past its 2 h limit. Returns the summary (or null if still open).
-function expireCheck(player) { const inst = player && player.instance; if (!inst || !inst.active) return null; if (Date.now() - (inst.startedAt || 0) < TIME_LIMIT_MS) return null; const sm = end(player, false); sm.lines.unshift('⏰ *Time is up — the instance closed itself after 2 hours.*'); sm.expired = true; return sm; }
+function timeLeftMs(inst) { return inst && inst.active ? Math.max(0, (inst.lastActAt || inst.startedAt || 0) + IDLE_LIMIT_MS - Date.now()) : 0; }
+// Auto-close an instance idle for 30 min. Returns the summary (or null if still open).
+function expireCheck(player) { const inst = player && player.instance; if (!inst || !inst.active) return null; if (Date.now() - (inst.lastActAt || inst.startedAt || 0) < IDLE_LIMIT_MS) return null; const sm = end(player, false, { idle: true }); sm.lines.unshift('⏰ *Idle for 30 minutes — the instance closed itself and scored your run.*'); sm.expired = true; return sm; }
+// Score + exit bonus (💠 Nexus) for a run. Floors are worth more the deeper you go; death pays half.
+function scoreFor(inst, died) { const f = Math.max(1, Number(inst && inst.floor) || 1), k = Math.max(0, Number(inst && inst.kills) || 0); const score = f * 100 + k * 10; const bonus = Math.floor(400 * f * f * (died ? 0.5 : 1)); return { score, bonus, floor: f, kills: k }; }
 
 function makeMonster(player, floor, slot = 1) {
   const rank = RANK_BY_FLOOR(floor);
@@ -235,7 +240,7 @@ function start(player, jobQuery) {
   player.jobKeys = _list.length;
   const _boss = bossFor(job.key);
   const target = targetFloorFor(job);
-  player.instance = { active: true, job: job.key, bossName: _boss.boss, keyName: _usedKey.name, floor: 1, slot: 1, target, kills: 0, startedAt: Date.now(), expiresAt: Date.now() + TIME_LIMIT_MS, monster: makeMonster(player, 1, 1), passed: false, gold: 0, jobXp: 0, domain: null, turn: 0 };
+  player.instance = { active: true, job: job.key, bossName: _boss.boss, keyName: _usedKey.name, floor: 1, slot: 1, target, kills: 0, startedAt: Date.now(), lastActAt: Date.now(), expiresAt: null, monster: makeMonster(player, 1, 1), passed: false, gold: 0, jobXp: 0, domain: null, turn: 0 };
   return { ok: true, job, target, inst: player.instance };
 }
 
@@ -270,7 +275,7 @@ async function act(player, skillQuery, hooks = null) {
   const inst = player.instance;
   if (!inst || !inst.active) return { ok: false, error: 'You are not inside an instance — /instance start' };
   const UC = require('./UnifiedCombat'); const SC = require('./SkillCatalog'); const MSFX = require('./MonsterSkillFX'); const DS = require('./DomainSystem');
-  const m = inst.monster; const lines = []; inst.turn = (inst.turn || 0) + 1;
+  const m = inst.monster; const lines = []; inst.turn = (inst.turn || 0) + 1; inst.lastActAt = Date.now();
   const canAct = UC.canAct ? UC.canAct(player) : { canAct: true };
   const built = _buildMove(player, skillQuery);
   if (built.error) return { ok: false, error: built.error };
@@ -315,15 +320,15 @@ async function act(player, skillQuery, hooks = null) {
     player.gold = (player.gold || 0) + reward; inst.gold += reward;
     const jx = JS.gainXp(player, JS.xpFor(m.isBoss ? 'boss' : 'floor'), 'instance'); if (jx) { inst.jobXp += jx.gained; if (jx.levelUp) { lines.push(`🧭 *JOB LEVEL UP!* ${jx.name} → Job Lv.${jx.to} — *${jx.title}*`); lines.push(...JS.runeLines(jx)); } }
     if (m.isBoss) { player.upgradePoints = (player.upgradePoints || 0) + 1; lines.push(`📈 +1 Upgrade Point (floor ${inst.floor} boss)`); }
-    lines.push(`☠️ *${m.name} falls!* +${reward.toLocaleString()} Mana Stones${jx ? ` · +${jx.gained} Job XP` : ''} · floor ${inst.floor}: ${Math.min(PER_FLOOR, inst.slot)}/${PER_FLOOR} down`);
+    lines.push(`☠️ *${m.name} falls!* +${reward.toLocaleString()} 💠 Nexus${jx ? ` · +${jx.gained} Job XP` : ''} · floor ${inst.floor}: ${Math.min(PER_FLOOR, inst.slot)}/${PER_FLOOR} down`);
     try { player.statusEffects = []; } catch (e) {}
     inst.domain = null;
     const job = JS.BY_KEY[inst.job];
     const floorCleared = inst.slot >= PER_FLOOR;
-    if (floorCleared && inst.floor >= FLOORS) {
+    if (floorCleared && inst.floor >= FLOORS && !inst.passed) {
+      // Push #97: the pass mark no longer ends the run — the instance is endless. Keep climbing or /instance leave.
       inst.passed = true; player.jobQuest = { cleared: inst.job, at: Date.now(), floor: inst.floor }; try { JS.unlock(player, JS.findJob(inst.job)); } catch (e) {}
-      lines.push(`🏆 *JOB CHANGE QUEST CLEARED!* All ${FLOORS} floors conquered — *${job.name}* is yours: /job change ${job.name}`);
-      const summary = end(player, false); return { ok: true, lines: [...lines, ...summary.lines], floorCleared: true, bossKill: !!m.isBoss, ended: true, passed: true };
+      lines.push(`🏆 *JOB CHANGE QUEST CLEARED!* Floor ${FLOORS} conquered — *${job.name}* is yours: /job change ${job.name}`, `♾️ The instance goes on. Every deeper floor raises your exit bonus — die and you keep only half. */instance leave* banks it.`);
     }
     if (floorCleared) {
       // Breather between floors: +20% HP (after a boss: +35%).
@@ -331,12 +336,13 @@ async function act(player, skillQuery, hooks = null) {
       inst.floor++; inst.slot = 1;
     } else inst.slot++;
     inst.monster = makeMonster(player, inst.floor, inst.slot);
-    lines.push(`➡️ *Floor ${inst.floor} · ${inst.slot}/${PER_FLOOR}* — ${inst.monster.emoji} *${inst.monster.name}* [${inst.monster.rank}] HP ${inst.monster.stats.maxHp}${inst.monster.isBoss ? (inst.monster.finalBoss ? ' · 👑 FINAL BOSS' : ' · 👑 FLOOR BOSS') : ''} · ⏰ ${Math.ceil(timeLeftMs(inst) / 60000)} min left`);
+    lines.push(`➡️ *Floor ${inst.floor} · ${inst.slot}/${PER_FLOOR}* — ${inst.monster.emoji} *${inst.monster.name}* [${inst.monster.rank}] HP ${inst.monster.stats.maxHp}${inst.monster.isBoss ? (inst.monster.finalBoss ? ' · 👑 FINAL BOSS' : ' · 👑 FLOOR BOSS') : ''} · ⏳ idle auto-exit in ${Math.ceil(timeLeftMs(inst) / 60000)} min`);
     return { ok: true, lines, floorCleared, bossKill: !!m.isBoss, ended: false };
   }
   // Monster turn
   const mc = UC.canAct ? UC.canAct(m) : { canAct: true };
   try { const st = UC.tickStatuses(player); if (st && st.length) lines.push(...st); } catch (e) {}
+  if ((player.stats.hp || 0) <= 0) { let _ail = null; try { _ail = (player.statusEffects || []).map(e => e.name || e.type).filter(Boolean)[0]; } catch (e) {} lines.push(`💀 You succumbed to ${_ail ? `*${_ail}*` : 'your ailments'}!`); } // Push #97 (BUG-007)
   try { const st = UC.tickStatuses(m); if (st && st.length) lines.push(...st); } catch (e) {}
   try { const tl = DS.tick(inst); if (tl) lines.push(tl); } catch (e) {}
   if (m.stats.hp <= 0) return { ok: true, lines: [...lines, `☠️ ${m.name} succumbs to its wounds — strike again to claim the floor.`], ended: false };
@@ -374,17 +380,20 @@ async function act(player, skillQuery, hooks = null) {
   }
   if ((player.stats.hp || 0) <= 0) {
     player.stats.hp = 1; // the instance is a trial, not a grave
-    const summary = end(player, false);
+    const summary = end(player, false, { died: true });
     return { ok: true, lines: [...lines, `💀 *You fall on floor ${summary.floor}.*`, ...summary.lines], ended: true, passed: summary.passed };
   }
   return { ok: true, lines, ended: false };
 }
 
-function end(player, voluntary) {
+function end(player, voluntary, opts = {}) {
   const inst = player.instance; if (!inst || !inst.active) return { lines: ['Not inside an instance.'], floor: inst && inst.last ? inst.last.floor : 0, passed: !!(inst && inst.last && inst.last.passed) };
   const job = JS.BY_KEY[inst.job];
-  const lines = [`📜 *INSTANCE ${voluntary ? 'LEFT' : 'OVER'}* — ${job ? job.emoji + ' ' + job.name : ''} quest · floor ${inst.floor} · ${inst.kills} kills`, `💠 ${inst.gold.toLocaleString()} Mana Stones · 🧭 ${inst.jobXp} Job XP`, inst.passed ? `🏆 Quest cleared — /job change ${job ? job.name : ''}` : `❌ Quest failed — all ${FLOORS} floors (${PER_FLOOR} monsters each) must fall within 2 h. Another key, another try.`];
-  player.instance = { active: false, last: { job: inst.job, floor: inst.floor, passed: inst.passed, at: Date.now() } };
+  // Push #97: score + exit bonus computed ON EXIT (death pays half). No leaderboard — your run is yours.
+  const sc = scoreFor(inst, !!opts.died); player.gold = (player.gold || 0) + sc.bonus; inst.gold += sc.bonus;
+  const best = Math.max(Number(player.instanceBestFloor) || 0, inst.floor); player.instanceBestFloor = best;
+  const lines = [`📜 *INSTANCE ${voluntary ? 'LEFT' : 'OVER'}* — ${job ? job.emoji + ' ' + job.name : ''} quest · floor ${inst.floor} · ${inst.kills} kills`, `🏁 Score *${sc.score.toLocaleString()}* · exit bonus *+${sc.bonus.toLocaleString()} 💠*${opts.died ? ' (halved — you fell)' : ''} · personal best floor ${best}`, `💠 ${inst.gold.toLocaleString()} Nexus total · 🧭 ${inst.jobXp} Job XP`, inst.passed ? `🏆 Quest cleared — /job change ${job ? job.name : ''}` : `❌ Quest failed — all ${FLOORS} floors (${PER_FLOOR} monsters each) must fall within 2 h. Another key, another try.`];
+  player.instance = { active: false, last: { job: inst.job, floor: inst.floor, passed: inst.passed, score: sc.score, bonus: sc.bonus, at: Date.now() } };
   try { require('./CombatReset').clearForBattle(player); } catch (e) {} // Push #96h-z20: nothing from the instance carries out
   return { lines, floor: inst.floor, passed: inst.passed };
 }
@@ -394,7 +403,7 @@ function status(player) {
   const inst = player.instance;
   if (!inst || !inst.active) return null;
   const job = JS.BY_KEY[inst.job]; const m = inst.monster;
-  return [`🏚️ *INSTANCE — ${job.emoji} ${job.name.toUpperCase()} QUEST*`, `Floor *${inst.floor}/${FLOORS}* · monster ${inst.slot || 1}/${PER_FLOOR} · kills ${inst.kills} · ⏰ ${Math.ceil(timeLeftMs(inst) / 60000)} min left`, `⚔️ /attack · /attack <id> · /skillcmd <skill> · /instance leave`, `${m.emoji} *${m.name}* [${m.rank}]${m.isBoss ? ' 👑' : ''} — HP ${m.stats.hp}/${m.stats.maxHp}`, `❤️ You: ${player.stats.hp}/${_max(player)} · ⚡ ${player.stats.energy}/${player.stats.maxEnergy}`, `⚔️ /instance attack · ✨ /instance skill <name> · 🌌 /domain expand · 🚪 /instance leave`].join('\n');
+  return [`🏚️ *INSTANCE — ${job.emoji} ${job.name.toUpperCase()} QUEST*`, `Floor *${inst.floor}* ♾️ (pass mark ${FLOORS}${inst.passed ? ' ✅' : ''}) · monster ${inst.slot || 1}/${PER_FLOOR} · kills ${inst.kills} · exit bonus now *+${scoreFor(inst, false).bonus.toLocaleString()} 💠* · idle timer ${Math.ceil(timeLeftMs(inst) / 60000)} min`, `⚔️ /attack · /attack <id> · /skillcmd <skill> · /instance leave`, `${m.emoji} *${m.name}* [${m.rank}]${m.isBoss ? ' 👑' : ''} — HP ${m.stats.hp}/${m.stats.maxHp}`, `❤️ You: ${player.stats.hp}/${_max(player)} · ⚡ ${player.stats.energy}/${player.stats.maxEnergy}`, `⚔️ /instance attack · ✨ /instance skill <name> · 🌌 /domain expand · 🚪 /instance leave`].join('\n');
 }
 
-module.exports = { FLOORS, PER_FLOOR, TIME_LIMIT_MS, timeLeftMs, expireCheck, regularBonus, REGULAR_BONUS_CHANCE, KEY_CHANCE, eligibleJobs, keys, onDailyComplete, openBox, openRegularBox, INSTANCE_BOSSES, bossFor, grantKey, syncKeys, keySummary, keyLine, targetFloorFor, makeMonster, start, act, end, status };
+module.exports = { FLOORS, PER_FLOOR, TIME_LIMIT_MS, IDLE_LIMIT_MS, scoreFor, timeLeftMs, expireCheck, regularBonus, REGULAR_BONUS_CHANCE, KEY_CHANCE, eligibleJobs, keys, onDailyComplete, openBox, openRegularBox, INSTANCE_BOSSES, bossFor, grantKey, syncKeys, keySummary, keyLine, targetFloorFor, makeMonster, start, act, end, status };

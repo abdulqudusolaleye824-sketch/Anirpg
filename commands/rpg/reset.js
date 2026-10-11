@@ -329,6 +329,21 @@ module.exports = {
 
     const action = args[0]?.toLowerCase();
 
+    // Push #97: /reset <bot name> — owner-only — revives a bot parked by /kill (must come through ANOTHER bot).
+    try {
+      const BotLane = require('../../rpg/utils/BotLane');
+      const _ci = msg.message?.extendedTextMessage?.contextInfo;
+      const _hasTarget = !!(_ci?.mentionedJid?.[0] || _ci?.participant);
+      const _bk = (!_hasTarget && args[0] && action !== 'restore') ? BotLane.resolveBotKey(args.join(' ')) : null;
+      if (_bk && (BotLane.isKilled(_bk) || !db.users[args[0]])) {
+        if (!Perms.isBotOwner(db, sender)) return sock.sendMessage(chatId, { text: '❌ Only the bot owner can reset a bot.' }, { quoted: msg });
+        const _nm = BotLane.displayName(_bk);
+        if (!BotLane.isKilled(_bk)) return sock.sendMessage(chatId, { text: `✅ *${_nm}* is not killed — nothing to reset.` }, { quoted: msg });
+        BotLane.reset(_bk);
+        return sock.sendMessage(chatId, { text: `♻️ *${_nm} IS BACK*\n${_nm} reads and answers again.` }, { quoted: msg });
+      }
+    } catch (e) {}
+
     // 2. Resolve Target (mention or quoted participant)
     const contextInfo = msg.message?.extendedTextMessage?.contextInfo;
     const mentionedJid = contextInfo?.mentionedJid?.[0];

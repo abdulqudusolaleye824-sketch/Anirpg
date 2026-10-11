@@ -370,7 +370,8 @@ function resolveCode(code, db = null) {
   if (!gate) {
     const rank = keyData.gateRank || 'C';
     const rd = GATE_RANKS[rank] || GATE_RANKS['E'];
-    const totalFloors = rd.floors || 5;
+    const totalFloors = Number(keyData.totalFloors) || GateManager.rollFloors(); // Push #97: 7–40 floors (kept from the key when known)
+    const _terrainId = keyData.terrain || null; // Push #97: restored below once the theme is known
     try {
       const { MONSTER_DROPS } = require('../data/MonsterDrops');
       const pool = (MONSTER_DROPS[rank] && MONSTER_DROPS[rank].monsters) || MONSTER_DROPS['E'].monsters;
@@ -398,7 +399,7 @@ function resolveCode(code, db = null) {
         cleared:false, broken:false, active:true,
         raiders: [], guildRaiders:[], externalRaiders:[], pendingApplicants:[],
         raidStarted:false, raidStartTime:null,
-        currentFloor:0, totalFloors,
+        currentFloor:0, totalFloors, terrain: _terrainId || (() => { try { return require('../data/Terrains').pickFor((bossData && GateManager.monsterFamily(bossData.name)) || null).id; } catch (e) { return null; } })(),
         monsters,
         boss: { name: bossData.name, baseName: bossData.baseName || bossData.name, family: _themed.theme || null, hp: bossHp, maxHp: bossHp, defeated:false }, theme: _themed.theme || null,
         bossLoot: [],
@@ -464,6 +465,7 @@ function raidOf(gate, key, keyData) {
       loot: null,
     };
   }
+  try { require('../utils/BotLane').claim(gate.raid); } catch (e) {} // Push #97: the raid belongs to the bot lane that opened it
   return gate.raid;
 }
 
@@ -678,6 +680,7 @@ function enter(sender, name, key, keyData, gate, db) {
   const raid = raidOf(gate, key, keyData);
   { const sr = sealedReason(gate); const _in = (raid.members || []).some(m => m.id === sender || GKM.normaliseJid(m.id) === GKM.normaliseJid(sender)); if (sr && !_in) return { ok: false, error: sr }; } // Push #96d
   { const other = findOtherRaid(sender, gate); if (other) return { ok: false, error: otherRaidError(other) }; }
+  { try { const _b = require('../utils/Engagement').whereBusy(db, sender, db?.users?.[sender], { ignore: ['gate'] }); if (_b) return { ok: false, error: _b.text }; } catch (e) {} } // Push #97: no instance/labyrinth/duel hunters in raids
   // Push #30: single-use keys — fresh entry on a consumed key is refused.
   // (Members re-running enter on their own live raid pass straight through.)
   const _alreadyIn = (raid.members || []).some(m =>
@@ -749,6 +752,7 @@ function join(sender, name, gate, db) {
   if (raid.status !== 'recruiting') return { ok: false, error: 'The raid has already started.' };
   if (raid.members.length >= MAX_PARTY) return { ok: false, error: `Party is full! (${MAX_PARTY} max)` };
   { const other = findOtherRaid(sender, gate); if (other) return { ok: false, error: otherRaidError(other) }; }
+  { try { const _b = require('../utils/Engagement').whereBusy(db, sender, db?.users?.[sender], { ignore: ['gate'] }); if (_b) return { ok: false, error: _b.text }; } catch (e) {} } // Push #97: no instance/labyrinth/duel hunters in raids
 
   ensureMember(gate, sender, db);
   return { ok: true, raid };
@@ -790,18 +794,20 @@ function start(sender, keyData, gate, db) {
   // Push #96d: hidden rolls — the gate may EVOLVE into a Red Gate (sealed: nobody enters or
   // leaves), may hide a second dungeon behind its boss, and a stronger beast may leak in.
   const notes = [];
+  try { const T = require('../data/Terrains'); if (!gate.terrain) gate.terrain = T.pickFor(gate.theme || null).id; const _tt = T.entryText(gate.terrain, gate.monsters, GateManager.monsterFamily); if (_tt) notes.push(_tt); } catch (e) {} // Push #97: terrain stated at entry
   if (!gate.isDouble) {
     if (Math.random() < RED_GATE_CHANCE) {
       gate.redGate = true; notes.push(RED_GATE_TEXT);
       // Push #96h: a Red Gate runs 10 floors DEEPER — extra floors are built from the same pool/theme.
       try {
-        const extra = GateManager.buildGateMonsters(gate.rank, (gate.totalFloors || 5) + RED_GATE_EXTRA_FLOORS, gate.preRollStrengthPct || gate.strengthPct || 100, gate.boss && gate.boss.name) || [];
-        const oldTop = gate.totalFloors || 5; const newTop = oldTop + RED_GATE_EXTRA_FLOORS;
+        const _redExtra = rollRedExtra(); // Push #97: 1–30 extra floors
+        const extra = GateManager.buildGateMonsters(gate.rank, (gate.totalFloors || 5) + _redExtra, gate.preRollStrengthPct || gate.strengthPct || 100, gate.boss && gate.boss.name) || [];
+        const oldTop = gate.totalFloors || 5; const newTop = oldTop + _redExtra;
         gate.monsters = (gate.monsters || []).filter(m => m && !m.elite);               // old elite guards go
         for (const m of extra) if (m.floor > oldTop) gate.monsters.push(m);           // new floors + new elite guards on the new boss floor
         gate.totalFloors = newTop;
         gate.monsters = GateManager.orderFloors(gate.monsters);
-        notes.push(`🟥 The red light stretches the gate — *${RED_GATE_EXTRA_FLOORS} extra floors* (${newTop} in total).`);
+        notes.push(`🟥 The red light stretches the gate — *${_redExtra} extra floor${_redExtra === 1 ? '' : 's'}* (${newTop} in total).`);
       } catch (e) {}
     }
     if (Math.random() < DOUBLE_DUNGEON_CHANCE) gate.doubleRoll = true; // revealed only when the boss falls
@@ -811,10 +817,11 @@ function start(sender, keyData, gate, db) {
 }
 
 // ── Push #96d: RED GATES · DOUBLE DUNGEONS · LEAKS · LEADER SUCCESSION ──────
-const RED_GATE_EXTRA_FLOORS = 10; // Push #96h
+const RED_GATE_EXTRA_FLOORS = 10; // Push #96h (legacy constant) · Push #97: a Red Gate now adds 1–30 extra floors (rollRedExtra)
+function rollRedExtra() { const r = Math.random(); return r < 0.5 ? 1 + Math.floor(Math.random() * 10) : r < 0.85 ? 11 + Math.floor(Math.random() * 10) : 21 + Math.floor(Math.random() * 10); }
 const RED_GATE_CHANCE = 0.06; // Push #96h-m: −60% (was 0.15)
 const DOUBLE_DUNGEON_CHANCE = 0.05;
-const LEAK_CHANCE = 0.17;
+const LEAK_CHANCE = 0.05; // Push #97: much rarer (was 0.17)
 const RED_GATE_TEXT = '🟥 *THE GATE TURNS RED!* The entrance seals behind you — *nobody can enter or leave* this raid until the gate is cleared or the party falls.';
 const RANK_ORDER = ['E', 'D', 'C', 'B', 'A', 'S'];
 // Null when the raid is open; otherwise the reason entry/exit is refused.
@@ -824,23 +831,64 @@ function sealedReason(gate) {
   if (gate.redGate) return '🟥 *RED GATE* — the entrance is sealed: nobody can enter or leave until the gate is cleared.';
   return null;
 }
-// 17%: ONE beast from a higher rank leaks into this raid (replaces a random non-elite floor monster).
-function leakMonster(gate) {
+// Push #97: LEAKS are SILENT. A leaked beast walks the floor wearing the body of a native monster (its real
+// name, its real HP) — nothing in chat says "leak". The moment it SURVIVES or EVADES a hunter's strike it
+// MORPHS: "the beast morphs into an A-Rank leak" — new name, full leak HP/ATK/DEF. Most leaks (85%) slip the
+// first strike; a strike that would kill the disguised body outright still kills it (truly overwhelming
+// damage ends a leak before it wakes). Leaks are rare (5% · a second 30% of those · a third 10%); a RED GATE
+// always carries at least one.
+const LEAK_EVADE = 0.85;
+const LEAK_MORE = [0.30, 0.10];
+function leakMonster(gate, opts = {}) {
   if (!gate || !Array.isArray(gate.monsters) || !gate.monsters.length) return null;
   const idx = RANK_ORDER.indexOf(String(gate.rank || 'E').toUpperCase());
   if (idx < 0 || idx >= RANK_ORDER.length - 1) return null; // S has nothing above it
-  if (Math.random() >= LEAK_CHANCE) return null;
-  const fromRank = RANK_ORDER[idx + 1 + Math.floor(Math.random() * (RANK_ORDER.length - 1 - idx))];
-  const pool = GateManager.buildGateMonsters(fromRank, 1, gate.strengthPct || 100, null) || [];
-  const leaked = pool.find(m => m && !m.elite) || pool[0];
-  if (!leaked) return null;
-  const slots = gate.monsters.map((m, i) => (m && !m.defeated && !m.elite && m.floor !== gate.totalFloors ? i : -1)).filter(i => i >= 0);
-  if (!slots.length) return null;
-  const i = slots[Math.floor(Math.random() * slots.length)];
-  const old = gate.monsters[i];
-  gate.monsters[i] = { ...leaked, floor: old.floor, defeated: false, leaked: true, leakedFrom: fromRank, name: `${leaked.name} (${fromRank}-Rank leak)` };
-  gate.leakedMonster = { name: gate.monsters[i].name, floor: old.floor, fromRank };
-  return `⚠️ *A ${fromRank}-Rank beast has leaked into this gate!* *${leaked.name}* prowls floor ${old.floor} — far stronger than anything native to this gate.`;
+  const force = !!(opts.force || gate.redGate);
+  if (!force && Math.random() >= LEAK_CHANCE) return null;
+  let planted = 0;
+  const plantOne = () => {
+    const fromRank = RANK_ORDER[idx + 1 + Math.floor(Math.random() * (RANK_ORDER.length - 1 - idx))];
+    const pool = GateManager.buildGateMonsters(fromRank, 1, gate.strengthPct || 100, null) || [];
+    const leaked = pool.find(m => m && !m.elite) || pool[0];
+    if (!leaked) return false;
+    const slots = gate.monsters.map((m, i) => (m && !m.defeated && !m.elite && !m.leakSleeper && !m.leaked && m.floor !== gate.totalFloors ? i : -1)).filter(i => i >= 0);
+    if (!slots.length) return false;
+    const i = slots[Math.floor(Math.random() * slots.length)];
+    const host = gate.monsters[i];
+    host.leakSleeper = true;
+    host.leakForm = { name: leaked.name, role: leaked.role, tier: leaked.tier, skills: leaked.skills || [], family: leaked.family, maxHp: leaked.maxHp, atk: leaked.atk, def: leaked.def, speed: leaked.speed, fromRank };
+    gate.leakedMonsters = gate.leakedMonsters || [];
+    gate.leakedMonsters.push({ host: host.name, floor: host.floor, fromRank, revealed: false });
+    planted++; return true;
+  };
+  plantOne();
+  for (const p of LEAK_MORE) { if (Math.random() < p) plantOne(); else break; }
+  return planted ? null : null; // silent — nothing is announced at raid start
+}
+// Called with the hunter's strike result BEFORE damage is applied. Returns null (not a sleeper / nothing
+// happens), { evaded: true } (strike whiffs, beast morphs now), { killed: true } (overwhelming — dies as the
+// native beast) or { morphAfter: true } (takes the hit, then morphs).
+function leakReveal(gate, mon, result) {
+  if (!mon || !mon.leakSleeper || mon.leaked || mon.defeated) return null;
+  if (result && (result.missed || result.blocked)) return null;
+  if (Math.random() < LEAK_EVADE) return { evaded: true };
+  const dmg = Number(result && result.damage) || 0;
+  if (dmg >= (Number(mon.hp) || 0)) return { killed: true };
+  return { morphAfter: true };
+}
+// The disguised beast becomes the leak: new name, leak base stats, full HP, scaled like every other beast.
+function morphLeak(gate, mon) {
+  if (!mon || !mon.leakForm || mon.leaked) return null;
+  const f = mon.leakForm; const was = mon.name;
+  mon.leaked = true; mon.leakedFrom = f.fromRank; mon.leakSleeper = false;
+  mon.name = `${f.name} (${f.fromRank}-Rank leak)`; mon.role = f.role || mon.role; mon.tier = f.tier || mon.tier; mon.family = f.family || mon.family;
+  mon.skills = Array.isArray(f.skills) && f.skills.length ? f.skills : mon.skills;
+  mon._base = { hp: f.maxHp || mon.maxHp || 10, atk: f.atk || mon.atk || 5, def: f.def || 0, speed: f.speed || 10 };
+  mon.maxHp = mon.hp = mon._base.hp; // full → applyMonsterScaling keeps it full
+  try { applyMonsterScaling(gate); } catch (e) {}
+  try { const r = (gate.leakedMonsters || []).find(x => x && x.host === was && x.floor === mon.floor && !x.revealed); if (r) { r.revealed = true; r.name = mon.name; } } catch (e) {}
+  gate.leakedMonster = { name: mon.name, floor: mon.floor, fromRank: f.fromRank };
+  return `🩸 *${was}* shudders… its body tears open — *the beast morphs into a ${f.fromRank}-Rank LEAK!*\n👹 *${mon.name}* — ❤️ ${mon.hp.toLocaleString()} HP · far stronger than anything native to this gate.`;
 }
 // When the leader falls, the next hunter on the party list takes the crown.
 function succeedLeader(gate, fallenJid) {
@@ -864,7 +912,7 @@ function evolveDouble(gate, db) {
   if (!gate.doublePending) return { ok: false, error: 'No second gate is waiting.' };
   const rank = ['B', 'A', 'S'][Math.floor(Math.random() * 3)];
   const rd = GATE_RANKS[rank];
-  const floors = rd.floors || 5;
+  const floors = GateManager.rollFloors(); // Push #97
   let bossName = 'Gate Warden', bossData = null, themed = null;
   try {
     const { MONSTER_DROPS } = require('../data/MonsterDrops');
@@ -878,7 +926,7 @@ function evolveDouble(gate, db) {
   Object.assign(gate, {
     rank, rankData: rd, hiddenRank: true, isDouble: true, doublePending: false, doubleFrom: prevRank,
     strengthPct, strengthLabel: GateManager.strengthLabel(strengthPct),
-    currentFloor: 1, totalFloors: floors, monsters,
+    currentFloor: 1, totalFloors: floors, monsters, terrain: (() => { try { return require('../data/Terrains').pickFor((themed && themed.theme) || null).id; } catch (e) { return null; } })(),
     boss: { name: bossName, baseName: (bossData && bossData.baseName) || bossName, family: (themed && themed.theme) || null, hp: bossHp, maxHp: bossHp, defeated: false },
     theme: (themed && themed.theme) || null,
     nexusLoot: Math.floor((gate.nexusLoot || 1000) * 2), crystalLoot: Math.floor((gate.crystalLoot || 100) * 2),
@@ -980,14 +1028,20 @@ function calibrateToParty(gate, raid, db) {
   const lvlRatio = avgLvl / rankLevel;
   // Blend: stats carry most of the weight, level keeps high-rank hunters honest
   // even if they walk in under-geared. sqrt(n): more hunters → tougher gate.
-  const ratio = (statRatio * 0.7 + lvlRatio * 0.3) * Math.sqrt(n);
+  const ratio = (statRatio * 0.7 + lvlRatio * 0.3) * Math.sqrt(Math.max(n, 1.8)); // Push #97: a lone hunter is weighed like ~2 — soloing your own rank stays a real fight
   const luck = partyLuck(raid, db);
-  let severity = 0.55 + ratio * 0.75;
-  severity = Math.max(1.0, Math.min(10.0, severity));
+  let severity = 0.3 + ratio * 0.8; // Push #97: a lone Lv.1 lands on the E floor (0.6); a right-rank party ≈1.1; strong parties climb to the cap
+  // Push #97: every rank has a strength BAND (min…max). The party's stats decide where inside the band the
+  // gate lands — never a push-over, never a wall: a fresh Lv.1 meets E at its floor, a Lv.50+ hunter walking
+  // into E meets the E ceiling (still an easy solo). A daily flex (±12%, same for everyone that day) keeps
+  // the same rank feeling different from one day to the next.
+  const _band = SEVERITY_BAND[String(gate.rank || 'E').toUpperCase()] || SEVERITY_BAND.E;
+  severity = Math.max(_band[0], Math.min(_band[1], severity));
+  severity = severity * dayFlex(gate.rank);
   severity = severity * (1 - luck / 100);
   severity = Math.round(severity * 100) / 100;
   const expected = Math.round(expectedPer * n);
-  gate.calibrated = { severity, label: null, partyPower: Math.floor(total), expected, luck, members: n, avgLevel: Math.round(avgLvl), avgSpeed: Math.round(sumSpd / n), at: Date.now() };
+  gate.calibrated = { severity, label: null, partyPower: Math.floor(total), expected, luck, members: n, avgLevel: Math.round(avgLvl), avgSpeed: Math.round(sumSpd / n), avgAtk: Math.round(sumAtk / n), at: Date.now() };
   applyMonsterScaling(gate);
   const label = severityLabel(severity);
   gate.calibrated.label = label;
@@ -999,6 +1053,12 @@ function calibrateToParty(gate, raid, db) {
   return gate.calibrated;
 }
 
+const SEVERITY_BAND = { E: [0.6, 2.0], D: [0.8, 3.0], C: [1.0, 4.0], B: [1.2, 6.0], A: [1.5, 8.0], S: [2.0, 10.0], SS: [2.5, 10.0] }; // Push #97
+function dayFlex(rank) {
+  const key = `${new Date().toISOString().slice(0, 10)}|${String(rank || 'E').toUpperCase()}`;
+  let h = 2166136261; for (const ch of key) { h ^= ch.charCodeAt(0); h = Math.imul(h, 16777619) >>> 0; }
+  return 0.88 + (h % 25) / 100; // 0.88 … 1.12
+}
 function severityLabel(severity) {
   return severity >= 7 ? '💀 CATACLYSM' : severity >= 4.5 ? '☠️ NIGHTMARE' : severity >= 2.5 ? '🔴 Severe' : severity >= 1.6 ? '🟠 Hard' : severity >= 1.15 ? '🟡 Standard' : '🟢 Mild';
 }
@@ -1007,7 +1067,10 @@ function severityLabel(severity) {
 // top of the party severity, boss floor gets the full stack plus 25%.
 function floorMultiplier(gate, floor) {
   const f = Math.max(1, Number(floor) || 1);
-  return 1 + (f - 1) * 0.18;
+  // Push #97: gates run 7–40 floors — the climb is spread over the gate's real depth: the last floor is
+  // always ≈1.9× the first (+25% more for the boss), however deep the gate rolled.
+  const tf = Math.max(2, Number(gate && gate.totalFloors) || 5);
+  return 1 + 0.9 * (Math.min(f, tf) - 1) / (tf - 1);
 }
 
 // Scale every live monster + the boss from their BASE stats using severity ×
@@ -1057,6 +1120,10 @@ function applyMonsterScaling(gate) {
     if (mon.leaked) { mon.maxHp = Math.floor(mon.maxHp * LEAK_MULT); mon.hp = Math.max(1, Math.floor(mon.maxHp * hpPct)); mon.atk = Math.floor(mon.atk * LEAK_MULT * LEAK_ATK_CUT); mon.def = Math.floor(mon.def * LEAK_MULT); mon.speed = Math.round(mon.speed * 1.5); } // Push #96h-n: ATK cut 70%
     // Push #96h-z9: tuning — regular gates −15%; RED gates +15%; a leaked beast a further +15% (HP/ATK/DEF).
     { const _gt = (gate.redGate ? RED_GATE_TUNE : GATE_TUNE) * (mon.leaked ? LEAK_TUNE : 1); mon.maxHp = Math.max(5, Math.floor(mon.maxHp * _gt)); mon.hp = Math.max(1, Math.floor(mon.maxHp * hpPct)); mon.atk = Math.max(1, Math.floor(mon.atk * _gt)); mon.def = Math.floor(mon.def * _gt); }
+    // Push #97: TERRAIN — a beast standing on home ground gets the terrain's boost (stated at raid start).
+    try { const T = require('../data/Terrains'); const _t = T.get(gate.terrain); if (_t && T.isHome(_t, mon, GateManager.monsterFamily)) { const hb = _t.homeBoost || {}; if (hb.atk) mon.atk = Math.max(1, Math.floor(mon.atk * (1 + hb.atk / 100))); if (hb.def) mon.def = Math.floor(mon.def * (1 + hb.def / 100)); mon.homeGround = true; } else mon.homeGround = false; } catch (e) {}
+    // Push #97: DEF is anchored to the party — no beast may shrug off a hunter's hit entirely (cap 55% of the party's average ATK).
+    { const _pa = gate.calibrated && gate.calibrated.avgAtk; if (_pa > 0) mon.def = Math.min(mon.def, Math.floor(_pa * 0.55)); }
     mon._raid = true; mon.rank = mon.rank || gate.rank; // Push #88q: raid ×2 package + initiative
   }
   // Push #88z: elites are ALWAYS exactly 2× the (scaled) monsters of the floor before them.
@@ -1084,7 +1151,7 @@ function applyMonsterScaling(gate) {
     const hpPct = wasFull ? 1 : Math.max(0, gate.boss.hp / Math.max(1, gate.boss.maxHp));
     gate.boss.maxHp = Math.max(50, Math.floor(gate.boss._base.hp * mult * MON_HP_BUFF));
     gate.boss.hp = Math.max(1, Math.floor(gate.boss.maxHp * hpPct));
-    if (gate.boss._base.atk) gate.boss.atk = Math.max(1, Math.floor(gate.boss._base.atk * mult * MON_ATK_BUFF));
+    if (gate.boss._base.atk) gate.boss.atk = Math.max(1, Math.floor(gate.boss._base.atk * mult * MON_ATK_BUFF * Math.pow(Math.min(1, severity), 1.5))); // Push #97: below-par parties (band floor) meet a boss that hits softer, not a wall
     gate.boss.def = Math.floor((gate.boss._base.def || 0) * mult * 0.8 * MON_DEF_BUFF);
     gate.boss._raid = true; gate.boss.isBoss = true; gate.boss.rank = gate.boss.rank || gate.rank;
     if (!gate.boss.speed) gate.boss.speed = 14 + (({ E: 0, D: 2, C: 4, B: 6, A: 9, S: 12 })[gate.rank] || 0) * 2;
@@ -1094,6 +1161,7 @@ function applyMonsterScaling(gate) {
     { const TM = _types(); if (TM && !gate.boss._typedBoss) { const tm = TM.mults(gate.boss); gate.boss._typedBoss = true; gate.boss.typeLabel = tm.label; gate.boss.critBonus = tm.crit; gate.boss._typeMult = tm; }
       const tm = gate.boss._typeMult; if (tm) { gate.boss.maxHp = Math.floor(gate.boss.maxHp * tm.hp); gate.boss.hp = Math.max(1, Math.floor(gate.boss.maxHp * hpPct)); gate.boss.atk = Math.floor(gate.boss.atk * tm.atk); gate.boss.def = Math.floor(gate.boss.def * tm.def); gate.boss.speed = Math.round(gate.boss.speed * tm.speed); } }
       { const _gt = gate.redGate ? RED_GATE_TUNE : GATE_TUNE; gate.boss.maxHp = Math.max(50, Math.floor(gate.boss.maxHp * _gt)); gate.boss.hp = Math.max(1, Math.floor(gate.boss.maxHp * hpPct)); gate.boss.atk = Math.max(1, Math.floor(gate.boss.atk * _gt)); gate.boss.def = Math.floor(gate.boss.def * _gt); } // Push #96h-z9
+    { const _pa = gate.calibrated && gate.calibrated.avgAtk; if (_pa > 0) gate.boss.def = Math.min(gate.boss.def, Math.floor(_pa * 0.55)); } // Push #97: boss DEF anchored to the party (never a 0-damage wall)
   }
 }
 
@@ -1288,6 +1356,7 @@ function statusOf(gate, db) {
     }
   }
   lines.push(`🗺️ Floor: *${floor}/${gate.totalFloors}*`);
+  try { const T = require('../data/Terrains'); const _t = T.get(gate.terrain); if (_t) lines.push(`${_t.emoji} Terrain: *${_t.name}* · ${T.compatibility(_t, gate.monsters, GateManager.monsterFamily)}% native beasts`); } catch (e) {} // Push #97
   lines.push(`👾 Monsters: ${totalMonsters - floorMonsters.length}/${totalMonsters} cleared`);
   if (bossReady) { lines.push(`🏆 *BOSS READY — /gateraid boss*`); const _bp = floorMonsters.filter(m => m.elite); if (_bp.length) lines.push(`⚜️ Boss party: ${_bp.map(m => `${m.name} (${m.hp} HP)`).join(' · ')} — they strike beside the boss`); }
   lines.push(``);
@@ -1334,6 +1403,8 @@ function monsterKilledBy(gate, monster, sender, db) {
   }
 
   // Push #88e: Pet Food and Health Potions are NO LONGER raid drops (shop-only).
+  // Push #97: Essence Stones — the crafting binder of this gate's rank (small chance per final blow).
+  try { const ES = require('../utils/EssenceStones'); if (ES.rollBeastDrop(gate.rank)) { ES.grant(player, gate.rank, 1); lines.push(`${ES.emojiFor(gate.rank)} *ESSENCE → ${player.name}*: *${ES.nameFor(gate.rank)}* ×1 _(crafting binder)_`); } } catch (e) {}
 
   return lines;
 }
@@ -1816,9 +1887,18 @@ function spawnWildPet(gate) {
   return { petId: chosen.id, name: chosen.name, emoji: chosen.emoji, rarity: chosen.rarity };
 }
 
+// Push #97: BOT LANES — "last result" slots live in the current lane's scratch, never on the module.
+// Two fights resolving at the same time (two bots, two groups) can no longer read each other's crit/dodge/miss.
+try {
+  const _BL = require('../utils/BotLane');
+  const _laneSlot = (fn, prop, key) => Object.defineProperty(fn, prop, { configurable: true, get() { return _BL.scratch()[key]; }, set(v) { _BL.scratch()[key] = v; } });
+  _laneSlot(monsterDamage, 'last', 'gr_mdLast'); _laneSlot(monsterDodges, 'last', 'gr_mdodgeLast');
+  _laneSlot(playerDamage, 'lastMiss', 'gr_pdLastMiss'); _laneSlot(playerDamage, 'partyAllies', 'gr_pdAllies');
+} catch (e) {}
 module.exports = { LEAK_MULT, LEAK_ATK_CUT, LEAK_REGEN_CHANCE: 0.90, LEAK_DOMAIN_CHANCE: 0.80,
   findOtherRaid,
-  GATE_TUNE, RED_GATE_TUNE, LEAK_TUNE, RED_GATE_CHANCE, DOUBLE_DUNGEON_CHANCE, LEAK_CHANCE, RED_GATE_TEXT, sealedReason, leakMonster, succeedLeader, takeLeaderNotice, doublePending, evolveDouble, grantDoubleBoxes, // Push #96d
+  SEVERITY_BAND, dayFlex, rollRedExtra,
+  GATE_TUNE, RED_GATE_TUNE, LEAK_TUNE, RED_GATE_CHANCE, DOUBLE_DUNGEON_CHANCE, LEAK_CHANCE, RED_GATE_TEXT, sealedReason, leakMonster, leakReveal, morphLeak, LEAK_EVADE, succeedLeader, takeLeaderNotice, doublePending, evolveDouble, grantDoubleBoxes, // Push #96d
   livingMembers,
   calibrateToParty, partyLuck, RANK_EXPECTED_POWER, totalStatsOf,
   MAX_PARTY,

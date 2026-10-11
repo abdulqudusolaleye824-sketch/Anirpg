@@ -15,10 +15,30 @@
 // anything else. Reward-type → real-slot map:
 const SLOT_MAP = {
   weapon: 'vambrace', weapons: 'vambrace',   // striking arm (ATK/crit)
-  armor: 'chestplate',                        // core armor (DEF/HP)
+  armor: 'chestplate',                        // core armor (DEF/HP) — refined by subtype below
   ring: 'ring',                               // jewelry
   accessory: 'ring', accessories: 'ring',     // trinkets ride the ring slot
+  artifact: 'cloak', artifacts: 'cloak',      // Push #97 (BUG-010): crafted artifacts are worn in the cloak slot
+  helmet: 'helmet', chestplate: 'chestplate', boots: 'boots', cloak: 'cloak', vambrace: 'vambrace',
 };
+// Push #97 (BUG-010): crafted armor used to land in "chestplate" whatever it was — a helmet, boots, gloves…
+// The recipe subtype (Helmet / Chest / Gloves / Boots / Leggings / Weapons / Accessories / Artifacts) decides the slot.
+const SUBTYPE_SLOT = {
+  helmet: 'helmet', helm: 'helmet', hood: 'helmet', head: 'helmet',
+  chest: 'chestplate', chestplate: 'chestplate', body: 'chestplate',
+  gloves: 'vambrace', gauntlets: 'vambrace', weapons: 'vambrace', weapon: 'vambrace',
+  boots: 'boots', leggings: 'boots', legs: 'boots',
+  accessories: 'ring', accessory: 'ring', ring: 'ring',
+  artifacts: 'cloak', artifact: 'cloak', cloak: 'cloak',
+};
+function slotFor(item) {
+  if (!item) return null;
+  const sub = String(item.subtype || '').toLowerCase();
+  if (SUBTYPE_SLOT[sub]) return SUBTYPE_SLOT[sub];
+  const type = String(item.type || '').toLowerCase();
+  if (type === 'gear' && VALID_SLOTS.has(item.slot)) return item.slot;
+  return SLOT_MAP[type] || null;
+}
 const VALID_SLOTS = new Set(['helmet', 'chestplate', 'boots', 'cloak', 'vambrace', 'ring']);
 
 // Repair pass: remap any gear already stored with a non-GearSystem slot
@@ -70,13 +90,14 @@ function grantItem(player, item, source = 'reward', extra = {}) {
   if (!item) return null;
   const inv = ensureInventory(player);
   const type = String(item.type || 'material').toLowerCase();
-  if (!SLOT_MAP[type]) {
+  const _slotPick = slotFor(item);
+  if (!_slotPick) {
     const entry = { ...item, type: item.type || 'material', rarity: item.rarity || 'common', source: item.source || source, acquiredAt: Date.now() };
     inv.items.push(entry);
     return entry;
   }
   repairGearSlots(player); // heal any bad-slot gear from earlier builds
-  const slot = SLOT_MAP[type];
+  const slot = _slotPick;
   const stats = {};
   const atk = item.stats?.atk ?? item.stats?.bonus ?? item.atk ?? item.bonus ?? 0;
   if (atk) stats.atk = atk;
@@ -108,6 +129,21 @@ function migrateLegacy(player) {
   if (!player || !player.inventory) return 0;
   const inv = player.inventory;
   let n = 0;
+  // Push #97 (BUG-010): crafted artifacts sat in a hidden bucket nothing displayed — bring them into items.
+  if (Array.isArray(inv.artifacts) && inv.artifacts.length) {
+    for (const a of inv.artifacts) { if (a && typeof a === 'object') { grantItem(player, { ...a, type: 'artifact', subtype: a.subtype || 'Artifacts' }, a.source || 'craft', { craftedBy: a.craftedBy, fromKey: a.fromKey, craftedAt: a.craftedAt, infusions: a.infusions || [] }); n++; } }
+    inv.artifacts = [];
+  }
+  // Push #97 (BUG-010): crafted gear stored under the wrong slot (helmet as chestplate…) → re-slot from its subtype.
+  if (Array.isArray(inv.items)) {
+    for (const it of inv.items) {
+      if (!it || it.type !== 'gear' || it._slotFixed) continue;
+      let want = SUBTYPE_SLOT[String(it.subtype || '').toLowerCase()];
+      if (!want && it.source === 'craft') { try { want = SUBTYPE_SLOT[require('./CraftingSystem').recipeCategoryOf(it.name) || ''] || null; } catch (e) {} }
+      if (want && it.slot !== want) { it.slot = want; n++; }
+      it._slotFixed = 1;
+    }
+  }
   for (const bucket of LEGACY_BUCKETS) {
     const arr = inv[bucket];
     if (!Array.isArray(arr) || arr.length === 0) continue;

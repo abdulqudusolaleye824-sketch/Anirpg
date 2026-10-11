@@ -166,6 +166,7 @@ module.exports = {
     const resolved = GR.resolveCode(code, db);
     if (!resolved.ok) return sock.sendMessage(chatId, { text: resolved.error }, { quoted: msg });
     const { key, keyData, gate } = resolved;
+    try { require('../../rpg/utils/BotLane').scratch().terrain = (gate && gate.terrain) || null; } catch (e) {} // Push #97: terrain shapes status odds for this flow
     // Push #96h-m: a raid belongs to ONE GC. A raider typing /attack (or any raid action) from a
     // different group used to get the whole raid turn posted THERE — the "messages for one GC land
     // in another" bug. Now the raid only plays out in the GC it was opened in.
@@ -173,6 +174,15 @@ module.exports = {
       const _home = (gate && gate.raid && gate.raid.status === 'active') ? (keyData?.dungeonChatId || gate.chatId) : null;
       if (_home && String(_home).endsWith('@g.us') && String(chatId).endsWith('@g.us') && _home !== chatId && !msg._berserkAuto) {
         return sock.sendMessage(chatId, { text: `❌ *That raid is running in another group.*\nGo back to the dungeon GC where the gate was opened and act there.` }, { quoted: msg });
+      }
+    } catch (e) {}
+    // Push #97: BOT LANES — a raid is driven by the bot that opened it. Another bot's lane is refused
+    // while that bot is alive; if it is dead/killed, this bot takes over (announced once).
+    try {
+      if (gate && gate.raid) {
+        const _lc = require('../../rpg/utils/BotLane').check(gate.raid, { what: 'raid' });
+        if (_lc && _lc.error && !msg._berserkAuto) return sock.sendMessage(chatId, { text: _lc.error }, { quoted: msg });
+        if (_lc && _lc.takeover) { try { GR.saveGateState(db, gate); } catch (e) {} await sock.sendMessage(chatId, { text: _lc.line }); }
       }
     } catch (e) {}
     // Push #88x: a BERSERK hunter (sub-Lv.10 Monster in a passive surge) cannot
@@ -579,6 +589,46 @@ module.exports = {
       // Show status at start of turn — tick damage/effects then display
       let _gateStatus = null;
       let _tickLogs = []; let _statusKilled = false;
+      // Push #97 (BUG-007): ONE death routine for every way a hunter can fall on their turn — monster
+      // counter-hit or a status ailment ticking them out. Returns the send promise when the hunter fell.
+      const _fallInGate = async () => {
+        const deathLines = [];
+          const PetManager = require('../../rpg/utils/PetManager');
+          const sac = PetManager.checkPetSacrifice(sender, player);
+          if (sac && sac.sacrificed) {
+            deathLines.push(``, sac.message);
+            await sock.sendMessage(chatId, { text: deathLines.filter(Boolean).join('\n') }, { quoted: msg });
+          } else {
+            player.stats.hp = 1;
+            player.stats_history = player.stats_history || {};
+            player.stats_history.gateDeaths = (player.stats_history.gateDeaths || 0) + 1;
+            const loss = Math.floor((player.manaCrystals || 0) * 0.15);
+            player.manaCrystals = Math.max(0, (player.manaCrystals || 0) - loss);
+
+            // Push #88: a single death pays NOTHING out — the party treasure
+            // stays banked. Only a full WIPE salvages 10% (to the guild treasury).
+
+            deathLines.push(``, `💀 *YOU FELL IN THE GATE!*`, `Lost ${loss.toLocaleString()} 💎`, `You fled with 1 HP.`);
+            // Push #29: JID-tolerant removal + wipe check (never re-persist a
+            // wiped gate — wipeGate already dropped it from every registry).
+            {
+              const _sN = GR.GKM.normaliseJid(sender);
+              const _gone = (id) => id !== sender && (!_sN || GR.GKM.normaliseJid(id) !== _sN);
+              if (gate.raid) gate.raid.members = gate.raid.members.filter(m => _gone(m.id));
+              try { GR.markFallen(gate, sender); } catch (e) {} // Push #88w
+              try { const _ln = GR.takeLeaderNotice(gate); if (_ln) await sock.sendMessage(chatId, { text: _ln }); } catch (e) {}
+              gate.raiders = (gate.raiders || []).filter(_gone);
+            }
+            if (gate.raid && gate.raid.members.length === 0) {
+              deathLines.push(...GR.wipeGate(gate, key, keyData, chatId, db));
+            } else {
+              try { GR.saveGateState(db, gate); } catch (e) {}
+            }
+        saveDatabase();
+            return sock.sendMessage(chatId, { text: deathLines.filter(Boolean).join('\n') }, { quoted: msg });
+          }
+        return null;
+      };
       try {
         const UCgTick = require('../../rpg/utils/UnifiedCombat');
         _statusKilled = false;
@@ -603,7 +653,16 @@ module.exports = {
           if (_tickLogs.length) statusMsg += _tickLogs.join('\n') + '\n';
           if (_gateStatus) statusMsg += `⚠️ *STATUS EFFECTS*\n${_gateStatus}`;
           if (statusMsg) await sock.sendMessage(chatId, { text: statusMsg.trim() }, { quoted: msg });
-        } catch(e){}
+        } catch (e) {}
+      }
+      // Push #97 (BUG-007): an ailment that ticks a hunter to 0 HP KILLS them right here — before any attack,
+      // counter-hit or "survive at 1 HP" safeguard (those only cover monster strikes) can swallow the death.
+      if ((player.stats.hp || 0) <= 0) {
+        const _ail = (() => { try { return (player.statusEffects || []).map(e => e.name || e.type).filter(Boolean)[0]; } catch (e) { return null; } })();
+        await sock.sendMessage(chatId, { text: `💀 *${player.name}* succumbed to ${_ail ? `*${_ail}*` : 'their ailments'}!` }, { quoted: msg });
+        try { require('../../rpg/utils/StatusEffectManager').clearAll(player); } catch (e) {}
+        const _fellDot = await _fallInGate();
+        if (_fellDot) return _fellDot;
       }
       // ── Frozen / stunned players lose their turn (statuses already ticked above) ──
       let _grCanAct = { canAct: true, reason: null };
@@ -699,7 +758,12 @@ module.exports = {
       } else {
         const useSkill = action === 'skill' ? skillArg : null;
         try { GR.playerDamage.partyAllies = (gate.raid?.members || []).map(m => db.users[m.id] || Object.values(db.users || {}).find(x => x && x.jid && GR.GKM.normaliseJid(x.jid) === GR.GKM.normaliseJid(m.id))).filter(Boolean); } catch (e) { GR.playerDamage.partyAllies = []; } // Push #94: party buffs on hybrid strikes
-        result = GR.playerDamage(player, useSkill, { statusEffects: target.statusEffects || [] });
+        // Push #97 (BUG-012): the skill engine needs the beast's real HP to apply "% of target max HP" drains
+        // (Crimson Blade & co.). Hand it a proxy carrying stats and write the drained HP back.
+        const _drainTgt = { name: target.name, statusEffects: target.statusEffects || [], stats: { hp: Number(target.hp) || 0, maxHp: Number(target.maxHp) || Number(target.hp) || 100 } };
+        result = GR.playerDamage(player, useSkill, _drainTgt);
+        if (result && result.drained > 0) target.hp = Math.max(1, _drainTgt.stats.hp);
+        if (_drainTgt.lastHitBy) target.lastHitBy = _drainTgt.lastHitBy;
         GR.playerDamage.partyAllies = [];
         // Push #55: pets count in the general attack flow as well (this is the
         // path /attack and /skill take outside /party).
@@ -716,6 +780,16 @@ module.exports = {
 
       // Daily quest: attack pattern actually used in combat
       if (atkPattern) { try { require('../../rpg/utils/QuestDispatcher').trackAndNotify(player, 'pattern', 1, sock, sender, chatId); } catch(e){} }
+
+      // Push #97: SILENT LEAKS — a disguised leak slips the strike (85%) or survives it, then MORPHS in front of the party.
+      let _leakAfter = false;
+      try {
+        const _lk = GR.leakReveal(gate, target, result);
+        if (_lk && _lk.evaded) {
+          result.damage = 0; result.missed = true; result.dodged = true; result.missWhy = 'the beast slips aside — impossibly fast';
+          const _ml = GR.morphLeak(gate, target); if (_ml) await sock.sendMessage(chatId, { text: _ml });
+        } else if (_lk && _lk.morphAfter) _leakAfter = true;
+      } catch (e) {}
 
       if (!gate.damageDealt) gate.damageDealt = {};
       gate.damageDealt[sender] = (gate.damageDealt[sender] || 0) + result.damage;
@@ -748,6 +822,7 @@ module.exports = {
         tag: atkTitle, defenderBar: 'monster', gapMs: 600,
       });
       target.hp = Math.max(0, monWrap.stats.hp);
+      if (_leakAfter && target.hp > 0) { try { const _ml = GR.morphLeak(gate, target); if (_ml) await sock.sendMessage(chatId, { text: _ml }); } catch (e) {} } // Push #97: survived the hit → morphs
       // Push #93: Soul Drain (monster) heals half the damage; Curse of Ruin lasts 3 ROUNDS.
       try { const NX = require('../../rpg/utils/Necromancy'); const _su = result.skillUsed; const _nl = [];
         if (_su && NX.isSoulDrain(_su) && (result.damage || 0) > 0 && !result.missed) { const _h = Math.floor(result.damage * 0.5); const _bh = player.stats.hp; player.stats.hp = Math.min(_effMax(player), _bh + _h); _nl.push(`🩸 *Soul Drain* — +${player.stats.hp - _bh} HP → ${player.stats.hp}/${_effMax(player)}`); }
@@ -842,10 +917,10 @@ module.exports = {
 
           // Push #96h-m: floor XP, scaled by floor + rank, committed now (every living raider).
           try { const BRf = require('../../rpg/utils/BattleRewards'); let _fx = 0; const _ids = [sender, ...((gate.raid?.members || []).map(m => m.id).filter(id => id !== sender))];
-            for (const id of _ids) { const u = db.users?.[id]; if (!u || (id !== sender && !((gate.raid?.members || []).find(m => m.id === id && (m.hp == null || m.hp > 0))))) continue; const got = BRf.grantFloorXp(u, floor, gate.rank); if (id === sender) _fx = got; LevelUpManager.checkAndApplyLevelUps(u, saveDatabase, sock, chatId); }
+            for (const id of _ids) { const u = db.users?.[id]; if (!u || (id !== sender && !((gate.raid?.members || []).find(m => m.id === id && (m.hp == null || m.hp > 0))))) continue; const got = BRf.grantFloorXp(u, floor, gate.rank, gate.totalFloors); if (id === sender) _fx = got; LevelUpManager.checkAndApplyLevelUps(u, saveDatabase, sock, chatId); }
             if (_fx) killLines.push(`✨ *Floor ${floor} XP:* +${_fx.toLocaleString()} XP (every living raider) · /xp`); } catch (e) {}
           if (floor >= gate.totalFloors) { killLines.push(``, `🏆 *BOSS FLOOR REACHED!*`, `/party boss — Engage the boss!`); }
-          else { killLines.push(``, `✅ *Floor ${floor} CLEARED!*`, `/party advance — Floor ${floor + 1}`, `⏳ Move on within *60s* — idle floors revive *+30% stronger* with no rewards.`); }
+          else { killLines.push(``, `✅ *Floor ${floor} CLEARED!*`, `⛏️ /mine — dig this floor for Mana Stones (3× each, before advancing)`, `/party advance — Floor ${floor + 1}`, `⏳ Move on within *60s* — idle floors revive *+30% stronger* with no rewards.`); }
         }
 
         try { GR.saveGateState(db, gate); } catch (e) {}
@@ -964,41 +1039,8 @@ module.exports = {
       }
 
       if (!_guardHit && player.stats.hp <= 0) {
-        const deathLines = [];
-        const PetManager = require('../../rpg/utils/PetManager');
-        const sac = PetManager.checkPetSacrifice(sender, player);
-        if (sac && sac.sacrificed) {
-          deathLines.push(``, sac.message);
-          await sock.sendMessage(chatId, { text: deathLines.filter(Boolean).join('\n') }, { quoted: msg });
-        } else {
-          player.stats.hp = 1;
-          player.stats_history = player.stats_history || {};
-          player.stats_history.gateDeaths = (player.stats_history.gateDeaths || 0) + 1;
-          const loss = Math.floor((player.manaCrystals || 0) * 0.15);
-          player.manaCrystals = Math.max(0, (player.manaCrystals || 0) - loss);
-
-          // Push #88: a single death pays NOTHING out — the party treasure
-          // stays banked. Only a full WIPE salvages 10% (to the guild treasury).
-
-          deathLines.push(``, `💀 *YOU FELL IN THE GATE!*`, `Lost ${loss.toLocaleString()} 💎`, `You fled with 1 HP.`);
-          // Push #29: JID-tolerant removal + wipe check (never re-persist a
-          // wiped gate — wipeGate already dropped it from every registry).
-          {
-            const _sN = GR.GKM.normaliseJid(sender);
-            const _gone = (id) => id !== sender && (!_sN || GR.GKM.normaliseJid(id) !== _sN);
-            if (gate.raid) gate.raid.members = gate.raid.members.filter(m => _gone(m.id));
-            try { GR.markFallen(gate, sender); } catch (e) {} // Push #88w
-            try { const _ln = GR.takeLeaderNotice(gate); if (_ln) await sock.sendMessage(chatId, { text: _ln }); } catch (e) {}
-            gate.raiders = (gate.raiders || []).filter(_gone);
-          }
-          if (gate.raid && gate.raid.members.length === 0) {
-            deathLines.push(...GR.wipeGate(gate, key, keyData, chatId, db));
-          } else {
-            try { GR.saveGateState(db, gate); } catch (e) {}
-          }
-      saveDatabase();
-          return sock.sendMessage(chatId, { text: deathLines.filter(Boolean).join('\n') }, { quoted: msg });
-        }
+        const _fell = await _fallInGate();
+        if (_fell) return _fell;
       }
 
       let _nextStatus2 = null;
@@ -1038,6 +1080,8 @@ module.exports = {
         // crashed with "boss is not defined".
         const boss = gate.boss;
         boss.defeated = true;
+        // Push #97: the boss ALWAYS drops Essence Stones of the gate's rank to the hunter who landed the final blow.
+        try { const ES = require('../../rpg/utils/EssenceStones'); const _en = ES.rollBossDrop(gate.rank); ES.grant(player, gate.rank, _en); out.push(`${ES.emojiFor(gate.rank)} *BOSS ESSENCE → ${player.name}*: *${ES.nameFor(gate.rank)}* ×${_en}`); } catch (e) {}
         // Push #89: the boss party falls with the boss (no rewards for them).
         try { for (const _el of (gate.monsters || [])) if (_el && _el.elite && !_el.defeated) { _el.defeated = true; _el.hp = 0; _el.revived = true; } } catch (e) {}
         AuraSystem.addAura(player, 'bossKill');
@@ -1168,7 +1212,10 @@ module.exports = {
       // Push #93: boss statuses (Curse of Ruin) count down one per hunter turn.
       try { if ((boss.statusEffects || []).length) { const _bt = { name: boss.name, statusEffects: boss.statusEffects, stats: { hp: boss.hp, maxHp: boss.maxHp } }; const _bl = require('../../rpg/utils/UnifiedCombat').tickStatuses(_bt); boss.hp = Math.max(0, _bt.stats.hp); if (_bl.some(l => /ruin wore off/.test(l))) await sock.sendMessage(chatId, { text: `✨ *Curse of Ruin* on *${boss.name}* has worn off.` }); } } catch (e) {}
       try { GR.playerDamage.partyAllies = (gate.raid?.members || []).map(m => db.users[m.id] || Object.values(db.users || {}).find(x => x && x.jid && GR.GKM.normaliseJid(x.jid) === GR.GKM.normaliseJid(m.id))).filter(Boolean); } catch (e) { GR.playerDamage.partyAllies = []; } // Push #94
-      const result = GR.playerDamage(player, skillArg || null, { statusEffects: (boss.statusEffects = boss.statusEffects || []) });
+      const _drainBoss = { name: boss.name, statusEffects: (boss.statusEffects = boss.statusEffects || []), stats: { hp: Number(boss.hp) || 0, maxHp: Number(boss.maxHp) || Number(boss.hp) || 100 } };
+      const result = GR.playerDamage(player, skillArg || null, _drainBoss); // Push #97 (BUG-012): drains land on the boss too
+      if (result && result.drained > 0) boss.hp = Math.max(1, _drainBoss.stats.hp);
+      if (_drainBoss.lastHitBy) boss.lastHitBy = _drainBoss.lastHitBy;
       GR.playerDamage.partyAllies = [];
       if (result.blocked) return sock.sendMessage(chatId, { text: `❌ ${result.reason}` }, { quoted: msg });
       // Push #55: pets fight the boss too — ATK bonus + their own ability hit.

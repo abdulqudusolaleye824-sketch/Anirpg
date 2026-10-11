@@ -12,6 +12,15 @@ const DungeonPartyManager = require('../../rpg/dungeons/DungeonPartyManager');
 const ImprovedCombat    = require('../../rpg/utils/ImprovedCombat');
 let BuffManager; try { BuffManager = require('../../rpg/utils/BuffManager'); } catch(e) {}
 const StatusEffectManager = require('../../rpg/utils/StatusEffectManager');
+
+// Push #97 (BUG-007): an ailment that ticks a hunter to 0 HP kills them on the spot — before any strike,
+// counter-hit or 1-HP safeguard can swallow the death. Returns the "succumbed" line (and clears statuses).
+function _succumbLine(player) {
+  if (!player || (player.stats?.hp ?? 1) > 0) return null;
+  let ail = null; try { ail = (player.statusEffects || []).map(e => e.name || e.type).filter(Boolean)[0]; } catch (e) {}
+  try { StatusEffectManager.clearAll(player); } catch (e) {}
+  return `💀 *${player.name}* succumbed to ${ail ? `*${ail}*` : 'their ailments'}!`;
+}
 const UI = require('../../rpg/utils/UI');
 function statusSummary(entity){ if(!entity||!entity.statusEffects||!entity.statusEffects.length) return null; const m={burn:'🔥 Burn -15 HP', poison:'☠️ Poison -10 HP', bleed:'🩸 Bleed -12 HP', stun:'💫 Stun skip', freeze:'❄️ Freeze skip + -3% HP', paralyze:'⚡ Paralyze 70% skip', weaken:'💔 Weaken -30% ATK', curse:'👁️ Curse -15% DEF', fear:'😱 Fear -20% ATK', enfeeble:'🐢 Enfeeble -30% DEF', trueslow:'🐌 Slow -35% SPD', silence:'🤐 Silence', blind:'🌫️ Blind -50% ACC'}; return entity.statusEffects.map(s=>{ const k=(s.type||'').toLowerCase(); const desc=m[k]||k; const dur=s.duration||s.turns||'?'; return `${desc} (${dur}t)`; }).join(' | '); }
 const BarSystem         = require('../../rpg/utils/BarSystem');
@@ -216,7 +225,12 @@ module.exports = {
     if (!TURN_SUBS.has(_sub0)) return this._execute(sock, msg, args, getDatabase, saveDatabase, sender);
     let party = null;
     try { party = DungeonPartyManager.getPartyByPlayer(sender); } catch (e) {}
-    if (!party || party.status !== 'active' || !party.id) return this._execute(sock, msg, args, getDatabase, saveDatabase, sender); // solo dungeons: no shared turn
+    if (!party || party.status !== 'active' || !party.id) return this._execute(sock, msg, args, getDatabase, saveDatabase, sender);
+    try { // Push #97: BOT LANES — the party dungeon is driven by the bot that opened it
+      const _lc = require('../../rpg/utils/BotLane').check(party, { what: 'dungeon run' });
+      if (_lc && _lc.error) return sock.sendMessage(msg.key.remoteJid, { text: _lc.error }, { quoted: msg });
+      if (_lc && _lc.takeover) await sock.sendMessage(msg.key.remoteJid, { text: _lc.line });
+    } catch (e) {} // solo dungeons: no shared turn
     const _db = getDatabase(); const _me = _db.users?.[sender];
     const lock = tryTurnLock(party.id, sender, (_me && _me.name) || sender.split('@')[0]);
     if (!lock.ok) {
@@ -805,6 +819,12 @@ module.exports = {
         } catch(e){}
         if (_tickSoloLogs.length) introLines.unshift(_tickSoloLogs.join('\n'));
         if (_statusSolo) introLines.unshift(`⚠️ *STATUS:* ${_statusSolo}`);
+        { const _sl = _succumbLine(player); if (_sl) { // Push #97 (BUG-007): ticked to death before the strike lands
+          player.stats.hp = 1;
+          if (dunSd) { player.gold = (player.gold || 0) + Math.floor((dunSd.totalNexus || 0) * 0.5); delete db.soloDungeons[sender]; }
+          saveDatabase();
+          return sock.sendMessage(chatId, { text: [introLines.join('\n'), _sl, FRAME, `💀 *You were defeated!*`, `50% of dungeon Nexus kept.`, `/use — recover`, FRAME].join('\n') }, { quoted: msg });
+        } }
         const sections = [
           { text: introLines.join('\n') },
           {
@@ -914,6 +934,13 @@ module.exports = {
         let log = '';
         if (fx.messages.length) log += fx.messages.join('\n') + '\n\n';
         else if (_preStatus) log += `⚠️ *STATUS:* ${_preStatus}\n\n`;
+        { const _sl = _succumbLine(player); if (_sl) { // Push #97 (BUG-007)
+          log += _sl + '\n'; player.stats.hp = 1;
+          try { awardXP(player, 'dungeon_floor', saveDatabase, sock, chatId); } catch (e) {}
+          player.gold = (player.gold || 0) + Math.floor((sd.totalNexus || 0) * 0.5);
+          delete db.soloDungeons[sender]; saveDatabase();
+          return sock.sendMessage(chatId, { text: `${log}\n${FRAME}\n💀 *DEFEATED on Floor ${sd.currentFloor}!*\n${FRAME}\n📦 Kept 50% of earned rewards.\n💠 Nexus: +${Math.floor((sd.totalNexus || 0) * 0.5).toLocaleString()}\n/use — recover` }, { quoted: msg });
+        } }
         // Batch-47: stunned loses the strike, monster still attacks.
         let _soloStunned = false;
         if (!fx.canAct) {
@@ -1096,6 +1123,7 @@ module.exports = {
       const fx = StatusEffectManager.processTurnEffects(player);
       let log = '';
       if (fx.messages.length) log += fx.messages.join('\n') + '\n\n';
+      { const _sl = _succumbLine(player); if (_sl) return handlePlayerDeath(sock, chatId, party, dungeon, db, saveDatabase, msg, sender, log + _sl + '\n'); } // Push #97 (BUG-007)
       if (!fx.canAct) { log += `❌ ${player.name} cannot act this turn!`; return sock.sendMessage(chatId, { text: log }, { quoted: msg }); }
 
       // Damage calc
@@ -1205,6 +1233,13 @@ module.exports = {
         const fx = StatusEffectManager.processTurnEffects(player);
         let log = '';
         if (fx.messages.length) log += fx.messages.join('\n') + '\n\n';
+        { const _sl = _succumbLine(player); if (_sl) { // Push #97 (BUG-007)
+          log += _sl + '\n'; player.stats.hp = 1;
+          try { awardXP(player, 'dungeon_floor', saveDatabase, sock, chatId); } catch (e) {}
+          player.gold = (player.gold || 0) + Math.floor((sd.totalNexus || 0) * 0.5);
+          delete db.soloDungeons[sender]; saveDatabase();
+          return sock.sendMessage(chatId, { text: `${log}\n${FRAME}\n💀 *DEFEATED on Floor ${sd.currentFloor}!*\n${FRAME}\n📦 Kept 50% of earned rewards.\n💠 Nexus: +${Math.floor((sd.totalNexus || 0) * 0.5).toLocaleString()}\n/use — recover` }, { quoted: msg });
+        } }
         if (!fx.canAct) { log += `❌ ${player.name} cannot act!`; return sock.sendMessage(chatId, { text: log }, { quoted: msg }); }
         if (!fx.canUseSkills) { log += `🤐 ${player.name} is SILENCED — skills locked!`; return sock.sendMessage(chatId, { text: log }, { quoted: msg }); }
 
@@ -1348,6 +1383,7 @@ module.exports = {
           // Push #88f: only a Healer-class hunter who actually HEALED draws aggro.
           { let _hc=false; try { _hc=/^healer$/i.test(String(require('../../rpg/utils/ClassPower').baseClassName(player)||'')); } catch(e){} if (_hc && _sc.isHeal) dungeon.healerAggro = { id: sender, name: player.name, turns: 3 }; }
           saveDatabase();
+          if (_sc.isHeal) { try { require('../../rpg/utils/QuestDispatcher').trackAndNotify(player, 'heal', 1, sock, sender, chatId); } catch (e) {} } // Push #97 (BUG-011)
           const _self = tgtJid === sender && !_sc.party;
           return sock.sendMessage(chatId, { text: [
             `${_sc.isHeal ? '💚' : '✨'} *SUPPORT — ${_sc.skill.name}*`,
@@ -1362,6 +1398,7 @@ module.exports = {
       const fx      = StatusEffectManager.processTurnEffects(player);
       let log = '';
       if (fx.messages.length) log += fx.messages.join('\n') + '\n\n';
+      { const _sl = _succumbLine(player); if (_sl) return handlePlayerDeath(sock, chatId, party, dungeon, db, saveDatabase, msg, sender, log + _sl + '\n'); } // Push #97 (BUG-007)
       if (!fx.canAct) { log += `❌ ${player.name} cannot act!`; return sock.sendMessage(chatId, { text: log }, { quoted: msg }); }
       if (!fx.canUseSkills) { log += `🤐 ${player.name} is SILENCED — skills locked!`; return sock.sendMessage(chatId, { text: log }, { quoted: msg }); }
 
@@ -1405,6 +1442,7 @@ module.exports = {
           const heal = Math.floor(player.stats.maxHp * 0.5);
           player.stats.hp = Math.min(_effMax(player), player.stats.hp + heal);
           saveDatabase();
+          try { require('../../rpg/utils/QuestDispatcher').trackBattleHeal(player, db, sock, sender, chatId); } catch (e) {} // Push #97 (BUG-011)
           return sock.sendMessage(chatId, { text: `🩹 Healed *+${heal} HP*!\n❤️ ${player.stats.hp}/${player.stats.maxHp}\n🩹 Potions left: ${player.inventory.healthPotions}` }, { quoted: msg });
         }
         if (itemType === 'ep' || itemType === 'energy') {

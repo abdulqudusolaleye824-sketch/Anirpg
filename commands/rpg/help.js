@@ -37,8 +37,11 @@ const KNOWN_SUBCOMMANDS = {
   market: ['list', 'buy', 'cancel', 'search', 'mylistings'],
   trade: ['offer', 'accept', 'decline', 'cancel', 'status'],
   shop: ['potions', 'gear', 'weapons', 'armor', 'buy'],
-  craft: ['list', 'recipe', 'craft'],
-  forge: ['list', 'recipe', 'craft'],
+  craft: ['<item> --<KEY> (preview card)', '<item> --<KEY> confirm (forge · 90% success)'],
+  forge: ['<item> --<KEY>', '<item> --<KEY> confirm'],
+  mine: ['(swing on a cleared floor, 3×/floor)', 'info', 'shop', 'buy <#>'],
+  labyrinth: ['buy (guild master, 1/week)', 'open (dungeon GC)', 'join', 'attack [#]', 'skill <name>', 'heal', 'leave', 'end (leader)'],
+  cooldowns: ['list', 'set <cmd> <5-50> (owner)'],
   pet: ['info', 'feed', 'train', 'play', 'level', 'equip', 'unequip', 'list'],
   caught: ['info', 'feed', 'train', 'play', 'level', 'equip', 'unequip', 'list'],
   catchpet: ['info', 'feed', 'train', 'play', 'level', 'equip', 'unequip', 'list'],
@@ -193,6 +196,8 @@ module.exports = {
           `🔁 *Aliases:* ${aliases}`,
           `📂 *Category:* ${command.category || 'general'}`,
           ...(subcommands ? [`⚡ *Subcommands:* ${subcommands}`] : []),
+          // Push #97: every command's per-player cooldown is shown here.
+          ...(() => { try { const CC = require('../../rpg/utils/CommandCooldown'); const _s = CC.secondsFor(command.name, getDatabase()); return [`⏱️ *Cooldown:* ${_s}s per player (Pro ${Math.max(CC.MIN_S, Math.round(_s * 0.75))}s · owners exempt)`]; } catch (e) { return []; } })(),
         ],
         proLines: sameCat.length ? [`🔗 *More ${command.category || 'general'}:*`, `  ${sameCat.join(' · ')}`] : [],
         tip: `/${command.name} to run it`,
@@ -207,11 +212,11 @@ module.exports = {
     const menuLines = [
       `👤 *PLAYER:* /register /profile /stats /rank /inventory /balance /daily /quest /box /weekly /challenges /cooldowns /achievements /title /settings /timezone /xp`,
       ``,
-      `⚔️ *COMBAT:* /party /gateraid /gate /dungeon /instance /boss /skill /classcmd /attacks /flee /guard /revive /pvp /teampvp /creator`,
+      `⚔️ *COMBAT:* /party /gateraid /gate /dungeon /instance /labyrinth /mine /boss /skill /classcmd /attacks /flee /guard /revive /pvp /teampvp /creator`,
       ``,
       `🏝️ *JEJU RAID:* /event /ejoin /einfo /estats /epoints /elb /eshop /eventafk /attack`,
       ``,
-      `🔧 *GEAR & PROGRESSION:* /store /equip /unequip /gear /weapon /swap /mend /find /use /buff /craft /recycle /scroll /enchant /upgrade /giveup /class /skills /job /jobskill /supplication /domain /awaken /artifact /aura /constellation /skin`,
+      `🔧 *GEAR & PROGRESSION:* /store /equip /unequip /gear /weapon /swap /mend /find /use /buff /craft /recycle /scroll /mine /enchant /upgrade /giveup /class /skills /job /jobskill /supplication /domain /awaken /artifact /aura /constellation /skin`,
       ``,
       `🐾 *PETS:* /pet /catch /petswap /eggs /food`,
       ``,
@@ -227,7 +232,7 @@ module.exports = {
       `🛡️ *GROUP ADMIN:* /kick /promote /demote /pm /mute /unmute /ban /unban /tagall /antilink /antimention /slowmode /chatbot /welcome /goodbye /close /open /delete /disable /enable /groupcmd /announce /setgroup /sub /gclist /joingc /leavegc /spawnstatus /killspawn /closegate /reset /restart /start /switch /aimode /setserf /approveserf /bots`,
     ];
     // z25: owner-only block appended at runtime (never in the public menu source).
-    try { if (require('../../utils/permissions').isBotOwner(getDatabase(), sender)) menuLines.push(['👑 *OWNER:* /bug list · /bugs · /bug delete <id> · /closeall /openall · /dbdump · /set --mod --false <serial> · /ver' + 'sion'].join('')); } catch (e) {}
+    try { if (require('../../utils/permissions').isBotOwner(getDatabase(), sender)) menuLines.push(['👑 *OWNER:* /bug list · /bugs · /bug delete <id> · /closeall /openall · /dbdump · /kill <bot> · /reset <bot> · /cooldowns set <cmd> <s> · /set --mod --false <serial> · /ver' + 'sion'].join('')); } catch (e) {}
     const message = UI.card(viewerH, {
       icon: '📋', title: '✦ 𝐀𝐬𝐭𝐫𝐚™ COMMAND MENU',
       lines: menuLines,

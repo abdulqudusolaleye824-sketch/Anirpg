@@ -10,6 +10,7 @@
 
 'use strict';
 
+const BotLane = require('../rpg/utils/BotLane'); // Push #97: per-bot lanes (isolation, /kill, /reset)
 const path = require('path');
 const fs   = require('fs');
 const {
@@ -438,6 +439,7 @@ function _wsReady(key) {
 }
 
 function isBotUsable(key) {
+  if (BotLane.isKilled(key)) return false; // Push #97: /kill parks the bot
   const s = botSockets[key];
   if (!s || !s.user?.id) return false;
   if (_loggedOut.has(key)) return false;
@@ -973,7 +975,7 @@ function _credsRegistered(authDir, personalityKey) {
 function getFirstOnlineSocketKey() {
   // Push #55: prefer a bot whose sends actually land. A zombie that still
   // reports user.id must never be the default responder for every group.
-  const online = Object.keys(botSockets).filter(k => !!botSockets[k]?.user?.id).sort();
+  const online = Object.keys(botSockets).filter(k => !!botSockets[k]?.user?.id && !BotLane.isKilled(k)).sort();
   const usable = online.filter(isBotUsable);
   return usable[0] || online[0] || null;
 }
@@ -1590,7 +1592,7 @@ function _isOwnBotNumber(bareNumber) {
 }
 
 function getAnySocket() {
-  const keys = Object.keys(botSockets);
+  const keys = Object.keys(botSockets).filter(k => !BotLane.isKilled(k)); // Push #97
   if (keys.length === 0) return null;
   return botSockets[keys[0]];
 }
@@ -1716,6 +1718,7 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
   try {
     const _rawSend = sock.sendMessage.bind(sock);
     sock.sendMessage = async (jid, content = {}, options = {}) => {
+      if (BotLane.isKilled(personalityKey)) return null; // Push #97: a killed bot never speaks
       try {
         const c = content || {};
         const keys = Object.keys(c);
@@ -2310,13 +2313,15 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
     // kept per player; shared-state commands (dungeon turns) take their own
     // lock and answer immediately when someone else's turn is playing out.
     const qkey = cid + '|' + String(msg?.key?.participant || msg?.participant || cid);
+    // Push #97: a KILLED bot hears nothing — not even the owner — until /reset <bot> from another bot.
+    if (BotLane.isKilled(personalityKey)) return;
     const prev = _chatQueues.get(qkey) || Promise.resolve();
     const run = prev.then(async () => {
       _inflightCmds++;
       let timer;
       try {
         await Promise.race([
-          _handleInbound(msg),
+          BotLane.run(personalityKey, () => _handleInbound(msg)), // Push #97: every message is handled inside this bot's LANE
           new Promise((_, rej) => { timer = setTimeout(() => rej(new Error(`inbound handler timed out after ${CMD_TIMEOUT_MS / 1000}s`)), CMD_TIMEOUT_MS); }),
         ]);
       } catch (e) {
@@ -2685,6 +2690,18 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
             mentions: [String(mj)],
           }, { quoted: msg });
         } catch (e) { /* best effort */ }
+      }
+      // Push #97: a hunter deep inside an INSTANCE dungeon / the LABYRINTH is "not on this realm" — tagging them
+      // gets the AFK-style notice (they cannot be pulled into raids or duels either).
+      for (const mj of mentionedAlso) {
+        try {
+          const bareNumber = String(mj).split(':')[0].split('@')[0];
+          const u = Object.values(db.users || {}).find(x => x && x.jid && String(x.jid).split(':')[0].split('@')[0] === bareNumber) || db.users?.[mj];
+          if (!u) continue;
+          const realm = (u.instance && u.instance.active) ? 'an *instance dungeon*' : (u.labyrinth && u.labyrinth.active) ? 'the *labyrinth*' : null;
+          if (!realm) continue;
+          await sock.sendMessage(chatId, { text: `🌀 @${bareNumber} is currently not on this realm — fighting inside ${realm}.\nThey will see your message when they return.`, mentions: [String(mj)] }, { quoted: msg });
+        } catch (e) {}
       }
     }
 

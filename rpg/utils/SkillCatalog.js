@@ -851,9 +851,11 @@ function cooldownMs(skill) {
   return Math.max(0, Math.round(turns * 2500));   // one turn ≈ 2.5s of chat cadence
 }
 
+// Push #97: +70% per level, compounding — 45,000 → 76,500 → 130,050 → 221,085.
 function skillUpgradeCost(level) {
-  const costs = [45000, 150000, 360000, 900000]; // Push #74: ×3 for all classes
-  return costs[(level || 1) - 1] ?? null;
+  const lv = Number(level) || 1;
+  if (lv < 1 || lv >= MAX_SKILL_LEVEL) return null;
+  return Math.round(45000 * Math.pow(1.7, lv - 1));
 }
 
 // ── Damage ───────────────────────────────────────────────────────────────────
@@ -1185,9 +1187,33 @@ function scaleEntry(entry, level) {
     energyPct: entry.energyPct ? up(entry.energyPct, 100) : entry.energyPct,
     convertPct: entry.convertPct ? up(entry.convertPct, 100) : entry.convertPct,
     healingPct: entry.healingPct ? up(entry.healingPct, 100) : entry.healingPct,
+    // Push #97: drains / lifesteal / energy restores grow with the level too (Crimson Blade 50% → 58% → 67%…).
+    drainPct: entry.drainPct ? up(entry.drainPct, 50) : entry.drainPct,
+    drainHealPct: entry.drainHealPct ? up(entry.drainHealPct, 100) : entry.drainHealPct,
+    lifestealPct: entry.lifestealPct ? up(entry.lifestealPct, 60) : entry.lifestealPct,
     immuneTurns: entry.immuneTurns ? entry.immuneTurns + (lv >= 5 ? 2 : lv >= 3 ? 1 : 0) : entry.immuneTurns,
   };
+  out.effectScaled = scaledSummary(out);
   return out;
+}
+// Push #97: the numbers a skill REALLY uses at its level, as display lines (so /skills shows growth on upgrade).
+function scaledSummary(e) {
+  if (!e) return [];
+  const L = [];
+  const lv = Number(e.level) || 1;
+  if (e.damagePct) L.push(`💥 ${Math.round(e.damagePct * (1 + (lv - 1) * 0.08))}% ATK damage`);
+  if (e.healingPct) L.push(`💚 Heals ${e.healingPct}% max HP`);
+  if (e.drainPct) L.push(`🧛 Drains ${e.drainPct}% of target max HP${e.drainHealPct ? ` · recovers ${e.drainHealPct}%` : ''}`);
+  if (e.lifestealPct) L.push(`🩸 Lifesteal ${e.lifestealPct}% of damage`);
+  if (e.shieldPct) L.push(`🛡️ Shield ${e.shieldPct}% max HP`);
+  if (e.regen && e.regen.pct) L.push(`💞 Regen ${e.regen.pct}%/turn${e.regen.turns ? ` × ${e.regen.turns}t` : ''}`);
+  if (e.damageTakenPct) L.push(`🧱 Damage taken −${e.damageTakenPct}%`);
+  if (e.reflectPct) L.push(`🔁 Reflect ${e.reflectPct}%`);
+  if (e.energyPct) L.push(`⚡ Restores ${e.energyPct}% energy`);
+  for (const b of (e.buffs || [])) if (b && b.stat) L.push(`📈 ${String(b.stat).toUpperCase()} +${Math.abs(Number(b.amount) || 0)}%${b.turns ? ` (${b.turns}t)` : ''}${e.party ? ' · whole party' : ''}`);
+  for (const d of (e.debuffs || [])) if (d && d.stat) L.push(`📉 Enemy ${String(d.stat).toUpperCase()} −${Math.abs(Number(d.amount) || 0)}%${d.turns ? ` (${d.turns}t)` : ''}`);
+  if (e.immuneTurns) L.push(`✨ Status immunity ${e.immuneTurns}t`);
+  return L;
 }
 function findBy(name, roster) {
   const n = String(name || '').toLowerCase();
@@ -1340,7 +1366,7 @@ module.exports = { CLASS_POWER, supportMult, scaleEntry,
   augmentContract,
   parseSupportFields, applySupportFields,
   snapshotSkillProgress, carrySkillProgress,
-  applyHpPercents, applyLifesteal, _lifestealPct,
+  applyHpPercents, applyLifesteal, _lifestealPct, scaledSummary, scaleEntry, supportMult,
   SKILLS_PER_CLASS, UNLOCK_STEP, MAX_SKILL_LEVEL, SUPPORTED_STATUS,
   canonicalClassName, buildRoster, getRoster, EXPLICIT,
   isUnlockedFor, syncPlayerSkills, resolveSkill,

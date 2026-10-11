@@ -99,13 +99,15 @@ function ensureGuildShopFresh(guild) {
     return (seed - 1) / 2147483646;
   }
 
+  // Push #97: mining tools always sit in the guild shop (guild discount applies) beside the rotating pool.
+  let _mineItems = []; try { _mineItems = require('../../rpg/utils/Mining').guildShopItems(); } catch (e) {}
   const poolCopy = [...REGULAR_SHOP_POOL];
   for (let i = poolCopy.length - 1; i > 0; i--) {
     const j = Math.floor(seededRandom() * (i + 1));
     [poolCopy[i], poolCopy[j]] = [poolCopy[j], poolCopy[i]];
   }
 
-  const selected = poolCopy.slice(0, 10).map(item => ({
+  const selected = [...poolCopy.slice(0, Math.max(0, 10 - Math.min(2, _mineItems.length))), ..._mineItems.filter(() => true).sort(() => seededRandom() - 0.5).slice(0, 2)].slice(0, 10).map(item => ({
     ...item,
     unitsLeft: 5,
     maxUnits: 5

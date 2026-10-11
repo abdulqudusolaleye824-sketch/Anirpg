@@ -999,7 +999,7 @@ function _busyElsewhere(pl, db) {
   try {
     const b = require('../../rpg/utils/RegenManager').checkInBattle(pl, db);
     if (!b || b.type === 'pvp') return null;
-    return { gateraid: 'gate raid', dungeon_solo: 'dungeon', dungeon_party: 'party dungeon', boss: 'boss fight' }[b.type] || 'battle';
+    return { gateraid: 'gate raid', dungeon_solo: 'dungeon', dungeon_party: 'party dungeon', boss: 'boss fight', instance: 'instance dungeon', labyrinth: 'labyrinth' }[b.type] || 'battle';
   } catch (e) { return null; }
 }
 function handlePvpVictory(sock, chatId, winner, loser, wId, lId, db, saveDatabase, turns, lastTurnText) {

@@ -23,6 +23,20 @@ module.exports = {
     const isPro = !!((player.isPro || player.proStatus) && player.proExpiresAt && player.proExpiresAt > now);
     const lines = [];
 
+    // Push #97: owner — /cooldowns set <cmd> <5-50> · /cooldowns list (per-player command cooldowns)
+    const _sub = String(args[0] || '').toLowerCase();
+    if (_sub === 'set' || _sub === 'list' || _sub === 'commands') {
+      const CC = require('../../rpg/utils/CommandCooldown');
+      let _owner = false; try { _owner = require('../../utils/permissions').isBotOwner(db, sender); } catch (e) {}
+      if (_sub === 'set') {
+        if (!_owner) return sock.sendMessage(chatId, { text: '❌ Owner only.' }, { quoted: msg });
+        const r = CC.setOverride(db, args[1], args[2]); if (r.ok) saveDatabase();
+        return sock.sendMessage(chatId, { text: r.ok ? r.line : r.error }, { quoted: msg });
+      }
+      const t = CC.table(db);
+      return sock.sendMessage(chatId, { text: [FRAME, `⏱️ *COMMAND COOLDOWNS* (per player · default ${CC.DEFAULT_S}s · Pro −25% · owners exempt)`, FRAME, ...t.map(x => `• /${x.cmd} — ${x.seconds}s`), FRAME].join('\n') }, { quoted: msg });
+    }
+
     if (isPro) {
       lines.push(`🌟 *PRO VIP STATUS ACTIVE:* 50% Reduced Cooldowns on all features!`);
       lines.push(``);

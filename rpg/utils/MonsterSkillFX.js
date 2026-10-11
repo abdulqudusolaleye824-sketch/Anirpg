@@ -231,7 +231,8 @@ function apply(monster, player, ability, dmg, opts = {}) {
   }
   // Status on the hunter.
   if (c.status && !opts.skipStatus && !(monster.noStatus) && (dmg > 0 || opts.forceStatus)) {
-    if (Math.random() * 100 < (c.status.chance || 50)) {
+    let _sc = (c.status.chance || 50); try { const _ter = require('./BotLane').scratch().terrain; if (_ter) _sc = _sc * require('../data/Terrains').statusMult(_ter, c.status.type); } catch (e) {} // Push #97: terrain
+    if (Math.random() * 100 < _sc) {
       const l = applyStatus(player, c.status.type, c.status.duration, c.status.damage);
       if (l) lines.push(l);
     }

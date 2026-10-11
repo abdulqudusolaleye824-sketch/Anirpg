@@ -22,6 +22,7 @@ function byRecency(arr) {
   return [...arr].reverse().sort((a, b) => ((b.acquiredAt || 0) - (a.acquiredAt || 0)));
 }
 function collectBuckets(player) {
+  try { require('../../rpg/utils/RewardInventory').migrateLegacy(player); } catch (e) {} // Push #97 (BUG-010): surface hidden artifacts / re-slot crafted gear
   const inv = player.inventory || {};
   const items = inv.items || [];
   const legacyGear = [...(inv.weapons || []), ...(inv.armor || []), ...(inv.accessories || [])]

@@ -673,6 +673,7 @@ module.exports = async (sock, msg, messageText, config, getDatabase, saveDatabas
     db.disabledCommands.push({
       name: target,
       by: sender,
+      byName: (db.users?.[sender]?.name) || null, // Push #97: the disabled-notice names the player, no tag
       timestamp: Date.now(),
     });
     saveDatabase();
@@ -711,16 +712,20 @@ module.exports = async (sock, msg, messageText, config, getDatabase, saveDatabas
     );
   }
 
-  const disabled = db.disabledCommands.find(c => c.name === commandName);
+  const disabled = db.disabledCommands.find(c => c.name === commandName) || db.disabledCommands.find(c => c.name === resolvedCommand);
   if (disabled) {
-    return sock.sendMessage(
-      chatId,
-      {
-        text: `❌ Command *${commandName}* is disabled.\n(by @${disabled.by.split('@')[0]})`,
-        mentions: [disabled.by],
-      },
-      { quoted: msg }
-    );
+    // Push #97: name WHO disabled it (player name) — no tag.
+    const _byName = (db.users?.[disabled.by]?.name) || (db.users?.[`${String(disabled.by || '').split('@')[0].split(':')[0]}@s.whatsapp.net`]?.name) || (disabled.byName) || String(disabled.by || 'a moderator').split('@')[0];
+    return sock.sendMessage(chatId, { text: `❌ Command */${commandName}* is disabled by *${_byName}*.` }, { quoted: msg });
+  }
+
+  // Push #97: per-player command cooldown (5–50 s). Owners exempt, Pro −25%. Other players are unaffected.
+  if (commands[resolvedCommand] && !msg._berserkAuto) {
+    try {
+      const CC = require('../rpg/utils/CommandCooldown');
+      const _cd = CC.check(db, sender, resolvedCommand);
+      if (_cd) return sock.sendMessage(chatId, { text: _cd.text }, { quoted: msg });
+    } catch (e) {}
   }
 
   // Push #87: Pro GC — members-only commands + /rob ban.

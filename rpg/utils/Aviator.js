@@ -142,8 +142,9 @@ function settleCashout(sock, flight, saveDatabase) {
   flights.delete(flight.sender);
 
   const player = flight.player;
-  const payout = Math.floor(flight.bet * flight.cashMult);
-  const profit = payout - flight.bet;
+  let payout = Math.floor(flight.bet * flight.cashMult);
+  let profit = payout - flight.bet;
+  try { const CB = require('./CasinoBoost'); if (profit > 0) { profit = CB.boostWin(profit, player); payout = flight.bet + profit; } } catch (e) {} // Push #97: +40% winnings, Pro ×2
   ensureCasinoStats(player);
   updatePlayerNexus(player, payout, saveDatabase);
   player.casino.gamesPlayed++;

@@ -27,6 +27,10 @@ function checkInBattle(player, db) {
   const _bare = String(pId || '').split(':')[0].split('@')[0];
   const _me = (j) => j === pId || String(j || '').split(':')[0].split('@')[0] === _bare || !!(db && db.lidMap && db.lidMap[String(j || '').split(':')[0].split('@')[0]] === _bare);
 
+  // Push #97: instance dungeons / labyrinth — "not on this realm"
+  if (player.instance && player.instance.active) return { type: 'instance', battle: player.instance };
+  if (player.labyrinth && player.labyrinth.active) return { type: 'labyrinth', battle: player.labyrinth };
+
   // Solo dungeon battle
   if (player.dungeon?.currentBattle) {
     const b = player.dungeon.currentBattle;

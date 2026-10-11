@@ -1,6 +1,6 @@
 // ═══════════════════════════════════════════════════════════════
 // /instance — Job Change Quest instance dungeons (DM only)
-//   Push #96h-z9: 10 floors × 5 monsters, 2 h limit (auto-closes), NO auto-attack.
+//   Push #97: ENDLESS floors × 5 monsters (floor 10 = job pass mark), 30 min idle auto-exit, NO auto-attack.
 //   Combat uses the SAME commands as regular dungeons, routed here while inside:
 //     /attack                 → basic strike
 //     /attack <id>            → equipped attack pattern
@@ -14,7 +14,7 @@ const JS = require('../../rpg/utils/JobSystem');
 module.exports = {
   name: 'instance',
   aliases: ['jobquest', 'inst'],
-  description: '🏚️ Instance dungeon — 10 floors × 5 monsters in DM, clears a Job Change Quest (needs an Instance Key)',
+  description: '🏚️ Instance dungeon — endless floors × 5 monsters in DM; floor 10 clears a Job Change Quest, exit bonus grows per floor (needs an Instance Key)',
 
   async execute(sock, msg, args, getDatabase, saveDatabase, sender) {
     const chatId = msg.key?.remoteJid;
@@ -30,11 +30,12 @@ module.exports = {
     { const ex = ID.expireCheck(player); if (ex) { saveDatabase(); await sock.sendMessage(chatId, { text: [FRAME, ...ex.lines, FRAME].join('\n') }, { quoted: msg }); if (sub === 'attack' || sub === 'skill' || sub === 'a' || sub === 's') return; } }
 
     if (sub === 'start' || sub === 'enter') {
+      { const _b = require('../../rpg/utils/Engagement').whereBusy(db, sender, player, { ignore: ['instance'] }); if (_b) return sock.sendMessage(chatId, { text: _b.text }, { quoted: msg }); } // Push #97
       const r = ID.start(player, args.slice(1).join(' '));
       if (!r.ok) return sock.sendMessage(chatId, { text: `❌ ${r.error}` }, { quoted: msg });
       saveDatabase();
       const m = r.inst.monster;
-      return sock.sendMessage(chatId, { text: [FRAME, `🏚️ *INSTANCE OPENED — ${r.job.emoji} ${r.job.name.toUpperCase()} QUEST*`, FRAME, `🗝️ Key consumed (${ID.keys(player)} left).`, `🏯 *${ID.FLOORS} floors × ${ID.PER_FLOOR} monsters* — the 5th of every floor is its boss. Clear floor ${ID.FLOORS} and the job is yours.`, `⏰ *2 hours* — then the instance closes itself. No auto-attacks: every move is yours.`, ``, `➡️ *Floor 1 · 1/${ID.PER_FLOOR}* — ${m.emoji} *${m.name}* [${m.rank}] HP ${m.stats.maxHp}`, ``, `⚔️ /attack · /attack <id> · /skillcmd <skill>`, `🚪 /instance leave`, FRAME].join('\n') }, { quoted: msg });
+      return sock.sendMessage(chatId, { text: [FRAME, `🏚️ *INSTANCE OPENED — ${r.job.emoji} ${r.job.name.toUpperCase()} QUEST*`, FRAME, `🗝️ Key consumed (${ID.keys(player)} left).`, `🏯 *Endless floors × ${ID.PER_FLOOR} monsters* — the 5th of every floor is its boss. Reach floor ${ID.FLOORS} and the job is yours; keep going for a bigger exit bonus.`, `☠️ It ends when you fall (half bonus) or */instance leave* (full bonus). 30 min idle = auto-exit. While inside you are *not on this realm* — no raids, no duels, no tags.`, ``, `➡️ *Floor 1 · 1/${ID.PER_FLOOR}* — ${m.emoji} *${m.name}* [${m.rank}] HP ${m.stats.maxHp}`, ``, `⚔️ /attack · /attack <id> · /skillcmd <skill>`, `🚪 /instance leave`, FRAME].join('\n') }, { quoted: msg });
     }
 
     if (sub === 'attack' || sub === 'skill' || sub === 'a' || sub === 's') {
@@ -71,6 +72,6 @@ module.exports = {
     const st = ID.status(player);
     if (st) return sock.sendMessage(chatId, { text: [FRAME, st, FRAME].join('\n') }, { quoted: msg });
     const elig = ID.eligibleJobs(player);
-    return sock.sendMessage(chatId, { text: [FRAME, `🏚️ *INSTANCE DUNGEONS*`, FRAME, `Job changes are sealed behind *Job Change Quests*: a DM dungeon of *${ID.FLOORS} floors × ${ID.PER_FLOOR} monsters* (the 5th of each floor is its boss). Clear floor ${ID.FLOORS} within *2 hours* and the job is yours.`, `⚔️ Same combat as regular dungeons: /attack · /attack <id> · /skillcmd <skill>. No auto-attacks.`, `🗝️ Keys: *${ID.keys(player)}* — 10% chance each time you finish all 4 daily quests (only when a job change is open to you). Bound, not tradeable.`, elig.length ? `🧭 Open to you: ${elig.map(j => `${j.emoji} ${j.name}`).join(', ')}` : `🧭 No job change open yet — /job list`, player.jobQuest && player.jobQuest.cleared ? `🏆 Cleared: *${(JS.BY_KEY[player.jobQuest.cleared] || {}).name}* — /job change ${(JS.BY_KEY[player.jobQuest.cleared] || {}).name}` : null, ``, `▶️ /instance start [job]`, FRAME].filter(l => l !== null).join('\n') }, { quoted: msg });
+    return sock.sendMessage(chatId, { text: [FRAME, `🏚️ *INSTANCE DUNGEONS*`, FRAME, `Job changes are sealed behind *Job Change Quests*: an endless DM dungeon (*${ID.PER_FLOOR} monsters per floor*, the 5th is its boss). Reach floor ${ID.FLOORS} and the job is yours — then climb on: the exit bonus grows with every floor (death keeps half). Score is settled when you leave or fall.`, `⚔️ Same combat as regular dungeons: /attack · /attack <id> · /skillcmd <skill>. No auto-attacks.`, `🗝️ Keys: *${ID.keys(player)}* — 10% chance each time you finish all 4 daily quests (only when a job change is open to you). Bound, not tradeable.`, elig.length ? `🧭 Open to you: ${elig.map(j => `${j.emoji} ${j.name}`).join(', ')}` : `🧭 No job change open yet — /job list`, player.jobQuest && player.jobQuest.cleared ? `🏆 Cleared: *${(JS.BY_KEY[player.jobQuest.cleared] || {}).name}* — /job change ${(JS.BY_KEY[player.jobQuest.cleared] || {}).name}` : null, ``, `▶️ /instance start [job]`, FRAME].filter(l => l !== null).join('\n') }, { quoted: msg });
   },
 };

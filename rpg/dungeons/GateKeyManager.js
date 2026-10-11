@@ -200,7 +200,7 @@ function purchaseGateKey(sender, gate, db, saveDatabase) {
   const keyData = {
     key,
     gateId:       gate.id,
-    gateRank:     gate.rank,
+    gateRank:     gate.rank, totalFloors: gate.totalFloors || null, terrain: gate.terrain || null, // Push #97: depth + terrain survive a restart
     nexusLoot:    Number(gate.nexusLoot) || 0, crystalLoot: Number(gate.crystalLoot) || 0, // z28: a rebuilt gate pays the ORIGINAL amount
     purchasePrice: Number(gate.purchasePrice) || 0, manaPrice: Number(gate.manaPrice) || 0,
     strengthPct:  gate.strengthPct || null, // Push #71

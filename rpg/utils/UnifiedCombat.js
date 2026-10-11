@@ -317,6 +317,8 @@ function tryApplyEffect(attack, attacker, defender) {
       if (['stun', 'freeze', 'paralyze', 'petrify'].includes(t)) { const cr = JS.mod(defender, 'ccResist'); if (cr && Math.random() * 100 < cr) { defender._lastStatusBlock = 'Unbreakable — shrugged it off'; return null; } }
     }
   } catch (e) {}
+  // Push #97: TERRAIN nudges the odds both ways (burn in a snowfield, poison in a swamp…) — hunters and beasts alike.
+  try { const _ter = require('./BotLane').scratch().terrain; if (_ter) chance = chance * require('../data/Terrains').statusMult(_ter, attack.effect.type); } catch (e) {}
   if (Math.random() * 100 > chance) return null;
   // Push #76: store gear defence — S immunity, B/A resist roll, −1 turn.
   let _turnCut = 0;
@@ -339,7 +341,8 @@ function tryApplyEffect(attack, attacker, defender) {
   let _dur = Math.max(2, Number(attack.effect.duration) || 2);
   // Push #74: POISON is a real DoT — never shorter than 4 turns.
   if (String(attack.effect.type || '').toLowerCase() === 'poison') _dur = Math.max(4, _dur);
-  if (_turnCut) _dur = Math.max(1, _dur - _turnCut);
+  // Push #97: gear turn-reduction STACKS (three −1 pieces = −3) with no floor — a status cut to 0 turns never lands.
+  if (_turnCut) { _dur = _dur - _turnCut; if (_dur <= 0) { defender._lastStatusBlock = `gear cut ${attack.effect.type} to 0 turns`; return null; } }
   try { const DS = require('./DomainSystem'); const d = DS.isShielded(defender); if (d) { defender._lastStatusBlock = `inside ${d.name} — immune to new status effects`; return null; } } catch (e) {} // Push #96g
   const eff = { type: attack.effect.type, duration: _dur, sourceAttack: attack.id };
   defender.statusEffects.push(eff);
@@ -645,6 +648,7 @@ async function playTurn(sock, chatId, o) {
 function noteDamageTaken(entity, dmg) {
   try { const c = entity && entity.tempBuffs && entity.tempBuffs.convert; if (!c || !(dmg > 0)) return 0; const amt = Math.floor(dmg * c.pct / 100); if (amt <= 0) return 0; const cur = entity.tempBuffs.convertHeal; entity.tempBuffs.convertHeal = { amount: (cur && cur.amount || 0) + amt, duration: 2, source: c.source || 'Blood Armor' }; return amt; } catch (e) { return 0; }
 }
+try { const _BL = require('./BotLane'); Object.defineProperty(hitCheck, 'last', { configurable: true, get() { return _BL.scratch().uc_hitLast; }, set(v) { _BL.scratch().uc_hitLast = v; } }); } catch (e) {} // Push #97: per-lane slot
 module.exports = { noteDamageTaken, accuracyOf, hitCheck, DODGE_CAP_VS_ACC,
   tempBuffPct, applyMoveBuffs, reflectDamage,
   dodgeChance, weakenTakenMult,
