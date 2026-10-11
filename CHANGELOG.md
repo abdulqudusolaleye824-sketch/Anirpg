@@ -1,3 +1,6 @@
+## 1.0.188 — Push #96h-z30 (2026-10-11)
+- **/bugs** (owner, DM only): re-sends every PENDING bug report card with its Log / Dismiss / Ban buttons.
+
 ## 1.0.187 — Push #96h-z29 (2026-10-10)
 - **/closeall** (owner, DM or group): every group any linked bot is in goes admin-only; each group gets a notice naming who closed it (with time); the groups are LOCKED — `/open` by anyone replies "locked by the bot owner" with no hint at the owner command. `/close` keeps working normally.
 - **/openall** (owner): lifts every lock and opens the groups (does not force beyond that).
