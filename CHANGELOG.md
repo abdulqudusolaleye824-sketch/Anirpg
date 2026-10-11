@@ -1,3 +1,8 @@
+## 1.0.187 — Push #96h-z29 (2026-10-10)
+- **/closeall** (owner, DM or group): every group any linked bot is in goes admin-only; each group gets a notice naming who closed it (with time); the groups are LOCKED — `/open` by anyone replies "locked by the bot owner" with no hint at the owner command. `/close` keeps working normally.
+- **/openall** (owner): lifts every lock and opens the groups (does not force beyond that).
+- **/dbdump** (owner, DM only): sends the current full database as a JSON file to your DM. Does not touch the 3-day offline backup or the daily snapshot timers.
+
 ## 1.0.186 — Push #96h-z28 (2026-10-10)
 - **Raid paid 0 Nexus / 0 Mana Stones — root cause fixed:** when the server restarts mid-raid (every deploy), the gate is rebuilt from the key and that rebuild hard-coded `nexusLoot:0 / crystalLoot:0`. Keys now store the gate's original payout at purchase, the rebuild restores it, and `clearGate` has a last-line guarantee: if a gate ever reaches payout with no money attached it rolls the rank's standard 3–4× payout (tagged 🛡️ guaranteed payout). Money is never luck — only drop items are.
 - **Job XP thresholds ×5:** Job Lv2–5 now at 1,500 / 4,500 / 10,000 / 20,000.

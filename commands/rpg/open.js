@@ -20,6 +20,8 @@ module.exports = {
     const chatId = msg.key.remoteJid;
     const db = getDatabase();
 
+    // z29: a group locked by /closeall cannot be opened from here (no hint at the owner command).
+    try { if (require('../../rpg/utils/GroupLock').isLocked(db, chatId)) return sock.sendMessage(chatId, { text: '🔒 This group was locked by the bot owner. It cannot be opened from here.' }, { quoted: msg }); } catch (e) {}
     const proO = UI.isPro(db.users[sender]);
     const gate = await GroupAdmin.requireGroupAdmin(sock, chatId, sender, db);
     if (!gate.ok) return sock.sendMessage(chatId, { text: gate.err }, { quoted: msg });
