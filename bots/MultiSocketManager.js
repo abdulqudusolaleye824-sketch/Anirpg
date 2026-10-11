@@ -22,6 +22,22 @@ const {
   makeCacheableSignalKeyStore,
 } = require('@whiskeysockets/baileys');
 const pino    = require('pino');
+// Push #99: every Signal key lives in SQLite (db/SqliteAuth) — no more 38k-file
+// auth folders, no half-written session files (Bad MAC), no 0-byte creds.json.
+const SqliteAuth = require('../db/SqliteAuth');
+async function _authState(personalityKey, botAuthDir, authDir) {
+  if (SqliteAuth.isAvailable()) {
+    try {
+      const legacyDir = path.join(authDir, '..', 'auth-legacy');
+      return await SqliteAuth.useSqliteAuthState(personalityKey, botAuthDir, { legacyDir });
+    } catch (e) { console.error(`⚠️ SqliteAuth [${personalityKey}] failed (${e.message}) — falling back to the multi-file store`); }
+  }
+  const r = await useMultiFileAuthState(botAuthDir);
+  return { ...r, source: 'multi-file' };
+}
+function _authWipe(personalityKey, why) {
+  try { if (SqliteAuth.isAvailable()) { SqliteAuth.wipe(personalityKey); console.log(`🗄️ SqliteAuth [${personalityKey}] keys cleared (${why})`); } } catch (e) {}
+}
 
 const PersonalityManager = require('./PersonalityManager');
 const AIHandler          = require('./AIHandler');
@@ -710,6 +726,7 @@ function _noteBadSender(args, now) {
 function _purgeSignalSessions(authDir, key) {
   const dir = path.join(authDir, key);
   let n = 0;
+  try { if (SqliteAuth.isAvailable()) n += SqliteAuth.purgeSessions(key); } catch (e) {}
   try {
     for (const f of fs.readdirSync(dir)) {
       if (/^(session|sender-key|sender-key-memory)-.*\.json$/.test(f)) { try { fs.rmSync(path.join(dir, f), { force: true }); n++; } catch (e) {} }
@@ -857,6 +874,33 @@ function clearSendHealth(key) {
 // ═══════════════════════════════════════════════════════════════
 const _authLocks = new Map();          // key -> { pid, at }
 const _logout401s = {};                // key -> consecutive unverified 401 count
+// Push #99: 403 circuit-breaker. WhatsApp answering `403 forbidden` means the
+// account is refused (banned, or the device was removed on the phone). Live on
+// 10-11 six numbers hammered it every 30 s for hours. After FORBIDDEN_MAX
+// consecutive 403s the bot stops, is marked "needs re-link" and the owners get
+// ONE DM naming it. /link <bot> (startAstraLink) clears the mark.
+const FORBIDDEN_MAX = Math.max(2, Number(process.env.BOT_403_MAX || 6) || 6);
+const _forbidden403 = {};              // key -> consecutive 403 closes
+const _relinkReason = {};              // key -> why it is parked ('403' | 'logged out')
+const _relinkNotifiedAt = {};          // key -> ts of the owner DM (once per parking)
+function relinkStatus() { const out = {}; for (const k of _loggedOut) out[k] = _relinkReason[k] || 'logged out'; return out; }
+async function _notifyOwnersNeedsRelink(key, displayName, reason, getDatabase) {
+  if (_relinkNotifiedAt[key] && Date.now() - _relinkNotifiedAt[key] < 6 * 3600000) return;
+  _relinkNotifiedAt[key] = Date.now();
+  try {
+    const db = typeof getDatabase === 'function' ? getDatabase() : null;
+    const owners = db ? Perms.getBotOwners(db) : [];
+    const via = getFirstUsableSocketKey(); const sk = via ? botSockets[via] : null;
+    if (!sk) return;
+    const seen = new Set();
+    for (const o of owners) {
+      const to = String(o || ''); if (!to || /@lid$/i.test(to)) continue;
+      const b = to.split('@')[0].split(':')[0]; if (!b || seen.has(b)) continue; seen.add(b);
+      const target = to.includes('@') ? to : `${to}@s.whatsapp.net`;
+      try { await sk.sendMessage(target, { text: `🚫 *${displayName} needs re-linking*\n\n${reason}\nI have stopped retrying so the number is not hammered.\n\n• Check that phone → Linked devices. If ✦ 𝐀𝐬𝐭𝐫𝐚™ is gone or the number is banned, use /link ${key} (new number if banned).\n• /bots shows every bot's state.` }); } catch (e) {}
+    }
+  } catch (e) {}
+}
 
 /** Is a recoverable session copy still on hand (disk backup or db backup)? */
 function _restoreAuthAvailable(authDir, key) {
@@ -966,6 +1010,7 @@ function _scheduleReconnect(personalityKey, backoffMs, reason) {
 }
 
 function _credsRegistered(authDir, personalityKey) {
+  try { if (SqliteAuth.isAvailable() && SqliteAuth.credsRegistered(personalityKey, require('path').join(authDir, personalityKey))) return true; } catch (_) {}
   try {
     const creds = JSON.parse(require('fs').readFileSync(require('path').join(authDir, personalityKey, 'creds.json'), 'utf8'));
     return !!(creds.registered || creds.me);
@@ -1256,7 +1301,9 @@ function _restoreAuthFiles(botAuthDir, files) {
 function restoreAuth(personalityKey, authDir, getDatabase) {
   try {
     const botAuthDir = path.join(authDir, personalityKey);
-    if (fs.existsSync(path.join(botAuthDir, 'creds.json'))) return false;
+    // Push #99: a 0-byte / corrupt creds.json (crash mid-write) is MISSING, not present.
+    if (SqliteAuth._readCredsFile(path.join(botAuthDir, 'creds.json'))) return false;
+    try { if (SqliteAuth.isAvailable() && SqliteAuth.loadCreds(personalityKey)) return false; } catch (e) {}
     // 1) Disk backup (current scheme).
     try {
       const f = _authBackupFile(authDir, personalityKey);
@@ -1332,6 +1379,7 @@ async function startAstraLink(personalityKey, authDir, getDatabase, saveDatabase
   // logged-out key") — the phone waited, gave up, "Couldn't log in".
   _loggedOut.delete(personalityKey);
   _logout401s[personalityKey] = 0;
+  _forbidden403[personalityKey] = 0; delete _relinkReason[personalityKey];
   reconnectAttempts[personalityKey] = 0;
 
   const botAuthDir = path.join(authDir, personalityKey);
@@ -1356,6 +1404,7 @@ async function startAstraLink(personalityKey, authDir, getDatabase, saveDatabase
     try { await _releaseOldSlotBeforePairing(authDir, personalityKey); } catch (e) {}
     // Clear old un-registered session state so pre-keys match fresh pairing code
     if (fs.existsSync(botAuthDir)) fs.rmSync(botAuthDir, { recursive: true, force: true });
+    _authWipe(personalityKey, 'fresh pairing');
     // Also clear persisted backups (disk + legacy DB) so fresh pairing starts clean
     try {
       const db = getDatabase?.();
@@ -1464,7 +1513,7 @@ async function revokeSessionDir(authDir, key, opts = {}) {
   let sock = null;
   try {
     const logger = pino({ level: 'silent' });
-    const { state } = await useMultiFileAuthState(dir);
+    const { state } = await _authState(personalityKey, dir, authDir);
     const ver = { version: await getWaVersion() };
     sock = makeWASocket({
       logger,
@@ -1485,6 +1534,7 @@ async function revokeSessionDir(authDir, key, opts = {}) {
       new Promise((_, rej) => { const t = setTimeout(() => rej(new Error('logout timed out')), timeoutMs); t.unref?.(); }),
     ]);
     try { fs.rmSync(dir, { recursive: true, force: true }); } catch (e) {}
+    _authWipe(personalityKey, 'old slot released');
     return { ok: true, reason: 'logged the old session out on WhatsApp and cleared its local keys' };
   } catch (e) {
     return { ok: false, reason: `could not log the old session out: ${e.message}` };
@@ -1624,7 +1674,8 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
   try { restoreAuth(personalityKey, authDir, getDatabase); } catch {}
   fs.mkdirSync(botAuthDir, { recursive: true });
 
-  const { state, saveCreds } = await useMultiFileAuthState(botAuthDir);
+  const { state, saveCreds, source: _authSource } = await _authState(personalityKey, botAuthDir, authDir);
+  if (_authSource && _authSource !== 'sqlite') console.log(`🗄️ AstraLink [${personalityKey}] auth loaded from ${_authSource}`);
   // Push #63: version lookup that cannot hang pairing (cached / 8s timeout /
   // bundled-version fallback) — see getWaVersion() above.
   const version = await getWaVersion();
@@ -1990,12 +2041,19 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
       const restartRequired = code === DisconnectReason.restartRequired || code === 515;
       if (botSockets[personalityKey] === sock) delete botSockets[personalityKey];
 
-      let credsRegistered = false;
-      try {
-        const creds = JSON.parse(fs.readFileSync(path.join(botAuthDir, 'creds.json'), 'utf8'));
-        credsRegistered = !!(creds.registered || creds.me);
-      } catch (_) {}
+      let credsRegistered = _credsRegistered(authDir, personalityKey);
 
+      if (!isLoggedOut && code === 403) {
+        _forbidden403[personalityKey] = (_forbidden403[personalityKey] || 0) + 1;
+        if (_forbidden403[personalityKey] >= FORBIDDEN_MAX && !(pairingSessions[personalityKey] || {}).status?.match(/awaiting_qr|starting/)) {
+          console.error(`🚫 AstraLink [${displayName}] refused by WhatsApp ${_forbidden403[personalityKey]}× in a row (403) — parked until /link ${personalityKey}`);
+          _loggedOut.add(personalityKey); _relinkReason[personalityKey] = '403';
+          reconnectAttempts[personalityKey] = 0; delete botSockets[personalityKey];
+          if (hostBotKey === personalityKey) hostBotKey = null;
+          _notifyOwnersNeedsRelink(personalityKey, displayName, `WhatsApp refused this number ${_forbidden403[personalityKey]} times in a row (code 403 = forbidden).`, getDatabase);
+          return;
+        }
+      } else if (!isLoggedOut) { _forbidden403[personalityKey] = 0; }
       if (!isLoggedOut) {
         const attempt = (reconnectAttempts[personalityKey] || 0) + 1;
         reconnectAttempts[personalityKey] = attempt;
@@ -2068,6 +2126,7 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
             fs.rmSync(botAuthDir, { recursive: true, force: true });
             console.log(`🧹 Cleared logged-out session directory for [${displayName}] (${botAuthDir})`);
           }
+          _authWipe(personalityKey, 'logged out');
         } catch (e) {
           console.error(`⚠️ Could not purge auth dir for [${displayName}]:`, e.message);
         }
@@ -2117,6 +2176,7 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
       reconnectAttempts[personalityKey] = 0; // Reset reconnect count on successful connection!
       _loggedOut.delete(personalityKey);
       _logout401s[personalityKey] = 0;        // a clean connect clears the 401 streak
+      _forbidden403[personalityKey] = 0; delete _relinkReason[personalityKey]; delete _relinkNotifiedAt[personalityKey];
       _authLockTouch(authDir, personalityKey);
       // Push #50: presence keepalive. Without an explicit "available" the number
       // drifts to "last active a few hours ago" in every client's contact view,
@@ -3173,6 +3233,7 @@ module.exports = {
   _waVersionTestReset,
   revokeSessionDir,
   getSocket,
+  relinkStatus, SqliteAuth, FORBIDDEN_MAX,
   getPendingSocket,
   getLatestQr,
   getAllSockets,

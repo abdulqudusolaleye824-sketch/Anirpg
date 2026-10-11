@@ -1,3 +1,11 @@
+## 1.0.191 — Push #99 (2026-10-11) — Bad MAC / bots flapping: root-cause fix
+- **Root cause found on the server:** auth folders had grown to 20k–38k files per bot (Hinata: 31,426 pre-key files, 784 MB total). Every reconnect read them one by one, parallel writes raced, a half-written session file = *Bad MAC* on the next message → bot looked deaf → recycled → "off and on". Two bots (kira, mikasa) had a **0-byte creds.json** from a crash mid-write and had been silently dead since Oct 5/6.
+- **SQLite auth store (`db/SqliteAuth.js`):** every Signal key now lives in `database/auth.sqlite`, written in transactions — no partial writes, no giant folders. First boot imports each legacy folder (keeps the newest 1,000 pre-keys, drops the rest), then moves the old files to `auth-legacy/<bot>/` (not deleted). Pre-keys auto-prune at 2,000 → 1,000.
+- **Login can't be lost any more:** creds are kept in SQLite + the last 5 registered copies, and mirrored atomically (tmp + rename) to `creds.json`. An empty/corrupt creds.json now restores from SQLite instead of forcing a re-pair.
+- **403 circuit-breaker:** after 6 consecutive `403 forbidden` closes the bot is parked (no more hammering), and the owners get ONE DM naming it with what to do. `/link <bot>` un-parks it.
+- **/bots** (owner): one card with every linked bot — 🟢 online / 🔴 reconnecting / 🚫 refused (403) / 🔌 logged out / 📲 pairing / 💀 killed — plus last-heard, deaf-recycles and key counts.
+- Deaf-socket healer's session purge and all relink/quarantine wipes also clear the SQLite keys.
+
 ## 1.0.190 — Push #98 (2026-10-11)
 - **Beast idle auto-attack ×3:** a beast only strikes an idle party after S 90 s · A 135 s · B 180 s · C 270 s · D 6 min · E 7.5 min (was 30/45/60/90/120/150 s). Repeats on the same window. Floor-revive (60 s) and player attack cooldown (30 s) unchanged.
 

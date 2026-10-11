@@ -378,6 +378,9 @@ const Storage = require('./db/Storage');
 const Updates = require('./db/updates');
 Storage.init(DATA_DIR);
 Updates.init(DATA_DIR);
+// Push #99: WhatsApp session keys live in SQLite (database/auth.sqlite).
+try { const f = require('./db/SqliteAuth').init(DATA_DIR); console.log(`🗄️ SqliteAuth live store: ${f}`); }
+catch (e) { console.error(`🚨 SqliteAuth UNAVAILABLE (${e.message}) — bots fall back to the multi-file auth folders`); }
 
 const fs_sync = require('fs');
 [AUTH_DIR, path.dirname(DB_PATH)].forEach(d => {
