@@ -36,7 +36,9 @@ async function _authState(personalityKey, botAuthDir, authDir) {
   return { ...r, source: 'multi-file' };
 }
 function _authWipe(personalityKey, why) {
-  try { if (SqliteAuth.isAvailable()) { SqliteAuth.wipe(personalityKey); console.log(`🗄️ SqliteAuth [${personalityKey}] keys cleared (${why})`); } } catch (e) {}
+  // A deliberate wipe (fresh pairing / logout / slot release) must also drop the creds backups —
+  // otherwise the next boot resurrects the dead registered login and the pairing never starts (BUG-026).
+  try { if (SqliteAuth.isAvailable()) { SqliteAuth.wipe(personalityKey, { wipeBackups: true }); console.log(`🗄️ SqliteAuth [${personalityKey}] keys + creds backups cleared (${why})`); } } catch (e) {}
 }
 
 const PersonalityManager = require('./PersonalityManager');

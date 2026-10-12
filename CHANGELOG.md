@@ -1,3 +1,6 @@
+## 1.0.192 — Push #99b (2026-10-12) — BUG-026 hotfix
+- **/link <bot> could never pair (Rem, Raven):** the fresh-pairing wipe kept the creds backups, so the dead registered login was restored at once → 401 loop. Deliberate wipes now clear the backups too.
+
 ## 1.0.191 — Push #99 (2026-10-11) — Bad MAC / bots flapping: root-cause fix
 - **Root cause found on the server:** auth folders had grown to 20k–38k files per bot (Hinata: 31,426 pre-key files, 784 MB total). Every reconnect read them one by one, parallel writes raced, a half-written session file = *Bad MAC* on the next message → bot looked deaf → recycled → "off and on". Two bots (kira, mikasa) had a **0-byte creds.json** from a crash mid-write and had been silently dead since Oct 5/6.
 - **SQLite auth store (`db/SqliteAuth.js`):** every Signal key now lives in `database/auth.sqlite`, written in transactions — no partial writes, no giant folders. First boot imports each legacy folder (keeps the newest 1,000 pre-keys, drops the rest), then moves the old files to `auth-legacy/<bot>/` (not deleted). Pre-keys auto-prune at 2,000 → 1,000.
