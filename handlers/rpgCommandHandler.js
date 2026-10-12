@@ -546,6 +546,8 @@ module.exports = async (sock, msg, messageText, config, getDatabase, saveDatabas
 
   if (!db.afkUsers) db.afkUsers = {};
 
+  // Push #101: exiled numbers are SILENT — no reply at all.
+  try { if (db.exiles && Object.keys(db.exiles).length && require('../rpg/utils/Exile').isExiled(db, sender)) return; } catch (e) {}
   if (db.bannedUsers?.[Mod.bare(sender)]) {
     const rec = db.bannedUsers[Mod.bare(sender)] || db.bannedUsers[sender];
     const _youName = db.users?.[sender]?.name || ('@' + Mod.bare(sender));

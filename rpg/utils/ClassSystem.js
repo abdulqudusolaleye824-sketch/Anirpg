@@ -443,6 +443,14 @@ function applyClassToPlayer(player, className) {
     maxPotency: skill.maxPotency,
     quality,
   }));
+  // Push #101: a Monster's awakening card must name the VARIANT's moves (Toxic Serpent Lunge…), not the
+  // generic kit ("Primal Strike") — hunters typed the generic name and got "doesn't know the skill".
+  try {
+    if (className === 'Monster' || player.classBase === 'Monster') {
+      const SCm = require('./SkillCatalog'); const vr = SCm.getRoster(player); const gen = SCm.buildRoster ? SCm.buildRoster('Monster', null) : [];
+      if (vr && vr.length && gen && gen.length) player.classSkills = player.classSkills.map(cs => { const gi = gen.findIndex(g => g && g.name === cs.name); return gi >= 0 && vr[gi] ? { ...cs, name: vr[gi].name } : cs; });
+    }
+  } catch (e) {}
 
   // If Monster class, also assign a specific variant
   if (className === 'Monster' && !player.monsterVariant) {

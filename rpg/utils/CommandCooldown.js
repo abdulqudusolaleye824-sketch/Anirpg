@@ -21,7 +21,7 @@ const TABLE = {
   heal: 15, buff: 15, guard: 15, flee: 15, revive: 15, mine: 15, party: 10, gateraid: 15, dungeon: 15, instance: 10, labyrinth: 10, event: 15,
   // 5 s — rarely used / daily / owner-side
   daily: 5, weekly: 5, claim: 5, help: 5, menu: 5, register: 5, link: 5, ping: 5, rules: 5, version: 5, bots: 5, start: 5, starts: 5, afk: 5,
-  spawn: 5, spawnstatus: 5, killspawn: 5, artifactspawn: 5, addxp: 5, addnexus: 5, kill: 5, reset: 5, closeall: 5, openall: 5, dbdump: 5, bots: 5, bugs: 5, bug: 5, announce: 5, broadcast: 5, restart: 5, maintenance: 5, closegate: 5, forceclear: 5, update: 5,
+  spawn: 5, spawnstatus: 5, killspawn: 5, artifactspawn: 5, addxp: 5, addnexus: 5, addup: 5, addmana: 5, exile: 5, kill: 5, reset: 5, closeall: 5, openall: 5, dbdump: 5, bots: 5, bugs: 5, bug: 5, announce: 5, broadcast: 5, restart: 5, maintenance: 5, closegate: 5, forceclear: 5, update: 5,
   ban: 5, unban: 5, mute: 5, unmute: 5, warn: 5, kick: 5, promote: 5, demote: 5, disable: 5, enable: 5, open: 5, close: 5, confirm: 5, cancel: 5,
 };
 const _last = new Map(); // `${sender}|${cmd}` → timestamp (per process; a restart simply clears cooldowns)

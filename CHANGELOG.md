@@ -1,3 +1,22 @@
+## 1.0.194 — Push #101 (2026-10-12) — bug sweep + owner tools
+- **BUG-016 Bone Wall:** the wall now absorbs the level-scaled % that /skills shows (Lv1 60% · Lv2 70% · Lv3 80% · Lv4 90% · Lv5 100%). It was hard-coded to 60% regardless of level.
+- **BUG-017 Last Breath / non-Healer self-heals charged 4× base:** `effectiveCost()` already doubles heal cost for non-Healers; the raid support path doubled it AGAIN (13 base → 26 shown → 52 taken). Second doubling removed — you pay exactly what the menu shows.
+- **BUG-018 gear swap:** equipping a piece/weapon into an occupied slot returns the old piece to your bag (same durability). Nothing is destroyed any more.
+- **BUG-019 Blind "1t" that lasted the whole boss fight:** on `/party boss` only the boss's statuses ticked — the hunter's own blind/fear/burn never counted down. Both tick now; a hunter who dies to a DoT on their boss turn falls properly.
+- **BUG-020 raid stuck after boss killed with /attack or /skill:** the boss settlement function was declared *after* the attack branch (temporal dead zone) — the kill threw silently, printed "has fallen!" and never marked the boss defeated. Hoisted; /attack kills now run the full loot + gate-clear path exactly like /party boss.
+- **BUG-023 affiliate hire/accept:** a hunter already in a party/raid/dungeon/PvP can't be hired or accept a contract (busy check on both sides).
+- **BUG-024 pets "never act":** attack pets now strike 55% of rounds (was 22%). When a pet sits out (hungry ≥80 / unhappy ≤30 / fainted) the fight log SAYS so once, with the fix (`/pet feed`, `/pet play`).
+- **BUG-025 serf DMs lost while a bot was offline:** per-bot outbox — queued, retried every 60 s, flushed 8 s after the bot verifies. Nothing silently dropped.
+- **BUG-013 (Monster-class skills "won't activate"):** could not reproduce — /skill, /cast and numbered skills all fire for a Toxic Serpent Lv13 copy of the reporter's account. Needs the exact error text.
+- **/bug delete 12** — numeric, `bug-12` and `BUG-012` all accepted.
+- **/addup <@|reply> <n>** (Upgrade Points) and **/addmana <@|reply> <n>** (💎 Mana Crystals) — owner only, aliases `addpoints`, `addms`.
+- **Owner spawns:** `/spawn <item|material|rarity>` never fails silently ("Nothing in the spawn catalog matches…"); only the owner who spawned may Claim (LID-aware); `/spawn essence <E|D|C|B|A|S|SS> [qty]`; Essence Stones gain an **SS** rank (⚪) — SSS gates now drop SS stones.
+- **/exile <number> [reason]** (owner, DM only, two confirmations): every bot removes the number from every group it admins, blocks it (silent — no commands, no DMs), wipes the RPG account/guild/keys, exiles linked LIDs, auto-removes the number within seconds if it rejoins any group (plus a 10-min safety sweep). `/exile list` · `/exile lift <number>` · `/exile cancel`.
+- **Monster skills by generic name:** `/cast primal strike` (and every generic kit name) now resolves to the variant's slot move (Toxic Serpent Lunge…) for all 50 variants; the awakening card names the variant moves. **Multi-word skill names** (`/cast Toxic Serpent Roar`) used to resolve only the first word → wrong/unknown skill (this is BUG-013) — the whole phrase is used now, and a locked skill says *when* it unlocks instead of "doesn't know".
+- **Anti-ban — hard send cap:** every bot sends at most **2 messages per second** (was 8), per-chat 650 ms gap unchanged.
+- **Anti-ban — no unattended pairing:** an unregistered bot no longer boots a socket and asks WhatsApp for a fresh pairing ref every 20 s around the clock (Mikasa was doing ~180 registration attempts/hour from the server IP). It parks with one log line until an owner runs `/link <bot>`.
+- /help owner block lists the new commands; cooldowns registered.
+
 ## 1.0.193 — Push #100 (2026-10-12)
 - **Bot lanes removed:** the "This raid is being run by *X* — send your commands to that bot" refusal is gone; every linked bot handles every raid, dungeon run, mine and labyrinth. /kill and /reset unchanged.
 

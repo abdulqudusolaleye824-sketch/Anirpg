@@ -1234,7 +1234,7 @@ function supportCast(caster, casterJid, target, targetJid, skillName, gate, db) 
         return { ok: false, error: `Only a *Healer* can heal a teammate. *${skill.name}* can only heal yourself: /skill ${skill.name}` };
       }
       target = caster; targetJid = casterJid;
-      cost = cost * 2;
+      // Push #101 (BUG-017): effectiveCost() ALREADY doubles heals for non-Healers — doubling again here charged 4× base (52 for a 13-energy Last Breath).
     } else if (partyWorded) {
       if (casterQuality < 70) return { ok: false, error: `*${skill.name}* is a party-wide heal — it needs a high-quality Healer (class quality ≥ 70%, yours is ${casterQuality}%). Heal one teammate instead: /skill ${skill.name} @teammate` };
       party = true;

@@ -114,9 +114,9 @@ const activeSpawns = new Map(); // chatId → { artifact, spawnTime, claimed, cl
 // ═══════════════════════════════════════════════════════════════
 // SPAWN ENGINE
 // ═══════════════════════════════════════════════════════════════
-async function spawnArtifact(sock, chatId, db, saveDatabase, forcedArtifact) {
+async function spawnArtifact(sock, chatId, db, saveDatabase, forcedArtifact, spawnedBy = null) {
   // Don't double-spawn
-  if (activeSpawns.has(chatId)) return;
+  if (activeSpawns.has(chatId)) return false;
   // Respect /set spawn --true — only spawn where gates are allowed (integrated)
   if (!forcedArtifact && db.gateSpawns && db.gateSpawns[chatId] !== true) return;
   // GLOBAL DAILY LIMITER: only ONE spawn per 24h across ALL GCs (common->epic once daily)
@@ -167,7 +167,9 @@ async function spawnArtifact(sock, chatId, db, saveDatabase, forcedArtifact) {
     artifact,
     spawnTime: Date.now(),
     claimed: false,
-    claimedBy: null
+    claimedBy: null,
+    // Push #101: an OWNER spawn can only be claimed by the owner who spawned it.
+    spawnedBy: forcedArtifact && spawnedBy ? String(spawnedBy) : null,
   });
 
   // Build bonus display
@@ -180,7 +182,7 @@ async function spawnArtifact(sock, chatId, db, saveDatabase, forcedArtifact) {
     : (bonusLines ? [`📊 *STATS:*`, bonusLines] : []);
   const msg = [`━━━━━━━━━━━━━━━━━━━━━━━━━━━`, `${style.color} ${style.header}`, `━━━━━━━━━━━━━━━━━━━━━━━━━━━`, ``, flavour, ``,
     `${artifact.emoji} *${artifact.name}*`, `${style.stars} ${artifact.rarity.toUpperCase()}`, ``, `💭 "${artifact.desc}"`, ``,
-    ...contentLines, ``, `━━━━━━━━━━━━━━━━━━━━━━━━━━━`, `⏰ *Available for 5 minutes!*`, style.urgency, `🎯 Type */claim* to grab it!`, `━━━━━━━━━━━━━━━━━━━━━━━━━━━`].join('\n');
+    ...contentLines, ``, `━━━━━━━━━━━━━━━━━━━━━━━━━━━`, `⏰ *Available for 5 minutes!*`, style.urgency, (forcedArtifact && spawnedBy ? `👑 Owner spawn — only the spawner can claim.` : `🎯 Type */claim* to grab it!`) + ``, `━━━━━━━━━━━━━━━━━━━━━━━━━━━`].join('\n');
 
   // Push #88f: ONE message — the member ping rides on the spawn itself
   // (the separate Announcer alert was a second, duplicate message).
@@ -220,6 +222,13 @@ async function handleClaim(sock, msg, args, getDatabase, saveDatabase, sender) {
 
   const player = db.users[sender];
   if (!player) return sock.sendMessage(chatId, { text: '❌ Register first! /register' }, { quoted: msg });
+  // Push #101: owner spawns are claimable by the spawner only.
+  if (spawn.spawnedBy) {
+    const _b = (j) => String(j || '').split('@')[0].split(':')[0];
+    let same = _b(spawn.spawnedBy) === _b(sender);
+    if (!same) { try { const lm = db.lidMap || {}; const a = lm[_b(spawn.spawnedBy)] || spawn.spawnedBy, b = lm[_b(sender)] || sender; same = _b(a) === _b(b); } catch (e) {} }
+    if (!same) return sock.sendMessage(chatId, { text: `❌ You did not spawn this item — only the owner who spawned it can claim it.` }, { quoted: msg });
+  }
 
   // ── LUCK CHECK ──────────────────────────────────────────────
   const hasLuckPotion = (player.inventory?.items || []).some(i => i.isLuckPotion);
@@ -253,6 +262,9 @@ async function handleClaim(sock, msg, args, getDatabase, saveDatabase, sender) {
     const PDB = require('../../rpg/utils/PetDatabase');
     PDB.addPetFood(player, art.petFoodId, art.qty || 1);
     whereLine = `💡 Pet food added — */pet feed* when your companion is hungry!`;
+  } else if (art.essenceRank) {
+    require('../../rpg/utils/EssenceStones').grant(player, art.essenceRank, art.qty || 1);
+    whereLine = `💡 ${art.qty || 1}× ${art.name} added — check */inv* and */craft*!`;
   } else if (art.bundle && Array.isArray(art.bundle)) {
     require('../../rpg/utils/MaterialSpawnPool').grantBundle(player, art.bundle);
     whereLine = '💡 Materials added — check */inv* and */craft*!';
@@ -449,6 +461,9 @@ module.exports = {
           '• /spawn materials — 🧰 crafting material cache · /spawn materials <E|D|C|B|A|S|common|rare|epic|legendary> — cache of that tier',
           '• /spawn material <name> — ANY single crafting material, every tier',
           '• /spawn pet <name|rarity> — wild pet, only YOU can /catch (free, guaranteed, 60 s)',
+          '• /spawn essence <E|D|C|B|A|S|SS> [qty] — essence stones (crafting)',
+          '• /spawn <item name> — any catalog artifact / material by name (e.g. /spawn Void Cleaver)',
+          '• Owner spawns: only YOU can claim them.',
           '• /spawn status · /spawn clear', '',
           `*🧪 Health potions* (${TIERS.length})`, ...TIERS.map(t => `• ${t.emoji} ${t.name} — heals ${t.pct}% (${t.rarity})`), '',
           `*🍖 Pet food* (${foods.length})`, ...foods.map(([id, f]) => `• ${f.emoji || '🍖'} ${f.name} (\`${id}\`) — +${f.hungerRestore} hunger, +${f.xpBonus} pet XP`), '',
@@ -488,7 +503,7 @@ module.exports = {
       const k = keys.find(x => x === want) || keys.find(x => x.startsWith(want)) || keys.find(x => x.includes(want));
       if (!k) return sock.sendMessage(chatId, { text: `❌ No material matches *${args.slice(1).join(' ')}*.` }, { quoted: msg });
       const m = all[k]; const MSP = require('../../rpg/utils/MaterialSpawnPool');
-      await spawnArtifact(sock, chatId, db, saveDatabase, { name: m.name, emoji: MSP.emojiFor(m.name), rarity: _rarOfRank(m.rank), type: 'material', bonus: {}, desc: `${m.rank}-rank crafting material. Forge it with /craft.` });
+      await spawnArtifact(sock, chatId, db, saveDatabase, { name: m.name, emoji: MSP.emojiFor(m.name), rarity: _rarOfRank(m.rank), type: 'material', bonus: {}, desc: `${m.rank}-rank crafting material. Forge it with /craft.` }, sender);
       return;
     }
     if ((sub === 'materials' || sub === 'cache') && args[1]) {
@@ -501,7 +516,7 @@ module.exports = {
       const seen = new Set(); const bundle = [];
       for (let i = 0; i < 30 && bundle.length < 3; i++) { const m = pool[Math.floor(Math.random() * pool.length)]; if (seen.has(m.name)) continue; seen.add(m.name); bundle.push({ name: m.name, qty: ranks[0] === 'A' || ranks[0] === 'S' ? 1 : 2 + Math.floor(Math.random() * 3), rarity: _rarOfRank(m.rank), emoji: MSP.emojiFor(m.name), type: 'material' }); }
       const rar = _rarOfRank(ranks[0]);
-      await spawnArtifact(sock, chatId, db, saveDatabase, { name: `${ranks.join('/')}-Rank Material Cache`, emoji: '🧰', rarity: rar, type: 'material', bonus: {}, bundle, desc: `A sealed cache of ${ranks.join('/')}-rank crafting materials.` });
+      await spawnArtifact(sock, chatId, db, saveDatabase, { name: `${ranks.join('/')}-Rank Material Cache`, emoji: '🧰', rarity: rar, type: 'material', bonus: {}, bundle, desc: `A sealed cache of ${ranks.join('/')}-rank crafting materials.` }, sender);
       return;
     }
     if (sub === 'force' || sub === 'random' || ['mending', 'stone', 'potion', 'food', 'petfood', 'materials', 'cache'].includes(sub)) {
@@ -518,7 +533,7 @@ module.exports = {
         }
       }
       if (!art) art = pickDiversifiedSpawn({});
-      await spawnArtifact(sock, chatId, db, saveDatabase, art);
+      await spawnArtifact(sock, chatId, db, saveDatabase, art, sender);
       return;
     }
 
@@ -526,12 +541,35 @@ module.exports = {
       activeSpawns.delete(chatId);
       return sock.sendMessage(chatId, { text: '✅ Active spawn cleared.' }, { quoted: msg });
     }
-
     if (sub === 'status') {
       const spawn = activeSpawns.get(chatId);
       if (!spawn) return sock.sendMessage(chatId, { text: '❌ No active spawn.' }, { quoted: msg });
       const elapsed = Math.floor((Date.now() - spawn.spawnTime) / 1000);
       return sock.sendMessage(chatId, { text: `Active: ${spawn.artifact.name}\nClaimed: ${spawn.claimed}\nAge: ${elapsed}s` }, { quoted: msg });
     }
+    // Push #101: /spawn essence <rank> [qty]
+    if (sub === 'essence' || sub === 'essences' || sub === 'ess') {
+      if (activeSpawns.has(chatId)) return sock.sendMessage(chatId, { text: '⚠️ There is already an unclaimed spawn here — /claim it first (or /spawn clear).' }, { quoted: msg });
+      const ES = require('../../rpg/utils/EssenceStones');
+      const rk = String(args[1] || '').toUpperCase();
+      if (!ES.RANKS.includes(rk)) return sock.sendMessage(chatId, { text: `Usage: */spawn essence <${ES.RANKS.join('|')}> [qty]*` }, { quoted: msg });
+      const qty = Math.max(1, Math.min(99, Math.floor(Number(args[2]) || 1)));
+      await spawnArtifact(sock, chatId, db, saveDatabase, { name: ES.nameFor(rk), emoji: ES.emojiFor(rk), rarity: ({ E: 'common', D: 'uncommon', C: 'rare', B: 'epic', A: 'legendary', S: 'mythic', SS: 'mythic' })[rk], type: 'essence', essenceRank: rk, qty, bonus: {}, desc: `${qty}× ${rk}-rank essence — required to forge ${rk}-rank gear.` }, sender);
+      return;
+    }
+    // Push #101: /spawn <item name> — catalog artifact or any material by name; unknown → say so (never silent).
+    {
+      if (activeSpawns.has(chatId)) return sock.sendMessage(chatId, { text: '⚠️ There is already an unclaimed spawn here — /claim it first (or /spawn clear).' }, { quoted: msg });
+      const want = args.join(' ').trim().toLowerCase();
+      const art = SPAWN_ARTIFACTS.find(a => a.name.toLowerCase() === want) || SPAWN_ARTIFACTS.find(a => a.name.toLowerCase().startsWith(want)) || SPAWN_ARTIFACTS.find(a => a.name.toLowerCase().includes(want));
+      if (art) { await spawnArtifact(sock, chatId, db, saveDatabase, { ...art }, sender); return; }
+      const all = _allMats(); const keys = Object.keys(all); const w2 = want.replace(/[^a-z0-9]+/g, ' ').trim();
+      const k = keys.find(x => x === w2) || keys.find(x => x.startsWith(w2)) || keys.find(x => x.includes(w2));
+      if (k) { const m = all[k]; const MSP = require('../../rpg/utils/MaterialSpawnPool'); await spawnArtifact(sock, chatId, db, saveDatabase, { name: m.name, emoji: MSP.emojiFor(m.name), rarity: _rarOfRank(m.rank), type: 'material', bonus: {}, desc: `${m.rank}-rank crafting material.` }, sender); return; }
+      const rar = ['common', 'rare', 'epic', 'legendary', 'mythic'].find(r => r === want);
+      if (rar) { const pool = SPAWN_ARTIFACTS.filter(a => a.rarity === rar && a.type !== 'material'); if (pool.length) { await spawnArtifact(sock, chatId, db, saveDatabase, { ...pool[Math.floor(Math.random() * pool.length)] }, sender); return; } }
+      return sock.sendMessage(chatId, { text: `❌ Nothing in the spawn catalog matches *${args.join(' ')}*.\n\nTry: /spawn force · mending · potion · food · materials <tier> · material <name> · essence <rank> · pet <name> · <artifact name> · <rarity>\nFull list: */spawn* (DM).` }, { quoted: msg });
+    }
+
   }
 };

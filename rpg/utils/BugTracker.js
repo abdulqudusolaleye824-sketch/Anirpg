@@ -34,7 +34,7 @@ function create(db, { reporter, reporterName, chatId, groupName, text }) {
   table(db)[id] = rec;
   return rec;
 }
-function get(db, id) { return table(db)[String(id || '').toUpperCase()] || null; }
+function get(db, id) { let k = String(id || '').toUpperCase().trim(); if (/^\d+$/.test(k)) k = 'BUG-' + k.padStart(3, '0'); else if (/^BUG-?\d+$/.test(k)) k = 'BUG-' + k.replace(/\D/g, '').padStart(3, '0'); return table(db)[k] || null; }
 
 /** Owner card text (what the DM says above the buttons). */
 function ownerCard(rec) {

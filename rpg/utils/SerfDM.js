@@ -45,6 +45,9 @@ async function sendSerfDM(sock, db, sender, content) {
         if (res.reason === 'no-serf') {
           return { ok: false, reason: 'no-serf', detail: 'No serf assigned. Use /setserf @bot to assign one.' };
         }
+        if (res.queued || res.reason === 'serf-queued') {
+          return { ok: false, queued: true, reason: 'serf-queued', detail: res.message || 'Your serf is reconnecting — the DM is queued and will be delivered automatically.' };
+        }
         if (res.reason === 'serf-offline') {
           return { ok: false, reason: 'serf-offline', detail: res.message || 'Assigned serf is offline or unavailable.' };
         }
@@ -70,6 +73,7 @@ function resultNotice(title, res) {
     const via = (res.via === 'direct' || res.via === 'direct-buttons') ? 'DM' : 'SERF';
     return `✅ *${title} — SUCCESSFULLY SENT VIA ${via}* 📩\nCheck your DM!`;
   }
+  if (res && res.queued) return `⏳ *${title} — QUEUED*\n${res.detail || 'Your serf is reconnecting; it will deliver this automatically.'}`;
   const why = res?.detail || res?.reason || 'unknown error';
   return `❌ *${title} — DM NOT SENT*\n📝 Reason: ${why}`;
 }

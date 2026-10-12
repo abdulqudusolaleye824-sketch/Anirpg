@@ -70,9 +70,15 @@ function planBoneWall(caster, casterJid, gate, db, mentionedJids = []) {
   const cd = aoe ? BONE_WALL.aoeCd : BONE_WALL.cdBase + BONE_WALL.cdPerTarget * targets.length;
   return { ok: true, targets, cost, cd, aoe, floor, cap };
 }
+// Push #101 (BUG-016): the absorb % grows with skill level exactly as /skills shows it
+// (same supportMult as every other support skill: Lv1 60% · Lv2 70% · Lv3 80% · Lv4 90% · Lv5 100%).
+function boneWallPct(level) {
+  try { const SC = require('./SkillCatalog'); return Math.min(100, Math.round(BONE_WALL.pct * SC.supportMult(level))); } catch (e) {}
+  return Math.min(100, Math.round(BONE_WALL.pct * (1 + (Math.max(1, level) - 1) / 6)));
+}
 function applyBoneWall(u, caster, level = 1) {
   const max = _max(u);
-  const pct = BONE_WALL.pct;
+  const pct = boneWallPct(level);
   const pool = Math.floor(max * pct / 100 * (1 + 0.1 * (Math.max(1, level) - 1)));
   u.tempBuffs = u.tempBuffs || {};
   u.tempBuffs.shield = { amount: pool, duration: BONE_WALL.turns + 1, pct: pct / 100, source: 'Bone Wall', by: caster && caster.name };
@@ -178,4 +184,4 @@ const REFORGED = {
 };
 const RENAMES = { 'life drain': 'Curse of Ruin' }; // old owned-skill names → new (Necromancer)
 
-module.exports = { BONE_WALL, SOUL_DRAIN, RUIN, REFORGED, RENAMES, isNecro, isBoneWall, isSoulDrain, isRuin, planBoneWall, castBoneWall, applyBoneWall, boneWallCap, absorb, shieldLine, soulDrainAlly, hasRuin, ruinAtkMult, ruinTakenMult, scaleRuinToRounds, setCooldownTurns, livingMembers };
+module.exports = { boneWallPct, BONE_WALL, SOUL_DRAIN, RUIN, REFORGED, RENAMES, isNecro, isBoneWall, isSoulDrain, isRuin, planBoneWall, castBoneWall, applyBoneWall, boneWallCap, absorb, shieldLine, soulDrainAlly, hasRuin, ruinAtkMult, ruinTakenMult, scaleRuinToRounds, setCooldownTurns, livingMembers };

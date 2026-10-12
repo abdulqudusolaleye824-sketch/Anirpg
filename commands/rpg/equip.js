@@ -133,7 +133,7 @@ module.exports = {
       equipGear(player, real);
       saveDatabase();
       let reply = pro ? `${UI.PRO_BAR}\n✅ *GEAR EQUIPPED!* 💎\n${UI.PRO_BAR}\n\n✅ Equipped *${real.name}*!\n` : `✅ Equipped *${real.name}*!\n`;
-      if (hadOld) reply += `⚠️ Previous ${si.name} (${hadOld.name}) was destroyed.\n`;
+      if (hadOld) reply += `📦 Previous ${si.name} (*${hadOld.name}*) returned to your bag at ${hadOld.durability ?? '?'}/${hadOld.maxDurability ?? '?'} durability.\n`;
       reply += `\n${si.emoji} ${si.name} slot now active.\n${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO GEAR* — ${si.name} active` : `\n${UI.upsell()}`);
       return sock.sendMessage(chatId, { text: reply }, { quoted: msg });
     }

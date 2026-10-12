@@ -88,7 +88,8 @@ ${FRAME}` + (pro ? '' : `\n${UI.upsell()}`)
     }
 
     // ── 3. No skill specified → show class skills menu ──────────
-    const skillName = args[0];
+    // Push #101: the WHOLE phrase is the skill name ("/cast Toxic Serpent Roar" used to resolve only "Toxic" → first prefix match → wrong skill).
+    const skillName = args.filter(a => !/^@/.test(String(a))).join(' ').trim();
     if (!skillName) {
       return showClassSkillMenu(sock, msg, player, className);
     }
@@ -96,8 +97,9 @@ ${FRAME}` + (pro ? '' : `\n${UI.upsell()}`)
     // ── 4. Find the skill on the player ───────────────────────
     const skill = findPlayerSkill(player, className, skillName);
     if (!skill) {
+      const _why = player._skillResolveError; delete player._skillResolveError;
       return sock.sendMessage(chatId, {
-        text: `❌ *${className}* doesn't know the skill *${skillName}*.\n\nUse */${playerCmd}* (no args) to see your class skills.`
+        text: _why && /🔒/.test(_why) ? _why : `❌ *${className}* doesn't know the skill *${skillName}*.\n\nUse */${playerCmd}* (no args) to see your class skills.`
       }, { quoted: msg });
     }
 

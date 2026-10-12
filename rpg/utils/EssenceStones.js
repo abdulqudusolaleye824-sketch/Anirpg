@@ -12,19 +12,19 @@
 
 const RI = require('./RewardInventory');
 
-const RANKS = ['E', 'D', 'C', 'B', 'A', 'S'];
+const RANKS = ['E', 'D', 'C', 'B', 'A', 'S', 'SS']; // Push #101: SS stones (SS/SSS gates, owner /spawn)
 const RARITY_TO_RANK = { common: 'E', uncommon: 'D', rare: 'C', epic: 'B', legendary: 'A', mythic: 'S' };
-const RANK_EMOJI = { E: '🪨', D: '🟢', C: '🔵', B: '🟣', A: '🟡', S: '🔴' };
+const RANK_EMOJI = { E: '🪨', D: '🟢', C: '🔵', B: '🟣', A: '🟡', S: '🔴', SS: '⚪' };
 // Drop odds per beast kill (final blow) and boss kill — rarer the higher the rank.
-const BEAST_DROP = { E: 0.14, D: 0.12, C: 0.10, B: 0.09, A: 0.08, S: 0.07 };
-const BOSS_DROP = { E: [1, 2], D: [1, 2], C: [1, 3], B: [1, 3], A: [2, 3], S: [2, 4] };
+const BEAST_DROP = { E: 0.14, D: 0.12, C: 0.10, B: 0.09, A: 0.08, S: 0.07, SS: 0.05 };
+const BOSS_DROP = { E: [1, 2], D: [1, 2], C: [1, 3], B: [1, 3], A: [2, 3], S: [2, 4], SS: [2, 4] };
 
-function normRank(rank) { const r = String(rank || 'E').toUpperCase().replace(/[^EDCBAS]/g, '')[0]; return RANKS.includes(r) ? r : 'E'; }
+function normRank(rank) { const u = String(rank || 'E').toUpperCase().replace(/[^EDCBAS]/g, ''); if (u.startsWith('SS')) return 'SS'; const r = u[0]; return RANKS.includes(r) ? r : 'E'; }
 function nameFor(rank) { return `${normRank(rank)}-Rank Essence Stone`; }
 function emojiFor(rank) { return RANK_EMOJI[normRank(rank)] || '🪨'; }
 function rankForRarity(rarity) { return RARITY_TO_RANK[String(rarity || 'common').toLowerCase()] || 'E'; }
-function isEssence(name) { return /^[EDCBAS]-Rank Essence Stone$/i.test(String(name || '').trim()); }
-function rankOf(name) { const m = String(name || '').match(/^([EDCBAS])-Rank Essence Stone$/i); return m ? m[1].toUpperCase() : null; }
+function isEssence(name) { return /^(SS|[EDCBAS])-Rank Essence Stone$/i.test(String(name || '').trim()); }
+function rankOf(name) { const m = String(name || '').match(/^(SS|[EDCBAS])-Rank Essence Stone$/i); return m ? m[1].toUpperCase() : null; }
 
 // How many stones a recipe needs. Base 1; weapons / artifacts 2; Legendary+ +1; very strong stats +1.
 function requiredFor(recipe, rarity) {
@@ -51,7 +51,7 @@ function grant(player, rank, n = 1) {
   const items = player.inventory.items;
   const hit = items.find(it => it && String(it.type || '').toLowerCase() === 'essence' && String(it.name || '') === nm);
   if (hit) { hit.count = Math.max(1, Number(hit.count) || 1) + q; return hit; }
-  const entry = { name: nm, type: 'essence', rarity: ({ E: 'common', D: 'uncommon', C: 'rare', B: 'epic', A: 'legendary', S: 'mythic' })[r], emoji: emojiFor(r), count: q, source: 'gate', acquiredAt: Date.now(), lore: `Condensed mana of a ${r}-rank beast. Crafting ${r}-rank gear needs it.` };
+  const entry = { name: nm, type: 'essence', rarity: ({ E: 'common', D: 'uncommon', C: 'rare', B: 'epic', A: 'legendary', S: 'mythic', SS: 'mythic' })[r], emoji: emojiFor(r), count: q, source: 'gate', acquiredAt: Date.now(), lore: `Condensed mana of a ${r}-rank beast. Crafting ${r}-rank gear needs it.` };
   items.push(entry);
   return entry;
 }

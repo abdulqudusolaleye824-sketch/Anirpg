@@ -91,7 +91,7 @@ const MAX_MSG_AGE_MS = Number(process.env.MAX_MSG_AGE_MS || 2 * 60 * 1000); // P
 // chat with a minimum gap, plus a global per-socket cap, so a burst becomes a
 // queue instead of a limit hit.
 const SEND_GAP_PER_CHAT_MS = Number(process.env.SEND_GAP_PER_CHAT_MS || 650);
-const SEND_GLOBAL_PER_SEC  = Number(process.env.SEND_GLOBAL_PER_SEC || 8);
+const SEND_GLOBAL_PER_SEC  = Math.min(2, Number(process.env.SEND_GLOBAL_PER_SEC || 2)); // Push #101: HARD CAP — 2 messages per second per bot (anti-ban)
 const SEND_TIMEOUT_MS      = Number(process.env.SEND_TIMEOUT_MS || 20_000); // Push #92c
 const _chatSendChain = new Map();   // `${key}|${jid}` -> Promise chain tail
 const _chatLastSend  = new Map();   // `${key}|${jid}` -> ts
@@ -1678,6 +1678,20 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
 
   const { state, saveCreds, source: _authSource } = await _authState(personalityKey, botAuthDir, authDir);
   if (_authSource && _authSource !== 'sqlite') console.log(`🗄️ AstraLink [${personalityKey}] auth loaded from ${_authSource}`);
+  // Push #101 (anti-ban): an UNREGISTERED bot never opens a socket on its own. Before this, a logged-out bot
+  // (Mikasa today) booted, asked WhatsApp for a fresh pairing ref every 20 s, timed out (408), reconnected and
+  // did it again — hundreds of registration attempts per hour from one datacenter IP, around the clock.
+  // Pairing happens ONLY while an owner is in /link (pairingMode set, or a live pairing session for this key).
+  try {
+    const _reg = !!(state && state.creds && (state.creds.registered || state.creds.me));
+    const _ps = pairingSessions[personalityKey];
+    const _pairingWanted = !!(options.pairingMode) || !!(_ps && ['starting', 'awaiting_qr', 'awaiting_code'].includes(_ps.status) && Date.now() - (_ps.startedAt || 0) < 15 * 60 * 1000);
+    if (!_reg && !_pairingWanted) {
+      const _k = `__unregNotice_${personalityKey}`; const now = Date.now();
+      if (!global[_k] || now - global[_k] > 60 * 60 * 1000) { global[_k] = now; console.log(`📴 AstraLink [${personalityKey}] is NOT linked — parked (no pairing attempts). An owner can link it with /link ${personalityKey}`); }
+      return null;
+    }
+  } catch (e) {}
   // Push #63: version lookup that cannot hang pairing (cached / 8s timeout /
   // bundled-version fallback) — see getWaVersion() above.
   const version = await getWaVersion();
@@ -2219,6 +2233,7 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
       _lastOpenAt[personalityKey] = Date.now(); // Push #86: deaf detector grace period starts now
       try { backupAuthToDisk(personalityKey, authDir, { force: true }); } catch {}
       console.log(`✅ AstraLink [${displayName}] connection VERIFIED & ACTIVE! (JID: ${jid})`);
+      setTimeout(() => { try { flushSerfOutbox(personalityKey, typeof getDatabase === 'function' ? getDatabase() : null); } catch (e) {} }, 8000);
       // Push #96h-z22: FIRST-LINK SETUP — a freshly linked number dresses itself: WhatsApp profile name = bot
       // name, profile photo visible to everyone, read receipts off; then the owner + co-owner get a link
       // confirmation DM with the bot's contact card. Runs once per linked jid (re-runs only after a re-link).
@@ -2290,6 +2305,16 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
       } catch (e) {}
     }
     const _bareOf = (p) => String(typeof p === 'string' ? p : (p && (p.id || p.jid)) || '').split(':')[0].split('@')[0];
+    // Push #101: an EXILED number that joins any group is removed at once (first bot to see it acts).
+    if (action === 'add') {
+      try {
+        const db = getDatabase(); const Ex = require('../rpg/utils/Exile');
+        if (db.exiles && Object.keys(db.exiles).length && _bootstrapDispatcher(personalityKey, chatId)) {
+          const kicked = await Ex.enforceInGroup(sock, db, chatId, participants);
+          if (kicked.length) { try { saveDatabase(); } catch (e) {} console.log(`🚷 [${personalityKey}] auto-removed exiled ${kicked.join(', ')} from ${chatId}`); return; }
+        }
+      } catch (e) {}
+    }
     // Push #77 / #96h-v / #96h-z18: THIS bot was just added → shared handler (also fed by groups.upsert).
     if (action === 'add') {
       try {
@@ -3114,6 +3139,67 @@ function canSendDM(db, playerJid, botJid, botKey) {
   return { allowed: false, reason: 'not-assigned-serf' };
 }
 
+// ── Push #101 (BUG-025): SERF OUTBOX ─────────────────────────────────────
+// "Killua is online but doesn't send my gate keys": the serf's socket was
+// stalled (ws open, nothing actually leaving). The IRON WALL stays — only the
+// serf may DM — but a DM that cannot leave NOW is QUEUED (persisted in
+// db.serfOutbox) and flushed the moment that serf verifies a fresh
+// connection or its next health tick finds it usable. Callers get
+// { queued: true } so the group notice says so instead of "sent".
+const OUTBOX_MAX_PER_BOT = 200;
+const OUTBOX_TTL_MS = 24 * 3600000;
+let _outboxDb = null;
+function _outbox(db) { const d = db || _outboxDb; if (!d) return null; _outboxDb = d; if (!d.serfOutbox || typeof d.serfOutbox !== 'object') d.serfOutbox = {}; return d.serfOutbox; }
+function queueSerfDM(db, serfKey, jid, content, why) {
+  const ob = _outbox(db); if (!ob) return false;
+  if (!Array.isArray(ob[serfKey])) ob[serfKey] = [];
+  ob[serfKey].push({ jid, content, at: Date.now(), why: why || 'unusable' });
+  while (ob[serfKey].length > OUTBOX_MAX_PER_BOT) ob[serfKey].shift();
+  return true;
+}
+function outboxSize(db, serfKey) { const ob = _outbox(db); return ob && Array.isArray(ob[serfKey]) ? ob[serfKey].length : 0; }
+async function flushSerfOutbox(serfKey, db) {
+  const ob = _outbox(db); if (!ob || !Array.isArray(ob[serfKey]) || !ob[serfKey].length) return 0;
+  if (!isBotUsable(serfKey)) return 0;
+  const sock = botSockets[serfKey]; if (!sock) return 0;
+  const items = ob[serfKey]; let sent = 0; const now = Date.now();
+  while (items.length) {
+    const it = items[0];
+    if (now - (it.at || 0) > OUTBOX_TTL_MS) { items.shift(); continue; }
+    try {
+      await Promise.race([sock.sendMessage(it.jid, it.content), new Promise((_, rej) => setTimeout(() => rej(new Error('send timeout')), SEND_TIMEOUT_MS))]);
+      items.shift(); sent++; markSendResult(serfKey, true);
+    } catch (e) { markSendResult(serfKey, false, e); break; }
+  }
+  if (sent) console.log(`📬 [${serfKey}] delivered ${sent} queued DM(s) from the serf outbox`);
+  return sent;
+}
+setInterval(() => { try { const ob = _outbox(null); if (!ob) return; for (const k of Object.keys(ob)) if (ob[k] && ob[k].length) flushSerfOutbox(k, null); } catch (e) {} }, 60_000).unref?.();
+// Push #101: safety-net sweep — every 10 min each exiled number is checked against every group (covers joins a bot missed).
+setInterval(async () => {
+  try {
+    const db = _outboxDb; if (!db || !db.exiles || !Object.keys(db.exiles).length) return;
+    const Ex = require('../rpg/utils/Exile');
+    for (const b of Object.keys(db.exiles)) { const r = await Ex.sweepAll(botSockets, db, b); if (r.kicked) console.log(`🚷 sweep: removed exiled +${b} from ${r.kicked} seat(s)`); }
+  } catch (e) {}
+}, 10 * 60_000).unref?.();
+async function _serfSendOrQueue(db, serfKey, playerJid, content) {
+  const serfSock = botSockets[serfKey];
+  const online = !!(serfSock && serfSock.user?.id);
+  if (!online || !isBotUsable(serfKey)) {
+    queueSerfDM(db, serfKey, playerJid, content, online ? 'stalled' : 'offline');
+    return { dropped: true, queued: true, reason: 'serf-queued', message: `⏳ Your Serf (${PersonalityManager.getDisplayName(serfKey) || serfKey}) is ${online ? 'reconnecting' : 'offline'} — this DM is queued and will be delivered automatically the moment it is back (queue: ${outboxSize(db, serfKey)}).` };
+  }
+  try {
+    const r = await Promise.race([serfSock.sendMessage(playerJid, content), new Promise((_, rej) => setTimeout(() => rej(new Error('send timeout')), SEND_TIMEOUT_MS))]);
+    markSendResult(serfKey, true);
+    return r;
+  } catch (e) {
+    markSendResult(serfKey, false, e);
+    queueSerfDM(db, serfKey, playerJid, content, 'send-failed:' + (e && e.message));
+    return { dropped: true, queued: true, reason: 'serf-queued', message: `⏳ Your Serf (${PersonalityManager.getDisplayName(serfKey) || serfKey}) could not send right now (${(e && e.message) || 'error'}) — this DM is queued and will be delivered automatically when it recovers.` };
+  }
+}
 async function safeSendDM(sock, playerJid, content, opts = {}) {
   // Push #28: never emit blank text bubbles.
   if (content && typeof content.text === 'string' && !content.text.trim()) {
@@ -3145,17 +3231,8 @@ async function safeSendDM(sock, playerJid, content, opts = {}) {
   }
 
   // IRON WALL: If player HAS a Serf, ONLY that specific Serf socket can send the DM!
-  const serfSock = botSockets[serfKey];
-  if (!serfSock || !serfSock.user?.id) {
-    // Serf bot is offline / banned — ABSOLUTELY NO OTHER BOT CAN DM!
-    return {
-      dropped: true,
-      reason: 'serf-offline',
-      message: `⚠️ Your assigned Serf (${serfKey}) is currently offline or unavailable.`
-    };
-  }
-
-  return serfSock.sendMessage(playerJid, content);
+  // Push #101: offline / stalled / failing → QUEUED for that same serf (never another bot).
+  return _serfSendOrQueue(db, serfKey, playerJid, content);
 }
 
 async function sendHiChorus(chatId, responses, quotedMsg) {
@@ -3236,6 +3313,7 @@ module.exports = {
   revokeSessionDir,
   getSocket,
   relinkStatus, SqliteAuth, FORBIDDEN_MAX,
+  queueSerfDM, flushSerfOutbox, outboxSize,
   getPendingSocket,
   getLatestQr,
   getAllSockets,

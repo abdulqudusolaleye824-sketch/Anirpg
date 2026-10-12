@@ -1519,6 +1519,7 @@ function startBotScheduler(personalityKey) {
   // knows the bot's personalityKey, so the join handler can filter out
   // non-active bots (preventing multiple welcome messages).
   MultiSocketManager.connectBot(personalityKey, AUTH_DIR, getDatabase, saveDatabase, buildBotOptions(personalityKey)).then(sock => {
+    if (!sock) return; // Push #101: unregistered bot parked until /link — nothing to initialise
     // Per-bot init: regen system (any bot that connects, runs it)
     try {
       RegenManager.initAllPlayers(getDatabase, saveDatabase, sock);

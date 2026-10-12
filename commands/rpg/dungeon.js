@@ -980,6 +980,7 @@ module.exports = {
           if (_st?.damage) { monster.stats.hp = Math.max(0, (monster.stats.hp || 0) - _st.damage); log += _st.line + '\n'; }
           try { if ((monster.stats.hp || 0) > 0) { const _sa = require('../../rpg/utils/ShadowArmy').strike(player, monster); if (_sa.lines.length) log += _sa.lines.join('\n') + '\n'; } } catch (e) {} // Push #96h-z19
           const _ph = PetCombat.healPlayer(sender, player);
+          try { const _whyP = PetCombat.whyIdle(sender, 'dungeon'); if (_whyP) log += _whyP + '\n'; } catch (e) {} // Push #101 (BUG-024)
           if (_ph.healed > 0) log += `💚 *${_ph.petName}* mended *${_ph.healed}* HP\n`;
           try { const _lg = require('../../rpg/utils/PetManager').tickLastGift(player); if (_lg && _lg.healed > 0) log += `✨ *Last Gift* (${_lg.from}): +${_lg.healed} HP · ${_lg.turnsLeft} turns left\n`; } catch (e) {}
           if ((monster.stats.hp || 0) <= 0) {
@@ -1156,6 +1157,7 @@ module.exports = {
           if (_st?.damage) { monster.stats.hp = Math.max(0, (monster.stats.hp || 0) - _st.damage); log += _st.line + '\n'; }
           try { if ((monster.stats.hp || 0) > 0) { const _sa = require('../../rpg/utils/ShadowArmy').strike(player, monster); if (_sa.lines.length) log += _sa.lines.join('\n') + '\n'; } } catch (e) {} // Push #96h-z19
           const _ph = PetCombat.healPlayer(sender, player);
+          try { const _whyP = PetCombat.whyIdle(sender, 'dungeon'); if (_whyP) log += _whyP + '\n'; } catch (e) {} // Push #101 (BUG-024)
           if (_ph.healed > 0) log += `💚 *${_ph.petName}* mended *${_ph.healed}* HP\n`;
           try { const _lg = require('../../rpg/utils/PetManager').tickLastGift(player); if (_lg && _lg.healed > 0) log += `✨ *Last Gift* (${_lg.from}): +${_lg.healed} HP · ${_lg.turnsLeft} turns left\n`; } catch (e) {}
           if ((monster.stats.hp || 0) <= 0) {

@@ -433,6 +433,125 @@ module.exports = {
     }
 
     // ── ATTACK / SKILL ──────────────────────────────────────────
+    // Push #101 (BUG-020): defined BEFORE the attack branch — it was a `const` declared further down, so a boss
+    // killed with /attack or /skill hit the temporal-dead-zone ("Cannot access before initialization"), the catch
+    // printed "has fallen!" and the boss was never marked defeated → raid stuck, gate had to be closed.
+    let _shadowOfferBoss = false;
+    // ── BOSS DEFEAT SETTLEMENT (shared: /party boss AND the general attack
+    //    system, since Push #54 lets /attack + /skill fight the boss too) ──
+    // Returns the lines to show. The caller saves state and sends.
+    const finishBossDefeat = async () => {
+      const out = [];
+        // Push #68: capture the boss from the gate. The `boss` local in the
+        // /party boss branch is block-scoped and was NOT visible here, so
+        // every boss settlement (via /party boss OR the general /attack flow)
+        // crashed with "boss is not defined".
+        const boss = gate.boss;
+        boss.defeated = true;
+        // Push #97: the boss ALWAYS drops Essence Stones of the gate's rank to the hunter who landed the final blow.
+        try { const ES = require('../../rpg/utils/EssenceStones'); const _en = ES.rollBossDrop(gate.rank); ES.grant(player, gate.rank, _en); out.push(`${ES.emojiFor(gate.rank)} *BOSS ESSENCE → ${player.name}*: *${ES.nameFor(gate.rank)}* ×${_en}`); } catch (e) {}
+        // Push #89: the boss party falls with the boss (no rewards for them).
+        try { for (const _el of (gate.monsters || [])) if (_el && _el.elite && !_el.defeated) { _el.defeated = true; _el.hp = 0; _el.revived = true; } } catch (e) {}
+        AuraSystem.addAura(player, 'bossKill');
+        try {
+          const QD = require('../../rpg/utils/QuestDispatcher');
+          QD.trackAndNotify(player, 'boss', 1, sock, sender, chatId);
+          QD.trackAndNotify(player, 'clear', 1, sock, sender, chatId);
+        } catch(e){}
+        // Push #87: /weekly "Defeat 3 World Bosses" — every raid member who hit the boss gets credit.
+        try {
+          const WK = require('./weekly');
+          const hitters = new Set([sender, ...Object.keys(gate.damageDealt || {})]);
+          for (const jid of hitters) { const u = db.users[jid]; if (u) WK.trackWeeklyProgress(u, 'boss_kill', 1); }
+          // z24: a finished gate raid is a dungeon clear for /weekly too (every member who took part),
+          // and the Nexus payout counts toward "Earn 1M Nexus this week".
+          const members = new Set([...hitters, ...(((gate.raid && gate.raid.members) || []).map(m => (m && (m.id || m.jid)) || m).filter(Boolean))]);
+          for (const jid of members) { const u = db.users[jid]; if (u) WK.trackWeeklyProgress(u, 'dungeon_clear', 1); }
+        } catch (e) {}
+        // Gate clear: +15 GP to the killer's guild (weekly + lifetime + quest)
+        try { require('../../rpg/utils/GuildPointsSystem').addGuildGP(db, sender, 15, 'Gate clear (' + (gate.rank || '?') + '-Rank)', { quest: true, sock, jid: sender, chatId }); } catch(e){}
+
+        const damageDealt = gate.damageDealt || {};
+        const topRaider = Object.entries(damageDealt).sort((a, b) => b[1] - a[1])[0];
+        if (topRaider && topRaider[0] === sender) AuraSystem.addAura(player, 'topRaider');
+
+        awardXP(player, 'gate_boss', saveDatabase, sock, chatId);
+        try { const _df = require('../../rpg/utils/DomainSystem').ownerFell(gate, boss, GR.livingMembers ? GR.livingMembers(gate, db) : [player]); if (_df) out.push(_df); } catch (e) {} // Push #96h-z20
+        try { const _sc = require('../../rpg/utils/ShadowArmy').registerCorpse(player, { ...boss, isBoss: true }, 'gate-boss'); if (_sc) { out.push(_sc); _shadowOfferBoss = true; } } catch (e) {} // Push #96h-z19
+        try { const BRb=require('../../rpg/utils/BattleRewards'); const wb=BRb.giveBattleWinRewards(player, db, 'gate', player.level, sock, chatId, { boss: true, lootMult: (gate.isDouble || gate.redGate) ? 1.5 : 1 }); out.push(BRb.formatRewards(wb)); try { const _sx = BRb.shareRaidExp(gate, sender, db, sock, chatId); if (_sx) out.push(_sx); } catch (e) {} } catch(e){}
+
+        // Final-blow boss loot → the killer
+        const bossDropLines = [];
+        const bossDrop = GateManager.rollMonsterKillDrop(gate.rank, boss.baseName || boss.name, player);
+        if (bossDrop) {
+          require('../../rpg/utils/RewardInventory').grantItem(player, { ...bossDrop, type: bossDrop.type || 'material', fromGate: gate.id }, 'gate');
+          bossDropLines.push(`🎁 *BOSS DROP → ${player.name}* (final blow): *${bossDrop.name}*`);
+        }
+
+        // Distribute full loot: gold→guild treasury, drops→final-blow, recovery
+        const _double = !!(gate.doubleRoll && !gate.isDouble); // Push #96d: a second gate hides behind this boss
+        const loot = GR.clearGate(gate, key, keyData, db, saveDatabase, { keepOpen: _double });
+
+        out.push(``, `💀 *${boss.name}* HAS BEEN DEFEATED!`, ``);
+        out.push(`🔥 Aura gained!`);
+        if (bossDropLines.length) out.push(...bossDropLines);
+        out.push(``, `🎁 *LOOT → ${loot.destinationText}*`);
+        out.push(`💠 ${loot.nexus.toLocaleString()} Nexus | 💎 ${loot.crystals.toLocaleString()} Mana Stones`);
+        try { if (loot && loot.nexus > 0 && !/treasury/i.test(String(loot.destinationText || ''))) require('./weekly').trackWeeklyProgress(player, 'earn_gold', Math.floor(loot.nexus)); } catch (e) {} // z24: raid payout counts for the weekly Nexus goal
+        if (loot.affiliatePayouts && Object.keys(loot.affiliatePayouts).length) {
+        out.push(``, `🤝 *Affiliate / recruiter payouts:*`);
+          for (const [jid, p] of Object.entries(loot.affiliatePayouts)) {
+            const nm = db.users?.[jid]?.name || jid.split('@')[0];
+        out.push(`  • *${nm}* — ${p.percent}% → ${p.gold.toLocaleString()} 💠 + ${p.crystals} 💎`);
+          }
+        }
+        if (loot.contractPayouts && Object.keys(loot.contractPayouts).length) out.push(`📋 Contracts paid out automatically.`);
+
+        if (loot.wildPet && loot.wildPet.token) {
+        out.push(``, `🐾 *WILD PET APPEARED!*`);
+        out.push(`${loot.wildPet.emoji} *${loot.wildPet.name}* [${loot.wildPet.rarity.toUpperCase()}]`);
+        out.push(`🪤 */catch* — 3 shared attempts for the whole raid, first success keeps it! Flees in 60s.`);
+        try { const B = require('../../utils/buttons'); setTimeout(() => { B.sendButtons(sock, chatId, { text: `🐾 *${loot.wildPet.name}* is loose — tap to catch!`, buttons: B.quickReplies([[`🪤 Catch ${loot.wildPet.name}`.slice(0, 20), '/catch']]) }).catch(() => {}); }, 1200); } catch (e) {} // Push #96h-n: catch button
+        }
+
+        // Push #55: scavenger pets pay out on the clear, and every raider's
+        // active pet gets XP for the fight (previously pets gained nothing).
+        try {
+          const _sv = PetCombat.scavenge(sender, loot.nexus || 0);
+          if (_sv.bonus > 0) {
+            player.gold = (player.gold || 0) + _sv.bonus;
+            player.manaCrystals = (player.manaCrystals || 0) + Math.floor(_sv.bonus / 10);
+            out.push(``, `${_sv.pet?.emoji || '🐾'} *${_sv.pet?.nickname || _sv.pet?.name || 'Scavenger'}* dug up *${_sv.bonus.toLocaleString()}* 💠 Nexus (+${Math.floor(_sv.bonus / 10)} 💎)`);
+          }
+          const _pr = PetCombat.rewardPet(sender, { won: true, exp: 120 });
+          if (_pr) out.push(..._pr);
+        } catch (e) {}
+        try {
+          for (const m of (gate.raid?.members || [])) {
+            const _mp = db.users?.[m.id];
+            if (_mp && _mp.stats?.hp > 0) PetCombat.rewardPet(m.id, { won: true, exp: 120 });
+          }
+        } catch (e) {}
+
+        out.push(``, `💚 *All members: +50% max HP recovery, no cooldown.*`);
+        try { if (_shadowOfferBoss) { const SA = require('../../rpg/utils/ShadowArmy'); const B = require('../../utils/buttons'); const pr = SA.buttonFor(player); if (pr) setTimeout(() => B.sendButtons(sock, chatId, { text: `👤 *${player.name}* — the boss's shadow awaits your word.`, buttons: B.quickReplies(pr) }).catch(() => {}), 1500); } } catch (e) {} // Push #96h-z19
+        if (_double) {
+          const _ldr = db.users?.[gate.raid?.leader]; const _ln = _ldr ? _ldr.name : 'Leader';
+          out.push(``, `🌀 *THE GATE DOES NOT CLOSE…*`, `A *DOUBLE DUNGEON* yawns open behind the fallen boss — rank unknown (B, A or S). Once entered it is sealed: nobody joins, nobody flees.`, `👑 *${_ln}* decides: */party proceed* or */party leave*`);
+          try { const Buttons = require('../../utils/buttons'); setTimeout(() => Buttons.sendButtons(sock, chatId, { text: `🌀 *DOUBLE DUNGEON* — ${_ln}, proceed or leave?`, buttons: Buttons.quickReplies([['⚔️ Proceed', '/party proceed'], ['🚪 Leave', '/party leave']]) }).catch(() => {}), 1500); } catch (e) {}
+        } else if (gate.isDouble) {
+          out.push(``, `🏆 *DOUBLE DUNGEON CONQUERED!* (${gate.rank}-Rank revealed)`, `🎁 Every survivor may open a box: */box blessed* or */box cursed* (sent to your DM)`);
+          try { const Buttons = require('../../utils/buttons'); for (const jid of (loot.doubleBoxes || [])) setTimeout(() => Buttons.sendButtons(sock, jid, { text: `🎁 *DOUBLE DUNGEON SURVIVOR* — choose your box:`, buttons: Buttons.quickReplies([['✨ Blessed box', '/box blessed'], ['🖤 Cursed box', '/box cursed']]) }).catch(() => {}), 1200); } catch (e) {}
+          out.push(`🚪 *GATE ${gate.id} CLEARED!*`);
+        } else out.push(`🚪 *GATE ${gate.id} CLEARED!*`);
+        out.push(FRAME);
+        if (pro) {
+          const topName = topRaider ? (db.users?.[topRaider[0]]?.name || 'a raider') : 'none';
+        out.push(UI.PRO_MINI, topRaider && topRaider[0] === sender ? `💎 *PRO SLAYER* — TOP raid damage: ${UI.num(topRaider[1])}! 🔥` : `💎 *PRO SLAYER* — top: ${topName} (${topRaider ? UI.num(topRaider[1]) : 0})`);
+        } else out.push(UI.upsell());
+      return out;
+    };
+
     if (action === 'attack' || action === 'skill') {
       if (!inRaid(gate, sender)) return sock.sendMessage(chatId, { text: '❌ You are not in this raid.' }, { quoted: msg });
       if (raidOver(gate)) return sock.sendMessage(chatId, { text: RAID_OVER_TEXT }, { quoted: msg });
@@ -1059,6 +1178,7 @@ module.exports = {
       try {
         const _ph = PetCombat.healPlayer(sender, player);
         if (_ph.healed > 0) msg3Lines.push(`💚 *${_ph.petName || 'Pet'}* mended *${_ph.healed}* HP → ${_ph.hp}/${_effMax(player)}`);
+        const _why = PetCombat.whyIdle(sender, 'gate:' + gate.id); if (_why) msg3Lines.push(_why); // Push #101 (BUG-024)
       } catch (e) {}
       if (_petLines.length && target.hp > 0) msg3Lines.push(..._petLines);
       try { GR.saveGateState(db, gate); } catch (e) {}
@@ -1069,120 +1189,6 @@ module.exports = {
       } finally { GR.releaseCombatLock(gate.id); } // Push #29
     }
 
-    // ── BOSS DEFEAT SETTLEMENT (shared: /party boss AND the general attack
-    //    system, since Push #54 lets /attack + /skill fight the boss too) ──
-    // Returns the lines to show. The caller saves state and sends.
-    const finishBossDefeat = async () => {
-      const out = [];
-        // Push #68: capture the boss from the gate. The `boss` local in the
-        // /party boss branch is block-scoped and was NOT visible here, so
-        // every boss settlement (via /party boss OR the general /attack flow)
-        // crashed with "boss is not defined".
-        const boss = gate.boss;
-        boss.defeated = true;
-        // Push #97: the boss ALWAYS drops Essence Stones of the gate's rank to the hunter who landed the final blow.
-        try { const ES = require('../../rpg/utils/EssenceStones'); const _en = ES.rollBossDrop(gate.rank); ES.grant(player, gate.rank, _en); out.push(`${ES.emojiFor(gate.rank)} *BOSS ESSENCE → ${player.name}*: *${ES.nameFor(gate.rank)}* ×${_en}`); } catch (e) {}
-        // Push #89: the boss party falls with the boss (no rewards for them).
-        try { for (const _el of (gate.monsters || [])) if (_el && _el.elite && !_el.defeated) { _el.defeated = true; _el.hp = 0; _el.revived = true; } } catch (e) {}
-        AuraSystem.addAura(player, 'bossKill');
-        try {
-          const QD = require('../../rpg/utils/QuestDispatcher');
-          QD.trackAndNotify(player, 'boss', 1, sock, sender, chatId);
-          QD.trackAndNotify(player, 'clear', 1, sock, sender, chatId);
-        } catch(e){}
-        // Push #87: /weekly "Defeat 3 World Bosses" — every raid member who hit the boss gets credit.
-        try {
-          const WK = require('./weekly');
-          const hitters = new Set([sender, ...Object.keys(gate.damageDealt || {})]);
-          for (const jid of hitters) { const u = db.users[jid]; if (u) WK.trackWeeklyProgress(u, 'boss_kill', 1); }
-          // z24: a finished gate raid is a dungeon clear for /weekly too (every member who took part),
-          // and the Nexus payout counts toward "Earn 1M Nexus this week".
-          const members = new Set([...hitters, ...(((gate.raid && gate.raid.members) || []).map(m => (m && (m.id || m.jid)) || m).filter(Boolean))]);
-          for (const jid of members) { const u = db.users[jid]; if (u) WK.trackWeeklyProgress(u, 'dungeon_clear', 1); }
-        } catch (e) {}
-        // Gate clear: +15 GP to the killer's guild (weekly + lifetime + quest)
-        try { require('../../rpg/utils/GuildPointsSystem').addGuildGP(db, sender, 15, 'Gate clear (' + (gate.rank || '?') + '-Rank)', { quest: true, sock, jid: sender, chatId }); } catch(e){}
-
-        const damageDealt = gate.damageDealt || {};
-        const topRaider = Object.entries(damageDealt).sort((a, b) => b[1] - a[1])[0];
-        if (topRaider && topRaider[0] === sender) AuraSystem.addAura(player, 'topRaider');
-
-        awardXP(player, 'gate_boss', saveDatabase, sock, chatId);
-        try { const _df = require('../../rpg/utils/DomainSystem').ownerFell(gate, boss, GR.livingMembers ? GR.livingMembers(gate, db) : [player]); if (_df) out.push(_df); } catch (e) {} // Push #96h-z20
-        try { const _sc = require('../../rpg/utils/ShadowArmy').registerCorpse(player, { ...boss, isBoss: true }, 'gate-boss'); if (_sc) { out.push(_sc); _shadowOffer = true; } } catch (e) {} // Push #96h-z19
-        try { const BRb=require('../../rpg/utils/BattleRewards'); const wb=BRb.giveBattleWinRewards(player, db, 'gate', player.level, sock, chatId, { boss: true, lootMult: (gate.isDouble || gate.redGate) ? 1.5 : 1 }); out.push(BRb.formatRewards(wb)); try { const _sx = BRb.shareRaidExp(gate, sender, db, sock, chatId); if (_sx) out.push(_sx); } catch (e) {} } catch(e){}
-
-        // Final-blow boss loot → the killer
-        const bossDropLines = [];
-        const bossDrop = GateManager.rollMonsterKillDrop(gate.rank, boss.baseName || boss.name, player);
-        if (bossDrop) {
-          require('../../rpg/utils/RewardInventory').grantItem(player, { ...bossDrop, type: bossDrop.type || 'material', fromGate: gate.id }, 'gate');
-          bossDropLines.push(`🎁 *BOSS DROP → ${player.name}* (final blow): *${bossDrop.name}*`);
-        }
-
-        // Distribute full loot: gold→guild treasury, drops→final-blow, recovery
-        const _double = !!(gate.doubleRoll && !gate.isDouble); // Push #96d: a second gate hides behind this boss
-        const loot = GR.clearGate(gate, key, keyData, db, saveDatabase, { keepOpen: _double });
-
-        out.push(``, `💀 *${boss.name}* HAS BEEN DEFEATED!`, ``);
-        out.push(`🔥 Aura gained!`);
-        if (bossDropLines.length) out.push(...bossDropLines);
-        out.push(``, `🎁 *LOOT → ${loot.destinationText}*`);
-        out.push(`💠 ${loot.nexus.toLocaleString()} Nexus | 💎 ${loot.crystals.toLocaleString()} Mana Stones`);
-        try { if (loot && loot.nexus > 0 && !/treasury/i.test(String(loot.destinationText || ''))) require('./weekly').trackWeeklyProgress(player, 'earn_gold', Math.floor(loot.nexus)); } catch (e) {} // z24: raid payout counts for the weekly Nexus goal
-        if (loot.affiliatePayouts && Object.keys(loot.affiliatePayouts).length) {
-        out.push(``, `🤝 *Affiliate / recruiter payouts:*`);
-          for (const [jid, p] of Object.entries(loot.affiliatePayouts)) {
-            const nm = db.users?.[jid]?.name || jid.split('@')[0];
-        out.push(`  • *${nm}* — ${p.percent}% → ${p.gold.toLocaleString()} 💠 + ${p.crystals} 💎`);
-          }
-        }
-        if (loot.contractPayouts && Object.keys(loot.contractPayouts).length) out.push(`📋 Contracts paid out automatically.`);
-
-        if (loot.wildPet && loot.wildPet.token) {
-        out.push(``, `🐾 *WILD PET APPEARED!*`);
-        out.push(`${loot.wildPet.emoji} *${loot.wildPet.name}* [${loot.wildPet.rarity.toUpperCase()}]`);
-        out.push(`🪤 */catch* — 3 shared attempts for the whole raid, first success keeps it! Flees in 60s.`);
-        try { const B = require('../../utils/buttons'); setTimeout(() => { B.sendButtons(sock, chatId, { text: `🐾 *${loot.wildPet.name}* is loose — tap to catch!`, buttons: B.quickReplies([[`🪤 Catch ${loot.wildPet.name}`.slice(0, 20), '/catch']]) }).catch(() => {}); }, 1200); } catch (e) {} // Push #96h-n: catch button
-        }
-
-        // Push #55: scavenger pets pay out on the clear, and every raider's
-        // active pet gets XP for the fight (previously pets gained nothing).
-        try {
-          const _sv = PetCombat.scavenge(sender, loot.nexus || 0);
-          if (_sv.bonus > 0) {
-            player.gold = (player.gold || 0) + _sv.bonus;
-            player.manaCrystals = (player.manaCrystals || 0) + Math.floor(_sv.bonus / 10);
-            out.push(``, `${_sv.pet?.emoji || '🐾'} *${_sv.pet?.nickname || _sv.pet?.name || 'Scavenger'}* dug up *${_sv.bonus.toLocaleString()}* 💠 Nexus (+${Math.floor(_sv.bonus / 10)} 💎)`);
-          }
-          const _pr = PetCombat.rewardPet(sender, { won: true, exp: 120 });
-          if (_pr) out.push(..._pr);
-        } catch (e) {}
-        try {
-          for (const m of (gate.raid?.members || [])) {
-            const _mp = db.users?.[m.id];
-            if (_mp && _mp.stats?.hp > 0) PetCombat.rewardPet(m.id, { won: true, exp: 120 });
-          }
-        } catch (e) {}
-
-        out.push(``, `💚 *All members: +50% max HP recovery, no cooldown.*`);
-        try { if (_shadowOffer) { const SA = require('../../rpg/utils/ShadowArmy'); const B = require('../../utils/buttons'); const pr = SA.buttonFor(player); if (pr) setTimeout(() => B.sendButtons(sock, chatId, { text: `👤 *${player.name}* — the boss's shadow awaits your word.`, buttons: B.quickReplies(pr) }).catch(() => {}), 1500); } } catch (e) {} // Push #96h-z19
-        if (_double) {
-          const _ldr = db.users?.[gate.raid?.leader]; const _ln = _ldr ? _ldr.name : 'Leader';
-          out.push(``, `🌀 *THE GATE DOES NOT CLOSE…*`, `A *DOUBLE DUNGEON* yawns open behind the fallen boss — rank unknown (B, A or S). Once entered it is sealed: nobody joins, nobody flees.`, `👑 *${_ln}* decides: */party proceed* or */party leave*`);
-          try { const Buttons = require('../../utils/buttons'); setTimeout(() => Buttons.sendButtons(sock, chatId, { text: `🌀 *DOUBLE DUNGEON* — ${_ln}, proceed or leave?`, buttons: Buttons.quickReplies([['⚔️ Proceed', '/party proceed'], ['🚪 Leave', '/party leave']]) }).catch(() => {}), 1500); } catch (e) {}
-        } else if (gate.isDouble) {
-          out.push(``, `🏆 *DOUBLE DUNGEON CONQUERED!* (${gate.rank}-Rank revealed)`, `🎁 Every survivor may open a box: */box blessed* or */box cursed* (sent to your DM)`);
-          try { const Buttons = require('../../utils/buttons'); for (const jid of (loot.doubleBoxes || [])) setTimeout(() => Buttons.sendButtons(sock, jid, { text: `🎁 *DOUBLE DUNGEON SURVIVOR* — choose your box:`, buttons: Buttons.quickReplies([['✨ Blessed box', '/box blessed'], ['🖤 Cursed box', '/box cursed']]) }).catch(() => {}), 1200); } catch (e) {}
-          out.push(`🚪 *GATE ${gate.id} CLEARED!*`);
-        } else out.push(`🚪 *GATE ${gate.id} CLEARED!*`);
-        out.push(FRAME);
-        if (pro) {
-          const topName = topRaider ? (db.users?.[topRaider[0]]?.name || 'a raider') : 'none';
-        out.push(UI.PRO_MINI, topRaider && topRaider[0] === sender ? `💎 *PRO SLAYER* — TOP raid damage: ${UI.num(topRaider[1])}! 🔥` : `💎 *PRO SLAYER* — top: ${topName} (${topRaider ? UI.num(topRaider[1]) : 0})`);
-        } else out.push(UI.upsell());
-      return out;
-    };
 
 
     // ── BOSS ────────────────────────────────────────────────────
@@ -1209,6 +1215,12 @@ module.exports = {
       gate.floorClearedAt = null; // Push #88w: engaging the boss = moving on
 
       const boss = gate.boss;
+      // Push #101 (BUG-019): the HUNTER's own statuses (blind, fear, burn…) count down on their boss turn too —
+      // before this only the boss ticked here, so a 1-turn Blind lasted the whole boss fight.
+      let _bossTickLogs = [];
+      try { const _UCb = require('../../rpg/utils/UnifiedCombat'); _bossTickLogs = _UCb.tickStatuses(player) || []; } catch (e) {}
+      if (_bossTickLogs.length) { try { await sock.sendMessage(chatId, { text: `🩺 *${player.name}* — ${_bossTickLogs.join(' · ')}` }); } catch (e) {} }
+      if ((player.stats?.hp || 0) <= 0) { let _fl = []; try { _fl = GR.hunterFalls(gate, sender, player, db) || []; GR.saveGateState(db, gate); } catch (e) {} GR.releaseCombatLock(gate.id); saveDatabase(); return sock.sendMessage(chatId, { text: [`💀 *${player.name}* succumbs to their wounds before reaching the boss.`, ..._fl].join('\n') }, { quoted: msg }); }
       // Push #93: boss statuses (Curse of Ruin) count down one per hunter turn.
       try { if ((boss.statusEffects || []).length) { const _bt = { name: boss.name, statusEffects: boss.statusEffects, stats: { hp: boss.hp, maxHp: boss.maxHp } }; const _bl = require('../../rpg/utils/UnifiedCombat').tickStatuses(_bt); boss.hp = Math.max(0, _bt.stats.hp); if (_bl.some(l => /ruin wore off/.test(l))) await sock.sendMessage(chatId, { text: `✨ *Curse of Ruin* on *${boss.name}* has worn off.` }); } } catch (e) {}
       try { GR.playerDamage.partyAllies = (gate.raid?.members || []).map(m => db.users[m.id] || Object.values(db.users || {}).find(x => x && x.jid && GR.GKM.normaliseJid(x.jid) === GR.GKM.normaliseJid(m.id))).filter(Boolean); } catch (e) { GR.playerDamage.partyAllies = []; } // Push #94
@@ -1263,6 +1275,7 @@ module.exports = {
       try {
         const _bh = PetCombat.healPlayer(sender, player);
         if (_bh.healed > 0) lines.push(`💚 *${_bh.petName}* mended *${_bh.healed}* HP → ${_bh.hp}/${_effMax(player)}`);
+        const _whyB = PetCombat.whyIdle(sender, 'gate:' + gate.id); if (_whyB) lines.push(_whyB); // Push #101 (BUG-024)
       } catch (e) {}
 
       if (boss.hp <= 0) {

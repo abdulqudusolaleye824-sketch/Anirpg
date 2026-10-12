@@ -1131,7 +1131,16 @@ function resolveSkill(player, query, opts = {}) {
     }
   }
 
-  const q = qRaw.toLowerCase().replace(/^\/?(skill|use|cast)\s*/i, '').trim();
+  let q = qRaw.toLowerCase().replace(/^\/?(skill|use|cast)\s*/i, '').trim();
+  // Push #101: Monster hunters still see / remember the GENERIC kit names ("Primal Strike", "Primal Fury"…)
+  // from awakening cards and old menus. Translate generic → this variant's slot name before looking up.
+  try {
+    if (canonicalClassName(player) === 'Monster') {
+      const generic = buildRoster('Monster', null);
+      const gi = generic.findIndex(g => g && (String(g.name).toLowerCase() === q || String(g.name).toLowerCase().startsWith(q)));
+      if (gi >= 0 && roster[gi] && String(roster[gi].name).toLowerCase() !== String(generic[gi].name).toLowerCase()) q = String(roster[gi].name).toLowerCase();
+    }
+  } catch (e) {}
   const byName = (arr) => Array.isArray(arr)
     ? (arr.find(s => String(s.name).toLowerCase() === q)
       || arr.find(s => String(s.name).toLowerCase().startsWith(q))

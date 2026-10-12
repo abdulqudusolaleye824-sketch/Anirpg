@@ -107,6 +107,16 @@ module.exports = {
       if (targetJid === sender) {
         return sock.sendMessage(chatId, { text: '❌ You cannot hire yourself!' }, { quoted: msg });
       }
+      // Push #101 (BUG-023): a hunter busy elsewhere (another raid, instance, labyrinth, duel) cannot be
+      // hired — before OR after this raid starts. Same rule both ways.
+      { try {
+        const GR = require('../../rpg/dungeons/GateRaid');
+        const other = GR.findOtherRaid(targetJid, resolved.gate);
+        const tName = (db.users?.[targetJid]?.name) || targetJid.split('@')[0];
+        if (other) return sock.sendMessage(chatId, { text: `❌ *${tName}* is already in another gate raid (${other.rank || '?'}-Rank). They must finish or leave it first.` }, { quoted: msg });
+        const busy = require('../../rpg/utils/Engagement').whereBusy(db, targetJid, db.users?.[targetJid], { ignore: ['gate'] });
+        if (busy) return sock.sendMessage(chatId, { text: `❌ *${tName}* is busy elsewhere — ${busy.text}` }, { quoted: msg });
+      } catch (e) {} }
 
       // Join remainder text to find percentages
       const splitText = args.slice(1).join(' ').replace(/@[0-9]+/g, '').trim();
@@ -346,10 +356,18 @@ module.exports = {
           return sock.sendMessage(chatId, { text: '❌ The party gate key is no longer active.' }, { quoted: msg });
         }
 
+        const GR = require('../../rpg/dungeons/GateRaid');
+        // Push #101 (BUG-023): accepting while in another raid / instance / labyrinth / duel is refused.
+        { try {
+          const _tr = GR.resolveCode(offer.partyKey, db); const _tg = _tr && _tr.ok ? _tr.gate : null;
+          const other = GR.findOtherRaid(sender, _tg);
+          if (other) return sock.sendMessage(chatId, { text: `❌ You are already in another gate raid (${other.rank || '?'}-Rank). Finish or leave it before accepting this hire.` }, { quoted: msg });
+          const busy = require('../../rpg/utils/Engagement').whereBusy(db, sender, db.users?.[sender], { ignore: ['gate'] });
+          if (busy) return sock.sendMessage(chatId, { text: busy.text }, { quoted: msg });
+        } catch (e) {} }
         if (!keyData.contracts) keyData.contracts = {};
         keyData.contracts[sender] = offer.affiliatePct;
 
-        const GR = require('../../rpg/dungeons/GateRaid');
         // Push #96h-n: resolve WITH db (revives a persisted raid) and seat the hire in a recruiting
         // OR active raid (late hires raid immediately) — "You are not in this raid" after accepting is over.
         const resolved = GR.resolveCode(offer.partyKey, db);

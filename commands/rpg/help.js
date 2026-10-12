@@ -232,7 +232,7 @@ module.exports = {
       `🛡️ *GROUP ADMIN:* /kick /promote /demote /pm /mute /unmute /ban /unban /tagall /antilink /antimention /slowmode /chatbot /welcome /goodbye /close /open /delete /disable /enable /groupcmd /announce /setgroup /sub /gclist /joingc /leavegc /spawnstatus /killspawn /closegate /reset /restart /start /switch /aimode /setserf /approveserf /bots`,
     ];
     // z25: owner-only block appended at runtime (never in the public menu source).
-    try { if (require('../../utils/permissions').isBotOwner(getDatabase(), sender)) menuLines.push(['👑 *OWNER:* /bug list · /bugs · /bug delete <id> · /closeall /openall · /dbdump · /bots · /kill <bot> · /reset <bot> · /cooldowns set <cmd> <s> · /set --mod --false <serial> · /ver' + 'sion'].join('')); } catch (e) {}
+    try { if (require('../../utils/permissions').isBotOwner(getDatabase(), sender)) menuLines.push(['👑 *OWNER:* /bug list · /bugs · /bug delete <id> · /closeall /openall · /dbdump · /bots · /kill <bot> · /reset <bot> · /cooldowns set <cmd> <s> · /set --mod --false <serial> · /ver' + 'sion', '\n👑 *OWNER+:* /add' + 'xp · /addnexus · /addup <@|reply> <n> (Upgrade Points) · /addmana <@|reply> <n> (💎 Mana Crystals) · /spawn <item|material|rarity> · /spawn essence <E–SS> [qty] · /exile <number> [reason] (DM) · /exile list · /exile lift <number>'].join('')); } catch (e) {}
     const message = UI.card(viewerH, {
       icon: '📋', title: '✦ 𝐀𝐬𝐭𝐫𝐚™ COMMAND MENU',
       lines: menuLines,

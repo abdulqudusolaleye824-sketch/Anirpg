@@ -269,7 +269,7 @@ function equipWeapon(player, inst) {
   items.splice(i, 1);
   const old = player.weapon && player.weapon.id ? player.weapon : null;
   // Old store weapon goes BACK to the bag (it is an item, not a stat sponge).
-  if (old && old.fromStore) items.push(old);
+  if (old && (old.fromStore || old.isWeapon || old.crafted)) { if (!old.isWeapon) old.isWeapon = true; items.push(old); } // Push #101: crafted weapons return too
   player.weapon = { ...inst, name: inst.name, bonus: inst.attack, attack: inst.attack };
   try { require('./InventoryCompactor').attach(player.weapon); } catch (e) {}
   // Weapon on-hit statuses are read from player.weapon.effects in combat.

@@ -21,7 +21,26 @@
 const PetManager = require('./PetManager');
 
 const FAINT_RECOVER_MS = 10 * 60 * 1000; // a fainted pet is back after 10 min
-const ABILITY_CHANCE   = Number(process.env.PET_ABILITY_CHANCE || 0.22);
+const ABILITY_CHANCE   = Number(process.env.PET_ABILITY_CHANCE || 0.55); // Push #101 (BUG-024): pets act most rounds (was 22% — felt like "my pet never attacks")
+
+// Push #101 (BUG-024): WHY the active pet is sitting a round out — hunters never saw this before and
+// reported "my pet doesn't attack / heal". Returns a one-line reason or null when the pet is fine.
+const _idleSaid = new Map(); // `${playerId}|${scope}` -> ts
+function whyIdle(playerId, scope = 'fight') {
+  return safe(() => {
+    const pet = activePet(playerId); if (!pet) return null;
+    const nm = pet.nickname || pet.name || 'Pet'; const em = pet.emoji || '🐾';
+    let why = null;
+    if (pet.isFainted) why = `${em} *${nm}* is fainted — it rests this fight.`;
+    else if ((pet.hunger || 0) >= 80) why = `${em} *${nm}* is too hungry to fight (hunger ${Math.round(pet.hunger)}/100) — /pet feed`;
+    else if ((pet.happiness || 0) <= 30) why = `${em} *${nm}* is too unhappy to fight (happiness ${Math.round(pet.happiness)}/100) — /pet play`;
+    if (!why) return null;
+    const k = `${playerId}|${scope}`; const last = _idleSaid.get(k) || 0;
+    if (Date.now() - last < 10 * 60 * 1000) return null; // say it once per 10 min per fight scope
+    _idleSaid.set(k, Date.now()); if (_idleSaid.size > 2000) _idleSaid.clear();
+    return why;
+  }, null);
+}
 
 function safe(fn, fallback) {
   try { return fn(); } catch (e) { return fallback; }
@@ -198,6 +217,7 @@ function statusLine(playerId) {
 }
 
 module.exports = {
+  whyIdle,
   activePet,
   battleBonus,
   atkBonus,

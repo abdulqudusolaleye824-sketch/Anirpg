@@ -194,8 +194,16 @@ function equipGear(player, gearItem) {
   // net of whatever the replaced piece gave. Unequip trims current HP back under the new max.
   const _oldHp = Number((player.equippedGear[slot] && player.equippedGear[slot].stats && player.equippedGear[slot].stats.hp) || 0);
   const _newHp = Number((gearItem.stats && gearItem.stats.hp) || 0);
-  // Old piece just gets deleted — no return to inventory
+  // Push #101 (BUG-018): the replaced piece RETURNS to the bag at its current durability — never destroyed.
+  const _old = player.equippedGear[slot];
   player.equippedGear[slot] = gearItem;
+  if (_old && typeof _old === 'object') {
+    if (!player.inventory) player.inventory = {};
+    if (!Array.isArray(player.inventory.items)) player.inventory.items = [];
+    if (!_old.id) _old.id = 'g' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+    _old.isGear = true;
+    if (!player.inventory.items.some(i => i && i.id === _old.id)) player.inventory.items.push(_old);
+  }
   try { if (player.stats && typeof player.stats.hp === 'number' && player.stats.hp > 0) { const delta = _newHp - _oldHp; if (delta > 0) player.stats.hp += delta; const em = effectiveMaxHp(player); if (player.stats.hp > em) player.stats.hp = em; } } catch (e) {}
   // Remove from inventory
   if (player.inventory?.items) {
