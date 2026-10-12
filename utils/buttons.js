@@ -264,6 +264,21 @@ function _liveSock(sock) {
 
 async function sendButtons(sock, chatId, opts, quoted) {
   sock = _liveSock(sock);
+  // Push #101b: SERF IRON WALL for interactive sends. The native path below uses sock.relayMessage, which does
+  // NOT pass through the MultiSocketManager sendMessage wrapper — Double Dungeon box prompts (and every other
+  // button DM) left from whichever bot ran the command. Resolve the serf socket here, same rule as the wrapper.
+  try {
+    const _j = String(chatId || '');
+    if ((_j.endsWith('@s.whatsapp.net') || _j.endsWith('@lid')) && !(quoted && String(quoted.key?.remoteJid || '') === _j)) {
+      const MSM = require('../bots/MultiSocketManager');
+      if (typeof MSM.dmRoute === 'function') {
+        const me = Object.entries(MSM.getAllSockets ? (MSM.getAllSockets() || {}) : {}).find(([, s]) => s === sock);
+        const r = MSM.dmRoute(_j, me ? me[0] : null, null);
+        if (!r.ok) { console.error(`🧱 [buttons] DM to ${_j} dropped — ${r.reason} (iron wall)`); return { mode: 'dropped', reason: r.reason, chunks: 0, ids: [] }; }
+        if (r.sock) sock = r.sock;
+      }
+    }
+  } catch (e) {}
   const o = opts || {};
   const text = o.text || '';
   const footer = o.footer || '';

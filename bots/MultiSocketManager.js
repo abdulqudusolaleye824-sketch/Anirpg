@@ -574,8 +574,10 @@ setInterval(_persistSeen, 15000).unref?.();
 process.once('SIGTERM', _persistSeen); process.once('SIGINT', _persistSeen);
 const _deafRecycles = {};       // key -> consecutive recycles without recovery
 const _deafHealAt = {};         // key -> ts of last recycle
+const _dmTalkAt = new Map(); // Push #101b: `${botKey}|${dmJid}` -> ts the hunter last wrote to THIS bot in DM
 function noteFreshInbound(key, msg) {
   _lastInboundAt[key] = Date.now(); _deafRecycles[key] = 0; _wakeTriedAt[key] = 0;
+  try { const rj = String(msg?.key?.remoteJid || ''); if (rj && !rj.endsWith('@g.us') && !msg?.key?.fromMe) { _dmTalkAt.set(`${key}|${rj}`, Date.now()); if (_dmTalkAt.size > 5000) _dmTalkAt.clear(); } } catch (e) {}
   // Push #88t: per-message cross-check bookkeeping (see _crossCheckDeaf).
   try {
     const chat = msg?.key?.remoteJid; const id = msg?.key?.id;
@@ -1851,22 +1853,18 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
       // they are talking to; owners/mods are exempt as in safeSendDM.
       try {
         const _j = String(jid || '');
-        const _isDm = (_j.endsWith('@s.whatsapp.net') || _j.endsWith('@lid')) && !(options && options.asSelf) && !(options && options.quoted) && !(content && (content.delete || content.react));
+        // Push #101b: a `quoted` reply only bypasses the wall when the quoted message really came from THIS DM chat
+        // (the hunter is talking to this bot). Group commands that DM their result with { quoted: groupMsg } used to slip through.
+        const _qFromHere = !!(options && options.quoted && String(options.quoted.key?.remoteJid || '') === _j);
+        const _isDm = (_j.endsWith('@s.whatsapp.net') || _j.endsWith('@lid')) && !(options && options.asSelf) && !_qFromHere && !(content && (content.delete || content.react));
         if (_isDm) {
           const _db = typeof getDatabase === 'function' ? getDatabase() : null;
-          if (_db && _db.users) {
-            const _bare = _j.split('@')[0];
-            const _pl = _db.users[_j] || _db.users[Object.keys(_db.users).find(k => k.split('@')[0] === _bare || (_db.lidMap && _db.lidMap[k.split('@')[0]] === _bare)) || ''];
-            if (_pl && !(Perms.isBotOwner(_db, _j) || Perms.isBotMod(_db, _j))) {
-              const _serfKey = SerfManager.getSerfBotKey(_db, _pl.jid || _pl.id || _j) || SerfManager.getSerfBotKey(_db, _j);
-              if (_serfKey && _serfKey !== personalityKey) {
-                const _ss = botSockets[_serfKey];
-                if (_ss && _ss.user?.id) return await _ss.sendMessage(jid, content, { ...(options || {}), asSelf: true });
-                console.error(`🧱 [${personalityKey}] DM to ${_j} dropped — serf ${_serfKey} offline (iron wall)`);
-                return null;
-              }
-            }
+          const _r = dmRoute(_j, personalityKey, _db);
+          if (!_r.ok) {
+            if (_r.reason === 'serf-offline') { console.error(`🧱 [${personalityKey}] DM to ${_j} dropped — serf ${_r.key} offline (iron wall)`); return null; }
+            console.error(`🧱 [${personalityKey}] DM to ${_j} dropped — hunter has no serf (iron wall; /setserf)`); return null;
           }
+          if (_r.key && _r.key !== personalityKey && _r.sock) return await _r.sock.sendMessage(jid, content, { ...(options || {}), asSelf: true });
         }
       } catch (e) {}
       if (options && options.asSelf) { options = { ...options }; delete options.asSelf; }
@@ -3149,6 +3147,30 @@ function canSendDM(db, playerJid, botJid, botKey) {
 const OUTBOX_MAX_PER_BOT = 200;
 const OUTBOX_TTL_MS = 24 * 3600000;
 let _outboxDb = null;
+// Push #101b: ONE serf rule for every DM path (sendMessage wrapper AND utils/buttons relayMessage).
+// Returns { ok:true, key, sock } (where the DM may leave from) or { ok:false, reason } (must not be sent).
+//   • owners / mods: any bot
+//   • unregistered number: any bot
+//   • hunter with a serf: ONLY the serf's socket (offline → caller queues/drops)
+//   • hunter with NO serf: NOT delivered (reason 'no-serf') — the sender must offer the group instead
+function dmRoute(jid, fromKey, db) {
+  try {
+    const _j = String(jid || ''); if (!(_j.endsWith('@s.whatsapp.net') || _j.endsWith('@lid'))) return { ok: true, key: fromKey, sock: botSockets[fromKey] };
+    const _db = db || (() => { try { const bp = Object.values(_bootParams).find(b => b && typeof b.getDatabase === 'function'); return bp ? bp.getDatabase() : _outboxDb; } catch (e) { return _outboxDb; } })();
+    if (!_db || !_db.users) return { ok: true, key: fromKey, sock: botSockets[fromKey] };
+    const _bare = _j.split('@')[0];
+    const _pl = _db.users[_j] || _db.users[Object.keys(_db.users).find(k => k.split('@')[0] === _bare || (_db.lidMap && _db.lidMap[k.split('@')[0]] === _bare)) || ''];
+    if (!_pl) return { ok: true, key: fromKey, sock: botSockets[fromKey] };
+    if (Perms.isBotOwner(_db, _j) || Perms.isBotMod(_db, _j) || _isOwnBotNumber(_bare)) return { ok: true, key: fromKey, sock: botSockets[fromKey] };
+    // a hunter who wrote to THIS bot in DM within 10 min is talking to it — replies stay with it (registration, /link, DM commands)
+    if (fromKey && Date.now() - (_dmTalkAt.get(`${fromKey}|${_j}`) || 0) < 10 * 60 * 1000) return { ok: true, key: fromKey, sock: botSockets[fromKey] };
+    const _serfKey = SerfManager.getSerfBotKey(_db, _pl.jid || _pl.id || _j) || SerfManager.getSerfBotKey(_db, _j);
+    if (!_serfKey) return { ok: false, reason: 'no-serf' };
+    const _ss = botSockets[_serfKey];
+    if (!_ss || !_ss.user?.id) return { ok: false, reason: 'serf-offline', key: _serfKey };
+    return { ok: true, key: _serfKey, sock: _ss };
+  } catch (e) { return { ok: true, key: fromKey, sock: botSockets[fromKey] }; }
+}
 function _outbox(db) { const d = db || _outboxDb; if (!d) return null; _outboxDb = d; if (!d.serfOutbox || typeof d.serfOutbox !== 'object') d.serfOutbox = {}; return d.serfOutbox; }
 function queueSerfDM(db, serfKey, jid, content, why) {
   const ob = _outbox(db); if (!ob) return false;
@@ -3287,6 +3309,7 @@ function getActiveSocket(chatId) {
 }
 
 module.exports = {
+  dmRoute, noteFreshInbound, __setSocketForTest: (k, s) => { if (process.env.ASTRA_TEST) { if (s) botSockets[k] = s; else delete botSockets[k]; } }, // Push #101b
   _pace,
   isOwnBotNumber: _isOwnBotNumber, // Push #96b: sibling-bot guard for moderation paths
   getInboundTrace: () => _inboundTrace,

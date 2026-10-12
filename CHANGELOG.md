@@ -1,3 +1,9 @@
+## 1.0.195 — Push #101b (2026-10-12) — serf wall closed everywhere
+- **Button DMs bypassed serfs** (Double Dungeon box prompt, every interactive DM): `utils/buttons.sendButtons` sends through `relayMessage`, which never passed the serf wall. It now resolves the serf socket first (same rule as plain sends).
+- **Two more holes in the wall:** (1) group commands that DM'd their result with `{ quoted: groupMsg }` were treated as "a DM reply" and left from any bot — only a quote from *that DM chat* counts now; (2) a hunter with **no serf** got DMs from whichever bot ran the command — now nothing is DM'd (callers already say so). A hunter who writes to a bot in DM still gets that bot's replies for 10 min (registration, /link, DM commands).
+- **/scroll read without a working serf** no longer dumps the recipe in the group. It asks: **📣 Post in group** / **🙈 Don't send** (only the reader can tap Post, 10-min window).
+- Anti-ban watch: minute-by-minute monitor running on the server since 22:09 UTC.
+
 ## 1.0.194 — Push #101 (2026-10-12) — bug sweep + owner tools
 - **BUG-016 Bone Wall:** the wall now absorbs the level-scaled % that /skills shows (Lv1 60% · Lv2 70% · Lv3 80% · Lv4 90% · Lv5 100%). It was hard-coded to 60% regardless of level.
 - **BUG-017 Last Breath / non-Healer self-heals charged 4× base:** `effectiveCost()` already doubles heal cost for non-Healers; the raid support path doubled it AGAIN (13 base → 26 shown → 52 taken). Second doubling removed — you pay exactly what the menu shows.

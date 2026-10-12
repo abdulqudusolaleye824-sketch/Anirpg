@@ -11,6 +11,7 @@ const { readScroll, formatScrollRead, checkMaterials } = require('../../rpg/util
 const SerfManager = require('../../rpg/utils/SerfManager');
 const { stripDevice } = require('../../utils/constants');
 
+const _pendingReveal = new Map(); // Push #101b: sender -> { idx, at }
 module.exports = {
   name: 'scroll',
   aliases: ['scrolls', 'read'],
@@ -77,13 +78,25 @@ module.exports = {
       const idx = parseInt(args[1]) - 1;
       return this.handleReadScroll(sock, msg, args, getDatabase, saveDatabase, sender, idx);
     }
+    // Push #101b: the hunter CHOSE to post the recipe in the group (serf missing/offline) — or chose not to.
+    if (sub === 'reveal' || sub === 'post') {
+      const idx = parseInt(args[1]) - 1;
+      const pend = _pendingReveal.get(sender);
+      if (!pend || pend.idx !== idx || Date.now() - pend.at > 10 * 60 * 1000) return sock.sendMessage(chatId, { text: `❌ Nothing to post — read the scroll first: */scroll read ${idx + 1}*` }, { quoted: msg });
+      _pendingReveal.delete(sender);
+      return this.handleReadScroll(sock, msg, args, getDatabase, saveDatabase, sender, idx, { reveal: true });
+    }
+    if (sub === 'keep' || sub === 'nosend') {
+      _pendingReveal.delete(sender);
+      return sock.sendMessage(chatId, { text: `🙈 Kept private. Set a serf with */setserf @bot* and read it again to get it in DM.` }, { quoted: msg });
+    }
 
     return sock.sendMessage(chatId, {
       text: (pro ? `${UI.PRO_BAR}\n📜 *SCROLL COMMANDS* 💎\n${UI.PRO_BAR}\n\n/scroll — list scrolls\n/scroll read <#> — read a scroll (sends recipe to DM via Serf)\n${UI.PRO_BAR}\n${UI.PRO_MINI}\n💎 *PRO SCROLL* — manage your recipes` : `📜 *SCROLL COMMANDS*\n${UI.FREE_BAR}\n\n/scroll — list scrolls\n/scroll read <#> — read a scroll (sends recipe to DM via Serf)\n${UI.FREE_BAR}\n${UI.upsell()}`)
     }, { quoted: msg });
   },
 
-  async handleReadScroll(sock, msg, args, getDatabase, saveDatabase, sender, idx) {
+  async handleReadScroll(sock, msg, args, getDatabase, saveDatabase, sender, idx, opts = {}) {
     const chatId = msg.key?.remoteJid;
     const isGroup = chatId.endsWith('@g.us');
     const db = getDatabase();
@@ -154,6 +167,10 @@ module.exports = {
     const hasSerf = !!serf;
 
     let dmSent = false;
+    if (opts.reveal && isGroup) {
+      // explicit choice: post it here, no DM attempt
+      return sock.sendMessage(chatId, { text: [`📜 *SCROLL #${idx + 1} — posted on request*`, fullText].join('\n'), mentions: [sender] }, { quoted: msg });
+    }
     if (MultiSocketManager) {
       const dmRes = await MultiSocketManager.safeSendDM(sock, cleanSender, { text: fullText }, { db });
       dmSent = !dmRes?.dropped;
@@ -166,25 +183,20 @@ module.exports = {
           mentions: [sender]
         }, { quoted: msg });
       } else {
-        // Serf offline, banned, or not set — ABSOLUTELY NO LEAKS
-        return sock.sendMessage(chatId, {
+        // Serf offline / not set — NEVER auto-leak the recipe. The hunter decides: post it here, or keep it private.
+        const B = require('../../utils/buttons');
+        _pendingReveal.set(sender, { idx, at: Date.now() });
+        return B.sendButtons(sock, chatId, {
           text: [
-            ...(pro ? [UI.PRO_BAR, `⚠️ *SERF DM NOTIFICATION* 💎`, UI.PRO_BAR] : [`⚠️ *SERF DM NOTIFICATION*`, UI.FREE_BAR]),
+            ...(pro ? [UI.PRO_BAR, `⚠️ *SERF DM BLOCKED* 💎`, UI.PRO_BAR] : [`⚠️ *SERF DM BLOCKED*`, UI.FREE_BAR]),
             ``,
-            `@${sender.split('@')[0]}, private DM delivery was blocked because your assigned Serf is currently offline or not set!`,
+            `@${sender.split('@')[0]}, Scroll #${idx + 1} (*${scroll.recipe?.output || 'Item'}*) could not be sent to your DM — ${hasSerf ? 'your serf is offline' : 'you have no serf set (*/setserf @bot*)'}.`,
             ``,
-            `⚓ *Solution:*`,
-            hasSerf
-              ? `Your assigned Serf is currently offline. You can view your recipe details right here:`
-              : `Set up your official Serf using */setserf @bot* to receive private DM alerts.`,
-            ``,
-            `📜 *Scroll Details:*`,
-            fullText,
-            FRAME,
-            ...(pro ? [UI.PRO_MINI, `💎 *PRO SCROLL* — Scroll #${idx + 1} revealed`] : [UI.upsell()]),
+            `Post the recipe in this group instead, or keep it private?`,
           ].join('\n'),
-          mentions: [sender]
-        }, { quoted: msg });
+          mentions: [sender],
+          buttons: B.quickReplies([['📣 Post in group', `/scroll reveal ${idx + 1}`], ['🙈 Don\'t send', '/scroll keep']]),
+        }, msg);
       }
     } else {
       if (!dmSent) {
