@@ -1,3 +1,6 @@
+## 1.0.193 — Push #100 (2026-10-12)
+- **Bot lanes removed:** the "This raid is being run by *X* — send your commands to that bot" refusal is gone; every linked bot handles every raid, dungeon run, mine and labyrinth. /kill and /reset unchanged.
+
 ## 1.0.192 — Push #99b (2026-10-12) — BUG-026 hotfix
 - **/link <bot> could never pair (Rem, Raven):** the fresh-pairing wipe kept the creds backups, so the dead registered login was restored at once → 401 loop. Deliberate wipes now clear the backups too.
 

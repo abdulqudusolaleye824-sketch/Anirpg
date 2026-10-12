@@ -66,6 +66,11 @@ function claim(obj) {
 // May the current lane drive this battle? Returns null when fine, otherwise
 // { error } (refuse) or { takeover: oldKey } (owner is dead/killed → we take it).
 function check(obj, opts = {}) {
+  // Push #100: lane OWNERSHIP REMOVED at the owner's request — every linked bot
+  // drives every raid/dungeon/labyrinth. (The multi-bot "tripling" was the per-
+  // socket tickers, fixed separately.) /kill + /reset remain.
+  return null;
+  // eslint-disable-next-line no-unreachable
   if (!obj || typeof obj !== 'object') return null;
   const me = current();
   const owner = obj.botKey || null;
