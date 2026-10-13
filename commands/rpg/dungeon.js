@@ -309,7 +309,7 @@ module.exports = {
         `⚔️ */party create <CODE>* — Form/Join a party for a gate raid`,
         `⚔️ */gateraid <CODE>*     — Enter the gate raid`,
         `🔑 */gate buy*            — Buy a gate when a gate spawns`,
-        `🔑 */gate key list*       — View your unused gate keys`,
+        `🔑 */guild keys*          — The guild keyring (GM / Vice / Officers)`,
         ``,
         `💡 *How to play:*`,
         `1. Buy a gate in your group when one spawns using */gate buy*.`,

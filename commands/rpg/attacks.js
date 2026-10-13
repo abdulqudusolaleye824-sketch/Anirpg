@@ -105,6 +105,43 @@ module.exports = {
     const managementCmds = ['shop', 'buy', 'equip', 'unequip', 'all', 'info', 'rank', 'purchase'];
     const isManagement = managementCmds.includes(sub);
 
+    // ── Push #102: tap menu — /attack again → plain / pattern / skill (gate raids) ──
+    if (sub === 'again' || sub === 'menu' || sub === 'pickpattern' || sub === 'pickskill') {
+      const B = require('../../utils/buttons');
+      const GR = require('../../rpg/dungeons/GateRaid');
+      const combat = detectActiveCombat(player, chatId, db, sender);
+      if (!combat || combat.type !== 'gateraid' || !combat.gate) return sock.sendMessage(chatId, { text: `❌ The tap menu works inside a gate raid. Type */attack*, */attack <id>* or */cast <skill>*.` }, { quoted: msg });
+      if (!pro) return sock.sendMessage(chatId, { text: `💎 Tap menus are a *PRO* perk — please type your command: */attack*, */attack <id>* or */cast <skill>*.\n${UI.upsell()}` }, { quoted: msg });
+      const gate = combat.gate;
+      const _ch = GR.getChooseLock(gate.id);
+      if (_ch && GR.GKM.normaliseJid(_ch.holder) !== GR.GKM.normaliseJid(sender)) return sock.sendMessage(chatId, { text: `🎯 *${_ch.name}* is picking their move — hold on.` }, { quoted: msg });
+      if (sub === 'again' || sub === 'menu') {
+        return B.sendButtons(sock, chatId, {
+          text: `⚔️ *${player.name}* — choose your move:`,
+          buttons: B.quickReplies([['⚔️ Plain attack', '/attack'], ['🎯 Attack pattern', '/attack pickpattern'], ['✨ Skill', '/attack pickskill']]),
+        }, msg);
+      }
+      // pattern / skill: lock the floor for ≤60s and wait for a plain reply (or "nil").
+      const PP = require('../../rpg/utils/PlainPrompt');
+      const wantPattern = sub === 'pickpattern';
+      GR.setChooseLock(gate.id, sender, player.name);
+      const forms = [sender, msg.key?.participant, msg.participant, msg.key?.participantAlt].filter(Boolean);
+      PP.expect(chatId, forms, (text, { cancelled }) => {
+        GR.clearChooseLock(gate.id, sender);
+        if (cancelled) return { reply: `🔓 *${player.name}* cancelled — open play again.` };
+        const t = String(text).trim().replace(/^\//, '');
+        if (!t) return { reply: `❌ Nothing picked — open play again.` };
+        return { command: wantPattern ? `/attack ${t}` : `/cast ${t}` };
+      }, GR.CHOOSE_LOCK_MS);
+      setTimeout(() => { try { if (GR.clearChooseLock(gate.id, sender)) PP.cancel(chatId, forms); } catch (e) {} }, GR.CHOOSE_LOCK_MS + 500).unref?.();
+      const eq = (ap.equipped || []).map((id, i) => { const a = DB.generateAttack(id); return `${i + 1}. *#${id}* ${a ? a.name : ''}`.trim(); }).slice(0, 8).join('\n');
+      return sock.sendMessage(chatId, {
+        text: wantPattern
+          ? `🎯 *${player.name}* — reply with the *equipped attack id* you want to use (60s). Type *nil* to cancel.${eq ? `\n\n${eq}` : ''}`
+          : `✨ *${player.name}* — reply with the *skill name* you want to cast (60s). Type *nil* to cancel.`,
+      }, { quoted: msg });
+    }
+
     // ── Combat Check (if not explicit management subcommand) ──
     if (!isManagement) {
       const combat = detectActiveCombat(player, chatId, db, sender);

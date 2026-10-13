@@ -1,3 +1,12 @@
+## 1.0.196 — Push #102 (2026-10-13) — speed is real, tap-to-attack, guild keyring
+- **Initiative ignored your buffs.** "Frost Giant lunges before you" at +200% SPEED: the initiative and dodge rolls read the *bare* speed stat — skill buffs (Lupine Dash…), debuffs and stun never counted. `liveSpeed()` now feeds both.
+- **Monster mini stat card** whenever a beast steps forward (initiative strike, next monster up after a kill): name, rank, HP, ATK, DEF, SPD, skills, status effects.
+- **Attack flow pauses 1.75 s** between the multi-message steps (was 0.5 s).
+- **⚔️ Attack again** button after a Pro hunter's move → *Plain attack / Attack pattern / Skill*. Pattern/Skill wait for a plain reply (the equipped `#id` or the skill name); the floor is locked for the party until the move lands, **nil** is typed, or 60 s pass. Free hunters tapping it are asked to type the command. (Gate raids.)
+- **Gate keys live in the GUILD keyring** — never DM'd on purchase (serf no longer required to buy). `/guild keys` (GM / Vice / Officer; affiliates see their own; `/gate keys` redirects): serf up → keyring to DM; serf down → pick a rank (buttons or a letter reply) and the ONE key of that rank lapsing soonest is posted in the group; a rank you don't hold → "pick again"; Pro gets a hint which rank lapses soonest. Existing personal keys are migrated into their holder's guild.
+- `/spawn material <name>` (and plain `/spawn <name>`) now finds Legendary/Mythic recipe materials ("Epoch Mana Stone — Frozen Time").
+- `/attack #123` (with the hash) works.
+
 ## 1.0.195 — Push #101b (2026-10-12) — serf wall closed everywhere
 - **Button DMs bypassed serfs** (Double Dungeon box prompt, every interactive DM): `utils/buttons.sendButtons` sends through `relayMessage`, which never passed the serf wall. It now resolves the serf socket first (same rule as plain sends).
 - **Two more holes in the wall:** (1) group commands that DM'd their result with `{ quoted: groupMsg }` were treated as "a DM reply" and left from any bot — only a quote from *that DM chat* counts now; (2) a hunter with **no serf** got DMs from whichever bot ran the command — now nothing is DM'd (callers already say so). A hunter who writes to a bot in DM still gets that bot's replies for 10 min (registration, /link, DM commands).

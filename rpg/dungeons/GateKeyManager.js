@@ -113,14 +113,8 @@ function purchaseGateKey(sender, gate, db, saveDatabase) {
   const player = db.users?.[sender];
   if (!player) return { success: false, error: 'You are not registered.' };
 
-  // 1. Serf Check
-  const serf = SerfManager.getSerf(db, sender);
-  if (!serf) {
-    return {
-      success: false,
-      error: `❌ No serf detected! Set a serf first using /setserf @bot so you can receive DM notifications.`
-    };
-  }
+  // Push #102: no serf needed — the key is not DM'd, it lands in the guild keyring (/guild keys).
+  const serf = SerfManager.getSerf(db, sender) || null;
 
   // 2. Purchaser Authorization Check (Only Guildmasters, Vice GMs, Officers, or Granted Affiliates)
   const guildName = player.guild;

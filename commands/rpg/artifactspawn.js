@@ -493,6 +493,9 @@ module.exports = {
     // materials, forge pools). /spawn materials <E|D|C|B|A|S|common|rare|epic|legendary> — a cache of that tier.
     const _allMats = () => { const out = {}; try { const Rc = require('../../rpg/utils/Recycler'); for (const [k, v] of Object.entries(Rc.materialRanks ? Rc.materialRanks() : {})) out[k] = { name: v.name, rank: v.rank }; } catch (e) {}
       try { const MSP = require('../../rpg/utils/MaterialSpawnPool'); const b = MSP.build(); for (const [tier, map] of Object.entries(b)) for (const n of Object.keys(map)) { const k = n.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim(); if (!out[k]) out[k] = { name: n, rank: tier === 'epic' ? 'A' : tier === 'rare' ? 'C' : 'E' }; } } catch (e) {}
+      // Push #102: EVERY recipe material of EVERY book (Legendary / Mythic too — "Epoch Mana Stone — Frozen Time" was unspawnable).
+      try { const C = require('../../rpg/utils/CraftingSystem'); const rk = { Common: 'E', Uncommon: 'D', Rare: 'C', Epic: 'A', Legendary: 'S', Mythic: 'S' };
+        for (const [rar, book] of Object.entries(C.RECIPES || {})) for (const list of Object.values(book || {})) for (const r of (list || [])) for (const n of Object.keys((r && r.materials) || {})) { const k = n.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim(); if (k && !out[k]) out[k] = { name: n, rank: rk[rar] || 'S' }; } } catch (e) {}
       return out; };
     const _rarOfRank = (r) => ({ E: 'common', D: 'common', C: 'rare', B: 'rare', A: 'epic', S: 'legendary' }[String(r).toUpperCase()] || 'common');
     if (sub === 'material' || sub === 'mat' || sub === 'item') {

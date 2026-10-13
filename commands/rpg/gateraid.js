@@ -562,11 +562,15 @@ module.exports = {
           // Push #68: the actor's OWN pending flow blocks them too (previously
           // the same holder could re-enter /attack before their 5-message
           // flow finished — double-spent kills and scrambled HP).
-          text: _lock.self
+          text: _lock.choosing
+            ? `🎯 *${_lock.holderName}* is picking their move (${_lock.secondsLeft}s left) — hold on! They can type *nil* to open play again.`
+            : _lock.self
             ? `⏳ *Your last move is still resolving!* Wait a moment before striking again.`
             : `⚔️ *${_lock.holderName}* is mid-battle... wait for their flow to finish, then strike!`,
         }, { quoted: msg });
       }
+      let _againOffer = false; // Push #102: tap menu after the flow
+      try { GR.clearChooseLock(gate.id, sender); } catch (e) {}
       try {
       const floor = gate.currentFloor;
       let floorMonsters = (gate.monsters || []).filter(mm => mm.floor === floor && !mm.defeated);
@@ -595,6 +599,7 @@ module.exports = {
           return sock.sendMessage(chatId, { text: `✅ Floor ${floor} cleared!\nAdvance: /party advance` }, { quoted: msg });
         }
       }
+      _againOffer = true;
       // Push #88: SUPPORT CAST — a heal/buff skill targets a TEAMMATE (or self)
       // and does NOT spend the turn: no monster counter-attack. High-rank
       // monsters remember the healer (aggro) for the next few counters.
@@ -702,7 +707,7 @@ module.exports = {
       // Check for attack pattern id in skillArg when action is attack (from /attack <id> routed via attacks.js)
       let patternId = null;
       if (action === 'attack' && skillArg) {
-        const pid = parseInt(String(skillArg).trim().split(' ')[0]);
+        const pid = parseInt(String(skillArg).trim().replace(/^#/, '').split(' ')[0]); // Push #102: "#123" works too
         if (!isNaN(pid) && pid >= 1 && pid <= 750) patternId = pid;
       }
       // Show status at start of turn — tick damage/effects then display
@@ -815,12 +820,12 @@ module.exports = {
           // Push #96h-n: a raised /guard intercepts the opening strike too.
           let _iGuard = null; try { _iGuard = GR.takeGuard(gate, sender, db); } catch (e) { _iGuard = null; }
           const _iVictim = _iGuard ? _iGuard.guardian : player; const _iVictimJid = _iGuard ? _iGuard.guardianJid : sender;
-          await sock.sendMessage(chatId, { text: `${target.emoji || '👹'} *${target.name}* lunges before *${player.name}* can act!` });
+          await sock.sendMessage(chatId, { text: GR.monsterCard(target, gate, `${target.emoji || '👹'} *${target.name}* lunges before *${player.name}* can act!`) });
           if (_iGuard) await sock.sendMessage(chatId, { text: `🛡️ *GUARD!* *${_iGuard.guardianName}* steps in and takes the opening strike meant for *${player.name}*!` });
           const _MSFXi = require('../../rpg/utils/MonsterSkillFX');
           const _iPool = (Array.isArray(target.skills) && target.skills.length) ? target.skills : [{ name: '🔥 Flame Spurt', effect: 'burn', chance: 40 }, { name: '⚡ Volt Shock', effect: 'stun', chance: 25 }, { name: '🩸 Savage Bite', effect: 'bleed', chance: 40 }, { name: '😱 Terror Howl', effect: 'fear', chance: 30 }, { name: '🌀 Void Crush', effect: 'weaken', chance: 35 }];
           const _iPick = _MSFXi.pickMoves(_iPool);
-          if (_iPick.support) { try { const _ss = _MSFXi.supportStep(target, player, _iPick.support); for (const b of _ss.blocks) { await sock.sendMessage(chatId, { text: b }); await new Promise(r => setTimeout(r, 500)); } } catch (e) {} }
+          if (_iPick.support) { try { const _ss = _MSFXi.supportStep(target, player, _iPick.support); for (const b of _ss.blocks) { await sock.sendMessage(chatId, { text: b }); await new Promise(r => setTimeout(r, 1750)); } } catch (e) {} }
           const _aDef = GR.effectiveDef(_iVictim, _iVictimJid); // Push #89: gear + title + pet
           const _hpBefore = _iVictim.stats.hp || 1;
           const _aRaw = GR.monsterDamage(target, _aDef, _iVictim);
@@ -1018,6 +1023,7 @@ module.exports = {
         const _eliteLeft = floor >= gate.totalFloors ? floorMonsters.filter(mm => !mm.defeated && mm.elite).length : 0;
         const remaining = floorMonsters.filter(mm => !mm.defeated && !(mm.elite && floor >= gate.totalFloors)).length;
         killLines.push(``, `👾 *${Math.max(0, remaining)}* monsters remaining on Floor ${floor}${_eliteLeft ? ` (+${_eliteLeft} elite guarding the boss)` : ''}`);
+        try { const _nx = floorMonsters.find(mm => !mm.defeated && (mm.hp || 0) > 0 && mm !== target); if (_nx && remaining > 0) killLines.push(``, GR.monsterCard(_nx, gate)); } catch (e) {} // Push #102
 
         if (remaining <= 0 && _revivedKill) {
           // Re-cleared a revived floor: treasure was already banked the first time.
@@ -1092,7 +1098,7 @@ module.exports = {
       const monsterSkill = _picked.attack;
       // Push #96h-m: a LEAKED beast regenerates 90% of its turns (free support move, like any other).
       if (_monCanAct.canAct && target.leaked && !_picked.support && target.hp < target.maxHp && Math.random() < 0.90) _picked.support = '💚 Regenerate';
-      if (_monCanAct.canAct && _picked.support) { try { const _ss = _MSFXc.supportStep(target, _victim, _picked.support); for (const b of _ss.blocks) { await sock.sendMessage(chatId, { text: b }); await new Promise(r => setTimeout(r, 500)); } } catch (e) {} }
+      if (_monCanAct.canAct && _picked.support) { try { const _ss = _MSFXc.supportStep(target, _victim, _picked.support); for (const b of _ss.blocks) { await sock.sendMessage(chatId, { text: b }); await new Promise(r => setTimeout(r, 1750)); } } catch (e) {} }
       if (!_monCanAct.canAct && _monCanAct.reason === 'initiative') {
         await sock.sendMessage(chatId, { text: [
           ...(pro ? [UI.PRO_BAR, `⚡ *MONSTER SPENT* 💎`, UI.PRO_BAR] : [`⚡ *MONSTER SPENT*`, UI.FREE_BAR]),
@@ -1186,7 +1192,16 @@ module.exports = {
       return sock.sendMessage(chatId, {
         text: msg3Lines.filter(Boolean).join('\n')
       }, { quoted: msg });
-      } finally { GR.releaseCombatLock(gate.id); } // Push #29
+      } finally {
+        GR.releaseCombatLock(gate.id); // Push #29
+        // Push #102: ⚔️ Attack again — tap menu (Pro picks plain / pattern / skill; free hunters are asked to type).
+        try {
+          if (_againOffer && pro && !raidOver(gate) && inRaid(gate, sender) && (player.stats?.hp || 0) > 0) {
+            const B = require('../../utils/buttons');
+            await B.sendButtons(sock, chatId, { text: `⚔️ *${player.name}* — strike again?`, buttons: B.quickReplies([['⚔️ Attack again', '/attack again']]) });
+          }
+        } catch (e) {}
+      }
     }
 
 
@@ -1313,7 +1328,7 @@ module.exports = {
         const bossAtk = (typeof boss.atk === 'number' && boss.atk > 0) ? boss.atk : Math.floor(GATE_RANKS[gate.rank].monsterRange[1] * 0.20 * ((gate.calibrated && gate.calibrated.severity) || 1));
         // Push #74: boss hits go through the same dodge/passive/weaken maths.
         const _bossRegen = Math.random() < 0.25 && boss.hp < boss.maxHp; // Push #96d: bosses can Regenerate · Push #96h-l: it is a FREE support move (no damage, no turn) — the boss still strikes
-        if (_bossRegen) { try { const _ss = require('../../rpg/utils/MonsterSkillFX').supportStep(boss, _bVictim, '💚 Regenerate'); for (const b of _ss.blocks) { await sock.sendMessage(chatId, { text: b }); await new Promise(r => setTimeout(r, 500)); } } catch (e) {} }
+        if (_bossRegen) { try { const _ss = require('../../rpg/utils/MonsterSkillFX').supportStep(boss, _bVictim, '💚 Regenerate'); for (const b of _ss.blocks) { await sock.sendMessage(chatId, { text: b }); await new Promise(r => setTimeout(r, 1750)); } } catch (e) {} }
         let dmg = GR.monsterDamage({ atk: bossAtk, speed: boss.speed || 14, statusEffects: boss.statusEffects || [], _raid: true, isBoss: true, rank: gate.rank }, def, _bVictim);
         if (_bGuard && _bGuard.aggro) await sock.sendMessage(chatId, { text: `🎯 *AGGRO!* *${boss.name}* turns on the healer *${_bGuard.guardianName}*!` });
         else if (_bGuard) await sock.sendMessage(chatId, { text: `🛡️ *GUARD!* *${_bGuard.guardianName}* steps in front of *${player.name}* and takes the boss's blow!` });

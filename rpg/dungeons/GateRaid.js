@@ -164,11 +164,39 @@ function monsterCritChance(monster) {
 // clamped 10–80. Held (stunned/frozen) monsters never win initiative.
 // Push #88t: ONLY a genuinely faster monster can win initiative — 0% when its
 // speed is equal or lower; +4% per point of speed edge, capped at 80%.
+// Push #102: LIVE speed — base stat × active SPEED buffs/debuffs (Lupine Dash +200%…) × status (stun −50%).
+// Before this the initiative and dodge rolls read the bare stat, so a +200% SPEED buff changed nothing.
+function liveSpeed(ent) {
+  if (!ent) return 10;
+  const base = Number(ent.speed || ent.stats?.speed || 10);
+  let m = 1;
+  try { m *= 1 + require('../utils/UnifiedCombat').tempBuffPct(ent, 'speed') / 100; } catch (e) {}
+  try { const SEM = require('../utils/StatusEffectManager'); const mods = SEM.getStatModifiers ? SEM.getStatModifiers(ent) : null; if (mods && mods.speedMod) m *= mods.speedMod; } catch (e) {}
+  return Math.max(1, Math.round(base * Math.max(0.1, m)));
+}
 function raidInitiativeChance(monster, player) {
-  const ms = Number(monster?.speed || monster?.stats?.speed || 10);
-  const ps = Number(player?.stats?.speed || 10);
+  const ms = liveSpeed(monster);
+  const ps = liveSpeed(player);
   if (ms <= ps) return 0;
   return Math.min(80, Math.round((ms - ps) * 4));
+}
+// Push #102: MINI STAT CARD — shown whenever a beast steps forward (initiative strike, next monster up).
+function monsterCard(monster, gate, title = null) {
+  if (!monster) return '';
+  const rank = String(monster.rank || gate?.rank || '?').toUpperCase();
+  const hp = Math.max(0, Math.floor(monster.hp || 0)), mhp = Math.max(hp, Math.floor(monster.maxHp || monster.hp || 0));
+  const atk = Math.floor(monster.atk || monster.stats?.atk || 0), def = Math.floor(monster.def || monster.stats?.def || 0);
+  const spd = liveSpeed(monster);
+  const skills = (Array.isArray(monster.skills) ? monster.skills : []).map(k => String(k.name || k).trim()).filter(Boolean).slice(0, 4);
+  const fx = (monster.statusEffects || []).filter(e => e && (e.duration == null || e.duration > 0)).map(e => `${String(e.type || e.name || '').toLowerCase()}${e.duration ? ` ${e.duration}t` : ''}`).filter(Boolean);
+  const lines = [
+    `${title || `${monster.emoji || '👹'} *${monster.name}* steps forward!`}`,
+    `🏷️ Rank ${rank} · ❤️ ${hp.toLocaleString()}/${mhp.toLocaleString()}`,
+    `⚔️ ATK ${atk.toLocaleString()} · 🛡️ DEF ${def.toLocaleString()} · 💨 SPD ${spd}`,
+  ];
+  if (skills.length) lines.push(`✨ Skills: ${skills.join(' · ')}`);
+  if (fx.length) lines.push(`🌀 Status: ${fx.join(', ')}`);
+  return lines.join('\n');
 }
 function raidMonsterGoesFirst(monster, player) {
   if (!monster || !player) return false;
@@ -180,8 +208,8 @@ function raidMonsterGoesFirst(monster, player) {
   return Math.random() * 100 < raidInitiativeChance(monster, player);
 }
 function monsterDodgeChance(monster, player) {
-  const ms = Number(monster?.speed || monster?.stats?.speed || 10);
-  const ps = Number(player?.stats?.speed || 10);
+  const ms = liveSpeed(monster);
+  const ps = liveSpeed(player);
   return Math.max(4, Math.min(25, 6 + (ms - ps) * 0.25));
 }
 // Roll a monster dodge against a hunter's strike. Frozen/stunned monsters never dodge.
@@ -191,7 +219,7 @@ function monsterDodges(monster, player, move = null) {
   // buffs, BLIND halves it) minus a capped speed dodge. Held monsters never dodge.
   try {
     const UC = require('../utils/UnifiedCombat');
-    const mon = { stats: { speed: Number(monster.speed || monster.stats?.speed || 10), atk: Number(monster.atk || monster.stats?.atk || 10) }, statusEffects: monster.statusEffects || [] };
+    const mon = { stats: { speed: liveSpeed(monster), atk: Number(monster.atk || monster.stats?.atk || 10) }, statusEffects: monster.statusEffects || [] };
     let pm = null; try { pm = require('../utils/ClassPower').passiveMultipliers(mon); } catch (e) {}
     const hc = UC.hitCheck(player, mon, move || { accuracy: player?.stats?.accuracy || 90 }, { pmD: pm });
     monsterDodges.last = hc; playerDamage.lastMiss = hc.hit ? null : hc;
@@ -476,8 +504,16 @@ function raidOf(gate, key, keyData) {
 // correct here — single process, and a restart clears all locks anyway.
 const _combatLocks = new Map(); // gateId -> { holder, name, ts }
 const COMBAT_LOCK_MS = 90_000;  // stale-lock auto-expiry (belt + braces)
+// Push #102: CHOOSE LOCK — a Pro hunter picking a move from the tap menu holds the floor (≤60s or "nil").
+const _chooseLocks = new Map(); // gateId -> { holder, name, until }
+const CHOOSE_LOCK_MS = 60e3;
+function setChooseLock(gateId, holder, name, ms = CHOOSE_LOCK_MS) { _chooseLocks.set(gateId, { holder, name, until: Date.now() + ms }); }
+function getChooseLock(gateId) { const c = _chooseLocks.get(gateId); if (!c) return null; if (c.until < Date.now()) { _chooseLocks.delete(gateId); return null; } return c; }
+function clearChooseLock(gateId, holder = null) { const c = _chooseLocks.get(gateId); if (!c) return false; if (holder && GKM.normaliseJid(c.holder) !== GKM.normaliseJid(holder)) return false; _chooseLocks.delete(gateId); return true; }
 function tryCombatLock(gateId, holder, name) {
   const now = Date.now();
+  const _ch = getChooseLock(gateId);
+  if (_ch && GKM.normaliseJid(_ch.holder) !== GKM.normaliseJid(holder)) return { ok: false, holderName: _ch.name || 'Another hunter', self: false, choosing: true, secondsLeft: Math.ceil((_ch.until - now) / 1000) };
   const cur = _combatLocks.get(gateId);
   // Push #68: the holder is blocked as well. The old self-exempt check let
   // the SAME hunter re-enter /attack (or /party boss) while their own
@@ -1924,7 +1960,8 @@ module.exports = { LEAK_MULT, LEAK_ATK_CUT, LEAK_REGEN_CHANCE: 0.90, LEAK_DOMAIN
   saveGateState,
   spawnWildPet,
   tryCombatLock,
-  hunterFalls, markFallen, isFallen, clearFallen, reviveFallen, FALLEN_TEXT, effectiveDef, IDLE_STRIKE_BY_RANK, rankSoften, reviveFloor, reviveStaleFloors, FLOOR_REVIVE_MS, FLOOR_REVIVE_MULT, berserkHunters, monsterCritChance, monsterDodgeChance, monsterDodges, critMultFor, noteRaidTurn, autoStrikeIdleRaids, IDLE_STRIKE_MS, IDLE_STRIKE_OTHER_MS, idleStrikeMsFor, raidInitiativeChance, raidMonsterGoesFirst, RAID_X2,
+  hunterFalls, markFallen, isFallen, clearFallen, reviveFallen, FALLEN_TEXT, effectiveDef,
+  liveSpeed, raidInitiativeChance, monsterCard, setChooseLock, getChooseLock, clearChooseLock, CHOOSE_LOCK_MS, /* Push #102 */ IDLE_STRIKE_BY_RANK, rankSoften, reviveFloor, reviveStaleFloors, FLOOR_REVIVE_MS, FLOOR_REVIVE_MULT, berserkHunters, monsterCritChance, monsterDodgeChance, monsterDodges, critMultFor, noteRaidTurn, autoStrikeIdleRaids, IDLE_STRIKE_MS, IDLE_STRIKE_OTHER_MS, idleStrikeMsFor, raidInitiativeChance, raidMonsterGoesFirst, RAID_X2,
   releaseCombatLock,
   wipeGate, keyStillLive, releaseStaleGC,
   applyMonsterScaling, floorMultiplier, severityLabel, markHealerAggro, pickAggroTarget, supportCast,

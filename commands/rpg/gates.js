@@ -47,6 +47,10 @@ const gate = {
 
     // ── /gate key list / /gate keys ───────────────────────────────────────────
     if (sub === 'keys' || sub === 'keylist' || (sub === 'key' && (sub2 === 'list' || sub2 === 'ls' || !sub2))) {
+      // Push #102: keys live in the GUILD keyring now — /gate keys is /guild keys.
+      return require('./guild').execute(sock, msg, ['keys', ...args.slice(1)], getDatabase, saveDatabase, sender);
+    }
+    if (false) {
       const allKeys = Object.entries(db.gateKeys || {}).filter(([, k]) => {
         return normaliseJid(k.ownedBy) === normaliseJid(sender)
             && !k.expired
@@ -264,12 +268,11 @@ const gate = {
         ...(pro ? [FRAME] : [FRAME, UI.upsell()]),
       ].join('\n');
 
-      // Deliver the key through the serf FIRST, then report the real result.
-      const SerfDM2 = require('../../rpg/utils/SerfDM');
-      const keyDmRes = await SerfDM2.sendSerfDM(sock, db, sender, { text: keyDmText });
-      const keyDmNotice = keyDmRes.ok
-        ? `📬 *Your gate key was SUCCESSFULLY SENT VIA SERF!* 🔥 Check your DM!`
-        : `❌ *Key DM failed:* ${keyDmRes.detail || keyDmRes.reason} \n\u2003\u2003Run /gate keys in my DM to retrieve it.`;
+      // Push #102: keys are NOT DM'd any more — they land in the guild keyring (/guild keys).
+      void keyDmText;
+      const keyDmNotice = result.keyData.guildName
+        ? `🗝️ Key stored in the *${result.keyData.guildName}* keyring → */guild keys* (Guildmaster / Vice / Officers).`
+        : `🗝️ Key stored in your keyring → */guild keys*.`;
 
       // GC Output: Do NOT reveal the gate key in public!
       await sock.sendMessage(chatId, {

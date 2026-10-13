@@ -2978,6 +2978,20 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
       }
     } catch (e) { console.error('registration reply error:', e.message); }
 
+    // ── Push #102: plain-text prompt answers (key rank letter, pattern id, skill name, "nil") ──
+    try {
+      const PP = require('../rpg/utils/PlainPrompt');
+      const _forms = [sender, msg.key?.participant, msg.participant, msg.key?.participantAlt].filter(Boolean);
+      if (PP.pending(chatId, _forms, getDatabase())) {
+        const r = await PP.resolve(chatId, _forms, messageText, getDatabase());
+        if (r) {
+          if (r.reply) { try { await sock.sendMessage(chatId, { text: r.reply, mentions: r.mentions || [] }, { quoted: msg }); } catch (e) {} }
+          if (r.command && options.rpgCommandHandler) await options.rpgCommandHandler(sock, msg, r.command, config, getDatabase, saveDatabase);
+          return;
+        }
+      }
+    } catch (e) { console.error('plain prompt error:', e.message); }
+
     // ── Numbered-menu replies (button replacement) ────────────────
     // Quote-reply with the number, or just send the number (2-min window).
     try {

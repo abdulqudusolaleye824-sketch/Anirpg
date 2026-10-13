@@ -191,6 +191,56 @@ module.exports = {
       try { _CM71._dmPlayer && _CM71._dmPlayer(db, r.target.id, r.dm); } catch (e) {}
       return sock.sendMessage(chatId, { text: `${FRAME}\n${r.text}\n${FRAME}`, mentions: [r.target.id] }, { quoted: msg });
     }
+    // ═══════════════════════════════════════════════════════════════════
+    // Push #102: /guild keys [rank] — the guild keyring (GM / Vice / Officer; affiliates see their own)
+    // ═══════════════════════════════════════════════════════════════════
+    if (action === 'keys' || action === 'keyring' || action === 'key') {
+      const GK = require('../../rpg/utils/GuildKeys');
+      const B = require('../../utils/buttons');
+      const isGroupChat = String(chatId).endsWith('@g.us');
+      const v = GK.visible(db, sender);
+      if (!v.ok) return sock.sendMessage(chatId, { text: v.error }, { quoted: msg });
+      saveDatabase(); // migration stamps
+      const keys = v.keys;
+      if (!keys.length) return sock.sendMessage(chatId, { text: `${FRAME}\n🔑 *${v.guildName.toUpperCase()} KEYRING*${pro ? ' 💎' : ''}\n${FRAME}\n\n❌ No live gate keys. Buy one with */gate buy* when a gate spawns — it lands here.` }, { quoted: msg });
+      const full = GK.listText(keys, { pro, FRAME, guildName: v.guildName });
+      const held = GK.ranksHeld(keys);
+      const soonest = keys[0];
+      const rankArg = String(args[1] || '').trim().toUpperCase();
+      const _askRank = async (prefix) => {
+        const hint = pro ? `\n💎 *PRO hint:* the key lapsing soonest is *${String(soonest.gateRank).toUpperCase()}-rank* (${require('../../rpg/dungeons/GateKeyManager').formatStability(Math.max(0, soonest.expiresAt - Date.now()))} left).` : '';
+        const PP = require('../../rpg/utils/PlainPrompt');
+        const forms = [sender, msg.key?.participant, msg.participant, msg.key?.participantAlt].filter(Boolean);
+        PP.expect(chatId, forms, (text, { cancelled }) => {
+          if (cancelled) return { reply: `🔒 Keyring closed.` };
+          const r = String(text).trim().toUpperCase().replace(/[^A-Z]/g, '').slice(0, 1);
+          if (!GK.RANKS.includes(r)) return { reply: `❌ Reply with one letter: ${held.join(', ')} — or *nil*.` };
+          return { command: `/guild keys ${r}` };
+        }, 120e3);
+        return B.sendButtons(sock, chatId, {
+          text: `${prefix ? prefix + '\n\n' : ''}🔑 *${v.guildName.toUpperCase()} KEYRING* — ${keys.length} live key${keys.length === 1 ? '' : 's'} (${held.join(' · ')}).\n⚠️ No serf detected for your DM — *pick a rank* and the key of that rank lapsing soonest is posted here (just one).\nReply with a letter: *${held.join(' / ')}* — or *nil* to close.${hint}`,
+          mentions: [sender],
+          buttons: B.quickReplies(held.map(r => [`${r}-Rank`, `/guild keys ${r}`])),
+        }, msg);
+      };
+      if (rankArg && /^[EDCBAS]$/.test(rankArg)) {
+        const k = GK.soonestOfRank(keys, rankArg);
+        if (!k) return _askRank(`❌ No *${rankArg}-rank* key in the keyring — pick again.`);
+        require('../../rpg/utils/PlainPrompt').cancel(chatId, [sender, msg.key?.participant, msg.participant].filter(Boolean));
+        if (isGroupChat) { // serf up → the single key still goes to DM, never the open group
+          try { const SD = require('../../rpg/utils/SerfDM'); const so = SD.getSerfSocket(db, sender); if (so && so.ok) { const r = await SD.sendSerfDM(sock, db, sender, { text: `${FRAME}\n🔑 *${rankArg}-RANK KEY — ${v.guildName.toUpperCase()}*\n${FRAME}\n${GK.keyCard(k, { pro, FRAME })}` }); if (r && r.ok) return sock.sendMessage(chatId, { text: SD.resultNotice(`🔑 ${rankArg}-RANK KEY`, r) }, { quoted: msg }); } } catch (e) {}
+        }
+        return sock.sendMessage(chatId, { text: `${FRAME}\n🔑 *KEY FROM THE ${v.guildName.toUpperCase()} KEYRING*${pro ? ' 💎' : ''}\n${FRAME}\n${GK.keyCard(k, { pro, FRAME })}\n${FRAME}\n📌 */party create --${k.key}* in a registered dungeon GC.\n⚠️ Posted in the open — anyone here can use it.` }, { quoted: msg });
+      }
+      if (!isGroupChat) return sock.sendMessage(chatId, { text: full }, { quoted: msg });
+      const SerfDM = require('../../rpg/utils/SerfDM');
+      const serfOk = SerfDM.getSerfSocket(db, sender);
+      if (serfOk && serfOk.ok) {
+        const dmRes = await SerfDM.sendSerfDM(sock, db, sender, { text: full });
+        if (dmRes && dmRes.ok) return sock.sendMessage(chatId, { text: SerfDM.resultNotice(`🔑 ${v.guildName.toUpperCase()} KEYRING (${keys.length})`, dmRes) }, { quoted: msg });
+      }
+      return _askRank('');
+    }
     if (action === 'active' || action === 'clearance') {
       const GSk = require('../../rpg/utils/GuildSack');
       const r = GSk.clear(db, playerGuild, sender);
