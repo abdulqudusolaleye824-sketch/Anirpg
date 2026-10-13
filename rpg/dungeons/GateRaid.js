@@ -166,9 +166,18 @@ function monsterCritChance(monster) {
 // speed is equal or lower; +4% per point of speed edge, capped at 80%.
 // Push #102: LIVE speed — base stat × active SPEED buffs/debuffs (Lupine Dash +200%…) × status (stun −50%).
 // Before this the initiative and dodge rolls read the bare stat, so a +200% SPEED buff changed nothing.
-function liveSpeed(ent) {
+function liveSpeed(ent, jid = null) {
   if (!ent) return 10;
-  const base = Number(ent.speed || ent.stats?.speed || 10);
+  let base = Number(ent.speed || ent.stats?.speed || 10);
+  // Push #102d: a HUNTER's speed is the /stats total — base + gear + title + constellation + pet + class passives.
+  // (282 on /stats, 200 in the initiative roll: a 247-speed beast "lunged first" — that was this gap.)
+  if (ent.stats && !ent.speed && (ent.inventory || ent.equippedGear || ent.class || ent.jid)) {
+    try { base += Number(require('../utils/GearSystem').getEquippedBonuses(ent).speed) || 0; } catch (e) {}
+    try { base += Number(require('../utils/TitleSystem').getEquippedBoost(ent).speed) || 0; } catch (e) {}
+    try { base += Number(require('../utils/ConstellationSystem').getSponsorBonus(ent).speed) || 0; } catch (e) {}
+    try { const j = jid || ent.jid; if (j) base += Number(require('../utils/PetCombat').spdBonus(j)) || 0; } catch (e) {}
+    try { const pm = require('../utils/ClassPower').passiveMultipliers(ent); if (pm && pm.speed) base *= 1 + pm.speed / 100; } catch (e) {}
+  }
   let m = 1;
   try { m *= 1 + require('../utils/UnifiedCombat').tempBuffPct(ent, 'speed') / 100; } catch (e) {}
   try { const SEM = require('../utils/StatusEffectManager'); const mods = SEM.getStatModifiers ? SEM.getStatModifiers(ent) : null; if (mods && mods.speedMod) m *= mods.speedMod; } catch (e) {}
@@ -1118,6 +1127,7 @@ const MON_ATK_BUFF = 1.7 * RAID_X2, MON_DEF_BUFF = 1.4 * RAID_X2 * 1.75 * 2.2, M
 const RANK_SOFTEN = { A: 0.75, B: 0.75, C: 0.75, D: 0.75, E: 0.75 };
 function rankSoften(rank) { return RANK_SOFTEN[String(rank || '').toUpperCase()] || 1; }
 const GATE_TUNE = 0.85, RED_GATE_TUNE = 1.15, LEAK_TUNE = 1.15; // Push #96h-z9
+const BEAST_HP_BUFF = 1.40, BEAST_ATK_BUFF = 1.20; // Push #102d: every raid monster & boss +40% HP, +20% ATK
 const LEAK_MULT = 5; // Push #96h-m: 5× (silent — never stated in text)
 const LEAK_ATK_CUT = 0.30; // Push #96h-n: leaked ATK −70% (5× × 0.3 = 1.5× habitat ATK)
 const SPEED_RANK_FACTOR = { E: 0.55, D: 0.65, C: 0.75, B: 0.85, A: 0.95, S: 1.10, SS: 1.25 };
@@ -1155,7 +1165,7 @@ function applyMonsterScaling(gate) {
     // Push #96h-m: a LEAKED beast is 5× what it would be in its own habitat (kept silent in-chat).
     if (mon.leaked) { mon.maxHp = Math.floor(mon.maxHp * LEAK_MULT); mon.hp = Math.max(1, Math.floor(mon.maxHp * hpPct)); mon.atk = Math.floor(mon.atk * LEAK_MULT * LEAK_ATK_CUT); mon.def = Math.floor(mon.def * LEAK_MULT); mon.speed = Math.round(mon.speed * 1.5); } // Push #96h-n: ATK cut 70%
     // Push #96h-z9: tuning — regular gates −15%; RED gates +15%; a leaked beast a further +15% (HP/ATK/DEF).
-    { const _gt = (gate.redGate ? RED_GATE_TUNE : GATE_TUNE) * (mon.leaked ? LEAK_TUNE : 1); mon.maxHp = Math.max(5, Math.floor(mon.maxHp * _gt)); mon.hp = Math.max(1, Math.floor(mon.maxHp * hpPct)); mon.atk = Math.max(1, Math.floor(mon.atk * _gt)); mon.def = Math.floor(mon.def * _gt); }
+    { const _gt = (gate.redGate ? RED_GATE_TUNE : GATE_TUNE) * (mon.leaked ? LEAK_TUNE : 1); mon.maxHp = Math.max(5, Math.floor(mon.maxHp * _gt * BEAST_HP_BUFF)); mon.hp = Math.max(1, Math.floor(mon.maxHp * hpPct)); mon.atk = Math.max(1, Math.floor(mon.atk * _gt * BEAST_ATK_BUFF)); mon.def = Math.floor(mon.def * _gt); }
     // Push #97: TERRAIN — a beast standing on home ground gets the terrain's boost (stated at raid start).
     try { const T = require('../data/Terrains'); const _t = T.get(gate.terrain); if (_t && T.isHome(_t, mon, GateManager.monsterFamily)) { const hb = _t.homeBoost || {}; if (hb.atk) mon.atk = Math.max(1, Math.floor(mon.atk * (1 + hb.atk / 100))); if (hb.def) mon.def = Math.floor(mon.def * (1 + hb.def / 100)); mon.homeGround = true; } else mon.homeGround = false; } catch (e) {}
     // Push #97: DEF is anchored to the party — no beast may shrug off a hunter's hit entirely (cap 55% of the party's average ATK).
@@ -1196,7 +1206,7 @@ function applyMonsterScaling(gate) {
     gate.boss.speed = Math.max(gate.boss.speed, Math.round(_anchorSpeed(gate, 1, true)));
     { const TM = _types(); if (TM && !gate.boss._typedBoss) { const tm = TM.mults(gate.boss); gate.boss._typedBoss = true; gate.boss.typeLabel = tm.label; gate.boss.critBonus = tm.crit; gate.boss._typeMult = tm; }
       const tm = gate.boss._typeMult; if (tm) { gate.boss.maxHp = Math.floor(gate.boss.maxHp * tm.hp); gate.boss.hp = Math.max(1, Math.floor(gate.boss.maxHp * hpPct)); gate.boss.atk = Math.floor(gate.boss.atk * tm.atk); gate.boss.def = Math.floor(gate.boss.def * tm.def); gate.boss.speed = Math.round(gate.boss.speed * tm.speed); } }
-      { const _gt = gate.redGate ? RED_GATE_TUNE : GATE_TUNE; gate.boss.maxHp = Math.max(50, Math.floor(gate.boss.maxHp * _gt)); gate.boss.hp = Math.max(1, Math.floor(gate.boss.maxHp * hpPct)); gate.boss.atk = Math.max(1, Math.floor(gate.boss.atk * _gt)); gate.boss.def = Math.floor(gate.boss.def * _gt); } // Push #96h-z9
+      { const _gt = gate.redGate ? RED_GATE_TUNE : GATE_TUNE; gate.boss.maxHp = Math.max(50, Math.floor(gate.boss.maxHp * _gt * BEAST_HP_BUFF)); gate.boss.hp = Math.max(1, Math.floor(gate.boss.maxHp * hpPct)); gate.boss.atk = Math.max(1, Math.floor(gate.boss.atk * _gt * BEAST_ATK_BUFF)); gate.boss.def = Math.floor(gate.boss.def * _gt); } // Push #96h-z9 · #102d buff
     { const _pa = gate.calibrated && gate.calibrated.avgAtk; if (_pa > 0) gate.boss.def = Math.min(gate.boss.def, Math.floor(_pa * 0.55)); } // Push #97: boss DEF anchored to the party (never a 0-damage wall)
   }
 }
@@ -1935,7 +1945,7 @@ try {
 module.exports = { LEAK_MULT, LEAK_ATK_CUT, LEAK_REGEN_CHANCE: 0.90, LEAK_DOMAIN_CHANCE: 0.80,
   findOtherRaid,
   SEVERITY_BAND, dayFlex, rollRedExtra,
-  GATE_TUNE, RED_GATE_TUNE, LEAK_TUNE, RED_GATE_CHANCE, DOUBLE_DUNGEON_CHANCE, LEAK_CHANCE, RED_GATE_TEXT, sealedReason, leakMonster, leakReveal, morphLeak, LEAK_EVADE, succeedLeader, takeLeaderNotice, doublePending, evolveDouble, grantDoubleBoxes, // Push #96d
+  GATE_TUNE, RED_GATE_TUNE, LEAK_TUNE, BEAST_HP_BUFF, BEAST_ATK_BUFF, RED_GATE_CHANCE, DOUBLE_DUNGEON_CHANCE, LEAK_CHANCE, RED_GATE_TEXT, sealedReason, leakMonster, leakReveal, morphLeak, LEAK_EVADE, succeedLeader, takeLeaderNotice, doublePending, evolveDouble, grantDoubleBoxes, // Push #96d
   livingMembers,
   calibrateToParty, partyLuck, RANK_EXPECTED_POWER, totalStatsOf,
   MAX_PARTY,

@@ -11,7 +11,7 @@ const closeall = {
     await sock.sendMessage(chatId, { text: '🔒 Closing every group… this takes a moment.' }, { quoted: msg });
     const notice = `🔒 *GROUP CLOSED*\nOnly admins can send messages now.\n👑 Closed by @${bare(sender)} (${who}) · ${stamp()}`;
     const r = await setAll('close', sender, db, saveDatabase, notice);
-    return sock.sendMessage(chatId, { text: `🔒 *CLOSE ALL* — ${r.done.length}/${r.total} groups closed & locked.${r.failed.length ? `\n⚠️ Could not close (bot not admin?): ${r.failed.join(', ')}` : ''}\n\n/open is refused in locked groups; /openall lifts the lock.` }, { quoted: msg });
+    return sock.sendMessage(chatId, { text: `🔒 *CLOSE ALL* — ${r.done.length}/${r.total} groups closed & locked${r.skipped && r.skipped.length ? ` (${r.skipped.length} already closed by an admin — left alone, /openall won't touch them)` : ''}.${r.failed.length ? `\n⚠️ Could not close (bot not admin?): ${r.failed.join(', ')}` : ''}\n\n/open is refused in locked groups; /openall lifts the lock.` }, { quoted: msg });
   },
 };
 module.exports = closeall;

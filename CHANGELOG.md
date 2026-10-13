@@ -1,3 +1,10 @@
+## 1.0.199 — Push #102d (2026-10-13) — real hunter speed, beast buff, stats sources, /hi, /openall
+- **"282 speed, a 247 beast lunged first":** the initiative/dodge rolls used the hunter's BASE speed only; `/stats` shows base + gear + title + constellation + pet (+ class passives). The roll now uses that same total.
+- **All raid monsters & bosses: HP +40 %, ATK +20 %** (on top of the existing calibration; DEF unchanged, still capped by the party's ATK).
+- **/stats → "🔎 WHERE THE EXTRAS COME FROM"**: each gear piece, weapon, title, constellation, pet, live skill buffs/debuffs (with turns left), job bonuses and status multipliers.
+- **/hi has no cooldown.**
+- **/openall opens only groups /closeall closed.** /closeall skips groups an admin had already closed by hand (and says so) — those stay closed on /openall.
+
 ## 1.0.198 — Push #102c (2026-10-13) — party buttons, advance flow, bugs 028–030
 - **Pro affiliate accepting a hire** gets the ✅ Ready button right away (theirs alone) — it only existed on `/party join` before.
 - **🚀 Party raid** button now also finds a leader stored under a lid/phone twin.

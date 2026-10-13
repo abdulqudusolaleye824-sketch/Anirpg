@@ -11,8 +11,8 @@ const openall = {
     await sock.sendMessage(chatId, { text: '🔓 Opening every group… this takes a moment.' }, { quoted: msg });
     const notice = `🔓 *GROUP OPENED*\nEveryone can send messages now.\n👑 Opened by @${bare(sender)} (${who}) · ${stamp()}`;
     const r = await setAll('open', sender, db, saveDatabase, notice);
-    db.lockedGroups = {}; try { saveDatabase(); } catch (e) {}
-    return sock.sendMessage(chatId, { text: `🔓 *OPEN ALL* — ${r.done.length}/${r.total} groups opened, locks lifted.${r.failed.length ? `\n⚠️ Could not open (bot not admin?): ${r.failed.join(', ')}` : ''}` }, { quoted: msg });
+    try { saveDatabase(); } catch (e) {}
+    return sock.sendMessage(chatId, { text: `🔓 *OPEN ALL* — ${r.done.length} group${r.done.length === 1 ? '' : 's'} opened (only those /closeall closed; ${r.skipped.length} left untouched).${r.failed.length ? `\n⚠️ Could not open (bot not admin?): ${r.failed.join(', ')}` : ''}` }, { quoted: msg });
   },
 };
 module.exports = openall;

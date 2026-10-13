@@ -10,7 +10,7 @@ async function allGroups(socketsOverride) {
   for (const s of Object.values(sockets)) {
     if (!s || !s.user || typeof s.groupFetchAllParticipating !== 'function') continue;
     let all = {}; try { all = await s.groupFetchAllParticipating(); } catch (e) { continue; }
-    for (const [id, meta] of Object.entries(all || {})) { const rec = out.get(id) || { subject: (meta && meta.subject) || id, socks: [] }; rec.socks.push(s); out.set(id, rec); }
+    for (const [id, meta] of Object.entries(all || {})) { const rec = out.get(id) || { subject: (meta && meta.subject) || id, socks: [], announce: !!(meta && meta.announce) }; rec.socks.push(s); out.set(id, rec); }
   }
   return out;
 }
@@ -18,8 +18,12 @@ async function allGroups(socketsOverride) {
 async function setAll(mode, by, db, saveDatabase, notice, socketsOverride) {
   const groups = await allGroups(socketsOverride);
   if (!db.lockedGroups) db.lockedGroups = {};
-  const done = [], failed = [];
+  const done = [], failed = [], skipped = [];
   for (const [id, g] of groups) {
+    // Push #102d: /closeall remembers only groups that were OPEN when it ran; /openall touches ONLY those —
+    // a group an admin closed by hand (or that was never recorded) stays as it is.
+    if (mode === 'close' && g.announce && !db.lockedGroups[id]) { skipped.push(g.subject); continue; }
+    if (mode === 'open' && !db.lockedGroups[id]) { skipped.push(g.subject); continue; }
     let ok = false;
     for (const s of g.socks) {
       try { await s.groupSettingUpdate(id, mode === 'close' ? 'announcement' : 'not_announcement'); ok = true; try { await s.sendMessage(id, { text: notice, mentions: [by] }); } catch (e) {} break; } catch (e) {}
@@ -28,7 +32,7 @@ async function setAll(mode, by, db, saveDatabase, notice, socketsOverride) {
     else failed.push(g.subject);
   }
   try { saveDatabase(); } catch (e) {}
-  return { done, failed, total: groups.size };
+  return { done, failed, skipped, total: groups.size };
 }
 
 function isLocked(db, chatId) { return !!(db && db.lockedGroups && db.lockedGroups[chatId]); }

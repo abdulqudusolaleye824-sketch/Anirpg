@@ -165,6 +165,23 @@ module.exports = {
     if ((player.stats.lifesteal||0) > 0)  msg2 += `\n💚 LIFESTEAL: *${player.stats.lifesteal}%*`;
     if ((player.stats.magicPower||0) > 0) msg2 += `\n✨ MAGIC PWR: *${player.stats.magicPower}*`;
 
+    // ── Push #102d: WHERE THE EXTRAS COME FROM ───────────────────────
+    try {
+      const src = [];
+      const _fmt = (o, keys) => keys.map(([k, lab]) => (Number(o && o[k]) ? `${lab} +${Math.round(Number(o[k]))}` : null)).filter(Boolean).join(' · ');
+      const K = [['atk', 'ATK'], ['def', 'DEF'], ['hp', 'HP'], ['maxHp', 'HP'], ['speed', 'SPD'], ['crit', 'CRIT%']];
+      try { for (const [slot, g] of Object.entries(player.equippedGear || {})) { if (!g || typeof g !== 'object') continue; const l = _fmt(g.stats || g, [['atk', 'ATK'], ['def', 'DEF'], ['hp', 'HP'], ['spd', 'SPD'], ['speed', 'SPD'], ['crit', 'CRIT%']]); if (l) src.push(`🧥 ${g.name || slot}: ${l}`); } } catch (e) {}
+      if (weaponBonus) src.push(`🗡️ ${player.weapon?.name || 'Weapon'}: ATK +${weaponBonus}${player.weapon?.defense ? ` · DEF +${player.weapon.defense}` : ''}`);
+      { const l = _fmt(titleBonus, K); if (l) src.push(`🏅 Title${player.equippedTitle ? ` (${player.equippedTitle.name || player.equippedTitle})` : ''}: ${l}`); }
+      { const l = _fmt(consBonus, K); if (l) src.push(`🌌 Constellation: ${l}`); }
+      try { const PC = require('../../rpg/utils/PetCombat'); const pa = PC.atkBonus(sender) || 0, pd = PC.defBonus(sender) || 0, ps = PC.spdBonus(sender) || 0; if (pa || pd || ps) src.push(`🐾 Pet: ${[pa && `ATK +${pa}`, pd && `DEF +${pd}`, ps && `SPD +${ps}`].filter(Boolean).join(' · ')}`); } catch (e) {}
+      try { const UC = require('../../rpg/utils/UnifiedCombat'); const live = Object.values(player.tempBuffs || {}).filter(b => b && b.stat && (b.duration || 0) > 0); for (const b of live) src.push(`${Number(b.amount) >= 0 ? '⬆️' : '⬇️'} ${String(b.stat).toUpperCase()} ${Number(b.amount) >= 0 ? '+' : ''}${Math.round(Number(b.amount))}% (${b.duration}t)`); void UC; } catch (e) {}
+      try { const JS = require('../../rpg/utils/JobSystem'); const jl = JS.activeBonusLines ? JS.activeBonusLines(player) : []; for (const l of jl || []) src.push(`💼 ${l}`); } catch (e) {}
+      try { const SE = require('../../rpg/utils/StatusEffectManager'); const m = SE.getStatModifiers(player); const sl = []; if (m && m.atkMod !== 1) sl.push(`ATK ×${m.atkMod}`); if (m && m.defMod !== 1) sl.push(`DEF ×${m.defMod}`); if (m && m.speedMod !== 1) sl.push(`SPD ×${m.speedMod}`); if (sl.length) src.push(`🌀 Status: ${sl.join(' · ')}`); } catch (e) {}
+      msg2 += `\n${FRAME}\n🔎 *WHERE THE EXTRAS COME FROM*\n${FRAME}`;
+      msg2 += src.length ? `\n${src.join('\n')}` : `\n_No gear, title, pet, job or buff bonuses active — the numbers above are your base stats._`;
+    } catch (e) {}
+
     // ── Attack Patterns ───────────────────────────────────────
     const ownedPatterns = player.attackPatterns?.owned || [];
     const equippedPat   = player.attackPatterns?.equipped || [];

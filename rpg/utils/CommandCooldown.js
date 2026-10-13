@@ -36,8 +36,10 @@ function _isOwner(db, sender) { try { return !!require('../../utils/permissions'
 function _isPro(player) { try { return !!require('./UI').isPro(player || {}); } catch (e) { return false; } }
 
 // Returns null when the command may run (and arms the cooldown), else { left, total, text }.
+const NO_COOLDOWN = new Set(['hi', 'hello', 'hey', 'botpersonality']); // Push #102d: greeting the bot is never throttled
 function check(db, sender, cmd, opts = {}) {
   if (!sender || !cmd) return null;
+  if (NO_COOLDOWN.has(String(cmd).toLowerCase())) return null;
   if (opts.exempt || _isOwner(db, sender)) return null;
   const player = db && db.users ? db.users[sender] : null;
   let total = secondsFor(cmd, db);
