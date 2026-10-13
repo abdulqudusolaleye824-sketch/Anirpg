@@ -62,8 +62,11 @@ module.exports = {
     // Helper: Parse percentages like "60|40", "60/40", "60 40", or "40"
     function parseSplit(strText) {
       const text = String(strText || '').trim();
+      // BUG-030: "-60|160" produced a negative cut and a negative balance. Both halves must be 0–100 and sum to 100.
+      if (/[-\u2212]/.test(text)) return null;
       const parts = text.split(/[/| ]+/).map(p => parseInt(p, 10)).filter(n => !isNaN(n));
       if (parts.length === 2) {
+        if (parts[0] < 0 || parts[1] < 0 || parts[0] > 100 || parts[1] > 100 || parts[0] + parts[1] !== 100) return null;
         return { firstPct: parts[0], secondPct: parts[1] };
       }
       if (parts.length === 1 && parts[0] > 0 && parts[0] < 100) {
@@ -390,8 +393,7 @@ module.exports = {
         delete db.affiliateOffers[sender];
         saveDatabase();
 
-        return sock.sendMessage(chatId, {
-          text: [
+        const _acceptTxt = [
             ...(pro ? [UI.PRO_BAR, `🤝 *HIRE OFFER ACCEPTED!* 💎`, UI.PRO_BAR] : [`🤝 *HIRE OFFER ACCEPTED!*`, UI.FREE_BAR]),
             `👤 Hunter: *${player.name}*`,
             `🔑 Party Key: \`${offer.partyKey}\``,
@@ -400,8 +402,10 @@ module.exports = {
             `✅ You joined the party as a hired affiliate! Run */party ready* when ready.`,
             FRAME,
             ...(pro ? [UI.PRO_MINI, `💎 *PRO DEAL* — ${offer.affiliatePct}% cut · /party ready`] : [UI.upsell()]),
-          ].join('\n'),
-        }, { quoted: msg });
+          ].join('\n');
+        // Push #102c: a Pro affiliate gets the Ready button right away (theirs alone).
+        if (pro && _seated) { try { const B = require('../../utils/buttons'); const r = await B.sendButtons(sock, chatId, { text: _acceptTxt, mentions: [sender], buttons: B.quickReplies([[`✅ Ready`, `/party ready --tap:${String(sender).split('@')[0].split(':')[0]}`]]) }, msg); if (r && r.mode !== 'dropped') return; } catch (e) {} }
+        return sock.sendMessage(chatId, { text: _acceptTxt }, { quoted: msg });
       }
     }
 

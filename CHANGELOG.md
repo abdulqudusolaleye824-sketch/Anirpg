@@ -1,3 +1,11 @@
+## 1.0.198 — Push #102c (2026-10-13) — party buttons, advance flow, bugs 028–030
+- **Pro affiliate accepting a hire** gets the ✅ Ready button right away (theirs alone) — it only existed on `/party join` before.
+- **🚀 Party raid** button now also finds a leader stored under a lid/phone twin.
+- **After `/party advance`:** the first beast's mini stat card steps forward and the Pro advancer gets an ⚔️ Attack button.
+- **BUG-028** `/gear equip` said the previous piece "was destroyed" — it goes back to the bag (it always did since #101); wording fixed.
+- **BUG-029** `/cast` for a Monster whose row carries the variant name ("Toxic Serpent") → "Class data not found": the dispatcher resolves the canonical class now.
+- **BUG-030** `/affiliate hire @x -60|160` produced a negative cut → negative balance. Splits must be 0–100 each and sum to 100.
+
 ## 1.0.197 — Push #102b (2026-10-13) — tap-flow fixes
 - **Skill/pattern picked from the tap menu failed** ("That hunter is not in this raid party"): the reply quoted the bot's prompt, and the target resolver treated the bot as the cast target. Replying to any bot message is never targeting now.
 - **Attack again** only appears after the strike actually resolved (not before an error), belongs to the hunter who struck, and on the **last monster of a floor** it becomes **➡️ Party advance** (or **👹 Party boss** on the boss floor).

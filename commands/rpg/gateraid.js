@@ -416,7 +416,12 @@ module.exports = {
       } catch(e){}
       try { GR.saveGateState(db, gate); } catch (e) {}
       saveDatabase();
-      return sock.sendMessage(chatId, {
+      // Push #102c: the first beast of the new floor steps forward (mini stat card) and a Pro advancer gets the Attack button.
+      const _advTail = async () => { try {
+        if (next[0]) await sock.sendMessage(chatId, { text: GR.monsterCard(next[0], gate) });
+        if (pro && next.length) { const B = require('../../utils/buttons'); await B.sendButtons(sock, chatId, { text: `⚔️ *${player.name}* — open the floor?`, buttons: B.quickReplies([['⚔️ Attack', `/attack again --tap:${String(sender).split('@')[0].split(':')[0]}`]]) }); }
+      } catch (e) {} };
+      await sock.sendMessage(chatId, {
         text: [
           ...(pro ? [UI.PRO_BAR, `➡️ *FLOOR ${gate.currentFloor}* 💎`, UI.PRO_BAR] : [`➡️ *FLOOR ${gate.currentFloor}*`, UI.FREE_BAR]),
           `「System」 Entering Floor ${gate.currentFloor} of ${gate.totalFloors}...`,
@@ -430,6 +435,7 @@ module.exports = {
           ...(pro ? [FRAME, UI.PRO_MINI, `💎 *PRO SCOUT* — strongest: ${next.length ? UI.num(Math.max(...next.map(mm => mm.hp || 0))) : 0} HP`] : [FRAME, UI.upsell()]),
         ].filter(l => l !== '').join('\n'),
       }, { quoted: msg });
+      return _advTail();
     }
 
     // ── ATTACK / SKILL ──────────────────────────────────────────

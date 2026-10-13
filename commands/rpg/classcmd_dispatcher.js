@@ -43,7 +43,9 @@ module.exports = {
     const pro = UI.isPro(player);
     const FRAME = pro ? UI.PRO_BAR : UI.FREE_BAR;
 
-    const className = typeof player.class === 'string' ? player.class : (player.class?.name || null);
+    // BUG-029: a Monster whose row says "Toxic Serpent" (the variant) must resolve to the Monster class.
+    let className = typeof player.class === 'string' ? player.class : (player.class?.name || null);
+    try { const _c = require('../../rpg/utils/SkillCatalog').canonicalClassName(player); if (_c && CS.CLASS_DATA[_c]) className = _c; else if (className && !CS.CLASS_DATA[className]) { const _k = Object.keys(CS.CLASS_DATA).find(k => k.toLowerCase() === String(className).toLowerCase()); if (_k) className = _k; } } catch (e) {}
 
     // ── 1. No class assigned? ─────────────────────────────────
     if (!className) {

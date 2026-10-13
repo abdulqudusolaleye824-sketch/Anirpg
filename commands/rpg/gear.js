@@ -100,7 +100,7 @@ module.exports = {
       saveDatabase();
 
       let reply = pro ? `${UI.PRO_BAR}\n✅ *GEAR EQUIPPED!* 💎\n${UI.PRO_BAR}\n\n✅ Equipped *${piece.name}*!\n` : `✅ Equipped *${piece.name}*!\n`;
-      if (hadOld) reply += `⚠️ Previous ${si.name} (${hadOld.name}) was destroyed.\n`;
+      if (hadOld) reply += `🎒 Previous ${si.name} (${hadOld.name}) went back to your bag.\n`; // BUG-028: it was never destroyed
       reply += `\n${si.emoji} ${si.name} slot now active.\n${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO GEAR* — ${si.name} active` : `\n${UI.upsell()}`);
 
       return sock.sendMessage(chatId, { text: reply }, { quoted: msg });

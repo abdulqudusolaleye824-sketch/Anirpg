@@ -514,7 +514,7 @@ module.exports = {
         responseText += `\n\n🎉 *ALL MEMBERS ARE READY!* Leader can run */party raid* to launch!`;
         // Push #102b: a Pro leader gets the launch button (theirs alone).
         try {
-          const _leaderJid = raid.leader; const _leader = db.users?.[_leaderJid];
+          const _leaderJid = raid.leader; let _leader = db.users?.[_leaderJid]; if (!_leader) { try { const _n = normaliseJid(_leaderJid); _leader = Object.values(db.users || {}).find(u => u && u.jid && normaliseJid(u.jid) === _n) || null; } catch (e) {} }
           if (_leader && UI.isPro(_leader) && Buttons?.sendButtons) {
             await sock.sendMessage(chatId, { text: responseText, mentions: [sender] }, { quoted: msg });
             await Buttons.sendButtons(sock, chatId, { text: `🚀 *${_leader.name}* — everyone is ready. Launch?`, mentions: [_leaderJid], buttons: Buttons.quickReplies([[`🚀 Party raid`, `/party raid ${_tapOf(_leaderJid)}`]]) });
