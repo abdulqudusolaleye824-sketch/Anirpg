@@ -23,16 +23,19 @@ function numberArg(args) {
   }
   return null;
 }
+// Push #102b: replying to a BOT's message (a prompt, a battle line) is never "targeting the bot".
+function _isBot(jid) { try { return require('../bots/MultiSocketManager').isOwnBotNumber(String(jid || '').split(':')[0].split('@')[0]); } catch (e) { return false; } }
+function humanQuotedAuthor(msg) { const q = quotedAuthor(msg); return q && !_isBot(q) ? q : null; }
 // Returns the first target JID found (mention > reply > number arg) or null.
 function resolve(msg, args) {
   const m = mentioned(msg); if (m.length) return m[0];
-  const q = quotedAuthor(msg); if (q) return q;
+  const q = humanQuotedAuthor(msg); if (q) return q;
   return numberArg(args);
 }
 // All targets (mentions + reply author), de-duplicated.
 function resolveAll(msg, args) {
   const out = [...mentioned(msg)];
-  const q = quotedAuthor(msg); if (q && !out.includes(q)) out.push(q);
+  const q = humanQuotedAuthor(msg); if (q && !out.includes(q)) out.push(q);
   if (!out.length) { const n = numberArg(args); if (n) out.push(n); }
   return out;
 }

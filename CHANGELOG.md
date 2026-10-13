@@ -1,3 +1,9 @@
+## 1.0.197 — Push #102b (2026-10-13) — tap-flow fixes
+- **Skill/pattern picked from the tap menu failed** ("That hunter is not in this raid party"): the reply quoted the bot's prompt, and the target resolver treated the bot as the cast target. Replying to any bot message is never targeting now.
+- **Attack again** only appears after the strike actually resolved (not before an error), belongs to the hunter who struck, and on the **last monster of a floor** it becomes **➡️ Party advance** (or **👹 Party boss** on the boss floor).
+- **Guild keyring → Pro picks a rank → 🎉 Party create** button right there (that hunter only).
+- **Party buttons are Pro + owner-bound** (`--tap`): Ready button on join only for a Pro joiner (incl. affiliates) and only they can use it; when everyone is ready a **Pro leader** gets a **🚀 Party raid** button. Free hunters tapping any of these are asked to type the command.
+
 ## 1.0.196 — Push #102 (2026-10-13) — speed is real, tap-to-attack, guild keyring
 - **Initiative ignored your buffs.** "Frost Giant lunges before you" at +200% SPEED: the initiative and dodge rolls read the *bare* speed stat — skill buffs (Lupine Dash…), debuffs and stun never counted. `liveSpeed()` now feeds both.
 - **Monster mini stat card** whenever a beast steps forward (initiative strike, next monster up after a kill): name, rank, HP, ATK, DEF, SPD, skills, status effects.

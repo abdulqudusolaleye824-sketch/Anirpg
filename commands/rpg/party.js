@@ -72,6 +72,20 @@ module.exports = {
     const pro = UI.isPro(player);
     const FRAME = pro ? UI.PRO_BAR : UI.FREE_BAR;
 
+    // Push #102b: `--tap[:number]` marks a BUTTON tap. Buttons are a Pro perk and, when a number is
+    // attached, usable only by that hunter (Party create after a key pick, Ready after a join…).
+    const _tapArg = args.find(a => /^--tap(:\d+)?$/i.test(String(a || '')));
+    if (_tapArg) {
+      args = args.filter(a => a !== _tapArg);
+      const _who = (String(_tapArg).split(':')[1] || '').replace(/\D/g, '');
+      const _me = String(sender).split('@')[0].split(':')[0];
+      let _mine = !_who || _who === _me;
+      try { if (!_mine && db.lidMap) { const m = db.lidMap[_me]; if (m && String(m).replace(/\D/g, '') === _who) _mine = true; } } catch (e) {}
+      if (!_mine) return sock.sendMessage(chatId, { text: `❌ That button belongs to another hunter — type the command yourself.` }, { quoted: msg });
+      if (!pro) return sock.sendMessage(chatId, { text: `💎 Tap buttons are a *PRO* perk — please type your command: */party ${String(args[0] || '').toLowerCase()}*.\n${UI.upsell()}` }, { quoted: msg });
+    }
+    const _tapOf = (jid) => `--tap:${String(jid || '').split('@')[0].split(':')[0]}`;
+
     const action = (args[0] || 'status').toLowerCase();
     // Gate-key parse: scan ALL args for an 8-char token, stripping every
     // dash variant WhatsApp autocorrect produces (hyphen, en/em-dash) plus
@@ -459,12 +473,12 @@ module.exports = {
       // Batch-47: ready button rides the join message.
       const _joinTxt = `✅ *${player.name}* joined the party!\n👥 Members: ${res.raid.members.length}/${GR.MAX_PARTY}\n\n📌 Tap Ready when set — leader launches with */party raid*.`;
       try {
-        if (Buttons?.sendButtons) {
+        if (Buttons?.sendButtons && pro) { // Push #102b: the Ready button is a Pro perk and belongs to the joiner
           await Buttons.sendButtons(sock, chatId, {
             text: _joinTxt,
             footer: `Party • ${res.raid.members.length}/${GR.MAX_PARTY}`,
             mentions: [sender],
-            buttons: Buttons.quickReplies([[`✅ Ready`, `/party ready`], [`📊 Party Status`, `/party`]]),
+            buttons: Buttons.quickReplies([[`✅ Ready`, `/party ready ${_tapOf(sender)}`], [`📊 Party Status`, `/party ${_tapOf(sender)}`]]),
           }, msg);
           return;
         }
@@ -498,6 +512,15 @@ module.exports = {
       let responseText = `✅ *${player.name}* is now **READY**! (${totalReady}/${totalMembers} ready)`;
       if (res.allReadied) {
         responseText += `\n\n🎉 *ALL MEMBERS ARE READY!* Leader can run */party raid* to launch!`;
+        // Push #102b: a Pro leader gets the launch button (theirs alone).
+        try {
+          const _leaderJid = raid.leader; const _leader = db.users?.[_leaderJid];
+          if (_leader && UI.isPro(_leader) && Buttons?.sendButtons) {
+            await sock.sendMessage(chatId, { text: responseText, mentions: [sender] }, { quoted: msg });
+            await Buttons.sendButtons(sock, chatId, { text: `🚀 *${_leader.name}* — everyone is ready. Launch?`, mentions: [_leaderJid], buttons: Buttons.quickReplies([[`🚀 Party raid`, `/party raid ${_tapOf(_leaderJid)}`]]) });
+            return;
+          }
+        } catch (e) {}
       }
 
       return sock.sendMessage(chatId, {

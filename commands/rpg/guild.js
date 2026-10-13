@@ -230,7 +230,11 @@ module.exports = {
         if (isGroupChat) { // serf up → the single key still goes to DM, never the open group
           try { const SD = require('../../rpg/utils/SerfDM'); const so = SD.getSerfSocket(db, sender); if (so && so.ok) { const r = await SD.sendSerfDM(sock, db, sender, { text: `${FRAME}\n🔑 *${rankArg}-RANK KEY — ${v.guildName.toUpperCase()}*\n${FRAME}\n${GK.keyCard(k, { pro, FRAME })}` }); if (r && r.ok) return sock.sendMessage(chatId, { text: SD.resultNotice(`🔑 ${rankArg}-RANK KEY`, r) }, { quoted: msg }); } } catch (e) {}
         }
-        return sock.sendMessage(chatId, { text: `${FRAME}\n🔑 *KEY FROM THE ${v.guildName.toUpperCase()} KEYRING*${pro ? ' 💎' : ''}\n${FRAME}\n${GK.keyCard(k, { pro, FRAME })}\n${FRAME}\n📌 */party create --${k.key}* in a registered dungeon GC.\n⚠️ Posted in the open — anyone here can use it.` }, { quoted: msg });
+        const _keyPost = `${FRAME}\n🔑 *KEY FROM THE ${v.guildName.toUpperCase()} KEYRING*${pro ? ' 💎' : ''}\n${FRAME}\n${GK.keyCard(k, { pro, FRAME })}\n${FRAME}\n📌 */party create --${k.key}* in a registered dungeon GC.\n⚠️ Posted in the open — anyone here can use it.`;
+        if (pro && isGroupChat) { // Push #102b: Pro gets an immediate Party create button — theirs alone
+          return B.sendButtons(sock, chatId, { text: _keyPost, mentions: [sender], buttons: B.quickReplies([[`🎉 Party create`, `/party create --${k.key} --tap:${String(sender).split('@')[0].split(':')[0]}`]]) }, msg);
+        }
+        return sock.sendMessage(chatId, { text: _keyPost }, { quoted: msg });
       }
       if (!isGroupChat) return sock.sendMessage(chatId, { text: full }, { quoted: msg });
       const SerfDM = require('../../rpg/utils/SerfDM');

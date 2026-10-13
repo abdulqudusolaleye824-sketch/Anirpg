@@ -108,6 +108,9 @@ module.exports = {
     // ── Push #102: tap menu — /attack again → plain / pattern / skill (gate raids) ──
     if (sub === 'again' || sub === 'menu' || sub === 'pickpattern' || sub === 'pickskill') {
       const B = require('../../utils/buttons');
+      // Push #102b: the button belongs to the hunter who just struck
+      const _tapArg = args.find(a => /^--tap:\d+$/i.test(String(a || '')));
+      if (_tapArg) { const _who = _tapArg.split(':')[1]; const _me = String(sender).split('@')[0].split(':')[0]; let _mine = _who === _me; try { const m = db.lidMap && db.lidMap[_me]; if (m && String(m).replace(/\D/g, '') === _who) _mine = true; } catch (e) {} if (!_mine) return sock.sendMessage(chatId, { text: `❌ That button belongs to another hunter — type */attack* yourself.` }, { quoted: msg }); }
       const GR = require('../../rpg/dungeons/GateRaid');
       const combat = detectActiveCombat(player, chatId, db, sender);
       if (!combat || combat.type !== 'gateraid' || !combat.gate) return sock.sendMessage(chatId, { text: `❌ The tap menu works inside a gate raid. Type */attack*, */attack <id>* or */cast <skill>*.` }, { quoted: msg });
@@ -118,7 +121,7 @@ module.exports = {
       if (sub === 'again' || sub === 'menu') {
         return B.sendButtons(sock, chatId, {
           text: `⚔️ *${player.name}* — choose your move:`,
-          buttons: B.quickReplies([['⚔️ Plain attack', '/attack'], ['🎯 Attack pattern', '/attack pickpattern'], ['✨ Skill', '/attack pickskill']]),
+          buttons: B.quickReplies([['⚔️ Plain attack', '/attack'], ['🎯 Attack pattern', `/attack pickpattern ${_tapArg || ''}`.trim()], ['✨ Skill', `/attack pickskill ${_tapArg || ''}`.trim()]]),
         }, msg);
       }
       // pattern / skill: lock the floor for ≤60s and wait for a plain reply (or "nil").

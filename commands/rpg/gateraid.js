@@ -599,7 +599,6 @@ module.exports = {
           return sock.sendMessage(chatId, { text: `✅ Floor ${floor} cleared!\nAdvance: /party advance` }, { quoted: msg });
         }
       }
-      _againOffer = true;
       // Push #88: SUPPORT CAST — a heal/buff skill targets a TEAMMATE (or self)
       // and does NOT spend the turn: no monster counter-attack. High-rank
       // monsters remember the healer (aggro) for the next few counters.
@@ -1028,6 +1027,7 @@ module.exports = {
         if (remaining <= 0 && _revivedKill) {
           // Re-cleared a revived floor: treasure was already banked the first time.
           gate.floorClearedAt = Date.now();
+          _againOffer = floor >= gate.totalFloors ? 'boss' : 'advance';
           if (floor >= gate.totalFloors) { killLines.push(``, `🏆 *BOSS FLOOR REACHED!*`, `/party boss — Engage the boss!`); }
           else { killLines.push(``, `✅ *Floor ${floor} re-cleared!* Move on within 60s or it revives again (+30%).`, `/party advance — Floor ${floor + 1}`); }
         } else if (remaining <= 0) {
@@ -1044,6 +1044,7 @@ module.exports = {
           try { const BRf = require('../../rpg/utils/BattleRewards'); let _fx = 0; const _ids = [sender, ...((gate.raid?.members || []).map(m => m.id).filter(id => id !== sender))];
             for (const id of _ids) { const u = db.users?.[id]; if (!u || (id !== sender && !((gate.raid?.members || []).find(m => m.id === id && (m.hp == null || m.hp > 0))))) continue; const got = BRf.grantFloorXp(u, floor, gate.rank, gate.totalFloors); if (id === sender) _fx = got; LevelUpManager.checkAndApplyLevelUps(u, saveDatabase, sock, chatId); }
             if (_fx) killLines.push(`✨ *Floor ${floor} XP:* +${_fx.toLocaleString()} XP (every living raider) · /xp`); } catch (e) {}
+          _againOffer = floor >= gate.totalFloors ? 'boss' : 'advance';
           if (floor >= gate.totalFloors) { killLines.push(``, `🏆 *BOSS FLOOR REACHED!*`, `/party boss — Engage the boss!`); }
           else { killLines.push(``, `✅ *Floor ${floor} CLEARED!*`, `⛏️ /mine — dig this floor for Mana Stones (3× each, before advancing)`, `/party advance — Floor ${floor + 1}`, `⏳ Move on within *60s* — idle floors revive *+30% stronger* with no rewards.`); }
         }
@@ -1051,6 +1052,7 @@ module.exports = {
         try { GR.saveGateState(db, gate); } catch (e) {}
       saveDatabase();
         try { if (_shadowOffer) { const SA = require('../../rpg/utils/ShadowArmy'); const B = require('../../utils/buttons'); const pr = SA.buttonFor(player); if (pr) setTimeout(() => B.sendButtons(sock, chatId, { text: `👤 *${player.name}* — the shadow awaits your word.`, buttons: B.quickReplies(pr) }).catch(() => {}), 1200); } } catch (e) {} // Push #96h-z19
+        if (!_againOffer) _againOffer = 'attack'; // more monsters on this floor
         return sock.sendMessage(chatId, { text: killLines.filter(Boolean).join('\n') }, { quoted: msg });
       }
 
@@ -1170,6 +1172,7 @@ module.exports = {
 
       let _nextStatus2 = null;
       try { _nextStatus2 = statusSummary(player); } catch(e){}
+      _againOffer = 'attack'; // Push #102b: the strike resolved and the beast still stands
       const msg3Lines = [
         ...(pro ? [UI.PRO_BAR, `🎮 *NEXT TURN* 💎`, UI.PRO_BAR] : [`🎮 *NEXT TURN*`, UI.FREE_BAR]),
         ...(_nextStatus2 ? [`⚠️ *YOUR STATUS:* ${_nextStatus2}`] : []),
@@ -1198,7 +1201,10 @@ module.exports = {
         try {
           if (_againOffer && pro && !raidOver(gate) && inRaid(gate, sender) && (player.stats?.hp || 0) > 0) {
             const B = require('../../utils/buttons');
-            await B.sendButtons(sock, chatId, { text: `⚔️ *${player.name}* — strike again?`, buttons: B.quickReplies([['⚔️ Attack again', '/attack again']]) });
+            const _tap = `--tap:${String(sender).split('@')[0].split(':')[0]}`;
+            if (_againOffer === 'advance') await B.sendButtons(sock, chatId, { text: `✅ Floor cleared — *${player.name}*, lead the party on?`, buttons: B.quickReplies([['➡️ Party advance', `/party advance ${_tap}`]]) });
+            else if (_againOffer === 'boss') await B.sendButtons(sock, chatId, { text: `🏆 Boss floor — *${player.name}*, engage?`, buttons: B.quickReplies([['👹 Party boss', `/party boss ${_tap}`]]) });
+            else await B.sendButtons(sock, chatId, { text: `⚔️ *${player.name}* — strike again?`, buttons: B.quickReplies([['⚔️ Attack again', `/attack again ${_tap}`]]) });
           }
         } catch (e) {}
       }
