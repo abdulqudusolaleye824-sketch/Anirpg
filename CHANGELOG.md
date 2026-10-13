@@ -1,3 +1,12 @@
+## 1.0.200 — Push #102e (2026-10-13) — socket churn root cause, 10-min reply cutoff, sticky bot
+- ROOT CAUSE of Bad MAC storms / silent bots / mid-chat bot switches: the stall sweeper recycled any bot that
+  simply had nothing to send for 4 min (void ×40, lunar ×39 in 3 h). Every recycle = fresh Signal sessions →
+  Bad MAC → deaf detector recycled again. Now a socket is "stalled" only if a send FAILED since the last
+  success AND nothing was heard for 4 min.
+- Deaf cross-check: a bot that heard anything in the last 45 s is not deaf (needs ≥3 misses, was 2).
+- Bots never answer a message older than 10 minutes (reply dropped at send time; inbound 2-min drop unchanged).
+- Sticky bot: a failover is a stand-in — the group's chosen bot is restored as soon as it is back online.
+
 ## 1.0.199 — Push #102d (2026-10-13) — real hunter speed, beast buff, stats sources, /hi, /openall
 - **"282 speed, a 247 beast lunged first":** the initiative/dodge rolls used the hunter's BASE speed only; `/stats` shows base + gear + title + constellation + pet (+ class passives). The roll now uses that same total.
 - **All raid monsters & bosses: HP +40 %, ATK +20 %** (on top of the existing calibration; DEF unchanged, still capped by the party's ATK).

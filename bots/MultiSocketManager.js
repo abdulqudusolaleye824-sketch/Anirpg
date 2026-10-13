@@ -82,6 +82,7 @@ const pairingSessions = {};
 // Push #64 — /link <bot> (owner DM). Throttle: one deliberate pairing start per
 // personality per 30s, so a double-tap can't burn QR refs back-to-back.
 const _linkKickAt = {};
+const REPLY_MAX_AGE_MS = 10 * 60 * 1000; // Push #102e: a reply to a message older than this is never sent
 const MAX_MSG_AGE_MS = Number(process.env.MAX_MSG_AGE_MS || 2 * 60 * 1000); // Push #96h-z18: 5 → 2 min (reconnect replays were answering old commands)
 
 // ── Push #75: OUTBOUND PACING ────────────────────────────────────────────────
@@ -513,8 +514,14 @@ function startStallSweeper(ctx) {
         const h = _sendHealth[key] || {};
         const lastOk = Math.max(h.lastOkAt || 0, key === '_lastRecv' ? 0 : 0);
         const idle = Date.now() - (lastOk || (h.firstSeenAt || 0));
-        if (lastOk && idle > STALL_KILL_MS && _wsReady(key)) {
-          console.log(`🩺 AstraLink [${key}] no successful send for ${Math.round(idle / 1000)}s — forcing a reconnect of the stalled socket`);
+        // Push #102e: a bot that simply had NOTHING to send for 4 min is idle, not stalled. On 10-13 this rule
+        // recycled every quiet bot every ~4 min (void ×40 in 3 h) → fresh Signal sessions each time → Bad MAC storms
+        // → the deaf detector recycled them again → "silent bots" + mid-conversation failovers. A socket is stalled
+        // only when a send has FAILED since the last success AND nothing has been heard for the same window.
+        const _failedSince = (h.lastFailAt || 0) > lastOk;
+        const _heardIdle = Date.now() - (_lastInboundAt[key] || 0);
+        if (lastOk && idle > STALL_KILL_MS && _failedSince && _heardIdle > STALL_KILL_MS && _wsReady(key)) {
+          console.log(`🩺 AstraLink [${key}] sends failing for ${Math.round((Date.now() - h.lastFailAt) / 1000)}s and nothing heard for ${Math.round(_heardIdle / 1000)}s — forcing a reconnect of the stalled socket`);
           try { s.ev?.removeAllListeners?.(); } catch (e) {}
           try { s.end(new Error('stalled')); } catch (e) {}
           try { delete botSockets[key]; } catch (e) {}
@@ -660,12 +667,13 @@ function _crossCheckDeaf(live, now) {
       if (now - (_groupHeardAt[k]?.[e.chat] || 0) > CROSS_MEMBER_MS) continue; // not (known to be) in that group
       if (now - (_lastOpenAt[k] || 0) < 60 * 1000) continue;       // just (re)connected
       if (e.firstAt < (_lastOpenAt[k] || 0)) continue;             // message predates this socket
+      if (now - (_lastInboundAt[k] || 0) < CROSS_MISS_MS) continue;   // Push #102e: it hears fine — a missed message is a decrypt hiccup, not deafness
       if ((_crossRecycles[k] || []).filter(t => now - t < 30 * 60 * 1000).length >= 2) continue; // max 2 fast recycles / 30 min (then the slow rule owns it)
       missing[k] = (missing[k] || 0) + 1;
     }
   }
   const worst = Object.entries(missing).sort((a, b) => b[1] - a[1])[0];
-  if (!worst || worst[1] < 2) return false; // need ≥2 missed messages (avoid one-off decrypt hiccups)
+  if (!worst || worst[1] < 3) return false; // Push #102e: need ≥3 missed (was 2) — need ≥2 missed messages (avoid one-off decrypt hiccups)
   const ok = recycleDeafSocket(worst[0], `missed ${worst[1]} group message(s) that another bot decrypted (>${Math.round(CROSS_MISS_MS / 1000)}s)`, 90 * 1000);
   if (ok) { (_crossRecycles[worst[0]] = _crossRecycles[worst[0]] || []).push(now); }
   return ok;
@@ -1868,6 +1876,15 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
         }
       } catch (e) {}
       if (options && options.asSelf) { options = { ...options }; delete options.asSelf; }
+      // Push #102e: NEVER answer a message that is more than 10 minutes old (replies to long-deleted commands).
+      try {
+        const q = options && options.quoted;
+        if (q && q.messageTimestamp != null && !q.key?.fromMe) {
+          const r = q.messageTimestamp; const n = (r && typeof r === 'object') ? (typeof r.toNumber === 'function' ? r.toNumber() : Number(r.low || 0)) : Number(r) || 0;
+          const ts = n > 1e12 ? n : n * 1000;
+          if (ts > 1.7e12 && Date.now() - ts > REPLY_MAX_AGE_MS) { console.log(`🕰️ [${personalityKey}] reply dropped — the message it answers is ${Math.round((Date.now() - ts) / 60000)} min old`); return null; }
+        }
+      } catch (e) {}
       // Push #96h-c: MULTI-MESSAGE blocks. Any text carrying the invisible break
       // (U+2063 — Domain Expansion name / description / effect) is sent as
       // separate messages, in order, wherever in the bot it was produced.

@@ -1,4 +1,5 @@
 const fs = require('fs');
+const _failoverHome = new Map(); // Push #102e: chatId -> { key, at } the bot a group chose before a failover stand-in
 const path = require('path');
 const PlayerMigration = require('../rpg/utils/PlayerMigration');
 const AutoRedirect = require('../rpg/utils/AutoRedirect');
@@ -745,11 +746,19 @@ module.exports = async (sock, msg, messageText, config, getDatabase, saveDatabas
   if (chatId.endsWith('@g.us') && activeKey) {
     try {
       const MSM = require('../bots/MultiSocketManager');
+      // Push #102e: STICKY BOT. A failover is a stand-in, not a switch — the moment the group's chosen bot is back
+      // online it takes over again (players saw Jinx answer one /xp and Killua the next).
+      const home = _failoverHome.get(chatId);
+      if (home && home.key !== activeKey && MSM.getSocket(home.key)?.user?.id) {
+        PersonalityManager.activateBot(chatId, home.key); activeKey = home.key; _failoverHome.delete(chatId);
+        console.log(`🔁 ${home.key} is back — restored as the active bot in ${chatId}`);
+      }
       const activeSock = MSM.getSocket(activeKey);
       const isOnline = !!(activeSock?.user?.id);
       if (!isOnline) {
         const failoverKey = MSM.getFirstOnlineSocketKey();
         if (failoverKey) {
+          if (!_failoverHome.has(chatId)) _failoverHome.set(chatId, { key: activeKey, at: Date.now() });
           PersonalityManager.activateBot(chatId, failoverKey);
           activeKey = failoverKey;
           console.log(`🔄 Failover active bot in ${chatId} to online bot: ${failoverKey}`);
