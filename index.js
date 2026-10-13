@@ -245,8 +245,9 @@ function maybeHourlySnapshot() {
 // minimum interval with a bounded maximum wait (so a busy group can never
 // starve persistence, and an idle one never spins).
 // ═══════════════════════════════════════════════════════════════
-const SAVE_MIN_INTERVAL_MS = parseInt(process.env.SAVE_MIN_INTERVAL_MS || '3000', 10);
-const SAVE_MAX_WAIT_MS     = parseInt(process.env.SAVE_MAX_WAIT_MS || '10000', 10);
+const SAVE_MIN_INTERVAL_MS = parseInt(process.env.SAVE_MIN_INTERVAL_MS || '15000', 10); // Push #102e2: 3 s → 15 s (9 MB document; SQLite live store is the crash-safe copy)
+const SAVE_MAX_WAIT_MS     = parseInt(process.env.SAVE_MAX_WAIT_MS || '30000', 10);     // Push #102e2: 10 s → 30 s
+const MONGO_MIN_INTERVAL_MS = parseInt(process.env.MONGO_MIN_INTERVAL_MS || '60000', 10); // Push #102e2
 let _snap = { str: null, at: 0, bytes: 0 };
 let _saveDirty = false;
 let _saveFirstDirtyAt = 0;
@@ -278,7 +279,10 @@ async function saveToMongo() {
   // next to a hardcoded 2000ms). Now: trailing write scheduled ONCE (750ms),
   // plus a leading-edge flush whenever the mirror is >5s stale.
   const _now = Date.now();
-  if (_now - _lastMongoFlush > 5000 && !pendingMongoWrite && !saveTimeout) {
+  // Push #102e2: the Atlas mirror is the THIRD copy (SQLite live store + JSON lead it). Live 10-13: 310 Mongo writes
+  // in 40 min, each ~260 ms of synchronous BSON for a 9 MB document = a quarter of the event loop → "bots slow".
+  // Now at most one Mongo write per MONGO_MIN_INTERVAL_MS (60 s), trailing-scheduled so nothing is ever lost.
+  if (_now - _lastMongoFlush > MONGO_MIN_INTERVAL_MS && !pendingMongoWrite && !saveTimeout) {
     _doMongoWrite();
     return;
   }
@@ -286,7 +290,7 @@ async function saveToMongo() {
   saveTimeout = setTimeout(() => {
     saveTimeout = null;
     _doMongoWrite();
-  }, 750);
+  }, Math.max(750, MONGO_MIN_INTERVAL_MS - (_now - _lastMongoFlush)));
 }
 
 function _doMongoWrite() {

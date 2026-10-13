@@ -335,7 +335,7 @@ const { inspectOutgoing, logSend: _logSend, getSendLog } = require('../utils/out
 // back; if we no longer have it we return undefined and Baileys skips the
 // resend instead of inventing a blank one.
 const _sentProtos = new Map(); // id -> { t, message }
-const _SENT_PROTO_MAX = 3000, _SENT_PROTO_TTL = 2 * 60 * 60 * 1000;
+const _SENT_PROTO_MAX = 3000, _SENT_PROTO_TTL = 10 * 60 * 1000; // Push #102e2: 2 h → 10 min (never re-ship old messages)
 function _rememberSentProto(id, message) {
   if (!id || !message || typeof message !== 'object') return;
   try {
@@ -350,7 +350,11 @@ function _getSentProto(key) {
   try {
     const id = key && key.id ? String(key.id) : null;
     const hit = id && _sentProtos.get(id);
-    if (hit && hit.message) return hit.message;
+    // Push #102e2: a retry receipt for a message we sent more than REPLY_MAX_AGE_MS (10 min) ago is NOT honoured.
+    // 10-13: Winry re-shipped a guild gate key from hours earlier (recipient's phone finally asked for it after a
+    // Bad MAC spell) — to players that is "the bot answered a command from hours ago".
+    if (hit && hit.message && Date.now() - (hit.t || 0) > REPLY_MAX_AGE_MS) { _sentProtos.delete(id); console.log(`↩️ retry-receipt for a ${Math.round((Date.now() - hit.t) / 60000)} min old message ${id} — too old, NOT resending`); return undefined; }
+    if (hit && hit.message) { console.log(`↩️ retry-receipt → resending ${id} (${Math.round((Date.now() - hit.t) / 1000)}s old) to ${key.remoteJid || '?'}`); return hit.message; }
     if (id) console.warn(`↩️ retry-receipt for unknown message ${id} (${key.remoteJid || '?'}) — NOT resending (no blank bubble)`);
   } catch (e) {}
   return undefined;

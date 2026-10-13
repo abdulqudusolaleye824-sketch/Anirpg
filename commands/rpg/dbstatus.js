@@ -74,7 +74,8 @@ module.exports = {
       if (process.env.DATA_DIR) sroots2.push(path.join(process.env.DATA_DIR, 'database', 'snapshots'));
       sroots2.push(path.join(__dirname, '..', '..', 'database', 'snapshots'));
       for (const sd of sroots2) {
-        if (fs.existsSync(sd) && fs.readdirSync(sd).some(f => f.startsWith('diverged-'))) { diverged = true; break; }
+        // Push #102e2: only a diverged snapshot from the last 24 h counts — the flag used to stay on forever (10-13: newest was 18 days old).
+        if (fs.existsSync(sd) && fs.readdirSync(sd).some(f => { if (!f.startsWith('diverged-')) return false; try { return Date.now() - fs.statSync(path.join(sd, f)).mtimeMs < 24 * 3600e3; } catch (e) { return false; } })) { diverged = true; break; }
       }
     } catch {}
     const memDot = users > 0 ? '✅' : '🔥';

@@ -464,6 +464,15 @@ class GateManager {
         else drop = now - (g.purchasedAt || now) > D7 && !raidLive;
         if (!drop && g.raid && /^(complete|completed|ended|failed|wiped)$/.test(String(g.raid.status || '')) && now - (g.raid.endedAt || g.raid.lastTurnAt || 0) > H2) drop = true;
       }
+      // Push #102e2: HARD 24 h rule — any gate that is cleared/broken, or whose raid has ended, is gone a day later
+      // no matter what its key says; a purchased gate never raided is gone 24 h after its key expired.
+      if (!drop && !raidLive) {
+        const D1 = 24 * 3600e3;
+        const ended = g.cleared || g.broken || (g.raid && /^(complete|completed|ended|failed|wiped|done)$/.test(String(g.raid.status || '')));
+        const endAt = Math.max(g.clearedAt || 0, g.brokenAt || 0, g.raid?.endedAt || 0, g.raid?.lastTurnAt || 0, g.breakTime || 0, g.purchasedAt || 0, g.spawnTime || 0);
+        if (ended && now - endAt > D1) drop = true;
+        else if (!ended && !g.raid) { const k = keyFor(id); if (k && k.expiresAt && now > k.expiresAt + D1) drop = true; }
+      }
       if (!drop) continue;
       delete this.activeGates[id];
       try { if (db && db.activeGates) delete db.activeGates[id]; } catch (e) {}

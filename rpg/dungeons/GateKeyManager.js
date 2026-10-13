@@ -433,13 +433,19 @@ function getKey(key, db = null) {
 // ── 100-day recycle: prune ancient keys so db.gateKeys can't grow forever ──
 // Only keys OLDER than 100 days AND not tied to a live raid are deleted.
 const RECYCLE_MS = 100 * 24 * 3600 * 1000;
+const BURNED_TTL_MS = 24 * 3600e3; // Push #102e2
 function recycleOldKeys(db, saveDatabase) {
   if (!db?.gateKeys) return 0;
   const now = Date.now();
   let n = 0;
   for (const [key, k] of Object.entries(db.gateKeys)) {
     if (!k || !k.purchasedAt) continue;
-    if (now - k.purchasedAt < RECYCLE_MS) continue;
+    // Push #102e2: a key that is used / burned (raid complete, consumed, expired) is gone 24 h later; an
+    // untouched key goes when it has been past its expiry for 24 h. (Live 10-13: 1494 keys, 1 MB, nearly all spent.)
+    const spent = !!(k.used || k.raidComplete || k.consumed);
+    const pastExpiry = !!(k.expiresAt && now > k.expiresAt + BURNED_TTL_MS) || !!k.expired;
+    const burned = (spent && now - k.purchasedAt > BURNED_TTL_MS) || (pastExpiry && now - Math.max(k.purchasedAt || 0, k.expiresAt || 0) > BURNED_TTL_MS);
+    if (!burned && now - k.purchasedAt < RECYCLE_MS) continue;
     let live = false;
     try {
       const { GateManager } = require('./GateManager');
@@ -452,7 +458,7 @@ function recycleOldKeys(db, saveDatabase) {
     n++;
   }
   if (n > 0) {
-    try { console.log(`🧹 Recycled ${n} gate key(s) older than 100 days`); } catch(e){}
+    try { console.log(`🧹 Recycled ${n} spent/expired gate key(s) (24 h rule)`); } catch(e){}
     if (saveDatabase) { try { saveDatabase(); } catch(e){} }
   }
   return n;

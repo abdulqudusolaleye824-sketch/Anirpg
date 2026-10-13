@@ -1,3 +1,14 @@
+## 1.0.201 — Push #102e2 (2026-10-13) — no re-shipping old messages, 24 h gate/key pruning, save cadence
+- ROOT CAUSE of "Winry answered a command from hours ago" (gate key revealed after /restart): it was NOT a command — a
+  member's phone finally asked (retry receipt) for a message Winry sent hours earlier and the sent-message store (2 h TTL,
+  persisted across restarts, TTL only enforced when >3000 entries) re-shipped it. Now a retry receipt for anything sent
+  more than 10 min ago is refused and the store itself keeps only 10 min.
+- Gate keys that are used/burned (raid complete, consumed, expired) are deleted 24 h later; gates whose raid ended or
+  that are cleared/broken are gone 24 h later regardless of key state; never-raided purchased gates go 24 h after key expiry.
+- Bots slow: 310 Atlas writes in 40 min (each ~260 ms of synchronous BSON on a 9 MB document) + JSON flush every 3 s.
+  Now Mongo mirror at most once per 60 s, JSON every 15 s (max wait 30 s); SQLite live store unchanged (crash-safe copy).
+- /dbstatus "DIVERGED" only when a diverged snapshot is < 24 h old (the flag was stuck on an 18-day-old file).
+
 ## 1.0.200 — Push #102e (2026-10-13) — socket churn root cause, 10-min reply cutoff, sticky bot
 - ROOT CAUSE of Bad MAC storms / silent bots / mid-chat bot switches: the stall sweeper recycled any bot that
   simply had nothing to send for 4 min (void ×40, lunar ×39 in 3 h). Every recycle = fresh Signal sessions →
