@@ -85,6 +85,14 @@ function onDailyComplete(player, sock, jid, chatId) {
   if (_pro(player)) {
     player.pendingBoxes = (Number(player.pendingBoxes) || 0) + 1;
     lines.push(`🎁 *PRO BOX* — choose ✨ Blessed or 🖤 Cursed below (or /box blessed · /box cursed) 💎`);
+    sendProBoxButtons(player, sock, jid, chatId);
+  }
+  return { lines };
+}
+// Push #102f (BUG-036): the box award itself now happens in DailyQuestSystem for EVERY completion path (market
+// sells and pool re-syncs used to finish the 4th quest without ever awarding the box); the buttons are sent here.
+function sendProBoxButtons(player, sock, jid, chatId) {
+  {
     const target = chatId || jid;
     if (sock && target) {
       (async () => {
@@ -97,7 +105,6 @@ function onDailyComplete(player, sock, jid, chatId) {
       })();
     }
   }
-  return { lines };
 }
 
 // ── Regular hunter daily bonus (hidden 50% chance) ────────────────────────
@@ -406,4 +413,5 @@ function status(player) {
   return [`🏚️ *INSTANCE — ${job.emoji} ${job.name.toUpperCase()} QUEST*`, `Floor *${inst.floor}* ♾️ (pass mark ${FLOORS}${inst.passed ? ' ✅' : ''}) · monster ${inst.slot || 1}/${PER_FLOOR} · kills ${inst.kills} · exit bonus now *+${scoreFor(inst, false).bonus.toLocaleString()} 💠* · idle timer ${Math.ceil(timeLeftMs(inst) / 60000)} min`, `⚔️ /attack · /attack <id> · /skillcmd <skill> · /instance leave`, `${m.emoji} *${m.name}* [${m.rank}]${m.isBoss ? ' 👑' : ''} — HP ${m.stats.hp}/${m.stats.maxHp}`, `❤️ You: ${player.stats.hp}/${_max(player)} · ⚡ ${player.stats.energy}/${player.stats.maxEnergy}`, `⚔️ /instance attack · ✨ /instance skill <name> · 🌌 /domain expand · 🚪 /instance leave`].join('\n');
 }
 
-module.exports = { FLOORS, PER_FLOOR, TIME_LIMIT_MS, IDLE_LIMIT_MS, scoreFor, timeLeftMs, expireCheck, regularBonus, REGULAR_BONUS_CHANCE, KEY_CHANCE, eligibleJobs, keys, onDailyComplete, openBox, openRegularBox, INSTANCE_BOSSES, bossFor, grantKey, syncKeys, keySummary, keyLine, targetFloorFor, makeMonster, start, act, end, status };
+module.exports = {
+  sendProBoxButtons, FLOORS, PER_FLOOR, TIME_LIMIT_MS, IDLE_LIMIT_MS, scoreFor, timeLeftMs, expireCheck, regularBonus, REGULAR_BONUS_CHANCE, KEY_CHANCE, eligibleJobs, keys, onDailyComplete, openBox, openRegularBox, INSTANCE_BOSSES, bossFor, grantKey, syncKeys, keySummary, keyLine, targetFloorFor, makeMonster, start, act, end, status };

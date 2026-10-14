@@ -191,7 +191,9 @@ function setJob(player, job, opts = {}) {
   }
   unlock(player, job);
   if (j.key) j.history.push({ key: j.key, level: j.level, xp: j.xp, left: Date.now() });
-  const prev = j.history.find(h => h.key === job.key); // returning to an old job keeps its progress
+  // Push #102f (BUG-034): returning to an old job restores its BEST saved progress (the old code took the OLDEST
+  // history record, so a job left twice came back at the earlier, lower level).
+  const prev = j.history.filter(h => h && h.key === job.key).sort((a, b) => (Number(b.level) || 0) - (Number(a.level) || 0) || (Number(b.xp) || 0) - (Number(a.xp) || 0))[0] || null;
   j.key = job.key; j.level = prev ? Math.max(1, prev.level) : 1; j.xp = prev ? prev.xp : 0; j.since = Date.now();
   let runeStones = []; try { runeStones = require('./RuneStones').onJobLevel(player, job.key, 0, j.level); } catch (e) {} // Push #96h-z20: Job Lv1 skill → rune stone
   return { ok: true, job, level: j.level, runeStones };

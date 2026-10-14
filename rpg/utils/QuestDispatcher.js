@@ -74,10 +74,11 @@ function trackAndNotify(player, type, amount = 1, sock = null, jid = null, chatI
     // Push #95: once per day — Instance Key roll (10%, job change must be open)
     // and, for Pro hunters, the Blessed / Cursed box choice (buttons, in DM).
     try {
-      const dk = player.dailyQuests.dayKey;
-      if (player._dailyDoneRewarded !== dk) {
-        const r = require('./InstanceDungeon').onDailyComplete(player, sock, jid, chatId);
-        if (r && r.lines && r.lines.length) txt += r.lines.join('\n') + `\n`;
+      // Push #102f: the box itself was already awarded inside DailyQuestSystem (every path); here we only announce
+      // it and, for Pro hunters, post the Blessed/Cursed buttons.
+      if (result.dailyDone && result.dailyDone.length) {
+        txt += result.dailyDone.join('\n') + `\n`;
+        try { const ID = require('./InstanceDungeon'); if ((player.pendingBoxes || 0) > 0 && ID.sendProBoxButtons) ID.sendProBoxButtons(player, sock, jid, chatId); } catch (e) {}
       }
     } catch (e) {}
     txt += `\n`;

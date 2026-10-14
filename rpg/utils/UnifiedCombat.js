@@ -131,8 +131,16 @@ function calcMoveDamage(attacker, defender, move) {
   try { const PM = require('./PetManager'); _gA = PM.lastGiftMultiplier(attacker) || 1; _gD = PM.lastGiftMultiplier(defender) || 1; } catch (e) {}
   // Push #88: kill-stack flat ATK (Devourer) + armour penetration passives (Ranger/Phantom).
   let _auA = 1; try { _auA = require('./AuraSystem').AuraSystem.atkMult(attacker); } catch (e) {} // Push #96f: aura title ATK%
-  const atkBase = ((attacker.stats?.atk || attacker.stats?.attack || 50) + _gearAtk + _wpnAtk + _tA + ((_pmA && _pmA.atkFlat) || 0)) * _gA * _auA;
-  const defBase = ((defender.stats?.def || defender.stats?.defense || 20) + _gearDef + _wpnDef + _tD) * _gD * (1 - Math.min(0.6, ((_pmA && _pmA.armorPen) || 0) / 100));
+  // Push #102f (BUG-040): constellation sponsor + pet flat ATK/DEF are part of the /stats total — they count here too.
+  let _cA = 0, _cD = 0, _ptA = 0, _ptD = 0;
+  try { const CS = require('./ConstellationSystem'); if (attacker.inventory || attacker.jid) _cA = Number(CS.getSponsorBonus(attacker).atk) || 0; if (defender.inventory || defender.jid) _cD = Number(CS.getSponsorBonus(defender).def) || 0; } catch (e) {}
+  // (pet ATK is added as flat damage by the PvP / raid callers — not here, no double count; pet DEF was counted nowhere)
+  try { const PC = require('./PetCombat'); const jd = defender.jid || defender.id; if (jd && !defender.isBoss && defender.inventory) _ptD = PC.defBonus(jd) || 0; } catch (e) {}
+  let atkBase = ((attacker.stats?.atk || attacker.stats?.attack || 50) + _gearAtk + _wpnAtk + _tA + _cA + _ptA + ((_pmA && _pmA.atkFlat) || 0)) * _gA * _auA;
+  // Push #102f (BUG-040): a SKILL cast by a caster scales with Magic Power like it does in raids (atk×0.7 + magic×0.5) —
+  // never below the plain ATK figure, so non-casters lose nothing.
+  if (move && move.isSkill) { const _mg = Number(attacker.stats?.magicPower || 0); if (_mg > 0) atkBase = Math.max(atkBase, atkBase * 0.7 + _mg * 0.5); }
+  const defBase = ((defender.stats?.def || defender.stats?.defense || 20) + _gearDef + _wpnDef + _tD + _cD + _ptD) * _gD * (1 - Math.min(0.6, ((_pmA && _pmA.armorPen) || 0) / 100));
 
   // Multipliers from attack pattern
   const atkMult = move.atkMult || 1;
@@ -224,6 +232,12 @@ function calcMoveDamage(attacker, defender, move) {
     if (syn.mult !== 1) { raw = Math.max(1, Math.floor(raw * syn.mult)); synergyNotes = syn.notes; }
   } catch (e) {}
 
+  // Push #102f (BUG-037): a 🛡️ Shield Scroll (/buff shield — "absorbs one hit") was sold but never consumed in combat.
+  // It now eats the first hit that lands on its holder — PvP and raid alike.
+  try {
+    const BM = require('./BuffManager');
+    if (raw > 0 && defender && defender.inventory && BM.hasShield(defender)) { BM.consumeShield(defender); synergyNotes = [...synergyNotes, `🛡️ *${defender.name || 'Target'}'s Shield Scroll* absorbed the whole hit (${raw} dmg → 0)`]; raw = 0; }
+  } catch (e) {}
   // Determine effectiveness for longer description
   const effectiveness = raw > 200 ? 'devastating' : raw > 120 ? 'powerful' : raw > 60 ? 'solid' : 'light';
 

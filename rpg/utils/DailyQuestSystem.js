@@ -49,11 +49,11 @@ const DAILY_QUEST_POOL = [
   { id: 'dq_fullclear3',  name: 'Completionist',         desc: 'Fully clear 3 dungeons or gates', type: 'clear',    target: 3,   reward: { gold: 4000,  crystals: 160 } },
 
   // ── PvP (5) ──────────────────────────────────────────────────────────────
-  { id: 'dq_pvp1',        name: 'Arena Fighter',         desc: 'Win 1 PvP duel',                           type: 'pvp',      target: 1,   reward: { gold: 500,   crystals: 12  } },
-  { id: 'dq_pvp3',        name: 'PvP Warrior',           desc: 'Win 3 PvP duels',                          type: 'pvp',      target: 3,   reward: { gold: 1300,  crystals: 38  } },
-  { id: 'dq_pvp5',        name: 'Duelist',               desc: 'Win 5 PvP duels',                          type: 'pvp',      target: 5,   reward: { gold: 2200,  crystals: 65  } },
-  { id: 'dq_pvp10',       name: 'Gladiator',             desc: 'Win 10 PvP duels',                         type: 'pvp',      target: 10,  reward: { gold: 3800,  crystals: 120 } },
-  { id: 'dq_pvpfloor',    name: 'Floor Fight',           desc: 'Win 1 PvP inside a dungeon',               type: 'pvpFloor', target: 1,   reward: { gold: 1100,  crystals: 33  } },
+  { id: 'dq_pvp1',        name: 'Arena Fighter',         desc: 'Challenge someone to a PvP duel (/pvp @user)', type: 'pvpChallenge',      target: 1,   reward: { gold: 500,   crystals: 12  } },
+  { id: 'dq_pvp3',        name: 'PvP Warrior',           desc: 'Fight 3 PvP duels (win or lose)',                          type: 'pvp',      target: 3,   reward: { gold: 1300,  crystals: 38  } },
+  { id: 'dq_pvp5',        name: 'Duelist',               desc: 'Fight 5 PvP duels (win or lose)',                          type: 'pvp',      target: 5,   reward: { gold: 2200,  crystals: 65  } },
+  { id: 'dq_pvp10',       name: 'Gladiator',             desc: 'Fight 10 PvP duels (win or lose)',                         type: 'pvp',      target: 10,  reward: { gold: 3800,  crystals: 120 } },
+  { id: 'dq_pvpfloor',    name: 'Floor Fight',           desc: 'Fight 2 PvP duels (win or lose)',          type: 'pvp',      target: 2,   reward: { gold: 1100,  crystals: 33  } }, // Push #102f: was 'PvP inside a dungeon' — impossible (PvP runs only in PvP groups)
 
   // ── Crafting / Economy (8) ───────────────────────────────────────────────
   { id: 'dq_scroll1',     name: 'Recipe Reader',         desc: 'Read 1 recipe scroll',                     type: 'scroll',   target: 1,   reward: { gold: 300,   crystals: 5   } },
@@ -185,7 +185,21 @@ function autoClaimIfReady(player) {
       justClaimed.push(q);
     }
   }
+  if (justClaimed.length) awardDailyDone(player);
   return justClaimed;
+}
+// Push #102f (BUG-036): the all-4-done box is awarded HERE, on every completion path (tracker, notify, pool
+// re-sync, market sell) — it used to live only in the chat-notify path, so a 4th quest finished elsewhere gave
+// "nothing, not even one box". Returns the award lines (or null when nothing new).
+function awardDailyDone(player) {
+  try {
+    const qs = player.dailyQuests && player.dailyQuests.quests;
+    if (!qs || qs.length < 4 || !qs.every(q => q.claimed)) return null;
+    const dk = player.dailyQuests.dayKey;
+    if (player._dailyDoneRewarded === dk) return null;
+    const r = require('./InstanceDungeon').onDailyComplete(player, null, null, null);
+    return r && r.lines && r.lines.length ? r.lines : null;
+  } catch (e) { return null; }
 }
 
 // ── Update quest progress (called from dungeon/pvp/craft/etc.) ──────────────
@@ -216,11 +230,12 @@ function trackQuestProgress(player, type, amount = 1) {
     }
   }
   // If the player just finished the last quest, check for a streak milestone
-  let milestone = null;
+  let milestone = null, dailyDone = null;
   if (justClaimed.length && player.dailyQuests.quests.every(q => q.claimed)) {
     milestone = checkStreakMilestone(player);
+    dailyDone = awardDailyDone(player);
   }
-  return { completed, justClaimed, milestone };
+  return { completed, justClaimed, milestone, dailyDone };
 }
 
 // Push #96h: ANY buff a hunter puts up counts for the "Activate a buff" quest —
@@ -329,6 +344,7 @@ function getInlineProgress(player, type) {
 }
 
 module.exports = {
+  awardDailyDone,
   DAILY_QUEST_POOL,
   STREAK_MILESTONES,
   getWATDayKey,

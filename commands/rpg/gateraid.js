@@ -459,6 +459,15 @@ module.exports = {
         // Push #89: the boss party falls with the boss (no rewards for them).
         try { for (const _el of (gate.monsters || [])) if (_el && _el.elite && !_el.defeated) { _el.defeated = true; _el.hp = 0; _el.revived = true; } } catch (e) {}
         AuraSystem.addAura(player, 'bossKill');
+        // Push #102f (BUG-053): boss kills were never counted anywhere, so /leaderboard boss and boss titles were always 0.
+        // Every raid member who hit the boss (plus the finisher) gets +1.
+        try {
+          const _bn = require('../../rpg/dungeons/GateKeyManager').normaliseJid;
+          const _seen = new Set(); const _ids = [sender, ...Object.keys(gate.damageDealt || {}), ...((gate.raid && gate.raid.members) || []).map(m => m && m.id)].filter(Boolean);
+          for (const _id of _ids) { const _k = _bn(_id) || _id; if (_seen.has(_k)) continue; _seen.add(_k);
+            const _u = db.users?.[_id] || Object.values(db.users || {}).find(x => _bn(x.id || x.jid || '') === _k); if (!_u) continue;
+            if (!_u.stats_history) _u.stats_history = {}; _u.stats_history.bossesDefeated = (_u.stats_history.bossesDefeated || 0) + 1; _u.bossesDefeated = (_u.bossesDefeated || 0) + 1; }
+        } catch (e) {}
         try {
           const QD = require('../../rpg/utils/QuestDispatcher');
           QD.trackAndNotify(player, 'boss', 1, sock, sender, chatId);

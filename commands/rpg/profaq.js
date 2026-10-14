@@ -28,7 +28,7 @@ module.exports = {
         `   💠 2,000,000 Nexus · 💎 200,000 Mana Stones · ✨ 100 UP`,
         `👑 Yearly — *60,000 PC* ($60) · 365 days`,
         `   💠 20,000,000 Nexus · 💎 2,000,000 Mana Stones · ✨ 1,200 UP`,
-        `🎖️ Battle Pass Premium — *2,000 PC* ($2) · season`,
+        `🎖️ Battle Pass Premium — *3,000 PC* ($3) · season`,
         ``,
         FRAME,
         `✨ *PRO PERKS*`,

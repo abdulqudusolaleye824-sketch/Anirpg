@@ -112,6 +112,7 @@ module.exports = {
         const _bo = _busyElsewhere(opp, db); if (_bo) return sock.sendMessage(chatId, { text: `❌ That player is in a *${_bo}* right now and can't be challenged.` }, { quoted: msg }); }
 
       db.pendingChallenges[targetJid] = { challengerId: sender, chatId, timestamp: Date.now() };
+      try { require('../../rpg/utils/QuestDispatcher').trackAndNotify(player, 'pvpChallenge', 1, sock, sender, chatId); } catch (e) {} // Push #102f: challenges count for the Arena Fighter quest
       saveDatabase();
 
       const challengerRank = getPvpRank(player.pvpElo);
@@ -200,7 +201,7 @@ module.exports = {
         `👤 Name: *${getPlayerName(challenger)}*`,
         `🎭 Class: *${getClassName(challenger)}* (Lv.${challenger.level || 1})`,
         `⭐ ELO: ${challenger.pvpElo || 1000}`,
-        `❤️ HP: ${challenger.stats?.hp || 100}/${challenger.stats?.maxHp || 100}`,
+        `❤️ HP: ${challenger.stats?.hp || 100}/${_effMax(challenger)}`,
         `⚔️ ATK: ${_eff1 ? _eff1.atk : (challenger.stats?.atk || 10)} | 🛡️ DEF: ${_eff1 ? _eff1.def : (challenger.stats?.def || 5)}`,
         `⚡ Speed: ${p1Spd}`,
         cPro ? UI.PRO_BAR : UI.FREE_BAR,
@@ -211,7 +212,7 @@ module.exports = {
         `👤 Name: *${getPlayerName(player)}*`,
         `🎭 Class: *${getClassName(player)}* (Lv.${player.level || 1})`,
         `⭐ ELO: ${player.pvpElo || 1000}`,
-        `❤️ HP: ${player.stats?.hp || 100}/${player.stats?.maxHp || 100}`,
+        `❤️ HP: ${player.stats?.hp || 100}/${_effMax(player)}`,
         `⚔️ ATK: ${_eff2 ? _eff2.atk : (player.stats?.atk || 10)} | 🛡️ DEF: ${_eff2 ? _eff2.def : (player.stats?.def || 5)}`,
         `⚡ Speed: ${p2Spd}`,
         `${FRAME}`,
@@ -271,9 +272,9 @@ module.exports = {
           ...(pro ? [UI.PRO_BAR, `⚔️ *PVP BATTLE STATUS — TURN ${turn}* 💎`, UI.PRO_BAR] : [`⚔️ *PVP BATTLE STATUS — TURN ${turn}*`, UI.FREE_BAR]),
           `📌 Your Move: *${locked}*`,
           ``,
-          `👤 *${getPlayerName(player)}*: ${player.stats?.hp || 0}/${player.stats?.maxHp || 100} ❤️`,
-          `👤 *${getPlayerName(opp, 'Opponent')}*: ${opp?.stats?.hp || 0}/${opp?.stats?.maxHp || 100} ❤️`,
-          ...(pro ? [FRAME, UI.PRO_MINI, `💎 *PRO READ* — you ${Math.round(100 * (player.stats?.hp || 0) / (player.stats?.maxHp || 100))}% · foe ${Math.round(100 * (opp?.stats?.hp || 0) / (opp?.stats?.maxHp || 100))}%`] : [FRAME, UI.upsell()]),
+          `👤 *${getPlayerName(player)}*: ${player.stats?.hp || 0}/${_effMax(player)} ❤️`,
+          `👤 *${getPlayerName(opp, 'Opponent')}*: ${opp?.stats?.hp || 0}/${_effMax(opp)} ❤️`,
+          ...(pro ? [FRAME, UI.PRO_MINI, `💎 *PRO READ* — you ${Math.round(100 * (player.stats?.hp || 0) / (_effMax(player)))}% · foe ${Math.round(100 * (opp?.stats?.hp || 0) / (_effMax(opp)))}%`] : [FRAME, UI.upsell()]),
         ].join('\n'),
       }, { quoted: msg });
     }
@@ -609,6 +610,7 @@ async function resolveTurn(sock, chatId, p1, p2, db, saveDatabase) {
       // Push #76: buffs/debuffs/statuses ride on the move; UnifiedCombat.playTurn applies them.
       return {
         buffs: entry.buffs || [], debuffs: entry.debuffs || [], statuses: entry.statuses || [], lifestealPct: entry.lifestealPct || 0, // Push #96h-z20
+        isSkill: true, // Push #102f: Magic Power scaling in UnifiedCombat
         id: 0,
         rank: pct >= 3 ? 'S' : pct >= 2.4 ? 'A' : pct >= 1.8 ? 'B' : pct >= 1.2 ? 'C' : 'D',
         name: entry.name,
@@ -695,7 +697,7 @@ async function resolveTurn(sock, chatId, p1, p2, db, saveDatabase) {
     res1 = UC.calcMoveDamage(p1, p2, m1);
     try {
       const _a = PetCombat.atkBonus(id1) || 0;
-      if (_a > 0) res1.damage = Math.max(1, (res1.damage || 0) + _a);
+      if (_a > 0) { res1.damage = Math.max(1, (res1.damage || 0) + _a); res1.petAtkLine = `🐾 pet +${_a} ATK`; } // Push #102f (BUG-040): the pet's share is shown
       if (_pet1?.damage) { res1.damage = Math.max(1, (res1.damage || 0) + _pet1.damage); res1.petLine = _pet1.line; }
     } catch (e) {}
     if (m1.id) UC.setCooldown(p1, m1.id, m1);
@@ -705,7 +707,7 @@ async function resolveTurn(sock, chatId, p1, p2, db, saveDatabase) {
     res2 = UC.calcMoveDamage(p2, p1, m2);
     try {
       const _a = PetCombat.atkBonus(id2) || 0;
-      if (_a > 0) res2.damage = Math.max(1, (res2.damage || 0) + _a);
+      if (_a > 0) { res2.damage = Math.max(1, (res2.damage || 0) + _a); res2.petAtkLine = `🐾 pet +${_a} ATK`; } // Push #102f (BUG-040): the pet's share is shown
       if (_pet2?.damage) { res2.damage = Math.max(1, (res2.damage || 0) + _pet2.damage); res2.petLine = _pet2.line; }
     } catch (e) {}
     if (m2.id) UC.setCooldown(p2, m2.id, m2);
@@ -748,8 +750,8 @@ async function resolveTurn(sock, chatId, p1, p2, db, saveDatabase) {
         ...segHead,
         o.skipMsg,
         `${FRAME}`,
-        `❤️ ${name1}: ${BarSystemPVP.getHPBar(p1.stats?.hp || 0, p1.stats?.maxHp || 100, UC.isPro(p1))}`,
-        `❤️ ${name2}: ${BarSystemPVP.getHPBar(p2.stats?.hp || 0, p2.stats?.maxHp || 100, UC.isPro(p2))}`,
+        `❤️ ${name1}: ${BarSystemPVP.getHPBar(p1.stats?.hp || 0, _effMax(p1), UC.isPro(p1))}`,
+        `❤️ ${name2}: ${BarSystemPVP.getHPBar(p2.stats?.hp || 0, _effMax(p2), UC.isPro(p2))}`,
         `${FRAME}`,
       ].join('\n');
       // Push #88d: tick ONLY the acting fighter (each hunter ticks once per round;
@@ -764,8 +766,8 @@ async function resolveTurn(sock, chatId, p1, p2, db, saveDatabase) {
         `🙌 *${o.name}* ${o.move.isHeal ? 'heals' : 'buffs'} themself!`,
         ...(o.move._supportLines || []),
         `${FRAME}`,
-        `❤️ ${name1}: ${BarSystemPVP.getHPBar(p1.stats?.hp || 0, p1.stats?.maxHp || 100, UC.isPro(p1))}`,
-        `❤️ ${name2}: ${BarSystemPVP.getHPBar(p2.stats?.hp || 0, p2.stats?.maxHp || 100, UC.isPro(p2))}`,
+        `❤️ ${name1}: ${BarSystemPVP.getHPBar(p1.stats?.hp || 0, _effMax(p1), UC.isPro(p1))}`,
+        `❤️ ${name2}: ${BarSystemPVP.getHPBar(p2.stats?.hp || 0, _effMax(p2), UC.isPro(p2))}`,
         `${FRAME}`,
       ].join('\n');
       { const _st = UC.tickStatuses(o.p); if (_st.length) segment += `\n${_st.join('\n')}`; }
@@ -784,11 +786,11 @@ async function resolveTurn(sock, chatId, p1, p2, db, saveDatabase) {
       segment = pt.texts.join('\n');
       // Push #55: pet ability line + support-pet mend for the round.
       const _petMsg = [];
-      try { if (o.res?.petLine) _petMsg.push(o.res.petLine); } catch (e) {}
+      try { if (o.res?.petLine) _petMsg.push(o.res.petLine); if (o.res?.petAtkLine && !o.res?._skipped && (o.res?.damage || 0) > 0) _petMsg.push(`${o.res.petAtkLine} rode on *${o.name}'s* hit`); } catch (e) {}
       try {
         const _pid = (o.p === p1 ? id1 : id2);
         const _ph = PetCombat.healPlayer(_pid, o.p);
-        if (_ph.healed > 0) _petMsg.push(`💚 *${o.name}'s ${_ph.petName}* mended *${_ph.healed}* HP → ${_ph.hp}/${o.p.stats?.maxHp || 100}`);
+        if (_ph.healed > 0) _petMsg.push(`💚 *${o.name}'s ${_ph.petName}* mended *${_ph.healed}* HP → ${_ph.hp}/${_effMax(o.p)}`);
       } catch (e) {}
       if (_petMsg.length) {
         segment += `\n${_petMsg.join('\n')}`;
@@ -888,8 +890,8 @@ async function resolveTurn(sock, chatId, p1, p2, db, saveDatabase) {
   const nextHead = FRAME === UI.PRO_BAR ? [UI.PRO_BAR, `🎮 *TURN ${turnNum + 1} — CHOOSE YOUR MOVE* 💎`, UI.PRO_BAR] : [`🎮 *TURN ${turnNum + 1} — CHOOSE YOUR MOVE*`, UI.FREE_BAR];
   const nextMsg = [
     ...nextHead,
-    `❤️ ${name1}: ${BarSystemPVP.getHPBar(p1.stats?.hp || 0, p1.stats?.maxHp || 100, isPro1)}${s1 ? `\n  ${s1.split('\n')[0]}` : ''}`,
-    `❤️ ${name2}: ${BarSystemPVP.getHPBar(p2.stats?.hp || 0, p2.stats?.maxHp || 100, isPro2)}${s2 ? `\n  ${s2.split('\n')[0]}` : ''}`,
+    `❤️ ${name1}: ${BarSystemPVP.getHPBar(p1.stats?.hp || 0, _effMax(p1), isPro1)}${s1 ? `\n  ${s1.split('\n')[0]}` : ''}`,
+    `❤️ ${name2}: ${BarSystemPVP.getHPBar(p2.stats?.hp || 0, _effMax(p2), isPro2)}${s2 ? `\n  ${s2.split('\n')[0]}` : ''}`,
     statusBlock,
     ``,
     ...(_ccNote ? [_ccNote.trim()] : []),
@@ -928,8 +930,8 @@ async function resolveTurn(sock, chatId, p1, p2, db, saveDatabase) {
       cur2.pvpBattle.pendingAction = null;
       saveDatabase();
       const timeoutMsg = `⏳ *Turn ${turnNum + 1} timed out* — no move locked in 20s. Both turns skipped (status -1).\n` +
-                         `❤️ ${getPlayerName(cur1)}: ${BarSystemPVP.getHPBar(cur1.stats?.hp || 0, cur1.stats?.maxHp || 100, UC.isPro(cur1))}\n` +
-                         `❤️ ${getPlayerName(cur2)}: ${BarSystemPVP.getHPBar(cur2.stats?.hp || 0, cur2.stats?.maxHp || 100, UC.isPro(cur2))}`;
+                         `❤️ ${getPlayerName(cur1)}: ${BarSystemPVP.getHPBar(cur1.stats?.hp || 0, _effMax(cur1), UC.isPro(cur1))}\n` +
+                         `❤️ ${getPlayerName(cur2)}: ${BarSystemPVP.getHPBar(cur2.stats?.hp || 0, _effMax(cur2), UC.isPro(cur2))}`;
       await sock.sendMessage(chatId, { text: timeoutMsg, mentions: [id1, id2] });
     } catch(e) {}
   };
@@ -1099,9 +1101,9 @@ function handlePvpVictory(sock, chatId, winner, loser, wId, lId, db, saveDatabas
     const QD = require('../../rpg/utils/QuestDispatcher');
     QD.trackAndNotify(winner, 'pvp', 1, sock, wId, chatId);
     QD.trackAndNotify(winner, 'goldEarn', rewardNexus, sock, wId, chatId);
-    let _inDg = false;
-    try { const _GKM = require('../../rpg/dungeons/GateKeyManager'); _inDg = !!(_GKM.getDungeonGC && _GKM.getDungeonGC(chatId)); } catch(e){}
-    if (_inDg) QD.trackAndNotify(winner, 'pvpFloor', 1, sock, wId, chatId);
+    // Push #102f (BUG-035/045/048): PvP quests count FIGHTS, not only wins — the loser gets the same credit.
+    // 'pvpFloor' (PvP inside a dungeon) was impossible (PvP only runs in PvP-typed groups) and is gone from the pool.
+    try { if (loser) QD.trackAndNotify(loser, 'pvp', 1, sock, lId, chatId); } catch (e) {}
   } catch(e){}
 
   // Also give general exp via LevelUpManager check

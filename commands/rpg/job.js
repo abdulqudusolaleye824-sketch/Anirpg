@@ -71,7 +71,7 @@ module.exports = {
       const r = JS.setJob(player, job);
       if (!r.ok) return sock.sendMessage(chatId, { text: `❌ ${r.error}` }, { quoted: msg });
       saveDatabase();
-      return sock.sendMessage(chatId, { text: [FRAME, `🧭 *JOB CHANGE COMPLETE*`, FRAME, `👤 *${player.name}* now walks the path of the ${job.emoji} *${job.name}*`, `⭐ Job Lv.${r.level} — _${job.levels[r.level - 1]}_`, `_${job.lore[r.level - 1]}_`, ...JS.describeMods(job, r.level), ...JS.runeLines(r), FRAME, `📈 Job XP grows with every raid, dungeon, PvP and instance win.`].join('\n') }, { quoted: msg });
+      return sock.sendMessage(chatId, { text: [FRAME, `🧭 *JOB CHANGE COMPLETE*`, FRAME, `👤 *${player.name}* now walks the path of the ${job.emoji} *${job.name}*`, `⭐ Job Lv.${r.level} — _${job.levels[r.level - 1]}_`, `_${job.lore[r.level - 1]}_`, `📌 _Each job keeps its own level — a new job starts at Lv.1; the one you left is saved and comes back at the same level with /job switch._`, ...JS.describeMods(job, r.level), ...JS.runeLines(r), FRAME, `📈 Job XP grows with every raid, dungeon, PvP and instance win.`].join('\n') }, { quoted: msg });
     }
 
     // default: card

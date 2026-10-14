@@ -59,19 +59,22 @@ module.exports = {
       case 'dungeon':
       case 'gate':
         title = '🏰 TOP GATE CLEARERS';
-        sortBy = (a, b) => (b.dungeon?.gatesCleared || 0) - (a.dungeon?.gatesCleared || 0);
+        // Push #102f (BUG-053): gates are counted in stats_history.gatesCleared (old field dungeon.gatesCleared kept as fallback)
+        const _gc = (p) => Math.max(p.stats_history?.gatesCleared || 0, p.dungeon?.gatesCleared || 0);
+        sortBy = (a, b) => _gc(b) - _gc(a);
         formatter = (p, rank) => {
           const medal = rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : '  ';
-          return `${medal} ${rank}. ${p.name} - ${p.dungeon?.gatesCleared || 0} gates`;
+          return `${medal} ${rank}. ${p.name} - ${_gc(p)} gates`;
         };
         break;
       
       case 'boss':
         title = '👑 TOP BOSS SLAYERS';
-        sortBy = (a, b) => (b.bossesDefeated || 0) - (a.bossesDefeated || 0);
+        const _bd = (p) => Math.max(p.stats_history?.bossesDefeated || 0, p.bossesDefeated || 0); // Push #102f (BUG-053)
+        sortBy = (a, b) => _bd(b) - _bd(a);
         formatter = (p, rank) => {
           const medal = rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : '  ';
-          return `${medal} ${rank}. ${p.name} - ${p.bossesDefeated || 0} bosses`;
+          return `${medal} ${rank}. ${p.name} - ${_bd(p)} bosses`;
         };
         break;
       

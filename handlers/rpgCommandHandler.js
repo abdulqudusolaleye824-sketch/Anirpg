@@ -727,7 +727,21 @@ module.exports = async (sock, msg, messageText, config, getDatabase, saveDatabas
     try {
       const CC = require('../rpg/utils/CommandCooldown');
       const _cd = CC.check(db, sender, resolvedCommand);
-      if (_cd) return sock.sendMessage(chatId, { text: _cd.text }, { quoted: msg });
+      if (_cd) {
+        // Push #102f: every cooldown hit is a spam strike — 5 warnings, then a random 5–30 min mute (Pro max 15) per hit.
+        let _sg = null;
+        try {
+          const SG = require('../rpg/utils/SpamGuard'); const _P = require('../utils/permissions');
+          const _pl = db.users?.[sender]; let _pro = false; try { _pro = require('../rpg/utils/UI').isPro(_pl); } catch (e) {}
+          _sg = SG.strike(db, sender, { chatId, pro: _pro, isOwner: _P.isBotOwner(db, sender) });
+          if (_sg) saveDatabase();
+        } catch (e) {}
+        if (_sg && _sg.mute) {
+          return sock.sendMessage(chatId, { text: `🔇 *AUTO-MUTED ${_sg.minutes} MIN* — spamming commands on cooldown (strike ${_sg.strikes} this week).\n${chatId.endsWith('@g.us') ? 'Everything you send here is deleted until it ends.' : 'I will ignore you until it ends.'} Strikes reset Sunday 00:00 WAT.`, mentions: [sender] }, { quoted: msg });
+        }
+        const _warn = _sg && _sg.warning ? `\n⚠️ Spam warning *${_sg.warning}/5* — after 5, every cooldown hit auto-mutes you for 5–30 min.` : '';
+        return sock.sendMessage(chatId, { text: _cd.text + _warn }, { quoted: msg });
+      }
     } catch (e) {}
   }
 

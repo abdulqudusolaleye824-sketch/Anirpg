@@ -801,7 +801,7 @@ module.exports = {
             const kn = trackAndNotify(player, 'kill', 1, sock, sender, chatId);
             if (kn) questNotes.push(kn);
             if (dunSd && dunSd.currentFloor % 5 === 0) {
-              const bn = trackAndNotify(player, 'boss', 1, sock, sender, chatId);
+              const bn = trackAndNotify(player, 'boss', 1, sock, sender, chatId); try { if (!player.stats_history) player.stats_history = {}; player.stats_history.bossesDefeated = (player.stats_history.bossesDefeated || 0) + 1; player.bossesDefeated = (player.bossesDefeated || 0) + 1; } catch (e) {} // Push #102f (BUG-053)
               if (bn) questNotes.push(bn);
             }
           }
@@ -1019,7 +1019,7 @@ module.exports = {
             const kn = trackAndNotify(player, 'kill', 1, sock, sender, chatId);
             if (kn) log += '\n' + kn;
             if (isBossSolo) {
-              const bn = trackAndNotify(player, 'boss', 1, sock, sender, chatId);
+              const bn = trackAndNotify(player, 'boss', 1, sock, sender, chatId); try { if (!player.stats_history) player.stats_history = {}; player.stats_history.bossesDefeated = (player.stats_history.bossesDefeated || 0) + 1; player.bossesDefeated = (player.bossesDefeated || 0) + 1; } catch (e) {} // Push #102f (BUG-053)
               if (bn) log += '\n' + bn;
             }
             const fn = trackAndNotify(player, 'floor', sd.currentFloor, sock, sender, chatId);
@@ -1189,7 +1189,7 @@ module.exports = {
           const kn = trackAndNotify(player, 'kill', 1, sock, sender, chatId);
           if (kn) log += '\n' + kn;
           if (dungeon.currentFloor % 5 === 0) {
-            const bn = trackAndNotify(player, 'boss', 1, sock, sender, chatId);
+            const bn = trackAndNotify(player, 'boss', 1, sock, sender, chatId); try { if (!player.stats_history) player.stats_history = {}; player.stats_history.bossesDefeated = (player.stats_history.bossesDefeated || 0) + 1; player.bossesDefeated = (player.bossesDefeated || 0) + 1; } catch (e) {} // Push #102f (BUG-053)
             if (bn) log += '\n' + bn;
           }
           const fn = trackAndNotify(player, 'floor', dungeon.currentFloor, sock, sender);
@@ -1287,7 +1287,7 @@ module.exports = {
             const kn = trackAndNotify(player, 'kill', 1, sock, sender, chatId);
             if (kn) log += '\n' + kn;
             if (isBossSk) {
-              const bn = trackAndNotify(player, 'boss', 1, sock, sender, chatId);
+              const bn = trackAndNotify(player, 'boss', 1, sock, sender, chatId); try { if (!player.stats_history) player.stats_history = {}; player.stats_history.bossesDefeated = (player.stats_history.bossesDefeated || 0) + 1; player.bossesDefeated = (player.bossesDefeated || 0) + 1; } catch (e) {} // Push #102f (BUG-053)
               if (bn) log += '\n' + bn;
             }
             const fn = trackAndNotify(player, 'floor', sd.currentFloor, sock, sender, chatId);
@@ -1560,7 +1560,7 @@ async function handleMonsterDefeat(sock, chatId, party, monster, dungeon, db, sa
       const kn = trackAndNotify(player, 'kill', 1, sock, sender, chatId);
       if (kn) log += '\n' + kn;
       if (dungeon.currentFloor % 5 === 0) {
-        const bn = trackAndNotify(player, 'boss', 1, sock, sender, chatId);
+        const bn = trackAndNotify(player, 'boss', 1, sock, sender, chatId); try { if (!player.stats_history) player.stats_history = {}; player.stats_history.bossesDefeated = (player.stats_history.bossesDefeated || 0) + 1; player.bossesDefeated = (player.bossesDefeated || 0) + 1; } catch (e) {} // Push #102f (BUG-053)
         if (bn) log += '\n' + bn;
       }
       const fn = trackAndNotify(player, 'floor', dungeon.currentFloor, sock, sender);

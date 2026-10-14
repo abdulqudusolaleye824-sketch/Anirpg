@@ -113,6 +113,8 @@ function playerDamage(player, skillName = null, target = null) {
         }
       }
     } catch (e) {}
+    // Push #102f (BUG-049): weapons wear in raids too — −1 durability on a landed hit (the only place they wore was PvP).
+    try { if (dmg > 0) { const bw = require('../utils/ArmoryStore').wearWeapon(player); if (bw) synergyNotes.push(`💥 *${player.name}'s ${bw.name}* shattered — its last swing!`); } } catch (e) {}
     return {
       damage: dmg, isCrit, skillUsed: skill,
       statuses: [ ...((entry && entry.statuses) || skill.statuses || []), ...((_pm74.onHit || [])) ],
@@ -141,6 +143,7 @@ function playerDamage(player, skillName = null, target = null) {
   let procNote = null;
   if (_pm74.procDmg > 0 && Math.random() * 100 < _pm74.procDmg) { const extra = Math.floor(dmg * 0.5); dmg += extra; procNote = `✨ Arcane proc +${extra}`; }
   if (procNote) synergyNotes = [...synergyNotes, procNote];
+  try { if (dmg > 0) { const bw = require('../utils/ArmoryStore').wearWeapon(player); if (bw) synergyNotes = [...synergyNotes, `💥 *${player.name}'s ${bw.name}* shattered — its last swing!`]; } } catch (e) {} // Push #102f (BUG-049)
   return { damage: Math.floor(dmg), isCrit, synergyNotes, statuses: (_pm74.onHit || []) };
 }
 
@@ -296,6 +299,7 @@ function monsterDamage(monster, def, player = null) {
         const _hpNow = Number(player.stats?.hp) || 0, _mx = Number(player.stats?.maxHp) || 100;
         if (_hpNow > _mx * 0.25 && Math.floor(raw) >= _hpNow) { raw = Math.max(1, _hpNow - 1); monsterDamage.last.leakSpared = true; }
       }
+      try { const BM = require('../utils/BuffManager'); if (raw > 0 && BM.hasShield(player)) { BM.consumeShield(player); monsterDamage.last.absorbed = (monsterDamage.last.absorbed || 0) + Math.floor(raw); monsterDamage.last.shieldScroll = Math.floor(raw); raw = 0; } } catch (e) {} // Push #102f (BUG-037): Shield Scroll eats one hit
       try { if (raw > 0 && player.tempBuffs && player.tempBuffs.reflect) { const _rf = require('../utils/UnifiedCombat').reflectDamage(player, monster, Math.floor(raw)); if (_rf) { monsterDamage.last.reflected = _rf.back; monsterDamage.last.shieldLine = [monsterDamage.last.shieldLine, _rf.line].filter(Boolean).join('\n'); if (monster.hp <= 0) monster.hp = 1; } } } catch (e) {}
       return Math.max(0, Math.floor(raw));
     } catch (e) {}
@@ -309,6 +313,8 @@ function monsterDamage(monster, def, player = null) {
 // per-turn regen. Returns lines. Call AFTER the damage was applied.
 function afterMonsterHit(player, monster, dmg) {
   const lines = [];
+  // Push #102f (BUG-049): armour wears when a beast lands a hit (−1 durability per piece; broken pieces fall off).
+  try { if (dmg > 0) { const Armory = require('../utils/ArmoryStore'); for (const bg of Armory.wearGear(player)) lines.push(`💥 *${player.name}'s ${bg.name}* broke apart!`); const _w = Armory.lowDurabilityCheck ? Armory.lowDurabilityCheck(player) : []; if (_w && _w.length) lines.push(..._w); } } catch (e) {}
   try { const _bdl = require('../utils/ClassPower').noteBloodDebt(player, dmg); if (_bdl) lines.push(_bdl); } catch (e) {}
   try { const UCc = require('../utils/UnifiedCombat'); const banked = UCc.noteDamageTaken(player, dmg); if (banked > 0) lines.push(`🩸 *${player.name}* banks ${banked} HP of that hit — it returns next turn (${player.tempBuffs.convert.source}).`); } catch (e) {}
   let pm = null; try { pm = require('../utils/ClassPower').passiveMultipliers(player); } catch (e) { return lines; }
@@ -1873,7 +1879,7 @@ function autoStrikeIdleRaids(db, now = Date.now(), canStrike = null) {
       if (guardHit) lines.push(`🛡️ *${guardHit.guardianName}* steps in front of *${victimName}* and takes the blow!`);
       if (monsterDamage.last && monsterDamage.last.shieldLine) lines.push(monsterDamage.last.shieldLine);
       if (dmg <= 0 && !(monsterDamage.last && monsterDamage.last.absorbed)) lines.push(monsterDamage.last && monsterDamage.last.blindMiss ? `🌫️ *${target.name}* is BLIND — it swings wide of *${u.name}*!` : `💨 *${u.name}* dodged it!`);
-      else if (dmg <= 0) lines.push(`🦴 The wall took it all — *${u.name}* is untouched!`);
+      else if (dmg <= 0) lines.push(monsterDamage.last && monsterDamage.last.shieldScroll ? `🛡️ *${u.name}'s Shield Scroll* absorbed the whole hit (${monsterDamage.last.shieldScroll} dmg → 0) and crumbled to dust.` : `🦴 The wall took it all — *${u.name}* is untouched!`);
       else {
         u.stats.hp = Math.max(0, (u.stats.hp || 0) - dmg);
         lines.push(`${crit ? '💥 CRITICAL HIT — ' : ''}💢 *${u.name}* takes *${dmg}* damage → ❤️ ${u.stats.hp}/${maxHp}`);

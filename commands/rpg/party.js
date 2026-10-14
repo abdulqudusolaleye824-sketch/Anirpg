@@ -349,7 +349,7 @@ module.exports = {
 
       const membersList = (raid.members || []).map((m, i) => {
         const p = db.users?.[m.id];
-        const isLeader = m.id === raid.leader;
+        const isLeader = m.id === raid.leader || (normaliseJid(m.id) && normaliseJid(m.id) === normaliseJid(raid.leader)); // Push #102f (BUG-050): lid/phone-tolerant
         const readyIcon = m.ready ? '✅ Ready' : '⏳ Not Ready';
         return `  ${i+1}. ${isLeader ? '👑' : '⚔️'} *${m.name}* (Lv.${p?.level || 1}) — ${readyIcon}`;
       });
@@ -392,6 +392,8 @@ module.exports = {
             `🗺️ Floor: *${floor}/${gate.totalFloors}*`,
             `👾 Monsters: *${totalFloor - left.length}/${totalFloor}* cleared`,
             `❤️ Hunters alive: *${aliveCount}/${totalMembers}*`,
+            // Push #102f (BUG-050): who leads right now (and whether command was passed on)
+            (() => { const L = (raid.members || []).find(m => m.id === raid.leader || (normaliseJid(m.id) && normaliseJid(m.id) === normaliseJid(raid.leader))); const nm = L?.name || db.users?.[raid.leader]?.name || String(raid.leader || '?').split('@')[0]; return `👑 Leader: *${nm}*${raid.leaderSucceededAt ? ` _(took command ${Math.max(1, Math.round((Date.now() - raid.leaderSucceededAt) / 60000))} min ago — the first leader fell)_` : ''}`; })(),
             ...(treas.nexus > 0 || treas.crystals > 0 ? [`💰 Loot banked: *${treas.nexus.toLocaleString()}* 💠 + *${treas.crystals.toLocaleString()}* 💎`] : []),
             ...(bossReady ? [``, `🏆 *BOSS READY:* ${gate.boss.name} — ❤️ ${gate.boss.hp}/${gate.boss.maxHp}`, `⚔️ /party boss — engage!`] : []),
             ``,

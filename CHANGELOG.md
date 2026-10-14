@@ -1,3 +1,21 @@
+## 1.0.202 — Push #102f (2026-10-14) — verified bug sweep, bank gating, spam auto-mute, prices
+- Battle Pass is **$3** (3,000 PC) on every card. `/upgrade reset` shows the real 200k. Bank creation is now paid
+  outside the bot ($20) and unlocked per player by an owner with `/ba @user` (or reply) — bank card + /help updated.
+- /help: MODERATION line separated from the Group Admin line; `/ba` listed with owner commands.
+- Spam auto-mute (SpamGuard): 5 warnings, then every violation = random 5–30 min mute (Pro max 15); counters reset
+  every Sunday; owners exempt; muted = bot ignores + WhatsApp group restriction.
+- BUG-034 jobs: level is per job (message explains). BUG-035/045/048 quests: PvP quests count attempts, impossible
+  quests audited and replaced automatically. BUG-036: "all 4 done" box reward works.
+- BUG-039 PvP HP displays use effective max HP. BUG-040 pet ATK no longer double-counted; pet bonus shown as its own
+  line; skill moves scale with magic power. Constellation + pet DEF included.
+- BUG-037 Shield Scroll was sold but never consumed — now absorbs the first landed hit (PvP + raids), then crumbles.
+- BUG-049 crafted/banner weapons now lose durability on every landed raid hit (both strike paths) and gear wears
+  when monsters hit you; class weapons stay unbreakable.
+- BUG-050 party card shows the current 👑 Leader (lid/phone-tolerant; notes when command passed on after a death).
+- BUG-053 /leaderboard gate read a field nothing wrote and bosses were never counted anywhere. Gates read from
+  stats_history; every gate/dungeon boss kill now credits bossesDefeated (raid: all hitters) — titles/stats card too.
+- Summoner (BUG-041/042/051) deferred to the class-skills doc edits.
+
 ## 1.0.201 — Push #102e2 (2026-10-13) — no re-shipping old messages, 24 h gate/key pruning, save cadence
 - ROOT CAUSE of "Winry answered a command from hours ago" (gate key revealed after /restart): it was NOT a command — a
   member's phone finally asked (retry receipt) for a message Winry sent hours earlier and the sent-message store (2 h TTL,

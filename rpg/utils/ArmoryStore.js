@@ -288,7 +288,9 @@ function unequipWeapon(player) {
 /** Called by combat: −1 weapon durability on a landed hit. Returns broken item or null. */
 function wearWeapon(player) {
   const w = player && player.weapon;
-  if (!w || !w.fromStore || w.maxDurability == null) return null;
+  // Push #102f (BUG-049): EVERY weapon with a durability (crafted, banner, store) wears — not only store weapons.
+  // Class weapons (maxDurability == null) stay unbreakable.
+  if (!w || w.maxDurability == null) return null;
   w.durability = Math.max(0, (w.durability || 0) - 1);
   if (w.durability === 0) { player.weapon = null; return w; }
   return null;

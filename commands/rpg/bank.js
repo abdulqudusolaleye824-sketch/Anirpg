@@ -50,7 +50,7 @@ ${FRAME}\n`;
 
       menu += `\n📌 COMMANDS
 ${FRAME}
-${!ownedBank ? '🏦 /bank create [name] - Create bank\n   Requirements: Level 50 OR 20k Nexus\n   Cost: 10,000 Nexus\n\n' : ''}${!accountBank ? '💳 /bank register [bank] - Open account\n\n' : ''}`;
+${!ownedBank ? '🏦 /bank create [name] - Open your own bank\n   💵 $20 (paid outside the game) → Owner unlocks you with /ba\n\n' : ''}${!accountBank ? '💳 /bank register [bank] - Open account\n\n' : ''}`;
 
       if (accountBank) {
         menu += `💠 /bank deposit [amount] [nexus|mana] - Deposit (default Nexus)
@@ -72,7 +72,7 @@ ${!ownedBank ? '🏦 /bank create [name] - Create bank\n   Requirements: Level 5
 ${FRAME}
 💡 HOW IT WORKS
 ${FRAME}
-1️⃣ High level players create banks
+1️⃣ Hunters with Owner-granted access ($20, via /ba) open banks
 2️⃣ Other players deposit Nexus safely
 3️⃣ Bank owner earns 10% on withdrawals
 4️⃣ Everyone's Nexus is protected!
@@ -101,14 +101,13 @@ ${FRAME}`;
         }, { quoted: msg });
       }
 
-      const WHITELISTED_BANK_CREATORS = ['221951679328499@lid', '194592469209292@lid'];
-      const isWhitelisted = WHITELISTED_BANK_CREATORS.includes(sender) || WHITELISTED_BANK_CREATORS.includes(sender.split('@')[0] + '@lid') || WHITELISTED_BANK_CREATORS.some(j => sender.includes(j.split('@')[0]));
-      const canCreate = isWhitelisted
-        ? { canCreate: true }
-        : BankingSystem.canCreateBank(player);
-      if (!canCreate.canCreate) {
+      // Push #102f: bank creation is a PAID privilege ($20, paid outside the bot). An Owner unlocks it with /ba @user.
+      // No Nexus fee, no level gate — only the grant (Owners always may).
+      const BA = require('../../rpg/utils/BankAccess');
+      let _isOwnerBA = false; try { _isOwnerBA = require('../../utils/permissions').isBotOwner(db, sender); } catch (e) {}
+      if (!_isOwnerBA && !BA.has(db, sender)) {
         return sock.sendMessage(chatId, {
-          text: `❌ Cannot create bank!\n\n${canCreate.reason}\n\n📌 Requirements:\n- Level 50 OR 20,000 Nexus\n- 10,000 Nexus creation fee unless you're Naruto`
+          text: `${FRAME}\n🏦 *BANK CREATION IS PAID*\n${FRAME}\n\n💵 Opening a bank costs *$20* (paid to the Owner, outside the game).\nOnce paid, an Owner unlocks you with */ba* and you run */bank create <name>*.\n\n📩 Contact an Owner to get started.`
         }, { quoted: msg });
       }
 
@@ -131,20 +130,7 @@ ${FRAME}`;
         }
       }
 
-      const isPrivilegedBankCreator = ['221951679328499@lid', '194592469209292@lid'].some(j => sender === j || sender.split('@')[0] === j.split('@')[0]);
-      const cost = isPrivilegedBankCreator ? 0 : BankingSystem.BANK_CREATION_REQUIREMENTS.creationCost;
-      if (!isPrivilegedBankCreator && player.gold < cost) {
-        return sock.sendMessage(chatId, {
-          text: `❌ Not enough Nexus!\n\nNeed: ${cost}\nHave: ${player.gold}`
-        }, { quoted: msg });
-      }
-
-      // Deduct cost (waived for owner/co-owner)
-      if (cost > 0) {
-        player.gold -= cost;
-        try { require('../../rpg/utils/TransactionLog').logTransaction(player, { type: 'bank_fee', amount: cost, currency: '💠', note: `bank creation` }); } catch (e) {};
-        if (player.inventory) player.inventory.gold = player.gold;
-      }
+      const cost = 0; // Push #102f: no in-game fee — the $20 is paid outside the bot
 
       // Create bank
       const bank = BankingSystem.createBank(db, sender, bankName);
