@@ -2587,6 +2587,20 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
           }
         } catch (e) {}
       }
+      // Push #102g: owner typed a reply to a bug report (armed by the 💬 Reply button / `/bug reply <id>`).
+      if (!isGroup && db && messageText.trim()) {
+        try {
+          const BT = require('../rpg/utils/BugTracker');
+          const pend = BT.pendingReply(db, sender);
+          if (pend && require('../utils/permissions').isBotOwner(db, sender)) {
+            BT.clearPending(db, sender);
+            if (/^cancel$/i.test(messageText.trim())) { try { saveDatabase?.(); } catch (e) {} await sock.sendMessage(chatId, { text: `✖️ Reply to *${pend.id}* cancelled.` }, { quoted: msg }); return; }
+            const r = await BT.sendReply(sock, db, sender, pend.id, messageText);
+            try { saveDatabase?.(); } catch (e) {}
+            await sock.sendMessage(chatId, { text: r.text }, { quoted: msg }); return;
+          }
+        } catch (e) {}
+      }
       // Push #96d: domain name/description setup — plain DM replies are consumed here.
       if (!isGroup && db && db.users) {
         try {

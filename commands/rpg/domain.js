@@ -27,21 +27,25 @@ module.exports = {
 
     // Late unlock safety: a Lv.20+ hunter who levelled before this update.
     if (!DS.has(player) && (player.level || 1) >= 20) { DS.unlock(player); saveDatabase(); }
+    // Push #102g (BUG-054): /domain effects works BEFORE the domain awakens — it exists to show what your class can get.
+    if (sub === 'effects' || sub === 'list') {
+      const d0 = player.domain || {};
+      const cls = d0.class || (() => { try { return require('../../rpg/utils/ClassPower').baseClassName(player); } catch (e) { return null; } })() || player.class || 'Hunter';
+      const names = DS.CLASS_DOMAINS[cls] || [];
+      if (!names.length) return sock.sendMessage(chatId, { text: [FRAME, `🌌 *DOMAIN EFFECTS*`, FRAME, player.class ? `No domain table for *${cls}* yet.` : `Awaken a class first — your domain effects depend on your class.`].join('\n') }, { quoted: msg });
+      const lines = names.map((n, i) => {
+        const a = DS.ARCHETYPES[i];
+        const f = (o, w) => Object.entries(o).filter(([, v]) => v).map(([s, v]) => `${w}${DS.STAT_LABEL[s] || s} ${v > 0 ? '+' : ''}${v}%`).join(', ');
+        return `${DS.has(player) && i === d0.idx ? '✨' : '•'} *${n}* — ${f(a.ally, '')}${Object.keys(a.enemy).length ? ' | foes: ' + f(a.enemy, '') : ''}`;
+      });
+      const foot = DS.has(player) ? `✨ = yours. Values grow +2% per Domain level.` : `One of these awakens at *Lv.20* — chosen by fate, yours forever. You are Lv.${player.level || 1}.`;
+      return sock.sendMessage(chatId, { text: [FRAME, `🌌 *${cls.toUpperCase()} DOMAINS* (Lv.1 values)`, FRAME, ...lines, FRAME, foot].join('\n') }, { quoted: msg });
+    }
+
     if (!DS.has(player)) {
       return sock.sendMessage(chatId, { text: [FRAME, `🌌 *DOMAIN — SEALED*`, FRAME, `Every hunter's domain awakens at *Lv.20* — one of the 10 domain effects of your class, chosen by fate, yours forever.`, `You are Lv.${player.level || 1}.`, `📖 /domain effects — see what your class can awaken`].join('\n') }, { quoted: msg });
     }
     const d = player.domain;
-
-    if (sub === 'effects' || sub === 'list') {
-      const cls = d.class || 'Hunter';
-      const names = DS.CLASS_DOMAINS[cls] || [];
-      const lines = names.map((n, i) => {
-        const a = DS.ARCHETYPES[i];
-        const f = (o, w) => Object.entries(o).filter(([, v]) => v).map(([s, v]) => `${w}${DS.STAT_LABEL[s] || s} ${v > 0 ? '+' : ''}${v}%`).join(', ');
-        return `${i === d.idx ? '✨' : '•'} *${n}* — ${f(a.ally, '')}${Object.keys(a.enemy).length ? ' | foes: ' + f(a.enemy, '') : ''}`;
-      });
-      return sock.sendMessage(chatId, { text: [FRAME, `🌌 *${cls.toUpperCase()} DOMAINS* (Lv.1 values)`, FRAME, ...lines, FRAME, `✨ = yours. Values grow +2% per Domain level.`].join('\n') }, { quoted: msg });
-    }
 
     if (sub === 'rename' || sub === 'name') {
       const name = args.slice(1).join(' ').trim();

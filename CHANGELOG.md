@@ -1,3 +1,18 @@
+## 1.0.203 — Push #102g (2026-10-14) — global pass seasons, Pro Store BP price, bug replies, BUG-054/055/056/058
+- PASS SEASONS now auto-end and auto-start for everyone: Battle Pass = 30-day global cycles, Astra Pass = 40-day
+  cycles, Season 1 starts 15 Oct 2026 00:00 WAT (rpg/utils/Seasons.js). A pass touched in a new season is reset
+  (level 1, 0 XP, claims cleared, Premium off — Premium is per season). Unclaimed tiers are lost at rollover.
+  Before this every player had a private seasonStart that never rolled ("Season Ends: Ended" forever).
+- /bp: XP bar shows the real tier cost (was a flat /500); season line shows time left + season number; Pro Store
+  Battle Pass Premium = 3,000 PC ($3) like /bp buy (was still 1,000).
+- /bug: 💬 Reply button (4th button) → owner types a custom reply in DM (10-min window, "cancel" aborts) or
+  `/bug reply <id> <text>`; delivered to the reporter (DM → group @mention → direct), recorded on the report.
+- BUG-054 /domain effects works before Lv.20 (it was behind the seal while the seal message pointed at it).
+- BUG-055 ROOT CAUSE: raid skill damage used ATK×0.7 + Magic×0.5 for ANYONE with magic power > 0, so a fighter
+  with a little magic lost up to 30% on every "X% ATK" skill. The blend never drops below plain ATK now.
+- BUG-056 /mine use <#> — switch the mining tool you swing with (durability-aware; falls back to strongest).
+- BUG-058 a dodged / absorbed monster move (0 dmg) no longer drains energy (Mana Drain etc.).
+
 ## 1.0.202 — Push #102f (2026-10-14) — verified bug sweep, bank gating, spam auto-mute, prices
 - Battle Pass is **$3** (3,000 PC) on every card. `/upgrade reset` shows the real 200k. Bank creation is now paid
   outside the bot ($20) and unlocked per player by an owner with `/ba @user` (or reply) — bank card + /help updated.

@@ -5,6 +5,7 @@
 //   /mine info       — your tools, durability, lifetime stats
 //   /mine shop       — the mining shop
 //   /mine buy <#>    — buy a tool / lantern / repair kit
+//   /mine use <#>    — switch the tool you swing with (Push #102g)
 // ═══════════════════════════════════════════════════════════════
 'use strict';
 
@@ -51,6 +52,12 @@ module.exports = {
 
     if (sub === 'info' || sub === 'tools') return reply(sock, chatId, msg, Mining.infoText(player, FRAME), [['🛒 Shop', '/mine shop'], ['⛏️ Mine', '/mine']], pro);
     if (sub === 'shop' || sub === 'store') return reply(sock, chatId, msg, Mining.shopText(player, FRAME), [['⛏️ Buy Weak Pickaxe', '/mine buy 1'], ['⚒️ Buy Strong Pickaxe', '/mine buy 2'], ['🧰 My tools', '/mine info']], pro);
+    if (sub === 'use' || sub === 'switch' || sub === 'equip') { // Push #102g (BUG-056)
+      const r = Mining.useTool(player, args.slice(1).join(' '));
+      if (!r.ok) return reply(sock, chatId, msg, r.error, [['🧰 My tools', '/mine info']], pro);
+      saveDatabase();
+      return reply(sock, chatId, msg, [FRAME, `⛏️ *MINING — TOOL SWITCHED*`, FRAME, r.line].join('\n'), [['🧰 My tools', '/mine info'], ['⛏️ Mine', '/mine']], pro);
+    }
     if (sub === 'buy') {
       const r = Mining.buy(player, args.slice(1).join(' '));
       if (!r.ok) return sock.sendMessage(chatId, { text: r.error }, { quoted: msg });
@@ -58,7 +65,7 @@ module.exports = {
       return reply(sock, chatId, msg, [FRAME, `🛒 *MINING SHOP — PURCHASE*`, FRAME, r.line, `💸 Paid: ${Mining.priceLine(r.paid)}`, `💰 Left: 💠 ${(player.gold || 0).toLocaleString()} · 💎 ${(player.manaCrystals || 0).toLocaleString()}`, FRAME].join('\n'), [['🧰 My tools', '/mine info'], ['🛒 Shop', '/mine shop']], pro);
     }
     if (sub && sub !== 'swing' && sub !== 'dig') {
-      return reply(sock, chatId, msg, [FRAME, `⛏️ *MINING*`, FRAME, `*/mine* — swing on a cleared floor (3× per floor)`, `*/mine info* — tools & stats`, `*/mine shop* · */mine buy <#>*`, FRAME].join('\n'), [['⛏️ Mine', '/mine'], ['🛒 Shop', '/mine shop'], ['🧰 Tools', '/mine info']], pro);
+      return reply(sock, chatId, msg, [FRAME, `⛏️ *MINING*`, FRAME, `*/mine* — swing on a cleared floor (3× per floor)`, `*/mine info* — tools & stats`, `*/mine use <#>* — switch tool`, `*/mine shop* · */mine buy <#>*`, FRAME].join('\n'), [['⛏️ Mine', '/mine'], ['🛒 Shop', '/mine shop'], ['🧰 Tools', '/mine info']], pro);
     }
 
     // ── Swing ────────────────────────────────────────────────────

@@ -47,7 +47,7 @@ module.exports = {
       const BP = require('../../rpg/utils/BattlePass');
       const bp = BP.getPassState(player);
       if (bp.premium) {
-        bpLine = `  🎖️ Battle Pass Premium: ✅ *ACTIVE* (${BP.CURRENT_SEASON?.name || 'current season'})`;
+        bpLine = `  🎖️ Battle Pass Premium: ✅ *ACTIVE* (${BP.seasonInfo().name} · ${BP.seasonInfo().remaining} left)`;
       }
     } catch (e) {}
 

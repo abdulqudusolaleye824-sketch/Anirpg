@@ -67,9 +67,25 @@ function buy(player, q, opts = {}) {
 // Best usable (non-accessory) tool = highest max yield with durability left.
 function bestTool(player) {
   const m = state(player);
-  const list = m.tools.filter(x => x && TOOLS[x.id] && !TOOLS[x.id].accessory && (x.durability || 0) > 0);
+  const list = m.tools.filter(x => x && TOOLS[x.id] && !TOOLS[x.id].accessory && !TOOLS[x.id].consumable && (x.durability || 0) > 0);
+  // Push #102g (BUG-056): a tool chosen with /mine use wins while it still has durability; else the strongest one.
+  if (m.active) { const pick = list.find(x => x.id === m.active); if (pick) return pick; }
   list.sort((a, b) => TOOLS[b.id].max - TOOLS[a.id].max);
   return list[0] || null;
+}
+// Push #102g (BUG-056): /mine use <#|name> — switch the tool you swing with.
+function useTool(player, q) {
+  const m = state(player);
+  const owned = m.tools.filter(x => x && TOOLS[x.id] && !TOOLS[x.id].accessory && !TOOLS[x.id].consumable);
+  if (!owned.length) return { ok: false, error: `❌ You own no mining tools. 🛒 */mine shop*` };
+  const s = String(q || '').trim().toLowerCase();
+  let t = null;
+  if (/^\d+$/.test(s)) t = owned[parseInt(s, 10) - 1] || null;
+  else if (s) t = owned.find(x => TOOLS[x.id].name.toLowerCase() === s || x.id === s || TOOLS[x.id].name.toLowerCase().includes(s)) || null;
+  if (!t) return { ok: false, error: [`❌ Pick a tool you own:`, ...owned.map((x, i) => `  ${i + 1}. ${TOOLS[x.id].emoji} ${TOOLS[x.id].name} — ${x.durability}/${TOOLS[x.id].durability}${m.active === x.id ? ' ✅ active' : ''}`), `Usage: */mine use <#>*`].join('\n') };
+  if ((t.durability || 0) <= 0) return { ok: false, error: `❌ ${TOOLS[t.id].emoji} ${TOOLS[t.id].name} is broken (0 durability). Repair it first (*/mine buy repair_kit*) or pick another.` };
+  m.active = t.id;
+  return { ok: true, tool: t, line: `✅ You now swing with ${TOOLS[t.id].emoji} *${TOOLS[t.id].name}* (${t.durability}/${TOOLS[t.id].durability}).` };
 }
 function lantern(player) { return state(player).tools.find(x => x && x.id === 'miners_lantern' && (x.durability || 0) > 0) || null; }
 
@@ -151,10 +167,10 @@ function infoText(player, FRAME = '━━━━━━━━━━━━━━━
   const m = state(player);
   const L = [FRAME, `⛏️ *MINING — ${player.name}*`, FRAME];
   if (!m.tools.length) L.push(`You own no mining tools.`, `🛒 */mine shop* — buy a pickaxe (also sold in */guild shop*).`);
-  else for (const t of m.tools) { const d = TOOLS[t.id]; if (!d) continue; L.push(`${d.emoji} *${d.name}* — ${t.durability}/${d.durability} durability${d.accessory ? ' (accessory)' : ` · ${d.min.toLocaleString()}–${d.max.toLocaleString()} 💎 · ${Math.round(d.chance * 100)}%`}`); }
+  else for (const t of m.tools) { const d = TOOLS[t.id]; if (!d) continue; L.push(`${d.emoji} *${d.name}*${(bestTool(player) || {}) === t ? ' ✅ active' : ''} — ${t.durability}/${d.durability} durability${d.accessory ? ' (accessory)' : ` · ${d.min.toLocaleString()}–${d.max.toLocaleString()} 💎 · ${Math.round(d.chance * 100)}%`}`); }
   const s = m.stats;
   L.push(``, `📊 Swings ${s.swings} · Hits ${s.hits} (${s.swings ? Math.round(s.hits / s.swings * 100) : 0}%) · 💎 ${s.mana.toLocaleString()} mined · Essence ${s.essence} · Broken ${s.broken}`);
-  L.push(``, `📖 *HOW:* clear every beast on a floor → */mine* (up to ${ATTEMPTS_PER_FLOOR}× per floor, ~10s each) → then */party advance*.`, `Mined Mana Stones join the gate loot. Essence Stones go straight to you. Tools lose 1 durability per swing (hit or miss).`, FRAME);
+  L.push(``, `🔁 */mine use <#>* — switch tool (numbered by order above).`); L.push(``, `📖 *HOW:* clear every beast on a floor → */mine* (up to ${ATTEMPTS_PER_FLOOR}× per floor, ~10s each) → then */party advance*.`, `Mined Mana Stones join the gate loot. Essence Stones go straight to you. Tools lose 1 durability per swing (hit or miss).`, FRAME);
   return L.join('\n');
 }
 
@@ -177,4 +193,4 @@ function grantFromShop(player, toolId) {
   return `${t.emoji} ${t.name} (${t.durability} durability) → /mine`;
 }
 
-module.exports = { TOOLS, ORDER, ATTEMPTS_PER_FLOOR, RANK_MULT, catalog, toolById, state, buy, bestTool, lantern, canMine, resolve, progressLines, resultText, infoText, shopText, guildShopItems, grantFromShop, priceLine };
+module.exports = { useTool, TOOLS, ORDER, ATTEMPTS_PER_FLOOR, RANK_MULT, catalog, toolById, state, buy, bestTool, lantern, canMine, resolve, progressLines, resultText, infoText, shopText, guildShopItems, grantFromShop, priceLine };

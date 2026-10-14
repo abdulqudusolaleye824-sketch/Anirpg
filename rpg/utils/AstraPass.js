@@ -21,7 +21,8 @@ function getPassState(player) {
   if (typeof ap.xp !== 'number') ap.xp = 0;
   if (!Array.isArray(ap.claimedFree)) ap.claimedFree = [];
   if (!Array.isArray(ap.claimedPremium)) ap.claimedPremium = [];
-  if (!ap.seasonStart) ap.seasonStart = Date.now();
+  // Push #102g: GLOBAL 40-day seasons (Seasons.js). New season → fresh pass (premiumBought is per season too).
+  try { require('./Seasons').roll(ap, 'astra', (a) => { a.level = 1; a.xp = 0; a.claimedFree = []; a.claimedPremium = []; a.premiumBought = false; }); } catch (e) { if (!ap.seasonStart) ap.seasonStart = Date.now(); }
   // One-time merge: legacy flat XP written by old fallback paths
   if (player.astraPassXp > 0) { ap.xp += Math.floor(player.astraPassXp); player.astraPassXp = 0; }
   // Batch-41: also absorb the old games counter (uppercase P) — quiz and the

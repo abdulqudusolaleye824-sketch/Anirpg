@@ -864,7 +864,10 @@ function computeDamage(player, skill, opts = {}) {
   const b = levelBonus(skill);
   const atk = Number(st.atk || 10);
   const magic = Number(st.magicPower || 0);
-  const base = opts.includeMagic ? (atk * 0.7 + magic * 0.5) : atk;
+  // Push #102g (BUG-055): the caster blend (ATK×0.7 + Magic×0.5) used to REPLACE ATK whenever a hunter had ANY magic
+  // power — a 1,000-ATK fighter with 50 magic hit for 725 on a "100% ATK" skill (−27%). Casters keep the blend; it can
+  // never drop below plain ATK, so "X% ATK" now means X% ATK for everyone.
+  const base = opts.includeMagic ? Math.max(atk, atk * 0.7 + magic * 0.5) : atk;
   const pct = ((skill.damagePct || 100) / 100) * b.dmgMult;
   let dmg = base * pct + (skill.flatDamage || 0) * b.dmgMult;
   if (opts.crit) dmg = dmg * (1 + (Number(st.critDamage || 150) - 100) / 100);

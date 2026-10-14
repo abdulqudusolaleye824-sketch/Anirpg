@@ -32,6 +32,15 @@ module.exports = {
       return sock.sendMessage(chatId, { text: r.text }, { quoted: msg });
     }
 
+    // ── Owner: /bug reply <id> [text]  (button arms a typed reply) — Push #102g ──
+    if (sub === 'reply' || sub === 'answer') {
+      if (!Perms.isBotOwner(db, sender)) return sock.sendMessage(chatId, { text: '❌ Only bot owners can reply to bug reports.' }, { quoted: msg });
+      const id = args[1]; const text = args.slice(2).join(' ').trim();
+      if (text) { const r = await BT.sendReply(sock, db, sender, id, text); saveDatabase(); return sock.sendMessage(chatId, { text: r.text }, { quoted: msg }); }
+      const r = BT.armReply(db, sender, id); saveDatabase();
+      return sock.sendMessage(chatId, { text: r.text }, { quoted: msg });
+    }
+
     if (!args.length) {
       return sock.sendMessage(chatId, { text: '❌ Please describe the bug.\nExample:\n/bug Dungeon crashes on skill use' }, { quoted: msg });
     }

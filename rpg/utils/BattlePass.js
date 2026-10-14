@@ -5,7 +5,7 @@
 // ═══════════════════════════════════════════════════════════════
 
 const SEASON_DURATION_DAYS = 30;
-const PASS_LEVELS = 50; // 0→50 levels per season
+const PASS_LEVELS = 40; // Push #102g: 40 tiers — matches /bp (SilentXP + the command both cap at 40)
 const XP_PER_LEVEL = 500; // base only — real cost scales (see xpForLevel)
 
 // XP needed to advance FROM `level` TO `level+1`. Linear ramp: 500 for the
@@ -99,16 +99,19 @@ const XP_SOURCES = {
 function getPassState(player) {
   if (!player.battlePass) player.battlePass = {};
   const bp = player.battlePass;
-  if (bp.seasonId !== CURRENT_SEASON.id) {
-    // New season — reset
-    bp.seasonId = CURRENT_SEASON.id;
-    bp.xp       = 0;
-    bp.level    = 0;
-    bp.premium  = false;
-    bp.claimed  = []; // array of level numbers claimed
+  // Push #102g: GLOBAL 30-day seasons (see Seasons.js). New season → fresh pass; Premium is per season.
+  try {
+    require('./Seasons').roll(bp, 'bp', (b) => { b.xp = 0; b.level = 1; b.premium = false; b.premiumSince = null; b.claimed = []; });
+  } catch (e) {
+    if (bp.seasonId == null) { bp.seasonId = 'bp-1'; bp.xp = 0; bp.level = 1; bp.premium = false; bp.claimed = []; }
   }
+  if (typeof bp.level !== 'number' || bp.level < 1) bp.level = 1;
+  if (typeof bp.xp !== 'number') bp.xp = 0;
+  if (!Array.isArray(bp.claimed)) bp.claimed = [];
   return bp;
 }
+// Push #102g: live season info (number / start / end) for cards.
+function seasonInfo(now = Date.now()) { const S = require('./Seasons'); const s = S.season('bp', now); return { ...s, name: `Season ${s.number}`, remaining: S.remainingText('bp', now), progress: S.progress('bp', now) }; }
 
 // Reward multiplier, centralized: Pro 2x, BP-premium 2x, both 4x.
 // (Callers pass base amounts only — no manual doubling at call sites.)
@@ -176,7 +179,7 @@ function claimReward(player, level) {
   return { success:true, gained };
 }
 
-module.exports = {
+module.exports = { seasonInfo,
   CURRENT_SEASON, PASS_LEVELS, XP_PER_LEVEL, XP_SOURCES, SEASON_DURATION_DAYS, xpForLevel,
   getRewardTrack, getPassState, addPassXP, addPassXPAmount, claimReward,
 };

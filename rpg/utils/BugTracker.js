@@ -56,7 +56,40 @@ function ownerButtons(rec) {
     ['✅ Log as verified bug', `/bug log ${rec.id}`],
     ['🗑️ Dismiss', `/bug dismiss ${rec.id}`],
     ['🚫 Ban reporter', `/bug ban ${rec.id}`],
+    ['💬 Reply to reporter', `/bug reply ${rec.id}`], // Push #102g: 4th button rolls into a follow-up message (max 3/msg)
   ];
+}
+
+// ── Push #102g: owner → reporter custom replies ────────────────────────────
+// `/bug reply <id>` (button) arms a 10-minute "type your reply" window for that owner in DM;
+// `/bug reply <id> <text>` sends straight away. Replies are delivered like the other feedback (DM → group @mention → direct).
+const REPLY_WINDOW_MS = 10 * 60e3;
+function armReply(db, ownerJid, id) {
+  const rec = get(db, id); if (!rec) return { ok: false, text: `❌ No bug report *${String(id || '').toUpperCase()}*.` };
+  if (!db.bugReplyPending) db.bugReplyPending = {};
+  db.bugReplyPending[_bare(ownerJid)] = { id: rec.id, at: Date.now() };
+  return { ok: true, rec, text: `💬 Type your reply to *${rec.id}* (${rec.reporterName}) as your next message here — it goes straight to them. 10 min window. Send *cancel* to stop.` };
+}
+function pendingReply(db, ownerJid) {
+  const p = db && db.bugReplyPending && db.bugReplyPending[_bare(ownerJid)];
+  if (!p) return null;
+  if (Date.now() - p.at > REPLY_WINDOW_MS) { delete db.bugReplyPending[_bare(ownerJid)]; return null; }
+  return p;
+}
+function clearPending(db, ownerJid) { if (db && db.bugReplyPending) delete db.bugReplyPending[_bare(ownerJid)]; }
+function replyText(rec, text, ownerJid, db) {
+  return [`💬 *Reply from the developers — ${rec.id}*`, `🐞 _${rec.text.length > 120 ? rec.text.slice(0, 117) + '…' : rec.text}_`, ``, text.trim(), ``, `— ${(db && ownerName(db, ownerJid)) || 'Astra Team'} · ${stamp(Date.now())}`].join('\n');
+}
+async function sendReply(sock, db, ownerJid, id, text) {
+  const rec = get(db, id); if (!rec) return { ok: false, text: `❌ No bug report *${String(id || '').toUpperCase()}*.` };
+  const body = String(text || '').trim(); if (!body) return { ok: false, text: `❌ Empty reply.` };
+  const out = replyText(rec, body, ownerJid, db);
+  rec.replies = rec.replies || []; rec.replies.push({ by: _bare(ownerJid), at: Date.now(), text: body });
+  let via = null;
+  try { const SerfDM = require('./SerfDM'); const r = await SerfDM.sendSerfDM(sock, db, rec.reporter, { text: out }); if (r && r.ok) via = r.via || 'serf'; } catch (e) {}
+  if (!via && rec.chatId && String(rec.chatId).endsWith('@g.us')) { try { await sock.sendMessage(rec.chatId, { text: `@${_bare(rec.reporter)}\n${out}`, mentions: [rec.reporter] }); via = 'group'; } catch (e) {} }
+  if (!via) { try { await sock.sendMessage(rec.reporter, { text: out }); via = 'direct'; } catch (e) {} }
+  return { ok: !!via, via, rec, text: via ? `✅ Reply to *${rec.id}* delivered to ${rec.reporterName} (${via}).` : `❌ Could not reach ${rec.reporterName}.` };
 }
 
 /** Feedback the reporter receives. */
@@ -140,4 +173,4 @@ async function notifyReporter(sock, db, rec) {
   return { via: null };
 }
 
-module.exports = { STATUS, stamp, create, get, decide, remove, listText, ownerCard, ownerButtons, reporterFeedback, notifyReporter, ownerName, table };
+module.exports = { armReply, pendingReply, clearPending, sendReply, REPLY_WINDOW_MS, STATUS, stamp, create, get, decide, remove, listText, ownerCard, ownerButtons, reporterFeedback, notifyReporter, ownerName, table };

@@ -114,11 +114,10 @@ module.exports = {
     const pro = UI.isPro(player);
     const FRAME = pro ? UI.PRO_BAR : UI.FREE_BAR;
 
-    if (!player.battlePass) {
-      player.battlePass = { level: 1, xp: 0, claimed: [], premium: false, seasonStart: Date.now() };
-    }
-    if(!player.battlePass.seasonStart) player.battlePass.seasonStart = Date.now();
-    const bp = player.battlePass;
+    // Push #102g: global 30-day seasons — getPassState rolls into the current one (fresh pass each season).
+    const _BPS = require('../../rpg/utils/BattlePass');
+    const bp = _BPS.getPassState(player);
+    const _season = _BPS.seasonInfo();
     const sub = (args[0] || '').toLowerCase();
 
     // ── INFO SUBCOMMAND ──────────────────────────────────────────
@@ -301,7 +300,7 @@ module.exports = {
 
     const imageBuffer = await renderBattlePassImage(player, bpData, page);
 
-    const xpReq = 500;
+    const xpReq = (() => { try { return _BPS.xpForLevel(bp.level || 1); } catch (e) { return 500; } })(); // Push #102g: real tier cost, not a flat 500
     const xpPct = Math.min(100, Math.floor(((bp.xp || 0) / xpReq) * 100));
     const xpBar = '█'.repeat(Math.floor(xpPct / 5)) + '░'.repeat(20 - Math.floor(xpPct / 5));
 
@@ -338,10 +337,10 @@ module.exports = {
       tierLines.push(``);
     }
     const navHintBP = page > 1 && page < 4 ? `◀️ /bp ${page-1}  •  ▶️ /bp ${page+1}` : page === 1 ? `▶️ Next: /bp 2` : `◀️ Prev: /bp 3`;
-    const seasonProgBP = Math.min(1, Math.max(0, (Date.now() - (bp.seasonStart || Date.now())) / (30 * 86400000)));
+    const seasonProgBP = _season.progress;
     const claimedBP = (bp.claimed || []).filter(t => t <= bp.level).length;
 
-    const seasonRemainingBP = (()=>{ const s=bp.seasonStart||Date.now(); const e=s+30*24*60*60*1000; const d=e-Date.now(); if(d<=0) return 'Ended'; const days=Math.floor(d/(24*60*60*1000)); const hrs=Math.floor((d%(24*60*60*1000))/(60*60*1000)); return `${days}d ${hrs}h`; })();
+    const seasonRemainingBP = `${_season.remaining} (${_season.name})`;
     const captionLines = [
       ...(pro ? [UI.PRO_BAR, `🎫 *BATTLE PASS VISUALIZATION* 💎`, UI.PRO_BAR] : [`🎫 *BATTLE PASS VISUALIZATION*`, UI.FREE_BAR]),
       ``,

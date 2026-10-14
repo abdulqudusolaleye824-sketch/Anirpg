@@ -155,6 +155,7 @@ function getTierDisplay(t) {
 const PREM_UP_TIERS = 15, PREM_UP_PER_TIER = 2;
 function premUpFor(t) { return (t >= 1 && t <= PREM_UP_TIERS) ? PREM_UP_PER_TIER : 0; }
 function currentSeasonNumber(db) {
+  try { return require('../../rpg/utils/Seasons').season('astra').number; } catch (e) {} // Push #102g: global seasons
   const start = (db && db.seasonStart) || Date.now();
   return Math.max(1, Math.floor((Date.now() - start) / (SEASON_DAYS * 86400000)) + 1);
 }
@@ -197,11 +198,9 @@ module.exports = {
     const pro = UI.isPro(player);
     const FRAME = pro ? UI.PRO_BAR : UI.FREE_BAR;
 
-    if (!player.astraPass) {
-      player.astraPass = { level: 1, xp: 0, claimedFree: [], claimedPremium: [], seasonStart: Date.now() };
-    }
-    if(!player.astraPass.seasonStart) player.astraPass.seasonStart = Date.now();
-    const ap = player.astraPass;
+    // Push #102g: global 40-day seasons — getPassState rolls into the current one.
+    const ap = require('../../rpg/utils/AstraPass').getPassState(player);
+    const _SE = require('../../rpg/utils/Seasons');
     const hasPremium = isProPlayer(player) || ap.premiumBought;
 
     const sub = (args[0] || '').toLowerCase();
@@ -400,14 +399,14 @@ module.exports = {
       tierLines.push(``);
     }
     const navHint = page > 1 && page < 5 ? `◀️ /pass ${page-1}  •  ▶️ /pass ${page+1}` : page === 1 ? `▶️ Next: /pass 2` : `◀️ Prev: /pass 4`;
-    const seasonProg = Math.min(1, Math.max(0, (Date.now() - (ap.seasonStart || Date.now())) / (SEASON_DAYS * 86400000)));
+    const seasonProg = _SE.progress('astra');
     const unclaimedM = [];
     for (let t = 1; t <= Math.min(ap.level, TOTAL_TIERS); t++) {
       const f = (ap.claimedFree || []).includes(t), pm = (ap.claimedPremium || []).includes(t);
       if (!f || (hasPremium && !pm)) unclaimedM.push(t);
     }
 
-    const seasonRemaining = (()=>{ const s=ap.seasonStart||Date.now(); const e=s+SEASON_DAYS*24*60*60*1000; const d=e-Date.now(); if(d<=0) return 'Ended'; const days=Math.floor(d/(24*60*60*1000)); const hrs=Math.floor((d%(24*60*60*1000))/(60*60*1000)); return `${days}d ${hrs}h`; })();
+    const seasonRemaining = `${_SE.remainingText('astra')} (Season ${_SE.season('astra').number})`;
     const captionLines = [
       ...(pro ? [UI.PRO_BAR, `🎫 *ASTRA PASS VISUALIZATION* 💎`, UI.PRO_BAR] : [`🎫 *ASTRA PASS VISUALIZATION*`, UI.FREE_BAR]),
       ``,

@@ -133,6 +133,7 @@ function awardXP(player, action = 'command', saveDatabase, sock, chatId, extraMu
   player.totalXp = (player.totalXp || 0) + amount; // lifetime XP (never resets at level-up)
 
   // ── Astra Pass XP (ALL activities) ───────────────────────────────────
+  try { require('./AstraPass').getPassState(player); } catch (e) {} // Push #102g: rolls the global season
   if (!player.astraPass) {
     player.astraPass = { level: 1, xp: 0, claimedFree: [], claimedPremium: [] };
   }
@@ -156,6 +157,7 @@ function awardXP(player, action = 'command', saveDatabase, sock, chatId, extraMu
     'gate_complete', 'gate_boss',
   ]);
   if (BATTLE_ACTIONS.has(action)) {
+    try { require('./BattlePass').getPassState(player); } catch (e) {} // Push #102g: rolls the global season
     if (!player.battlePass) {
       player.battlePass = { level: 1, xp: 0, claimed: [], premium: false };
     }

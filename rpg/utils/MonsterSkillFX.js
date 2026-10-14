@@ -207,7 +207,8 @@ function apply(monster, player, ability, dmg, opts = {}) {
   if (!monster || !player) return { contract: c, lines };
   const mStats = monster.stats || monster; // raid monsters keep hp/atk at top level
   // Mana drain → drains the hunter's energy (name + mult still deal the hit).
-  if (c.drainPct > 0 && player.stats) {
+  // Push #102g (BUG-058): a dodged / absorbed move (dmg 0) drains nothing — you slipped clear of it.
+  if (c.drainPct > 0 && player.stats && (dmg > 0 || opts.forceDrain)) {
     const maxE = player.stats.maxEnergy || 100;
     const loss = Math.max(5, Math.floor(maxE * c.drainPct / 100));
     const before = player.stats.energy || 0;

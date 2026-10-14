@@ -61,7 +61,7 @@ const PASS_PRODUCTS = {
   battlepass: {
     aliases: ['bp', 'battle'],
     name: 'Battle Pass Premium',
-    cost: 1000,
+    cost: 3000, // Push #102g: $3 (1,000 PC = $1) — matches /bp buy
     emoji: '🎖️',
     blurb: 'Premium track for the current season + 50% bonus EXP while active',
   },
@@ -166,7 +166,7 @@ module.exports = {
           const BP = require('../../rpg/utils/BattlePass');
           const bp = BP.getPassState(player);
           if (bp.premium) {
-            return sock.sendMessage(chatId, { text: `✅ You already own *Battle Pass Premium* for ${BP.CURRENT_SEASON?.name || 'this season'}!` }, { quoted: msg });
+            return sock.sendMessage(chatId, { text: `✅ You already own *Battle Pass Premium* for ${BP.seasonInfo().name}!` }, { quoted: msg });
           }
           player.procoin -= prod.cost;
           try { require('../../rpg/utils/TransactionLog').logTransaction(player, { type: 'prostore_buy', amount: prod.cost, currency: 'PC', note: `Battle Pass Premium` }); } catch (e) {};
@@ -176,7 +176,7 @@ module.exports = {
           const text = UI.card(player, {
             icon: '🎖️', title: 'BATTLE PASS PREMIUM ACTIVATED!',
             lines: [
-              `🎫 Season: *${BP.CURRENT_SEASON?.name || 'current'}*`,
+              `🎫 Season: *${BP.seasonInfo().name} · ends in ${BP.seasonInfo().remaining}*`,
               `✨ Premium track unlocked + *50% bonus EXP* on all gains!`,
               ``,
               `📌 Use /bp to view & claim premium rewards.`,
