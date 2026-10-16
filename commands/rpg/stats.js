@@ -163,7 +163,7 @@ module.exports = {
     if (totalCrit > 0) msg2 += `\n💥 CRIT:  *${totalCrit}%*${breakdown(player.stats.critChance||0, (gear.crit||0) + (titleBonus.crit||0))}`;
     if ((player.stats.critDamage||0) > 0) msg2 += `\n🔥 CRIT DMG: *${player.stats.critDamage}%*`;
     if ((player.stats.lifesteal||0) > 0)  msg2 += `\n💚 LIFESTEAL: *${player.stats.lifesteal}%*`;
-    if ((player.stats.magicPower||0) > 0) msg2 += `\n✨ MAGIC PWR: *${player.stats.magicPower}*`;
+    { let _mp = player.stats.magicPower || 0; try { _mp = require('../../rpg/utils/GearSystem').effectiveMagicPower(player); } catch (e) {} if (_mp > 0) msg2 += `\n✨ MAGIC PWR: *${_mp}*${_mp !== (player.stats.magicPower || 0) ? ` _(base ${player.stats.magicPower || 0} + gear ${_mp - (player.stats.magicPower || 0)})_` : ''}`; } // Push #102h (BUG-081)
 
     // ── Push #102d: WHERE THE EXTRAS COME FROM ───────────────────────
     try {

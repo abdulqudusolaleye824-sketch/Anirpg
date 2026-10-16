@@ -50,6 +50,7 @@ module.exports = {
         `16. 🛠️ Emergency serf switch`,
         `17. ❤️ Pro battle UI & buttons`,
         `18. 🎂 Birthday bonus`,
+        `19. 🛡️ 24 h rob immunity after activating a pass`,
         ``,
         FRAME,
         `🛍️ */prostore* — buy Pro cards · */bp buy* — Battle Pass Premium`,

@@ -239,6 +239,7 @@ module.exports = {
       const durationMs = tier.days * 86400 * 1000;
       player.proExpiresAt = (player.proExpiresAt && player.proExpiresAt > Date.now() ? player.proExpiresAt : Date.now()) + durationMs;
       player.proTier = option;
+      player.proRobShieldUntil = Date.now() + 24 * 3600e3; // Push #102h: 24h rob immunity after activating a Pro pass
       if (!player.proActivatedAt || !(player.proExpiresAt && player.proExpiresAt - durationMs > Date.now())) {
         player.proActivatedAt = Date.now(); // fresh sub (extensions keep the original date)
       }
@@ -294,6 +295,7 @@ module.exports = {
       const durationMs = tier.days * 86400 * 1000;
       player.proExpiresAt = (player.proExpiresAt && player.proExpiresAt > Date.now() ? player.proExpiresAt : Date.now()) + durationMs;
       player.proTier = 'weekly';
+      player.proRobShieldUntil = Date.now() + 24 * 3600e3; // Push #102h
       if (!player.proActivatedAt || !(player.proExpiresAt && player.proExpiresAt - durationMs > Date.now())) {
         player.proActivatedAt = Date.now();
       }

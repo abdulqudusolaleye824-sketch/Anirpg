@@ -266,7 +266,9 @@ function equipWeapon(player, inst) {
   const items = player.inventory?.items || [];
   const i = items.findIndex(x => x.id === inst.id);
   if (i === -1) return { ok: false, error: 'That weapon is not in your inventory.' };
+  if (inst.maxDurability != null && (inst.durability || 0) <= 0) return { ok: false, error: `*${inst.name}* is broken (0 durability) — mend it first (🛠️ Mending Stone via /equip use, or /mend).` }; // Push #102h
   items.splice(i, 1);
+  delete inst.broken;
   const old = player.weapon && player.weapon.id ? player.weapon : null;
   // Old store weapon goes BACK to the bag (it is an item, not a stat sponge).
   if (old && (old.fromStore || old.isWeapon || old.crafted)) { if (!old.isWeapon) old.isWeapon = true; items.push(old); } // Push #101: crafted weapons return too
@@ -292,7 +294,13 @@ function wearWeapon(player) {
   // Class weapons (maxDurability == null) stay unbreakable.
   if (!w || w.maxDurability == null) return null;
   w.durability = Math.max(0, (w.durability || 0) - 1);
-  if (w.durability === 0) { player.weapon = null; return w; }
+  if (w.durability === 0) {
+    // Push #102h (BUG-075): a broken weapon is NOT deleted — it goes back to the bag at 0 durability (unusable until
+    // mended with a 🛠️ Mending Stone). Before this it silently vanished ("my A-rank weapon just disappeared").
+    player.weapon = null;
+    try { if (!player.inventory) player.inventory = { items: [] }; if (!Array.isArray(player.inventory.items)) player.inventory.items = []; w.isWeapon = true; w.broken = true; player.inventory.items.push(w); } catch (e) {}
+    return w;
+  }
   return null;
 }
 /** Called by combat: −1 durability on every equipped gear piece when hit. Returns broken pieces. */
@@ -304,7 +312,7 @@ function wearGear(player) {
     const p = eq[slot];
     if (!p || p.maxDurability == null) continue;
     p.durability = Math.max(0, (p.durability || 0) - 1);
-    if (p.durability === 0) { broken.push(p); delete eq[slot]; }
+    if (p.durability === 0) { broken.push(p); delete eq[slot]; try { if (!player.inventory) player.inventory = { items: [] }; if (!Array.isArray(player.inventory.items)) player.inventory.items = []; p.broken = true; player.inventory.items.push(p); } catch (e) {} } // Push #102h: back to the bag, not deleted
   }
   return broken;
 }

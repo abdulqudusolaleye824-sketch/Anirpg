@@ -129,7 +129,9 @@ module.exports = {
       if (!si) {
         return sock.sendMessage(chatId, { text: `❌ *${real.name}* has an unknown slot (${real.slot || '?'}). Try /inv info, or report this.` }, { quoted: msg });
       }
+      if (real.maxDurability != null && (real.durability || 0) <= 0) return sock.sendMessage(chatId, { text: `❌ *${real.name}* is broken (0 durability) — mend it first (🛠️ Mending Stone via /equip use).` }, { quoted: msg }); // Push #102h
       const hadOld = player.equippedGear?.[real.slot];
+      delete real.broken;
       equipGear(player, real);
       saveDatabase();
       let reply = pro ? `${UI.PRO_BAR}\n✅ *GEAR EQUIPPED!* 💎\n${UI.PRO_BAR}\n\n✅ Equipped *${real.name}*!\n` : `✅ Equipped *${real.name}*!\n`;
@@ -309,10 +311,17 @@ module.exports = {
       }
 
       // Batch-48: crafting materials are NEVER equipped/absorbed — /craft only.
-      if (['material', 'crafting', 'craft', 'ingredient', 'reagent'].includes((item.type || '').toLowerCase())) {
+      // Push #102h (BUG-064): essence stones / mana stones / rune stones / keys are materials too — they were falling
+      // through to the "absorb" path, which DELETED the whole stack for "no direct stat bonus".
+      if (['material', 'crafting', 'craft', 'ingredient', 'reagent', 'essence', 'stone', 'runestone', 'rune', 'key', 'currency'].includes((item.type || '').toLowerCase()) || item.isRuneStone || item.isEssence) {
         return sock.sendMessage(chatId, { text: `🧱 *${item.name}* is a crafting material — it can't be equipped or absorbed.\n\n💡 Spend it in /craft. You CAN gift it: /equip gift ${itemNum} @player` }, { quoted: msg });
       }
 
+      // Push #102h: never absorb something that gives nothing — tell the hunter instead of deleting it.
+      { let _probe = null; try { _probe = applyItemBonus(JSON.parse(JSON.stringify({ stats: player.stats || {}, baseStats: player.baseStats || null })), item); } catch (e) { _probe = { changes: ['?'] }; } // dry run on a copy
+        if (!(_probe && _probe.changes && _probe.changes.length) && !(item.onHit && item.onHit.type)) {
+          return sock.sendMessage(chatId, { text: `❌ *${item.name}* gives no stat bonus — it won't be absorbed (that would just destroy it).\n💡 Materials go in /craft · gift with /equip gift ${itemNum} @player.` }, { quoted: msg });
+        } }
       // ── Apply stat bonus ──
       const statResult = applyItemBonus(player, item);
       // Push #74: crafted weapons can carry an on-hit status (e.g. Kasaka

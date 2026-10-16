@@ -108,7 +108,7 @@ function generateGearForSlot(slot, dungeonRank, rarity, playerLevel) {
 // Get combined stat bonuses from all equipped gear
 function getEquippedBonuses(player) {
   const equipped = player.equippedGear || {};
-  const bonuses = { hp: 0, atk: 0, def: 0, speed: 0, crit: 0, critDmg: 0, evasion: 0, statusResist: 0, specials: [] };
+  const bonuses = { hp: 0, atk: 0, def: 0, speed: 0, crit: 0, critDmg: 0, evasion: 0, statusResist: 0, magicPower: 0, lifesteal: 0, maxEnergy: 0, specials: [] }; // Push #102h (BUG-081): magicPower / lifesteal / energy count
 
   for (const slot of GEAR_SLOTS) {
     const piece = equipped[slot];
@@ -122,6 +122,9 @@ function getEquippedBonuses(player) {
     if (st.critDmg)      bonuses.critDmg      += st.critDmg;
     if (st.evasion)      bonuses.evasion      += st.evasion;
     if (st.statusResist) bonuses.statusResist += st.statusResist;
+    if (st.magicPower)   bonuses.magicPower   += st.magicPower;
+    if (st.lifesteal)    bonuses.lifesteal    += st.lifesteal;
+    if (st.energy || st.maxEnergy) bonuses.maxEnergy += (st.maxEnergy || st.energy || 0);
     if (piece.special)            bonuses.specials.push(piece.special);
   }
   // Push #95: Blacksmith / Enchanter jobs squeeze more out of every piece.
@@ -261,11 +264,20 @@ function getEffectiveStats(player) {
     speed:      (b.speed || 0) + (g.speed || 0),
     critChance: (b.critChance || 0) + (g.crit || 0),
     critDamage: b.critDamage || 150,
-    magicPower: b.magicPower || 0,
-    lifesteal:  b.lifesteal || 0,
+    magicPower: (b.magicPower || 0) + (g.magicPower || 0) + _weaponMagic(player), // Push #102h (BUG-081)
+    lifesteal:  (b.lifesteal || 0) + (g.lifesteal || 0),
     energy:     b.energy || 0,
-    maxEnergy:  b.maxEnergy || 100,
+    maxEnergy:  (b.maxEnergy || 100) + (g.maxEnergy || 0),
   };
+}
+
+// Push #102h (BUG-081): magic power a crafted weapon carries (stats.magicPower or flat magicPower).
+function _weaponMagic(player) { try { const w = player && player.weapon; return Number((w && ((w.stats && w.stats.magicPower) || w.magicPower)) || 0); } catch (e) { return 0; } }
+/** Total Magic Power that combat should use: base stat + equipped gear + weapon. */
+function effectiveMagicPower(player) {
+  if (!player || !player.stats) return 0;
+  let g = 0; try { g = getEquippedBonuses(player).magicPower || 0; } catch (e) {}
+  return (Number(player.stats.magicPower) || 0) + g + _weaponMagic(player);
 }
 
 // Push #85: the HP ceiling a hunter can actually fill — base + gear + title
@@ -282,7 +294,7 @@ function effectiveMaxHp(player) {
   return Math.max(1, Math.floor(((player.stats.maxHp || 100) + g + t + w) * gift * aura));
 }
 
-module.exports = {
+module.exports = { effectiveMagicPower,
   regenUnequippedDurability,
   mendingSlots,
   effectiveMaxHp,

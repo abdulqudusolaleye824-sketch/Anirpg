@@ -85,6 +85,11 @@ module.exports = {
         }, { quoted: msg });
       }
 
+      // ── Push #102h: a hunter who activated a Pro pass in the last 24 h cannot be robbed ──
+      if (victim.proRobShieldUntil && victim.proRobShieldUntil > Date.now()) {
+        const _hl = Math.ceil((victim.proRobShieldUntil - Date.now()) / 3600e3);
+        return sock.sendMessage(chatId, { text: `🛡️ *${victim.name}* just activated a Pro pass — fresh Pro hunters are untouchable for 24 h (${_hl}h left). Pick another mark.` }, { quoted: msg });
+      }
       // ── Push #88j: robbing the Owner or Co-Owner is a death sentence ──
       // 50% of the thief's TOTAL Nexus (wallet + bank account) goes to them.
       try {

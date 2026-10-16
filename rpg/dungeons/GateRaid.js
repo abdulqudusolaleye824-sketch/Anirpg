@@ -36,7 +36,7 @@ function playerDamage(player, skillName = null, target = null) {
   // (Devourer) add flat ATK.
   let _tbAtk = 0; try { _tbAtk = require('../utils/UnifiedCombat').tempBuffPct(player, 'atk'); } catch (e) {}
   const atk = Math.floor(((player.stats?.atk || 10) + _gearAtkGR + (player.weapon?.attack || player.weapon?.bonus || 0) + (_pm74.atkFlat || 0)) * (1 + (_pm74.atk || 0) / 100) * (1 + Math.max(-90, _tbAtk) / 100) * _gift * _auraGR.atk);
-  const magicPower = player.stats?.magicPower || 0;
+  let magicPower = player.stats?.magicPower || 0; try { magicPower = require('../utils/GearSystem').effectiveMagicPower(player); } catch (e) {} // Push #102h (BUG-081)
   if (skillName) {
     // SkillCatalog: name / prefix / number, equipped OR library, and it tells
     // you the level that unlocks a locked skill. The old lookup demanded an
@@ -60,7 +60,7 @@ function playerDamage(player, skillName = null, target = null) {
     const synergyNotes = [];
     // Push #88: skills scale from the FULL effective ATK (gear + weapon + buffs
     // + passives), not bare stats.atk — a "+100% ATK" buff now doubles the hit.
-    let dmg = SC.computeDamage({ ...player, stats: { ...(player.stats || {}), atk } }, entry || skill, { includeMagic: magicPower > 0, crit: false, target, notes: synergyNotes });
+    let dmg = SC.computeDamage({ ...player, stats: { ...(player.stats || {}), atk, magicPower } }, entry || skill, { includeMagic: magicPower > 0, crit: false, target, notes: synergyNotes });
     if (_pm74.skillDmg) dmg = Math.max(1, Math.floor(dmg * (1 + (_pm74.skillDmg || 0) / 100)));
     let _tDefMult95 = 1, _tTaken95 = 1; try { const _UC95 = require('../utils/UnifiedCombat'); _tDefMult95 = Math.max(0.1, 1 + _UC95.tempBuffPct(target || {}, 'def') / 100); _tTaken95 = 1 + _UC95.tempBuffPct(target || {}, 'damageTaken') / 100; } catch (e) {} // Push #95: monster shells / domain debuffs are real
     if (target && typeof target.def === 'number' && target.def > 0) dmg = Math.max(1, dmg - Math.floor(target.def * _tDefMult95 * 0.35 * (1 - Math.min(0.6, (_pm74.armorPen || 0) / 100))));
@@ -91,7 +91,7 @@ function playerDamage(player, skillName = null, target = null) {
     let _hpx = { lines: [], drained: 0, healed: 0, cost: 0 };
     try { _hpx = SC.applyHpPercents(entry || skill, player, target, (u) => { try { return require('../utils/GearSystem').effectiveMaxHp(u); } catch (e) { return u.stats.maxHp; } }); } catch (e) {}
     if (_healPct > 0) {
-      const maxHp = player.stats.maxHp || 100;
+      let maxHp = player.stats.maxHp || 100; try { maxHp = require('../utils/GearSystem').effectiveMaxHp(player); } catch (e) {} // Push #102h (BUG-077)
       const before = player.stats.hp || 0;
       player.stats.hp = Math.min(maxHp, before + Math.floor(maxHp * _healPct / 100));
       healed = player.stats.hp - before;
@@ -114,7 +114,7 @@ function playerDamage(player, skillName = null, target = null) {
       }
     } catch (e) {}
     // Push #102f (BUG-049): weapons wear in raids too — −1 durability on a landed hit (the only place they wore was PvP).
-    try { if (dmg > 0) { const bw = require('../utils/ArmoryStore').wearWeapon(player); if (bw) synergyNotes.push(`💥 *${player.name}'s ${bw.name}* shattered — its last swing!`); } } catch (e) {}
+    try { if (dmg > 0) { const bw = require('../utils/ArmoryStore').wearWeapon(player); if (bw) synergyNotes.push(`💥 *${player.name}'s ${bw.name}* shattered — back in your bag at 0 durability (🛠️ mend it)`); } } catch (e) {}
     return {
       damage: dmg, isCrit, skillUsed: skill,
       statuses: [ ...((entry && entry.statuses) || skill.statuses || []), ...((_pm74.onHit || [])) ],
@@ -143,7 +143,7 @@ function playerDamage(player, skillName = null, target = null) {
   let procNote = null;
   if (_pm74.procDmg > 0 && Math.random() * 100 < _pm74.procDmg) { const extra = Math.floor(dmg * 0.5); dmg += extra; procNote = `✨ Arcane proc +${extra}`; }
   if (procNote) synergyNotes = [...synergyNotes, procNote];
-  try { if (dmg > 0) { const bw = require('../utils/ArmoryStore').wearWeapon(player); if (bw) synergyNotes = [...synergyNotes, `💥 *${player.name}'s ${bw.name}* shattered — its last swing!`]; } } catch (e) {} // Push #102f (BUG-049)
+  try { if (dmg > 0) { const bw = require('../utils/ArmoryStore').wearWeapon(player); if (bw) synergyNotes = [...synergyNotes, `💥 *${player.name}'s ${bw.name}* shattered — back in your bag at 0 durability (🛠️ mend it)`]; } } catch (e) {} // Push #102f (BUG-049)
   return { damage: Math.floor(dmg), isCrit, synergyNotes, statuses: (_pm74.onHit || []) };
 }
 
@@ -314,7 +314,7 @@ function monsterDamage(monster, def, player = null) {
 function afterMonsterHit(player, monster, dmg) {
   const lines = [];
   // Push #102f (BUG-049): armour wears when a beast lands a hit (−1 durability per piece; broken pieces fall off).
-  try { if (dmg > 0) { const Armory = require('../utils/ArmoryStore'); for (const bg of Armory.wearGear(player)) lines.push(`💥 *${player.name}'s ${bg.name}* broke apart!`); const _w = Armory.lowDurabilityCheck ? Armory.lowDurabilityCheck(player) : []; if (_w && _w.length) lines.push(..._w); } } catch (e) {}
+  try { if (dmg > 0) { const Armory = require('../utils/ArmoryStore'); for (const bg of Armory.wearGear(player)) lines.push(`💥 *${player.name}'s ${bg.name}* broke — back in your bag at 0 durability (🛠️ mend it)`); const _w = Armory.lowDurabilityCheck ? Armory.lowDurabilityCheck(player) : []; if (_w && _w.length) lines.push(..._w); } } catch (e) {}
   try { const _bdl = require('../utils/ClassPower').noteBloodDebt(player, dmg); if (_bdl) lines.push(_bdl); } catch (e) {}
   try { const UCc = require('../utils/UnifiedCombat'); const banked = UCc.noteDamageTaken(player, dmg); if (banked > 0) lines.push(`🩸 *${player.name}* banks ${banked} HP of that hit — it returns next turn (${player.tempBuffs.convert.source}).`); } catch (e) {}
   let pm = null; try { pm = require('../utils/ClassPower').passiveMultipliers(player); } catch (e) { return lines; }
@@ -1623,7 +1623,7 @@ function clearGate(gate, key, keyData, db, saveDatabase, opts = {}) {
 
       // Down hunters get nothing at all: no recovery, no XP, no pass XP.
       if (_wasAlive) {
-        const maxHp = p.stats.maxHp || 100;
+        let maxHp = p.stats.maxHp || 100; try { maxHp = require('../utils/GearSystem').effectiveMaxHp(p); } catch (e) {} // Push #102h (BUG-077): cap at EFFECTIVE max — base max was slashing geared hunters to ~15%
         p.stats.hp = Math.min(maxHp, Math.max(0, p.stats.hp || 0) + Math.floor(maxHp * 0.5));
         if (p.stats.maxEnergy) {
           p.stats.energy = Math.min(p.stats.maxEnergy, Math.max(0, p.stats.energy || 0) + Math.floor(p.stats.maxEnergy * 0.5));
@@ -1904,7 +1904,7 @@ function autoStrikeIdleRaids(db, now = Date.now(), canStrike = null) {
           }
         }
       }
-      lines.push(`⚔️ Attack now — the gate strikes again in ${Math.round(idleStrikeMsFor(gate.rank) / 1000)} s of silence.`);
+      if ((raid.members || []).length > 0 && raid.status === 'active') lines.push(`⚔️ Attack now — the gate strikes again in ${Math.round(idleStrikeMsFor(gate.rank) / 1000)} s of silence.`); // Push #102h (BUG-063): not after a wipe
       try { saveGateState(db, gate); } catch (e) {}
       out.push({ chatId: raid.chatId || gate.chatId, text: lines.join('\n'), mentions: [m.id].filter(Boolean) });
     } catch (e) { console.error('[GateRaid] idle strike error:', e.message); }

@@ -171,12 +171,20 @@ class AuraSystem {
 
   // Get guild aura leaderboard
   static getGuildLeaderboard(db, guildName, limit = 10) {
-    const guild = db.guilds?.[guildName];
+    // Push #102h (BUG-080): guilds are keyed by ID (not name) and members are { id, rank } rows — the old lookup
+    // found nothing, so /aura guild always said "No guild members found".
+    let GCM = null; try { GCM = require('./GuildContractManager'); } catch (e) {}
+    const guild = (GCM && GCM.findGuild ? GCM.findGuild(db, guildName) : null) || db.guilds?.[guildName];
     if (!guild) return [];
-
-    const members = (guild.members || [])
-      .map(jid => db.users[jid])
-      .filter(Boolean)
+    const norm = (j) => { try { return require('../dungeons/GateKeyManager').normaliseJid(j) || String(j || '').split('@')[0]; } catch (e) { return String(j || '').split('@')[0]; } };
+    const ids = new Set();
+    for (const m of (guild.members || [])) { const id = typeof m === 'string' ? m : (m && (m.id || m.jid)); if (id) ids.add(norm(id)); }
+    if (guild.leader) ids.add(norm(guild.leader));
+    const members = Object.entries(db.users || {})
+      .filter(([k, u]) => u && (ids.has(norm(u.jid || u.id || k)) || ids.has(norm(k)) || (u.guild && guild.name && u.guild === guild.name)))
+      .map(([k, u]) => ({ u, n: norm(u.jid || u.id || k) }))
+      .filter((r, i, arr) => arr.findIndex(x => x.n === r.n) === i)
+      .map(r => r.u)
       .sort((a, b) => (b.aura || 0) - (a.aura || 0))
       .slice(0, limit);
 

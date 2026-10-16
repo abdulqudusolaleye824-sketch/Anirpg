@@ -1,3 +1,25 @@
+## 1.0.204 — Push #102h (2026-10-16) — spam strikes, /broadcast, Pro rob shield, BUG-060/063/064/070/071/075/077/079/080/081/084/086/089
+- SPAM GUARD: 10 warnings per week, then a random mute (1–10 min, Pro 1–5 min). A cooldown hit with ≤3 s left no
+  longer counts as a strike. Owner `/resetstrikes` clears every strike and lifts every spam mute.
+- /broadcast <msg> (owner): reaches EVERY registered hunter — through their serf when they have one, otherwise from
+  the bot the command was typed on. Reports "via serf / via bot / failed". If the sending bot dies mid-run
+  `/broadcast resume` continues from ANY other bot (progress is stored in the DB); `/broadcast status|cancel`.
+- PRO PASS: activating Pro grants 24 h of rob immunity (Pro Store perk #19).
+- BUG-075/086/070/071 (ROOT CAUSE, 1.0.202 regression): weapons/gear that hit 0 durability were DELETED. Now a
+  broken piece goes back to your bag at 0 durability (🛠️ mend it; it cannot be re-equipped until mended). One-shot
+  migration restores the two lost weapons (Toji's Dragonbone Bow of Ashborn, Vhiveed's Hexed Katana) fully mended.
+- BUG-064: `/equip` refuses essence stones, rune stones, runes, keys and currency (they were silently absorbed), and
+  dry-runs the bonus apply so a bad item can never eat a slot. Destroyed essence stacks could not be counted back.
+- BUG-077: HP "dropping" between raids — post-clear recovery and class heals capped HP at BASE max (e.g. 930) while
+  the raid showed it against EFFECTIVE max (gear/title HP) → a geared hunter entered the next gate at ~15%. All HP
+  caps now use the effective max.
+- BUG-079: pet feed looked stuck at 0/100 — the bar was HUNGER (0 = full). It now reads "🍖 Full x/100".
+- BUG-080: `/aura guild` always said "No guild members found" (guilds are keyed by id, members are {id,rank}). Fixed.
+- BUG-081: crafted gear/weapon Magic Power (and lifesteal / energy) now counts in /stats, skills and raids.
+- BUG-084: `/cooldowns` lists every battle command still cooling (attack/skill/hunt/…), dungeon and boss timers.
+- BUG-060: `/catch` cooldown 15 s. BUG-063: gate raid trailer no longer crashes when the boss has no trailer.
+- BUG-089 (timer lag): noted — WhatsApp delivery latency; not a bot-side timer bug.
+
 ## 1.0.203 — Push #102g (2026-10-14) — global pass seasons, Pro Store BP price, bug replies, BUG-054/055/056/058
 - PASS SEASONS now auto-end and auto-start for everyone: Battle Pass = 30-day global cycles, Astra Pass = 40-day
   cycles, Season 1 starts 15 Oct 2026 00:00 WAT (rpg/utils/Seasons.js). A pass touched in a new season is reset

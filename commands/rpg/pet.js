@@ -45,7 +45,7 @@ module.exports = {
           let _g = ''; try { _g = require('../../rpg/utils/PetBreeding').genderIcon(pet); } catch (e) {}
           txt += `${i + 1 > _cap ? `🔒${i+1}.` : isActive ? '▶️' : `${i+1}.`} ${pet.emoji} *${pet.nickname || pet.name}* ${_g} ${re}${i + 1 > _cap ? ' _(locked slot)_' : ''}\n`;
           txt += `   Lv.${pet.level} | ${pet.rarity.toUpperCase()} | ${pet.role?.toUpperCase()}\n`;
-          txt += `   💕 ${pet.bonding}/100 | 😊 ${pet.happiness}/100 | 🍖 ${pet.hunger}/100\n\n`;
+          txt += `   💕 ${pet.bonding}/100 | 😊 ${pet.happiness}/100 | 🍖 Full ${100 - (pet.hunger || 0)}/100\n\n`;
         });
 
         if (eggs.length > 0) {
@@ -116,7 +116,7 @@ module.exports = {
         if (_loreBlock) txt += `\n${FRAME}\n${_loreBlock}\n${FRAME}`;
         const _isActive = PetManager.getActivePet(sender)?.instanceId === pet.instanceId;
         if (_isActive && _liveLine) txt += `\n${_liveLine}`;
-        txt += `\n${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO BOND* — 💕 ${pet.bonding}/100 · 😊 ${pet.happiness}/100 · 🍖 ${pet.hunger}/100` : `\n${UI.upsell()}`);
+        txt += `\n${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO BOND* — 💕 ${pet.bonding}/100 · 😊 ${pet.happiness}/100 · 🍖 Full ${100 - (pet.hunger || 0)}/100` : `\n${UI.upsell()}`);
         return sock.sendMessage(chatId, { text: txt }, { quoted: msg });
       }
 

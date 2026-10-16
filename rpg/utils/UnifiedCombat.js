@@ -139,7 +139,7 @@ function calcMoveDamage(attacker, defender, move) {
   let atkBase = ((attacker.stats?.atk || attacker.stats?.attack || 50) + _gearAtk + _wpnAtk + _tA + _cA + _ptA + ((_pmA && _pmA.atkFlat) || 0)) * _gA * _auA;
   // Push #102f (BUG-040): a SKILL cast by a caster scales with Magic Power like it does in raids (atk×0.7 + magic×0.5) —
   // never below the plain ATK figure, so non-casters lose nothing.
-  if (move && move.isSkill) { const _mg = Number(attacker.stats?.magicPower || 0); if (_mg > 0) atkBase = Math.max(atkBase, atkBase * 0.7 + _mg * 0.5); }
+  if (move && move.isSkill) { let _mg = Number(attacker.stats?.magicPower || 0); try { _mg = require('./GearSystem').effectiveMagicPower(attacker); } catch (e) {} /* Push #102h (BUG-081): gear/weapon magic counts */ if (_mg > 0) atkBase = Math.max(atkBase, atkBase * 0.7 + _mg * 0.5); }
   const defBase = ((defender.stats?.def || defender.stats?.defense || 20) + _gearDef + _wpnDef + _tD + _cD + _ptD) * _gD * (1 - Math.min(0.6, ((_pmA && _pmA.armorPen) || 0) / 100));
 
   // Multipliers from attack pattern
@@ -613,8 +613,8 @@ async function playTurn(sock, chatId, o) {
       }
       // Durability: weapon wears on a landed hit, defender's gear wears on being hit.
       const bw = Armory.wearWeapon(attacker);
-      if (bw) o._broke = (o._broke || []).concat([`💥 ${attacker.name || 'Attacker'}'s *${bw.name}* shattered!`]);
-      for (const bg of Armory.wearGear(defender)) o._broke = (o._broke || []).concat([`💥 ${defender.name || 'Defender'}'s *${bg.name}* broke apart!`]);
+      if (bw) o._broke = (o._broke || []).concat([`💥 ${attacker.name || 'Attacker'}'s *${bw.name}* shattered — back in the bag at 0 durability (🛠️ mend it)`]);
+      for (const bg of Armory.wearGear(defender)) o._broke = (o._broke || []).concat([`💥 ${defender.name || 'Defender'}'s *${bg.name}* broke — back in the bag at 0 durability (🛠️ mend it)`]);
       // Push #88q: Pro low-durability warning / auto-mend for both sides.
       try { const _w = [].concat(Armory.lowDurabilityCheck(attacker), Armory.lowDurabilityCheck(defender)); if (_w.length) o._broke = (o._broke || []).concat(_w); } catch (e) {}
     } catch (e) {}

@@ -16,7 +16,7 @@ const TABLE = {
   // 50 s — gambling
   casino: 50, slots: 50, gamble: 50, bet: 50, coinflip: 50, dice: 50, rob: 50, steal: 50, lottery: 50, guess: 50,
   // 30 s — spam-prone battle actions
-  attack: 30, a: 30, attacks: 30, skill: 30, s: 30, cast: 30, hit: 30, strike: 30, hunt: 30, fight: 30, pvp: 30, duel: 30, battle: 30, teampvp: 30, boss: 30, catch: 30, summon: 20, domain: 20,
+  attack: 30, a: 30, attacks: 30, skill: 30, s: 30, cast: 30, hit: 30, strike: 30, hunt: 30, fight: 30, pvp: 30, duel: 30, battle: 30, teampvp: 30, boss: 30, catch: 15 /* Push #102h BUG-060 */, summon: 20, domain: 20,
   // 15 s — raid helpers
   heal: 15, buff: 15, guard: 15, flee: 15, revive: 15, mine: 15, party: 10, gateraid: 15, dungeon: 15, instance: 10, labyrinth: 10, event: 15,
   // 5 s — rarely used / daily / owner-side
@@ -63,4 +63,17 @@ function setOverride(db, cmd, seconds) {
 }
 function table(db) { const names = new Set([...Object.keys(TABLE), ...Object.keys((db && db.cmdCooldowns) || {})]); return [...names].sort().map(n => ({ cmd: n, seconds: secondsFor(n, db) })); }
 
-module.exports = { TABLE, DEFAULT_S, MIN_S, MAX_S, secondsFor, check, clear, setOverride, table, _last };
+// Push #102h (BUG-084): every command cooldown still ticking for this hunter (for /cooldowns).
+function active(db, sender, now = Date.now()) {
+  const out = []; if (!sender) return out;
+  const player = db && db.users ? db.users[sender] : null; const pro = _isPro(player);
+  for (const [k, last] of _last) {
+    if (!k.startsWith(`${sender}|`)) continue;
+    const cmd = k.slice(sender.length + 1);
+    let total = secondsFor(cmd, db); if (pro) total = Math.max(MIN_S, Math.round(total * 0.75));
+    const left = Math.ceil((last + total * 1000 - now) / 1000);
+    if (left > 0) out.push({ cmd, left, total });
+  }
+  return out.sort((a, b) => b.left - a.left);
+}
+module.exports = { active, TABLE, DEFAULT_S, MIN_S, MAX_S, secondsFor, check, clear, setOverride, table, _last };

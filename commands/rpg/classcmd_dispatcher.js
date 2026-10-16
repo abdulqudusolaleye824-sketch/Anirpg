@@ -287,7 +287,7 @@ async function defaultHandler(sock, msg, player, skill, db, saveDatabase, getDat
     if (entry && (entry.type === 'heal' || entry.category === 'heal') && !(skill.effect && skill.effect.type === 'heal')) _catHeal = Number(entry.healingPct) || 20;
   } catch (e) {}
   if (_catHeal > 0) {
-    const maxHp = player.stats.maxHp || 100;
+    let maxHp = player.stats.maxHp || 100; try { maxHp = require('../../rpg/utils/GearSystem').effectiveMaxHp(player); } catch (e) {} // Push #102h (BUG-077)
     const before = player.stats.hp || 0;
     player.stats.hp = Math.min(maxHp, before + Math.floor(maxHp * _catHeal / 100));
     resultText += `\n💚 +${(player.stats.hp - before).toLocaleString()} HP restored (${_catHeal}%)!`;
@@ -295,7 +295,7 @@ async function defaultHandler(sock, msg, player, skill, db, saveDatabase, getDat
 
   if (skill.effect && skill.effect.type === 'heal') {
     const healPct = skill.effect.healPercent || 0.20;
-    const maxHp = player.stats.maxHp || 100;
+    let maxHp = player.stats.maxHp || 100; try { maxHp = require('../../rpg/utils/GearSystem').effectiveMaxHp(player); } catch (e) {} // Push #102h (BUG-077)
     const healAmt = Math.floor(maxHp * healPct);
     const before = player.stats.hp;
     player.stats.hp = Math.min(maxHp, before + healAmt);

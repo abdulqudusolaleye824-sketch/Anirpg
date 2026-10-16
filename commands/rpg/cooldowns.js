@@ -74,6 +74,20 @@ module.exports = {
       : 0;
     lines.push(`🦹 *Rob:* ${fmt(robCd)}${robCd === 0 ? ' — /rob @user' : ''}`);
 
+    // ── Push #102h (BUG-084): battle / command cooldowns ─────
+    try {
+      const CC = require('../../rpg/utils/CommandCooldown');
+      const act = CC.active(db, sender, now);
+      const BATTLE = new Set(['attack', 'a', 'attacks', 'skill', 's', 'cast', 'hit', 'strike', 'hunt', 'fight', 'pvp', 'duel', 'battle', 'teampvp', 'boss', 'catch', 'summon', 'domain', 'heal', 'buff', 'guard', 'flee', 'revive', 'gateraid', 'dungeon', 'instance', 'labyrinth', 'event', 'party', 'mine']);
+      const battle = act.filter(x => BATTLE.has(x.cmd)), other = act.filter(x => !BATTLE.has(x.cmd));
+      lines.push(`⚔️ *Battle Commands:* ${battle.length ? battle.map(x => `/${x.cmd} ⏳${x.left}s`).join(' · ') : '✅ All ready'}`);
+      if (other.length) lines.push(`🕹️ *Other Commands:* ${other.map(x => `/${x.cmd} ⏳${x.left}s`).join(' · ')}`);
+      const dg = Math.max(0, (player.dungeonCooldown || 0) - now);
+      if (dg > 0) lines.push(`🏰 *Dungeon:* ${fmt(dg)}`);
+      const bossCd = Math.max(0, (player.cooldowns?.boss || 0) - now);
+      if (bossCd > 0) lines.push(`👹 *Boss:* ${fmt(bossCd)}`);
+    } catch (e) {}
+
     // ── PvP battle status ─────────────────────────────────────
     if (player.pvpBattle) {
       const opp = db.users[player.pvpBattle.opponentId];

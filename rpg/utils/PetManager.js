@@ -266,7 +266,7 @@ class PetManager {
     const prefNote = isPreferred ? '\n💖 *PREFERRED FOOD!* 2× Bonding & +50% EXP bonus!' : '';
     return {
       success: true,
-      message: `${pet.emoji} *${pet.nickname || pet.name}* enjoyed the ${food.name}!${prefNote}\n💕 Bonding +${bondingGain} (${pet.bonding}/100) | 😊 Happiness up | 🍖 Hunger -${food.hungerRestore}\n✨ +${xpGain} EXP`
+      message: `${pet.emoji} *${pet.nickname || pet.name}* enjoyed the ${food.name}!${prefNote}\n💕 Bonding +${bondingGain} (${pet.bonding}/100) | 😊 Happiness up | 🍖 Full ${100 - (pet.hunger || 0)}/100 (hunger −${food.hungerRestore})\n✨ +${xpGain} EXP`
     };
   }
 
@@ -539,7 +539,7 @@ class PetManager {
     if (pet.stats.healPower) s += `💚 Heal Power: ${pet.stats.healPower}\n`;
     if (pet.stats.scavengeRate) s += `🔍 Scavenge: +${Math.floor(pet.stats.scavengeRate * 100)}% Nexus\n`;
     s += `\n📊 EXP: ${pet.exp}/${expReq} (${expPct}%)\n`;
-    s += `💕 Bonding: ${pet.bonding}/100 | 😊 ${pet.happiness}/100 | 🍖 ${pet.hunger}/100\n`;
+    s += `💕 Bonding: ${pet.bonding}/100 | 😊 ${pet.happiness}/100 | 🍖 Full ${100 - (pet.hunger || 0)}/100\n`;
     if (pet.evolution) s += `\n🌟 Evolves at Lv.${pet.evolution.level}`;
     return s;
   }

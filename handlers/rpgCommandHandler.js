@@ -733,13 +733,14 @@ module.exports = async (sock, msg, messageText, config, getDatabase, saveDatabas
         try {
           const SG = require('../rpg/utils/SpamGuard'); const _P = require('../utils/permissions');
           const _pl = db.users?.[sender]; let _pro = false; try { _pro = require('../rpg/utils/UI').isPro(_pl); } catch (e) {}
-          _sg = SG.strike(db, sender, { chatId, pro: _pro, isOwner: _P.isBotOwner(db, sender) });
+          _sg = SG.strike(db, sender, { chatId, pro: _pro, isOwner: _P.isBotOwner(db, sender), left: _cd.left });
           if (_sg) saveDatabase();
         } catch (e) {}
         if (_sg && _sg.mute) {
           return sock.sendMessage(chatId, { text: `🔇 *AUTO-MUTED ${_sg.minutes} MIN* — spamming commands on cooldown (strike ${_sg.strikes} this week).\n${chatId.endsWith('@g.us') ? 'Everything you send here is deleted until it ends.' : 'I will ignore you until it ends.'} Strikes reset Sunday 00:00 WAT.`, mentions: [sender] }, { quoted: msg });
         }
-        const _warn = _sg && _sg.warning ? `\n⚠️ Spam warning *${_sg.warning}/5* — after 5, every cooldown hit auto-mutes you for 5–30 min.` : '';
+        const SGW = require('../rpg/utils/SpamGuard').WARNINGS;
+        const _warn = _sg && _sg.warning ? `\n⚠️ Spam warning *${_sg.warning}/${SGW}* — after ${SGW}, every cooldown hit auto-mutes you for 1–10 min.` : '';
         return sock.sendMessage(chatId, { text: _cd.text + _warn }, { quoted: msg });
       }
     } catch (e) {}
