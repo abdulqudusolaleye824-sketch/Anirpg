@@ -26,18 +26,21 @@ function skillUpgradeCost(currentLevel) {
 
 // Push #96h-k: the listed cost IS the charged cost (level discount, job discount, non-Healer heal ×2).
 let _SCk = null; try { _SCk = require('../../rpg/utils/SkillCatalog'); } catch (e) {}
+// Push #103c: kind tag — passives, buffs, debuffs, heals, summons and damage read differently at a glance.
+function kindTagOf(sk) { try { return require('../../rpg/data/SkillLore').TAG[require('../../rpg/data/SkillLore').kindOf(sk)]; } catch (e) { return '💥 DAMAGE'; } }
 function realCost(skill, player) { try { if (_SCk && player) return _SCk.effectiveCost(skill, player); } catch (e) {} return Math.max(5, (skill.energyCost || 20) - ((skill.level || 1) - 1) * 3); }
 function applySkillLevelBonus(skill) {
   // Each level: +8% flat damage, -3 energy cost, -1 cooldown (floored)
   const lv = skill.level || 1;
-  const dmgMult = 1 + (lv - 1) * 0.08;
-  const costReduction = (lv - 1) * 3;
-  const cdReduction = Math.floor((lv - 1) * 0.5);
+  // Push #103c: single source of truth = SkillCatalog.levelBonus (+12% DMG/lv, cost ×1.75/lv, −1 cd per 2 lv).
+  let dmgMult = 1 + (lv - 1) * 0.12, cdReduction = Math.floor((lv - 1) * 0.5), costMult = Math.pow(1.75, lv - 1);
+  try { const b = _SCk.levelBonus(skill); dmgMult = b.dmgMult; cdReduction = b.cdReduction; costMult = b.costMult || costMult; } catch (e) {}
+  const costReduction = 0;
   return {
     damage: Math.floor((skill.damage || 0) * dmgMult),
     energyCost: Math.max(5, (skill.energyCost || 20) - costReduction),
     cooldown: Math.max(0, (skill.cooldown || 0) - cdReduction),
-    dmgMult, costReduction, cdReduction
+    dmgMult, costReduction, cdReduction, costMult
   };
 }
 
@@ -82,7 +85,7 @@ function fmtSkillLine(skill, idx, player, compact=false) {
   const bar = skillLevelBar(lv, max);
   const prefix = idx !== undefined ? `${idx+1}. ` : '';
   if (compact) {
-    return `${prefix}*${skill.name}* [Lv${lv}/${max}] ${bar}\n   💥${bonuses.damage} | ${player.energyColor||'💙'}${realCost(skill, player)} | ⏰${bonuses.cooldown}t\n`;
+    return `${prefix}*${skill.name}* [Lv${lv}/${max}] ${bar} · ${kindTagOf(skill)}\n   💥${bonuses.damage} | ${player.energyColor||'💙'}${realCost(skill, player)} | ⏰${bonuses.cooldown}t\n`;
   }
   return `${prefix}*${skill.name}*\nLv ${lv}/${max}: ${bar}\n💥 DMG: ${bonuses.damage} | ${player.energyColor||'💙'} ${realCost(skill, player)} | ⏰ ${bonuses.cooldown}t\n`;
 }
@@ -120,6 +123,7 @@ module.exports = {
     // ── MAIN MENU ─────────────────────────────────────────────
     if (!action) {
       let txt = pro ? `${UI.PRO_BAR}\n⚔️ SKILL LOADOUT 💎\n${UI.PRO_BAR}\n👤 ${player.name} [${className} Lv.${player.level}]\n${player.energyColor||'💙'} ${player.stats.energy}/${player.stats.maxEnergy} ${player.energyType||'Energy'}\n🎯 Slots: ${equipped.length}/${maxSlots}${player.origin==='scholar'?' (Scholar +2)':''}\n${UI.PRO_BAR}\n🔮 EQUIPPED SKILLS\n${UI.PRO_BAR}\n` : `⚔️ SKILL LOADOUT\n${UI.FREE_BAR}\n👤 ${player.name} [${className} Lv.${player.level}]\n${player.energyColor||'💙'} ${player.stats.energy}/${player.stats.maxEnergy} ${player.energyType||'Energy'}\n🎯 Slots: ${equipped.length}/${maxSlots}${player.origin==='scholar'?' (Scholar +2)':''}\n${UI.FREE_BAR}\n🔮 EQUIPPED SKILLS\n${UI.FREE_BAR}\n`;
+      if ((Number(player.skillUpgradeCredits) || 0) > 0) txt += `🎟️ Skill Upgrade Credits: *${player.skillUpgradeCredits}* — /skills upgrade [slot#] spends them before Nexus\n`; // Push #103c
       if (!equipped.length) {
         txt += '(None equipped)\n';
       } else {
@@ -144,9 +148,13 @@ module.exports = {
         return sock.sendMessage(chatId, { text: '✅ You have unlocked all available skills!' }, { quoted: msg });
       }
       let txt = pro ? `${UI.PRO_BAR}\n🔒 *LOCKED SKILLS* 💎\n${UI.PRO_BAR}\n\n` : `🔒 *LOCKED SKILLS*\n${UI.FREE_BAR}\n\n`;
+      // Push #103c: tag every locked skill by KIND so hunters can tell passives, buffs and damage apart at a glance.
+      const kindTag = kindTagOf;
+      const counts = {}; locked.forEach(sk => { const k = kindTag(sk); counts[k] = (counts[k] || 0) + 1; });
+      txt += Object.entries(counts).map(([k, v]) => `${k} ${v}`).join(' · ') + '\n\n';
       locked.forEach(s => {
-        txt += `🔒 *${s.name}* — ${(() => { try { const SC = require('../../rpg/utils/SkillCatalog'); return SC.lockReason(player, SC.getRoster(player).find(e => e.name === s.name) || s).replace(/\*/g, '').replace(/`/g, ''); } catch (e) { return s.rankReq ? `${s.rankReq}-Rank skill` : `rune at Lv.${s.unlocksAtLevel || '?'}`; } })()}\n`;
-        txt += `   💥 DMG: ${s.damage} | ⚡ Cost: ${realCost(s, player)} | ⏰ CD: ${s.cooldown}t\n\n`;
+        txt += `🔒 [${kindTag(s)}] *${s.name}* — ${(() => { try { const SC = require('../../rpg/utils/SkillCatalog'); return SC.lockReason(player, SC.getRoster(player).find(e => e.name === s.name) || s).replace(/\*/g, '').replace(/`/g, ''); } catch (e) { return s.rankReq ? `${s.rankReq}-Rank skill` : `rune at Lv.${s.unlocksAtLevel || '?'}`; } })()}\n`;
+        txt += (s.isPassive || String(s.type || '').toLowerCase() === 'passive') ? `   ${String(s.effect || s.description || '').split('\n')[0].replace(/^• Passive: /, '')}${(s.level || 1) > 1 ? ` | ⬆️ Lv.${s.level}` : ''}\n\n` : `   💥 DMG: ${s.damage} | ⚡ Cost: ${realCost(s, player)} | ⏰ CD: ${s.cooldown}t${(s.level || 1) > 1 ? ` | ⬆️ Lv.${s.level}` : ''}\n\n`;
       });
       txt += `${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO LOADOUT* — ${locked.length} locked` : `\n${UI.upsell()}`);
       return sock.sendMessage(chatId, { text: txt }, { quoted: msg });
@@ -180,15 +188,15 @@ module.exports = {
       const bar = skillLevelBar(lv, max);
       const upgradeCost = lv < max ? skillUpgradeCost(lv) : null;
       let txt = pro ? `${UI.PRO_BAR}\n🔮 *${skill.name}* 💎\n${UI.PRO_BAR}\n` : `🔮 *${skill.name}*\n${UI.FREE_BAR}\n`;
-      txt += `${info?.description || 'A powerful skill.'}\n\n`;
+      txt += `🏷️ ${kindTagOf(skill)}${skill.rankReq ? ` · ${skill.rankReq}-Rank` : ''}\n${info?.description || 'A powerful skill.'}\n\n`;
       txt += `📊 STATS (Level ${lv}/${max})\n${bar}\n`;
       if (isHealerHealSkill(player, skill)) txt += `${healerUpgradeLine(skill)}\n`; else txt += `💥 Damage: ${bonuses.damage}\n`;
       txt += `${player.energyColor||'💙'} Cost: ${realCost(skill, player)} ${player.energyType||'Energy'}\n`;
       txt += `⏰ Cooldown: ${bonuses.cooldown}t\n`;
-      if (lv > 1) txt += isHealerHealSkill(player, skill) ? `⬆️ Level bonus: −${require('../../rpg/utils/HealerBacklash').reductionPct(lv)}% backlash, -${bonuses.costReduction} cost\n` : `⬆️ Level bonus: +${Math.round((bonuses.dmgMult-1)*100)}% DMG, -${bonuses.costReduction} cost\n`;
+      if (lv > 1) txt += isHealerHealSkill(player, skill) ? `⬆️ Level bonus: −${require('../../rpg/utils/HealerBacklash').reductionPct(lv)}% backlash · cost ×${bonuses.costMult.toFixed(2)}\n` : `⬆️ Level bonus: +${Math.round((bonuses.dmgMult-1)*100)}% DMG · cost ×${bonuses.costMult.toFixed(2)} (stronger casts drain more)\n`;
       if (info?.effect) txt += `\n💡 EFFECTS:\n${info.effect}\n`;
       // Push #97: what the skill REALLY does at its current level (support numbers grow with every upgrade).
-      try { const _r = _SCk && _SCk.resolveSkill ? _SCk.resolveSkill(player, skill.name) : null; const _e = _r && _r.ok ? _r.entry : null; const _L = _e ? (_e.effectScaled || _SCk.scaledSummary(_e)) : []; if (_L.length) txt += `\n📐 AT LEVEL ${lv}${lv > 1 ? ` (×${(_SCk.supportMult(lv)).toFixed(2)} support · +${Math.round((lv - 1) * 8)}% damage)` : ''}:\n${_L.join('\n')}\n`; } catch (e) {}
+      try { const _r = _SCk && _SCk.resolveSkill ? _SCk.resolveSkill(player, skill.name) : null; const _e = _r && _r.ok ? _r.entry : null; const _L = _e ? (_e.effectScaled || _SCk.scaledSummary(_e)) : []; if (_L.length) txt += `\n📐 AT LEVEL ${lv}${lv > 1 ? ` (×${(_SCk.supportMult(lv)).toFixed(2)} support · +${Math.round((lv - 1) * 12)}% damage)` : ''}:\n${_L.join('\n')}\n`; } catch (e) {}
       if (info?.animation) txt += `\n🎬 ANIMATION:\n${info.animation.split('\n')[0]}\n`;
       if (upgradeCost) txt += `\n${FRAME}\n⬆️ Upgrade to Lv ${lv+1}: 💠 ${upgradeCost.toLocaleString()} Nexus\n/skills upgrade [slot#]\n`;
       txt += `${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO LOADOUT* — Lv.${lv} ${skill.name}` : `\n${UI.upsell()}`);
@@ -204,16 +212,20 @@ module.exports = {
       const lv = skill.level || 1;
       const max = skill.maxLevel || 5;
       if (lv >= max) return sock.sendMessage(chatId, { text: `❌ *${skill.name}* is already max level (${max})!` }, { quoted: msg });
-      const cost = skillUpgradeCost(lv);
-      if ((player.gold||0) < cost) return sock.sendMessage(chatId, { text: `❌ Not enough Nexus!\nNeed: 💠 ${cost.toLocaleString()}\nHave: 💠 ${(player.gold||0).toLocaleString()}` }, { quoted: msg });
-      player.gold -= cost;
-      try { require('../../rpg/utils/TransactionLog').logSpend(player, 'skill_upgrade', cost, 0); } catch (e) {}
+      let cost = skillUpgradeCost(lv); let _usedCredit = false;
+      // Push #103c: SKILL UPGRADE CREDITS (levels refunded by the revamp) are spent before Nexus.
+      if ((Number(player.skillUpgradeCredits) || 0) > 0) { player.skillUpgradeCredits = Number(player.skillUpgradeCredits) - 1; _usedCredit = true; cost = 0; }
+      else {
+        if ((player.gold||0) < cost) return sock.sendMessage(chatId, { text: `❌ Not enough Nexus!\nNeed: 💠 ${cost.toLocaleString()}\nHave: 💠 ${(player.gold||0).toLocaleString()}` }, { quoted: msg });
+        player.gold -= cost;
+        try { require('../../rpg/utils/TransactionLog').logSpend(player, 'skill_upgrade', cost, 0); } catch (e) {}
+      }
       skill.level = lv + 1;
       const newBonuses = applySkillLevelBonus(skill);
       const bar = skillLevelBar(skill.level, max);
       saveDatabase();
       return sock.sendMessage(chatId, {
-        text: (pro ? `${UI.PRO_BAR}\n⬆️ SKILL UPGRADED! 💎\n${UI.PRO_BAR}\n\n🔮 *${skill.name}*` : `⬆️ SKILL UPGRADED!\n${UI.FREE_BAR}\n\n🔮 *${skill.name}*`)+`\nLevel ${lv} → *${skill.level}/${max}*\n${bar}\n\n${isHealerHealSkill(player, skill) ? `🩸 Backlash: −${require('../../rpg/utils/HealerBacklash').reductionPct(skill.level)}% (was −${require('../../rpg/utils/HealerBacklash').reductionPct(lv)}%)` : `💥 DMG: +${Math.round((newBonuses.dmgMult-1)*100)}% boost`}\n${player.energyColor||'💙'} Cost: ${realCost({ ...skill, level: lv }, player)} → *${realCost(skill, player)}* per cast\n💠 Spent: ${cost.toLocaleString()} Nexus\n💠 Remaining: ${player.gold.toLocaleString()}\n${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO LOADOUT* — Lv.${skill.level}/${max} ${skill.name}` : `\n${UI.upsell()}`)
+        text: (pro ? `${UI.PRO_BAR}\n⬆️ SKILL UPGRADED! 💎\n${UI.PRO_BAR}\n\n🔮 *${skill.name}*` : `⬆️ SKILL UPGRADED!\n${UI.FREE_BAR}\n\n🔮 *${skill.name}*`)+`\nLevel ${lv} → *${skill.level}/${max}*\n${bar}\n\n${isHealerHealSkill(player, skill) ? `🩸 Backlash: −${require('../../rpg/utils/HealerBacklash').reductionPct(skill.level)}% (was −${require('../../rpg/utils/HealerBacklash').reductionPct(lv)}%)` : `💥 DMG: +${Math.round((newBonuses.dmgMult-1)*100)}% boost`}\n${player.energyColor||'💙'} Cost: ${realCost({ ...skill, level: lv }, player)} → *${realCost(skill, player)}* per cast\n${_usedCredit ? `🎟️ Paid with a Skill Upgrade Credit (${player.skillUpgradeCredits} left)` : `💠 Spent: ${cost.toLocaleString()} Nexus`}\n💠 Remaining: ${player.gold.toLocaleString()}\n${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO LOADOUT* — Lv.${skill.level}/${max} ${skill.name}` : `\n${UI.upsell()}`)
       }, { quoted: msg });
     }
 

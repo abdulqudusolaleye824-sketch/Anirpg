@@ -116,10 +116,13 @@ function toRaw(className, sk, index) {
     lines.push(`• ${txt}`);
   }
   const displayEffect = [...lines.slice(0, lines.length - 1), `• ${sk.text}`].join('\n');
+  // Push #103c: every skill speaks in its class's voice — lore above, the spec sentence (📜) below, mechanics after.
+  let _lore = null; try { _lore = require('../data/SkillLore').lore(className, sk, sk._variant || null); } catch (e) {}
   return {
     name: sk.name, type: catType, emoji: sk.emoji,
     effect: lines.join('\n'), displayEffect,
-    description: `${sk.emoji || '✦'} ${sk.text}`,
+    description: _lore ? `${sk.emoji || '✦'} _${_lore.lore}_\n📝 ${sk.text}` : `${sk.emoji || '✦'} ${sk.text}`,
+    animation: _lore ? _lore.cast : undefined, loreTag: _lore ? _lore.tag : null,
     energyCost: costFor(index, sk.rank, type), cooldown: cooldownFor(index, sk.rank, type),
     rankReq: sk.rank || null, scaleStat: dm.stat || 'atk', specText: sk.text, revamp: true, _spec: sk,
   };
@@ -218,7 +221,7 @@ function mechanics(sk) {
   if (/\b(burn\w*|fire|flame|scorch|hellfire|magma|pyre|ignite|blaz\w+|inferno|lava)\b/.test(t) && (type === 'damage' || type === 'debuff') && /burn|ignite|scorch|applies|inflict/.test(t)) status('burn', 100, turns(3));
   if (/\b(poison\w*|toxic|venom\w*|plague|pestilence|acid|necrotic|rot\w*|spore)\b/.test(t) && (type === 'damage' || type === 'debuff')) status('poison', 100, turns(3));
   if (/\b(bleed\w*|hemorrhag\w*|laceration|serrated|rend\w*)\b/.test(t) && (type === 'damage' || type === 'debuff')) status('bleed', 100, turns(3));
-  if (/\b(curse\w*|hex\w*|doom|ruin)\b/.test(t) && (type === 'debuff' || type === 'damage') && enemyish) status('curse', 100, turns(3));
+  if (/\b(curse\w*|hex\w*|doom|ruin|malediction|jinx|bane)\b/.test(t + ' ' + String(sk.name || '').toLowerCase()) && (type === 'debuff' || type === 'damage') && (enemyish || type === 'debuff')) status('curse', 100, turns(3)); // Push #103c: the NAME counts too (Hex, Curse of …)
   if (/\bweaken\w*|enfeebl\w*|sap\w*\s+strength/.test(t) && enemyish) status('weaken', 100, turns(2));
 
   // sustain
@@ -289,7 +292,7 @@ function rawsFor(className, variant = null) {
   // Push #103b: Monster VARIANTS — same 26 slots / same numbers, re-bodied from the
   // creature's anatomy (MonsterKits103): a mantis never bites, a golem has no mouth…
   if (className === 'Monster' && variant && !/^monster$/i.test(String(variant))) {
-    try { const MK = require('../data/MonsterKits103'); const sk = MK.rosterSpec(variant); if (sk && sk.length === spec.skills.length) return sk.map((x, i) => toRaw(className, x, i)); } catch (e) {}
+    try { const MK = require('../data/MonsterKits103'); const sk = MK.rosterSpec(variant); if (sk && sk.length === spec.skills.length) return sk.map((x, i) => toRaw(className, { ...x, _variant: variant }, i)); } catch (e) {}
   }
   return spec.skills.map((sk, i) => toRaw(className, sk, i));
 }

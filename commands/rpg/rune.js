@@ -38,7 +38,8 @@ module.exports = {
         `🪨 *${r.stone.name}* crumbles to light…`,
         '',
         `✨ *${e.emoji || '🔮'} ${e.name}* learned — ${where}.`,
-        `📜 ${String(e.description || '').split(' Mechanics:')[0].slice(0, 220)}`,
+        `${String(e.description || '').split(' Mechanics:')[0].slice(0, 420)}`, // Push #103c: lore + 📝 spec
+        `🏷️ ${(() => { try { const SL = require('../../rpg/data/SkillLore'); return SL.TAG[SL.kindOf(e)]; } catch (x) { return ''; } })()}`,
         `⚡ ${e.isPassive ? 'Passive' : `${e.energyCost} energy`}${e.rankReq ? ` · ${e.rankReq}-Rank skill (locks again if your rank drops)` : ''}`,
       ];
       return sock.sendMessage(chatId, { text: L.join('\n') }, { quoted: msg });
@@ -56,7 +57,8 @@ module.exports = {
       stones.forEach((st, i) => {
         const e = SR.entryByName(player, st.skill);
         const tag = !e ? 'other class' : e.rankReq ? (SR.rankMeets(player, e.rankReq) ? `${e.rankReq}-Rank ✅` : `${e.rankReq}-Rank 🔒 (you are ${rank})`) : `Lv.${e.unlocksAtLevel}`;
-        L.push(`${i + 1}. ${e && e.emoji ? e.emoji : '🪨'} *${st.skill}* — ${tag}`);
+        const kt = (() => { try { const SL = require('../../rpg/data/SkillLore'); return e ? ` · ${SL.TAG[SL.kindOf(e)]}` : ''; } catch (x) { return ''; } })(); // Push #103c
+        L.push(`${i + 1}. ${e && e.emoji ? e.emoji : '🪨'} *${st.skill}* — ${tag}${kt}`);
       });
       L.push('➜ `/rune use <name>` · `/rune use all`');
     } else L.push('\nNo unused rune stones. A new one drops every 5 levels (from Lv.15 there is a chance at a bonus pair), and rank skills arrive the moment your Hunter Rank reaches them.');

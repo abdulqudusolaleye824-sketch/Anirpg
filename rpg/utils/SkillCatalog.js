@@ -664,7 +664,7 @@ function normalise(className, raw, index) {
   if (support.cleanse) _mech.push(`cleanses status effects`);
   if (support.party && !isPassive && !(parsed.buffs || []).length && !_healingPct) _mech.push(`reaches the whole party`);
   // Push #96h-t: show the REAL number — a non-Healer's heal lists the doubled cost it actually pays.
-  if (!isPassive) _mech.push(type === 'heal' && className !== 'Healer' ? `${energyCostFinal * 2} energy (heals cost ×2 outside the Healer class)` : `${energyCostFinal} energy`);
+  if (!isPassive) _mech.push(type === 'heal' && className !== 'Healer' ? `${energyCostFinal * 2} energy at Lv.1 (heals cost ×2 outside the Healer class; ×1.75 per skill level)` : `${energyCostFinal} energy at Lv.1 (×1.75 per skill level)`);
   if (_mech.length && !/Mechanics:/.test(desc)) desc = `${desc.replace(/\s+$/, '')}${/[.!?]["”]?$/.test(desc) ? '' : '.'} Mechanics: ${_mech.join(' · ')}.`;
   else if (!_mech.length && isPassive && !/Mechanics:/.test(desc)) desc = `${desc.replace(/\s+$/, '')}${/[.!?]$/.test(desc) ? '' : '.'} Mechanics: passive — ${effect.split('\n')[0].replace(/^[•\s]*(?:passive:\s*)?/i, '').replace(/\*\*/g, '')}.`;
 
@@ -730,7 +730,7 @@ function rebuildMechanics(e) {
   if (e.corpseBurst) m.push(`consumes battlefield corpses`);
   if (e.mrCheck) m.push(`Magic Power vs target Magic Resistance`);
   if (e.party && !e.isPassive && !(e.buffs || []).length && !e.healingPct) m.push(`reaches the whole party`);
-  if (!e.isPassive) m.push(`${e.energyCost} energy`);
+  if (!e.isPassive) m.push(`${e.energyCost} energy at Lv.1 (×1.75 per skill level)`);
   if (e.rankReq) m.push(`${e.rankReq}-Rank skill`);
   if (!m.length) return e.description;
   return `${base}${/[.!?]["”]?$/.test(base) ? '' : '.'} Mechanics: ${m.join(' · ')}.`;
@@ -1118,8 +1118,9 @@ function syncPlayerSkills(player) {
       if (inActive || inLib) {
         const src = inActive ? player.skills.active : player.availableSkills;
         const i = src.findIndex(s => nameOf(s) === n);
+        const _kept = Number(src[i]?.level || 1); // Push #103c: a skill that re-locks keeps its upgrade level
         src.splice(i, 1);
-        player.skills.locked.push(fresh);
+        player.skills.locked.push({ ...fresh, level: _kept });
         changed = true;
       } else if (!inLocked) {
         player.skills.locked.push(fresh);

@@ -1705,6 +1705,7 @@ async function startup() {
       } catch (e) {} return n; };
     try { const r = require('./rpg/utils/Migrations103a').run(getDatabase()); if (r) { console.log(`🧹 Migrations103a: ${r} fix(es)`); saveDatabase(); } } catch (e) {}
     try { const r = require('./rpg/utils/Migrations103b').run(getDatabase()); if (r) { console.log(`🪨 Migrations103b: rune stones issued to ${r} hunter(s)`); saveDatabase(); } } catch (e) { console.error('Migrations103b:', e.message); }
+    try { const r = require('./rpg/utils/Migrations103c').run(getDatabase()); if (r) { console.log(`⬆️ Migrations103c: skill levels restored for ${r} hunter(s)`); saveDatabase(); } } catch (e) { console.error('Migrations103c failed:', e && e.message); }
     try { const r = require('./rpg/utils/Migrations102h').run(getDatabase()); if (r) { console.log(`🛠️ restored ${r} worn-away weapon(s) (BUG-075/086)`); saveDatabase(); } } catch (e) {} // Push #102h
     try { const n = GateManager.sweepStale(getDatabase()) + _docDiet(); if (n) { console.log(`🧹 document diet: ${n} item(s) removed`); saveDatabase(); } } catch (e) {}
     setInterval(() => { try { if (GateManager.sweepStale(getDatabase()) + _docDiet()) saveDatabase(); } catch (e) {} }, 10 * 60 * 1000).unref?.();

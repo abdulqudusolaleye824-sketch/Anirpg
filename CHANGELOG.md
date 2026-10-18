@@ -1,3 +1,15 @@
+## 1.0.207 — Push #103d (2026-10-18) — Skills with PERSONALITY, skill-level restore, Hex curses, kind tags
+- SKILL LORE: every one of the 702 class/variant skills now speaks in its class's own voice — a flavour passage above
+  the 📝 spec sentence on the skill card, a cast line in combat ("📜 Hex! The target's strength bleeds out of them."),
+  and the mechanics line after. Deterministic per skill (rpg/data/SkillLore.js). Combat shows cast line + spec only.
+- KIND TAGS: `/skills`, `/skills locked`, `/skills info`, `/rune` label every skill 💥 DAMAGE · ✨ BUFF · 🌀 DEBUFF ·
+  💚 HEAL · 🛡️ PASSIVE · 🜏 SUMMON; `/skills locked` opens with a count per kind and shows upgrade levels.
+- SKILL LEVELS RESTORED: the revamp sync had re-locked skills at Lv.1, dropping paid upgrades. Levels were recovered
+  from the pre-revamp snapshot: same-name skills get their level back; skills that no longer exist become SKILL
+  UPGRADE CREDITS (🎟️, shown on `/skills`) that `/skills upgrade` spends before Nexus. Re-locking never drops a level now.
+- Hex / Curse-named debuffs really inflict CURSE (the name counts, not only the sentence).
+- Skill card maths fixed: level bonus shows the true +12% DMG/level and cost ×1.75/level; "energy at Lv.1" labelled.
+
 ## 1.0.206 — Push #103c (2026-10-18) — Astra Pass premium payback + compounding skill energy costs
 - ASTRA PASS premium track now pays itself back and more: over 50 tiers = 3,000,000 💠 Nexus + 300,000 💎 Mana Stones +
   3,000 PC (60 PC per tier; tier 1 = 20,800 💠 / 2,080 💎 → tier 50 = 99,200 💠 / 9,920 💎). Shown on `/pass` cards and claims.
