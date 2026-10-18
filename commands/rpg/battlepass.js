@@ -4,7 +4,7 @@
 // 4 levels grant Currency alone (Free: L1, L2, L3 | Prem: L7)
 // All other 36 levels grant Currency + Items / PC Refunds!
 // 20 levels are locked to Premium.
-// 5 locked levels award 200 PC each (1,000 PC total refunded at Tier 40!).
+// Push #103d: all 20 premium levels return 150 PC each (3,000 PC — the full price — by Tier 40) plus big Nexus/Stone boosts.
 // ═══════════════════════════════════════════════════════════════
 
 'use strict';
@@ -21,8 +21,9 @@ function isProPlayer(player) {
   return !!((player.isPro || player.proStatus) && player.proExpiresAt && player.proExpiresAt > Date.now());
 }
 
-// PC reward tiers (5 locked tiers that return 200 PC each)
-const PC_REWARD_TIERS = [8, 16, 24, 32, 40];
+// PC reward tiers = the premium tiers
+const PC_REWARD_TIERS = [2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32, 34, 36, 38, 40]; // Push #103d: every premium tier returns PC
+const PREM_PC = 150, PREM_GOLD_BONUS = 90000, PREM_STONE_BONUS = 14000; // Push #103d: 20 premium tiers → 3,000 PC · +1.8M 💠 · +280k 💎
 // The 20 tiers that are locked to Premium BP:
 const LOCKED_TIERS = [2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32, 34, 36, 38, 40];
 
@@ -69,14 +70,17 @@ const BP_ITEMS = {
 };
 
 function getBPTierRewards(t) {
-  const goldAmt = t * 1500;
-  const stoneAmt = t * 20;
+  // Push #103d: the PREMIUM (locked) tiers pay the 3,000 PC pass back and then some —
+  //   every locked tier: +150 PC · +90,000 💠 · +14,000 💎 on top of the base (20 tiers → 3,000 PC · ~3.03M 💠 · ~296k 💎 over the track)
+  const prem = LOCKED_TIERS.includes(t);
+  const goldAmt = t * 1500 + (prem ? PREM_GOLD_BONUS : 0);
+  const stoneAmt = t * 20 + (prem ? PREM_STONE_BONUS : 0);
   const item = BP_ITEMS[t] || null;
-  const hasPC = PC_REWARD_TIERS.includes(t);
-  const pc = hasPC ? 200 : 0;
+  const hasPC = prem;
+  const pc = prem ? PREM_PC : 0;
 
-  let str = `+${goldAmt.toLocaleString()} 💠 Nexus | +${stoneAmt} 💎 Stones`;
-  if (hasPC) str += ` | 💼 *+200 PC Return!*`;
+  let str = `+${goldAmt.toLocaleString()} 💠 Nexus | +${stoneAmt.toLocaleString()} 💎 Stones`;
+  if (hasPC) str += ` | 💼 *+${pc} PC Return!*`;
   if (item) str += ` | 🎁 *${item.name}*`;
 
   // Push #84: premium (locked) tiers 1–15 grant Upgrade Points
@@ -147,7 +151,7 @@ module.exports = {
           ``,
           `💰 *PREMIUM REFUND TRACK:*`,
           `• Unlock Premium for **3,000 PC** ($3) (/bp buy)`,
-          `• Tiers 8, 16, 24, 32, and 40 return **200 PC each** (1,000 PC back by Tier 40!).`,
+          `• Every premium tier returns **150 PC** (the full 3,000 PC back by Tier 40!) + **90,000 💠** and **14,000 💎** extra per tier.`,
         ],
         proLines: [`💎 *PRO TRACK*`, `  ⚡ Rate: **${expRate}** · ✅ ${claimedN}/${unlockedN} claimed`],
         tip: '/bp to view your tiers',
@@ -163,7 +167,7 @@ module.exports = {
       if ((player.procoin || 0) < BP_COST_PC) {
         return sock.sendMessage(chatId, {
           text: `${FRAME}\n🎖️ *PREMIUM BATTLE PASS UNLOCK*\n${FRAME}\n\n💰 Cost: *${BP_COST_PC.toLocaleString()} PC*\n💼 Your Balance: *${(player.procoin || 0).toLocaleString()} PC*\n\n✨ *PREMIUM PERKS:*` +
-            `\n• Unlocks all 20 Premium-Locked Tiers\n• **2x BP EXP Boost** on all Battle XP!\n• Combine with PRO for **4x BP EXP**!\n• Receive 200 PC back at Tiers 8, 16, 24, 32, 40 (1,000 PC back by Tier 40!)\n\n💡 Use /prostore to get PC, or buy with /bp buy when ready!`
+            `\n• Unlocks all 20 Premium-Locked Tiers\n• **2x BP EXP Boost** on all Battle XP!\n• Combine with PRO for **4x BP EXP**!\n• Every premium tier returns 150 PC (full 3,000 PC back by Tier 40!) + 90,000 💠 and 14,000 💎 extra per tier (~3M 💠 / ~300k 💎 over the track)\n\n💡 Use /prostore to get PC, or buy with /bp buy when ready!`
         }, { quoted: msg });
       }
 
@@ -172,7 +176,7 @@ module.exports = {
       bp.premium = true;
       saveDatabase();
       return sock.sendMessage(chatId, {
-        text: `${FRAME}\n🌟 *PREMIUM BATTLE PASS ACTIVATED!*\n${FRAME}\n\n✅ Premium Track Unlocked for ${BP_COST_PC} PC!\nAll 20 locked levels can now be claimed!\n\n🔥 **2x BP EXP Boost Activated!**\n💡 Claim 200 PC back at Tiers 8, 16, 24, 32, and 40!\n${FRAME}`
+        text: `${FRAME}\n🌟 *PREMIUM BATTLE PASS ACTIVATED!*\n${FRAME}\n\n✅ Premium Track Unlocked for ${BP_COST_PC} PC!\nAll 20 locked levels can now be claimed!\n\n🔥 **2x BP EXP Boost Activated!**\n💡 Every premium tier returns 150 PC + 90,000 💠 + 14,000 💎 — the pass pays itself back by Tier 40!\n${FRAME}`
       }, { quoted: msg });
     }
 
@@ -205,8 +209,8 @@ module.exports = {
           _logN += r.gold || 0; _logC += r.stones || 0; _logP += r.pc || 0;
           if (r.item) addItemToInventory(player, r.item);
 
-          let str = `Tier ${t}: +${r.gold.toLocaleString()} 💠 | +${r.stones} 💎`;
-          if (r.pc > 0) str += ` | 💼 +200 PC Return!`;
+          let str = `Tier ${t}: +${r.gold.toLocaleString()} 💠 | +${r.stones.toLocaleString()} 💎`;
+          if (r.pc > 0) str += ` | 💼 +${r.pc} PC Return!`;
           if (r.up) str += ` | ✨ +${giveUP(player, r.up)} UP`;
           if (r.item) str += ` | 🎁 *${r.item.name}*`;
           gained.push(str);
@@ -268,9 +272,9 @@ module.exports = {
       }
       if (r.item) addItemToInventory(player, r.item);
 
-      let str = `Tier ${targetLvl}: +${r.gold.toLocaleString()} 💠 Nexus | +${r.stones} 💎 Mana Stones`;
+      let str = `Tier ${targetLvl}: +${r.gold.toLocaleString()} 💠 Nexus | +${r.stones.toLocaleString()} 💎 Mana Stones`;
       if (r.up) str += ` | ✨ +${giveUP(player, r.up)} UP`;
-      if (r.pc > 0) str += ` | 💼 +200 PC Return!`;
+      if (r.pc > 0) str += ` | 💼 +${r.pc} PC Return!`;
       if (r.item) str += ` | 🎁 *${r.item.name}*`;
       gained.push(str);
 
@@ -329,11 +333,11 @@ module.exports = {
         else if(isClaimed){ statusText='✅ Claimed'; }
         else { statusText='🟢 Unlocked'; }
       }
-      const pcTxt = r.pc ? ` + 200 PC` : '';
+      const pcTxt = r.pc ? ` + ${r.pc} PC` : '';
       const itemTxt = r.item ? ` + ${r.item.name}` : '';
       const premiumTag = isLocked ? ' (Premium)' : '';
       tierLines.push(`Level ${tTier}: ${statusText}`);
-      tierLines.push(`  Rewards: ${r.gold.toLocaleString()} 💠 | ${r.stones} 💎${pcTxt}${itemTxt}${premiumTag}`);
+      tierLines.push(`  Rewards: ${r.gold.toLocaleString()} 💠 | ${r.stones.toLocaleString()} 💎${pcTxt}${itemTxt}${premiumTag}`);
       tierLines.push(``);
     }
     const navHintBP = page > 1 && page < 4 ? `◀️ /bp ${page-1}  •  ▶️ /bp ${page+1}` : page === 1 ? `▶️ Next: /bp 2` : `◀️ Prev: /bp 3`;

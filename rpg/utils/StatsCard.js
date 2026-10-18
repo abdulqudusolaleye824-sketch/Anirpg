@@ -287,7 +287,9 @@ async function generateStatsCard(player, db) {
   RY += 20;
 
   // Class skills
-  const classSkills = player.classSkills || [];
+  // Push #103d: live bar skills (revamp roster), not the stale awakening snapshot
+  let classSkills = [];
+  try { const _SC = require('./SkillCatalog'); classSkills = (player.skills?.active || []).map(sk => { const d = String(sk.description || ''); const m = d.match(/📝 ([^\n]*)/); return { name: `${sk.name} Lv.${sk.level || 1}`, desc: (m ? m[1] : d).replace(/\s*Mechanics:[\s\S]*$/, '').replace(/^\S+\s+_[^_]*_\n?/, '').trim() }; }); } catch (e) { classSkills = player.classSkills || []; }
   for (const skill of classSkills.slice(0, 3)) {
     ctx.save();
     ctx.fillStyle = '#ffd600';

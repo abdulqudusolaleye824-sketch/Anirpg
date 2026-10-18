@@ -213,8 +213,8 @@ async function renderAstraPassImage(player, passData, page = 1) {
     ctx.textAlign = 'left';
 
     // Dynamic seasonal rewards for Tier t
-    const premNexus = 20800 + (t - 1) * 1600; // Push #103c: 3M 💠 / 300k 💎 / 3,000 PC over 50 tiers
-    const premStones = 2080 + (t - 1) * 160;
+    const premNexus = t * 3000;
+    const premStones = Math.floor(t * 14);
     const freeNexus = t * 1500;
     const freeStones = Math.floor(t * 7);
 
@@ -223,7 +223,7 @@ async function renderAstraPassImage(player, passData, page = 1) {
     ctx.font = 'bold 14px "DejaVu Sans", sans-serif';
     ctx.fillText(`PREMIUM:`, 150, y + 36);
 
-    let premText = `+${premNexus.toLocaleString()} Nexus | +${premStones.toLocaleString()} Stones | +60 PC`;
+    let premText = `+${premNexus.toLocaleString()} Nexus | +${premStones} Stones`;
     if (premItem) {
       premText += ` | + ${cleanText(premItem.name) || premItem.name}`;
     }
@@ -419,8 +419,9 @@ async function renderBattlePassImage(player, bpData, page = 1) {
     const item = bpItems[t];
     const hasPC = pcTiers.includes(t);
 
-    const goldAmt = t * 1500;
-    const stoneAmt = t * 20;
+    // Push #103d: PREMIUM (locked) tiers pay the pass back — 150 PC + 90,000 💠 + 14,000 💎 extra each (20 tiers → 3,000 PC · ~3M 💠 · ~300k 💎)
+    const goldAmt = t * 1500 + (isPremLocked ? 90000 : 0);
+    const stoneAmt = t * 20 + (isPremLocked ? 14000 : 0);
 
     // Card background
     ctx.fillStyle = isCurrent
@@ -471,7 +472,7 @@ async function renderBattlePassImage(player, bpData, page = 1) {
     ctx.fillText(trackLabel, 145, y + 34);
 
     let rewardText = `+${goldAmt.toLocaleString()} Nexus | +${stoneAmt} Stones`;
-    if (hasPC) rewardText += ` | +200 PC Return!`;
+    if (isPremLocked) rewardText += ` | +150 PC Return!`;
     if (item) rewardText += ` | + ${cleanText(item.name) || item.name}`;
 
     ctx.fillStyle = item ? (RARITY_COLORS[item.rarity] || '#F59E0B') : '#E2E8F0';

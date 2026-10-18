@@ -227,21 +227,25 @@ module.exports = {
     // ── Class Skills ──────────────────────────────────────────
     // Push #74c: the class kit is shown as a LADDER (unlocked vs locked-at-Lv),
     // not as a second usable skill set — combat only reads SKILLS below.
-    let classSkills = player.classSkills || [];
-    let _ladder = null;
+    // Push #103d: the kit comes from the LIVE roster (revamp ladder) — never the stale awakening snapshot
+    // (player.classSkills showed old names / wrong numbers like "Party ATK +1%").
+    let _ladder = null; let _SCs = null, _SL = null;
     try {
-      const SCs = require('../../rpg/utils/SkillCatalog');
-      const roster = SCs.getRoster(player);
-      if (roster.length) _ladder = roster.filter(e => e.fromClassFile).map(e => ({ ...e, open: SCs.isUnlockedFor(player, e) }));
+      _SCs = require('../../rpg/utils/SkillCatalog'); try { _SL = require('../../rpg/data/SkillLore'); } catch (e) {}
+      const roster = _SCs.getRoster(player);
+      if (roster.length) _ladder = roster.map(e => ({ ...e, open: _SCs.isUnlockedFor(player, e) }));
     } catch (e) {}
+    const _tag = (e) => { try { return _SL ? _SL.TAG[_SL.kindOf(e)] : ''; } catch (x) { return ''; } };
+    const _spec = (e) => { const d = String(e.specText || e.description || ''); const m = d.match(/📝 ([^\n]*)/); return (m ? m[1] : d.replace(/^\S+\s+_[^_]*_\n?/, '')).replace(/\s*Mechanics:[\s\S]*$/, '').trim(); };
     if (_ladder && _ladder.length) {
-      msg2 += `\n${FRAME}\n🎭 *CLASS KIT* (${className}) — ${_ladder.filter(e => e.open).length}/${_ladder.length} unlocked`;
-      _ladder.forEach((s, i) => {
-        msg2 += s.open ? `\n  ✅ *${s.name}*` : `\n  🔒 ${s.name} _(${s.rankReq ? s.rankReq + "-Rank" : "Lv." + s.unlocksAtLevel})_`;
-      });
-    } else if (classSkills.length > 0) {
-      msg2 += `\n${FRAME}\n🎭 *CLASS SKILLS* (${className})`;
-      classSkills.forEach((s, i) => { msg2 += `\n  ${i+1}. *${s.name}* — ${s.desc}`; });
+      const openL = _ladder.filter(e => e.open), lockedL = _ladder.filter(e => !e.open);
+      msg2 += `\n${FRAME}\n🎭 *CLASS KIT* (${className}) — ${openL.length}/${_ladder.length} learned`;
+      openL.forEach(e => { msg2 += `\n  ✅ ${e.emoji || '🔮'} *${e.name}* · ${_tag(e)}\n     _${_spec(e).slice(0, 110)}_`; });
+      if (lockedL.length) {
+        const next = lockedL.slice(0, 3);
+        msg2 += `\n  🔒 Next: ${next.map(e => `${e.name} _(${e.rankReq ? e.rankReq + '-Rank' : 'Lv.' + e.unlocksAtLevel})_`).join(' · ')}${lockedL.length > 3 ? ` · +${lockedL.length - 3} more` : ''}`;
+      }
+      msg2 += `\n  💡 /rune — stones in your bag · /skills locked — the full ladder`;
     }
 
     // ── Active skills ─────────────────────────────────────────
@@ -249,9 +253,10 @@ module.exports = {
     if (activeSkills.length > 0) {
       msg2 += `\n${FRAME}\n✨ *SKILLS* (${activeSkills.length})`;
       activeSkills.forEach(skill => {
-        const cost = skill.energyCost || skill.manaCost || 10;
-        msg2 += `\n🔮 *${skill.name}* [Lv.${skill.level}/${skill.maxLevel||10}]`;
-        msg2 += `\n   💥 ${skill.damage} dmg | ${player.energyColor || '💙'} ${cost} | ⏰ ${skill.cooldown||10}s`;
+        let cost = skill.energyCost || skill.manaCost || 10; try { cost = _SCs.effectiveCost(skill, player); } catch (e) {} // Push #103d: the real charged cost at this level
+        let dmg = skill.damage; try { dmg = Math.round((player.stats?.atk || 10) * ((skill.damagePct || 0) / 100) * (_SCs.levelBonus(skill).dmgMult || 1)) || skill.damage; } catch (e) {}
+        msg2 += `\n🔮 *${skill.name}* [Lv.${skill.level || 1}/${skill.maxLevel || 5}] · ${_tag(skill)}`;
+        msg2 += `\n   💥 ${dmg} dmg | ${player.energyColor || '💙'} ${cost} | ⏰ ${skill.cooldown || 0}t`;
       });
     }
 

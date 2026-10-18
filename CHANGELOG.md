@@ -1,3 +1,12 @@
+## 1.0.208 — Push #103e (2026-10-18) — Battle Pass premium payback (not Astra Pass) + live stats card kit
+- ASTRA PASS reverted to its normal track (the 1.0.206 boost was applied to the wrong pass).
+- BATTLE PASS (/bp, bought for 3,000 PC): every one of the 20 PREMIUM tiers now returns 150 PC (3,000 PC — the full
+  price — by Tier 40) plus +90,000 💠 and +14,000 💎 on top of the base tier. Over the track: ~3.03M 💠 · ~296k 💎 · 3,000 PC.
+  Shown on /bp cards, tier list, buy screen and claims.
+- /stats: CLASS KIT now comes from the live roster (learned ✅ with kind tag + spec line, next locked, hint to /rune) —
+  the stale awakening snapshot ("Party ATK +1%") is gone. SKILLS rows show the real charged cost and level-scaled damage.
+  The /stats image card lists the live bar skills too.
+
 ## 1.0.207 — Push #103d (2026-10-18) — Skills with PERSONALITY, skill-level restore, Hex curses, kind tags
 - SKILL LORE: every one of the 702 class/variant skills now speaks in its class's own voice — a flavour passage above
   the 📝 spec sentence on the skill card, a cast line in combat ("📜 Hex! The target's strength bleeds out of them."),
