@@ -213,8 +213,8 @@ async function renderAstraPassImage(player, passData, page = 1) {
     ctx.textAlign = 'left';
 
     // Dynamic seasonal rewards for Tier t
-    const premNexus = t * 3000;
-    const premStones = Math.floor(t * 14);
+    const premNexus = 20800 + (t - 1) * 1600; // Push #103c: 3M 💠 / 300k 💎 / 3,000 PC over 50 tiers
+    const premStones = 2080 + (t - 1) * 160;
     const freeNexus = t * 1500;
     const freeStones = Math.floor(t * 7);
 
@@ -223,7 +223,7 @@ async function renderAstraPassImage(player, passData, page = 1) {
     ctx.font = 'bold 14px "DejaVu Sans", sans-serif';
     ctx.fillText(`PREMIUM:`, 150, y + 36);
 
-    let premText = `+${premNexus.toLocaleString()} Nexus | +${premStones} Stones`;
+    let premText = `+${premNexus.toLocaleString()} Nexus | +${premStones.toLocaleString()} Stones | +60 PC`;
     if (premItem) {
       premText += ` | + ${cleanText(premItem.name) || premItem.name}`;
     }

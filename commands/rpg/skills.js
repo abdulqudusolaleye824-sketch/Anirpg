@@ -213,7 +213,7 @@ module.exports = {
       const bar = skillLevelBar(skill.level, max);
       saveDatabase();
       return sock.sendMessage(chatId, {
-        text: (pro ? `${UI.PRO_BAR}\n⬆️ SKILL UPGRADED! 💎\n${UI.PRO_BAR}\n\n🔮 *${skill.name}*` : `⬆️ SKILL UPGRADED!\n${UI.FREE_BAR}\n\n🔮 *${skill.name}*`)+`\nLevel ${lv} → *${skill.level}/${max}*\n${bar}\n\n${isHealerHealSkill(player, skill) ? `🩸 Backlash: −${require('../../rpg/utils/HealerBacklash').reductionPct(skill.level)}% (was −${require('../../rpg/utils/HealerBacklash').reductionPct(lv)}%)` : `💥 DMG: +${Math.round((newBonuses.dmgMult-1)*100)}% boost`}\n${player.energyColor||'💙'} Cost: -${newBonuses.costReduction}\n💠 Spent: ${cost.toLocaleString()} Nexus\n💠 Remaining: ${player.gold.toLocaleString()}\n${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO LOADOUT* — Lv.${skill.level}/${max} ${skill.name}` : `\n${UI.upsell()}`)
+        text: (pro ? `${UI.PRO_BAR}\n⬆️ SKILL UPGRADED! 💎\n${UI.PRO_BAR}\n\n🔮 *${skill.name}*` : `⬆️ SKILL UPGRADED!\n${UI.FREE_BAR}\n\n🔮 *${skill.name}*`)+`\nLevel ${lv} → *${skill.level}/${max}*\n${bar}\n\n${isHealerHealSkill(player, skill) ? `🩸 Backlash: −${require('../../rpg/utils/HealerBacklash').reductionPct(skill.level)}% (was −${require('../../rpg/utils/HealerBacklash').reductionPct(lv)}%)` : `💥 DMG: +${Math.round((newBonuses.dmgMult-1)*100)}% boost`}\n${player.energyColor||'💙'} Cost: ${realCost({ ...skill, level: lv }, player)} → *${realCost(skill, player)}* per cast\n💠 Spent: ${cost.toLocaleString()} Nexus\n💠 Remaining: ${player.gold.toLocaleString()}\n${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO LOADOUT* — Lv.${skill.level}/${max} ${skill.name}` : `\n${UI.upsell()}`)
       }, { quoted: msg });
     }
 

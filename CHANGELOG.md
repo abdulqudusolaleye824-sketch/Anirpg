@@ -1,3 +1,9 @@
+## 1.0.206 — Push #103c (2026-10-18) — Astra Pass premium payback + compounding skill energy costs
+- ASTRA PASS premium track now pays itself back and more: over 50 tiers = 3,000,000 💠 Nexus + 300,000 💎 Mana Stones +
+  3,000 PC (60 PC per tier; tier 1 = 20,800 💠 / 2,080 💎 → tier 50 = 99,200 💠 / 9,920 💎). Shown on `/pass` cards and claims.
+- SKILL ENERGY: cost COMPOUNDS ×1.75 per skill level (Lv1 ×1 · Lv2 ×1.75 · Lv3 ×3.06 · Lv4 ×5.36 · Lv5 ×9.38) — a 25-energy
+  skill costs ~235 at Lv5 (was ~40). `/skills upgrade` card shows old → new cost per cast.
+
 ## 1.0.205 — Push #103 (2026-10-17) — CLASS REVAMP (rune stones, MR, Bard/Druid, Warlord, summons & corpses, combat snippets, anatomical Monster kits) + BUG-086/089/090/093/095/096/097/098/100
 - 10-18 OWNER ROUND (same push): every level-up (any class) = domain +1 level · guild Nexus/Mana withdraw taxed 15% ·
   summon strikes arrive as ONE message per summon · heal skills on non-Healers are capped per fight (E/F 1, D/C 2,

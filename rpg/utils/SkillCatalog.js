@@ -875,8 +875,10 @@ function getRoster(player) {
 // /skills so nobody's upgraded skills silently get weaker).
 function levelBonus(skill) {
   const lv = Math.max(1, Math.min(MAX_SKILL_LEVEL, skill.level || 1));
-  // Push #103b: +12% effect per level; energy cost RISES +15% per level (stronger casts cost more); −1 turn cd every 2 levels.
-  return { lv, dmgMult: 1 + (lv - 1) * 0.12, costReduction: 0, costMult: 1 + (lv - 1) * 0.15, cdReduction: Math.floor((lv - 1) * 0.5), turnBonus: Math.floor((lv - 1) / 2) };
+  // Push #103b: +12% effect per level; −1 turn cd every 2 levels.
+  // Push #103c (owner): energy cost COMPOUNDS ×1.75 per level — Lv1 ×1 · Lv2 ×1.75 · Lv3 ×3.06 · Lv4 ×5.36 · Lv5 ×9.38
+  // (a 25-energy skill costs ~235 at Lv5). Stronger casts drain real energy.
+  return { lv, dmgMult: 1 + (lv - 1) * 0.12, costReduction: 0, costMult: Math.pow(1.75, lv - 1), cdReduction: Math.floor((lv - 1) * 0.5), turnBonus: Math.floor((lv - 1) / 2) };
 }
 
 function effectiveCost(skill, caster = null) {

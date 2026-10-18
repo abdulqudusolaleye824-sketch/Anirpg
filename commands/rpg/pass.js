@@ -129,12 +129,14 @@ const PASS_ITEMS = {
 function getTierDisplay(t) {
   // Push #87: currency scales upward with tier (both tracks).
   // Free:    tier 1 = 1,000 💠 / 50 💎  → tier 50 = 25,500 💠 / 295 💎
-  // Premium: tier 1 = 3,000 💠 / 150 💎 → tier 50 = 76,500 💠 / 885 💎
+  // Premium (Push #103c): the pass pays itself back — over 50 tiers = 3,000,000 💠 + 300,000 💎 + 3,000 PC
+  //   tier 1 = 20,800 💠 / 2,080 💎 / 60 PC → tier 50 = 99,200 💠 / 9,920 💎 / 60 PC
   const tt = Math.max(1, Math.min(TOTAL_TIERS, Number(t) || 1));
   const freeNexus = 1000 + (tt - 1) * 500;
   const freeStones = 50 + (tt - 1) * 5;
-  const premNexus = 3000 + (tt - 1) * 1500;
-  const premStones = 150 + (tt - 1) * 15;
+  const premNexus = 20800 + (tt - 1) * 1600;
+  const premStones = 2080 + (tt - 1) * 160;
+  const premPC = 60;
 
   const freeItem = PASS_ITEMS.free[t] || null;
   const premItem = PASS_ITEMS.premium[t] || null;
@@ -142,12 +144,12 @@ function getTierDisplay(t) {
   let freeStr = `+${freeNexus.toLocaleString()} 💠 | +${freeStones} 💎`;
   if (freeItem) freeStr += ` | 📦 *${freeItem.name}*`;
 
-  let premStr = `+${premNexus.toLocaleString()} 💠 | +${premStones} 💎`;
+  let premStr = `+${premNexus.toLocaleString()} 💠 | +${premStones.toLocaleString()} 💎 | +${premPC} PC`;
   if (premItem) premStr += ` | 🎁 *${premItem.name}*`;
   if (premUpFor(t)) premStr += ` | ✨ +${premUpFor(t)} UP`;
   if (t === TOTAL_TIERS) premStr += ` | 🏆 *Season Astra Champion* title`;
 
-  return { freeStr, premStr, freeItem, premItem, freeNexus, freeStones, premNexus, premStones };
+  return { freeStr, premStr, freeItem, premItem, freeNexus, freeStones, premNexus, premStones, premPC };
 }
 
 // Push #84: Premium tiers 1–15 grant Upgrade Points (2 UP each); Premium
@@ -272,8 +274,9 @@ module.exports = {
             player.nexus = player.gold;
             player.manaCrystals = (player.manaCrystals || 0) + tInfo.premStones;
             player.manaStones = player.manaCrystals;
+            player.procoin = (player.procoin || 0) + (tInfo.premPC || 0); // Push #103c
             _logN += tInfo.premNexus || 0; _logC += tInfo.premStones || 0;
-            let str = `Tier ${t} Premium: +${tInfo.premNexus.toLocaleString()} 💠 | +${tInfo.premStones} 💎`;
+            let str = `Tier ${t} Premium: +${tInfo.premNexus.toLocaleString()} 💠 | +${tInfo.premStones.toLocaleString()} 💎 | +${tInfo.premPC} PC`;
             if (tInfo.premItem) {
               addItemToInventory(player, tInfo.premItem);
               str += ` | 🎁 *${tInfo.premItem.name}*`;
@@ -325,8 +328,9 @@ module.exports = {
         player.nexus = player.gold;
         player.manaCrystals = (player.manaCrystals || 0) + tInfo.premStones;
         player.manaStones = player.manaCrystals;
+        player.procoin = (player.procoin || 0) + (tInfo.premPC || 0); // Push #103c
         _tN += tInfo.premNexus || 0; _tC += tInfo.premStones || 0;
-        let str = `Premium: +${tInfo.premNexus.toLocaleString()} 💠 Nexus | +${tInfo.premStones} 💎 Mana Stones`;
+        let str = `Premium: +${tInfo.premNexus.toLocaleString()} 💠 Nexus | +${tInfo.premPC} PC | +${tInfo.premStones.toLocaleString()} 💎 Mana Stones`;
         if (tInfo.premItem) {
           addItemToInventory(player, tInfo.premItem);
           str += ` | 🎁 *${tInfo.premItem.name}*`;
@@ -395,7 +399,7 @@ module.exports = {
       const premItemTxt = tInfo.premItem ? ` + ${tInfo.premItem.name}` : '';
       tierLines.push(`Level ${tTier}: ${statusText}`);
       tierLines.push(`  Free: ${tInfo.freeNexus.toLocaleString()} 💠 | ${tInfo.freeStones} 💎${freeItemTxt}`);
-      tierLines.push(`  Premium: ${tInfo.premNexus.toLocaleString()} 💠 | ${tInfo.premStones} 💎${premItemTxt}`);
+      tierLines.push(`  Premium: ${tInfo.premNexus.toLocaleString()} 💠 | ${tInfo.premPC} PC | ${tInfo.premStones.toLocaleString()} 💎${premItemTxt}`);
       tierLines.push(``);
     }
     const navHint = page > 1 && page < 5 ? `◀️ /pass ${page-1}  •  ▶️ /pass ${page+1}` : page === 1 ? `▶️ Next: /pass 2` : `◀️ Prev: /pass 4`;
