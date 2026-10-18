@@ -86,10 +86,13 @@ function damageOf(text, type) {
 }
 
 // ── cost / cooldown by slot ────────────────────────────────────────────────
-function costFor(index, rank, type) {
+// Push #103f-3: per-skill cost tuning (name → multiplier). Ancestral Wrath: damage 260% → 130% and cost halved.
+const COST_TUNE = { 'Ancestral Wrath': 0.5 };
+function costFor(index, rank, type, name) {
   if (type === 'passive') return 0;
-  if (rank) return RANK_COST[rank] || 45;
-  return Math.min(30, 15 + Math.round(index * 0.75));
+  const tune = COST_TUNE[name] || 1;
+  if (rank) return Math.max(5, Math.round((RANK_COST[rank] || 45) * tune));
+  return Math.max(5, Math.round(Math.min(30, 15 + Math.round(index * 0.75)) * tune));
 }
 function cooldownFor(index, rank, type) {
   if (type === 'passive') return 0;
@@ -123,7 +126,7 @@ function toRaw(className, sk, index) {
     effect: lines.join('\n'), displayEffect,
     description: _lore ? `${sk.emoji || '✦'} _${_lore.lore}_\n📝 ${sk.text}` : `${sk.emoji || '✦'} ${sk.text}`,
     animation: _lore ? _lore.cast : undefined, loreTag: _lore ? _lore.tag : null,
-    energyCost: costFor(index, sk.rank, type), cooldown: cooldownFor(index, sk.rank, type),
+    energyCost: costFor(index, sk.rank, type, sk.name), cooldown: cooldownFor(index, sk.rank, type),
     rankReq: sk.rank || null, scaleStat: dm.stat || 'atk', specText: sk.text, revamp: true, _spec: sk,
   };
 }

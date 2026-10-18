@@ -621,6 +621,7 @@ function normalise(className, raw, index) {
   let damagePct = isPassive ? 0
     : type === 'heal' ? (statedPct || 40)
     : type === 'buff' ? (statedPct || 100) // Push #88: a buff skill still lands a full-strength strike, then the buff doubles what follows
+    : type === 'debuff' && !statedPct ? 60 // Push #103f-3: a pure debuff (Hex…) is a 60% ATK tap — the debuff is the point, not the hit
     : (statedPct || 100 + index * 6);
   // Push #96h-m: CLASS POWER — Archer & Berserker skills AND buffs are 50% stronger. Applied to
   // the contract numbers themselves so the listed Mechanics line and the engines agree.
@@ -881,9 +882,12 @@ function levelBonus(skill) {
   return { lv, dmgMult: 1 + (lv - 1) * 0.12, costReduction: 0, costMult: Math.pow(1.75, lv - 1), cdReduction: Math.floor((lv - 1) * 0.5), turnBonus: Math.floor((lv - 1) / 2) };
 }
 
+const UTILITY_COST_MULT = 0.6; // Push #103f-3
 function effectiveCost(skill, caster = null) {
   const b = levelBonus(skill);
   let c = Math.max(5, Math.round((skill.energyCost || 0) * (b.costMult || 1)));
+  // Push #103f-3: utility casts (buffs / debuffs with no stated damage %) cost 60% — Hex 195 → 117 at Lv5; damage skills unchanged.
+  { const _t = String(skill && skill.type || '').toLowerCase(); if ((_t === 'buff' || _t === 'debuff') && !skill.rankReq) c = Math.max(5, Math.round(c * UTILITY_COST_MULT)); }
   if (caster) { try { const cm = require('./ClassSnippets').costMult(caster); if (cm !== 1) c = Math.max(5, Math.round(c * cm)); } catch (e) {} } // Push #103b: Mage/Shaman/Bard aggressive energy scaling
   if (caster) { try { const ed = require('./JobSystem').mod(caster, 'energyDiscount'); if (ed) c = Math.max(5, Math.floor(c * (1 - ed / 100))); } catch (e) {} } // Push #95: Starforged
   // Push #88d: heals are a Healer's craft — every other class pays DOUBLE energy.

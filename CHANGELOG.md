@@ -1,3 +1,8 @@
+## 1.0.211 — Push #103f-3 (2026-10-18) — utility skill costs, Ancestral Wrath halved
+- Buff / debuff casts (no stated damage %) now cost 60% — Hex Lv5 195 → 117 energy. Damage & rank skills unchanged.
+- A pure debuff (Hex…) is a 60% ATK tap instead of a full strike — the debuff is the point (cards & engines agree).
+- Ancestral Wrath: 260% → 130% damage and energy cost halved (Lv5 207 → 109).
+
 ## 1.0.210 — Push #103f-2 (2026-10-18) — UP economy ×2, caps +110%, in-battle rank regen, owner mass grants
 - Upgrade allocation thresholds +110% (every stat cap ×2.1). All UP sources DOUBLED: level-up 10, raid boss 50, dungeon /
   instance chests & floor bosses, PvP, quests, registration rank bonus, Battle Pass & Astra Pass premium tiers (+4 UP).

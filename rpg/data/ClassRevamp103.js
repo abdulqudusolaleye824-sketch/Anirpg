@@ -1014,7 +1014,7 @@ module.exports = {
     "emoji": "⚡",
     "type": "damage",
     "rank": null,
-    "text": "Deals 260% of combined ATK + Magic Power."
+    "text": "Deals 130% of combined ATK + Magic Power."
    },
    {
     "name": "Serpent Venom",
