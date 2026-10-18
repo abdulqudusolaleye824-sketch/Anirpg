@@ -145,7 +145,7 @@ module.exports = {
       }
       let txt = pro ? `${UI.PRO_BAR}\n🔒 *LOCKED SKILLS* 💎\n${UI.PRO_BAR}\n\n` : `🔒 *LOCKED SKILLS*\n${UI.FREE_BAR}\n\n`;
       locked.forEach(s => {
-        txt += `🔒 *${s.name}* — Unlocks at Lv.${s.unlocksAtLevel || '?'}\n`;
+        txt += `🔒 *${s.name}* — ${(() => { try { const SC = require('../../rpg/utils/SkillCatalog'); return SC.lockReason(player, SC.getRoster(player).find(e => e.name === s.name) || s).replace(/\*/g, '').replace(/`/g, ''); } catch (e) { return s.rankReq ? `${s.rankReq}-Rank skill` : `rune at Lv.${s.unlocksAtLevel || '?'}`; } })()}\n`;
         txt += `   💥 DMG: ${s.damage} | ⚡ Cost: ${realCost(s, player)} | ⏰ CD: ${s.cooldown}t\n\n`;
       });
       txt += `${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO LOADOUT* — ${locked.length} locked` : `\n${UI.upsell()}`);

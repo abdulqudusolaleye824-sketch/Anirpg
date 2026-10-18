@@ -148,7 +148,7 @@ function buildGateMonsters(rank, floors, strengthPct = 100, bossName = null) {
       atk: Math.max(1, Math.floor(baseHp * prof.atk)),
       def: Math.floor(baseHp * prof.def),
       speed: Math.round(10 * prof.speed),
-      skills: [...(Array.isArray(m.skills) ? m.skills : []), { name: '💚 Regenerate', effect: null, chance: 0 }, ...(() => { try { if (Math.random() < 0.35) return [require('../utils/MonsterSkillFX').blindSkillFor({ name: m.name, family: theme || monsterFamily(m.name) })]; } catch (e) {} return []; })()], // Push #96d regen · #96h-j 35% carry a blinding skill
+      skills: [...(Array.isArray(m.skills) ? m.skills : []), { name: '💚 Regenerate', effect: null, chance: 0 }, (() => { try { return require('../utils/MonsterSkillFX').trickSkillFor({ name: m.name, family: theme || monsterFamily(m.name) }); } catch (e) { return { name: 'Pack Howl', effect: null, chance: 0 }; } })(), ...(() => { try { if (Math.random() < 0.35) return [require('../utils/MonsterSkillFX').blindSkillFor({ name: m.name, family: theme || monsterFamily(m.name) })]; } catch (e) {} return []; })()], // Push #96d regen · #96h-j 35% carry a blinding skill
       floor, defeated: false,
       family: theme || monsterFamily(m.name) || 'wild',
       ...(elite ? { elite: true } : {}),
@@ -473,7 +473,10 @@ class GateManager {
         if (ended && now - endAt > D1) drop = true;
         else if (!ended && !g.raid) { const k = keyFor(id); if (k && k.expiresAt && now > k.expiresAt + D1) drop = true; }
       }
-      if (!drop) continue;
+      if (!drop) { // Push #103a (BUG-093): ghost parties are expired in place (gate + key stay usable, members freed)
+        try { const GR = require('./GateRaid'); if (GR.raidIsGhost && GR.raidIsGhost(g, now) && g.raid && g.raid.status !== 'expired' && !g.cleared && !g.broken) { GR.expireGhostRaid(g, db); n++; } } catch (e) {}
+        continue;
+      }
       delete this.activeGates[id];
       try { if (db && db.activeGates) delete db.activeGates[id]; } catch (e) {}
       try { const c = g.chatId; if (c && this.gatesByChat[c]) this.gatesByChat[c] = this.gatesByChat[c].filter(x => x !== id); } catch (e) {}

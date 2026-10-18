@@ -305,7 +305,7 @@ async function act(player, skillQuery, hooks = null) {
       if (!res.damage || res.missed) { if (!played) lines.push(`💨 *${built.move.name}* misses ${m.name}!`); try { JS.noteHit(player, false); } catch (e) {} }
       else {
         let dmg = res.damage;
-        if (!played) { m.stats.hp = Math.max(0, m.stats.hp - dmg); try { JS.noteHit(player, true); } catch (e) {} lines.push(`⚔️ *${built.move.name}* hits ${m.emoji} ${m.name} for *${dmg}*${res.crit ? ' 💥 CRIT' : ''} → ${m.stats.hp}/${m.stats.maxHp}`); }
+        if (!played) { m.stats.hp = Math.max(0, m.stats.hp - dmg); try { JS.noteHit(player, true); } catch (e) {} lines.push(`⚔️ *${built.move.name}* hits ${m.emoji} ${m.name} for *${dmg}*${res.crit ? ' 💥 CRIT' : ''} → ${m.stats.hp}/${(()=>{try{return require('./GearSystem').effectiveMaxHp(m);}catch(e){return m.stats.maxHp;}})()}`); }
         if (!played) { try { const fx = UC.tryApplyEffect(built.move, player, m); if (fx) lines.push(`${fx.emoji || '☠️'} ${m.name} is ${fx.name || fx.type} (${fx.duration}t)`); } catch (e) {} }
         if (!played) { try { for (const n of UC.applyMoveBuffs(built.move, player, m)) lines.push(n); } catch (e) {} }
         try { const pm = require('./ClassPower').passiveMultipliers(player); const ls = ((player.stats.lifesteal || 0) + (pm.lifesteal || 0)) / 100; if (ls > 0) { const h = Math.floor(dmg * ls); const b = player.stats.hp; player.stats.hp = Math.min(_max(player), b + h); if (player.stats.hp > b) lines.push(`🩸 Lifesteal +${player.stats.hp - b} HP`); } } catch (e) {}
@@ -383,7 +383,7 @@ async function act(player, skillQuery, hooks = null) {
       if (ability && player.stats.hp > 0) { try { const fx = MSFX.apply(m, player, ability, dmg); lines.push(...fx.lines); } catch (e) {} }
     }
     // Push #96h-z9: in a solo instance a beast expands its domain at most ONCE (boss 50%, others 15%) — a 10-floor run must stay clearable with every move chosen by hand.
-    try { if (!m._domCast) { const dl = DS.monsterTry(inst, m, [player], { boss: m.isBoss, rank: m.rank, forceChance: m.isBoss ? 0.5 : 0.15 }); if (dl) { m._domCast = true; lines.push(dl); } else if (Math.random() < 0.5) m._domCast = true; } } catch (e) {}
+    try { if (m._domainArmedAt) { const dl = DS.monsterTry(inst, m, [player], { boss: m.isBoss, rank: m.rank, armed: true }); m._domCast = true; if (dl) lines.push(dl); } else if (!m._domCast) { const dl = DS.monsterWarn(inst, m, [player], { boss: m.isBoss, rank: m.rank, forceChance: m.isBoss ? 0.5 : 0.15 }); if (dl) lines.push(dl); else if (Math.random() < 0.5) m._domCast = true; } } catch (e) {} // Push #103b: warn one turn, unfold the next
   }
   if ((player.stats.hp || 0) <= 0) {
     player.stats.hp = 1; // the instance is a trial, not a grave
@@ -410,7 +410,7 @@ function status(player) {
   const inst = player.instance;
   if (!inst || !inst.active) return null;
   const job = JS.BY_KEY[inst.job]; const m = inst.monster;
-  return [`🏚️ *INSTANCE — ${job.emoji} ${job.name.toUpperCase()} QUEST*`, `Floor *${inst.floor}* ♾️ (pass mark ${FLOORS}${inst.passed ? ' ✅' : ''}) · monster ${inst.slot || 1}/${PER_FLOOR} · kills ${inst.kills} · exit bonus now *+${scoreFor(inst, false).bonus.toLocaleString()} 💠* · idle timer ${Math.ceil(timeLeftMs(inst) / 60000)} min`, `⚔️ /attack · /attack <id> · /skillcmd <skill> · /instance leave`, `${m.emoji} *${m.name}* [${m.rank}]${m.isBoss ? ' 👑' : ''} — HP ${m.stats.hp}/${m.stats.maxHp}`, `❤️ You: ${player.stats.hp}/${_max(player)} · ⚡ ${player.stats.energy}/${player.stats.maxEnergy}`, `⚔️ /instance attack · ✨ /instance skill <name> · 🌌 /domain expand · 🚪 /instance leave`].join('\n');
+  return [`🏚️ *INSTANCE — ${job.emoji} ${job.name.toUpperCase()} QUEST*`, `Floor *${inst.floor}* ♾️ (pass mark ${FLOORS}${inst.passed ? ' ✅' : ''}) · monster ${inst.slot || 1}/${PER_FLOOR} · kills ${inst.kills} · exit bonus now *+${scoreFor(inst, false).bonus.toLocaleString()} 💠* · idle timer ${Math.ceil(timeLeftMs(inst) / 60000)} min`, `⚔️ /attack · /attack <id> · /skillcmd <skill> · /instance leave`, `${m.emoji} *${m.name}* [${m.rank}]${m.isBoss ? ' 👑' : ''} — HP ${m.stats.hp}/${(()=>{try{return require('./GearSystem').effectiveMaxHp(m);}catch(e){return m.stats.maxHp;}})()}`, `❤️ You: ${player.stats.hp}/${_max(player)} · ⚡ ${player.stats.energy}/${player.stats.maxEnergy}`, `⚔️ /instance attack · ✨ /instance skill <name> · 🌌 /domain expand · 🚪 /instance leave`].join('\n');
 }
 
 module.exports = {

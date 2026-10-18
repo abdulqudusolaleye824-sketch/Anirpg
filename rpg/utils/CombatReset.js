@@ -8,6 +8,8 @@
 // ═══════════════════════════════════════════════════════════════
 function clearForBattle(player, opts = {}) {
   if (!player || typeof player !== 'object') return false;
+  try { require('./Summons').clear(player); } catch (e) {} // Push #103b
+  try { require('./Transformation').clearFightUse(player); } catch (e) {} // Push #103b: one transformation per fight
   try {
     // End a running transformation cleanly (stats revert, no aftermath statuses).
     try { const TF = require('./Transformation'); if (player.transform) TF.end(player, false, false); } catch (e) {}

@@ -37,7 +37,7 @@ const KNOWN_SUBCOMMANDS = {
   market: ['list', 'buy', 'cancel', 'search', 'mylistings'],
   trade: ['offer', 'accept', 'decline', 'cancel', 'status'],
   shop: ['potions', 'gear', 'weapons', 'armor', 'buy'],
-  craft: ['<item> --<KEY> (preview card)', '<item> --<KEY> confirm (forge · 90% success)'],
+  craft: ['<item> --<KEY> (preview card)', '<item> --<KEY> confirm (light the forge · 90% · timed: E 12h → S 5d, Pro half)', 'status (forges in progress)', 'Shaman: confirm quality (+20%) | confirm quantity (−20% time)'],
   forge: ['<item> --<KEY>', '<item> --<KEY> confirm'],
   mine: ['(swing on a cleared floor, 3×/floor)', 'info', 'shop', 'buy <#>'],
   labyrinth: ['buy (guild master, 1/week)', 'open (dungeon GC)', 'join', 'attack [#]', 'skill <name>', 'heal', 'leave', 'end (leader)'],
@@ -210,13 +210,13 @@ module.exports = {
     const viewerH = getDatabase()?.users?.[sender];
     // Push #96h-z18: COMPACT MENU — command names only (details live in /help <cmd>); Owner-only commands are hidden.
     const menuLines = [
-      `👤 *PLAYER:* /register /profile /stats /rank /inventory /balance /daily /quest /box /weekly /challenges /cooldowns /achievements /title /settings /timezone /xp`,
+      `👤 *PLAYER:* /register /profile /stats /rank /inventory /balance /daily /quest /box /weekly /challenges /cooldowns /strikes /achievements /title /settings /timezone /xp`,
       ``,
       `⚔️ *COMBAT:* /party /gateraid /gate /dungeon /instance /labyrinth /mine /boss /skill /classcmd /attacks /flee /guard /revive /pvp /teampvp /creator`,
       ``,
       `🏝️ *JEJU RAID:* /event /ejoin /einfo /estats /epoints /elb /eshop /eventafk /attack`,
       ``,
-      `🔧 *GEAR & PROGRESSION:* /store /equip /unequip /gear /weapon /swap /mend /find /use /buff /craft /recycle /scroll /mine /enchant /upgrade /giveup /class /skills /job /jobskill /supplication /domain /awaken /artifact /aura /constellation /skin`,
+      `🔧 *GEAR & PROGRESSION:* /store /equip /unequip /gear /weapon /swap /mend /find /use /buff /craft /recycle /scroll /mine /enchant /upgrade /giveup /class /skills /rune /job /jobskill /supplication /domain /awaken /artifact /aura /constellation /skin`,
       ``,
       `🐾 *PETS:* /pet /catch /petswap /eggs /food`,
       ``,
@@ -234,7 +234,7 @@ module.exports = {
     // Push #102f: MODERATION line — bot mods only (separate from group admins), shown only to mods/owners.
     try { const _P = require('../../utils/permissions'); if (_P.isBotMod(getDatabase(), sender) || _P.isBotOwner(getDatabase(), sender)) menuLines.push('', '⭐ *MODERATION (bot mods):* /announce /reset <@> /restart /spawnstatus /killspawn /closegate /burnkey /approveserf /setgroup /setpp /groupcmd /botstats /botid /cctv /maintenance /transactions <@> /gclist /joingc /leavegc /welcome /goodbye /antilink /antimention /aimode /prousers /mods /ytstatus /birthday'); } catch (e) {}
     // z25: owner-only block appended at runtime (never in the public menu source).
-    try { if (require('../../utils/permissions').isBotOwner(getDatabase(), sender)) menuLines.push(['👑 *OWNER:* /ba <@|reply> (bank access, $20) · /ba remove · /ba list · /bug list · /bug reply <id> [text] · /resetstrikes · /broadcast <msg|resume|status> · /bugs · /bug delete <id> · /closeall /openall · /dbdump · /bots · /kill <bot> · /reset <bot> · /cooldowns set <cmd> <s> · /set --mod --false <serial> · /ver' + 'sion', '\n👑 *OWNER+:* /add' + 'xp · /addnexus · /addup <@|reply> <n> (Upgrade Points) · /addmana <@|reply> <n> (💎 Mana Crystals) · /spawn <item|material|rarity> · /spawn essence <E–SS> [qty] · /exile <number> [reason] (DM) · /exile list · /exile lift <number>'].join('')); } catch (e) {}
+    try { if (require('../../utils/permissions').isBotOwner(getDatabase(), sender)) menuLines.push(['👑 *OWNER:* /ba <@|reply> (bank access, $20) · /ba remove · /ba list · /bug list · /bug reply <id> [text] · /resetstrikes · /strikes @u · /domain pending · /domain approve|reject <id> · /broadcast <msg|resume|status> · /bugs · /bug delete <id> · /closeall /openall · /dbdump · /bots · /kill <bot> · /reset <bot> · /cooldowns set <cmd> <s> · /set --mod --false <serial> · /ver' + 'sion', '\n👑 *OWNER+:* /add' + 'xp · /addnexus · /addup <@|reply> <n> (Upgrade Points) · /addmana <@|reply> <n> (💎 Mana Crystals) · /spawn <item|material|rarity> · /spawn essence <E–SS> [qty] · /exile <number> [reason] (DM) · /exile list · /exile lift <number>'].join('')); } catch (e) {}
     const message = UI.card(viewerH, {
       icon: '📋', title: '✦ 𝐀𝐬𝐭𝐫𝐚™ COMMAND MENU',
       lines: menuLines,

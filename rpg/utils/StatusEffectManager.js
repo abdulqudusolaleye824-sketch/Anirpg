@@ -27,18 +27,27 @@ class StatusEffectManager {
     lifesteal: { name: 'Lifesteal', emoji: '💚', isPassive: true, duration: 3 }
   };
 
-  static applyEffect(entity, effectType, duration) {
+  // Push #103b: engines name the caster so Magic Resistance can be checked (StatusEffectManager.withCaster(att, () => ...)).
+  static withCaster(caster, fn) { const prev = StatusEffectManager._caster; StatusEffectManager._caster = caster || null; try { return fn(); } finally { StatusEffectManager._caster = prev; } }
+  static applyEffect(entity, effectType, duration, caster = null) {
     const key = effectType.toLowerCase();
     const def = this.EFFECTS[key] || this.EFFECTS[key.replace('trueslow','trueSlow')];
     if (!def) return false;
     const className = getClassName(entity);
+    let _mrOverride = false;
+    const _c = caster || StatusEffectManager._caster;
+    if (_c && _c !== entity) {
+      try { const MR = require('./MagicResist'); const r = MR.check(entity, _c); if (r.resisted) { entity._lastStatusBlock = `resisted (MR ${r.mr} vs MP ${r.mp})`; return false; } _mrOverride = r.overrides && r.mr > 0; } catch (e) {}
+    }
     const { resisted } = checkEffectResistance(className, key);
-    if (resisted) return false;
+    if (resisted && !_mrOverride) return false;
+    // Push #103b: class snippet immunities (Warrior rank ladder · Druid nature · Paladin holy) — MR override still breaks through.
+    if (!_mrOverride && entity && entity.class) { try { if (require('./ClassSnippets').statusResist(entity, key)) { entity._lastStatusBlock = `${className || 'class'} resilience — shrugged off ${key.toUpperCase()}`; return false; } } catch (e) {} }
     // Push #96g: the owner of an active domain is immune to NEW statuses inside it.
     try { const DS = require('./DomainSystem'); const d = DS.isShielded(entity); if (d) { entity._lastStatusBlock = `inside ${d.name} — immune to new status effects`; return false; } } catch (e) {}
     // Push #76: store gear immunity / resistance / turn reduction (skip if the
     // caller already ran it — UnifiedCombat.tryApplyEffect passes _armoryChecked).
-    if (!entity._armoryChecked) {
+    if (!entity._armoryChecked && !_mrOverride) {
       try {
         const sd = require('./ArmoryStore').statusDefense(entity, key);
         if (sd.blocked) { entity._lastStatusBlock = sd.reason; return false; }

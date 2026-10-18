@@ -174,7 +174,7 @@ async function onKnockout(sock, chatId, winner, loser, wId, lId, db, saveDatabas
     b.turn = turn + 1;
     saveDatabase();
     const nextP = db.users[next];
-    await sock.sendMessage(chatId, { text: [`💀 *${loser.name || bare(lId)}* is down! (Team ${lSide}: ${b[lSide].members.length - b[lSide].fallen.length} left)`, ``, `🔁 *${(nextP && nextP.name) || bare(next)}* steps in for Team ${lSide}!`, `❤️ ${nextP && nextP.stats ? `${nextP.stats.hp}/${nextP.stats.maxHp}` : '?'} HP vs *${winner.name || bare(wId)}* ${winner.stats ? `${winner.stats.hp}/${winner.stats.maxHp}` : ''} HP`, ``, `@${bare(next)} @${bare(wId)} — /pvp attack or /pvp skill <name> (20s)`].join('\n'), mentions: [next, wId] });
+    await sock.sendMessage(chatId, { text: [`💀 *${loser.name || bare(lId)}* is down! (Team ${lSide}: ${b[lSide].members.length - b[lSide].fallen.length} left)`, ``, `🔁 *${(nextP && nextP.name) || bare(next)}* steps in for Team ${lSide}!`, `❤️ ${nextP && nextP.stats ? `${nextP.stats.hp}/${(()=>{try{return require('./GearSystem').effectiveMaxHp(nextP);}catch(e){return nextP.stats.maxHp;}})()}` : '?'} HP vs *${winner.name || bare(wId)}* ${winner.stats ? `${winner.stats.hp}/${(()=>{try{return require('./GearSystem').effectiveMaxHp(winner);}catch(e){return winner.stats.maxHp;}})()}` : ''} HP`, ``, `@${bare(next)} @${bare(wId)} — /pvp attack or /pvp skill <name> (20s)`].join('\n'), mentions: [next, wId] });
     return true;
   }
   // Team wiped → battle over.

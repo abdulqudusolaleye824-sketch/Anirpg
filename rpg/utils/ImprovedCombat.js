@@ -25,7 +25,7 @@ class ImprovedCombat {
       return { success: false, message: res.error, locked: !!res.locked };
     }
     const skill = res.skill;
-    const entry = res.entry || SkillCatalog.buildRoster(attacker).find(r => r.name === skill.name) || null;
+    let entry = res.entry || SkillCatalog.buildRoster(attacker).find(r => r.name === skill.name) || null;
 
     // Catalog entry is authoritative (lore + effect + animation + costs);
     // SkillDescriptions is only the fallback for un-catalogued classes.
@@ -53,10 +53,12 @@ class ImprovedCombat {
       return { success: false, message: cooldownResult.message };
     }
 
+    { const _hg = require('./ClassSnippets').healGate(attacker, entry); if (!_hg.ok) return { success: false, message: _hg.error }; } // Push #103b: heal budget per fight
     // ── Deduct energy & set cooldown ──────────────────────────
     attacker.stats.energy = Math.max(0, (attacker.stats.energy || 0) - energyCost);
     SkillCatalog.setCooldown(attacker, entry || skill);
     try { require('./RegenManager').markCombatAction(attacker); } catch (e) {}
+    try { require('./ClassSnippets').noteHeal(attacker, entry); } catch (e) {}
 
     // ── Push #88o: the monster may DODGE a damaging skill (cooldown + energy already spent) ──
     let _monDodged = false;
@@ -238,6 +240,11 @@ class ImprovedCombat {
     // Push #94: support contract on the caster (immunity / shield / regen / reflect / cleanse / energy).
     try { const _sf = SkillCatalog.applySupportFields(entry, attacker, attacker, { name: attacker.name }); _hpxLines = _hpxLines.concat(_sf.lines || []); } catch (e) {}
 
+    // Push #103b: class snippet rules (execution · holy vs dark · stealth strike · riposte · elemental rotation · consume · illusions)
+    let _snipS = { mult: 1, lines: [], statuses: [], noMiss: false };
+    try { _snipS = require('./ClassSnippets').damageMods(attacker, entry, defender); if (_snipS.noMiss) _monDodged = false; if (!_monDodged && _snipS.mult !== 1 && finalDamage > 0) finalDamage = Math.max(1, Math.floor(finalDamage * _snipS.mult)); _hpxLines = _hpxLines.concat(_snipS.lines); if (entry && _snipS.statuses.length) entry = { ...entry, statuses: [...(entry.statuses || []), ..._snipS.statuses] }; } catch (e) {}
+    try { if (!_monDodged && finalDamage > 0) _hpxLines = _hpxLines.concat(require('./ClassSnippets').multiHitLines(attacker, entry, finalDamage, isCrit)); } catch (e) {}
+    try { const _sup = String((entry && entry.type) || '').toLowerCase(); if (_sup === 'buff' || _sup === 'heal') { _hpxLines = _hpxLines.concat(require('./ClassSnippets').onSupportCast(attacker, entry)); _hpxLines = _hpxLines.concat(require('./Summons').applySummonBuff(attacker, entry)); } } catch (e) {}
     // Push #88o: dodged → no damage, no on-hit statuses; cooldown already spent.
     if (_monDodged) { finalDamage = 0; isCrit = false; try { parsedEffects.statusEffects = []; } catch (e) {} }
     try { require('./JobSystem').noteHit(attacker, !_monDodged && finalDamage > 0); if (!_monDodged && finalDamage > 0) defender.lastHitBy = attacker.jid || attacker.id || defender.lastHitBy; } catch (e) {}
@@ -255,7 +262,7 @@ class ImprovedCombat {
             try { const sc = require('./JobSystem').mod(attacker, 'statusChance'); if (sc) ch = ch * (1 + sc / 100); } catch (e) {}
             if (Math.random() * 100 > ch) continue;
             const dur = Math.max(2, Number(st.duration) || 2);
-            if (StatusEffectManager.applyEffect(defender, t, dur)) _hpxLines.push(`☠️ ${defender.name || 'Target'} is ${t.toUpperCase()} (${dur}t)`);
+            if (StatusEffectManager.applyEffect(defender, t, dur, attacker)) _hpxLines.push(`☠️ ${defender.name || 'Target'} is ${t.toUpperCase()} (${dur}t)`); else if (/resisted/.test(String(defender._lastStatusBlock || ''))) _hpxLines.push(`🔰 ${defender.name || 'Target'} ${defender._lastStatusBlock}`); // Push #103b MR
           }
         }
         const notes = UCp.applyMoveBuffs({ name: entry.name, buffs: entry.buffs || [], debuffs: finalDamage > 0 ? (entry.debuffs || []) : [], selfDebuffs: entry.selfDebuffs || [] }, attacker, defender);
@@ -465,7 +472,7 @@ class ImprovedCombat {
       player.stats.hp = Math.max(0, player.stats.hp - monsterDmg);
       narrative += `\n👹 ${monster.name} counter-attacks!\n`;
       narrative += _dodged ? `💨 *DODGED!* You slipped clear of the attack!\n` : `${_mCrit ? '💥 *CRITICAL HIT!* ' : ''}💢 You took *${monsterDmg}* damage!\n`;
-      narrative += `❤️ Your HP: ${player.stats.hp}/${player.stats.maxHp}\n`;
+      narrative += `❤️ Your HP: ${player.stats.hp}/${(()=>{try{return require('./GearSystem').effectiveMaxHp(player);}catch(e){return player.stats.maxHp;}})()}\n`;
     }
 
     const defeat = player.stats.hp <= 0;
@@ -515,7 +522,7 @@ class ImprovedCombat {
         player.stats.hp = Math.max(0, player.stats.hp - monsterDmg);
         narrative += `\n👹 ${monster.name} counter-attacks!\n`;
         narrative += `💢 You took *${monsterDmg}* damage!\n`;
-        narrative += `❤️ Your HP: ${player.stats.hp}/${player.stats.maxHp}\n`;
+        narrative += `❤️ Your HP: ${player.stats.hp}/${(()=>{try{return require('./GearSystem').effectiveMaxHp(player);}catch(e){return player.stats.maxHp;}})()}\n`;
       }
     }
 
@@ -539,7 +546,7 @@ class ImprovedCombat {
       player.inventory.healthPotions--;
       return {
         success: true,
-        narrative: `🧪 Used *Health Potion*!\n❤️ Restored *${healAmount}* HP!\n❤️ HP: ${player.stats.hp}/${player.stats.maxHp}\n`
+        narrative: `🧪 Used *Health Potion*!\n❤️ Restored *${healAmount}* HP!\n❤️ HP: ${player.stats.hp}/${(()=>{try{return require('./GearSystem').effectiveMaxHp(player);}catch(e){return player.stats.maxHp;}})()}\n`
       };
     }
 
@@ -577,7 +584,7 @@ class ImprovedCombat {
 
   static getBattleMenu(player, monster) {
     const energyDisplay = `${player.energyColor || '💙'} ${player.energyType || 'Energy'}: ${player.stats.energy}/${player.stats.maxEnergy}`;
-    let menu = `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n⚔️ BATTLE ⚔️\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n👤 ${player.name}\n❤️ HP: ${player.stats.hp}/${player.stats.maxHp}\n${energyDisplay}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n👹 ${monster.name}\n❤️ HP: ${monster.stats?.hp || monster.hp}/${monster.stats?.maxHp || monster.maxHp}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n/dungeon attack | /dungeon use [skill] | /dungeon run\n━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+    let menu = `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n⚔️ BATTLE ⚔️\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n👤 ${player.name}\n❤️ HP: ${player.stats.hp}/${(()=>{try{return require('./GearSystem').effectiveMaxHp(player);}catch(e){return player.stats.maxHp;}})()}\n${energyDisplay}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n👹 ${monster.name}\n❤️ HP: ${monster.stats?.hp || monster.hp}/${monster.stats?.maxHp || monster.maxHp}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n/dungeon attack | /dungeon use [skill] | /dungeon run\n━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
     if (player.statusEffects?.length) menu += `\n💫 Your effects: ${player.statusEffects.map(e => e.type).join(', ')}`;
     if (monster.statusEffects?.length) menu += `\n💀 Enemy effects: ${monster.statusEffects.map(e => e.type).join(', ')}`;
     return menu;

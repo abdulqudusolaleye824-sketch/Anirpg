@@ -17,15 +17,7 @@ module.exports = {
   emoji: '💖',
   lore: 'The battlefield is not measured in kills. It is measured in the breaths that follow the silence. You do not slay the enemy — you make the enemy irrelevant by keeping your team alive.',
   cmdName: 'heal',   // Custom command: /heal <skill_name> or /heal <target>
-  maxBonuses: {
-    hp: 150,           // High survivability (matches Paladin-tier)
-    atk: 8,            // Near-zero ATK — base attacks are weak by design
-    def: 20,           // Decent defense to survive while healing
-    speed: 25,
-    maxEnergy: 120,    // High energy pool — healing is energy-hungry
-    magicPower: 60,    // Primary scaling stat for healing
-    critChance: 0,     // No crits needed for a healer
-  },
+  maxBonuses: { hp: 150, atk: 8, def: 20, speed: 25, maxEnergy: 120, magicPower: 60, critChance: 0 },
   skills: [
     // ── Self / single-target heals ──
     { name: 'Healing Light',   type: 'heal', maxPotency: 25,  desc: 'Restores {p}% max HP to a single ally' },

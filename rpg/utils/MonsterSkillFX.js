@@ -57,6 +57,31 @@ const FAMILY_BLIND_SKILL = {
   elf:       { name: 'Flash Rune',   effect: 'blind', chance: 55, desc: 'A rune detonates in white light. Blinds for 2 turns.' },
   wild:      { name: 'Dirt Flick',   effect: 'blind', chance: 45, desc: 'Dirt and leaves flung at the eyes. Blinds for 2 turns.' },
 };
+// Push #103b: TRICK skills — every beast carries ONE of stealth / summoning / necromancy, picked by
+// family. Free support moves (no damage, no turn) that the beast reaches for often (see pickMoves).
+const FAMILY_TRICK_SKILL = {
+  insect:    { name: 'Brood Call',      trick: 'summon',  desc: 'A chittering call — a brood of lesser insects pours in to harry the hunters. ATK +25% for 3 turns, bleeding bites.' },
+  slime:     { name: 'Spawn Division',  trick: 'summon',  desc: 'The slime splits off hungry spawn that cling to the hunters. ATK +25% for 3 turns, acid clings.' },
+  beast:     { name: 'Shadow Stalk',    trick: 'stealth', desc: 'The beast melts into cover — the hunters lose sight of it. SPEED +50% and DEF +30% for 2 turns; blinds.' },
+  goblinoid: { name: 'Smoke Vanish',    trick: 'stealth', desc: 'A smoke bomb, then nothing — it strikes from the dark. SPEED +50% and DEF +30% for 2 turns; blinds.' },
+  undead:    { name: 'Raise the Fallen',trick: 'necro',   desc: 'Grave-light stirs the fallen — corpses rise to feed it. Heals 20% max HP, ATK +15% for 3 turns, curses.' },
+  reptile:   { name: 'Mire Ambush',     trick: 'stealth', desc: 'It sinks beneath the mire and waits. SPEED +50% and DEF +30% for 2 turns; blinds.' },
+  construct: { name: 'Shard Sentinels', trick: 'summon',  desc: 'Loose plates reform into stone sentinels at its side. ATK +25% for 3 turns, crushing blows.' },
+  demon:     { name: 'Soul Harvest',    trick: 'necro',   desc: 'It drinks the lingering souls of the slain. Heals 20% max HP, ATK +15% for 3 turns, curses.' },
+  elf:       { name: 'Glamour Veil',    trick: 'stealth', desc: 'An illusion folds over it — the eye slides off. SPEED +50% and DEF +30% for 2 turns; blinds.' },
+  wild:      { name: 'Pack Howl',       trick: 'summon',  desc: 'A howl answered — the pack closes in. ATK +25% for 3 turns, bleeding bites.' },
+};
+function trickSkillFor(monster) { let f = 'wild'; try { f = require('./MonsterTypes').familyOf(monster); } catch (e) {} return { ...(FAMILY_TRICK_SKILL[f] || FAMILY_TRICK_SKILL.wild), effect: null, chance: 0 }; }
+function trickOf(ability) { const name = String(typeof ability === 'string' ? ability : (ability && ability.name) || '').replace(/^[^\w]+/, '').trim(); return Object.values(FAMILY_TRICK_SKILL).find(t => t.name === name) || null; }
+function trickStep(monster, victim, trick) {
+  const lines = []; const mStats = monster.stats || monster; const em = monster.emoji || '👹';
+  if (!monster.tempBuffs) monster.tempBuffs = {};
+  const buff = (stat, amount, turns) => { monster.tempBuffs[`mskill:${stat}`] = { stat, amount, duration: turns + 1, source: trick.name }; lines.push(`📈 ${em} ${monster.name}'s ${stat.toUpperCase()} rises +${amount}% (${turns}t)`); };
+  if (trick.trick === 'stealth') { lines.push(`🌫️ ${em} *${monster.name}* vanishes from sight!`); buff('speed', 50, 2); buff('def', 30, 2); if (victim && !monster.noStatus && Math.random() < 0.6) { const l = applyStatus(victim, 'blind', 2, undefined, monster); if (l) lines.push(l); } }
+  else if (trick.trick === 'summon') { const n = 2 + Math.floor(Math.random() * 3); lines.push(`🜏 ${em} *${monster.name}* calls *${n}* lesser kin to its side!`); buff('atk', 25, 3); if (victim && !monster.noStatus && Math.random() < 0.45) { const l = applyStatus(victim, /construct/i.test(trick.name) || trick.name === 'Shard Sentinels' ? 'stun' : 'bleed', trick.name === 'Shard Sentinels' ? 1 : 3, undefined, monster); if (l) lines.push(l); } }
+  else { const max = mStats.maxHp || mStats.hp || 0; const b = mStats.hp || 0; mStats.hp = Math.min(max, b + Math.floor(max * 0.20)); lines.push(`💀 ${em} *${monster.name}* raises the fallen and FEEDS!${mStats.hp > b ? ` Recovers *${mStats.hp - b}* HP` : ''}`); buff('atk', 15, 3); if (victim && !monster.noStatus && Math.random() < 0.45) { const l = applyStatus(victim, 'curse', 3, undefined, monster); if (l) lines.push(l); } }
+  return lines;
+}
 function blindSkillFor(monster) { let f = 'wild'; try { f = require('./MonsterTypes').familyOf(monster); } catch (e) {} return { ...(FAMILY_BLIND_SKILL[f] || FAMILY_BLIND_SKILL.wild) }; }
 
 // Push #96h-j: the DESCRIPTION is a contract too — "+30% ATK", "DEF rises", "recovers 20% HP",
@@ -151,6 +176,7 @@ function resolve(ability) {
 // Push #96h-l: SUPPORT moves (Regenerate, Harden, Roar-without-a-hit, Mend …) heal or buff the
 // beast and deal NO damage — and they cost it no turn: the beast still attacks afterwards.
 function isSupport(ability) {
+  if (trickOf(ability)) return true; // Push #103b
   const c = resolve(ability); if (!c.name) return false;
   if (/^(💚\s*)?regenerate$/i.test(c.name)) return true;
   const healOnly = c.selfHealPct > 0 && !c.status && !c.drainPct && c.healPct === 0;
@@ -160,7 +186,9 @@ function isSupport(ability) {
 // Pick the beast's moves for this turn: an optional support move (free) + the attack it still makes.
 function pickMoves(pool, fallbackAttack = { name: 'Strike', effect: null, chance: 0 }) {
   const list = Array.isArray(pool) && pool.length ? pool : [fallbackAttack];
-  const first = list[Math.floor(Math.random() * list.length)];
+  // Push #103b: 40% of turns the beast reaches for its TRICK (stealth / summon / necromancy) first.
+  const tricks = list.filter(a => trickOf(a));
+  const first = (tricks.length && Math.random() < 0.40) ? tricks[Math.floor(Math.random() * tricks.length)] : list[Math.floor(Math.random() * list.length)];
   if (!isSupport(first)) return { support: null, attack: first };
   const attacks = list.filter(a => !isSupport(a));
   return { support: first, attack: attacks.length ? attacks[Math.floor(Math.random() * attacks.length)] : fallbackAttack };
@@ -168,7 +196,9 @@ function pickMoves(pool, fallbackAttack = { name: 'Strike', effect: null, chance
 // Execute a support move: heal/buff lines, zero damage. Returns the message blocks (step by step).
 function supportStep(monster, victim, ability) {
   const c = resolve(ability); const nm = String(c.name || 'Support');
-  const fx = apply(monster, victim, ability, 0, { skipStatus: true });
+  const _trick = trickOf(ability);
+  const fx = _trick ? { lines: trickStep(monster, victim, _trick) } : apply(monster, victim, ability, 0, { skipStatus: true });
+  if (_trick) c.desc = _trick.desc;
   const mStats = monster.stats || monster;
   const blocks = [
     `🌀 *MONSTER SUPPORT MOVE*\n${monster.emoji || '👹'} *${monster.name}* uses *${nm}*!`,
@@ -192,7 +222,7 @@ function applyStatus(player, type, duration, damage, source) {
   } catch (e) {}
   try {
     const SEM = require('./StatusEffectManager');
-    const ok = SEM.applyEffect(player, t, Math.max(1, Number(duration) || 2));
+    const ok = SEM.applyEffect(player, t, Math.max(1, Number(duration) || 2), source && typeof source === 'object' ? source : null); // Push #103b: monster MP vs hunter MR
     if (!ok) return player._lastStatusBlock ? `🛡️ *${player.name}* resisted ${t.toUpperCase()} (${player._lastStatusBlock})` : `🛡️ *${player.name}* resisted ${t.toUpperCase()}!`;
     const fx = (player.statusEffects || []).find(e => e.type === t);
     if (fx && damage) fx.damage = Math.max(fx.damage || 0, damage);
@@ -234,7 +264,7 @@ function apply(monster, player, ability, dmg, opts = {}) {
   if (c.status && !opts.skipStatus && !(monster.noStatus) && (dmg > 0 || opts.forceStatus)) {
     let _sc = (c.status.chance || 50); try { const _ter = require('./BotLane').scratch().terrain; if (_ter) _sc = _sc * require('../data/Terrains').statusMult(_ter, c.status.type); } catch (e) {} // Push #97: terrain
     if (Math.random() * 100 < _sc) {
-      const l = applyStatus(player, c.status.type, c.status.duration, c.status.damage);
+      const l = applyStatus(player, c.status.type, c.status.duration, c.status.damage, monster);
       if (l) lines.push(l);
     }
   }
@@ -245,4 +275,4 @@ function apply(monster, player, ability, dmg, opts = {}) {
 function hitMult(ability) { return resolve(ability).mult || DEFAULT_MULT; }
 function pierce(ability) { return resolve(ability).pierce || 0; }
 
-module.exports = { isSupport, pickMoves, supportStep, FAMILY_BLIND_SKILL, blindSkillFor, parseDescription, descriptionOf, resolve, apply, applyStatus, hitMult, pierce, KEYWORDS };
+module.exports = { FAMILY_TRICK_SKILL, trickSkillFor, trickOf, trickStep, isSupport, pickMoves, supportStep, FAMILY_BLIND_SKILL, blindSkillFor, parseDescription, descriptionOf, resolve, apply, applyStatus, hitMult, pierce, KEYWORDS };

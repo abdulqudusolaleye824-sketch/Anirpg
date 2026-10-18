@@ -117,6 +117,7 @@ function serverRank(db, targetId) {
 
 // ════════════════════════════════════════════════════════════════
 module.exports = {
+  RANKS, calcPower, getRank, // Push #103b: shared with SkillRunes (rank-locked skills)
   name: 'rank',
   description: 'View your Hunter Rank card with power breakdown',
 

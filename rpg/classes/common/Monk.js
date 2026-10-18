@@ -10,7 +10,7 @@ module.exports = {
   name: 'Monk',
   emoji: '☯️',
     lore: 'The body is the temple. The mind is the weapon.',
-    maxBonuses: { hp: 100, atk: 25, def: 25, speed: 20, maxEnergy: 40 },
+    maxBonuses: { hp: 80, atk: 35, def: 20, speed: 30, maxEnergy: 40 },
     skills: [
       { name: 'Inner Peace', type: 'heal',    maxPotency: 25,  desc: 'Restore {p}% max HP' },
       { name: 'Iron Palm',   type: 'damage',  maxPotency: 200, desc: 'Deals {p}% ATK, ignores {p/4}% DEF' },

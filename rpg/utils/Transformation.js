@@ -11,12 +11,12 @@
 'use strict';
 
 const TIERS = [
-  { key: 'quarter',       level: 10, name: 'Quarter Transformation',          mult: 5,  turns: 3 },
-  { key: 'quarter_full',  level: 20, name: 'Complete Quarter Transformation', mult: 5,  turns: 10 },
-  { key: 'half',          level: 30, name: 'Half Transformation',             mult: 10, turns: 3 },
-  { key: 'half_full',     level: 40, name: 'Complete Half Transformation',    mult: 10, turns: 10 },
-  { key: 'full',          level: 50, name: 'Full Transformation',             mult: 15, turns: 3 },
-  { key: 'full_full',     level: 60, name: 'Complete Full Transformation',    mult: 15, turns: 10 },
+  { key: 'quarter',       level: 10, name: 'Quarter Transformation',          mult: 5, turns: 3 },
+  { key: 'quarter_full',  level: 20, name: 'Complete Quarter Transformation', mult: 5, turns: 10 },
+  { key: 'half',          level: 30, name: 'Half Transformation',             mult: 5, turns: 3 },
+  { key: 'half_full',     level: 40, name: 'Complete Half Transformation',    mult: 5, turns: 10 },
+  { key: 'full',          level: 50, name: 'Full Transformation',             mult: 5, turns: 3 },
+  { key: 'full_full',     level: 60, name: 'Complete Full Transformation',    mult: 5, turns: 10 },
 ];
 const PASSIVE_CHANCE = 0.08;          // per combat turn, when not transformed (Lv.10+)
 const BERSERK_CHANCE = 0.47;          // per combat turn for Monsters below Lv.10 — they go BERSERK
@@ -25,7 +25,7 @@ const BERSERK_LEVEL = 10;
 const AFTERMATH = [{ type: 'weaken', duration: 10 }, { type: 'stun', duration: 2 }, { type: 'bleed', duration: 7 }];
 const MAX_AGE_MS = 20 * 60 * 1000;    // safety: no form outlives 20 minutes
 const STATS = ['atk', 'def', 'speed', 'maxHp'];
-const HP_MULT = 2;      // Push #96h-z20: max HP only doubles in every form (ATK/DEF/SPD keep the tier multiplier)
+const HP_MULT = 3;      // Push #103b: every form = ×3 max HP, ×5 ATK/DEF/SPD; tiers differ by duration. ONE transformation per fight (berserk + cast share it), no timed cooldown.
 const REGEN_PCT = 4;    // Push #96h-z20: +4% max HP every transformed turn
 
 function baseClass(player) {
@@ -81,7 +81,7 @@ function apply(player, tier, source = 'cast') {
   const lines = [
     `🧬 *${player.name || 'Hunter'}* transforms — *${player.transform.name}*! ${source === 'passive' ? '(innate surge) ' : ''}×${mult} ATK/DEF/SPD · ×${hpMult} HP · 💚 +${REGEN_PCT}% HP regen/turn for ${tier.turns} turns`,
     ...(berserk ? [`😈 *BERSERK!* The beast is in control — *${player.name || 'Hunter'}* attacks on their own and cannot be commanded. Teammates: stand clear during their turns!`] : []),
-    `⚔️ ATK ${player.stats.atk} · 🛡️ DEF ${player.stats.def} · 💨 SPD ${player.stats.speed} · ❤️ ${player.stats.hp}/${player.stats.maxHp}`,
+    `⚔️ ATK ${player.stats.atk} · 🛡️ DEF ${player.stats.def} · 💨 SPD ${player.stats.speed} · ❤️ ${player.stats.hp}/${(()=>{try{return require('./GearSystem').effectiveMaxHp(player);}catch(e){return player.stats.maxHp;}})()}`,
   ];
   return { ok: true, lines, transform: player.transform };
 }
@@ -141,15 +141,15 @@ function tick(player) {
   // a combo bonus (+25% ATK for the duration).
   const pack = packmates(player);
   if (pack.length) chance *= PACK_CHANCE_MULT;
-  if (isMonster(player) && cooldownLeftMs(player) > 0) return lines; // Push #96h-z18: no innate surge while the transformation cooldown runs (was spamming transform→fizzle every turn)
+  if (isMonster(player) && usedThisFight(player)) return lines; // Push #103b: one surge per fight // Push #96h-z18: no innate surge while the transformation cooldown runs (was spamming transform→fizzle every turn)
   if (isMonster(player) && Math.random() < chance) {
     const r = apply(player, TIERS[0], 'passive');
-    if (r.ok) player.tfCastAt = Date.now();
+    if (r.ok) markUsed(player);
     if (r.ok) {
       lines.push(...r.lines);
       if (pack.length) {
         const joined = [player];
-        for (const m of pack) { if (cooldownLeftMs(m) > 0) continue; const rr = apply(m, TIERS[0], 'passive'); if (rr.ok) { m.tfCastAt = Date.now(); joined.push(m); lines.push(...rr.lines); } }
+        for (const m of pack) { if (usedThisFight(m)) continue; const rr = apply(m, TIERS[0], 'passive'); if (rr.ok) { markUsed(m); joined.push(m); lines.push(...rr.lines); } }
         if (joined.length > 1) {
           for (const m of joined) _comboBoost(m);
           lines.push(`🐺 *PACK RAMPAGE!* ${joined.map(m => `*${m.name || 'Hunter'}*`).join(' & ')} rampage TOGETHER — combo strikes: +${Math.round((PACK_COMBO_MULT - 1) * 100)}% ATK while the pack rages!`);
@@ -189,15 +189,19 @@ function cast(player, entry) {
   if ((player.level || 1) < tier.level) return { ok: false, lines: [], error: `*${tier.name}* unlocks at Lv.${tier.level}.` };
   // Push #96h-z12: ONE transformation cooldown everywhere (raids, instances, PvP, dungeons — the island has
   // the same rule in EventSystem): 1 h, 30 min for Pro. Upgrading tiers while still transformed stays free.
-  const cdLeft = cooldownLeftMs(player);
-  if (cdLeft > 0 && !active(player)) return { ok: false, lines: [], error: `🧬 Your transformation is recovering — *${Math.ceil(cdLeft / 60000)} min* left (1 h, 30 min for Pro).` };
+  if (usedThisFight(player) && !active(player)) return { ok: false, lines: [], error: `🧬 The beast already surfaced this fight — one transformation per raid (berserk surges count).` };
   const r = apply(player, tier, 'cast');
-  if (r && r.ok && !cdLeft) player.tfCastAt = Date.now();
+  if (r && r.ok) markUsed(player);
   return r;
 }
-const TF_COOLDOWN_MS = 60 * 60 * 1000;
-function cooldownMsFor(player) { let pro = false; try { pro = require('./UI').isPro(player); } catch (e) {} return pro ? TF_COOLDOWN_MS / 2 : TF_COOLDOWN_MS; }
-function cooldownLeftMs(player) { const at = Number(player && player.tfCastAt) || 0; if (!at) return 0; return Math.max(0, cooldownMsFor(player) - (Date.now() - at)); }
+// Push #103b: no timed cooldown — ONE transformation per fight. The flag is cleared by
+// CombatReset.clearForBattle (fight start) and RegenManager.endCombat (fight end).
+const TF_COOLDOWN_MS = 0;
+function usedThisFight(player) { return !!(player && player.tfUsedFight); }
+function markUsed(player) { if (player) { player.tfUsedFight = true; player.tfCastAt = Date.now(); } }
+function clearFightUse(player) { if (player) delete player.tfUsedFight; }
+function cooldownMsFor() { return 0; }
+function cooldownLeftMs(player) { return usedThisFight(player) && !active(player) ? 1 : 0; }
 
 function isBerserk(player) { const t = active(player); return !!(t && t.berserk); }
 const BERSERK_TEXT = '😈 You are BERSERK — the beast controls your body. You cannot command it until the transformation fades.';
@@ -211,7 +215,7 @@ function berserkPick(player) {
     const SC = require('./SkillCatalog');
     for (const e of SC.getRoster(player)) {
       if (!e || e.isPassive || e.transform) continue;
-      if ((e.unlocksAtLevel || 1) > (player.level || 1)) continue;
+      if (!SC.isUnlockedFor(player, e)) continue; // Push #103b: learned (rune) + rank
       const ty = String(e.type || '').toLowerCase();
       if (ty !== 'damage' && ty !== 'debuff') continue;
       if (!SC.onCooldown(player, e).ready) continue;
@@ -243,10 +247,10 @@ function rosterEntries(variant) {
     name: variant ? `${t.name}: ${variant}` : t.name,
     type: 'buff', maxPotency: t.mult, transform: t.key, unlocksAtLevel: t.level,
     energyCost: 30 + t.level, cooldown: 4,
-    effect: `• Transform into your ${variant || 'monster'} form: ×${t.mult} ATK, DEF, SPD and HP for ${t.turns} turns\n• Cannot stack with an equal or stronger form`,
-    description: `${t.name}${variant ? ` (${variant})` : ''} — the beast beneath the hunter surfaces. Every stat is multiplied ×${t.mult} for ${t.turns} turns; Monster-class hunters may also surge into a Quarter form at random.`,
+    effect: `• Transform into your ${variant || 'monster'} form: ×${t.mult} ATK, DEF, SPD · ×${HP_MULT} HP for ${t.turns} turns\n• One transformation per fight (berserk surges count)`,
+    description: `${t.name}${variant ? ` (${variant})` : ''} — the beast beneath the hunter surfaces. ATK/DEF/SPD ×${t.mult} and HP ×${HP_MULT} for ${t.turns} turns; Monster-class hunters may also surge into a Quarter form at random.`,
     animation: `🧬 Bones crack. Skin splits. The ${variant || 'monster'} takes over...\n👹 ${t.name.toUpperCase()}!`,
   }));
 }
 
-module.exports = { cooldownLeftMs, cooldownMsFor, TF_COOLDOWN_MS, PACK_CHANCE_MULT, PACK_COMBO_MULT, withPack, packmates, TIERS, PASSIVE_CHANCE, BERSERK_CHANCE, BERSERK_LEVEL, AFTERMATH, MAX_AGE_MS, isBerserk, BERSERK_TEXT, berserkPick, applyAftermath, isMonster, variantName, skillName, tierByName, isTransformSkill, active, apply, end, tick, cast, sweep, rosterEntries };
+module.exports = { HP_MULT, usedThisFight, markUsed, clearFightUse, cooldownLeftMs, cooldownMsFor, TF_COOLDOWN_MS, PACK_CHANCE_MULT, PACK_COMBO_MULT, withPack, packmates, TIERS, PASSIVE_CHANCE, BERSERK_CHANCE, BERSERK_LEVEL, AFTERMATH, MAX_AGE_MS, isBerserk, BERSERK_TEXT, berserkPick, applyAftermath, isMonster, variantName, skillName, tierByName, isTransformSkill, active, apply, end, tick, cast, sweep, rosterEntries };

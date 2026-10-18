@@ -281,7 +281,7 @@ ${FRAME}`;
             ``,
             `☠️ In PvP battles, health potions corrupt and deal damage!`,
             `💥 Dealt *${damage} damage* (${Math.floor(pct * 100)}% Max HP) to *${opponent ? opponent.name : 'Opponent'}*!`,
-            opponent ? `❤️ Opponent HP: *${opponent.stats.hp}/${opponent.stats.maxHp}*` : ``,
+            opponent ? `❤️ Opponent HP: *${opponent.stats.hp}/${(()=>{try{return require('../../rpg/utils/GearSystem').effectiveMaxHp(opponent);}catch(e){return opponent.stats.maxHp;}})()}*` : ``,
             `${FRAME}`,
           ].filter(Boolean).join('\n'),
         }, { quoted: msg });
@@ -335,7 +335,7 @@ ${FRAME}`;
           `${tierEmoji} *${player.name}* used ${tierName}!`,
           ``,
           `✨ Restored: *+${actualHeal} HP* (+${Math.floor(pct * 100)}%)`,
-          `❤️ HP: *${player.stats.hp}/${player.stats.maxHp}*`,
+          `❤️ HP: *${player.stats.hp}/${(()=>{try{return require('../../rpg/utils/GearSystem').effectiveMaxHp(player);}catch(e){return player.stats.maxHp;}})()}*`,
           inBattleInfo ? `\n⚔️ Used in ${inBattleInfo.type}!` : ``,
           `${FRAME}`,
         ].join('\n'),
@@ -449,7 +449,7 @@ ${FRAME}`;
 ${FRAME}
 💫 *${player.name}* used a Revive Token!
 
-✨ Restored: *${player.stats.hp}/${player.stats.maxHp} HP*
+✨ Restored: *${player.stats.hp}/${(()=>{try{return require('../../rpg/utils/GearSystem').effectiveMaxHp(player);}catch(e){return player.stats.maxHp;}})()} HP*
 🎫 Tokens Left: ${player.inventory.reviveTokens}
 ${FRAME}`
       }, { quoted: msg });

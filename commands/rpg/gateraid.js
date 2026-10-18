@@ -454,6 +454,7 @@ module.exports = {
         // crashed with "boss is not defined".
         const boss = gate.boss;
         boss.defeated = true;
+        try { require('../../rpg/utils/Corpses').recordBoss(gate, { ...boss, level: boss.level || ({ E: 8, D: 20, C: 32, B: 48, A: 62, S: 80 }[String(gate.rank || 'E').toUpperCase()] || 8) }, player.name); } catch (e) {} // Push #103b: boss corpse
         // Push #97: the boss ALWAYS drops Essence Stones of the gate's rank to the hunter who landed the final blow.
         try { const ES = require('../../rpg/utils/EssenceStones'); const _en = ES.rollBossDrop(gate.rank); ES.grant(player, gate.rank, _en); out.push(`${ES.emojiFor(gate.rank)} *BOSS ESSENCE → ${player.name}*: *${ES.nameFor(gate.rank)}* ×${_en}`); } catch (e) {}
         // Push #89: the boss party falls with the boss (no rewards for them).
@@ -568,6 +569,7 @@ module.exports = {
     };
 
     if (action === 'attack' || action === 'skill') {
+      sock = require('../../rpg/utils/PacedSock').paced(sock); // Push #103b: 3 s between combat messages
       if (!inRaid(gate, sender)) return sock.sendMessage(chatId, { text: '❌ You are not in this raid.' }, { quoted: msg });
       if (raidOver(gate)) return sock.sendMessage(chatId, { text: RAID_OVER_TEXT }, { quoted: msg });
       // Push #29: combat lock — one battle flow at a time per gate.
@@ -626,6 +628,28 @@ module.exports = {
           const _e = _pre.ok ? (_pre.entry || _pre.skill) : null;
           const _t = _e ? String(_e.type || '').toLowerCase() : '';
           const _isSupport = !!_e && (_t === 'heal' || _t === 'buff');
+          // ── Push #103b: SUMMONS (Necromancer corpses · Summoner horde · Shaman totems · Phantom possession) ──
+          try {
+            const SM = require('../../rpg/utils/Summons');
+            if (_e && SM.isSummonSkill(_e)) {
+              const _party = (gate.raid?.members || []).map(m => db.users[m.id] || Object.values(db.users || {}).find(x => x && x.jid && GR.GKM.normaliseJid(x.jid) === GR.GKM.normaliseJid(m.id))).filter(Boolean);
+              const _curT = (() => { try { return GR._currentRaidTarget ? GR._currentRaidTarget(gate) : null; } catch (e) { return null; } })();
+              const _sm = SM.cast(player, _e, gate, { party: _party, target: _curT });
+              GR.releaseCombatLock(gate.id);
+              if (!_sm.ok) return sock.sendMessage(chatId, { text: `❌ ${_sm.error}` }, { quoted: msg });
+              try { GR.noteRaidTurn(gate, chatId); } catch (e) {}
+              try { require('../../rpg/utils/RegenManager').raidTurnEnergy(player); } catch (e) {}
+              try { GR.saveGateState(db, gate); } catch (e) {}
+              saveDatabase();
+              const _msgs = (_sm.messages || []).filter(Boolean);
+              for (let i = 0; i < _msgs.length; i++) {
+                await sock.sendMessage(chatId, { text: (i === 0 && pro ? `${UI.PRO_BAR}\n` : '') + _msgs[i] + (i === _msgs.length - 1 ? `\n⚡ −${_sm.energyCost} energy · 🕊️ Summoning does not use your turn.` : '') }, i === 0 ? { quoted: msg } : {});
+                if (i < _msgs.length - 1) await new Promise(r => setTimeout(r, 3000));
+              }
+              if (_curT && _sm.damage > 0 && _curT.hp <= 0) { try { await sock.sendMessage(chatId, { text: `💀 *${_curT.name}* is destroyed by the blast! Finish the floor with your next move.` }); } catch (e) {} }
+              return;
+            }
+          } catch (e) { console.error('[gateraid] summon cast:', e.message); }
           // ── Push #93: NECROMANCER REFORGED ─────────────────────────────
           try {
             const NX = require('../../rpg/utils/Necromancy');
@@ -674,6 +698,7 @@ module.exports = {
           } catch (e) { console.error('[gateraid] necromancy cast:', e.message); }
           if (_isSupport) {
             try { GR.noteRaidTurn(gate, chatId); } catch (e) {} // Push #92: a heal/buff is a move too
+            try { require('../../rpg/utils/RegenManager').raidTurnEnergy(player); } catch (e) {} // Push #103b
             let tgtJid = sender, tgt = player;
             if (_mentioned.length) {
               const mj = _mentioned[0];
@@ -737,6 +762,8 @@ module.exports = {
             deathLines.push(``, sac.message);
             await sock.sendMessage(chatId, { text: deathLines.filter(Boolean).join('\n') }, { quoted: msg });
           } else {
+            try { require('../../rpg/utils/Corpses').recordHunter(gate, player); } catch (e) {} // Push #103b
+            try { const _lf = require('../../rpg/utils/Summons').onOwnerDown(player); if (_lf) deathLines.push(_lf); } catch (e) {} // Push #103b: linked fate
             player.stats.hp = 1;
             player.stats_history = player.stats_history || {};
             player.stats_history.gateDeaths = (player.stats_history.gateDeaths || 0) + 1;
@@ -787,8 +814,12 @@ module.exports = {
       _gateStatus = statusSummary(player) || (target && target.statusEffects ? statusSummary(target) : null);
       if (_gateStatus || _tickLogs.length) {
         try {
+          // Push #103b: every buff/effect that wears off gets its OWN message; the rest of the tick stays bundled.
+          const _wore = _tickLogs.filter(l => /wore off|faded|fades|ends\b|wears off/i.test(l));
+          const _rest = _tickLogs.filter(l => !_wore.includes(l));
+          for (const w of _wore) await sock.sendMessage(chatId, { text: `${pro ? UI.PRO_BAR : UI.FREE_BAR}\n⌛ *${player.name}* — ${w}` }).catch(() => {});
           let statusMsg = '';
-          if (_tickLogs.length) statusMsg += _tickLogs.join('\n') + '\n';
+          if (_rest.length) statusMsg += _rest.join('\n') + '\n';
           if (_gateStatus) statusMsg += `⚠️ *STATUS EFFECTS*\n${_gateStatus}`;
           if (statusMsg) await sock.sendMessage(chatId, { text: statusMsg.trim() }, { quoted: msg });
         } catch (e) {}
@@ -819,6 +850,7 @@ module.exports = {
       let _petStrike = null, _petLines = []; let _shadowOffer = false; // Push #96h-z19
       const UCgFlow = require('../../rpg/utils/UnifiedCombat');
       try { GR.noteRaidTurn(gate, chatId); } catch (e) {} // Push #88q: idle-pressure clock
+      try { require('../../rpg/utils/RegenManager').raidTurnEnergy(player); } catch (e) {} // Push #103b: per-action rank energy regen
       // Push #88q: INITIATIVE — a faster raid monster can strike BEFORE the
       // hunter's move (hunters no longer always go first). The opening hit is
       // an extra action at 60% force and never kills outright (leaves 1 HP);
@@ -839,7 +871,7 @@ module.exports = {
           const _MSFXi = require('../../rpg/utils/MonsterSkillFX');
           const _iPool = (Array.isArray(target.skills) && target.skills.length) ? target.skills : [{ name: '🔥 Flame Spurt', effect: 'burn', chance: 40 }, { name: '⚡ Volt Shock', effect: 'stun', chance: 25 }, { name: '🩸 Savage Bite', effect: 'bleed', chance: 40 }, { name: '😱 Terror Howl', effect: 'fear', chance: 30 }, { name: '🌀 Void Crush', effect: 'weaken', chance: 35 }];
           const _iPick = _MSFXi.pickMoves(_iPool);
-          if (_iPick.support) { try { const _ss = _MSFXi.supportStep(target, player, _iPick.support); for (const b of _ss.blocks) { await sock.sendMessage(chatId, { text: b }); await new Promise(r => setTimeout(r, 1750)); } } catch (e) {} }
+          if (_iPick.support) { try { const _ss = _MSFXi.supportStep(target, player, _iPick.support); for (const b of _ss.blocks) { await sock.sendMessage(chatId, { text: b }); await new Promise(r => setTimeout(r, 3000)); } } catch (e) {} }
           const _aDef = GR.effectiveDef(_iVictim, _iVictimJid); // Push #89: gear + title + pet
           const _hpBefore = _iVictim.stats.hp || 1;
           const _aRaw = GR.monsterDamage(target, _aDef, _iVictim);
@@ -895,11 +927,15 @@ module.exports = {
         }
       } else {
         const useSkill = action === 'skill' ? skillArg : null;
+        // Push #103b: corpse-burst skills eat REAL corpses (refused with no turn spent when the field is empty)
+        let _burst = null;
+        if (useSkill) { try { const SMb = require('../../rpg/utils/Summons'); const _pe = require('../../rpg/utils/SkillCatalog').resolveSkill(player, String(useSkill).replace(/@\S+/g, '').trim(), { allowLibrary: true }); if (_pe.ok && SMb.isBurstSkill(_pe.entry || _pe.skill)) { _burst = SMb.corpseBurst(player, _pe.entry || _pe.skill, gate); if (!_burst.ok) { GR.releaseCombatLock(gate.id); return sock.sendMessage(chatId, { text: `❌ ${_burst.error}` }, { quoted: msg }); } } } catch (e) { _burst = null; } }
         try { GR.playerDamage.partyAllies = (gate.raid?.members || []).map(m => db.users[m.id] || Object.values(db.users || {}).find(x => x && x.jid && GR.GKM.normaliseJid(x.jid) === GR.GKM.normaliseJid(m.id))).filter(Boolean); } catch (e) { GR.playerDamage.partyAllies = []; } // Push #94: party buffs on hybrid strikes
         // Push #97 (BUG-012): the skill engine needs the beast's real HP to apply "% of target max HP" drains
         // (Crimson Blade & co.). Hand it a proxy carrying stats and write the drained HP back.
         const _drainTgt = { name: target.name, statusEffects: target.statusEffects || [], stats: { hp: Number(target.hp) || 0, maxHp: Number(target.maxHp) || Number(target.hp) || 100 } };
         result = GR.playerDamage(player, useSkill, _drainTgt);
+        if (_burst && _burst.used && result && !result.blocked) { result.damage = Math.max(1, Math.floor((result.damage || 0) * _burst.bonusMult)); result.burstLines = _burst.lines; }
         if (result && result.drained > 0) target.hp = Math.max(1, _drainTgt.stats.hp);
         if (_drainTgt.lastHitBy) target.lastHitBy = _drainTgt.lastHitBy;
         GR.playerDamage.partyAllies = [];
@@ -1000,10 +1036,13 @@ module.exports = {
       } catch (e) {}
       // Push #96h-z19: the Shadow Army fights beside its Monarch.
       try { if (!_statusKilled && target.hp > 0) { const _sa = require('../../rpg/utils/ShadowArmy').strike(player, target); if (_sa.lines.length) _petLines.push(..._sa.lines); } } catch (e) {}
+      // Push #103b: summons strike with their master, then age one turn.
+      try { const SMs = require('../../rpg/utils/Summons'); if (result && result.burstLines) _petLines.unshift(...result.burstLines); if (!_statusKilled && target.hp > 0 && !result.blocked) { const _party = (gate.raid?.members || []).map(m => db.users[m.id]).filter(Boolean); const _ss = SMs.strike(player, target, { party: _party }); if (_ss.lines.length) { for (const _l of _ss.lines) { await sock.sendMessage(chatId, { text: `${pro ? UI.PRO_BAR : UI.FREE_BAR}\n🜏 *SUMMONS STRIKE*\n${_l}` }).catch(() => {}); } } } if (!result.blocked) _petLines.push(...SMs.tick(player)); } catch (e) {} // Push #103b: one message per summon strike
 
       if (target.hp <= 0) {
         // The 5 strike messages are already live — rewards go in their own message.
         const killLines = [];
+        if (_petLines.length) killLines.push(..._petLines); // Push #103b: summon/pet lines on the killing turn too
         target.defeated = true;
         player._runKills = (player._runKills || 0) + 1; // Push #88: Devourer 'Hunger' stacks
         gate.monstersKilled = (gate.monstersKilled || 0) + 1;
@@ -1115,7 +1154,7 @@ module.exports = {
       const monsterSkill = _picked.attack;
       // Push #96h-m: a LEAKED beast regenerates 90% of its turns (free support move, like any other).
       if (_monCanAct.canAct && target.leaked && !_picked.support && target.hp < target.maxHp && Math.random() < 0.90) _picked.support = '💚 Regenerate';
-      if (_monCanAct.canAct && _picked.support) { try { const _ss = _MSFXc.supportStep(target, _victim, _picked.support); for (const b of _ss.blocks) { await sock.sendMessage(chatId, { text: b }); await new Promise(r => setTimeout(r, 1750)); } } catch (e) {} }
+      if (_monCanAct.canAct && _picked.support) { try { const _ss = _MSFXc.supportStep(target, _victim, _picked.support); for (const b of _ss.blocks) { await sock.sendMessage(chatId, { text: b }); await new Promise(r => setTimeout(r, 3000)); } } catch (e) {} }
       if (!_monCanAct.canAct && _monCanAct.reason === 'initiative') {
         await sock.sendMessage(chatId, { text: [
           ...(pro ? [UI.PRO_BAR, `⚡ *MONSTER SPENT* 💎`, UI.PRO_BAR] : [`⚡ *MONSTER SPENT*`, UI.FREE_BAR]),
@@ -1148,7 +1187,7 @@ module.exports = {
         try { const _fx = require('../../rpg/utils/MonsterSkillFX').apply(target, _victim, monsterSkill, dmg, { skipStatus: true }); if (_fx.lines.length) await sock.sendMessage(chatId, { text: _fx.lines.join('\n') }); } catch (e) {}
       }
       // Push #95: DOMAINS — bosses / B-rank+ monsters may expand a domain over the party.
-      try { const DS = require('../../rpg/utils/DomainSystem'); const _hunters = GR.livingMembers ? GR.livingMembers(gate, db) : [player]; const _nj = (j) => { try { return GR.GKM.normaliseJid(j) || String(j); } catch (e) { return String(j); } }; const _tl = DS.tick(DS.arenaOf(gate), { actor: _nj(sender), roster: ((gate.raid && gate.raid.members) || []).filter(m => (m.hp || 0) > 0).map(m => _nj(m.id)) }); if (_tl) await sock.sendMessage(chatId, { text: _tl }); const _dl = DS.monsterTry(DS.arenaOf(gate), target, _hunters, { boss: !!_fightingBoss, rank: gate.rank }); if (_dl) await DS.sendDomain(sock, chatId, _dl); } catch (e) {}
+      try { const DS = require('../../rpg/utils/DomainSystem'); const _hunters = GR.livingMembers ? GR.livingMembers(gate, db) : [player]; const _nj = (j) => { try { return GR.GKM.normaliseJid(j) || String(j); } catch (e) { return String(j); } }; const _tl = DS.tick(DS.arenaOf(gate), { actor: _nj(sender), roster: ((gate.raid && gate.raid.members) || []).filter(m => (m.hp || 0) > 0).map(m => _nj(m.id)) }); if (_tl) await sock.sendMessage(chatId, { text: _tl }); const _ctxD = { boss: !!_fightingBoss, rank: gate.rank }; const _warn = DS.monsterWarn(DS.arenaOf(gate), target, _hunters, _ctxD); if (_warn) { await sock.sendMessage(chatId, { text: _warn, mentions: _hunters.map(h => h.jid).filter(Boolean) }).catch(() => {}); await new Promise(r => setTimeout(r, DS.DOMAIN_WARN_MS)); if ((target.hp || 0) > 0) { const _dl = DS.monsterTry(DS.arenaOf(gate), target, _hunters, { ..._ctxD, armed: true }); if (_dl) await DS.sendDomain(sock, chatId, _dl); } } } catch (e) {} // Push #103b: 10 s warning before a monster domain
 
       try { const _lg = require('../../rpg/utils/PetManager').tickLastGift(player); if (_lg && _lg.healed > 0) await sock.sendMessage(chatId, { text: `✨ *Last Gift* (${_lg.from}): +${_lg.healed} HP regen · ${_lg.turnsLeft} turn${_lg.turnsLeft === 1 ? '' : 's'} left` }); } catch (e) {}
       if (_guardHit) {
@@ -1349,7 +1388,7 @@ module.exports = {
         const bossAtk = (typeof boss.atk === 'number' && boss.atk > 0) ? boss.atk : Math.floor(GATE_RANKS[gate.rank].monsterRange[1] * 0.20 * ((gate.calibrated && gate.calibrated.severity) || 1));
         // Push #74: boss hits go through the same dodge/passive/weaken maths.
         const _bossRegen = Math.random() < 0.25 && boss.hp < boss.maxHp; // Push #96d: bosses can Regenerate · Push #96h-l: it is a FREE support move (no damage, no turn) — the boss still strikes
-        if (_bossRegen) { try { const _ss = require('../../rpg/utils/MonsterSkillFX').supportStep(boss, _bVictim, '💚 Regenerate'); for (const b of _ss.blocks) { await sock.sendMessage(chatId, { text: b }); await new Promise(r => setTimeout(r, 1750)); } } catch (e) {} }
+        if (_bossRegen) { try { const _ss = require('../../rpg/utils/MonsterSkillFX').supportStep(boss, _bVictim, '💚 Regenerate'); for (const b of _ss.blocks) { await sock.sendMessage(chatId, { text: b }); await new Promise(r => setTimeout(r, 3000)); } } catch (e) {} }
         let dmg = GR.monsterDamage({ atk: bossAtk, speed: boss.speed || 14, statusEffects: boss.statusEffects || [], _raid: true, isBoss: true, rank: gate.rank }, def, _bVictim);
         if (_bGuard && _bGuard.aggro) await sock.sendMessage(chatId, { text: `🎯 *AGGRO!* *${boss.name}* turns on the healer *${_bGuard.guardianName}*!` });
         else if (_bGuard) await sock.sendMessage(chatId, { text: `🛡️ *GUARD!* *${_bGuard.guardianName}* steps in front of *${player.name}* and takes the boss's blow!` });
@@ -1394,6 +1433,8 @@ module.exports = {
           if (sac && sac.sacrificed) {
             lines.push(``, sac.message);
           } else {
+            try { require('../../rpg/utils/Corpses').recordHunter(gate, player); } catch (e) {} // Push #103b
+            try { const _lf = require('../../rpg/utils/Summons').onOwnerDown(player); if (_lf) lines.push(_lf); } catch (e) {} // Push #103b: linked fate
             player.stats.hp = 1;
             player.stats_history = player.stats_history || {};
             player.stats_history.gateDeaths = (player.stats_history.gateDeaths || 0) + 1;

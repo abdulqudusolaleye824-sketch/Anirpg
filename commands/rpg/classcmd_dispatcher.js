@@ -254,7 +254,7 @@ async function defaultHandler(sock, msg, player, skill, db, saveDatabase, getDat
         const target = player.dungeon?.currentBattle?.monster || null;
         for (const st of stats) {
           if (Math.random() * 100 < (st.chance ?? 100)) {
-            if (target) SEM.applyEffect(target, st.type, st.duration);
+            if (target) SEM.applyEffect(target, st.type, st.duration, player); // Push #103b: MR check
             const def = SEM.EFFECTS?.[st.type];
             resultText += `\n${def?.emoji || '✨'} ${def?.name || st.type} applied${target ? '' : ' (no live target)'}!`;
           }
@@ -556,7 +556,7 @@ function showClassSkillMenu(sock, msg, player, className) {
       lns.push(UI.isPro(player) ? UI.PRO_BAR : UI.FREE_BAR);
       unlocked.forEach((e, i) => {
         const mine = (player.skills.active.concat(player.availableSkills)).find(s => s.name === e.name) || e;
-        lns.push(`${i + 1}. *${e.name}* [Lv.${e.unlocksAtLevel}]`);
+        lns.push(`${i + 1}. ${e.emoji || ''}*${e.name}* [${e.rankReq ? `${e.rankReq}-Rank` : `Lv.${e.unlocksAtLevel}`}]`);
         lns.push(`   📖 ${e.description}`);
         lns.push(`   ${e.effect.split('\n').join('\n   ')}`);
         lns.push(`   ${_SC.effectiveCost(mine, player)} energy · ${_SC.effectiveCooldownTurns(mine)} turn CD · ⚔️ ${e.damagePct || 0}% ATK`);
@@ -568,7 +568,7 @@ function showClassSkillMenu(sock, msg, player, className) {
         lns.push('');
       }
       if (locked.length) {
-        lns.push(`🔒 *LOCKED* — next: ${locked[0].name} at Lv.${locked[0].unlocksAtLevel} (${locked.length} total)`);
+        lns.push(`🔒 *LOCKED* — next: ${locked[0].name} (${_SC.lockReason(player, locked[0]).replace(/\*/g, '')}) · ${locked.length} total`);
         lns.push(`   /skills locked lists them all`);
       }
       lns.push(UI.isPro(player) ? UI.PRO_BAR : UI.FREE_BAR);

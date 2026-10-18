@@ -193,8 +193,11 @@ class PetManager {
         pet.abilities.push(...newAbs);
       }
     }
+    // Push #103a (BUG-096): tell the owner the moment a pet becomes evolvable (and keep a flag so /pet list shows it).
+    let evolveReady = false;
+    if (levelsGained.length && pet.evolution && pet.level >= pet.evolution.level && pet.evolution.options && pet.evolution.options.length) { evolveReady = true; pet.evolveReadyNotified = pet.evolveReadyNotified || Date.now(); }
     this.save();
-    return { pet, levelsGained };
+    return { pet, levelsGained, evolveReady, evolveHint: evolveReady ? `🌟 *${pet.nickname || pet.name}* can EVOLVE now! → /pet evolve <#> (options: ${pet.evolution.options.map(o => o.id).join(' / ')})` : null };
   }
 
   getExpReq(level) { return Math.floor(50 * Math.pow(level, 1.5)); }
@@ -205,8 +208,8 @@ class PetManager {
     const pet = pd.pets.find(p => p.instanceId === petInstanceId);
     if (!pet) return { success: false, message: '❌ Pet not found!' };
     if (this.isLocked(playerId, petInstanceId)) return { success: false, message: this.lockedMsg(playerId, petInstanceId) };
-    if (!pet.evolution) return { success: false, message: '❌ This pet cannot evolve!' };
-    if (pet.level < pet.evolution.level) return { success: false, message: `❌ Need level ${pet.evolution.level} to evolve!` };
+    if (!pet.evolution) return { success: false, message: `✨ *${pet.nickname || pet.name}* is already a FINAL form — it has no further evolution. Keep levelling it: every level still raises its stats and unlocks abilities.` }; // Push #103a (BUG-096)
+    if (pet.level < pet.evolution.level) return { success: false, message: `❌ Need level ${pet.evolution.level} to evolve (now Lv.${pet.level}).` };
     const opt = pet.evolution.options.find(o => o.id === evolutionChoice);
     if (!opt) return { success: false, message: '❌ Invalid evolution choice!' };
     const newTemplate = PET_DATABASE[evolutionChoice];
@@ -540,7 +543,7 @@ class PetManager {
     if (pet.stats.scavengeRate) s += `🔍 Scavenge: +${Math.floor(pet.stats.scavengeRate * 100)}% Nexus\n`;
     s += `\n📊 EXP: ${pet.exp}/${expReq} (${expPct}%)\n`;
     s += `💕 Bonding: ${pet.bonding}/100 | 😊 ${pet.happiness}/100 | 🍖 Full ${100 - (pet.hunger || 0)}/100\n`;
-    if (pet.evolution) s += `\n🌟 Evolves at Lv.${pet.evolution.level}`;
+    if (pet.evolution) s += pet.level >= pet.evolution.level ? `\n🌟 *READY TO EVOLVE* — /pet evolve <#> (${pet.evolution.options.map(o => o.id).join(' / ')})` : `\n🌟 Evolves at Lv.${pet.evolution.level}`; else s += `\n✨ Final form (no further evolution)`; // Push #103a (BUG-096)
     return s;
   }
 }

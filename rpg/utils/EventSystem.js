@@ -497,7 +497,7 @@ function resolvePending(db, victimId) {
   else { if (c.victimDodgeTried) lines.push(`💨 *${_name(B)}* tries to dodge (${c.dodgePct}%) — too slow!`); dA = _strike(db, ev, A, B, c.attackerSkill, lines); }
   const dB = c.victimAnswered ? _strike(db, ev, B, A, c.victimSkill, lines) : 0;
   B.stats.hp = Math.max(0, (B.stats.hp || 0) - dA); if (dB) A.stats.hp = Math.max(0, (A.stats.hp || 0) - dB);
-  lines.push(`❤️ ${_name(A)} ${A.stats.hp}/${A.stats.maxHp} · ${_name(B)} ${B.stats.hp}/${B.stats.maxHp}`);
+  lines.push(`❤️ ${_name(A)} ${A.stats.hp}/${(()=>{try{return require('./GearSystem').effectiveMaxHp(A);}catch(e){return A.stats.maxHp;}})()} · ${_name(B)} ${B.stats.hp}/${(()=>{try{return require('./GearSystem').effectiveMaxHp(B);}catch(e){return B.stats.maxHp;}})()}`);
   const kill = (winner, loser, ws, ls) => { const stolen = Math.floor((ls.points || 0) * STEAL_PCT); ws.points += stolen + HUNTER_KILL_BONUS; ws.hunterKills++; ls.points = 0; ls.deaths++; ls.diedAt = Date.now(); ls.statusEffects = []; ls.tempBuffs = {}; lines.push(`💀 *${_name(loser)} is slain!* ${_name(winner)} takes *${stolen} points* (+${HUNTER_KILL_BONUS} bounty) — ${_name(loser)}'s points reset to *0*, respawn in ${ls._pro ? 30 : 60} min.`); _gainExp(db, winner._real || winner, ws, EXP_HUNTER, lines); };
   if (B.stats.hp <= 0 && A.stats.hp <= 0) { lines.push(`☠️ *Double knockout!* Both fall — no points change hands.`); as.deaths++; bs.deaths++; as.diedAt = bs.diedAt = Date.now(); }
   else { if (B.stats.hp <= 0) kill(A, B, as, bs); if (A.stats.hp <= 0) kill(B, A, bs, as); }
@@ -597,7 +597,7 @@ function castDomain(db, player, chatId, victim = null) {
     const V = _avatar(db, victim); const vs = _p(db, victim);
     const dmg = Math.max(1, Math.floor(burst * (1 - _mit(V.stats.def, h.atk)))); V.stats.hp = Math.max(0, V.stats.hp - dmg); vs.dmgTaken += dmg; total = dmg; vs.debuffUntil = until; hunters = 1;
     const fxl = []; _applyStatuses({ missed: false, statuses: [] }, _avatar(db, player), V, fxl, _domainStatuses(player));
-    burstLine = `💥 Opening burst: *${_name(victim)}* takes *${dmg.toLocaleString()}* (${V.stats.hp}/${V.stats.maxHp} HP)${fxl.length ? '\n' + fxl.join('\n') : ''}`;
+    burstLine = `💥 Opening burst: *${_name(victim)}* takes *${dmg.toLocaleString()}* (${V.stats.hp}/${(()=>{try{return require('./GearSystem').effectiveMaxHp(V);}catch(e){return V.stats.maxHp;}})()} HP)${fxl.length ? '\n' + fxl.join('\n') : ''}`;
     if (V.stats.hp <= 0) { vs.deaths++; vs.diedAt = Date.now(); vs.statusEffects = []; vs.tempBuffs = {}; const stolen = Math.floor((vs.points || 0) * STEAL_PCT); st.points += stolen + HUNTER_KILL_BONUS; st.hunterKills++; vs.points = 0; burstLine += `\n💀 *${_name(victim)} is crushed by the domain!* +${stolen} stolen points (+${HUNTER_KILL_BONUS} bounty).`; const el = []; _gainExp(db, player, st, EXP_HUNTER, el); burstLine += '\n' + el.join('\n'); }
     _commit(V);
   } else { // no tag: the ACTIVE beast (your last target, else the weakest alive) takes the whole burst

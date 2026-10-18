@@ -10,7 +10,7 @@ module.exports = {
   name: 'Archer',
   emoji: '🏹',
     lore: 'Precision over power. Every arrow finds its mark.',
-    maxBonuses: { hp: 60, atk: 45, def: 8, speed: 25, maxEnergy: 30 },
+    maxBonuses: { hp: 40, atk: 45, def: 5, speed: 25, maxEnergy: 35 },
     skills: [
       { name: 'Eagle Eye',     type: 'passive', maxPotency: 25,  desc: 'Crit chance +{p}%' },
       { name: 'Barrage',       type: 'damage',  maxPotency: 220, desc: 'Fires {p}% ATK across 3 rapid shots' },

@@ -10,16 +10,7 @@ module.exports = {
   name: 'Senku',
   emoji: '⚗️',
     lore: 'The 10 billion% genius. Science is the ultimate power — and you are its voice.',
-    maxBonuses: {
-      hp: 280,
-      atk: 75,
-      def: 45,
-      speed: 65,
-      maxEnergy: 110,
-      magicPower: 70,
-      critChance: 15,
-      lifesteal: 10,
-    },
+    maxBonuses: { hp: 280, atk: 75, def: 45, speed: 65, maxEnergy: 110, magicPower: 70, critChance: 15, lifesteal: 10 },
     skills: [
       { name: 'Nitro Burst',     type: 'damage',  maxPotency: 380, desc: 'Deals {p}% ATK as science damage, applies burn for 3 turns' },
       { name: '10 Billion%',     type: 'damage',  maxPotency: 500, desc: 'Ultimate genius form: {p}% ATK, guaranteed crit, ignores 50% of target DEF' },

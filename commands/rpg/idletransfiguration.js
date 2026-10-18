@@ -227,7 +227,7 @@ module.exports = {
     text += `📊 CURRENT STATS:\n`;
     text += `⚔️ ATK: ${player.stats.atk}\n`;
     text += `🛡️ DEF: ${player.stats.def}\n`;
-    text += `❤️ HP: ${player.stats.hp}/${player.stats.maxHp}\n`;
+    text += `❤️ HP: ${player.stats.hp}/${(()=>{try{return require('../../rpg/utils/GearSystem').effectiveMaxHp(player);}catch(e){return player.stats.maxHp;}})()}\n`;
     text += `💙 ${player.energyType || 'Energy'}: ${player.stats.energy}/${player.stats.maxEnergy}\n`;
     text += `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
     text += `💡 Future equips will now reflect in stats.\n`;

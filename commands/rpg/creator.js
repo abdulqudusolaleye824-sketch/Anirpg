@@ -141,7 +141,7 @@ every trial I set before you."*
 👤 *YOUR STATUS*
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-❤️ HP: ${player.stats.hp}/${player.stats.maxHp}
+❤️ HP: ${player.stats.hp}/${(()=>{try{return require('../../rpg/utils/GearSystem').effectiveMaxHp(player);}catch(e){return player.stats.maxHp;}})()}
 💙 Mana: ${player.stats.mana}/${player.stats.maxMana}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -278,7 +278,7 @@ Try again when you're ready.
       }
 
       message += `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
-      message += `👤 *YOUR HP:* ${player.stats.hp}/${player.stats.maxHp}\n`;
+      message += `👤 *YOUR HP:* ${player.stats.hp}/${(()=>{try{return require('../../rpg/utils/GearSystem').effectiveMaxHp(player);}catch(e){return player.stats.maxHp;}})()}\n`;
       message += `💀 *CREATOR HP:* ${battle.hp}/${battle.maxHp}\n`;
       message += `✨ *Phase:* ${battle.phase}/3`;
 

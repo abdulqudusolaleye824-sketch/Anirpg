@@ -254,6 +254,27 @@ function _parsePassive(text, out, hpPct, q) {
   // Healer: "All heals +20% effectiveness" / "Healing received ... 15% stronger"
   const hp1 = cond(new RegExp(`(?:all\\s+)?heals?\\s*\\+${_PCT}`)); if (hp1) out.healPower += qs(hp1);
   const hp2 = cond(new RegExp(`healing received[^\\n]*?${_PCT}\\s+stronger`)); if (hp2) out.healReceived += qs(hp2);
+  // ── Push #103b: revamp phrasings (Bard / Druid / Archer …) ──
+  // "Critical strike chance +15%" / "crit rate +10%"
+  const c3 = cond(new RegExp(`crit(?:ical)?\\s*(?:strike|hit)?\\s*(?:chance|rate)\\s*\\+${_PCT}`)); if (c3 && !c && !c2) out.crit += qs(c3);
+  // "4% HP regeneration at the start of every turn" / "regenerates 3% max HP per turn" → % regen (resolved against max HP by the caller)
+  const rp = t.match(new RegExp(`${_PCT}\\s*(?:max\\s*)?hp\\s+regen(?:eration)?(?:\\s+(?:at the start of|each|every|per)\\s+(?:every\\s+)?turn)?`)) || t.match(new RegExp(`regenerates?\\s+${_PCT}\\s*(?:of\\s+)?(?:max\\s*)?hp\\s+(?:each|every|per)\\s+turn`));
+  if (rp) out.regenPct = (out.regenPct || 0) + qs(parseFloat(rp[1]));
+  // "Max HP and energy regen +15%" / "Max energy and energy recovery rate +20%" → max HP / max energy
+  const mh = cond(new RegExp(`max\\s*hp(?:\\s+and\\s+energy\\s+regen)?\\s*\\+${_PCT}`)); if (mh) out.maxHp = (out.maxHp || 0) + qs(mh);
+  const me = cond(new RegExp(`max\\s*energy(?:\\s+and\\s+energy\\s+recovery\\s+rate)?\\s*\\+${_PCT}`)); if (me) out.maxEnergy = (out.maxEnergy || 0) + qs(me);
+  // "Melee attackers take 25% physical damage back as thorns" → reflect
+  const th = cond(new RegExp(`attackers?\\s+take\\s+${_PCT}\\s+(?:physical\\s+|magic\\s+)?damage\\s+back`)); if (th) out.reflect += qs(th);
+  // "DEF scaling +15% outdoors/dungeon gates" → DEF
+  const ds = cond(new RegExp(`def\\s+scaling\\s*\\+${_PCT}`)); if (ds) out.def += qs(ds);
+  // "Poison/disease/crowd-control resistance +50%" → status resistance (read by the status engine)
+  const sr = cond(new RegExp(`(?:crowd-control|status|poison|cc)[^\\n]*?resistance\\s*\\+${_PCT}`)); if (sr) out.statusResist = (out.statusResist || 0) + qs(sr);
+  // "Triggers 25% max HP heal when dropping below 15% HP (once)" → survive-lethal style emergency heal
+  const em = t.match(new RegExp(`triggers?\\s+${_PCT}\\s*max\\s*hp\\s+heal\\s+when\\s+dropping\\s+below\\s+(\\d+)%`)); if (em) out.emergencyHeal = { pct: qs(parseFloat(em[1])), below: parseInt(em[2], 10) };
+  // "Doubles illusion/trance duration on elites/bosses" → status duration bonus
+  if (/doubles?\s+[^\n]*duration/.test(t)) out.statusTurnBonus = (out.statusTurnBonus || 0) + 1;
+  // "Bleed and poison effects tick 20% faster" → DoT power
+  const dt = cond(new RegExp(`(?:bleed|poison|burn|dot)[^\\n]*?tick\\s+${_PCT}\\s+faster`)); if (dt) out.dotPower = (out.dotPower || 0) + qs(dt);
 }
 
 /**
@@ -322,6 +343,8 @@ function passiveMultipliers(player) {
     }
   } catch (e) {}
   for (const p of player.classSkills || []) if (String(p.type || '').toLowerCase() === 'passive') consider(p);
+  // Push #103b: "% HP regeneration per turn" passives resolve against EFFECTIVE max HP.
+  if (out.regenPct && player.stats) { let mx = Number(player.stats.maxHp) || 0; try { mx = require('./GearSystem').effectiveMaxHp(player) || mx; } catch (e) {} out.regenFlat += Math.max(1, Math.floor(mx * out.regenPct / 100)); }
   // Push #96h-t: BLOOD DEBT — Berserker passive. Every hit a Berserker takes
   // becomes debt: +ATK and a little lifesteal per stack (see bloodDebt()).
   try { const bd = bloodDebt(player); if (bd.stacks) { out.atk += bd.atkPct; out.lifesteal += bd.lifestealPct; } } catch (e) {}
@@ -342,6 +365,7 @@ function passiveMultipliers(player) {
     const UC = require('./UnifiedCombat');
     for (const k of ['crit', 'lifesteal', 'armorPen', 'speed']) { const v = UC.tempBuffPct(player, k); if (v) out[k] += v; }
   } catch (e) {}
+  try { require('./ClassSnippets').passiveMods(player, out); } catch (e) {} // Push #103b: class-level snippet rules
   // Clamp to sane bounds.
   out.atk = Math.min(150, out.atk); out.def = Math.min(150, out.def); out.speed = Math.min(100, out.speed);
   out.crit = Math.min(60, out.crit); out.dodge = Math.min(40, out.dodge); out.dmgTaken = Math.max(-60, out.dmgTaken);
@@ -429,7 +453,7 @@ function buyClassWeapon(player, query) {
   let PM = null; try { PM = require('../player/PlayerManager'); } catch (e) { return { ok: false, error: 'Weapon table unavailable.' }; }
   const cls = baseClassName(player);
   let def = PM && PM.classDefinitions ? PM.classDefinitions[cls] : null;
-  if (def && /^monster$/i.test(cls)) { try { const TF = require('./Transformation'); const v = TF.variantName(player); if (v && !/^monster$/i.test(v)) def = { ...def, ...require('../data/MonsterVariantKits').weaponDef(v) }; } catch (e) {} }
+  if (def && /^monster$/i.test(cls)) return { ok: false, error: 'Abnormalities have no dedicated weapons — your gift (fangs, claws, fists…) grows with every level. See /class weapons.' };
   if (!def) return { ok: false, error: 'You have no class yet — awaken first.' };
   const lad = _ladder(def);
   const q = String(query || '').trim().toLowerCase();
@@ -453,7 +477,7 @@ function ensureClassWeapon(player, force = false) {
   const base = baseClassName(player);
   let def = PM && PM.classDefinitions ? PM.classDefinitions[base] : null;
   // Push #92: each Monster variant has its own natural-weapon ladder.
-  if (def && /^monster$/i.test(base)) { try { const TF = require('./Transformation'); const v = TF.variantName(player); if (v && !/^monster$/i.test(v)) def = { ...def, ...require('../data/MonsterVariantKits').weaponDef(v) }; } catch (e) {} }
+  if (def && /^monster$/i.test(base)) { try { const TF = require('./Transformation'); const v = TF.variantName(player); if (v && !/^monster$/i.test(v)) def = { ...def, ...require('../data/MonsterKits103').naturalDef(v, player.level) }; } catch (e) {} } // Push #103b: natural gift grows per level
   if (!def) return { changed: false };
   const w = player.weapon;
   const isStore = !!(w && (w.fromStore || w.id || w.sku));

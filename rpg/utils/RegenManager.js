@@ -111,20 +111,33 @@ function getRegenRate(rank) {
 // Out-of-battle ENERGY refill, per second — the requested ladder. Energy has
 // no potion any more (energy potions scrapped), so this is the only way back:
 //   E 2/s · D 3/s · C 4/s · B 5/s · A 8/s · S 10/s
+// Push #103b ("harsher energy"): halved — E 1/s · D 1.5/s · C 2/s · B 2.5/s · A 4/s · S 5/s.
 function getEnergyRegenRate(rank) {
   const r = String(rank || 'E').toUpperCase().trim();
   switch (r) {
-    case 'E': return 2;
-    case 'D': return 3;
-    case 'C': return 4;
-    case 'B': return 5;
-    case 'A': return 8;
+    case 'E': return 1;
+    case 'D': return 1.5;
+    case 'C': return 2;
+    case 'B': return 2.5;
+    case 'A': return 4;
     case 'S':
     case 'SS':
     case 'NATIONAL':
-    case 'BEYOND': return 10;
-    default: return 2;
+    case 'BEYOND': return 5;
+    default: return 1;
   }
+}
+// Push #103b: IN-RAID energy comes back per action, by rank — E 2% · D 3% · C 4% · B 5% · A 7% · S 9% of max.
+const RAID_TURN_ENERGY_PCT = { E: 2, D: 3, C: 4, B: 5, A: 7, S: 9, SS: 9, NATIONAL: 9, BEYOND: 9, F: 2 };
+function raidTurnEnergy(player) {
+  if (!player || !player.stats) return 0;
+  const rank = String(player.awakenRank || 'E').toUpperCase();
+  const pct = RAID_TURN_ENERGY_PCT[rank] || 2;
+  const maxEn = Number(player.stats.maxEnergy) || 100;
+  const gain = Math.max(1, Math.floor(maxEn * pct / 100));
+  const before = Number(player.stats.energy) || 0;
+  player.stats.energy = Math.min(maxEn, before + gain);
+  return player.stats.energy - before;
 }
 
 // How long after a fight ends nothing regenerates. Without this, the moment a
@@ -155,6 +168,9 @@ function markCombatAction(player) {
 function endCombat(player, ms) {
   if (!player) return;
   try { require('./ClassPower').clearBloodDebt(player); } catch (e) {} // Push #96h-t: Blood Debt is paid when the fight ends
+  try { require('./Summons').clear(player); } catch (e) {} // Push #103b: summons/possession never outlive the fight
+  try { require('./Transformation').clearFightUse(player); } catch (e) {} // Push #103b: one transformation per fight
+  try { require('./ClassSnippets').clearFight(player); } catch (e) {} // Push #103b
   player.regenLockUntil = Date.now() + (ms == null ? POST_COMBAT_LOCK_MS : ms);
   markCombatAction(player);
 }
@@ -225,7 +241,7 @@ function initAllPlayers(getDatabase, saveDatabase, sock) {
   } catch (_) {}
 }
 
-module.exports = {
+module.exports = { raidTurnEnergy, RAID_TURN_ENERGY_PCT,
   checkInBattle,
   getRegenRate,
   getEnergyRegenRate,

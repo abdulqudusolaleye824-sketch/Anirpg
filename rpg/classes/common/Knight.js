@@ -10,7 +10,7 @@ module.exports = {
   name: 'Knight',
   emoji: '🛡️',
     lore: 'The wall between the weak and the storm.',
-    maxBonuses: { hp: 180, atk: 15, def: 45, speed: -5, maxEnergy: 25 },
+    maxBonuses: { hp: 150, atk: 25, def: 45, speed: 0, maxEnergy: 30 },
     skills: [
       { name: 'Fortress Stance', type: 'buff',    maxPotency: 50,  desc: 'DEF +{p}% for 3 turns' },
       { name: 'Counterguard',    type: 'passive', maxPotency: 30,  desc: 'Reflects {p}% of blocked damage' },

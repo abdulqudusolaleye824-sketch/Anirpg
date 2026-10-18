@@ -33,9 +33,22 @@ module.exports = {
         const CPm = require('../../rpg/utils/ClassPower'); const TFm = require('../../rpg/utils/Transformation');
         if (viewer && /^monster$/i.test(CPm.baseClassName(viewer) || '')) {
           const v = TFm.variantName(viewer);
-          if (v && !/^monster$/i.test(v) && defs.Monster) { _monsterVariant = v; defs = { ...defs, Monster: { ...defs.Monster, ...require('../../rpg/data/MonsterVariantKits').weaponDef(v) } }; }
+          if (v && !/^monster$/i.test(v) && defs.Monster) { _monsterVariant = v; defs = { ...defs, Monster: { ...defs.Monster, ...require('../../rpg/data/MonsterKits103').naturalDef(v, viewer.level) } }; }
         }
       } catch (e) {}
+      // Push #103b: abnormalities have no dedicated weapon — their gift grows with every level.
+      if (_monsterVariant && !args.slice(1).join(' ').trim()) {
+        const MKn = require('../../rpg/data/MonsterKits103'); const nw = MKn.naturalWeapon(_monsterVariant, viewer.level || 1); const nx = MKn.naturalBonus((viewer.level || 1) + 1);
+        try { require('../../rpg/utils/ClassPower').ensureClassWeapon(viewer, false); saveDatabase(); } catch (e) {}
+        return sock.sendMessage(chatId, { text: [
+          ...(pro ? [UI.PRO_BAR, `🐾 *NO DEDICATED WEAPON* 💎`, UI.PRO_BAR] : [`🐾 *NO DEDICATED WEAPON*`, UI.FREE_BAR]),
+          `Abnormalities forge nothing — *${_monsterVariant}* fights with its gifts.`,
+          ``, `${CLASS_DATA.Monster?.emoji || '👹'} *${nw.name}* — +${nw.bonus} ATK (Lv.${viewer.level || 1})`,
+          `📈 Grows every level: Lv.${(viewer.level || 1) + 1} → +${nx} ATK · Lv.100 → +${MKn.naturalBonus(100)} ATK`,
+          `🌌 Every level-up also raises your Domain by +1 level.`,
+          ``, `Store weapons (/store) still replace it when equipped.`, FRAME,
+        ].join('\n') }, { quoted: msg });
+      }
       const CPw = require('../../rpg/utils/ClassPower');
       // Push #92: /class weapons buy <level|name> — class weapons are purchased, not auto-unlocked.
       if (/^(buy|purchase)$/i.test(String(args[1] || '')) ) {

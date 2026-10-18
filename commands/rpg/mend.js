@@ -67,7 +67,7 @@ module.exports = {
           t += `  *${n}.* ${e.name}${e.equipped ? ' ✅' : ''} 🔧${d}/${m}${flag}\n`;
         }
       }
-      t += `\n💡 /mend <number> — 1 stone restores that item to 100%\n💡 /mend all — 1 stone SHARED across all damaged items (10 items → +10% each)`;
+      t += `\n💡 /mend <number> — 1 stone restores that item to 100%\n💡 /mend all — 1 stone SHARED across your DAMAGED items only (4 damaged → +25% each)`;
       return sock.sendMessage(chatId, { text: t }, { quoted: msg });
     }
 
@@ -88,11 +88,16 @@ module.exports = {
     }
 
     // ── mend one ──
-    if (!/^\d+$/.test(arg)) {
-      return sock.sendMessage(chatId, { text: '❌ Usage: /mend <inv#>  (or /mend all)\n\nSee /inv for numbers.' }, { quoted: msg });
+    // Push #103a (BUG-095): accept an item NAME too (players typed the /weapon number, which is not the /inv number).
+    let entry = null;
+    if (/^\d+$/.test(arg)) entry = serials[parseInt(arg, 10) - 1];
+    else {
+      const q = args.join(' ').toLowerCase().trim();
+      const cands = serials.filter(e => (e.kind === 'gear' || e.kind === 'weapon') && e.ref && String(e.name || '').toLowerCase().includes(q));
+      entry = cands.find(e => String(e.name || '').toLowerCase() === q) || cands.find(e => e.ref.maxDurability != null && (e.ref.durability || 0) < e.ref.maxDurability) || cands[0] || null;
+      if (!entry) return sock.sendMessage(chatId, { text: `❌ Usage: /mend <inv#> · /mend <item name> · /mend all\n\nNo weapon/gear named "${args.join(' ')}". See /inv for numbers.` }, { quoted: msg });
     }
-    const n = parseInt(arg, 10);
-    const entry = serials[n - 1];
+    const n = /^\d+$/.test(arg) ? parseInt(arg, 10) : (serials.indexOf(entry) + 1);
     if (!entry) return sock.sendMessage(chatId, { text: `❌ No /inv entry #${n}. You have ${serials.length} entries.` }, { quoted: msg });
     if ((entry.kind !== 'gear' && entry.kind !== 'weapon') || !entry.ref) {
       return sock.sendMessage(chatId, { text: `❌ *${entry.name}* isn't a weapon or gear piece — only those can be mended.` }, { quoted: msg });

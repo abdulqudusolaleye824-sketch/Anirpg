@@ -267,7 +267,7 @@ function getEffectiveStats(player) {
     magicPower: (b.magicPower || 0) + (g.magicPower || 0) + _weaponMagic(player), // Push #102h (BUG-081)
     lifesteal:  (b.lifesteal || 0) + (g.lifesteal || 0),
     energy:     b.energy || 0,
-    maxEnergy:  (b.maxEnergy || 100) + (g.maxEnergy || 0),
+    maxEnergy:  Math.floor(((b.maxEnergy || 100) + (g.maxEnergy || 0)) * (1 + passivePct(player, 'energy') / 100)), // Push #103b: Max energy +N% passives
   };
 }
 
@@ -291,10 +291,22 @@ function effectiveMaxHp(player) {
   try { w = player.weapon?.hp || 0; } catch (e) {}
   try { gift = require('./PetManager').lastGiftMultiplier(player) || 1; } catch (e) {}
   let aura = 1; try { aura = require('./AuraSystem').AuraSystem.hpMult(player) || 1; } catch (e) {} // Push #96f: aura title HP%
-  return Math.max(1, Math.floor(((player.stats.maxHp || 100) + g + t + w) * gift * aura));
+  const pas = 1 + passivePct(player, 'hp') / 100; // Push #103b: "Max HP +15%" passives (Druid Primal Harmony …)
+  return Math.max(1, Math.floor(((player.stats.maxHp || 100) + g + t + w) * gift * aura * pas));
+}
+// Push #103b: cheap text read of unlocked passives for "Max HP +N%" / "Max energy +N%" (no engine recursion).
+function passivePct(player, kind) {
+  try {
+    const list = (player && player.skills && Array.isArray(player.skills.passive)) ? player.skills.passive : [];
+    if (!list.length) return 0;
+    const re = kind === 'hp' ? /max\s*hp(?:\s+and\s+energy\s+regen)?\s*\+(\d+(?:\.\d+)?)%/i : /max\s*energy(?:\s+and\s+energy\s+recovery\s+rate)?\s*\+(\d+(?:\.\d+)?)%/i;
+    let pct = 0; const q = Math.max(50, Math.min(100, Number(player.classQuality) || 80)) / 100;
+    for (const sk of list) { const m = String((sk && (sk.effect || sk.description)) || '').match(re); if (m) pct += parseFloat(m[1]) * q; }
+    return Math.min(50, pct);
+  } catch (e) { return 0; }
 }
 
-module.exports = { effectiveMagicPower,
+module.exports = { passivePct, effectiveMagicPower,
   regenUnequippedDurability,
   mendingSlots,
   effectiveMaxHp,

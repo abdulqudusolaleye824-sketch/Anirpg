@@ -220,7 +220,7 @@ Total Claims: ${player.christmasEvent.totalClaims}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━
 👤 YOUR STATUS
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━
-❤️ HP: ${player.stats.hp}/${player.stats.maxHp}
+❤️ HP: ${player.stats.hp}/${(()=>{try{return require('../../rpg/utils/GearSystem').effectiveMaxHp(player);}catch(e){return player.stats.maxHp;}})()}
 ${player.energyColor} ${player.energyType}: ${player.stats.energy}/${player.stats.maxEnergy}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ⏰ TIME LIMIT: 5 MINUTES

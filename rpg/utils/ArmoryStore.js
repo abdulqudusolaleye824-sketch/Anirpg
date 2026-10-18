@@ -149,9 +149,9 @@ function genWeapon(rank, rng, idx) {
   };
 }
 
-function genGear(rank, rng, idx) {
+function genGear(rank, rng, idx, forceSlot = null) {
   const roll = rng();
-  const slot = pick(rng, GEAR_SLOTS);
+  const slot = forceSlot && GEAR_SLOTS.includes(forceSlot) ? forceSlot : pick(rng, GEAR_SLOTS);
   const noun = pick(rng, SLOT_NOUN[slot]);
   const name = `${pick(rng, PREFIX[rank])} ${noun} ${pick(rng, SUFFIX)}`;
   const stats = { def: lerp(...GEAR_DEF[rank], roll), hp: lerp(...GEAR_HP[rank], roll) };
@@ -260,6 +260,42 @@ function grantRandom(player, rank, kind, source = 'bonus') {
   return inst;
 }
 
+// ── Push #103b: CRAFTED gear is store-grade ─────────────────────────────────
+// A crafted piece rolls EXACTLY like an Armory item of the matching rank
+// (Common→E … Mythic→S): same ATK/DEF/HP bands, same effects/resists, same
+// level-scaled durability. The recipe keeps its name + lore; the roll is
+// seeded by the recipe name so the same recipe always forges the same grade.
+const RARITY_RANK = { common: 'E', uncommon: 'D', rare: 'C', epic: 'B', legendary: 'A', mythic: 'S' };
+const CRAFT_SLOT = { helmet: 'helmet', helm: 'helmet', chest: 'chestplate', chestplate: 'chestplate', gloves: 'vambrace', gauntlets: 'vambrace', boots: 'boots', leggings: 'boots', accessories: 'ring', accessory: 'ring', ring: 'ring', artifacts: 'cloak', artifact: 'cloak', cloak: 'cloak' };
+function rankForRarity(rarity) { return RARITY_RANK[String(rarity || 'common').toLowerCase()] || 'E'; }
+function craftInstance(recipe, rarity, player, opts = {}) {
+  const rank = rankForRarity(rarity);
+  const rng = makeRng('craft:' + String(recipe.output || '') + ':' + rank);
+  const sub = String(recipe.subtype || recipe.type || '').toLowerCase();
+  const isWeapon = sub === 'weapons' || sub === 'weapon' || String(recipe.type || '').toLowerCase() === 'weapon';
+  let stock;
+  if (isWeapon) {
+    stock = genWeapon(rank, rng, 'C');
+    const t = WEAPON_TYPES.find(w => new RegExp('\\b' + w + '\\b', 'i').test(recipe.output || '')) || stock.weaponType;
+    stock = { ...stock, name: recipe.output, weaponType: t, emoji: WEAPON_EMOJI[t] || stock.emoji, lore: recipe.lore || stock.lore };
+  } else {
+    const ty = String(recipe.type || '').toLowerCase();
+    const slot = CRAFT_SLOT[sub] || (ty === 'accessory' ? 'ring' : ty === 'artifact' ? 'cloak' : CRAFT_SLOT[ty] || (/helm|hood|crown|mask|visor|cap\b/i.test(recipe.output || '') ? 'helmet' : /boot|greave|tread|sabaton|legging|pants|striders/i.test(recipe.output || '') ? 'boots' : /glove|gauntlet|bracer|vambrace|grip/i.test(recipe.output || '') ? 'vambrace' : /ring|band|signet|amulet|necklace|pendant|belt|earring|bracelet|charm/i.test(recipe.output || '') ? 'ring' : /cloak|mantle|shroud|veil|relic|core|orb|tome|idol|totem/i.test(recipe.output || '') ? 'cloak' : 'chestplate'));
+    stock = genGear(rank, rng, 'C', slot);
+    stock = { ...stock, name: recipe.output, lore: recipe.lore || stock.lore };
+  }
+  const inst = instantiate(stock, player);
+  inst.fromStore = false; inst.crafted = true; inst.source = 'craft';
+  const q = Number(opts.quality || 1);
+  if (q !== 1) {
+    if (inst.isWeapon) { inst.attack = Math.round(inst.attack * q); inst.bonus = inst.attack; }
+    else for (const k of Object.keys(inst.stats || {})) inst.stats[k] = Math.round(inst.stats[k] * q);
+    inst.maxDurability = Math.round(inst.maxDurability * q); inst.durability = inst.maxDurability;
+    inst.quality = opts.qualityLabel || 'Masterwork';
+  }
+  return inst;
+}
+
 // ── Equip / durability / mending ─────────────────────────────────────────────
 function equipWeapon(player, inst) {
   if (!inst || !inst.isWeapon) return { ok: false, error: 'Not a weapon.' };
@@ -297,8 +333,9 @@ function wearWeapon(player) {
   if (w.durability === 0) {
     // Push #102h (BUG-075): a broken weapon is NOT deleted — it goes back to the bag at 0 durability (unusable until
     // mended with a 🛠️ Mending Stone). Before this it silently vanished ("my A-rank weapon just disappeared").
-    player.weapon = null;
-    try { if (!player.inventory) player.inventory = { items: [] }; if (!Array.isArray(player.inventory.items)) player.inventory.items = []; w.isWeapon = true; w.broken = true; player.inventory.items.push(w); } catch (e) {}
+    // Push #103b (owner call): a weapon that hits 0 durability SHATTERS — removed on the spot, lost for good.
+    player.weapon = null; w.broken = true; w.destroyed = true;
+    try { if (player.inventory && Array.isArray(player.inventory.items)) { const i = player.inventory.items.indexOf(w); if (i >= 0) player.inventory.items.splice(i, 1); } } catch (e) {}
     return w;
   }
   return null;
@@ -312,7 +349,7 @@ function wearGear(player) {
     const p = eq[slot];
     if (!p || p.maxDurability == null) continue;
     p.durability = Math.max(0, (p.durability || 0) - 1);
-    if (p.durability === 0) { broken.push(p); delete eq[slot]; try { if (!player.inventory) player.inventory = { items: [] }; if (!Array.isArray(player.inventory.items)) player.inventory.items = []; p.broken = true; player.inventory.items.push(p); } catch (e) {} } // Push #102h: back to the bag, not deleted
+    if (p.durability === 0) { broken.push(p); delete eq[slot]; p.broken = true; p.destroyed = true; try { if (player.inventory && Array.isArray(player.inventory.items)) { const i = player.inventory.items.indexOf(p); if (i >= 0) player.inventory.items.splice(i, 1); } } catch (e) {} } // Push #103b: shattered — gone for good
   }
   return broken;
 }
@@ -361,8 +398,8 @@ function lowDurabilityCheck(player) {
  *  Returns { count, items:[{name,before,after,max}] }. */
 function mendAllShared(player) {
   const targets = [];
-  // z26: the stone is shared across EVERY gear item (owner rule: 10 items → +10% each), full ones included.
-  const add = (p) => { if (p && p.maxDurability != null) targets.push(p); };
+  // Push #103a (BUG-097): DAMAGED items only — full ones no longer eat a share (3 damaged of 8 → +33% each).
+  const add = (p) => { if (p && p.maxDurability != null && (p.durability || 0) < p.maxDurability) targets.push(p); };
   if (player.weapon) add(player.weapon);
   for (const p of Object.values(player.equippedGear || {})) add(p);
   for (const p of (player.inventory?.items || [])) if (p && (p.isGear || p.isWeapon)) add(p);
@@ -453,6 +490,7 @@ function renderDetail(it) {
 }
 
 module.exports = {
+  craftInstance, rankForRarity, RARITY_RANK,
   mendShare,
   LORE_W, LORE_G,
   lowDurabilityCheck, autoMendEnabled, LOW_DUR,

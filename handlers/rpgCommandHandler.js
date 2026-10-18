@@ -496,6 +496,20 @@ module.exports = async (sock, msg, messageText, config, getDatabase, saveDatabas
     // Push #88f: HP can never sit above the CURRENT effective max (a lapsed
     // pet "Last Gift" / removed gear used to leave 867/811 on the card).
     try { if (player && player.stats) { const _em = require('../rpg/utils/GearSystem').effectiveMaxHp(player); if ((player.stats.hp || 0) > _em) player.stats.hp = _em; } } catch (e) {}
+    // Push #103b: rank-locked skills — the moment the live Hunter Rank reaches B/A/S the rune stone is handed
+    // over (announced once); a rank change also re-syncs the bar so rank-guarded skills open/close.
+    try {
+      if (player.class) {
+        const SR = require('../rpg/utils/SkillRunes'); const r = SR.syncRank(player);
+        if (r.stones.length || r.changed) { try { require('../rpg/utils/SkillCatalog').syncPlayerSkills(player); } catch (e) {} saveDatabase(); }
+        if (r.stones.length) {
+          const names = r.stones.map(x => `*${x.entry.name}* (${x.entry.rankReq}-Rank)`).join(', ');
+          const txt = `🏅 *${r.rank}-RANK RUNE${r.stones.length > 1 ? 'S' : ''} AWAKENED* — ${player.name || 'Hunter'}\n🪨 ${names} dropped into your bag.\n➜ \`/rune use all\` to learn. Rank skills only answer while you HOLD the rank.`;
+          // announce in the chat the hunter is using (group or DM) — no DM routing needed for a one-liner
+          try { await sock.sendMessage(chatId, { text: txt }); } catch (e) {}
+        }
+      }
+    } catch (e) {}
 
     const isPro = !!((player.isPro || player.proStatus) && player.proExpiresAt && player.proExpiresAt > Date.now());
 
@@ -737,7 +751,12 @@ module.exports = async (sock, msg, messageText, config, getDatabase, saveDatabas
           if (_sg) saveDatabase();
         } catch (e) {}
         if (_sg && _sg.mute) {
-          return sock.sendMessage(chatId, { text: `🔇 *AUTO-MUTED ${_sg.minutes} MIN* — spamming commands on cooldown (strike ${_sg.strikes} this week).\n${chatId.endsWith('@g.us') ? 'Everything you send here is deleted until it ends.' : 'I will ignore you until it ends.'} Strikes reset Sunday 00:00 WAT.`, mentions: [sender] }, { quoted: msg });
+          // Push #103a (BUG-090): say WHO muted and WHY (players saw their messages vanish "muted by no one"), log it, and DM the reason via their serf.
+          const _tag = `@${String(sender).split('@')[0].split(':')[0]}`;
+          const _why = `🔇 ${_tag} *AUTO-MUTED ${_sg.minutes} MIN by ✦ 𝐀𝐬𝐭𝐫𝐚™ SpamGuard*\nReason: you used */${resolvedCommand}* while it was still on cooldown for you (${_cd.left}s left) — strike *${_sg.strikes}* this week (after ${require('../rpg/utils/SpamGuard').WARNINGS} warnings every hit mutes).\n${chatId.endsWith('@g.us') ? 'Everything you send in this group is deleted until it ends.' : 'I will ignore you until it ends.'}\n📊 /strikes — see your strikes · resets Sunday 00:00 WAT.`;
+          try { console.log(`[SPAMGUARD] muted ${sender} ${_sg.minutes}m in ${chatId} (/${resolvedCommand}, strike ${_sg.strikes})`); } catch (e) {}
+          try { require('../rpg/utils/SerfDM').sendSerfDM(sock, db, sender, { text: _why }).catch(() => {}); } catch (e) {}
+          return sock.sendMessage(chatId, { text: _why, mentions: [sender] }, { quoted: msg });
         }
         const SGW = require('../rpg/utils/SpamGuard').WARNINGS;
         const _warn = _sg && _sg.warning ? `\n⚠️ Spam warning *${_sg.warning}/${SGW}* — after ${SGW}, every cooldown hit auto-mutes you for 1–10 min.` : '';

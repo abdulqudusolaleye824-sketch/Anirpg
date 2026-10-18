@@ -164,6 +164,7 @@ module.exports = {
     if ((player.stats.critDamage||0) > 0) msg2 += `\n🔥 CRIT DMG: *${player.stats.critDamage}%*`;
     if ((player.stats.lifesteal||0) > 0)  msg2 += `\n💚 LIFESTEAL: *${player.stats.lifesteal}%*`;
     { let _mp = player.stats.magicPower || 0; try { _mp = require('../../rpg/utils/GearSystem').effectiveMagicPower(player); } catch (e) {} if (_mp > 0) msg2 += `\n✨ MAGIC PWR: *${_mp}*${_mp !== (player.stats.magicPower || 0) ? ` _(base ${player.stats.magicPower || 0} + gear ${_mp - (player.stats.magicPower || 0)})_` : ''}`; } // Push #102h (BUG-081)
+    { let _mr = 0; try { _mr = require('../../rpg/utils/MagicResist').effective(player); } catch (e) { _mr = player.stats.magicResist || 0; } if (_mr > 0) msg2 += `\n🔰 MAGIC RES: *${_mr}*`; } // Push #103b
 
     // ── Push #102d: WHERE THE EXTRAS COME FROM ───────────────────────
     try {
@@ -236,7 +237,7 @@ module.exports = {
     if (_ladder && _ladder.length) {
       msg2 += `\n${FRAME}\n🎭 *CLASS KIT* (${className}) — ${_ladder.filter(e => e.open).length}/${_ladder.length} unlocked`;
       _ladder.forEach((s, i) => {
-        msg2 += s.open ? `\n  ✅ *${s.name}*` : `\n  🔒 ${s.name} _(Lv.${s.unlocksAtLevel})_`;
+        msg2 += s.open ? `\n  ✅ *${s.name}*` : `\n  🔒 ${s.name} _(${s.rankReq ? s.rankReq + "-Rank" : "Lv." + s.unlocksAtLevel})_`;
       });
     } else if (classSkills.length > 0) {
       msg2 += `\n${FRAME}\n🎭 *CLASS SKILLS* (${className})`;

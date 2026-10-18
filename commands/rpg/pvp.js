@@ -185,13 +185,15 @@ module.exports = {
       saveDatabase();
 
       // Turn order uses EFFECTIVE speed: base + equipped gear + weapon.
-      const _spdOf = (p) => {
-        let g = 0;
+      const _spdOf = (p, id) => { // Push #103a: same formula as the fight (gear + weapon + title + pet)
+        let g = 0, t = 0, pet = 0;
         try { g = require('../../rpg/utils/GearSystem').getEquippedBonuses(p).speed || 0; } catch (e) {}
-        return (p.stats?.speed || 10) + g + (p.weapon?.speed || 0);
+        try { t = require('../../rpg/utils/TitleSystem').getEquippedBoost(p).speed || 0; } catch (e) {}
+        try { pet = require('../../rpg/utils/PetCombat').spdBonus(id) || 0; } catch (e) {}
+        return (p.stats?.speed || 50) + g + (p.weapon?.speed || 0) + t + pet;
       };
-      const p1Spd = _spdOf(challenger);
-      const p2Spd = _spdOf(player);
+      const p1Spd = _spdOf(challenger, challenge.challengerId);
+      const p2Spd = _spdOf(player, sender);
 
       const cPro = UI.isPro(challenger);
       let _eff1 = null, _eff2 = null;
@@ -344,6 +346,7 @@ module.exports = {
 
     // ── IN-BATTLE ACTION SUBMISSION ──────────────────────────────
     if (sub === 'attack' || sub === 'skill') {
+      sock = require('../../rpg/utils/PacedSock').paced(sock); // Push #103b: 3 s between combat messages
       if (!player.pvpBattle) {
         return sock.sendMessage(chatId, { text: '❌ You are not in a PvP battle! Challenge someone with /pvp challenge @user' }, { quoted: msg });
       }
@@ -431,8 +434,10 @@ module.exports = {
         if (!_cd.ready) {
           return sock.sendMessage(chatId, { text: `⏳ *${_entry.name}* is on cooldown — ${Math.ceil(_cd.msLeft / 1000)}s left.\nUse /skill to see what is ready, or /attack for a basic strike.` }, { quoted: msg });
         }
+        { const _hg = require('../../rpg/utils/ClassSnippets').healGate(player, _entry); if (!_hg.ok) return sock.sendMessage(chatId, { text: `❌ ${_hg.error}` }, { quoted: msg }); } // Push #103b
         player.stats.energy = Math.max(0, (player.stats?.energy || 0) - _cost);
         SCv.setCooldown(player, _entry);
+        try { require('../../rpg/utils/ClassSnippets').noteHeal(player, _entry); } catch (e) {}
         try { require('../../rpg/utils/RegenManager').markCombatAction(player); } catch (e) {}
         _lockedSkill = { name: _entry.name, level: _res.skill.level || 1 };
       }
@@ -725,7 +730,16 @@ async function resolveTurn(sock, chatId, p1, p2, db, saveDatabase) {
   };
   const p1Spd = (_effSpd(p1) + (PetCombat.spdBonus(id1) || 0)) * (m1?.speedMult || 1);
   const p2Spd = (_effSpd(p2) + (PetCombat.spdBonus(id2) || 0)) * (m2?.speedMult || 1);
-  let p1First = p1Spd > p2Spd || (p1Spd === p2Spd && Math.random() < 0.5);
+  // Push #103a: the faster hunter USUALLY moves first — the slower one gets an upset chance of 30% × (1 − gap),
+  // gap = (fast − slow) / fast. Equal speed → 30% (then a coin flip), 50% slower → 15%, twice as slow → ~0%.
+  let p1First, _upset = null;
+  {
+    const fast = Math.max(p1Spd, p2Spd), slow = Math.min(p1Spd, p2Spd);
+    const gap = fast > 0 ? (fast - slow) / fast : 0;
+    const slowerFirst = Math.random() < 0.30 * Math.max(0, 1 - gap);
+    if (p1Spd === p2Spd) p1First = Math.random() < 0.5;
+    else { const p1Faster = p1Spd > p2Spd; p1First = slowerFirst ? !p1Faster : p1Faster; if (slowerFirst) _upset = { name: p1First ? name1 : name2, pct: Math.round(gap * 100) }; }
+  }
   // Push #96h-s: while a hunter's own domain stands, that caster ALWAYS moves first.
   let _domFirst = null; try { const DS = require('../../rpg/utils/DomainSystem'); const s1 = !!DS.isShielded(p1), s2 = !!DS.isShielded(p2); if (s1 && !s2) { p1First = true; _domFirst = name1; } else if (s2 && !s1) { p1First = false; _domFirst = name2; } } catch (e) {}
   // Push #95: the shared domain record for this pair counts down once per round.
@@ -738,6 +752,7 @@ async function resolveTurn(sock, chatId, p1, p2, db, saveDatabase) {
   let accumulated = '';
   let battleEnded = false;
   if (_domFirst) { try { await sock.sendMessage(chatId, { text: `🌌 *${_domFirst}*'s domain stands — the caster moves first.` }); } catch (e) {} }
+  else if (_upset) { try { await sock.sendMessage(chatId, { text: `⚡ *${_upset.name}* reads the opening and strikes first despite being slower (${_upset.pct}% speed gap — ${Math.round(30 * (1 - _upset.pct / 100))}% upset chance).` }); } catch (e) {} }
   let winner = null, loser = null, winnerId = null, loserId = null;
 
   for (let idx = 0; idx < order.length; idx++) {

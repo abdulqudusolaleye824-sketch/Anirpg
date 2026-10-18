@@ -139,7 +139,8 @@ module.exports = {
     const playerClass = typeof player.class === 'string' ? player.class : player.class?.name;
     const isGuaranteed = playerClass === 'Paladin' || isOwnerSpawn;
 
-    const finalRate = Math.min(95, baseRate + luckBonus);
+    let finalRate = Math.min(95, baseRate + luckBonus);
+    try { if (require('../../rpg/utils/ClassSnippets').petCaptureBonus(player)) finalRate = 95; } catch (e) {} // Push #103b: Shaman — Pet Capture Mastery
 
     // Push #87: shared attempt pool — 3 attempts per wild pet across ALL players.
     const pool = wildRecord || (isDungeonPet ? party.dungeon : null) || {};

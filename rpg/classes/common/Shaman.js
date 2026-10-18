@@ -10,7 +10,7 @@ module.exports = {
   name: 'Shaman',
   emoji: '🌀',
     lore: 'Channels forces beyond human comprehension.',
-    maxBonuses: { hp: 70, atk: 30, def: 12, speed: 8, maxEnergy: 60, magicPower: 35 },
+    maxBonuses: { hp: 70, atk: 30, def: 12, speed: 8, maxEnergy: 60, magicPower: 55 },
     skills: [
       { name: 'Spirit Link',     type: 'buff',    maxPotency: 20,  desc: 'Party ATK +{p}% for 2 turns' },
       { name: 'Hex',             type: 'debuff',  maxPotency: 35,  desc: 'Target DEF -{p}% for 3 turns' },

@@ -216,7 +216,7 @@ module.exports = {
           return sock.sendMessage(chatId, { text: '❌ Usage: /pet evolve [#] [evolution_id]\nSee /pet info [#] for options' }, { quoted: msg });
         }
         const pet = pets[idx];
-        if (!pet.evolution) return sock.sendMessage(chatId, { text: '❌ This pet cannot evolve!' }, { quoted: msg });
+        if (!pet.evolution) return sock.sendMessage(chatId, { text: `✨ *${pet.nickname || pet.name}* is already a FINAL form — no further evolution. Levels still raise its stats and unlock abilities.` }, { quoted: msg }); // Push #103a (BUG-096)
         if (!choice) {
           let txt = `🌟 *${pet.name}* can evolve at Lv.${pet.evolution.level}!\n\n*Options:*\n`;
           pet.evolution.options.forEach(o => { txt += `• \`${o.id}\` — ${o.name}\n`; });

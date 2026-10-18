@@ -78,8 +78,8 @@ const REGULAR_SHOP_POOL = [
   { id: 'pattern_shadow', name: 'Shadow Strike', category: 'Attack Patterns', type: 'pattern', currency: 'gold', basePrice: 100000, description: 'Critical lethal shadow assassination pattern' },
 
   // Recipe Scrolls (Mana Stones)
-  { id: 'scroll_common', name: 'Common Recipe Scroll', category: 'Scrolls', type: 'scroll', currency: 'crystals', basePrice: 500, description: 'Unlocks Common craft recipe', rarity: 'common' },
-  { id: 'scroll_rare', name: 'Rare Recipe Scroll', category: 'Scrolls', type: 'scroll', currency: 'crystals', basePrice: 2000, description: 'Unlocks Rare craft recipe', rarity: 'rare' }
+  { id: 'scroll_common', name: 'Common Recipe Scroll', category: 'Scrolls', type: 'scroll', currency: 'crystals', basePrice: 875, description: 'Unlocks Common craft recipe', rarity: 'common' },
+  { id: 'scroll_rare', name: 'Rare Recipe Scroll', category: 'Scrolls', type: 'scroll', currency: 'crystals', basePrice: 3500, description: 'Unlocks Rare craft recipe', rarity: 'rare' }
 ];
 
 function ensureGuildShopFresh(guild) {
@@ -1709,19 +1709,20 @@ ${FRAME}\n`;
       const cur = (args[1] || '').toUpperCase();
       const amount = parseInt(args[2]);
       if (!['N', 'M'].includes(cur) || !amount || amount <= 0) {
-        return sock.sendMessage(chatId, { text: '❌ Usage:\n/guild deposit N <nexus>\n/guild deposit M <mana>\n/guild withdraw N <nexus>\n/guild withdraw M <mana>' });
+        return sock.sendMessage(chatId, { text: '❌ Usage:\n/guild deposit N <nexus>\n/guild deposit M <mana>\n/guild withdraw N <nexus> (15% tax)\n/guild withdraw M <mana>' });
       }
 
       if (cur === 'N') {
         if (isWithdraw) {
           const avail = playerGuild.treasury || 0;
           if (avail < amount) return sock.sendMessage(chatId, { text: `❌ Treasury only has ${avail.toLocaleString()} Nexus.` });
+          const taxN = Math.ceil(amount * 0.15), netN = amount - taxN; // Push #103b: 15% withdrawal tax
           playerGuild.treasury -= amount;
-          player.gold = (player.gold || 0) + amount;
+          player.gold = (player.gold || 0) + netN;
           if (player.inventory) player.inventory.gold = player.gold;
-          try { require('../../rpg/utils/TransactionLog').logCredit(player, 'guild_withdraw', amount, 0, playerGuild.name); } catch (e) {}
+          try { require('../../rpg/utils/TransactionLog').logCredit(player, 'guild_withdraw', netN, 0, playerGuild.name); } catch (e) {}
           saveDatabase();
-          return sock.sendMessage(chatId, { text: `✅ *Withdrew* 💠 ${amount.toLocaleString()} Nexus to your balance.\n🏰 Treasury now: ${(playerGuild.treasury || 0).toLocaleString()} Nexus` });
+          return sock.sendMessage(chatId, { text: `✅ *Withdrew* 💠 ${amount.toLocaleString()} Nexus — 🧾 15% tax ${taxN.toLocaleString()} → you receive *${netN.toLocaleString()}*.\n🏰 Treasury now: ${(playerGuild.treasury || 0).toLocaleString()} Nexus` });
         }
         const bal = player.gold || 0;
         if (bal < amount) return sock.sendMessage(chatId, { text: `❌ You have ${bal.toLocaleString()} Nexus.` });
@@ -1737,11 +1738,12 @@ ${FRAME}\n`;
       if (isWithdraw) {
         const avail = playerGuild.manaTreasury || 0;
         if (avail < amount) return sock.sendMessage(chatId, { text: `❌ Treasury only has ${avail.toLocaleString()} Mana Stones.` });
+        const taxM = Math.ceil(amount * 0.15), netM = amount - taxM; // Push #103b: 15% withdrawal tax
         playerGuild.manaTreasury -= amount;
-        player.manaCrystals = (player.manaCrystals || 0) + amount;
-        try { require('../../rpg/utils/TransactionLog').logCredit(player, 'guild_withdraw', 0, amount, playerGuild.name); } catch (e) {}
+        player.manaCrystals = (player.manaCrystals || 0) + netM;
+        try { require('../../rpg/utils/TransactionLog').logCredit(player, 'guild_withdraw', 0, netM, playerGuild.name); } catch (e) {}
         saveDatabase();
-        return sock.sendMessage(chatId, { text: `✅ *Withdrew* 💎 ${amount.toLocaleString()} Mana Stones.\n🏰 Treasury now: ${(playerGuild.manaTreasury || 0).toLocaleString()} 💎` });
+        return sock.sendMessage(chatId, { text: `✅ *Withdrew* 💎 ${amount.toLocaleString()} Mana Stones — 🧾 15% tax ${taxM.toLocaleString()} → you receive *${netM.toLocaleString()}*.\n🏰 Treasury now: ${(playerGuild.manaTreasury || 0).toLocaleString()} 💎` });
       }
       const bal = player.manaCrystals || 0;
       if (bal < amount) return sock.sendMessage(chatId, { text: `❌ You have ${bal.toLocaleString()} Mana Stones.` });

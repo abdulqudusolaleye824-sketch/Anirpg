@@ -710,6 +710,52 @@ const classDefinitions = {
     ],
     skills: { active: [], passive: [] },
   },
+  // ── Push #103b: BARD + DRUID (rare) ─────────────────────────
+  Bard: {
+    rarity: 'rare',
+    energyType: 'Resonance',
+    energyColor: '🎵',
+    baseStats: {
+      hp: 90, maxHp: 90, atk: 10, def: 14,
+      energy: 110, maxEnergy: 110, speed: 108,
+      critChance: 5, critDamage: 1.5
+    },
+    weapon: { name: 'Wandering Lute', bonus: 6 },
+    levelWeapons: [
+      { level: 10, name: 'Silverstring Lyre', bonus: 11 },
+      { level: 20, name: 'Harp of Hollow Echoes', bonus: 17 },
+      { level: 30, name: 'Dirgecaller Violin', bonus: 23 },
+      { level: 40, name: 'Requiem Organ', bonus: 30 },
+      { level: 50, name: 'Worldsong Instrument', bonus: 38 },
+    ],
+    skills: [],
+    passive: [
+      { name: 'Perfect Pitch', effect: 'Highest Magic Power of any class; illusions make enemies miss' }
+    ]
+  },
+  Druid: {
+    rarity: 'rare',
+    energyType: 'Sap',
+    energyColor: '🌿',
+    baseStats: {
+      hp: 120, maxHp: 120, atk: 14, def: 18,
+      energy: 100, maxEnergy: 100, speed: 92,
+      critChance: 5, critDamage: 1.5
+    },
+    weapon: { name: 'Oaken Staff', bonus: 6 },
+    levelWeapons: [
+      { level: 10, name: 'Thornwood Crook', bonus: 11 },
+      { level: 20, name: 'Grovewarden Staff', bonus: 17 },
+      { level: 30, name: 'Heartwood Totem', bonus: 23 },
+      { level: 40, name: 'Staff of the First Forest', bonus: 30 },
+      { level: 50, name: 'Worldtree Branch', bonus: 38 },
+    ],
+    skills: [],
+    passive: [
+      { name: 'Verdant Pulse', effect: 'Passive HP regeneration and absolute status purification' }
+    ]
+  },
+
   Senku: {
     rarity: 'divine',
     energyType: 'Science',

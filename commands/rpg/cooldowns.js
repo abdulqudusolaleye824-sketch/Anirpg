@@ -120,7 +120,7 @@ module.exports = {
     lines.push(`🎰 *Casino Cooldowns:* ${isPro ? 'Slots 15s • BJ 7s • Roulette 10s • Dice 5s' : 'Slots 30s • BJ 15s • Roulette 20s • Dice 10s'}`);
 
     return sock.sendMessage(chatId, {
-      text: (pro ? `${UI.PRO_BAR}\n⏱️ *YOUR COOLDOWNS* 💎\n${UI.PRO_BAR}\n\n${lines.join('\n')}\n\n${UI.PRO_BAR}\n❤️ HP: ${player.stats.hp}/${player.stats.maxHp} | 💠 Nexus: ${player.gold || 0}\n${UI.PRO_BAR}\n${UI.PRO_MINI}\n💎 *PRO TIMERS* — 50% reduced cooldowns active` : `⏱️ *YOUR COOLDOWNS*\n${UI.FREE_BAR}\n\n${lines.join('\n')}\n\n${UI.FREE_BAR}\n❤️ HP: ${player.stats.hp}/${player.stats.maxHp} | 💠 Nexus: ${player.gold || 0}\n${UI.FREE_BAR}\n${UI.upsell()}`)
+      text: (pro ? `${UI.PRO_BAR}\n⏱️ *YOUR COOLDOWNS* 💎\n${UI.PRO_BAR}\n\n${lines.join('\n')}\n\n${UI.PRO_BAR}\n❤️ HP: ${player.stats.hp}/${(()=>{try{return require('../../rpg/utils/GearSystem').effectiveMaxHp(player);}catch(e){return player.stats.maxHp;}})()} | 💠 Nexus: ${player.gold || 0}\n${UI.PRO_BAR}\n${UI.PRO_MINI}\n💎 *PRO TIMERS* — 50% reduced cooldowns active` : `⏱️ *YOUR COOLDOWNS*\n${UI.FREE_BAR}\n\n${lines.join('\n')}\n\n${UI.FREE_BAR}\n❤️ HP: ${player.stats.hp}/${(()=>{try{return require('../../rpg/utils/GearSystem').effectiveMaxHp(player);}catch(e){return player.stats.maxHp;}})()} | 💠 Nexus: ${player.gold || 0}\n${UI.FREE_BAR}\n${UI.upsell()}`)
     }, { quoted: msg });
   }
 };

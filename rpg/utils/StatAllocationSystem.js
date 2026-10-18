@@ -33,6 +33,11 @@ const STAT_CONFIG = {
     costPerPoint: 1, valuePerPoint: 3, baseMax: 30,
     recommended: 'Mage, Necromancer'
   },
+  magicResist: { // Push #103b
+    name: 'MAGIC RES', emoji: '🔰', description: 'Magic Resistance — resists statuses/debuffs when above the caster\'s Magic Power',
+    costPerPoint: 1, valuePerPoint: 3, baseMax: 30,
+    recommended: 'Knight, Paladin, Druid, Monk'
+  },
   speed: {
     name: 'SPEED', emoji: '💨', description: 'Attack Speed & Dodge',
     costPerPoint: 2, valuePerPoint: 1, baseMax: 25,
@@ -68,6 +73,7 @@ const STAT_SCALE_FACTOR = {
   atk:         2.0,   // +2 per level
   def:         2.0,
   magicPower:  1.5,
+  magicResist: 1.5,
   speed:       1.0,
   critChance:  0.2,
   critDamage:  0.4,
@@ -85,7 +91,7 @@ function getMaxAllocations(statName, level = 1) {
 function initializeStatAllocations(player) {
   if (!player.statAllocations) {
     player.statAllocations = {
-      hp: 0, atk: 0, def: 0, magicPower: 0,
+      hp: 0, atk: 0, def: 0, magicPower: 0, magicResist: 0,
       speed: 0, critChance: 0, critDamage: 0, lifesteal: 0
     };
   }
@@ -232,7 +238,7 @@ function resetAllocations(player) {
   player.gold -= resetCost;
   try { require('./TransactionLog').logSpend(player, 'stat_reset', resetCost, 0); } catch (e) {}
   player.upgradePoints = (player.upgradePoints || 0) + totalPointsSpent;
-  player.statAllocations = { hp: 0, atk: 0, def: 0, magicPower: 0, speed: 0, critChance: 0, critDamage: 0, lifesteal: 0, energy: 0 };
+  player.statAllocations = { hp: 0, atk: 0, def: 0, magicPower: 0, magicResist: 0, speed: 0, critChance: 0, critDamage: 0, lifesteal: 0, energy: 0 };
   
   applyAllocationsToStats(player);
   

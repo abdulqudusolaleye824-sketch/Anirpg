@@ -16,7 +16,7 @@
 // "Skill not found" — the report this module exists to fix.
 //
 // Rules enforced here:
-//   • EVERY class has exactly SKILLS_PER_CLASS (20) skills, one unlocked per
+//   • EVERY class has exactly SKILLS_PER_CLASS (26 — Push #103b revamp: 20 core + 6 rank-guarded) skills, one unlocked per
 //     5 levels (Lv.5 → Lv.100). Same count for every class, by design.
 //   • Every skill carries lore (description), a battle `effect` block, an
 //     `animation`, a cooldown and an energy cost — the same shape attack
@@ -37,7 +37,7 @@
 
 'use strict';
 
-const SKILLS_PER_CLASS = 20;          // identical for every class
+const SKILLS_PER_CLASS = 26;          // identical for every class
 const UNLOCK_STEP      = 5;           // Lv.5, 10, ... 100
 const MAX_SKILL_LEVEL  = 5;
 
@@ -470,7 +470,7 @@ function pruneStatuses(effect, statuses) {
 }
 
 // Push #96h-m: per-class power multiplier (skills + buffs).
-const CLASS_POWER = { Archer: 1.5, Berserker: 1.5 };
+const CLASS_POWER = {}; // Push #103b: the revamp spec is balanced as written — no per-class multiplier
 function normalise(className, raw, index) {
   const name   = String(raw.name || `Skill ${index + 1}`).trim();
   const effect = ensureParseable(raw.effect || '• Deals 100% ATK damage');
@@ -708,6 +708,34 @@ function normalise(className, raw, index) {
   };
 }
 
+// Push #103b: regenerate the trailing "Mechanics: …" summary from an entry's FINAL fields.
+function rebuildMechanics(e) {
+  const base = String(e.description || '').replace(/\s*Mechanics:\s[\s\S]*$/, '').replace(/\s+$/, '');
+  const m = [];
+  if (!e.isPassive && e.damagePct > 0 && e.type !== 'heal' && e.type !== 'buff') m.push(`${e.damagePct}% ${e.scaleStat === 'magic' ? 'Magic Power' : e.scaleStat === 'def' ? 'DEF' : 'ATK'}`);
+  for (const b of (e.buffs || [])) m.push(`${e.party && !e.isPassive ? 'party' : 'self'} ${String(b.stat).toUpperCase()} +${b.amount}% for ${b.duration || b.turns || 2} turns`);
+  for (const d of (e.debuffs || [])) m.push(d.stat === 'damageTaken' ? `target takes +${d.amount}% damage for ${d.duration || 3} turns` : `target ${String(d.stat).toUpperCase()} -${d.amount}% for ${d.duration || 3} turns`);
+  for (const st of (e.statuses || [])) m.push(`${st.chance}% to inflict ${String(st.type).toUpperCase()} (${st.duration}t)`);
+  if (e.healingPct > 0) m.push(`heals ${e.healingPct}% max HP${e.party ? ' to the whole party' : ''}`);
+  if (e.shieldPct) m.push(e.shieldMode === 'rate' ? `shield absorbs ${e.shieldPct}% of each hit for ${e.shieldTurns} turns` : `shield worth ${e.shieldPct}% max HP for ${e.shieldTurns} turns`);
+  if (e.immuneTurns) m.push(`immune to damage for ${e.immuneTurns} turn${e.immuneTurns === 1 ? '' : 's'}`);
+  if (e.energyPct) m.push(`restores ${e.energyPct}% max energy`);
+  if (e.regen) m.push(`regenerates ${e.regen.pct}% max HP per turn for ${e.regen.turns} turns`);
+  if (e.damageTakenPct) m.push(`damage taken -${e.damageTakenPct}% for ${e.damageTakenTurns} turns`);
+  if (e.convertPct) m.push(`converts ${e.convertPct}% of damage taken into HP next turn (${e.convertTurns} turns)`);
+  if (e.reflectPct) m.push(`reflects ${e.reflectPct}% of damage taken for ${e.reflectTurns} turns`);
+  if (e.lifestealPct) m.push(`heals ${e.lifestealPct}% of damage dealt`);
+  if (e.cleanse) m.push(`cleanses status effects`);
+  if (e.summon) m.push(e.corpses ? `summons — consumes ${e.corpses} corpse${e.corpses === 1 ? '' : 's'} (Magic Power check)` : `summons`);
+  if (e.corpseBurst) m.push(`consumes battlefield corpses`);
+  if (e.mrCheck) m.push(`Magic Power vs target Magic Resistance`);
+  if (e.party && !e.isPassive && !(e.buffs || []).length && !e.healingPct) m.push(`reaches the whole party`);
+  if (!e.isPassive) m.push(`${e.energyCost} energy`);
+  if (e.rankReq) m.push(`${e.rankReq}-Rank skill`);
+  if (!m.length) return e.description;
+  return `${base}${/[.!?]["”]?$/.test(base) ? '' : '.'} Mechanics: ${m.join(' · ')}.`;
+}
+
 // ── Per-class roster (memoised) ──────────────────────────────────────────────
 const _rosterCache = new Map();
 
@@ -717,7 +745,13 @@ function buildRoster(className, variant = null) {
   if (_rosterCache.has(cacheKey)) return _rosterCache.get(cacheKey);
 
   let raws = [];
-  if (EXPLICIT[className]) {
+  // Push #103b: the CLASS REVAMP spec (rpg/data/ClassRevamp103.js) is the single source for every
+  // revamped class — 20 core + 6 rank-locked skills, in spec order. Class-file signature moves,
+  // SkillDescriptions rows and padding are skipped for these classes.
+  let _revamp = false;
+  try { const RV = require('./RevampSkills'); const rr = RV.rawsFor(className, variant); if (rr && rr.length) { raws = rr; _revamp = true; } } catch (e) { _revamp = false; }
+  if (_revamp) { /* spec wins */ }
+  else if (EXPLICIT[className]) {
     raws = EXPLICIT[className].map(r => ({ ...r }));
   } else if (SD && SD.skillDatabase && SD.skillDatabase[className]) {
     const db = SD.skillDatabase[className];
@@ -729,7 +763,7 @@ function buildRoster(className, variant = null) {
   try {
     const CS = require('./ClassSystem');
     const cls = CS.CLASS_DATA && CS.CLASS_DATA[className];
-    if (cls && Array.isArray(cls.skills)) {
+    if (!_revamp && cls && Array.isArray(cls.skills)) {
       const seen = new Set(raws.map(r => String(r.name).toLowerCase()));
       for (const s of cls.skills) {
         if (!s || !s.name || seen.has(String(s.name).toLowerCase())) continue;
@@ -767,17 +801,33 @@ function buildRoster(className, variant = null) {
     const t = String(r && r.type || '').toLowerCase();
     return t === 'passive' || /•\s*passive|passive:/i.test(String(r && r.effect || ''));
   };
-  raws = [...raws.filter(r => !isPassiveRaw(r)), ...raws.filter(isPassiveRaw)];
+  if (_revamp) {
+    // spec order is kept; only guarantee the Lv.5 slot is castable
+    if (isPassiveRaw(raws[0])) { const j = raws.findIndex(r => !isPassiveRaw(r) && !r.rankReq); if (j > 0) { const t = raws[0]; raws[0] = raws[j]; raws[j] = t; } }
+  } else raws = [...raws.filter(r => !isPassiveRaw(r)), ...raws.filter(isPassiveRaw)];
 
+  const _target = _revamp ? raws.length : SKILLS_PER_CLASS;
   let gi = 0;
-  while (raws.length < SKILLS_PER_CLASS) raws.push(generateSkill(className, raws.length + gi++));
-  if (raws.length > SKILLS_PER_CLASS) raws = raws.slice(0, SKILLS_PER_CLASS);
+  while (raws.length < _target) raws.push(generateSkill(className, raws.length + gi++));
+  if (raws.length > _target) raws = raws.slice(0, _target);
 
   // Push #92: every Monster VARIANT has its own roster — names + element procs.
-  if (className === 'Monster' && variant && !/^monster$/i.test(String(variant))) {
+  if (className === 'Monster' && variant && !/^monster$/i.test(String(variant)) && !_revamp) {
     try { const MVK = require('../data/MonsterVariantKits'); let ai = 0, pi = 0; raws = raws.map((r) => { const ps = isPassiveRaw(r); return MVK.reskin(r, variant, ps ? pi++ : ai++, ps); }); } catch (e) {}
   }
-  const roster = raws.map((r, i) => normalise(className, { ...r, unlocksAtLevel: (i + 1) * UNLOCK_STEP }, i));
+  const roster = raws.map((r, i) => {
+    const e = normalise(className, { ...r, unlocksAtLevel: (i + 1) * UNLOCK_STEP }, i);
+    if (r.rankReq) { e.rankReq = r.rankReq; e.unlocksAtLevel = null; }
+    if (r.scaleStat) e.scaleStat = r.scaleStat;
+    if (r.emoji) e.emoji = r.emoji;
+    if (r.revamp) { e.revamp = true; try { require('./RevampSkills').applyMechanics(e, r._spec || {}); } catch (err) {} if (r.displayEffect) e.effect = r.displayEffect;
+      // Push #103b: the spec's cost is the contract (flavour text like "costs 0 energy" must not zero a cast) and the Mechanics summary is rebuilt from the FINAL contract.
+      if (!e.isPassive && Number.isFinite(Number(r.energyCost))) e.energyCost = Math.max(0, Number(r.energyCost));
+      try { const SMc = require('./Summons'); if (SMc.isSummonSkill(e)) { e.energyCost = SMc.costFor(e); e.summon = true; const sp = SMc.specFor(e); if (sp && sp.corpses) e.corpses = sp.corpses; } else if (SMc.isBurstSkill(e)) e.corpseBurst = true; } catch (err) {} // Push #103b: summoning drinks deep
+      e.description = rebuildMechanics(e);
+    }
+    return e;
+  });
   // Push #88q: the Healer is a pure support class — every non-passive Healer
   // skill is a SUPPORT cast (heal/buff). Two library entries ("World Heal",
   // "Transcendent Light") were typed `damage` and hit for 100% ATK in PvP.
@@ -825,12 +875,14 @@ function getRoster(player) {
 // /skills so nobody's upgraded skills silently get weaker).
 function levelBonus(skill) {
   const lv = Math.max(1, Math.min(MAX_SKILL_LEVEL, skill.level || 1));
-  return { lv, dmgMult: 1 + (lv - 1) * 0.08, costReduction: (lv - 1) * 3, cdReduction: Math.floor((lv - 1) * 0.5) };
+  // Push #103b: +12% effect per level; energy cost RISES +15% per level (stronger casts cost more); −1 turn cd every 2 levels.
+  return { lv, dmgMult: 1 + (lv - 1) * 0.12, costReduction: 0, costMult: 1 + (lv - 1) * 0.15, cdReduction: Math.floor((lv - 1) * 0.5), turnBonus: Math.floor((lv - 1) / 2) };
 }
 
 function effectiveCost(skill, caster = null) {
   const b = levelBonus(skill);
-  let c = Math.max(5, (skill.energyCost || 0) - b.costReduction);
+  let c = Math.max(5, Math.round((skill.energyCost || 0) * (b.costMult || 1)));
+  if (caster) { try { const cm = require('./ClassSnippets').costMult(caster); if (cm !== 1) c = Math.max(5, Math.round(c * cm)); } catch (e) {} } // Push #103b: Mage/Shaman/Bard aggressive energy scaling
   if (caster) { try { const ed = require('./JobSystem').mod(caster, 'energyDiscount'); if (ed) c = Math.max(5, Math.floor(c * (1 - ed / 100))); } catch (e) {} } // Push #95: Starforged
   // Push #88d: heals are a Healer's craft — every other class pays DOUBLE energy.
   if (caster && String(skill && skill.type || '').toLowerCase() === 'heal') {
@@ -867,7 +919,11 @@ function computeDamage(player, skill, opts = {}) {
   // Push #102g (BUG-055): the caster blend (ATK×0.7 + Magic×0.5) used to REPLACE ATK whenever a hunter had ANY magic
   // power — a 1,000-ATK fighter with 50 magic hit for 725 on a "100% ATK" skill (−27%). Casters keep the blend; it can
   // never drop below plain ATK, so "X% ATK" now means X% ATK for everyone.
-  const base = opts.includeMagic ? Math.max(atk, atk * 0.7 + magic * 0.5) : atk;
+  let base = opts.includeMagic ? Math.max(atk, atk * 0.7 + magic * 0.5) : atk;
+  // Push #103b: "N% Magic Power" scales off Magic Power, "N% DEF" off Defence (never below 60% of ATK so a
+  // low-roll caster still lands something).
+  if (skill && skill.scaleStat === 'magic') base = Math.max(atk * 0.6, magic);
+  else if (skill && skill.scaleStat === 'def') base = Math.max(atk * 0.6, Number(st.def || 0));
   const pct = ((skill.damagePct || 100) / 100) * b.dmgMult;
   let dmg = base * pct + (skill.flatDamage || 0) * b.dmgMult;
   if (opts.crit) dmg = dmg * (1 + (Number(st.critDamage || 150) - 100) / 100);
@@ -899,6 +955,7 @@ function toPlayerSkill(player, entry) {
     maxLevel: MAX_SKILL_LEVEL,
     unlockedAt: entry.unlocksAtLevel,
     unlocksAtLevel: entry.unlocksAtLevel,
+    rankReq: entry.rankReq || null, scaleStat: entry.scaleStat || 'atk', emoji: entry.emoji || null,
     description: entry.description,
     effect: entry.effect,
     animation: entry.animation,
@@ -911,14 +968,28 @@ function toPlayerSkill(player, entry) {
   };
 }
 
+// Push #103b: a skill is open ONLY once its Rune Stone was used (/rune use) — level alone no longer
+// unlocks anything. Rank-locked skills additionally need the hunter's LIVE rank (re-checked every sync:
+// drop below the rank and the skill closes, climb back and it reopens).
 function isUnlockedFor(player, entry) {
-  const lvl = Number(player?.level || 1);
-  if (lvl >= (entry.unlocksAtLevel || 99)) return true;
-  // Push #74c: class-file signature skills are level-gated ONLY — they were
-  // never part of the old schedule, so an override for one can only have come
-  // from the classSkills leak.
-  if (entry.fromClassFile) return false;
-  return !!(player?.skills?.unlockedOverrides || []).includes(entry.name);
+  if (!player || !entry) return false;
+  let SR = null; try { SR = require('./SkillRunes'); } catch (e) { return false; }
+  if (!SR.isLearned(player, entry.name)) return false;
+  if (entry.rankReq && !SR.rankMeets(player, entry.rankReq)) return false;
+  return true;
+}
+// How a locked entry is described to the hunter.
+function lockReason(player, entry) {
+  if (!entry) return 'locked';
+  let SR = null; try { SR = require('./SkillRunes'); } catch (e) {}
+  if (entry.rankReq) {
+    if (SR && SR.isLearned(player, entry.name)) return `needs *${entry.rankReq}-Rank* — you are ${SR.rankOf(player)}-Rank right now`;
+    if (SR && SR.hasStone(player, entry.name)) return `its rune is in your bag — \`/rune use ${entry.name}\` (needs ${entry.rankReq}-Rank)`;
+    return `${entry.rankReq}-Rank skill — its rune arrives when your Hunter Rank reaches ${entry.rankReq}`;
+  }
+  if (SR && SR.hasStone(player, entry.name)) return `its rune is in your bag — \`/rune use ${entry.name}\``;
+  const lv = entry.unlocksAtLevel || 0;
+  return (player && (player.level || 1) >= lv) ? `rune stone pending — reach the next level-up or ask an owner` : `rune drops at *Lv.${lv}* (you are Lv.${player && player.level || 1})`;
 }
 
 // ── The one sync every path calls ────────────────────────────────────────────
@@ -989,17 +1060,7 @@ function syncPlayerSkills(player) {
     player.skills.unlockedOverrides = player.skills.unlockedOverrides.filter(n => !classFileNames.has(n));
     if (player.skills.unlockedOverrides.length !== before) changed = true;
   }
-  const _cfNames = new Set(roster.filter(e => e.fromClassFile).map(e => e.name));
-  for (const arr of [player.skills.active, player.availableSkills]) {
-    if (!Array.isArray(arr)) continue;
-    for (const s of arr) {
-      const n = String(s?.name || '').trim();
-      if (n && !_cfNames.has(n) && !player.skills.unlockedOverrides.includes(n)) {
-        player.skills.unlockedOverrides.push(n);
-        changed = true;
-      }
-    }
-  }
+  // Push #103b: ownership is player.skills.learned (rune stones) — bar/library contents no longer seed unlocks.
 
   for (const entry of roster) {
     const n = entry.name.toLowerCase();
@@ -1011,11 +1072,21 @@ function syncPlayerSkills(player) {
     const fresh    = toPlayerSkill(player, entry);
 
     if (entry.isPassive) {
-      if (!inPass) { player.skills.passive.push(fresh); changed = true; }
-      else if (inPass.effect !== fresh.effect || inPass.description !== fresh.description) { Object.assign(inPass, fresh, { level: inPass.level || 1 }); changed = true; }
-      for (const arr of [player.skills.active, player.availableSkills, player.skills.locked]) {
-        const i = arr.findIndex(s => nameOf(s) === n);
-        if (i >= 0) { arr.splice(i, 1); changed = true; }
+      // Push #103b: passives are learned from rune stones too — an unlearned passive sits in `locked`.
+      if (open) {
+        if (!inPass) { player.skills.passive.push(fresh); changed = true; }
+        else if (inPass.effect !== fresh.effect || inPass.description !== fresh.description) { Object.assign(inPass, fresh, { level: inPass.level || 1 }); changed = true; }
+        for (const arr of [player.skills.active, player.availableSkills, player.skills.locked]) {
+          const i = arr.findIndex(s => nameOf(s) === n);
+          if (i >= 0) { arr.splice(i, 1); changed = true; }
+        }
+      } else {
+        for (const arr of [player.skills.active, player.availableSkills, player.skills.passive]) {
+          const i = arr.findIndex(s => nameOf(s) === n);
+          if (i >= 0) { arr.splice(i, 1); changed = true; }
+        }
+        if (!inLocked) { player.skills.locked.push(fresh); changed = true; }
+        else if (inLocked.effect !== fresh.effect || inLocked.description !== fresh.description) Object.assign(inLocked, fresh, { level: inLocked.level || 1 });
       }
       continue;
     }
@@ -1161,7 +1232,7 @@ function resolveSkill(player, query, opts = {}) {
   const lock = byName(player.skills.locked);
   if (lock) {
     return { ok: false, locked: true, skill: lock, entry: findBy(lock.name, roster), unlockAt: lock.unlocksAtLevel,
-             error: `🔒 *${lock.name}* is still locked — it unlocks at *Lv.${lock.unlocksAtLevel}* (you are Lv.${player.level || 1}).` };
+             error: `🔒 *${lock.name}* is still locked — ${lockReason(player, findBy(lock.name, roster) || lock)}.` };
   }
 
   const cat = byName(roster);
@@ -1172,7 +1243,7 @@ function resolveSkill(player, query, opts = {}) {
       return { ok: true, skill: fresh, source: 'catalog', entry: cat };
     }
     return { ok: false, locked: true, entry: cat, unlockAt: cat.unlocksAtLevel,
-             error: `🔒 *${cat.name}* unlocks at *Lv.${cat.unlocksAtLevel}* (you are Lv.${player.level || 1}).` };
+             error: `🔒 *${cat.name}* is locked — ${lockReason(player, cat)}.` };
   }
 
   try { if (_jobFuzzy) { const jr = _jobFuzzy.resolve(player, qRaw); if (jr) return jr; } } catch (e) {}
@@ -1184,16 +1255,19 @@ function resolveSkill(player, query, opts = {}) {
 // Damage already scales via levelBonus().dmgMult; every buff / shield / regen /
 // damage-reduction / reflect / energy / heal promise now scales too:
 // ×1 → ×1.17 → ×1.33 → ×1.5 → ×1.67 (a 150% boost becomes 175% → 200% → 225% → 250%).
-function supportMult(level) { const lv = Math.max(1, Math.min(MAX_SKILL_LEVEL, Number(level) || 1)); return 1 + (lv - 1) / 6; }
+function supportMult(level) { const lv = Math.max(1, Math.min(MAX_SKILL_LEVEL, Number(level) || 1)); return 1 + (lv - 1) * 0.12; } // Push #103b: +12%/level
 function scaleEntry(entry, level) {
   const lv = Math.max(1, Math.min(MAX_SKILL_LEVEL, Number(level) || 1));
   if (!entry || lv <= 1) return entry;
   const m = supportMult(lv); const up = (v, cap) => Math.min(cap, Math.round((Number(v) || 0) * m));
-  const sb = (arr) => (arr || []).map(b => b && typeof b === 'object' ? { ...b, amount: Math.round((Number(b.amount) || 0) * m) } : b);
+  const tb = Math.floor((lv - 1) / 2); // Push #103b: +1 turn every 2 levels
+  const sb = (arr) => (arr || []).map(b => b && typeof b === 'object' ? { ...b, amount: Math.round((Number(b.amount) || 0) * m), duration: (Number(b.duration) || 2) + tb, turns: b.turns != null ? (Number(b.turns) || 2) + tb : b.turns } : b);
+  const ss = (arr) => (arr || []).map(x => x && typeof x === 'object' ? { ...x, duration: (Number(x.duration) || 2) + tb } : x);
   const out = { ...entry, level: lv, _scaled: m,
-    buffs: sb(entry.buffs), debuffs: sb(entry.debuffs), extraBuffs: sb(entry.extraBuffs),
+    buffs: sb(entry.buffs), debuffs: sb(entry.debuffs), extraBuffs: sb(entry.extraBuffs), statuses: ss(entry.statuses),
+    shieldTurns: entry.shieldTurns ? entry.shieldTurns + tb : entry.shieldTurns, damageTakenTurns: entry.damageTakenTurns ? entry.damageTakenTurns + tb : entry.damageTakenTurns, reflectTurns: entry.reflectTurns ? entry.reflectTurns + tb : entry.reflectTurns,
     shieldPct: entry.shieldPct ? up(entry.shieldPct, 100) : entry.shieldPct,
-    regen: entry.regen && entry.regen.pct ? { ...entry.regen, pct: up(entry.regen.pct, 30) } : entry.regen,
+    regen: entry.regen && entry.regen.pct ? { ...entry.regen, pct: up(entry.regen.pct, 30), turns: (entry.regen.turns || 3) + tb } : entry.regen,
     damageTakenPct: entry.damageTakenPct ? up(entry.damageTakenPct, 85) : entry.damageTakenPct,
     reflectPct: entry.reflectPct ? up(entry.reflectPct, 100) : entry.reflectPct,
     energyPct: entry.energyPct ? up(entry.energyPct, 100) : entry.energyPct,
@@ -1213,7 +1287,7 @@ function scaledSummary(e) {
   if (!e) return [];
   const L = [];
   const lv = Number(e.level) || 1;
-  if (e.damagePct) L.push(`💥 ${Math.round(e.damagePct * (1 + (lv - 1) * 0.08))}% ATK damage`);
+  if (e.damagePct) L.push(`💥 ${Math.round(e.damagePct * (1 + (lv - 1) * 0.12))}% ${e.scaleStat === 'magic' ? 'Magic Power' : e.scaleStat === 'def' ? 'DEF' : 'ATK'} damage`);
   if (e.healingPct) L.push(`💚 Heals ${e.healingPct}% max HP`);
   if (e.drainPct) L.push(`🧛 Drains ${e.drainPct}% of target max HP${e.drainHealPct ? ` · recovers ${e.drainHealPct}%` : ''}`);
   if (e.lifestealPct) L.push(`🩸 Lifesteal ${e.lifestealPct}% of damage`);
@@ -1263,10 +1337,19 @@ function passiveSkills(player)   { return getRoster(player).filter(r => r.isPass
 // ── Reset (used by /fixskills and awakening flows) ──────────────────────────
 function resetPlayerSkills(player) {
   if (!player) return null;
-  player.skills = { active: [], passive: [], locked: [], cooldowns: {}, unlockedOverrides: [] };
+  player.skills = { active: [], passive: [], locked: [], cooldowns: {}, unlockedOverrides: [], learned: [] };
   player.availableSkills = [];
   player.skillCooldowns = {};
   player.lastSkillUse = {};
+  // Push #103b: a fresh class = fresh runes. Stones of other classes' ladders are cleared, and every stone
+  // this hunter is entitled to (level + live rank) lands in the bag — nothing is auto-learned.
+  try {
+    const SR = require('./SkillRunes');
+    const names = new Set(getRoster(player).map(e => String(e.name).toLowerCase()));
+    const items = (player.inventory && Array.isArray(player.inventory.items)) ? player.inventory.items : [];
+    for (let i = items.length - 1; i >= 0; i--) { const it = items[i]; if (it && it.isRuneStone && (it.skillKind || 'class') === 'class' && !names.has(String(it.skill || '').toLowerCase())) items.splice(i, 1); }
+    SR.grantEntitled(player, 'class_reset');
+  } catch (e) {}
   return syncPlayerSkills(player);
 }
 
@@ -1374,7 +1457,7 @@ function carrySkillProgress(player, snap) {
   }
   return { applied, count: now.length, wanted: snap.count };
 }
-module.exports = { CLASS_POWER, supportMult, scaleEntry,
+module.exports = { CLASS_POWER, supportMult, scaleEntry, lockReason,
   augmentContract,
   parseSupportFields, applySupportFields,
   snapshotSkillProgress, carrySkillProgress,

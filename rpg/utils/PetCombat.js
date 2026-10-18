@@ -188,10 +188,13 @@ function rewardPet(playerId, { won = true, exp = 0 } = {}) {
     const gained = Math.max(5, Math.floor(exp || (won ? 60 : 20)));
     const before = Number(pet.exp || 0);
     const res = PetManager.addPetExp(playerId, pet.instanceId, gained, won);
-    const leveled = res?.leveled || (res?.newLevel && res.newLevel > (pet.level || 1));
+    // Push #103a (BUG-096): addPetExp returns { pet, levelsGained, evolveReady, evolveHint } — the old reads (leveled /
+    // newLevel / evolutionAvailable) never existed, so no pet ever announced a level-up or that it could evolve.
+    const leveled = !!(res?.leveled || (res?.levelsGained && res.levelsGained.length) || (res?.newLevel && res.newLevel > (pet.level || 1)));
     const lines = [];
-    if (leveled) lines.push(`🎉 *${pet.nickname || pet.name}* reached Lv.${pet.level}!`);
-    if (res?.evolutionAvailable || res?.canEvolve) lines.push(`🥚 *${pet.nickname || pet.name}* can evolve — /pet evolve`);
+    if (leveled) lines.push(`🎉 *${pet.nickname || pet.name}* reached Lv.${(res && res.pet && res.pet.level) || pet.level}!`);
+    if (res?.evolveHint) lines.push(res.evolveHint);
+    else if (res?.evolutionAvailable || res?.canEvolve) lines.push(`🥚 *${pet.nickname || pet.name}* can evolve — /pet evolve`);
     if (res?.message && typeof res.message === 'string' && res.message.includes('Lv.')) lines.push(res.message);
     return lines.length ? lines : null;
   }, null);

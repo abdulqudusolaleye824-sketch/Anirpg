@@ -10,7 +10,7 @@ module.exports = {
   name: 'Mage',
   emoji: '🔮',
     lore: 'Knowledge is the sharpest weapon.',
-    maxBonuses: { hp: 45, atk: 55, def: 5, speed: 10, maxEnergy: 70, magicPower: 50 },
+    maxBonuses: { hp: 40, atk: 15, def: 10, speed: 15, maxEnergy: 80, magicPower: 60 },
     skills: [
       { name: 'Arcane Burst', type: 'damage',  maxPotency: 300, desc: 'Deals {p}% Magic Power as arcane damage' },
       { name: 'Mana Shield',  type: 'buff',    maxPotency: 40,  desc: 'Absorbs {p}% of next hit using energy' },

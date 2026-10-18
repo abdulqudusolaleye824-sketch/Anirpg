@@ -10,15 +10,7 @@ module.exports = {
   name: 'Berserker',
   emoji: '💢',
   lore: 'The anger is the gift. The blood is the proof. Below 50% HP, fear becomes fuel — below 30%, you are the nightmare they should have never woken.',
-  maxBonuses: {
-    hp: 220,           // Highest HP in the legendary tier (Devourer: 160)
-    atk: 60,           // Highest ATK in the legendary tier (Devourer/Phantom: 55)
-    def: 8,            // Glass cannon — intentionally low
-    speed: 20,         // Slow but relentless
-    maxEnergy: 40,
-    critChance: 8,     // +8% crit — risk/reward for going all-in
-    lifesteal: 8,      // Sustains through sheer violence
-  },
+  maxBonuses: { hp: 110, atk: 70, def: -20, speed: 30, maxEnergy: 35, critChance: 8, lifesteal: 8 },
   skills: [
     // ── Active skills (damage & status effects) ──
     { name: 'Rage',           type: 'buff',    maxPotency: 80,  desc: 'ATK +{p}% for 3 turns, takes 20% more damage' },

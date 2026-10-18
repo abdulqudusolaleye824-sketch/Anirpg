@@ -121,6 +121,13 @@ module.exports = {
       player.boss.cooldownUntil = 0;
     }
 
+    // Push #103a (BUG-093): pull them out of every gate raid roster too — /forceclear used to leave the raid
+    // membership behind, so the hunter stayed "already in a gate raid" after the gate was force-closed.
+    try { const GR = require('../../rpg/dungeons/GateRaid'); const n = GR.evictFromAllRaids(targetId, db); if (n) report.push(`✔ Removed from ${n} gate raid roster${n === 1 ? '' : 's'}`); } catch (e) {}
+    player.inGate = false; player.currentGateId = null;
+    try { if (player.instance && player.instance.active) { player.instance.active = false; report.push('✔ Instance dungeon exited'); } } catch (e) {}
+    try { if (player.labyrinth && player.labyrinth.active) { player.labyrinth.active = false; report.push('✔ Labyrinth exited'); } } catch (e) {}
+
     if (!player.cooldowns) player.cooldowns = {};
     player.cooldowns.dungeon = 0;
     player.cooldowns.boss    = 0;

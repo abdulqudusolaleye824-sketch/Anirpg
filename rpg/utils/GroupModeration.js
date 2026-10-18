@@ -47,7 +47,7 @@ async function check(sock, msg, db, saveDatabase, ctx) {
   rec.count++; rec.at = Date.now(); const n = rec.count;
   try {
     if (n === 1) await sock.sendMessage(chatId, { text: `⚠️ ${tag} *WARNING* — links are not allowed here.\n⛔ Next: *5-minute mute*, then *kick*.`, mentions: [sender] });
-    else if (n === 2) { if (!db.mutedUsers) db.mutedUsers = {}; db.mutedUsers[sender] = { endsAt: Date.now() + 5 * 60 * 1000 }; await sock.sendMessage(chatId, { text: `🔇 ${tag} *muted for 5 minutes* — repeated links.`, mentions: [sender] }); }
+    else if (n === 2) { try { require('./ModerationUtils').groupMute(db, chatId, sender, 'AntiLink', 5); } catch (e) {} /* Push #103a (BUG-090): was written under the full JID with no mutedBy — never matched the bare-key reader */ await sock.sendMessage(chatId, { text: `🔇 ${tag} *muted for 5 minutes* — repeated links.`, mentions: [sender] }); }
     else { await sock.groupParticipantsUpdate(chatId, [sender], 'remove'); delete db.antiLinkStrikes[sender]; await sock.sendMessage(chatId, { text: `🪓 ${tag} *kicked* — repeated link spam.`, mentions: [sender] }); }
   } catch (e) {}
   try { if (typeof saveDatabase === 'function') saveDatabase(); } catch (e) {}

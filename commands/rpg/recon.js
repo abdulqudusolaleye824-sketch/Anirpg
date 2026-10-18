@@ -133,7 +133,18 @@ module.exports = {
     // Push #88f: skill COUNT + LEVELS carry over (old #1 Lv5 → new #1 Lv5).
     let _carry = null;
     try { const SCr = require('../../rpg/utils/SkillCatalog'); SCr.syncPlayerSkills(player); if (_skillSnap) _carry = SCr.carrySkillProgress(player, _skillSnap); } catch (e) {}
+    // Push #103a (BUG-100): the domain follows the new class — fresh effect, same level, new DM prompt for name + description.
+    let _dom = null;
+    try { const DS = require('../../rpg/utils/DomainSystem'); _dom = DS.reconDomain(player); } catch (e) { _dom = null; }
     saveDatabase();
+    if (_dom) {
+      try {
+        const SerfDM = require('../../rpg/utils/SerfDM');
+        const to = player.jid || jid;
+        const send = async (text) => { try { const r = await SerfDM.sendSerfDM(sock, db, to, { text }); if (r && r.ok) return; } catch (e) {} try { await sock.sendMessage(to, { text }); } catch (e) {} };
+        await send(_dom.awakening); if (_dom.prompt) await send(_dom.prompt);
+      } catch (e) {}
+    }
 
     const data = CS.CLASS_DATA?.[res.className] || {};
     const shown = player.monsterVariant?.name || res.className;
@@ -147,6 +158,7 @@ module.exports = {
         `✨ New class: *${data.emoji || '🎭'} ${shown}* (${(data.rarity || 'common').toUpperCase()})`,
         `⭐ Quality: *${res.quality || player.classQuality || 0}%*${pinClass || pinQuality != null ? '  _(custom)_' : ''}`,
         ...(res.variant ? [`👹 Unique Monster variant — *${res.uniqueLeft}* of 50 still unclaimed`] : []),
+        ...(_dom ? [`🌌 Domain reshaped for the new class: *${_dom.domain.name}* — name/description prompt sent to their DM (owner-approved)`] : []),
         ...(_carry ? [`📚 Skills carried: *${_carry.count}* unlocked · levels preserved (${_skillSnap.levels.filter(l => l > 1).length} upgraded)`] : []),
         `↩️ Undo: */recon undo @${bare(jid)}*`,
         ``,

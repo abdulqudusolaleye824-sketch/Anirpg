@@ -2607,8 +2607,14 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
           const _pl = db.users[sender] || db.users[Object.keys(db.users).find(k => k.split('@')[0] === bareSender) || ''];
           if (_pl && _pl.domain && _pl.domain.setup && messageText.trim()) {
             const DS = require('../rpg/utils/DomainSystem');
-            const r = DS.handleSetupReply(_pl, messageText);
-            if (r) { try { saveDatabase?.(); } catch (e) {} await sock.sendMessage(chatId, { text: r.reply }, { quoted: msg }); return; }
+            // Push #103a (BUG-100): only a reply that QUOTES the prompt or starts with name:/desc: is a setup answer.
+            let _q = ''; try { const qm = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage; _q = qm?.conversation || qm?.extendedTextMessage?.text || qm?.buttonsMessage?.contentText || ''; } catch (e) {}
+            const r = DS.handleSetupReply(_pl, messageText, { quoted: _q });
+            if (r) {
+              if (r.submit) { try { const DA = require('../rpg/utils/DomainApprovals'); const sub = DA.submit(db, sender, _pl, r.submit, 'setup'); if (sub.ok) DA.notifyOwners(sock, db, sub.rec).catch(() => {}); } catch (e) {} }
+              try { saveDatabase?.(); } catch (e) {}
+              await sock.sendMessage(chatId, { text: r.reply }, { quoted: msg }); return;
+            }
           }
         } catch (e) {}
       }

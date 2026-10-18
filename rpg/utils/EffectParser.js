@@ -427,7 +427,7 @@ class EffectParser {
       if (special.type === 'selfHeal') {
         const heal = Math.floor(attacker.stats.maxHp * (special.percent / 100));
         attacker.stats.hp = Math.min(require('./GearSystem').effectiveMaxHp(attacker), attacker.stats.hp + heal);
-        narrative += `💚 Healed ${heal} HP! (${attacker.stats.hp}/${attacker.stats.maxHp})\n`;
+        narrative += `💚 Healed ${heal} HP! (${attacker.stats.hp}/${(()=>{try{return require('./GearSystem').effectiveMaxHp(attacker);}catch(e){return attacker.stats.maxHp;}})()})\n`;
       }
 
       if (special.type === 'surviveLethal') {
@@ -445,7 +445,7 @@ class EffectParser {
     for (const effect of parsedEffects.statusEffects) {
       if (Math.random() * 100 < effect.chance) {
         if (StatusEffectManager?.applyEffect) {
-          StatusEffectManager.applyEffect(defender, effect.type.toUpperCase(), effect.duration);
+          StatusEffectManager.applyEffect(defender, effect.type.toUpperCase(), effect.duration, attacker); // Push #103b: MR check
         } else {
           if (!defender.statusEffects) defender.statusEffects = [];
           { let _sh = null; try { _sh = require('./DomainSystem').isShielded(defender); } catch (e) {} if (!_sh) defender.statusEffects.push({ type: effect.type.toUpperCase(), duration: effect.duration }); } // Push #96g

@@ -87,7 +87,7 @@ ${player.energyColor} Full ${player.energyType} restored!
 📊 STATUS
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-❤️ HP: ${player.stats.hp}/${player.stats.maxHp}
+❤️ HP: ${player.stats.hp}/${(()=>{try{return require('../../rpg/utils/GearSystem').effectiveMaxHp(player);}catch(e){return player.stats.maxHp;}})()}
 ${player.energyColor} ${player.energyType}: ${player.stats.energy}/${player.stats.maxEnergy}
 
 🎫 Revive Tokens Left: ${player.inventory.reviveTokens}

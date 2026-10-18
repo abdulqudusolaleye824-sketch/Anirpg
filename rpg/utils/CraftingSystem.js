@@ -42,12 +42,12 @@ function recipeCategoryOf(name) {
 }
 
 const SCROLL_RARITIES = {
-  Common:    { emoji: '⬜', cost: 500,    description: 'A worn scroll. Simple recipes inside.' },
-  Uncommon:  { emoji: '🟩', cost: 1500,   description: 'A sealed scroll. Moderate recipes await.' },
-  Rare:      { emoji: '🟦', cost: 5000,   description: 'A glowing scroll. Rare power sealed within.' },
-  Epic:      { emoji: '🟪', cost: 15000,  description: 'A pulsing scroll. Epic power radiates from it.' },
-  Legendary: { emoji: '🟨', cost: 50000,  description: 'A blazing scroll. Legendary weapons sleep within.' },
-  Mythic:    { emoji: '🔴', cost: 200000, description: 'A world-breaking scroll. Only legends dare read it.' },
+  Common:    { emoji: '⬜', cost: 875,    description: 'A worn scroll. Simple recipes inside.' },
+  Uncommon:  { emoji: '🟩', cost: 2625,   description: 'A sealed scroll. Moderate recipes await.' },
+  Rare:      { emoji: '🟦', cost: 8750,   description: 'A glowing scroll. Rare power sealed within.' },
+  Epic:      { emoji: '🟪', cost: 26250,  description: 'A pulsing scroll. Epic power radiates from it.' },
+  Legendary: { emoji: '🟨', cost: 87500,  description: 'A blazing scroll. Legendary weapons sleep within.' },
+  Mythic:    { emoji: '🔴', cost: 350000, description: 'A world-breaking scroll. Only legends dare read it.' },
 };
 
 const SCROLL_SHOP_ITEMS = Object.entries(SCROLL_RARITIES).map(([rarity, data], i) => ({
@@ -134,46 +134,116 @@ function craftPreview(player, itemName, key, db) {
   const nexusCost = craftNexusCost(scroll.rarity);
   const nexus = { need: nexusCost, have: Number(player.gold) || 0, ok: (Number(player.gold) || 0) >= nexusCost };
   const missing = [...mats.filter(m => !m.ok).map(m => `${m.mat} (need ${m.need}, have ${m.have})`), ...(!essence.ok ? [`${essence.name} (need ${essence.need}, have ${essence.have})`] : []), ...(!nexus.ok ? [`💠 ${nexusCost.toLocaleString()} Nexus (have ${nexus.have.toLocaleString()})`] : [])];
-  return { ok: true, scroll, ownerJid, recipe, rarity: scroll.rarity, mats, essence, nexus, nexusCost, successPct: Math.round(CRAFT_SUCCESS * 100), discount: _disc, missing, canCraft: missing.length === 0 };
+  return { ok: true, scroll, ownerJid, recipe, rarity: scroll.rarity, mats, essence, nexus, nexusCost, successPct: (() => { try { return require("./ClassSnippets").craftAlwaysSucceeds(player) ? 100 : Math.round(CRAFT_SUCCESS * 100); } catch (e) { return Math.round(CRAFT_SUCCESS * 100); } })(), discount: _disc, missing, canCraft: missing.length === 0 };
 }
+
+// ── Push #103b: TIMED FORGING ───────────────────────────────────────────────
+// Confirming a craft pays everything, rolls the forge and starts a JOB. The
+// piece is delivered when the timer ends (group notice; Pro also DM via serf).
+//   E/Common 12h · D/Uncommon 1d · C/Rare 1.5d · B/Epic 2d · A/Legendary 3d · S/Mythic 5d
+//   Pro: 50% time. Shaman: 100% success and a choice — QUANTITY (−20% time, plain)
+//   or QUALITY (+20% all stats & durability, normal time). Pro does not change either.
+const H = 3600e3;
+const CRAFT_TIME_MS = { Common: 12 * H, Uncommon: 24 * H, Rare: 36 * H, Epic: 48 * H, Legendary: 72 * H, Mythic: 120 * H };
+const QUALITY_MULT = 1.20, QUANTITY_TIME = 0.80;
+function _isShaman(player) { try { return require('./ClassSnippets').craftAlwaysSucceeds(player); } catch (e) { return false; } }
+function _isPro(player) { try { return require('./UI').isPro(player); } catch (e) { return !!(player && player.isPro); } }
+function craftModes(player) { return _isShaman(player) ? ['quality', 'quantity'] : ['standard']; }
+function craftDurationMs(player, rarity, mode = 'standard') {
+  const k = String(rarity || 'Common'); const base = CRAFT_TIME_MS[k.charAt(0).toUpperCase() + k.slice(1).toLowerCase()] || CRAFT_TIME_MS.Common;
+  let ms = base;
+  if (_isPro(player)) ms *= 0.5;
+  if (mode === 'quantity' && _isShaman(player)) ms *= QUANTITY_TIME;
+  return Math.round(ms);
+}
+function fmtDur(ms) { ms = Math.max(0, ms); const d = Math.floor(ms / 86400e3), h = Math.floor(ms % 86400e3 / H), m = Math.floor(ms % H / 60e3); return d ? `${d}d ${h}h` : h ? `${h}h ${m}m` : `${m}m`; }
+function jobsOf(db, jid) { return (db && Array.isArray(db.craftJobs) ? db.craftJobs : []).filter(j => j && j.owner === jid && !j.done); }
 
 function attemptCraft(player, itemName, key, db, opts = {}) {
   const pv = craftPreview(player, itemName, key, db);
   if (!pv.ok) return { success: false, reason: pv.reason };
   const { scroll: targetScroll, ownerJid: scrollOwnerJid, recipe } = pv;
   if (!pv.canCraft) return { success: false, reason: `❌ Missing for *${recipe.output}*:\n${pv.missing.map(m => `• ${m}`).join('\n')}`, preview: pv };
-  // Pay everything up front — a failed craft burns it all (the player was warned on the preview screen).
+  const mode = craftModes(player).includes(opts.mode) ? opts.mode : craftModes(player)[0];
+  // Pay everything up front — a failed forge burns it all (the player was warned on the preview screen).
   for (const m of pv.mats) RI.consumeMaterial(player, m.mat, m.need);
   require('./EssenceStones').consume(player, pv.essence.rank, pv.essence.need);
   player.gold = (Number(player.gold) || 0) - pv.nexusCost;
   try { require('./TransactionLog').logSpend(player, 'craft', pv.nexusCost, 0, recipe.output); } catch (e) {}
   const rng = typeof opts.rng === 'function' ? opts.rng : Math.random;
-  if (rng() >= CRAFT_SUCCESS) {
+  const _sure = _isShaman(player);
+  const willFail = !_sure && rng() >= CRAFT_SUCCESS;
+  if (willFail) {
     player.craftFails = (player.craftFails || 0) + 1;
     return { success: false, failed: true, preview: pv, scrollOwnerJid, spent: { mats: pv.mats, essence: pv.essence, nexus: pv.nexusCost },
-      reason: `💥 *CRAFT FAILED!* The forge rejected *${recipe.output}*.\nLost: ${pv.mats.map(m => `${m.mat} ×${m.need}`).join(', ')}, ${pv.essence.name} ×${pv.essence.need}, 💠 ${pv.nexusCost.toLocaleString()} Nexus.\n📜 The scroll (key *${key}*) survives — gather materials and try again (90% success).` };
+      reason: `💥 *CRAFT FAILED!* The forge rejected *${recipe.output}* the moment it was lit.\nLost: ${pv.mats.map(m => `${m.mat} ×${m.need}`).join(', ')}, ${pv.essence.name} ×${pv.essence.need}, 💠 ${pv.nexusCost.toLocaleString()} Nexus.\n📜 The scroll (key *${key}*) survives — gather again and retry.` };
   }
-  targetScroll.crafted = true; targetScroll.craftedBy = player.jid || 'unknown'; targetScroll.craftedAt = Date.now();
-  if (scrollOwnerJid && db.users[scrollOwnerJid]) {
-    const ownerScroll = (db.users[scrollOwnerJid].inventory?.scrolls || []).find(s => s.key === key);
-    if (ownerScroll) { ownerScroll.crafted = true; ownerScroll.craftedBy = player.jid || 'unknown'; ownerScroll.craftedAt = Date.now(); }
+  {
+    targetScroll.crafted = true; targetScroll.craftedBy = player.jid || 'unknown'; targetScroll.craftedAt = Date.now();
+    if (scrollOwnerJid && db.users[scrollOwnerJid]) { const os = (db.users[scrollOwnerJid].inventory?.scrolls || []).find(s => s.key === key); if (os) { os.crafted = true; os.craftedBy = player.jid || 'unknown'; os.craftedAt = Date.now(); } }
   }
-  const craftedItem = {
-    name: recipe.output, type: recipe.type, subtype: recipe.subtype, rarity: targetScroll.rarity,
-    ...recipe.stats, durability: recipe.durability, maxDurability: recipe.durability,
-    infusions: [], craftedAt: Date.now(), craftedBy: player.name || 'Unknown Hunter', fromKey: key,
-    ...(recipe.lore ? { lore: recipe.lore } : {}),
-    ...(recipe.onHit ? { onHit: recipe.onHit } : {}),
+  const ms = craftDurationMs(player, targetScroll.rarity, mode);
+  const job = {
+    id: `cj-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`, owner: player.jid || opts.owner || null, ownerName: player.name || 'Hunter',
+    chatId: opts.chatId || null, key, scrollOwnerJid: scrollOwnerJid || null,
+    recipe: { output: recipe.output, type: recipe.type, subtype: recipe.subtype, lore: recipe.lore || null }, rarity: targetScroll.rarity,
+    mode, willFail, startedAt: Date.now(), readyAt: Date.now() + ms, done: false, notified: false,
+    spent: { mats: pv.mats.map(m => ({ mat: m.mat, need: m.need })), essence: { name: pv.essence.name, need: pv.essence.need }, nexus: pv.nexusCost },
   };
-  // Commit to the live inventory: wearables → items (normalized gear shape,
-  // visible to /gear + /equip). Artifacts keep their own bucket (the artifact
-  // system reads it); anything else → items as material.
-  // Push #97 (BUG-010): EVERY crafted piece (artifacts included) goes into the normal inventory as gear —
-  // artifacts wear in the cloak slot; helmets/boots/gloves land in their own slots (subtype decides).
-  const _granted = RI.grantItem(player, { ...craftedItem, source: 'craft' }, 'craft',
-    { subtype: craftedItem.subtype, infusions: craftedItem.infusions || [], craftedBy: craftedItem.craftedBy, fromKey: craftedItem.fromKey, craftedAt: craftedItem.craftedAt });
-  let _invIndex = -1; try { _invIndex = (player.inventory.items || []).indexOf(_granted); } catch (e) {}
-  return { success: true, item: craftedItem, granted: _granted, slot: _granted && _granted.slot, invIndex: _invIndex, scrollOwnerJid, preview: pv, spent: { mats: pv.mats, essence: pv.essence, nexus: pv.nexusCost } };
+  if (!Array.isArray(db.craftJobs)) db.craftJobs = [];
+  db.craftJobs.push(job);
+  return { success: true, started: true, job, mode, ms, readyAt: job.readyAt, preview: pv, scrollOwnerJid, spent: { mats: pv.mats, essence: pv.essence, nexus: pv.nexusCost } };
+}
+
+// Deliver one finished job into its owner's bag. Returns { success, failed, item, granted, job }.
+function finishCraft(db, job) {
+  const player = db.users && job.owner ? db.users[job.owner] : null;
+  job.done = true; job.finishedAt = Date.now();
+  if (!player) return { success: false, job, reason: 'owner missing' };
+  const Armory = require('./ArmoryStore');
+  const inst = Armory.craftInstance(job.recipe, job.rarity, player, job.mode === 'quality' ? { quality: QUALITY_MULT, qualityLabel: 'Shaman Masterwork' } : {});
+  inst.craftedBy = job.ownerName; inst.craftedAt = Date.now(); inst.fromKey = job.key;
+  if (!player.inventory) player.inventory = {}; if (!Array.isArray(player.inventory.items)) player.inventory.items = [];
+  player.inventory.items.push(inst);
+  const item = { name: inst.name, emoji: inst.emoji, type: inst.type, subtype: job.recipe.subtype, rarity: inst.rarity, rank: inst.rank, durability: inst.durability, maxDurability: inst.maxDurability,
+    ...(inst.isWeapon ? { atk: inst.attack } : {}), ...(inst.stats || {}), quality: inst.quality || null, craftedBy: job.ownerName, lore: inst.lore };
+  return { success: true, item, granted: inst, slot: inst.slot || (inst.isWeapon ? 'weapon' : null), invIndex: player.inventory.items.length - 1, job };
+}
+function dueJobs(db) { const now = Date.now(); return (db && Array.isArray(db.craftJobs) ? db.craftJobs : []).filter(j => j && !j.done && j.readyAt <= now); }
+function finishedLines(res, pro) {
+  const UIx = require('./UI'); const F = pro ? UIx.PRO_BAR : UIx.FREE_BAR; const j = res.job;
+  if (!res.success) return [F, `⚒️ *FORGE COMPLETE — ${j.recipe.output}*`, F, res.reason || 'The forge went cold.', F].join('\n');
+  const it = res.item; const st = [];
+  if (it.atk) st.push(`ATK +${it.atk}`); for (const k of ['def', 'hp', 'speed', 'evasion', 'critDmg', 'atk']) if (k !== 'atk' && it[k]) st.push(`${k.toUpperCase()} +${it[k]}`);
+  const g = res.granted; const fx = g.isWeapon && g.effects && g.effects.length ? g.effects.map(e => `${e.type} ${e.chance}%`).join(', ') : (g.special || '');
+  return [F, `🔨 *FORGED!* ${it.emoji || '✨'} *${it.name}*${it.quality ? ` · ✨ ${it.quality} (+20%)` : ''}`, F,
+    `⭐ ${String(it.rank)}-rank ${String(it.rarity).toUpperCase()} ${it.type}${res.slot ? ` · slot: ${res.slot}` : ''}`,
+    st.length ? `📊 ${st.join(' · ')}` : null, fx ? `✨ ${fx}` : null, `🔧 Durability: *${it.durability}/${it.maxDurability}* (store-grade, scaled to your level)`,
+    `🎒 In your /inv as item *#${res.invIndex + 1}* — */equip ${res.invIndex + 1}*`, F].filter(Boolean).join('\n');
+}
+// Sweep: deliver every due job; group notice (+ Pro DM via serf). Call every minute from index.js.
+async function tick(db, saveDatabase) {
+  const due = dueJobs(db); if (!due.length) return 0;
+  let MSM = null; try { MSM = require('../../bots/MultiSocketManager'); } catch (e) {}
+  let n = 0;
+  for (const job of due) {
+    let res; try { res = finishCraft(db, job); } catch (e) { job.done = true; job.error = e.message; continue; }
+    n++;
+    const player = db.users[job.owner]; const pro = _isPro(player);
+    const text = finishedLines(res, pro);
+    try {
+      const sk = MSM && job.chatId && MSM.getActiveSocket ? MSM.getActiveSocket(job.chatId) : null;
+      if (sk) { await sk.sendMessage(job.chatId, { text: `${text}\n@${String(job.owner || '').split('@')[0]}`, mentions: job.owner ? [job.owner] : [] }).catch(() => {}); job.notified = true; }
+      if (pro && sk) { try { await require('./SerfDM').sendSerfDM(sk, db, job.owner, { text }); } catch (e) {} }
+    } catch (e) {}
+    try { if (res.success) { const _BP = require('./BattlePass'); if (_BP.addPassXPAmount) _BP.addPassXPAmount(player, 50); } } catch (e) {}
+    try { if (res.success) require('./WeeklyGuildWar').addGP(db, job.owner, 75, saveDatabase); } catch (e) {}
+    try { if (res.success && job.scrollOwnerJid && job.scrollOwnerJid !== job.owner && db.users[job.scrollOwnerJid]) { const sk2 = MSM && job.chatId && MSM.getActiveSocket ? MSM.getActiveSocket(job.chatId) : null; if (sk2) await require('./SerfDM').sendSerfDM(sk2, db, job.scrollOwnerJid, { text: `🔑 *YOUR SCROLL KEY WAS USED*\nSomeone used your craft key *${job.key}* and forged *${job.recipe.output}*. Your scroll has been consumed.` }); } } catch (e) {}
+  }
+  // prune finished jobs older than 7 days
+  db.craftJobs = db.craftJobs.filter(j => !(j.done && (Date.now() - (j.finishedAt || 0)) > 7 * 86400e3));
+  if (n && typeof saveDatabase === 'function') saveDatabase();
+  return n;
 }
 
 function checkMaterials(player, recipe) {
@@ -242,6 +312,7 @@ function formatScrollRead(scroll, player = null) {
 }
 
 module.exports = {
+  CRAFT_TIME_MS, QUALITY_MULT, QUANTITY_TIME, craftModes, craftDurationMs, fmtDur, jobsOf, finishCraft, dueJobs, finishedLines, tick,
   recipeCategoryOf,
   RECIPES, SCROLL_RARITIES, SCROLL_SHOP_ITEMS,
   generateCraftKey, buyScroll, readScroll,

@@ -28,23 +28,8 @@ class LevelUpManager {
         player.level++;
     
     // ── Unlock skills at certain levels ──────────────────────
-    const locked = player.skills?.locked || [];
-    const newlyUnlocked = [];
-    for (const skill of locked) {
-      if ((skill.unlocksAtLevel || 999) <= player.level) {
-        newlyUnlocked.push(skill);
-      }
-    }
-    if (newlyUnlocked.length > 0) {
-      if (!player.skills.active) player.skills.active = [];
-      for (const skill of newlyUnlocked) {
-        player.skills.active.push({...skill});
-        const idx = player.skills.locked.findIndex(s => s.name === skill.name);
-        if (idx >= 0) player.skills.locked.splice(idx, 1);
-      }
-      if (!player._newSkillsUnlocked) player._newSkillsUnlocked = [];
-      player._newSkillsUnlocked.push(...newlyUnlocked.map(s => s.name));
-    }
+    // Push #103b: levels no longer unlock skills directly — the level's RUNE STONE drops instead
+    // (see unlockSkillForLevel → SkillRunes.onLevel) and the hunter learns it with /rune use.
         player.xp -= xpNeeded;
 
         // Increase stats — write to BOTH stats and baseStats so that
@@ -106,14 +91,14 @@ class LevelUpManager {
         // Check for skill unlock at level 5, 10, 15, 20, 25, etc.
         if (player.level % 5 === 0) {
           try {
-            const unlockedSkill = this.unlockSkillForLevel(player, player.level);
-            if (unlockedSkill) {
-              newSkills.push(unlockedSkill);
-              skillUnlockLevels.push(player.level);
-              try { const _rs = require('./RuneStones').onClassSkill(player, unlockedSkill.name, player.level); if (_rs) unlockedSkill.runeStone = _rs.name; } catch (e) {} // Push #96h-z20
-            }
+            // Push #103b: rune stones instead of auto-unlocks (+ Lv.15+ bonus pair chance)
+            const SR = require('./SkillRunes');
+            const drop = SR.onLevel(player, player.level);
+            if (drop.stone) { newSkills.push({ name: drop.stone.skill, runeStone: drop.stone.name, stone: true }); skillUnlockLevels.push(player.level); }
+            for (const st of drop.pair) newSkills.push({ name: st.skill, runeStone: st.name, stone: true, bonus: true });
+            try { require('./SkillCatalog').syncPlayerSkills(player); } catch (e) {}
           } catch (error) {
-            console.error('❌ Error unlocking skill:', error.message);
+            console.error('❌ Error dropping rune stone:', error.message);
           }
         }
         // Skill specialization choice at levels 20, 40, 60, 80
@@ -153,6 +138,12 @@ class LevelUpManager {
         this.sendLevelUpNotification(player, levelsGained, newSkills, skillUnlockLevels, totalUPAwarded, classAssigned, sock, chatId);
         // Push #95: domain awakens at Lv.20 (DM for Pro, GC otherwise); new jobs become available every 5 levels.
         try { require('./DomainSystem').onLevelUp(player, sock, chatId); } catch (e) {}
+        // Push #103b: every hunter level gained also raises the Domain +1 level; abnormalities' natural gift grows too.
+        try {
+          const CPl = require('./ClassPower');
+          if (/^monster$/i.test(String(CPl.baseClassName(player) || ''))) CPl.ensureClassWeapon(player, false);
+          if (player.domain && player.domain.unlocked) { const before = player.domain.level || 1; player.domain.level = Math.min(100, before + Math.max(1, levelsGained || 1)); if (player.domain.level > before) sock.sendMessage(chatId, { text: `🌌 *${player.name}*'s domain deepens — Domain Lv.${before} → *Lv.${player.domain.level}*.` }).catch(() => {}); }
+        } catch (e) {}
         try {
           const JS = require('./JobSystem');
           const fresh = JS.JOBS.filter(j => j.unlock <= player.level && j.unlock > player.level - levelsGained);
@@ -720,14 +711,23 @@ class LevelUpManager {
       lines.push(``);
     }
 
-    if (newSkills.length > 0) {
+    const _stones = newSkills.filter(s => s && s.stone);
+    const _learned = newSkills.filter(s => !(s && s.stone));
+    if (_stones.length > 0) {
+      lines.push(`━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+      lines.push(`🪨 *RUNE STONE${_stones.length > 1 ? 'S' : ''} DROPPED*`);
+      lines.push(`━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+      _stones.forEach((st) => lines.push(`${st.bonus ? '✨ Bonus rune' : '🪨 Rune'} — *${st.name}*`));
+      lines.push(`➜ \`/rune use ${_stones[0].name}\` to learn it (or \`/rune use all\`)`);
+      lines.push(``);
+    }
+    if (_learned.length > 0) {
       lines.push(`━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
       lines.push(`✨ *NEW SKILL UNLOCKED*`);
       lines.push(`━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
-      newSkills.forEach((skill, i) => {
+      _learned.forEach((skill, i) => {
         lines.push(`🔮 *${skill.name}*`);
         lines.push(`   💥 DMG: ${skill.damage}  |  💙 Cost: ${skill.energyCost}  |  ⏱ CD: ${skill.cooldown}s`);
-        if (skill.runeStone) lines.push(`   🪨 *${skill.runeStone}* forged — soulbound, in your bag`);
       });
       lines.push(``);
     }

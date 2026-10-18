@@ -1480,6 +1480,9 @@ setInterval(async () => {
   finally { _berserkBusy = false; }
 }, 12 * 1000).unref?.();
 
+// Push #103b: timed forges — deliver finished crafts (group ping + Pro serf DM).
+let _forgeBusy = false;
+setInterval(async () => { if (_forgeBusy || !_dbReady) return; _forgeBusy = true; try { await require('./rpg/utils/CraftingSystem').tick(database, saveDatabase); } catch (e) { console.error('forge tick:', e.message); } finally { _forgeBusy = false; } }, 60 * 1000).unref?.();
 // Push #88w: transformation safety sweep — no form outlives 20 minutes.
 setInterval(() => { try { if (_dbReady) { const n = require('./rpg/utils/Transformation').sweep(database); if (n) saveDatabase(); } } catch (e) {} }, 60 * 1000).unref?.();
 
@@ -1700,6 +1703,8 @@ async function startup() {
         for (const [j, b] of Object.entries(db.userResetBackups || {})) if (!b || Date.now() - (b.resetAt || 0) > 30 * 86400e3) { delete db.userResetBackups[j]; n++; }
         try { n += require('./rpg/utils/InventoryCompactor').compactAll(db); } catch (e) {} // Push #96h-z15: gear lore → index
       } catch (e) {} return n; };
+    try { const r = require('./rpg/utils/Migrations103a').run(getDatabase()); if (r) { console.log(`🧹 Migrations103a: ${r} fix(es)`); saveDatabase(); } } catch (e) {}
+    try { const r = require('./rpg/utils/Migrations103b').run(getDatabase()); if (r) { console.log(`🪨 Migrations103b: rune stones issued to ${r} hunter(s)`); saveDatabase(); } } catch (e) { console.error('Migrations103b:', e.message); }
     try { const r = require('./rpg/utils/Migrations102h').run(getDatabase()); if (r) { console.log(`🛠️ restored ${r} worn-away weapon(s) (BUG-075/086)`); saveDatabase(); } } catch (e) {} // Push #102h
     try { const n = GateManager.sweepStale(getDatabase()) + _docDiet(); if (n) { console.log(`🧹 document diet: ${n} item(s) removed`); saveDatabase(); } } catch (e) {}
     setInterval(() => { try { if (GateManager.sweepStale(getDatabase()) + _docDiet()) saveDatabase(); } catch (e) {} }, 10 * 60 * 1000).unref?.();

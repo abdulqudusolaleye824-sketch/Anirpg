@@ -1,3 +1,48 @@
+## 1.0.205 — Push #103 (2026-10-17) — CLASS REVAMP (rune stones, MR, Bard/Druid, Warlord, summons & corpses, combat snippets, anatomical Monster kits) + BUG-086/089/090/093/095/096/097/098/100
+- 10-18 OWNER ROUND (same push): every level-up (any class) = domain +1 level · guild Nexus/Mana withdraw taxed 15% ·
+  summon strikes arrive as ONE message per summon · heal skills on non-Healers are capped per fight (E/F 1, D/C 2,
+  B/A 3, S 5; Healers exempt) and already cost 2× · beasts now carry a TRICK skill per family (stealth: Shadow Stalk /
+  Smoke Vanish / Mire Ambush / Glamour Veil; summons: Brood Call / Spawn Division / Shard Sentinels / Pack Howl;
+  necromancy: Raise the Fallen / Soul Harvest) and reach for it 40% of turns · combat messages are paced 3 s apart ·
+  each buff/effect that wears off gets its own message · MONSTER DOMAINS warn 10 s before unfolding (hunters may
+  /domain expand → clash) — dungeons/instances warn one turn ahead; PvP: the first caster gathers 10 s so the rival can
+  answer, once both fire the clash resolves at once · transformation: NO timed cooldown, ONCE per fight (berserk +
+  cast share it), HP ×3 and ATK/DEF/SPD ×5 for every form (tiers differ by duration) · broken weapons AND gear are
+  destroyed on the spot — lost for good (reverses BUG-075 keep-at-0).
+- CLASS REVAMP (per "Class revamp.txt"): every class has 26 skills — 20 core (one every 5 levels, Lv5…Lv100) and 6
+  rank-guarded (B/A/S Hunter Rank). Skills are no longer auto-learned: each entitled skill arrives as a RUNE STONE in
+  the bag — `/rune` lists them, `/rune use <skill>` learns it. Lv15+ level-ups roll a chance at a bonus PAIR of stones
+  from above your level. Rank skills arrive via `/recon`/rank-up; dropping rank re-locks them. One-shot migration gives
+  every classed hunter a stone for everything they are entitled to (levels on already-known skills are kept).
+- NEW CLASSES: Bard, Druid. Warlord replaces/merges World Class. MAGIC RESISTANCE stat (`/stats`, upgradeable) —
+  caster statuses are checked vs the defender's MR; an attacker whose MP clearly exceeds MR overrides class resistances.
+- ENERGY: harsher costs (spec is the contract) and rank-tiered regen in raids; upgrade scaling per spec.
+- SUMMONS & CORPSES: every monster/hunter that dies in a party raid or dungeon leaves a real corpse. Necromancer
+  Reanimate / Spectral Army / Army of the Dead / Corpse Explosion / Cataclysm, Summoner summons, Shaman totems and
+  Druid spirits consume those corpses (MP vs corpse difficulty or the rite fails; big energy costs), fight on their own
+  turn, soak hits for their master and are told in multi-message lore. Summons are cleared when the fight ends.
+- COMBAT SNIPPETS (all classes): Warrior parry+riposte & status immunity by rank, Archer 3-arrow volleys, Paladin ×1.5
+  vs the unholy, Elementalist fire→ice→lightning rotation (Steam/Shatter) + attuned barrier, Assassin stealth strike,
+  Rogue/Assassin/ShadowDancer decoys, Monk aggro-immune & never berserks, Chronomancer Rewind (2 turns of HP),
+  Warlord formation, Devourer eats max HP, Mage/Shaman/Bard energy premiums, Shaman 95% catch / sure craft / ignores
+  always-hit domains, Knight unyielding spirit, Rogue/Phantom dodge, Summoner Linked Fate.
+- MONSTER VARIANTS: all 50 variant kits are built from the creature's ANATOMY (MonsterKits103) — a mantis cuts with
+  scythe arms and never bites, a golem has no mouth, a bear has no tail weapon, a toad lashes with its tongue, a moth
+  blinds with wing dust; element procs per variant; same numbers in every slot so no variant is weaker.
+- FIX: "40% chance to apply X" was parsed as a 100% proc on every class — now the stated chance.
+- BUG-093 ghost raids / BUG-090 / BUG-095 / BUG-097 / BUG-098 / BUG-100 / BUG-096 (pet evolution) / BUG-089 — see
+  report. PvP: the slower hunter may strike first with a 30%×(1−speed gap) chance. `/mend all` shares 100% across
+  damaged pieces only. Domain names/descriptions need owner approval (`/domain approve`); `/recon` re-prompts.
+- Spam strikes: `/strikes` shows your weekly count.
+- TIMED FORGING: confirming a craft pays and lights the forge; the piece is delivered when the timer ends — E/Common 12h ·
+  D 1d · C 1.5d · B 2d · A 3d · S/Mythic 5d (Pro: half). Group ping on completion (+ serf DM for Pro); `/craft status`.
+  A failed forge is known instantly (scroll survives). CRAFTED GEAR IS STORE-GRADE: same ATK/DEF/HP bands, effects and
+  level-scaled durability as /store for that rank (Common→E … Mythic→S); the recipe keeps its name + lore.
+- SHAMAN: 100% forge success and a choice per craft — Quality (+20% all stats & durability) or Quantity (−20% time).
+- Recipe scrolls cost +75% (shop + guild shop).
+- MONSTER (abnormalities): no dedicated weapons — `/class weapons` shows the natural gift (fangs/claws/fists…), which
+  grows every level (+1.4 ATK/level); every level-up also raises the Domain by +1 level. Variant kit slot names de-duplicated.
+
 ## 1.0.204 — Push #102h (2026-10-16) — spam strikes, /broadcast, Pro rob shield, BUG-060/063/064/070/071/075/077/079/080/081/084/086/089
 - SPAM GUARD: 10 warnings per week, then a random mute (1–10 min, Pro 1–5 min). A cooldown hit with ≤3 s left no
   longer counts as a strike. Owner `/resetstrikes` clears every strike and lifts every spam mute.

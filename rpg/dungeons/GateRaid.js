@@ -69,6 +69,9 @@ function playerDamage(player, skillName = null, target = null) {
     if (target) { try { dmg = Math.max(1, Math.floor(dmg * require('../utils/JobSystem').targetMult(player, target, { boss: !!target.isBoss }))); } catch (e) {} } // Push #95: job prey/elite/pack bonuses
     const isCrit = Math.random() < ((player.stats?.critChance || 2) + (_pm74.crit || 0) + _gearCritGR + _titleCritGR + _auraGR.crit + _critBuffGR(player)) / 100;
     if (isCrit) dmg = Math.floor(dmg * ((player.stats?.critDamage || 150) + _gearCritDmgGR) / 100);
+    // Push #103b: class snippet rules (execution, holy vs dark, stealth strike, riposte, elemental rotation, consume…)
+    let _snip = { mult: 1, lines: [], statuses: [], noMiss: false };
+    try { _snip = require('../utils/ClassSnippets').damageMods(player, entry || skill, target); if (_snip.mult !== 1) dmg = Math.max(1, Math.floor(dmg * _snip.mult)); synergyNotes.push(..._snip.lines); } catch (e) {}
     if (target) { try { require('../utils/JobSystem').noteHit(player, true); target.lastHitBy = player.jid || player.id || target.lastHitBy; } catch (e) {} } // Push #95
 
     player.stats.energy = Math.max(0, (player.stats.energy || 0) - cost);
@@ -76,7 +79,7 @@ function playerDamage(player, skillName = null, target = null) {
     try { require('../utils/RegenManager').markCombatAction(player); } catch (e) {}
     // Push #88o: the monster may DODGE a damaging skill — cooldown + energy are
     // already spent (a dodged/missed move still enters cooldown).
-    if (target && !_isHealSkillEarly(entry, skill) && monsterDodges(target, player, entry || skill)) {
+    if (target && !_isHealSkillEarly(entry, skill) && !_snip.noMiss && monsterDodges(target, player, entry || skill)) {
       try { require('../utils/JobSystem').noteHit(player, false); } catch (e) {} // Push #95: Brawler momentum breaks on a miss
       return { damage: 0, isCrit: false, dodged: true, missed: true, missWhy: (monsterDodges.last && monsterDodges.last.why) || null, skillUsed: skill, statuses: [], healingPct: 0, healed: 0, hpPercentLines: [], drained: 0, hpCost: 0, synergyNotes: [], buffs: [] };
     }
@@ -114,10 +117,11 @@ function playerDamage(player, skillName = null, target = null) {
       }
     } catch (e) {}
     // Push #102f (BUG-049): weapons wear in raids too — −1 durability on a landed hit (the only place they wore was PvP).
-    try { if (dmg > 0) { const bw = require('../utils/ArmoryStore').wearWeapon(player); if (bw) synergyNotes.push(`💥 *${player.name}'s ${bw.name}* shattered — back in your bag at 0 durability (🛠️ mend it)`); } } catch (e) {}
+    try { if (dmg > 0) { const bw = require('../utils/ArmoryStore').wearWeapon(player); if (bw) synergyNotes.push(`💥 *${player.name}'s ${bw.name}* SHATTERED — destroyed, lost for good`); } } catch (e) {}
+    try { if (dmg > 0) { const _mh = require('../utils/ClassSnippets').multiHitLines(player, entry || skill, dmg, isCrit); if (_mh.length) synergyNotes.push(..._mh); } } catch (e) {} // Push #103b: Archer per-arrow log
     return {
       damage: dmg, isCrit, skillUsed: skill,
-      statuses: [ ...((entry && entry.statuses) || skill.statuses || []), ...((_pm74.onHit || [])) ],
+      statuses: [ ...((entry && entry.statuses) || skill.statuses || []), ...((_pm74.onHit || [])), ...(_snip.statuses || []) ],
       healingPct: _healPct,
       healed: healed + (_hpx.healed || 0),
       hpPercentLines: _hpx.lines, drained: _hpx.drained, hpCost: _hpx.cost,
@@ -143,7 +147,7 @@ function playerDamage(player, skillName = null, target = null) {
   let procNote = null;
   if (_pm74.procDmg > 0 && Math.random() * 100 < _pm74.procDmg) { const extra = Math.floor(dmg * 0.5); dmg += extra; procNote = `✨ Arcane proc +${extra}`; }
   if (procNote) synergyNotes = [...synergyNotes, procNote];
-  try { if (dmg > 0) { const bw = require('../utils/ArmoryStore').wearWeapon(player); if (bw) synergyNotes = [...synergyNotes, `💥 *${player.name}'s ${bw.name}* shattered — back in your bag at 0 durability (🛠️ mend it)`]; } } catch (e) {} // Push #102f (BUG-049)
+  try { if (dmg > 0) { const bw = require('../utils/ArmoryStore').wearWeapon(player); if (bw) synergyNotes = [...synergyNotes, `💥 *${player.name}'s ${bw.name}* SHATTERED — destroyed, lost for good`]; } } catch (e) {} // Push #102f (BUG-049)
   return { damage: Math.floor(dmg), isCrit, synergyNotes, statuses: (_pm74.onHit || []) };
 }
 
@@ -299,6 +303,8 @@ function monsterDamage(monster, def, player = null) {
         const _hpNow = Number(player.stats?.hp) || 0, _mx = Number(player.stats?.maxHp) || 100;
         if (_hpNow > _mx * 0.25 && Math.floor(raw) >= _hpNow) { raw = Math.max(1, _hpNow - 1); monsterDamage.last.leakSpared = true; }
       }
+      try { const CSn = require('../utils/ClassSnippets'); if (raw > 0) { const _ih = CSn.incomingHit(player, monster, Math.floor(raw)); if (_ih.lines.length) { raw = _ih.raw; monsterDamage.last.soakLines = [...(monsterDamage.last.soakLines || []), ..._ih.lines]; if (_ih.parried) monsterDamage.last.parried = true; } } } catch (e) {} // Push #103b: Warrior parry / stealth break
+      try { const SM = require('../utils/Summons'); if (raw > 0) { const _sk = SM.soak(player, Math.floor(raw)); if (_sk.lines.length) { raw = _sk.dmg; monsterDamage.last.soakLines = _sk.lines; } } } catch (e) {} // Push #103b: summons soak (Linked Fate / Golem / Sanctuary)
       try { const BM = require('../utils/BuffManager'); if (raw > 0 && BM.hasShield(player)) { BM.consumeShield(player); monsterDamage.last.absorbed = (monsterDamage.last.absorbed || 0) + Math.floor(raw); monsterDamage.last.shieldScroll = Math.floor(raw); raw = 0; } } catch (e) {} // Push #102f (BUG-037): Shield Scroll eats one hit
       try { if (raw > 0 && player.tempBuffs && player.tempBuffs.reflect) { const _rf = require('../utils/UnifiedCombat').reflectDamage(player, monster, Math.floor(raw)); if (_rf) { monsterDamage.last.reflected = _rf.back; monsterDamage.last.shieldLine = [monsterDamage.last.shieldLine, _rf.line].filter(Boolean).join('\n'); if (monster.hp <= 0) monster.hp = 1; } } } catch (e) {}
       return Math.max(0, Math.floor(raw));
@@ -312,9 +318,18 @@ function monsterDamage(monster, def, player = null) {
 // Push #88: after a monster hit lands on `player` — reflect, survive-lethal,
 // per-turn regen. Returns lines. Call AFTER the damage was applied.
 function afterMonsterHit(player, monster, dmg) {
+  // Push #103b: summon soak lines + Transcendent Lich Ascendancy (survive via a minion)
+  const _l103 = [];
+  try { if (monsterDamage.last && monsterDamage.last.soakLines) { _l103.push(...monsterDamage.last.soakLines); delete monsterDamage.last.soakLines; } } catch (e) {}
+  try { if (player && player.stats && (player.stats.hp || 0) <= 0) { const SM = require('../utils/Summons'); const _ls = SM.lichSave(player); if (_ls) _l103.push(_ls); } } catch (e) {}
+  try { require('../utils/ClassSnippets').noteHp(player); } catch (e) {} // Push #103b: Chronomancer timeline
+  if (_l103.length) { const _rest = afterMonsterHit._inner ? afterMonsterHit._inner(player, monster, dmg) : []; return [..._l103, ..._rest]; }
+  return afterMonsterHit._inner(player, monster, dmg);
+}
+afterMonsterHit._inner = function (player, monster, dmg) {
   const lines = [];
   // Push #102f (BUG-049): armour wears when a beast lands a hit (−1 durability per piece; broken pieces fall off).
-  try { if (dmg > 0) { const Armory = require('../utils/ArmoryStore'); for (const bg of Armory.wearGear(player)) lines.push(`💥 *${player.name}'s ${bg.name}* broke — back in your bag at 0 durability (🛠️ mend it)`); const _w = Armory.lowDurabilityCheck ? Armory.lowDurabilityCheck(player) : []; if (_w && _w.length) lines.push(..._w); } } catch (e) {}
+  try { if (dmg > 0) { const Armory = require('../utils/ArmoryStore'); for (const bg of Armory.wearGear(player)) lines.push(`💥 *${player.name}'s ${bg.name}* BROKE — destroyed, lost for good`); const _w = Armory.lowDurabilityCheck ? Armory.lowDurabilityCheck(player) : []; if (_w && _w.length) lines.push(..._w); } } catch (e) {}
   try { const _bdl = require('../utils/ClassPower').noteBloodDebt(player, dmg); if (_bdl) lines.push(_bdl); } catch (e) {}
   try { const UCc = require('../utils/UnifiedCombat'); const banked = UCc.noteDamageTaken(player, dmg); if (banked > 0) lines.push(`🩸 *${player.name}* banks ${banked} HP of that hit — it returns next turn (${player.tempBuffs.convert.source}).`); } catch (e) {}
   let pm = null; try { pm = require('../utils/ClassPower').passiveMultipliers(player); } catch (e) { return lines; }
@@ -493,6 +508,7 @@ function relationOf(sender, keyData, db) {
 
 // ── Get / create the raid object on a gate ──────────────────────
 function raidOf(gate, key, keyData) {
+  try { if (gate.raid && gate.raid.status === 'recruiting' && !gate.raid.startedAt && raidIsGhost(gate)) { expireGhostRaid(gate, null); gate.raid = null; } } catch (e) {} // Push #103a (BUG-093): a 6h-old party that never started is rebuilt fresh
   if (!gate.raid) {
     gate.raid = {
       key,
@@ -506,6 +522,7 @@ function raidOf(gate, key, keyData) {
       startedAt: null,
       clearedAt: null,
       loot: null,
+      createdAt: Date.now(), // Push #103a (BUG-093): recruiting raids that never start expire after RECRUIT_TTL_MS
     };
   }
   try { require('../utils/BotLane').claim(gate.raid); } catch (e) {} // Push #97: the raid belongs to the bot lane that opened it
@@ -600,6 +617,24 @@ function wipeGate(gate, key, keyData, chatId, db) {
 
 // Push #82: one hunter, one raid. Scans every live gate for a raid that is
 // still recruiting/active and already lists this sender (JID-tolerant).
+// Push #103a (BUG-093): a party that was formed but never started (or an active raid nobody touched for a day)
+// is a ghost — it must not hold its members hostage ("already in a gate raid") for ever. Live DB had a
+// 'recruiting' raid from 8 Oct still blocking 6 hunters nine days later.
+const RECRUIT_TTL_MS = 6 * 3600e3, IDLE_RAID_TTL_MS = 24 * 3600e3;
+function raidIsGhost(g, now = Date.now()) {
+  const r = g && g.raid; if (!r) return false;
+  if (g.cleared || g.broken) return true;
+  if (r.status === 'recruiting' && !r.startedAt) { const t = r.createdAt || g.purchasedAt || g.spawnTime || 0; return !!t && now - t > RECRUIT_TTL_MS; }
+  if (r.status === 'active') { const t = r.lastTurnAt || r.startedAt || r.createdAt || 0; return !!t && now - t > IDLE_RAID_TTL_MS; }
+  return false;
+}
+function expireGhostRaid(g, db) {
+  const r = g && g.raid; if (!r) return false;
+  r.status = 'expired'; r.endedAt = Date.now(); r.members = []; g.raiders = []; g.raidStarted = false;
+  try { releaseCombatLock(g.id); } catch (e) {}
+  try { saveGateState(db, g); } catch (e) {}
+  return true;
+}
 function findOtherRaid(sender, gate) {
   const sNum = GKM.normaliseJid(sender);
   let all = {};
@@ -609,10 +644,27 @@ function findOtherRaid(sender, gate) {
     const r = g.raid;
     if (!r || !Array.isArray(r.members) || r.status === 'done') continue;
     if (r.status !== 'recruiting' && r.status !== 'active') continue;
+    if (raidIsGhost(g)) continue; // Push #103a (BUG-093)
     const hit = r.members.find(x => x.id === sender || (sNum && GKM.normaliseJid(x.id) === sNum));
     if (hit && (hit.hp === undefined || hit.hp > 0)) return g;
   }
   return null;
+}
+/** Push #103a (BUG-093): pull a hunter out of EVERY raid roster (used by /forceclear). Returns count. */
+function evictFromAllRaids(sender, db) {
+  const sNum = GKM.normaliseJid(sender); let n = 0; let all = {};
+  try { all = GateManager.activeGates || {}; } catch (e) {}
+  for (const g of Object.values(all)) {
+    try {
+      const r = g && g.raid; if (!r) continue;
+      const before = (r.members || []).length;
+      if (Array.isArray(r.members)) r.members = r.members.filter(x => !(x.id === sender || (sNum && GKM.normaliseJid(x.id) === sNum)));
+      if (Array.isArray(g.raiders)) g.raiders = g.raiders.filter(x => !(x === sender || (sNum && GKM.normaliseJid(x) === sNum)));
+      if (Array.isArray(r.fallen)) r.fallen = r.fallen.filter(x => x !== sNum && x !== sender);
+      if ((r.members || []).length !== before) { n++; if (r.leader === sender && r.members.length) r.leader = r.members[0].id; try { saveGateState(db, g); } catch (e) {} }
+    } catch (e) {}
+  }
+  return n;
 }
 function otherRaidError(g) {
   const code = g.code || g.keyCode || g.id || '?';
@@ -1229,6 +1281,7 @@ function pickAggroTarget(gate, attackerJid, db, isBoss) {
   const raid = gate && gate.raid;
   const ag = raid && raid.healerAggro;
   if (!ag || (ag.turns || 0) <= 0) return null;
+  try { const _hu = db && db.users && db.users[ag.jid]; if (_hu && require('../utils/ClassSnippets').aggroImmune(_hu)) { ag.turns = 0; return null; } } catch (e) {} // Push #103b: Monk — Pacifying Presence
   const rankHigh = ['B', 'A', 'S', 'SS', 'DISASTER'].includes(String(gate.rank || '').toUpperCase());
   if (!rankHigh && !isBoss) return null;
   if (GKM.normaliseJid(ag.jid) === GKM.normaliseJid(attackerJid)) { ag.turns -= 1; return null; } // healer struck — normal counter
@@ -1258,6 +1311,7 @@ function supportCast(caster, casterJid, target, targetJid, skillName, gate, db) 
   if (!isHeal && !isBuff) return { ok: false, error: `*${skill.name}* is not a heal or buff — cast it on the monster with /skill ${skill.name}.`, notSupport: true };
   const cd = SC.onCooldown(caster, entry);
   if (!cd.ready) return { ok: false, error: `*${skill.name}* is on cooldown! (${Math.ceil(cd.msLeft / 1000)}s)` };
+  { const _hg = require('../utils/ClassSnippets').healGate(caster, entry); if (!_hg.ok) return { ok: false, error: _hg.error }; } // Push #103b: heal budget per fight
   // ── Push #88d: HEALING RULES ─────────────────────────────────────────────
   //  • Only the HEALER class may heal a TEAMMATE or the PARTY. Every other
   //    class's heal is SELF-ONLY and costs 2× energy (a big mana commitment).
@@ -1315,6 +1369,7 @@ function supportCast(caster, casterJid, target, targetJid, skillName, gate, db) 
   let healPower = 1;
   try { const CP = require('../utils/ClassPower'); healPower = 1 + ((CP.passiveMultipliers(caster).healPower || 0) / 100); } catch (e) {}
   const lines = [];
+  try { const _hn = require('../utils/ClassSnippets').noteHeal(caster, entry); if (_hn) lines.push(_hn); } catch (e) {} // Push #103b
   const targets = [];
   if (party && gate && gate.raid && gate.raid.members) {
     // Every living party member (including the caster).
@@ -1375,6 +1430,8 @@ function supportCast(caster, casterJid, target, targetJid, skillName, gate, db) 
   let stunned = false;
   if (hpToll > 0) { caster.stats.hp = Math.max(1, (caster.stats.hp || 0) - hpToll); lines.push(`🩸 *${caster.name}* pays ${hpToll} HP of backlash (${tollPct.toFixed(1)}%${_hLv > 1 ? `, Lv${_hLv} −${HB.reductionPct(_hLv)}%` : ''}) → ${caster.stats.hp}`); }
   if (severeHealed) { HB.stunHealer(caster); stunned = true; lines.push(`💫 *${caster.name}* is STUNNED — pulling *${severeHealed}* back from under ${HB.SEVERE_HP_PCT}% HP was a shock (${HB.STUN_TURNS} turn).`); }
+  try { const SMb = require('../utils/Summons'); lines.push(...SMb.applySummonBuff(caster, entry)); } catch (e) {} // Push #103b
+  try { lines.push(...require('../utils/ClassSnippets').onSupportCast(caster, entry)); } catch (e) {} // Push #103b: stealth / rewind / barrier / formation
   return { ok: true, skill, lines, healed: healedTotal, party: targets.length > 1, isHeal, isBuff, energyCost: cost, hpToll, stunned };
 }
 
@@ -1432,6 +1489,7 @@ function statusOf(gate, db) {
 function monsterKilledBy(gate, monster, sender, db) {
   const lines = [];
   const player = db.users?.[sender];
+  try { require('../utils/Corpses').recordMonster(gate, { ...monster, level: monster.level || gate.level || ({ E: 5, D: 15, C: 25, B: 40, A: 55, S: 70 }[String(gate.rank || 'E').toUpperCase()] || 5) }, player && player.name); } catch (e) {} // Push #103b: corpse ledger
   if (!player) return lines;
 
   if (!player.inventory) player.inventory = { materials: [], items: [], petFood: {} };
@@ -1632,6 +1690,7 @@ function clearGate(gate, key, keyData, db, saveDatabase, opts = {}) {
         // Recovery stops here. Rank regen resumes after the short lock window
         // instead of dumping a full heal the instant the raid ends.
         if (RegenMgr) RegenMgr.endCombat(p);
+        try { require('../utils/Summons').clear(p); } catch (e) {} // Push #103b
         recovered++;
 
         // Everyone standing is paid: XP → (LevelUpManager → level-up stats,
@@ -1787,6 +1846,8 @@ function hunterFalls(gate, memberId, u, db) {
   const lines = []; const raid = gate && gate.raid; if (!raid || !u) return lines;
   const _n = GKM.normaliseJid(memberId);
   const m = (raid.members || []).find(x => x.id === memberId || GKM.normaliseJid(x.id) === _n);
+  try { require('../utils/Corpses').recordHunter(gate, u); } catch (e) {} // Push #103b: a fallen hunter is a corpse the dead can use
+  try { const _lf = require('../utils/Summons').onOwnerDown(u); if (_lf) lines.push(_lf); } catch (e) {} // Push #103b: linked fate
   u.stats.hp = 1;
   try { require('../utils/CombatReset').clearForBattle(u); } catch (e) {} // Push #96h-z20
   u.stats_history = u.stats_history || {}; u.stats_history.gateDeaths = (u.stats_history.gateDeaths || 0) + 1;
@@ -1815,9 +1876,13 @@ function berserkHunters(db) {
       const raid = gate && gate.raid;
       if (!raid || raid.status !== 'active' || gate.cleared || gate.broken) continue;
       const hasTarget = !!_currentRaidTarget(gate);
+      // Push #103b: Monk — Pacifying Presence: no Monster in a party with a living Monk falls into BERSERK.
+      let _monkCalm = false;
+      try { const CSn = require('../utils/ClassSnippets'); _monkCalm = (raid.members || []).some(mm => { const mu = db && db.users && db.users[mm.id]; return mu && (mu.stats?.hp || 0) > 0 && CSn.preventsBerserk(mu); }); } catch (e) {}
       for (const m of raid.members || []) {
         const u = db && db.users ? (db.users[m.id] || Object.values(db.users).find(x => x && x.jid && GKM.normaliseJid(x.jid) === GKM.normaliseJid(m.id))) : null;
         if (!u || !TF.isBerserk(u)) continue;
+        if (_monkCalm) { try { if (u.transform) u.transform.berserk = false; } catch (e) {} continue; }
         if ((u.stats?.hp || 0) <= 0) continue;
         if (!hasTarget) {
           // Nothing left to maul on this floor: the rage burns down one turn per tick.
@@ -1948,7 +2013,7 @@ try {
   _laneSlot(monsterDamage, 'last', 'gr_mdLast'); _laneSlot(monsterDodges, 'last', 'gr_mdodgeLast');
   _laneSlot(playerDamage, 'lastMiss', 'gr_pdLastMiss'); _laneSlot(playerDamage, 'partyAllies', 'gr_pdAllies');
 } catch (e) {}
-module.exports = { LEAK_MULT, LEAK_ATK_CUT, LEAK_REGEN_CHANCE: 0.90, LEAK_DOMAIN_CHANCE: 0.80,
+module.exports = { _currentRaidTarget, currentTarget: _currentRaidTarget, raidIsGhost, expireGhostRaid, evictFromAllRaids, RECRUIT_TTL_MS, LEAK_MULT, LEAK_ATK_CUT, LEAK_REGEN_CHANCE: 0.90, LEAK_DOMAIN_CHANCE: 0.80,
   findOtherRaid,
   SEVERITY_BAND, dayFlex, rollRedExtra,
   GATE_TUNE, RED_GATE_TUNE, LEAK_TUNE, BEAST_HP_BUFF, BEAST_ATK_BUFF, RED_GATE_CHANCE, DOUBLE_DUNGEON_CHANCE, LEAK_CHANCE, RED_GATE_TEXT, sealedReason, leakMonster, leakReveal, morphLeak, LEAK_EVADE, succeedLeader, takeLeaderNotice, doublePending, evolveDouble, grantDoubleBoxes, // Push #96d

@@ -55,6 +55,8 @@ const CLASS_KITS = {
   Assassin:     { ally: { crit: 35, armorPen: 25, atk: 20 }, enemy: { def: -20 }, statuses: [{ type: 'poison', chance: 100, duration: 4 }, { type: 'silence', chance: 70, duration: 2 }], burst: 300 },
   ShadowDancer: { ally: { dodge: 25, speed: 25, atk: 20 }, enemy: { dodge: -20 }, statuses: [{ type: 'blind', chance: 100, duration: 3 }, { type: 'bleed', chance: 80, duration: 3 }], burst: 220 },
   Phantom:      { ally: { dodge: 25, atk: 20 }, enemy: { atk: -15 }, statuses: [{ type: 'fear', chance: 100, duration: 3 }, { type: 'blind', chance: 70, duration: 2 }], burst: 200 },
+  Bard:         { ally: { dodge: 20, atk: 15, crit: 10 }, enemy: { atk: -20, dodge: -15 }, statuses: [{ type: 'silence', chance: 80, duration: 2 }, { type: 'blind', chance: 100, duration: 3 }], burst: 180 },
+  Druid:        { ally: { def: 25, regen: 6, atk: 10 }, enemy: { speed: -20 }, statuses: [{ type: 'poison', chance: 100, duration: 4 }, { type: 'trueslow', chance: 100, duration: 3 }], burst: 170 },
   Monk:         { ally: { speed: 25, def: 20, atk: 20 }, enemy: { speed: -15 }, statuses: [{ type: 'paralyze', chance: 60, duration: 1 }, { type: 'weaken', chance: 100, duration: 3 }], burst: 220 },
   Mage:         { ally: { atk: 40, crit: 10 }, enemy: { def: -20 }, statuses: [{ type: 'burn', chance: 100, duration: 3 }, { type: 'freeze', chance: 50, duration: 1 }], burst: 300 },
   Elementalist: { ally: { atk: 35 }, enemy: { def: -15, speed: -15 }, statuses: [{ type: 'burn', chance: 100, duration: 3 }, { type: 'freeze', chance: 60, duration: 1 }, { type: 'paralyze', chance: 40, duration: 1 }], burst: 280 },
@@ -98,6 +100,8 @@ const CLASS_DOMAINS = {
   Devourer:     ['Endless Hunger', 'Devoured Shell', 'Ravenous Sprint', 'Consuming Maw', 'Gnashing Execution', 'Starving Field', 'Gorged Rest', 'Regurgitation', 'Gluttony Overload', 'Apex Devourer'],
   Phantom:      ['Spectral Barrage', 'Ethereal Wall', 'Phase Shift', 'Soul Siphon', 'Haunting Execution', 'Chilling Presence', 'Ghostly Refuge', 'Phantasm Mirror', 'Wraith Overload', 'Phantom Sovereign'],
   Senku:        ['Scientific Assault', 'Reinforced Lab', 'Kinetic Momentum', 'Chemical Siphon', 'Precision Analysis', 'Nerve Gas Field', 'Medical Tent', 'Optical Mirror', 'Overclocked Reactor', 'Kingdom of Science'],
+  Bard:         ['Crescendo Volley', 'Chorus of Shields', 'Allegro Steps', 'Siphoning Serenade', 'Final Note', 'Dirge of Dread', 'Quiet Refrain', 'Mirror Melody', 'Reckless Fortissimo', 'Grand Overture'],
+  Druid:        ['Thorn Barrage', 'Bark of the Elder', 'Stampede Grove', 'Rootdrink', 'Predator\'s Pounce', 'Spore Dread', 'Sanctuary Glade', 'Still Pond Mirror', 'Wildfire Heart', 'Worldtree Court'],
   Monster:      ['Feral Rampage', 'Chitin Fortress', 'Predator Sprint', 'Devouring Ground', 'Apex Kill Zone', 'Primal Terror', 'Den of the Beast', 'Hide Reflection', 'Rampage Overload', 'Monarch of Beasts'],
 };
 const GENERIC = ['Awakened Will', 'Iron Resolve', 'Quick Instinct', 'Hungry Spirit', 'Sharpened Focus', 'Cold Presence', 'Quiet Ground', 'Stubborn Mirror', 'Reckless Heart', 'Hunter\'s Authority'];
@@ -141,38 +145,55 @@ const _clean = (t) => String(t || '').replace(/[*_~`]/g, '').replace(/\s+/g, ' '
 function setupStep(player) { return (player && player.domain && player.domain.unlocked && player.domain.setup) || null; }
 function setupPrompt(player) {
   const d = player && player.domain; if (!d || !d.setup) return null;
-  if (d.setup === 'name') return [`🌌 *NAME YOUR DOMAIN*`, `Reply here with the name of your domain (3–40 characters). Fate gave it the working name *${d.name}* — you may keep it by replying *keep*.`, `✏️ A name can be changed later with a 🃏 Rename Card (/domain rename).`].join('\n');
-  if (d.setup === 'desc') return [`📜 *DESCRIBE YOUR DOMAIN*`, `Reply here with a short description of *${d.name}* (up to 2000 characters) — what does a hunter see when it expands?`, `⚠️ The description is *permanent*. Reply *skip* for none.`].join('\n');
+  // Push #103a (BUG-100): replies must be EXPLICIT — quote this prompt, or start with "name:" / "desc:". A plain DM is
+  // never taken as a domain name any more (it swallowed a bot-link reply and named someone's domain "Astra2026").
+  if (d.setup === 'name') return [`🌌 *NAME YOUR DOMAIN*`, `Fate gave it the working name *${d.name}*.`, `✏️ To name it yourself, *reply to this message* with the name (3–40 characters), or send: *name: Your Domain Name*`, `Reply *name: keep* to keep *${d.name}*.`, `🛡️ Names and descriptions are checked by an owner before they go live.`].join('\n');
+  if (d.setup === 'desc') return [`📜 *DESCRIBE YOUR DOMAIN*`, `*Reply to this message* with a short description of *${d.name}* (up to 2000 characters) — what does a hunter see when it expands? Or send: *desc: Your description*`, `Send *desc: skip* for none. It can be changed later with /domain desc <text> (owner-approved).`].join('\n');
   return null;
 }
-// Returns null if this text was not a setup reply; otherwise { reply, done }.
-function handleSetupReply(player, text) {
+const SETUP_MARKERS = ['NAME YOUR DOMAIN', 'DESCRIBE YOUR DOMAIN'];
+// Returns null if this text was not a setup reply; otherwise { reply, done, submit? }.
+// opts.quoted = text of the message being replied to (if any). A reply counts only when it quotes a setup prompt
+// or carries a "name:" / "desc:" prefix.
+function handleSetupReply(player, text, opts = {}) {
   const d = player && player.domain; if (!d || !d.unlocked || !d.setup) return null;
-  const t = _clean(text); if (!t || t.startsWith('/') || t.startsWith('!') || t.startsWith('.')) return null;
+  let t = _clean(text); if (!t || t.startsWith('/') || t.startsWith('!') || t.startsWith('.')) return null;
+  const quoted = String(opts.quoted || '');
+  const quotedPrompt = SETUP_MARKERS.some(m => quoted.toUpperCase().includes(m));
+  const m = t.match(/^(name|desc|description)\s*[:：-]\s*(.*)$/i);
+  if (m) { const kind = m[1].toLowerCase().startsWith('name') ? 'name' : 'desc'; if (kind !== d.setup) return { reply: d.setup === 'name' ? `✏️ First the NAME — send *name: Your Domain Name* (or *name: keep*).` : `📜 The name is set — now send *desc: your description* (or *desc: skip*).`, done: false }; t = _clean(m[2]); }
+  else if (!quotedPrompt && !opts.explicit) return null; // plain chatter / link codes / anything else → not ours
   if (d.setup === 'name') {
-    if (t.toLowerCase() !== 'keep') {
-      if (t.length < 3 || t.length > 40) return { reply: '❌ 3–40 characters please. Reply with your domain name, or *keep*.', done: false };
-      d.name = t;
-    }
-    d.setup = 'desc';
-    return { reply: `✨ Your domain shall be known as *${d.name}*.\n\n${setupPrompt(player)}`, done: false };
+    if (t.toLowerCase() === 'keep') { d.setup = 'desc'; return { reply: `✨ *${d.name}* it stays.\n\n${setupPrompt(player)}`, done: false }; }
+    if (t.length < 3 || t.length > 40) return { reply: '❌ 3–40 characters please. Reply again with *name: …*, or *name: keep*.', done: false };
+    d.setupName = t; d.setup = 'desc';
+    return { reply: `✨ *${t}* — noted (goes live once an owner approves).\n\n${setupPrompt(player)}`, done: false };
   }
   if (d.setup === 'desc') {
-    if (t.toLowerCase() !== 'skip') {
-      if (t.length > 2000) return { reply: '❌ Up to 2000 characters please. Reply again, or *skip*.', done: false };
-      d.desc = t;
-    }
-    delete d.setup;
-    return { reply: [`🌌 *${d.name}*${d.desc ? ` — _${d.desc}_` : ''}`, `Your domain is sealed in the records. See it any time with /domain.`].join('\n'), done: true };
+    let desc = null;
+    if (t.toLowerCase() !== 'skip') { if (t.length > 2000) return { reply: '❌ Up to 2000 characters please. Reply again with *desc: …*, or *desc: skip*.', done: false }; desc = t; }
+    const name = d.setupName || null; delete d.setupName; delete d.setup;
+    if (name == null && desc == null) return { reply: [`🌌 *${d.name}*`, `Your domain is sealed in the records. See it any time with /domain.`].join('\n'), done: true };
+    return { reply: [`🌌 *${name || d.name}*${desc ? ` — _${desc}_` : ''}`, `📨 Sent to the owners for approval — until then your domain shows as *${d.name}*. You will be told the verdict here.`].join('\n'), done: true, submit: { name, desc } };
   }
   return null;
 }
+/** Push #103a: /domain name <x> — costs a Rename Card (charged now, refunded on reject) and goes to approval. */
 function rename(player, name) {
   const d = player && player.domain; if (!d || !d.unlocked) return { ok: false, error: 'No domain yet.' };
   const n = _clean(name); if (n.length < 3 || n.length > 40) return { ok: false, error: 'Give a name of 3–40 characters.' };
   if (!player.cards || (Number(player.cards.namechange) || 0) < 1) return { ok: false, error: 'Renaming a domain costs 1 🃏 Rename Card — /prostore buy namechange' };
-  player.cards.namechange -= 1; const old = d.name; d.name = n;
-  return { ok: true, old, name: n, left: player.cards.namechange };
+  player.cards.namechange -= 1; const old = d.name;
+  return { ok: true, old, name: n, left: player.cards.namechange, needsApproval: true };
+}
+/** Push #103a (BUG-100): after /recon the domain follows the NEW class — new effect of that class, same level/UP,
+ *  and the hunter is prompted again (DM) for a name + description (owner-approved). Returns the prompt text or null. */
+function reconDomain(player) {
+  const d = player && player.domain; if (!d || !d.unlocked) return null;
+  const cls = _cls(player) || 'Hunter'; if (cls === d.class) return null;
+  const idx = Math.floor(Math.random() * 10); const eff = effectFor(cls, idx);
+  d.class = cls; d.idx = idx; d.name = eff.name; d.desc = ''; delete d.descEdited; delete d.setupName; delete d.pendingApproval; d.setup = 'name'; d.reconAt = Date.now();
+  return { domain: d, prompt: setupPrompt(player), awakening: [`🌌 *YOUR DOMAIN HAS CHANGED WITH YOUR CLASS*`, `The ${cls} within you reshapes it: *${d.name}*`, ...describe(player)].join('\n') };
 }
 function scaledEffect(player) {
   const d = player.domain; if (!d) return null;
@@ -458,13 +479,30 @@ function monsterDomainInfo(rank, boss = false) {
     turns: MD_TURNS[ri] + (boss ? 1 : 0), status: MD_STATUS[ri], statusChance: Math.min(1, MD_STATUS_CHANCE[ri] * (boss ? 1.15 : 1)) };
 }
 // Called on the monster's turn. Returns a text block or null.
+// Push #103b: TWO-STAGE monster domain — the beast first GATHERS its domain (a warning the hunters
+// can answer with /domain expand within 10 s), then it unfolds. monsterWarn() rolls + arms;
+// monsterTry({ armed: true }) resolves without rolling again.
+const DOMAIN_WARN_MS = 10 * 1000;
+function monsterWarn(arena, monster, hunters = [], ctx = {}) {
+  if (!arena || !monster || !hunters.length || !monsterEligible(monster, ctx)) return null;
+  const cur = active(arena);
+  if (cur && cur.side === 'monster') return null;
+  const isBoss = !!(ctx.boss || monster.isBoss);
+  const chance = monster.leaked ? 0.80 : isBoss ? 0.70 : 0.40;
+  if (Math.random() > (ctx.forceChance != null ? ctx.forceChance : chance)) return null;
+  monster._domainArmedAt = Date.now();
+  const ready = hunters.filter(h => h && has(h) && (h.stats?.hp || 0) > 0 && (h.stats?.energy || 0) >= costFor(h.domain.level || 1)).map(h => h.name);
+  return [`⚠️ *${monster.name} GATHERS ITS DOMAIN!* The air thickens — the space is about to be claimed.`,
+    `⏳ Hunters have *10 seconds* to open their own: */domain expand*${ready.length ? ` (ready: ${ready.join(', ')})` : ''}. A standing hunter domain forces a CLASH instead of a free hit.`].join('\n');
+}
 function monsterTry(arena, monster, hunters = [], ctx = {}) {
   if (!arena || !monster || !hunters.length || !monsterEligible(monster, ctx)) return null;
   const cur = active(arena);
   if (cur && cur.side === 'monster') return null;
   const isBoss = !!(ctx.boss || monster.isBoss);
   const chance = monster.leaked ? 0.80 : isBoss ? 0.70 : 0.40; // Push #96d: bosses 70%, B/A/S 40% · Push #96h-m: leaked 80%
-  if (Math.random() > (ctx.forceChance != null ? ctx.forceChance : chance)) return null;
+  if (ctx.armed) delete monster._domainArmedAt;
+  else if (Math.random() > (ctx.forceChance != null ? ctx.forceChance : chance)) return null;
   const pow = monsterPower(monster, ctx);
   const lines = [];
   if (cur) {
@@ -594,4 +632,4 @@ function findBattle(player, sender, db) {
   return null;
 }
 
-module.exports = { releaseShield, ownerFell, domainVariance, DOMAIN_TTL_MS, CASTER_REGEN_PCT, costFor, CLASS_KITS, kitFor, SKILL_DOMAINS, BREAK, splitMessages, sendDomain, FAMILY_DOMAINS, isShielded, shieldLine, monsterDomainInfo, MONSTER_DOMAINS, setupStep, setupPrompt, handleSetupReply, rename, pvpArena, endPvpArena, findBattle, CAST_ENERGY, MAX_LEVEL, UP_SHARE_CAP, ARCHETYPES, CLASS_DOMAINS, STAT_LABEL, effectFor, scale, turnsFor, costToNext, ensure, has, unlock, scaledEffect, describe, power, upgrade, arenaOf, active, shatter, tick, expand, monsterPower, monsterEligible, monsterTry, onLevelUp, shareUP };
+module.exports = { monsterWarn, DOMAIN_WARN_MS, reconDomain, SETUP_MARKERS, releaseShield, ownerFell, domainVariance, DOMAIN_TTL_MS, CASTER_REGEN_PCT, costFor, CLASS_KITS, kitFor, SKILL_DOMAINS, BREAK, splitMessages, sendDomain, FAMILY_DOMAINS, isShielded, shieldLine, monsterDomainInfo, MONSTER_DOMAINS, setupStep, setupPrompt, handleSetupReply, rename, pvpArena, endPvpArena, findBattle, CAST_ENERGY, MAX_LEVEL, UP_SHARE_CAP, ARCHETYPES, CLASS_DOMAINS, STAT_LABEL, effectFor, scale, turnsFor, costToNext, ensure, has, unlock, scaledEffect, describe, power, upgrade, arenaOf, active, shatter, tick, expand, monsterPower, monsterEligible, monsterTry, onLevelUp, shareUP };

@@ -76,6 +76,7 @@ function applyMoveBuffs(move, attacker, defender) {
   }
   for (const db of (move.debuffs || [])) {
     if (!db || !db.stat) continue;
+    try { const MR = require('./MagicResist'); const r = MR.check(defender, attacker); if (r.resisted) { notes.push(`🔰 ${defender.name || 'Target'} resisted ${String(db.stat).toUpperCase()} debuff (MR ${r.mr} vs MP ${r.mp})`); continue; } } catch (e) {} // Push #103b
     if (!defender.tempBuffs) defender.tempBuffs = {};
     const amt = Number(db.amount) || 0;
     // damageTaken debuff means the target takes MORE damage → positive amount
@@ -273,6 +274,7 @@ function hitCheck(attacker, defender, move, opts = {}) {
   if (!held && !(move && move.undodgeable)) { try { dodge = Math.min(opts.dodgeCap != null ? opts.dodgeCap : DODGE_CAP_VS_ACC, dodgeChance(attacker, defender, opts.pmD || null)); } catch (e) {} }
   // Push #96h-o: while YOUR domain stands, your moves cannot miss (owner only — not teammates).
   let domainSure = false; try { const DS = require('./DomainSystem'); domainSure = !!DS.isShielded(attacker); } catch (e) {}
+  try { if (domainSure && defender && require('./ClassSnippets').ignoresAlwaysHit(defender)) domainSure = false; } catch (e) {} // Push #103b: Shaman — Domain Immunity ("always hit" bypass)
   if (domainSure) { a.acc = 100; a.blind = false; dodge = 0; }
   const hit = (held || domainSure) ? 100 : Math.max(5, Math.min(100, a.acc - dodge));
   const roll = Math.random() * 100;
@@ -334,12 +336,16 @@ function tryApplyEffect(attack, attacker, defender) {
   // Push #97: TERRAIN nudges the odds both ways (burn in a snowfield, poison in a swamp…) — hunters and beasts alike.
   try { const _ter = require('./BotLane').scratch().terrain; if (_ter) chance = chance * require('../data/Terrains').statusMult(_ter, attack.effect.type); } catch (e) {}
   if (Math.random() * 100 > chance) return null;
+  // Push #103b: MAGIC RESISTANCE — MR above the caster's Magic Power can shrug the effect off; MP above MR
+  // breaks through gear/class immunities.
+  let _mrOverride = false;
+  try { const MR = require('./MagicResist'); const r = MR.check(defender, attacker); if (r.resisted) { defender._lastStatusBlock = `resisted (MR ${r.mr} vs MP ${r.mp})`; return null; } _mrOverride = r.overrides && r.mr > 0; } catch (e) {}
   // Push #76: store gear defence — S immunity, B/A resist roll, −1 turn.
   let _turnCut = 0;
   try {
     const sd = require('./ArmoryStore').statusDefense(defender, attack.effect.type);
-    if (sd.blocked) { defender._lastStatusBlock = sd.reason; return null; }
-    _turnCut = sd.turnReduce || 0;
+    if (sd.blocked && !_mrOverride) { defender._lastStatusBlock = sd.reason; return null; }
+    _turnCut = _mrOverride ? 0 : (sd.turnReduce || 0);
   } catch (e) {}
   // Apply to defender
   if (!defender.statusEffects) defender.statusEffects = [];
@@ -613,8 +619,8 @@ async function playTurn(sock, chatId, o) {
       }
       // Durability: weapon wears on a landed hit, defender's gear wears on being hit.
       const bw = Armory.wearWeapon(attacker);
-      if (bw) o._broke = (o._broke || []).concat([`💥 ${attacker.name || 'Attacker'}'s *${bw.name}* shattered — back in the bag at 0 durability (🛠️ mend it)`]);
-      for (const bg of Armory.wearGear(defender)) o._broke = (o._broke || []).concat([`💥 ${defender.name || 'Defender'}'s *${bg.name}* broke — back in the bag at 0 durability (🛠️ mend it)`]);
+      if (bw) o._broke = (o._broke || []).concat([`💥 ${attacker.name || 'Attacker'}'s *${bw.name}* SHATTERED — destroyed, lost for good`]);
+      for (const bg of Armory.wearGear(defender)) o._broke = (o._broke || []).concat([`💥 ${defender.name || 'Defender'}'s *${bg.name}* BROKE — destroyed, lost for good`]);
       // Push #88q: Pro low-durability warning / auto-mend for both sides.
       try { const _w = [].concat(Armory.lowDurabilityCheck(attacker), Armory.lowDurabilityCheck(defender)); if (_w.length) o._broke = (o._broke || []).concat(_w); } catch (e) {}
     } catch (e) {}

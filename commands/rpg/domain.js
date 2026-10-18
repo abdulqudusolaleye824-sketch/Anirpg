@@ -3,8 +3,8 @@
 //   /domain                  → your domain card
 //   /domain expand           → expand it in your current raid / dungeon / instance / PvP (350 energy)
 //   /domain upgrade [n]      → spend UP (10 → Lv.2, 15 → Lv.3, +5 per level, max Lv.100)
-//   /domain name <name>      → rename your domain
-//   /domain desc <text>      → set its description (shown when you expand)
+//   /domain name <name>      → rename your domain (Rename Card, owner-approved)
+//   /domain desc <text>      → change its description (owner-approved) · owner: /domain approve|reject <id> · /domain pending
 //   /domain effects          → the 10 possible effects of your class
 // ═══════════════════════════════════════════════════════════════
 const UI = require('../../rpg/utils/UI');
@@ -47,24 +47,40 @@ module.exports = {
     }
     const d = player.domain;
 
+    const DA = require('../../rpg/utils/DomainApprovals');
     if (sub === 'rename' || sub === 'name') {
       const name = args.slice(1).join(' ').trim();
-      if (!name) return sock.sendMessage(chatId, { text: `✏️ Usage: /domain rename <new name> — costs 1 🃏 Rename Card (you have ${player.cards?.namechange || 0}).` }, { quoted: msg });
+      if (!name) return sock.sendMessage(chatId, { text: `✏️ Usage: /domain name <new name> — costs 1 🃏 Rename Card (you have ${player.cards?.namechange || 0}) and needs owner approval.` }, { quoted: msg });
       const r = DS.rename(player, name);
       if (!r.ok) return sock.sendMessage(chatId, { text: `❌ ${r.error}` }, { quoted: msg });
-      saveDatabase();
-      return sock.sendMessage(chatId, { text: `🌌 *${r.old}* → *${r.name}* · 🃏 1 Rename Card used (${r.left} left)` }, { quoted: msg });
+      const sub2 = DA.submit(db, sender, player, { name: r.name }, 'rename');
+      if (!sub2.ok) { player.cards.namechange += 1; return sock.sendMessage(chatId, { text: `❌ ${sub2.error}` }, { quoted: msg }); }
+      sub2.rec.refundCard = true; saveDatabase();
+      DA.notifyOwners(sock, db, sub2.rec).catch(() => {});
+      return sock.sendMessage(chatId, { text: `📨 *${r.old}* → *${r.name}* sent for owner approval (${sub2.rec.id}) · 🃏 1 Rename Card used (${r.left} left, refunded if rejected). You'll be told the verdict in your DM.` }, { quoted: msg });
     }
     if (sub === 'desc' || sub === 'description') {
-      // Push #96h-q: ONE free rewrite with /domain desc <text> (up to 2000 chars).
+      // Push #103a (BUG-100): /domain desc <text> any time — every change goes to the owners for approval.
       const txt = args.slice(1).join(' ').replace(/[*_~`]/g, '').replace(/\s+/g, ' ').trim();
       if (txt) {
-        if (d.descEdited) return sock.sendMessage(chatId, { text: `❌ You already used your one *free* description change. *${d.name}* keeps: _${d.desc || '—'}_` }, { quoted: msg });
-        if (txt.length > 2000) return sock.sendMessage(chatId, { text: `❌ Up to 2000 characters (yours is ${txt.length}).` }, { quoted: msg });
-        d.desc = txt; d.descEdited = Date.now(); saveDatabase();
-        return sock.sendMessage(chatId, { text: `📜 *${d.name}* — _${d.desc}_\n✅ Description set. That was your one free change — it is permanent now.` }, { quoted: msg });
+        const sub2 = DA.submit(db, sender, player, { desc: txt }, 'desc');
+        if (!sub2.ok) return sock.sendMessage(chatId, { text: `❌ ${sub2.error}` }, { quoted: msg });
+        saveDatabase(); DA.notifyOwners(sock, db, sub2.rec).catch(() => {});
+        return sock.sendMessage(chatId, { text: `📨 New description for *${d.name}* sent for owner approval (${sub2.rec.id}). Until then it keeps: _${d.desc || '—'}_` }, { quoted: msg });
       }
-      return sock.sendMessage(chatId, { text: d.desc ? `📜 *${d.name}* — _${d.desc}_\n⚠️ Domain descriptions are permanent.` : `📜 Your domain has no description — it is set once, in your DM, when the domain awakens.${DS.setupStep(player) ? ' Check your DM — the system is still waiting for your reply.' : ''}` }, { quoted: msg });
+      const pend = DA.pendingFor(db, sender);
+      return sock.sendMessage(chatId, { text: (d.desc ? `📜 *${d.name}* — _${d.desc}_` : `📜 *${d.name}* has no description yet.`) + `\n✏️ Change it: /domain desc <text> (owner-approved).` + (pend ? `\n⏳ Pending approval: ${pend.id}` : '') + (DS.setupStep(player) ? `\n📨 Your DM has the naming prompt waiting.` : '') }, { quoted: msg });
+    }
+    if (sub === 'approve' || sub === 'reject' || sub === 'pending') {
+      let owner = false; try { owner = require('../../utils/permissions').isBotOwner(db, sender); } catch (e) {}
+      if (!owner) return sock.sendMessage(chatId, { text: '❌ Owner only.' }, { quoted: msg });
+      if (sub === 'pending') { const L = DA.listPending(db); return sock.sendMessage(chatId, { text: L.length ? L.map(DA.card).join('\n\n') : '✅ No domain approvals pending.' }, { quoted: msg }); }
+      const id = String(args[1] || '').toUpperCase(); const reason = args.slice(2).join(' ');
+      const r = DA.decide(db, id, sub === 'approve', sender, reason);
+      if (!r.ok) return sock.sendMessage(chatId, { text: `❌ ${r.error}` }, { quoted: msg });
+      if (sub === 'reject' && r.rec.refundCard && r.player) { if (!r.player.cards) r.player.cards = {}; r.player.cards.namechange = (Number(r.player.cards.namechange) || 0) + 1; }
+      saveDatabase(); DA.notifyPlayer(sock, db, r.rec).catch(() => {});
+      return sock.sendMessage(chatId, { text: `${sub === 'approve' ? '✅ Approved' : '❌ Rejected'} ${r.rec.id} — *${r.rec.player}*${r.rec.name != null ? ` · name *${r.rec.name}*` : ''}${r.rec.desc != null ? ' · description' : ''}${r.rec.refundCard && sub === 'reject' ? ' · 🃏 card refunded' : ''}` }, { quoted: msg });
     }
 
     if (sub === 'upgrade' || sub === 'up') {
@@ -79,6 +95,20 @@ module.exports = {
       const battle = DS.findBattle(player, sender, db);
       if (!battle) return sock.sendMessage(chatId, { text: '❌ You can only expand your domain inside a live raid, dungeon, instance or PvP battle.' }, { quoted: msg });
       if ((player.stats?.hp || 0) <= 0) return sock.sendMessage(chatId, { text: '❌ The dead expand nothing.' }, { quoted: msg });
+      // Push #103b: PvP — the FIRST caster gathers for 10 s so the rival may open theirs; once both have fired,
+      // the clash resolves at once (the second caster skips the wait).
+      if (battle.kind === 'pvp' && !DS.active(battle.arena)) {
+        const opp = battle.enemies[0]; const now = Date.now();
+        if (battle.arena._gatherUntil && battle.arena._gatherUntil > now && battle.arena._gatherBy !== sender) {
+          battle.arena._gatherUntil = 0; // rival answered — both domains fire now
+        } else if (opp && DS.has(opp) && (opp.stats?.hp || 0) > 0) {
+          battle.arena._gatherUntil = now + DS.DOMAIN_WARN_MS; battle.arena._gatherBy = sender;
+          await sock.sendMessage(chatId, { text: `⚠️ *${player.name} GATHERS THEIR DOMAIN!*\n⏳ *${opp.name}*, you have *10 seconds* to answer with */domain expand* — then the field is claimed.` }).catch(() => {});
+          const _t0 = Date.now(); while (Date.now() - _t0 < DS.DOMAIN_WARN_MS && battle.arena._gatherUntil) await new Promise(r => setTimeout(r, 500));
+          battle.arena._gatherUntil = 0;
+          if ((player.stats?.hp || 0) <= 0 || !player.pvpBattle) return sock.sendMessage(chatId, { text: `🌫️ *${player.name}*'s domain never unfolded.` }).catch(() => {});
+        }
+      }
       const r = DS.expand(battle.arena, player, battle.allies, battle.enemies, { kind: battle.kind });
       saveDatabase();
       if (!r.ok) return sock.sendMessage(chatId, { text: r.clashed ? r.error : `❌ ${r.error}` }, { quoted: msg });
@@ -107,6 +137,6 @@ module.exports = {
     } catch (e2) {}
     // Push #96h-t: inside a battle, /domain is the SHORT battle card only — no lore spiel.
     if (_battle.length) return sock.sendMessage(chatId, { text: [..._battle, `🌌 *${d.name}* · Lv.${d.level} · lasts ${e.turns} round${e.turns === 1 ? '' : 's'} · ⚡ ${DS.costFor(d.level || 1)} energy`, FRAME].join('\n') }, { quoted: msg });
-    return sock.sendMessage(chatId, { text: [FRAME, `🌌 *${d.name.toUpperCase()}*`, FRAME, d.desc ? `_${d.desc}_` : `_No description yet — /domain desc <text> (one free change)_`, `👤 ${player.name} · ${d.class} · Domain Lv.${d.level}/${DS.MAX_LEVEL} · power ${DS.power(player)}`, `⏳ ${e.turns} turns · ⚡ ${DS.costFor(d.level || 1)} energy · cast ${d.casts || 0}×`, ...DS.describe(player), ``, next != null ? `📈 Next level: *${next} UP* (you have ${player.upgradePoints || 0}) — /domain upgrade` : `🏆 Max level.`, `⚔️ /domain expand · ✏️ /domain name · /domain desc`, FRAME, ..._battle].join('\n') }, { quoted: msg });
+    return sock.sendMessage(chatId, { text: [FRAME, `🌌 *${d.name.toUpperCase()}*`, FRAME, d.desc ? `_${d.desc}_` : `_No description yet — /domain desc <text> (owner-approved)_`, `👤 ${player.name} · ${d.class} · Domain Lv.${d.level}/${DS.MAX_LEVEL} · power ${DS.power(player)}`, `⏳ ${e.turns} turns · ⚡ ${DS.costFor(d.level || 1)} energy · cast ${d.casts || 0}×`, ...DS.describe(player), ``, next != null ? `📈 Next level: *${next} UP* (you have ${player.upgradePoints || 0}) — /domain upgrade` : `🏆 Max level.`, `⚔️ /domain expand · ✏️ /domain name · /domain desc`, FRAME, ..._battle].join('\n') }, { quoted: msg });
   },
 };

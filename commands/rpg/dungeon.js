@@ -149,10 +149,14 @@ function executeMonsterAI(monster, player, ctx = null) {
   try { require('../../rpg/utils/JobSystem').noteStruck(player); } catch (e) {} // Push #96: Brawler counter window
   if (_pm && _pm.job && _pm.job.monsterDmgTaken) finalDmg = Math.max(1, Math.floor(finalDmg * (1 + _pm.job.monsterDmgTaken / 100))); // Push #95: Beast King
   try { finalDmg = Math.max(1, Math.floor(finalDmg * (1 + _UCm.tempBuffPct(player, 'damageTaken') / 100) * _UCm.weakenTakenMult(player))); } catch (e) {} // Push #95: damage-taken buffs/debuffs + WEAKEN
-  // Push #93/#94: Bone Wall / shields absorb before HP.
+  // Push #103b: class combat snippets (Warrior parry, decoys, elemental barrier, formation) then summons soak, then shields.
   let _absLine = '';
+  try { const _ih = require('../../rpg/utils/ClassSnippets').incomingHit(player, monster, finalDmg); if (_ih.lines.length) { finalDmg = Math.max(0, Math.floor(_ih.raw)); _absLine += '\n' + _ih.lines.join('\n'); } } catch (e) {}
+  try { const SMk = require('../../rpg/utils/Summons'); if (finalDmg > 0) { const _sk = SMk.soak(player, finalDmg); if (_sk.lines.length) { finalDmg = _sk.dmg; _absLine += '\n' + _sk.lines.join('\n'); } } } catch (e) {}
+  // Push #93/#94: Bone Wall / shields absorb before HP.
   try { const NX = require('../../rpg/utils/Necromancy'); const ab = NX.absorb(player, finalDmg); if (ab && ab.absorbed > 0) { finalDmg = ab.dmg; _absLine = `\n${NX.shieldLine(ab, player.name) || `🛡️ Shield absorbs *${ab.absorbed}*`}`; } } catch (e) {}
   player.stats.hp = Math.max(0, player.stats.hp - finalDmg);
+  try { require('../../rpg/utils/ClassSnippets').noteHp(player); } catch (e) {}
   let passiveLines = '';
   if (_pm) {
     if (_pm.surviveLethal && player.stats.hp <= 0 && (!player._lethalUsedAt || Date.now() - player._lethalUsedAt > 2 * 3600e3)) { player.stats.hp = 1; player._lethalUsedAt = Date.now(); passiveLines += `\n🛡️ *Undying will!* You survive at 1 HP.`; }
@@ -171,7 +175,7 @@ function executeMonsterAI(monster, player, ctx = null) {
   msg += `${monster.emoji} ${monster.name} ${abilityName ? 'uses *' + abilityName + '*!' : 'attacks!'}\n💬 "${line}"\n${FRAME}\n`;
   msg += `${_mCrit ? '💥 *CRITICAL HIT!* ' : ''}💥 You take *${finalDmg}* damage!${_absLine}${passiveLines}${fxLines}\n❤️ Your HP: ${Math.max(0, player.stats.hp)}/${_effMax(player)}\n`;
   // Push #95: DOMAINS — bosses and B-rank+ monsters may expand theirs.
-  try { const DS = require('../../rpg/utils/DomainSystem'); const arena = ctx && ctx.dungeon ? DS.arenaOf(ctx.dungeon) : null; if (arena) { const tl = DS.tick(arena); if (tl) msg += `\n${tl}\n`; const dl = DS.monsterTry(arena, monster, [player], { boss: !!monster.isBoss, rank: monster.rank }); if (dl) msg += `\n${dl}\n`; } } catch (e) {}
+  try { const DS = require('../../rpg/utils/DomainSystem'); const arena = ctx && ctx.dungeon ? DS.arenaOf(ctx.dungeon) : null; if (arena) { const tl = DS.tick(arena); if (tl) msg += `\n${tl}\n`; const _cd = { boss: !!monster.isBoss, rank: monster.rank }; const dl = monster._domainArmedAt ? DS.monsterTry(arena, monster, [player], { ..._cd, armed: true }) : DS.monsterWarn(arena, monster, [player], _cd); if (dl) msg += `\n${dl}\n`; } } catch (e) {} // Push #103b: warns one turn, unfolds the next
   return msg;
 }
 
@@ -497,7 +501,7 @@ module.exports = {
       const mBar    = BarSystem.getMonsterHPBar(monster.stats.hp, monster.stats.maxHp);
       let txt = pro ? `${UI.PRO_BAR}\n📊 *FLOOR ${dungeon.currentFloor}/${dungeon.maxFloors}* 💎\n${UI.PRO_BAR}\n` : `📊 *FLOOR ${dungeon.currentFloor}/${dungeon.maxFloors}*\n${UI.FREE_BAR}\n`;
       txt += `${DungeonManager.isBossFloor(dungeon.currentFloor) ? '⚠️ BOSS FLOOR!' : `🔽 Floor ${dungeon.currentFloor}`}\n`;
-      txt += `${monster.emoji} *${monster.name}*\n${mBar}\n❤️ ${monster.stats.hp}/${monster.stats.maxHp}\n\n`;
+      txt += `${monster.emoji} *${monster.name}*\n${mBar}\n❤️ ${monster.stats.hp}/${(()=>{try{return require('../../rpg/utils/GearSystem').effectiveMaxHp(monster);}catch(e){return monster.stats.maxHp;}})()}\n\n`;
       txt += `👥 *Party:*\n`;
       party.members.forEach(m => {
         const mp  = db.users[m.id];
@@ -523,7 +527,7 @@ module.exports = {
           awardXP(player, 'dungeon_complete', saveDatabase, sock, chatId);
           player.gold = (player.gold || 0) + sd.totalNexus;
           player.manaCrystals = (player.manaCrystals || 0) + sd.totalCrystals;
-          delete db.soloDungeons[sender];
+          delete db.soloDungeons[sender]; try { require('../../rpg/utils/Summons').clear(player); require('../../rpg/utils/Transformation').clearFightUse(player); } catch (e) {}
           saveDatabase();
           LevelUpManager.checkAndApplyLevelUps(player, saveDatabase, sock, chatId);
           try {
@@ -564,7 +568,7 @@ module.exports = {
         } else {
           txt += `🔽 *FLOOR ${nextFloor}*${pro ? ' 💎' : ''}\n${FRAME}\n${atmo2}\n`;
         }
-        txt += `${FRAME}\n${monster.emoji} *${monster.name}* [Lv.${monster.level}]${isBoss ? ' 🔴 BOSS' : ''}\n💬 "${line2}"\n${FRAME}\n${mBar}\n❤️ ${monster.stats.hp}/${monster.stats.maxHp} HP\n⚔️ ATK: ${monster.stats.atk} | 🛡️ DEF: ${monster.stats.def}\n💥 Abilities: ${monster.abilities.join(', ')}\n${FRAME}\n⚔️ /dungeon attack\n⚡ /<classcmd> [skill]\n🎒 /dungeon item [hp/energy]\n${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO SCOUT* — ATK ${monster.stats.atk} · DEF ${monster.stats.def}` : `\n${UI.upsell()}`);
+        txt += `${FRAME}\n${monster.emoji} *${monster.name}* [Lv.${monster.level}]${isBoss ? ' 🔴 BOSS' : ''}\n💬 "${line2}"\n${FRAME}\n${mBar}\n❤️ ${monster.stats.hp}/${(()=>{try{return require('../../rpg/utils/GearSystem').effectiveMaxHp(monster);}catch(e){return monster.stats.maxHp;}})()} HP\n⚔️ ATK: ${monster.stats.atk} | 🛡️ DEF: ${monster.stats.def}\n💥 Abilities: ${monster.abilities.join(', ')}\n${FRAME}\n⚔️ /dungeon attack\n⚡ /<classcmd> [skill]\n🎒 /dungeon item [hp/energy]\n${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO SCOUT* — ATK ${monster.stats.atk} · DEF ${monster.stats.def}` : `\n${UI.upsell()}`);
         return sock.sendMessage(chatId, { text: txt }, { quoted: msg });
       }
 
@@ -626,7 +630,7 @@ module.exports = {
         const sd = db.soloDungeons[sender];
         player.gold = (player.gold || 0) + sd.totalNexus;
         player.manaCrystals = (player.manaCrystals || 0) + sd.totalCrystals;
-        delete db.soloDungeons[sender];
+        delete db.soloDungeons[sender]; try { require('../../rpg/utils/Summons').clear(player); require('../../rpg/utils/Transformation').clearFightUse(player); } catch (e) {}
         saveDatabase();
         LevelUpManager.checkAndApplyLevelUps(player, saveDatabase, sock, chatId);
         try {
@@ -652,7 +656,7 @@ module.exports = {
     if (sub === 'flee') {
       // Solo flee — lose all rewards
       if (db.soloDungeons && db.soloDungeons[sender]) {
-        delete db.soloDungeons[sender];
+        delete db.soloDungeons[sender]; try { require('../../rpg/utils/Summons').clear(player); require('../../rpg/utils/Transformation').clearFightUse(player); } catch (e) {}
         saveDatabase();
         return sock.sendMessage(chatId, { text: '🏃 *You fled the dungeon!*\n❌ All rewards lost.\n\nUse /dungeon solo to try again.' }, { quoted: msg });
       }
@@ -663,6 +667,7 @@ module.exports = {
     }
 
     // ── ATTACK ────────────────────────────────────────────────
+    if (TURN_SUBS.has(sub)) sock = require('../../rpg/utils/PacedSock').paced(sock); // Push #103b: 3 s between combat messages
     if (sub === 'attack') {
       // Push #88x: a BERSERK hunter does not choose — the beast picks an equipped pattern (or a wild strike).
       try {
@@ -821,7 +826,7 @@ module.exports = {
         if (_statusSolo) introLines.unshift(`⚠️ *STATUS:* ${_statusSolo}`);
         { const _sl = _succumbLine(player); if (_sl) { // Push #97 (BUG-007): ticked to death before the strike lands
           player.stats.hp = 1;
-          if (dunSd) { player.gold = (player.gold || 0) + Math.floor((dunSd.totalNexus || 0) * 0.5); delete db.soloDungeons[sender]; }
+          if (dunSd) { player.gold = (player.gold || 0) + Math.floor((dunSd.totalNexus || 0) * 0.5); delete db.soloDungeons[sender]; try { require('../../rpg/utils/Summons').clear(player); require('../../rpg/utils/Transformation').clearFightUse(player); } catch (e) {} }
           saveDatabase();
           return sock.sendMessage(chatId, { text: [introLines.join('\n'), _sl, FRAME, `💀 *You were defeated!*`, `50% of dungeon Nexus kept.`, `/use — recover`, FRAME].join('\n') }, { quoted: msg });
         } }
@@ -858,7 +863,7 @@ module.exports = {
               `💀 *${monster.name}* defeated!`,
               rewardLine,
               ``,
-              ...(_nq ? [`${_nq.isBoss ? '👹' : '🛡️'} *${_nq.name}* steps forward! [Lv.${_nq.level}]${_nq.isBoss ? ' 🔴 BOSS' : ' ⚜️ ELITE'}`, `❤️ ${_nq.stats.hp}/${_nq.stats.maxHp} · ⚔️ ${_nq.stats.atk} · 🛡️ ${_nq.stats.def} · 💨 ${_nq.stats.speed}`, `/dungeon attack — keep fighting`]
+              ...(_nq ? [`${_nq.isBoss ? '👹' : '🛡️'} *${_nq.name}* steps forward! [Lv.${_nq.level}]${_nq.isBoss ? ' 🔴 BOSS' : ' ⚜️ ELITE'}`, `❤️ ${_nq.stats.hp}/${(()=>{try{return require('../../rpg/utils/GearSystem').effectiveMaxHp(_nq);}catch(e){return _nq.stats.maxHp;}})()} · ⚔️ ${_nq.stats.atk} · 🛡️ ${_nq.stats.def} · 💨 ${_nq.stats.speed}`, `/dungeon attack — keep fighting`]
                      : [`/dungeon advance — next floor`, `/dungeon leave   — exit with rewards`]),
               `${FRAME}`,
             ].filter(Boolean).join('\n'),
@@ -874,7 +879,7 @@ module.exports = {
           player.stats.hp = 1;
           if (dunSd) {
             player.gold = (player.gold || 0) + Math.floor(dunSd.totalNexus * 0.5);
-            delete db.soloDungeons[sender];
+            delete db.soloDungeons[sender]; try { require('../../rpg/utils/Summons').clear(player); require('../../rpg/utils/Transformation').clearFightUse(player); } catch (e) {}
           }
           saveDatabase();
           sections.push({
@@ -897,11 +902,11 @@ module.exports = {
             FRAME,
             `${monster.emoji} *${monster.name}*`,
             `${mBar}`,
-            `❤️ ${monster.stats.hp}/${monster.stats.maxHp}`,
+            `❤️ ${monster.stats.hp}/${(()=>{try{return require('../../rpg/utils/GearSystem').effectiveMaxHp(monster);}catch(e){return monster.stats.maxHp;}})()}`,
             ``,
             `👤 *${player.name}*`,
             `${pBar}`,
-            `❤️ ${player.stats.hp}/${player.stats.maxHp}`,
+            `❤️ ${player.stats.hp}/${(()=>{try{return require('../../rpg/utils/GearSystem').effectiveMaxHp(player);}catch(e){return player.stats.maxHp;}})()}`,
             FRAME,
             `⚔️ /dungeon attack — next hit`,
             `⚡ /<classcmd> [skill]   — use a skill`,
@@ -938,7 +943,7 @@ module.exports = {
           log += _sl + '\n'; player.stats.hp = 1;
           try { awardXP(player, 'dungeon_floor', saveDatabase, sock, chatId); } catch (e) {}
           player.gold = (player.gold || 0) + Math.floor((sd.totalNexus || 0) * 0.5);
-          delete db.soloDungeons[sender]; saveDatabase();
+          delete db.soloDungeons[sender]; try { require('../../rpg/utils/Summons').clear(player); require('../../rpg/utils/Transformation').clearFightUse(player); } catch (e) {} saveDatabase();
           return sock.sendMessage(chatId, { text: `${log}\n${FRAME}\n💀 *DEFEATED on Floor ${sd.currentFloor}!*\n${FRAME}\n📦 Kept 50% of earned rewards.\n💠 Nexus: +${Math.floor((sd.totalNexus || 0) * 0.5).toLocaleString()}\n/use — recover` }, { quoted: msg });
         } }
         // Batch-47: stunned loses the strike, monster still attacks.
@@ -979,6 +984,7 @@ module.exports = {
           const _st = PetCombat.abilityStrike(sender, monster.stats, { owner: player });
           if (_st?.damage) { monster.stats.hp = Math.max(0, (monster.stats.hp || 0) - _st.damage); log += _st.line + '\n'; }
           try { if ((monster.stats.hp || 0) > 0) { const _sa = require('../../rpg/utils/ShadowArmy').strike(player, monster); if (_sa.lines.length) log += _sa.lines.join('\n') + '\n'; } } catch (e) {} // Push #96h-z19
+          try { const SMs = require('../../rpg/utils/Summons'); if ((monster.stats.hp || 0) > 0) { const _ss = SMs.strike(player, monster); if (_ss.lines.length) log += _ss.lines.join('\n') + '\n'; } const _tk = SMs.tick(player); if (_tk.length) log += _tk.join('\n') + '\n'; } catch (e) {} // Push #103b
           const _ph = PetCombat.healPlayer(sender, player);
           try { const _whyP = PetCombat.whyIdle(sender, 'dungeon'); if (_whyP) log += _whyP + '\n'; } catch (e) {} // Push #101 (BUG-024)
           if (_ph.healed > 0) log += `💚 *${_ph.petName}* mended *${_ph.healed}* HP\n`;
@@ -1005,6 +1011,7 @@ module.exports = {
         log += `💥 Dealt *${playerDmg}* damage!\n`;
 
         if (monster.stats.hp <= 0) {
+          try { require('../../rpg/utils/Corpses').recordMonster(sd, { name: monster.name, level: monster.level, atk: monster.stats.atk, def: monster.stats.def, maxHp: monster.stats.maxHp, emoji: monster.emoji, isBoss: sd.currentFloor % 5 === 0 }, player.name); } catch (e) {} // Push #103b: corpse ledger
           try { const _DS = require('../../rpg/utils/DomainSystem'); const _ar = _DS.arenaOf(sd); if (_ar) { const _df = _DS.ownerFell(_ar, monster, [player]); const _cur = _DS.active(_ar); if (!_df && _cur && _cur.side === 'monster') _DS.shatter(_ar, [player], [monster]); } } catch (e) {} // z24: a dead monster's domain + its buffs are dispelled
           // Monster defeated
           const isBossSolo = sd.currentFloor % 5 === 0;
@@ -1064,7 +1071,7 @@ module.exports = {
           awardXP(player, 'dungeon_complete', saveDatabase, sock, chatId);
             player.gold         = (player.gold          || 0) + sd.totalNexus;
             player.manaCrystals = (player.manaCrystals  || 0) + sd.totalCrystals;
-            delete db.soloDungeons[sender];
+            delete db.soloDungeons[sender]; try { require('../../rpg/utils/Summons').clear(player); require('../../rpg/utils/Transformation').clearFightUse(player); } catch (e) {}
             saveDatabase();
             return sock.sendMessage(chatId, {
               text: `${log}\n\n${FRAME}\n🏆 *SOLO DUNGEON COMPLETE!*${pro ? ' 💎' : ''}\n${FRAME}\n✅ All 10 floors cleared!\n\n📊 *TOTAL REWARDS:*\n💠 Nexus: +${sd.totalNexus.toLocaleString()}\n💎 Mana Stones: +${sd.totalCrystals}\n${FRAME}\n💪 Well done, solo hunter!` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO DELVER* — run total ${UI.num(sd.totalNexus)} 💠` : `\n${UI.upsell()}`)
@@ -1094,7 +1101,7 @@ module.exports = {
           player.stats.hp = 1;
           awardXP(player, 'dungeon_floor', saveDatabase, sock, chatId);
           player.gold = (player.gold  || 0) + Math.floor(sd.totalNexus * 0.5);
-          delete db.soloDungeons[sender];
+          delete db.soloDungeons[sender]; try { require('../../rpg/utils/Summons').clear(player); require('../../rpg/utils/Transformation').clearFightUse(player); } catch (e) {}
           saveDatabase();
           return sock.sendMessage(chatId, {
             text: `${log}\n\n${FRAME}\n💀 *DEFEATED on Floor ${sd.currentFloor}!*\n${FRAME}\n📦 Kept 50% of earned rewards.\n💠 Nexus: +${Math.floor(sd.totalNexus * 0.5)}\n${FRAME}\n🏥 Use /use to recover.`
@@ -1106,8 +1113,8 @@ module.exports = {
         saveDatabase();
 
         log += `\n${FRAME}\n`;
-        log += `${monster.emoji} *${monster.name}*\n${mHpBar}\n❤️ ${monster.stats.hp}/${monster.stats.maxHp}\n\n`;
-        log += `👤 *${player.name}*\n${pHpBar}\n❤️ ${player.stats.hp}/${player.stats.maxHp}\n`;
+        log += `${monster.emoji} *${monster.name}*\n${mHpBar}\n❤️ ${monster.stats.hp}/${(()=>{try{return require('../../rpg/utils/GearSystem').effectiveMaxHp(monster);}catch(e){return monster.stats.maxHp;}})()}\n\n`;
+        log += `👤 *${player.name}*\n${pHpBar}\n❤️ ${player.stats.hp}/${(()=>{try{return require('../../rpg/utils/GearSystem').effectiveMaxHp(player);}catch(e){return player.stats.maxHp;}})()}\n`;
         log += `${FRAME}\n🎯 Floor ${sd.currentFloor}/10 | Turn ${sd.turn}`;
         return sock.sendMessage(chatId, { text: log }, { quoted: msg });
       }
@@ -1156,6 +1163,7 @@ module.exports = {
           const _st = PetCombat.abilityStrike(sender, monster.stats, { owner: player });
           if (_st?.damage) { monster.stats.hp = Math.max(0, (monster.stats.hp || 0) - _st.damage); log += _st.line + '\n'; }
           try { if ((monster.stats.hp || 0) > 0) { const _sa = require('../../rpg/utils/ShadowArmy').strike(player, monster); if (_sa.lines.length) log += _sa.lines.join('\n') + '\n'; } } catch (e) {} // Push #96h-z19
+          try { const SMs = require('../../rpg/utils/Summons'); if ((monster.stats.hp || 0) > 0) { const _ss = SMs.strike(player, monster, { party: (party.members || []).map(m => db.users[m.id]).filter(Boolean) }); if (_ss.lines.length) log += _ss.lines.join('\n') + '\n'; } const _tk = SMs.tick(player); if (_tk.length) log += _tk.join('\n') + '\n'; } catch (e) {} // Push #103b
           const _ph = PetCombat.healPlayer(sender, player);
           try { const _whyP = PetCombat.whyIdle(sender, 'dungeon'); if (_whyP) log += _whyP + '\n'; } catch (e) {} // Push #101 (BUG-024)
           if (_ph.healed > 0) log += `💚 *${_ph.petName}* mended *${_ph.healed}* HP\n`;
@@ -1183,6 +1191,7 @@ module.exports = {
       log += `💥 Dealt *${dmg}* damage!\n`;
 
       if (monster.stats.hp <= 0) {
+        try { require('../../rpg/utils/Corpses').recordMonster(dungeon, { name: monster.name, level: monster.level, atk: monster.stats.atk, def: monster.stats.def, maxHp: monster.stats.maxHp, emoji: monster.emoji, isBoss: !!monster.isBoss }, player.name); } catch (e) {} // Push #103b: corpse ledger
         // ── Quest tracking: kill + boss + floor (party) ───────────
         try {
           const { trackAndNotify } = require('../../rpg/utils/QuestDispatcher');
@@ -1215,7 +1224,7 @@ module.exports = {
 
       saveDatabase();
       log += `\n${FRAME}\n`;
-      log += `👤 *${player.name}* ❤️ ${player.stats.hp}/${player.stats.maxHp}\n${BarSystem.getHPBar(player.stats.hp, player.stats.maxHp, require('../../rpg/utils/UnifiedCombat').isPro(player))}\n`;
+      log += `👤 *${player.name}* ❤️ ${player.stats.hp}/${(()=>{try{return require('../../rpg/utils/GearSystem').effectiveMaxHp(player);}catch(e){return player.stats.maxHp;}})()}\n${BarSystem.getHPBar(player.stats.hp, player.stats.maxHp, require('../../rpg/utils/UnifiedCombat').isPro(player))}\n`;
       log += `\n${monster.emoji} *${monster.name}*\n${BarSystem.getMonsterHPBar(monster.stats.hp, monster.stats.maxHp)}\n`;
       log += `${FRAME}\n🎯 Floor ${dungeon.currentFloor}/20 | Turn ${dungeon.turn}`;
       return sock.sendMessage(chatId, { text: log }, { quoted: msg });
@@ -1231,6 +1240,19 @@ module.exports = {
         const skillName = args.slice(1).join(' ').toLowerCase();
         if (!skillName) return sock.sendMessage(chatId, { text: '❌ Usage: /<classcmd> [skill]' }, { quoted: msg });
 
+        // Push #103b: SUMMONS (corpses · horde · totems · possession) — multi-message lore, no turn spent
+        try {
+          const SMx = require('../../rpg/utils/Summons'); const SCs = require('../../rpg/utils/SkillCatalog');
+          const _pS = SCs.resolveSkill(player, skillName, { allowLibrary: true }); const _eS = _pS.ok ? (_pS.entry || _pS.skill) : null;
+          if (_eS && SMx.isSummonSkill(_eS)) {
+            const _r = SMx.cast(player, _eS, sd, { party: [player], target: sd.currentMonster });
+            if (!_r.ok) return sock.sendMessage(chatId, { text: `❌ ${_r.error}` }, { quoted: msg });
+            saveDatabase();
+            const _ms = (_r.messages || []).filter(Boolean);
+            for (let i = 0; i < _ms.length; i++) { await sock.sendMessage(chatId, { text: _ms[i] + (i === _ms.length - 1 ? `\n⚡ −${_r.energyCost} energy · 🕊️ Summoning does not use your turn.` : '') }, i === 0 ? { quoted: msg } : {}); if (i < _ms.length - 1) await new Promise(r => setTimeout(r, 3000)); }
+            return;
+          }
+        } catch (e) { console.error('[dungeon] summon cast:', e.message); }
         const monster = sd.currentMonster;
         const fx = StatusEffectManager.processTurnEffects(player);
         let log = '';
@@ -1239,7 +1261,7 @@ module.exports = {
           log += _sl + '\n'; player.stats.hp = 1;
           try { awardXP(player, 'dungeon_floor', saveDatabase, sock, chatId); } catch (e) {}
           player.gold = (player.gold || 0) + Math.floor((sd.totalNexus || 0) * 0.5);
-          delete db.soloDungeons[sender]; saveDatabase();
+          delete db.soloDungeons[sender]; try { require('../../rpg/utils/Summons').clear(player); require('../../rpg/utils/Transformation').clearFightUse(player); } catch (e) {} saveDatabase();
           return sock.sendMessage(chatId, { text: `${log}\n${FRAME}\n💀 *DEFEATED on Floor ${sd.currentFloor}!*\n${FRAME}\n📦 Kept 50% of earned rewards.\n💠 Nexus: +${Math.floor((sd.totalNexus || 0) * 0.5).toLocaleString()}\n/use — recover` }, { quoted: msg });
         } }
         if (!fx.canAct) { log += `❌ ${player.name} cannot act!`; return sock.sendMessage(chatId, { text: log }, { quoted: msg }); }
@@ -1259,8 +1281,12 @@ module.exports = {
         const pEnt = { name: player.name, stats: pStats, skills: player.skills, class: { name: className }, energyType: player.energyType || 'Energy', statusEffects: player.statusEffects || [], weapon: player.weapon };
         const mEnt = { name: monster.name, stats: monster.stats, skills: {}, abilities: monster.abilities || [], statusEffects: monster.statusEffects || [] };
 
+        let _burstD = null; // Push #103b: corpse-burst skills eat REAL corpses
+        try { const SMb = require('../../rpg/utils/Summons'); const _pb = require('../../rpg/utils/SkillCatalog').resolveSkill(player, skillName, { allowLibrary: true }); if (_pb.ok && SMb.isBurstSkill(_pb.entry || _pb.skill)) { _burstD = SMb.corpseBurst(player, _pb.entry || _pb.skill, sd); if (!_burstD.ok) return sock.sendMessage(chatId, { text: `❌ ${_burstD.error}` }, { quoted: msg }); } } catch (e) { _burstD = null; }
         const result = ImprovedCombat.executeSkill(pEnt, mEnt, skillName);
         if (!result.success) return sock.sendMessage(chatId, { text: `❌ ${result.message}` }, { quoted: msg });
+        if (_burstD && _burstD.used && result.damage > 0) { const _ex = Math.floor(result.damage * (_burstD.bonusMult - 1)); mEnt.stats.hp = Math.max(0, (mEnt.stats.hp || 0) - _ex); result.message = `${_burstD.lines.join('\n')}\n${result.message}${_ex > 0 ? `\n💥 Corpse-fire adds *${_ex.toLocaleString()}* damage.` : ''}`; }
+        if (mEnt.stats.hp <= 0) { try { require('../../rpg/utils/Corpses').recordMonster(sd, { name: monster.name, level: monster.level, atk: mEnt.stats.atk, def: mEnt.stats.def, maxHp: mEnt.stats.maxHp, emoji: monster.emoji, isBoss: !!monster.isBoss }, player.name); } catch (e) {} } // Push #103b
 
         player.stats.hp      = pEnt.stats.hp;
         player.stats.energy  = pEnt.stats.energy;
@@ -1314,7 +1340,7 @@ module.exports = {
           awardXP(player, 'dungeon_complete', saveDatabase, sock, chatId);
             player.gold         = (player.gold          || 0) + sd.totalNexus;
             player.manaCrystals = (player.manaCrystals  || 0) + sd.totalCrystals;
-            delete db.soloDungeons[sender];
+            delete db.soloDungeons[sender]; try { require('../../rpg/utils/Summons').clear(player); require('../../rpg/utils/Transformation').clearFightUse(player); } catch (e) {}
             saveDatabase();
             return sock.sendMessage(chatId, {
               text: `${log}\n\n${FRAME}\n🏆 *SOLO DUNGEON COMPLETE!*${pro ? ' 💎' : ''}\n${FRAME}\n✅ All 10 floors cleared!\n\n📊 *TOTAL REWARDS:*\n💠 Nexus: +${sd.totalNexus.toLocaleString()}\n💎 Mana Stones: +${sd.totalCrystals}\n${FRAME}\n💪 Well done, solo hunter!` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO DELVER* — run total ${UI.num(sd.totalNexus)} 💠` : `\n${UI.upsell()}`)
@@ -1335,7 +1361,7 @@ module.exports = {
           player.stats.hp = 1;
           awardXP(player, 'dungeon_floor', saveDatabase, sock, chatId);
           player.gold = (player.gold  || 0) + Math.floor(sd.totalNexus * 0.5);
-          delete db.soloDungeons[sender];
+          delete db.soloDungeons[sender]; try { require('../../rpg/utils/Summons').clear(player); require('../../rpg/utils/Transformation').clearFightUse(player); } catch (e) {}
           saveDatabase();
           return sock.sendMessage(chatId, {
             text: `${log}\n\n${FRAME}\n💀 *DEFEATED on Floor ${sd.currentFloor}!*\n${FRAME}\n📦 Kept 50% of earned rewards.\n💠 Nexus: +${Math.floor(sd.totalNexus * 0.5)}\n${FRAME}\n🏥 Use /use to recover.`
@@ -1343,7 +1369,7 @@ module.exports = {
         }
 
         saveDatabase();
-        log += `\n${FRAME}\n${monster.emoji} *${monster.name}*\n${BarSystem.getMonsterHPBar(monster.stats.hp, monster.stats.maxHp)}\n❤️ ${monster.stats.hp}/${monster.stats.maxHp}\n\n👤 *${player.name}*\n${BarSystem.getHPBar(player.stats.hp, player.stats.maxHp, require('../../rpg/utils/UnifiedCombat').isPro(player))}\n❤️ ${player.stats.hp}/${player.stats.maxHp}\n${FRAME}\n🎯 Floor ${sd.currentFloor}/10 | Turn ${sd.turn}`;
+        log += `\n${FRAME}\n${monster.emoji} *${monster.name}*\n${BarSystem.getMonsterHPBar(monster.stats.hp, monster.stats.maxHp)}\n❤️ ${monster.stats.hp}/${(()=>{try{return require('../../rpg/utils/GearSystem').effectiveMaxHp(monster);}catch(e){return monster.stats.maxHp;}})()}\n\n👤 *${player.name}*\n${BarSystem.getHPBar(player.stats.hp, player.stats.maxHp, require('../../rpg/utils/UnifiedCombat').isPro(player))}\n❤️ ${player.stats.hp}/${(()=>{try{return require('../../rpg/utils/GearSystem').effectiveMaxHp(player);}catch(e){return player.stats.maxHp;}})()}\n${FRAME}\n🎯 Floor ${sd.currentFloor}/10 | Turn ${sd.turn}`;
         return sock.sendMessage(chatId, { text: log }, { quoted: msg });
       }
 
@@ -1358,6 +1384,19 @@ module.exports = {
       const dungeon = party.dungeon;
       const monster = dungeon.currentMonster;
 
+        // Push #103b: SUMMONS (corpses · horde · totems · possession) — multi-message lore, no turn spent
+        try {
+          const SMx = require('../../rpg/utils/Summons'); const SCs = require('../../rpg/utils/SkillCatalog');
+          const _pS = SCs.resolveSkill(player, skillName, { allowLibrary: true }); const _eS = _pS.ok ? (_pS.entry || _pS.skill) : null;
+          if (_eS && SMx.isSummonSkill(_eS)) {
+            const _r = SMx.cast(player, _eS, dungeon, { party: (party.members || []).map(m => db.users[m.id]).filter(Boolean), target: dungeon.currentMonster });
+            if (!_r.ok) return sock.sendMessage(chatId, { text: `❌ ${_r.error}` }, { quoted: msg });
+            saveDatabase();
+            const _ms = (_r.messages || []).filter(Boolean);
+            for (let i = 0; i < _ms.length; i++) { await sock.sendMessage(chatId, { text: _ms[i] + (i === _ms.length - 1 ? `\n⚡ −${_r.energyCost} energy · 🕊️ Summoning does not use your turn.` : '') }, i === 0 ? { quoted: msg } : {}); if (i < _ms.length - 1) await new Promise(r => setTimeout(r, 3000)); }
+            return;
+          }
+        } catch (e) { console.error('[dungeon] summon cast:', e.message); }
       // Push #88: SUPPORT CAST in the tower — heal/buff a teammate (or self)
       // without spending the turn; the monster does not counter.
       try {
@@ -1408,8 +1447,12 @@ module.exports = {
       const pEnt = { name: player.name, stats: player.stats, skills: player.skills, class: { name: className }, energyType: player.energyType || 'Energy', statusEffects: player.statusEffects || [] };
       const mEnt = { name: monster.name, stats: monster.stats, skills: {}, abilities: monster.abilities || [], statusEffects: monster.statusEffects || [] };
 
+      let _burstD = null; // Push #103b: corpse-burst skills eat REAL corpses
+      try { const SMb = require('../../rpg/utils/Summons'); const _pb = require('../../rpg/utils/SkillCatalog').resolveSkill(player, skillName, { allowLibrary: true }); if (_pb.ok && SMb.isBurstSkill(_pb.entry || _pb.skill)) { _burstD = SMb.corpseBurst(player, _pb.entry || _pb.skill, dungeon); if (!_burstD.ok) return sock.sendMessage(chatId, { text: `❌ ${_burstD.error}` }, { quoted: msg }); } } catch (e) { _burstD = null; }
       const result = ImprovedCombat.executeSkill(pEnt, mEnt, skillName);
       if (!result.success) return sock.sendMessage(chatId, { text: `❌ ${result.message}` }, { quoted: msg });
+      if (_burstD && _burstD.used && result.damage > 0) { const _ex = Math.floor(result.damage * (_burstD.bonusMult - 1)); mEnt.stats.hp = Math.max(0, (mEnt.stats.hp || 0) - _ex); result.message = `${_burstD.lines.join('\n')}\n${result.message}${_ex > 0 ? `\n💥 Corpse-fire adds *${_ex.toLocaleString()}* damage.` : ''}`; }
+      if (mEnt.stats.hp <= 0) { try { require('../../rpg/utils/Corpses').recordMonster(dungeon, { name: monster.name, level: monster.level, atk: mEnt.stats.atk, def: mEnt.stats.def, maxHp: mEnt.stats.maxHp, emoji: monster.emoji, isBoss: !!monster.isBoss }, player.name); } catch (e) {} } // Push #103b
 
       player.stats.hp     = pEnt.stats.hp;
       player.stats.energy = pEnt.stats.energy;
@@ -1428,7 +1471,7 @@ module.exports = {
       if (player.stats.hp <= 0) return handlePlayerDeath(sock, chatId, party, dungeon, db, saveDatabase, msg, sender, log);
 
       saveDatabase();
-      log += `\n${FRAME}\n👤 *${player.name}* ❤️ ${player.stats.hp}/${player.stats.maxHp}\n${BarSystem.getHPBar(player.stats.hp, player.stats.maxHp, require('../../rpg/utils/UnifiedCombat').isPro(player))}\n\n${monster.emoji} *${monster.name}*\n${BarSystem.getMonsterHPBar(monster.stats.hp, monster.stats.maxHp)}\n${FRAME}\n🎯 Floor ${dungeon.currentFloor}/20`;
+      log += `\n${FRAME}\n👤 *${player.name}* ❤️ ${player.stats.hp}/${(()=>{try{return require('../../rpg/utils/GearSystem').effectiveMaxHp(player);}catch(e){return player.stats.maxHp;}})()}\n${BarSystem.getHPBar(player.stats.hp, player.stats.maxHp, require('../../rpg/utils/UnifiedCombat').isPro(player))}\n\n${monster.emoji} *${monster.name}*\n${BarSystem.getMonsterHPBar(monster.stats.hp, monster.stats.maxHp)}\n${FRAME}\n🎯 Floor ${dungeon.currentFloor}/20`;
       return sock.sendMessage(chatId, { text: log }, { quoted: msg });
     }
 
@@ -1445,7 +1488,7 @@ module.exports = {
           player.stats.hp = Math.min(_effMax(player), player.stats.hp + heal);
           saveDatabase();
           try { require('../../rpg/utils/QuestDispatcher').trackBattleHeal(player, db, sock, sender, chatId); } catch (e) {} // Push #97 (BUG-011)
-          return sock.sendMessage(chatId, { text: `🩹 Healed *+${heal} HP*!\n❤️ ${player.stats.hp}/${player.stats.maxHp}\n🩹 Potions left: ${player.inventory.healthPotions}` }, { quoted: msg });
+          return sock.sendMessage(chatId, { text: `🩹 Healed *+${heal} HP*!\n❤️ ${player.stats.hp}/${(()=>{try{return require('../../rpg/utils/GearSystem').effectiveMaxHp(player);}catch(e){return player.stats.maxHp;}})()}\n🩹 Potions left: ${player.inventory.healthPotions}` }, { quoted: msg });
         }
         if (itemType === 'ep' || itemType === 'energy') {
           return sock.sendMessage(chatId, { text: '❌ *Energy potions no longer exist.* Energy refills by rank outside battle — check /use energy.' }, { quoted: msg });
@@ -1468,7 +1511,7 @@ module.exports = {
         const heal = Math.floor(player.stats.maxHp * 0.5);
         player.stats.hp = Math.min(_effMax(player), player.stats.hp + heal);
         saveDatabase();
-        return sock.sendMessage(chatId, { text: `🩹 *${player.name}* healed *+${heal} HP*!\n❤️ ${player.stats.hp}/${player.stats.maxHp}\n🩹 Potions used: ${party.sharedItems.healthPotionsUsed}/5` }, { quoted: msg });
+        return sock.sendMessage(chatId, { text: `🩹 *${player.name}* healed *+${heal} HP*!\n❤️ ${player.stats.hp}/${(()=>{try{return require('../../rpg/utils/GearSystem').effectiveMaxHp(player);}catch(e){return player.stats.maxHp;}})()}\n🩹 Potions used: ${party.sharedItems.healthPotionsUsed}/5` }, { quoted: msg });
       }
       if (itemType === 'ep' || itemType === 'energy') {
         // Energy potions scrapped: energy is the skill resource and it does not
@@ -1492,7 +1535,7 @@ module.exports = {
         player.stats.hp     = Math.floor(_effMax(player) * 0.3);
         player.stats.energy = Math.floor(player.stats.maxEnergy * 0.3);
         saveDatabase();
-        return sock.sendMessage(chatId, { text: `🎫 *${player.name}* has been REVIVED!\n❤️ ${player.stats.hp}/${player.stats.maxHp}` }, { quoted: msg });
+        return sock.sendMessage(chatId, { text: `🎫 *${player.name}* has been REVIVED!\n❤️ ${player.stats.hp}/${(()=>{try{return require('../../rpg/utils/GearSystem').effectiveMaxHp(player);}catch(e){return player.stats.maxHp;}})()}` }, { quoted: msg });
       }
       return sock.sendMessage(chatId, { text: '❌ Usage: /dungeon item [hp/energy/revive]' }, { quoted: msg });
     }
@@ -1579,7 +1622,7 @@ async function handleMonsterDefeat(sock, chatId, party, monster, dungeon, db, sa
     txt += `${FRAME}\n`;
     txt += `📊 Floor ${dungeon.currentFloor}/${dungeon.maxFloors} | Defeated: ${dungeon.monstersDefeated}\n\n`;
     if (_nextQ) {
-      txt += `${_nextQ.isBoss ? '👹' : '🛡️'} *${_nextQ.name}* steps forward! [Lv.${_nextQ.level}]${_nextQ.isBoss ? ' 🔴 BOSS' : ' ⚜️ ELITE'}\n❤️ ${_nextQ.stats.hp}/${_nextQ.stats.maxHp} · ⚔️ ${_nextQ.stats.atk} · 🛡️ ${_nextQ.stats.def} · 💨 ${_nextQ.stats.speed}\n\n`;
+      txt += `${_nextQ.isBoss ? '👹' : '🛡️'} *${_nextQ.name}* steps forward! [Lv.${_nextQ.level}]${_nextQ.isBoss ? ' 🔴 BOSS' : ' ⚜️ ELITE'}\n❤️ ${_nextQ.stats.hp}/${(()=>{try{return require('../../rpg/utils/GearSystem').effectiveMaxHp(_nextQ);}catch(e){return _nextQ.stats.maxHp;}})()} · ⚔️ ${_nextQ.stats.atk} · 🛡️ ${_nextQ.stats.def} · 💨 ${_nextQ.stats.speed}\n\n`;
     } else if (DungeonManager.isBossFloor(dungeon.currentFloor)) {
       txt += `👹 *BOSS FLOOR CLEARED!* Bonus rewards earned.\n\n`;
     }

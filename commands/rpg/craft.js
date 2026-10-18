@@ -13,7 +13,6 @@
 // ═══════════════════════════════════════════════════════════════
 
 const { attemptCraft } = require('../../rpg/utils/CraftingSystem');
-const { sendImageCard } = require('../../utils/imageCard');
 
 module.exports = {
   name: 'craft',
@@ -28,9 +27,21 @@ module.exports = {
     const UI = require('../../rpg/utils/UI');
 
     const fullInput = args.join(' ').trim();
+    const CSx = require('../../rpg/utils/CraftingSystem');
+    const FRAME0 = UI.isPro(player) ? UI.PRO_BAR : UI.FREE_BAR;
 
-    // Parse item name and key — format: <item name> --<KEY> [confirm]   (Push #97: optional trailing confirm)
-    const keyMatch = fullInput.match(/--([A-Z0-9]{6})(?:\s+confirm)?$/i);
+    // Push #103b: /craft status — timed forges in progress
+    if (/^(status|jobs|queue|progress)$/i.test(fullInput) || !fullInput) {
+      const jobs = CSx.jobsOf(db, sender);
+      const L = [FRAME0, `⚒️ *YOUR FORGE*`, FRAME0];
+      if (!jobs.length) L.push(`Nothing on the anvil.`, ``, `Usage: */craft <item name> --<KEY>*`, `📖 Read a scroll in DMs to get the key (/scroll).`);
+      else for (const j of jobs) L.push(`• *${j.recipe.output}* (${j.rarity}${j.mode !== 'standard' ? ` · ${j.mode}` : ''}) — ready in *${CSx.fmtDur(j.readyAt - Date.now())}*`);
+      L.push(``, `⏳ Forge times: E 12h · D 1d · C 1.5d · B 2d · A 3d · S 5d${UI.isPro(player) ? ' · 💎 Pro: half' : ' · Pro: half time'}`, `📣 You are notified here when a piece is done${UI.isPro(player) ? ' (and by DM via your serf)' : ''}.`, FRAME0);
+      return sock.sendMessage(chatId, { text: L.join('\n') }, { quoted: msg });
+    }
+
+    // Parse item name and key — format: <item name> --<KEY> [confirm [quality|quantity]]   (Push #97/#103b)
+    const keyMatch = fullInput.match(/--([A-Z0-9]{6})(?:\s+confirm(?:\s+(quality|quantity))?)?$/i);
     if (!keyMatch) {
       return sock.sendMessage(chatId, {
         text: [
@@ -45,8 +56,9 @@ module.exports = {
     }
 
     const key = keyMatch[1].toUpperCase();
-    const itemName = fullInput.replace(/\s*confirm\s*$/i, '').replace(/--[A-Z0-9]{6}$/i, '').trim();
-    const wantsConfirm = /--[A-Z0-9]{6}\s+confirm$/i.test(fullInput);
+    const craftMode = keyMatch[2] ? keyMatch[2].toLowerCase() : null;
+    const itemName = fullInput.replace(/\s*confirm(?:\s+(?:quality|quantity))?\s*$/i, '').replace(/--[A-Z0-9]{6}$/i, '').trim();
+    const wantsConfirm = /--[A-Z0-9]{6}\s+confirm(?:\s+(?:quality|quantity))?$/i.test(fullInput);
 
     if (!itemName) {
       return sock.sendMessage(chatId, {
@@ -73,88 +85,46 @@ module.exports = {
       L.push(`${pv.essence.have >= pv.essence.need ? '✅' : '❌'} ${pv.essence.emoji} ${pv.essence.name} — ${pv.essence.have}/${pv.essence.need}${pv.essence.have >= pv.essence.need ? '' : ` (missing ${pv.essence.need - pv.essence.have})`}`);
       L.push(`${pv.nexus.ok ? '✅' : '❌'} 💠 Forge fee — ${pv.nexus.need.toLocaleString()} Nexus (you: ${pv.nexus.have.toLocaleString()})`);
       L.push(``, `🎲 *${pv.successPct}% success · ${100 - pv.successPct}% FAIL*`, `⚠️ *A fail CONSUMES every material above, the essence stones and the Nexus fee.* The scroll/key survives.`);
-      if (pv.canCraft) L.push(``, `👉 Confirm: */craft ${pv.recipe.output} --${key} confirm*`);
+      const _modes = CSx.craftModes(player);
+      if (_modes.includes('quality')) L.push(`⏳ Forge time: *${CSx.fmtDur(CSx.craftDurationMs(player, pv.rarity, 'quality'))}* (quality) · *${CSx.fmtDur(CSx.craftDurationMs(player, pv.rarity, 'quantity'))}* (quantity)`, `🪶 Shaman's choice — *Quality*: +20% all stats & durability · *Quantity*: −20% forge time, plain piece.`);
+      else L.push(`⏳ Forge time: *${CSx.fmtDur(CSx.craftDurationMs(player, pv.rarity))}*${pro ? ' (💎 Pro: half)' : ''} — you are notified here when it is done.`);
+      L.push(`🏪 Crafted pieces are store-grade: same stats & durability bands as /store for that rank.`);
+      if (pv.canCraft) L.push(``, CSx.craftModes(player).includes('quality') ? `👉 Confirm: */craft ${pv.recipe.output} --${key} confirm quality* or *… confirm quantity*` : `👉 Confirm: */craft ${pv.recipe.output} --${key} confirm*`);
       else L.push(``, `🔒 Not ready — ${pv.missing.length} item(s) missing. See the steps on the card.`);
       L.push(FRAME);
       return L.join('\n');
     })();
     if (!wantsConfirm || !pv.canCraft) {
       let img = null; try { img = await require('../../rpg/utils/CraftRenderer').renderCraftImage(pv, player); } catch (e) { img = null; }
-      const btns = pv.canCraft ? [['⚒️ FORGE (90%)', `/craft ${pv.recipe.output} --${key} confirm`], ['📜 Scrolls', '/scroll']] : [['♻️ Recycle mats', '/recycle'], ['📜 Scrolls', '/scroll']];
+      const _sh = CSx.craftModes(player).includes('quality');
+      const btns = pv.canCraft ? (_sh ? [['✨ Quality (+20%)', `/craft ${pv.recipe.output} --${key} confirm quality`], ['⏱️ Quantity (−20% time)', `/craft ${pv.recipe.output} --${key} confirm quantity`], ['📜 Scrolls', '/scroll']] : [[`⚒️ FORGE (${pv.successPct}%)`, `/craft ${pv.recipe.output} --${key} confirm`], ['📜 Scrolls', '/scroll']]) : [['♻️ Recycle mats', '/recycle'], ['📜 Scrolls', '/scroll']];
       if (img) { try { await sock.sendMessage(chatId, { image: img, caption: previewText }, { quoted: msg }); if (pro && Buttons) { try { await Buttons.sendButtons(sock, chatId, { text: pv.canCraft ? `⚒️ Ready. Forge *${pv.recipe.output}*?` : `🔒 Gather the missing items first.`, buttons: Buttons.quickReplies(btns) }); } catch (e) {} } return; } catch (e) {} }
       return _reply(previewText, btns);
     }
 
-    // Attempt craft (confirmed)
-    const result = attemptCraft(player, itemName, key, db);
+    // Push #103b: a Shaman must pick Quality or Quantity before the forge lights.
+    if (CSx.craftModes(player).includes('quality') && !craftMode) {
+      return _reply([FRAME, `🪶 *SHAMAN'S CHOICE — ${pv.recipe.output}*`, FRAME,
+        `✨ *Quality* — +20% all stats & durability · ready in *${CSx.fmtDur(CSx.craftDurationMs(player, pv.rarity, 'quality'))}*`,
+        `⏱️ *Quantity* — plain piece · ready in *${CSx.fmtDur(CSx.craftDurationMs(player, pv.rarity, 'quantity'))}*`, FRAME].join('\n'),
+        [['✨ Quality', `/craft ${pv.recipe.output} --${key} confirm quality`], ['⏱️ Quantity', `/craft ${pv.recipe.output} --${key} confirm quantity`]]);
+    }
+    // Light the forge (confirmed) — pays now, delivers when the timer ends.
+    const result = attemptCraft(player, itemName, key, db, { mode: craftMode || 'standard', chatId, owner: sender });
 
     if (!result.success) {
       if (result.failed) { saveDatabase(); try { require('../../rpg/utils/QuestDispatcher').trackAndNotify(player, 'craft', 1, sock, sender, chatId); } catch (e) {} }
       return _reply(result.reason, result.failed ? [['🔁 Try again', `/craft ${itemName} --${key}`], ['♻️ Recycle', '/recycle']] : []);
     }
 
-    const item = result.item;
-
-    // Award Weekly GP (central ledger) + Battle Pass XP for crafting
-    try { require('../../rpg/utils/WeeklyGuildWar').addGP(db, sender, 75, saveDatabase); } catch(e) {}
-    try { const _BP = require('../../rpg/utils/BattlePass'); if (_BP.addPassXPAmount) _BP.addPassXPAmount(player, 50); } catch(e) {}
-    // Daily quest: item crafted (exactly once)
+    // Daily quest: item crafted (counts when the forge is lit)
     try { require('../../rpg/utils/QuestDispatcher').trackAndNotify(player, 'craft', 1, sock, sender, chatId); } catch(e){}
-
     saveDatabase();
-
-    // Notify original owner if someone else used their key
-    const stolenKey = result.scrollOwnerJid && result.scrollOwnerJid !== sender;
-    if (stolenKey) {
-      try {
-        const oPro = UI.isPro(db.users?.[result.scrollOwnerJid]);
-        await sock.sendMessage(result.scrollOwnerJid, {
-          text: [
-            ...(oPro ? [UI.PRO_BAR, `🔑 *YOUR SCROLL KEY WAS USED* 💎`, UI.PRO_BAR] : [`🔑 *YOUR SCROLL KEY WAS USED*`, UI.FREE_BAR]),
-            ``,
-            `Someone used your craft key *${key}*`,
-            `and crafted *${item.name}*.`,
-            ``,
-            `Your scroll has been consumed.`,
-            oPro ? UI.PRO_BAR : UI.FREE_BAR,
-          ].join('\n')
-        });
-      } catch (e) {}
-    }
-
-    // ── Two-message card: artwork (if available) + stats/lore ──
-    const statKeys = ['atk', 'bonus', 'def', 'hp', 'speed', 'critChance', 'lifesteal', 'magicPower', 'energy'];
-    const statObj = {};
-    for (const k of statKeys) if (item[k]) statObj[k] = item[k];
-
-    // Push #96h-z21: the craft result must ALWAYS be announced. The image card can fail (canvas / media upload
-    // hiccups) — players then saw nothing and thought the craft vanished. Text fallback on any failure.
-    const _textCard = () => {
-      const FRAME = UI.isPro(player) ? UI.PRO_BAR : UI.FREE_BAR;
-      const st = Object.entries(statObj).map(([k, v]) => `${k.toUpperCase()} +${v}`).join(' · ');
-      return sock.sendMessage(chatId, { text: [FRAME, `🔨 *CRAFTED!* ${item.emoji || '✨'} *${item.name}*`, FRAME, `⭐ Rarity: ${(item.rarity || 'common').toUpperCase()}${item.type ? ` · ${item.type}` : ''}`, st ? `📊 ${st}` : null, item.durability ? `🔧 Durability ${item.durability}/${item.maxDurability}` : null, stolenKey ? `🔑 (crafted with someone else's scroll key)` : null, `🎒 It is in your bag — /inv`, FRAME].filter(Boolean).join('\n') }, { quoted: msg });
-    };
-    try {
-      const _sent = await sendImageCard(sock, chatId, {
-      kind: 'item',
-      name: item.name,
-      rarity: (item.rarity || 'common').toLowerCase(),
-      stats: statObj,
-      extra: {
-        type: item.type,
-        subtype: item.subtype,
-        durability: item.durability ? `${item.durability}/${item.maxDurability}` : null,
-        infusions: item.infusions,
-        craftedBy: item.craftedBy,
-        stolen: stolenKey,
-      },
-    }, { quoted: msg });
-      if (!_sent) await _textCard();
-    } catch (e) { await _textCard(); }
-    // Push #97: say EXACTLY where it landed.
-    const _slot = result.slot || item.subtype || item.type || 'inventory';
-    let _gearNo = 1; try { const gl = (player.inventory.items || []).filter(i => i && i.isGear).slice().sort((a, b) => (b.acquiredAt || 0) - (a.acquiredAt || 0)); const gi = gl.indexOf(result.granted); if (gi >= 0) _gearNo = gi + 1; } catch (e) {}
-    const _invPos = result.invIndex >= 0 ? result.invIndex + 1 : (player.inventory.items || []).length;
-    return _reply([FRAME, `📦 *${item.name}* → your inventory: */gear* list *#${_gearNo}* (slot: *${_slot}*${String(item.type).toLowerCase() === 'weapon' ? ' — weapon arm' : ''}) · */inv* item *#${_invPos}*.`, `💸 Spent: ${(result.spent?.mats || []).map(m => `${m.mat} ×${m.need}`).join(', ')}, ${result.spent?.essence?.name} ×${result.spent?.essence?.need}, 💠 ${(result.spent?.nexus || 0).toLocaleString()} Nexus`, `🧰 Equip now: */gear equip ${_gearNo}*`, FRAME].join('\n'), [['🧰 Equip it', `/gear equip ${_gearNo}`], ['🎒 Gear list', '/gear']]);
+    const j = result.job;
+    return _reply([FRAME, `🔥 *FORGE LIT — ${j.recipe.output}*`, FRAME,
+      `⭐ ${String(j.rarity).toUpperCase()}${j.mode === 'quality' ? ' · ✨ Shaman Quality (+20%)' : j.mode === 'quantity' ? ' · ⏱️ Shaman Quantity (−20% time)' : ''}`,
+      `⏳ Ready in *${CSx.fmtDur(result.ms)}* — you'll be pinged here${pro ? ' and DM\'d via your serf' : ''} when it's done.`,
+      `💸 Spent: ${(result.spent?.mats || []).map(m => `${m.mat} ×${m.need}`).join(', ')}, ${result.spent?.essence?.name} ×${result.spent?.essence?.need}, 💠 ${Number(result.spent?.nexus || 0).toLocaleString()}`,
+      `🔎 */craft status* — see your forge`, FRAME].join('\n'), [['⚒️ Forge status', '/craft status'], ['📜 Scrolls', '/scroll']]);
   }
 };

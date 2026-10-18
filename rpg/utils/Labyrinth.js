@@ -130,7 +130,7 @@ function act(db, lab, player, jid, targetId = null, skillQuery = null) {
   if (!res.damage || res.missed) lines.push(`💨 *${move.name}* misses ${t.name}!`);
   else {
     t.stats.hp = Math.max(0, t.stats.hp - res.damage); me.dmg += res.damage;
-    lines.push(`⚔️ *${player.name}* · *${move.name}* hits 🐀 ${t.name} [#${t.id}] for *${res.damage}*${res.crit ? ' 💥' : ''} → ${t.stats.hp}/${t.stats.maxHp}`);
+    lines.push(`⚔️ *${player.name}* · *${move.name}* hits 🐀 ${t.name} [#${t.id}] for *${res.damage}*${res.crit ? ' 💥' : ''} → ${t.stats.hp}/${(()=>{try{return require('./GearSystem').effectiveMaxHp(t);}catch(e){return t.stats.maxHp;}})()}`);
     if (t.stats.hp <= 0) {
       t.defeated = true; me.kills++; lab.kills++;
       const xp = me.xp < XP_CAP_PER_SESSION ? XP_PER_KILL : 0; if (xp) { me.xp += xp; player.xp = (player.xp || 0) + xp; }

@@ -38,7 +38,7 @@ module.exports = {
 
       if (!statName) {
         return sock.sendMessage(chatId, { 
-          text: (pro ? `${UI.PRO_BAR}\n❌ SPECIFY A STAT! 💎\n${UI.PRO_BAR}\n\n📜 AVAILABLE STATS:\n${UI.PRO_BAR}\n❤️ hp - Health Points\n⚔️ atk - Attack Power\n🛡️ def - Defense\n✨ magic - Magic Power\n💨 speed - Speed\n💥 crit - Critical Chance\n🔥 critdmg - Critical Damage\n💚 lifesteal - Lifesteal\n⚡ energy - Max Energy (+5 per point)\n\n${UI.PRO_BAR}\n📖 USAGE:\n${UI.PRO_BAR}\n/upgrade allocate <stat> <amount>\n\nExamples:\n/upgrade allocate atk 10\n/upgrade allocate hp 5\n/upgrade allocate crit 3\n${UI.PRO_BAR}\n${UI.PRO_MINI}\n💎 *PRO STATS* — ${player.upgradePoints || 0} UP banked` : `❌ SPECIFY A STAT!\n${UI.FREE_BAR}\n\n📜 AVAILABLE STATS:\n${UI.FREE_BAR}\n❤️ hp - Health Points\n⚔️ atk - Attack Power\n🛡️ def - Defense\n✨ magic - Magic Power\n💨 speed - Speed\n💥 crit - Critical Chance\n🔥 critdmg - Critical Damage\n💚 lifesteal - Lifesteal\n⚡ energy - Max Energy (+5 per point)\n\n${UI.FREE_BAR}\n📖 USAGE:\n${UI.FREE_BAR}\n/upgrade allocate <stat> <amount>\n\nExamples:\n/upgrade allocate atk 10\n/upgrade allocate hp 5\n/upgrade allocate crit 3\n${UI.FREE_BAR}\n${UI.upsell()}`) 
+          text: (pro ? `${UI.PRO_BAR}\n❌ SPECIFY A STAT! 💎\n${UI.PRO_BAR}\n\n📜 AVAILABLE STATS:\n${UI.PRO_BAR}\n❤️ hp - Health Points\n⚔️ atk - Attack Power\n🛡️ def - Defense\n✨ magic - Magic Power\n🔰 mr - Magic Resistance\n💨 speed - Speed\n💥 crit - Critical Chance\n🔥 critdmg - Critical Damage\n💚 lifesteal - Lifesteal\n⚡ energy - Max Energy (+5 per point)\n\n${UI.PRO_BAR}\n📖 USAGE:\n${UI.PRO_BAR}\n/upgrade allocate <stat> <amount>\n\nExamples:\n/upgrade allocate atk 10\n/upgrade allocate hp 5\n/upgrade allocate crit 3\n${UI.PRO_BAR}\n${UI.PRO_MINI}\n💎 *PRO STATS* — ${player.upgradePoints || 0} UP banked` : `❌ SPECIFY A STAT!\n${UI.FREE_BAR}\n\n📜 AVAILABLE STATS:\n${UI.FREE_BAR}\n❤️ hp - Health Points\n⚔️ atk - Attack Power\n🛡️ def - Defense\n✨ magic - Magic Power\n🔰 mr - Magic Resistance\n💨 speed - Speed\n💥 crit - Critical Chance\n🔥 critdmg - Critical Damage\n💚 lifesteal - Lifesteal\n⚡ energy - Max Energy (+5 per point)\n\n${UI.FREE_BAR}\n📖 USAGE:\n${UI.FREE_BAR}\n/upgrade allocate <stat> <amount>\n\nExamples:\n/upgrade allocate atk 10\n/upgrade allocate hp 5\n/upgrade allocate crit 3\n${UI.FREE_BAR}\n${UI.upsell()}`) 
         }, { quoted: msg });
       }
 
@@ -53,6 +53,11 @@ module.exports = {
         'magic': 'magicPower',
         'magicpower': 'magicPower',
         'mp': 'magicPower',
+        'mr': 'magicResist',
+        'magicres': 'magicResist',
+        'magicresist': 'magicResist',
+        'resist': 'magicResist',
+        'resistance': 'magicResist',
         'speed': 'speed',
         'spd': 'speed',
         'energy': 'energy',

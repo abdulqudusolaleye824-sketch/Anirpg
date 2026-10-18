@@ -10,7 +10,7 @@ module.exports = {
   name: 'Warlord',
   emoji: '🏴',
     lore: 'Leads from the front. Never from safety.',
-    maxBonuses: { hp: 100, atk: 40, def: 25, speed: 10, maxEnergy: 30 },
+    maxBonuses: { hp: 100, atk: 40, def: 25, speed: 10, maxEnergy: 30, dodge: 15 },
     skills: [
       { name: 'War Cry',     type: 'buff',    maxPotency: 35,  desc: 'Party ATK +{p}% and DEF +15% for 3 turns' },
       { name: 'Cleave',      type: 'damage',  maxPotency: 160, desc: 'Hits all enemies for {p}% ATK' },

@@ -146,7 +146,7 @@ module.exports = {
         text: [
           ...(pro ? [UI.PRO_BAR, `👁️ *${target.name}* — Status Check 💎`, UI.PRO_BAR] : [`👁️ *${target.name}* — Status Check`, UI.FREE_BAR]),
           `📊 Level: ${target.level || 1}`,
-          `❤️ HP: ${target.stats.hp}/${target.stats.maxHp} (${hpPct}%)`,
+          `❤️ HP: ${target.stats.hp}/${(()=>{try{return require('../../rpg/utils/GearSystem').effectiveMaxHp(target);}catch(e){return target.stats.maxHp;}})()} (${hpPct}%)`,
           `⚡ Energy: ${target.stats.energy}/${target.stats.maxEnergy || 100} (${enPct}%)`,
           `🎮 Status: ${inBattle}`,
           `💫 Effects: ${effects}`,
