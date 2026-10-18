@@ -130,6 +130,15 @@ function ensure(player) {
   return player.domain;
 }
 function has(player) { return !!(player && player.domain && player.domain.unlocked); }
+// Push #103g: SELF-HEAL — a domain whose class no longer matches the hunter (recon before #103a, e.g. Necromancer →
+// Monster still carrying "Realm of the Undead King") is reshaped on first touch; the hunter is re-prompted for a name.
+function syncClass(player) {
+  try {
+    const d = player && player.domain; if (!d || !d.unlocked) return null;
+    const cls = _cls(player) || 'Hunter'; if (!d.class || cls === d.class) return null;
+    const r = reconDomain(player); if (r) { d._reconNotice = r.awakening; } return r;
+  } catch (e) { return null; }
+}
 
 // Roll + assign the permanent domain (Lv.20+). Returns the domain if newly unlocked.
 function unlock(player) {
@@ -197,6 +206,7 @@ function reconDomain(player) {
 }
 function scaledEffect(player) {
   const d = player.domain; if (!d) return null;
+  syncClass(player);
   const cls = d.class || _cls(player); const eff = effectFor(cls, d.idx); const k = scale(d.level || 1); const kit = kitFor(cls);
   const merge = (a, b) => { const o = { ...a }; for (const [s, v] of Object.entries(b || {})) o[s] = (o[s] || 0) + v; return o; };
   const sc = (o) => Object.fromEntries(Object.entries(o).map(([s, v]) => [s, Math.round(v * k * 10) / 10]));
@@ -299,6 +309,20 @@ function ownerFell(arena, entity, allies = [], enemies = []) {
 // six swings from a six-man party. Pass { actor, roster } to count rounds.
 function tick(arena, opts) {
   const d = active(arena); if (!d) return null;
+  // Push #103g: a HUNTER domain counts turns by its OWNER's actions — "6 turns" = six of the caster's own moves, exactly
+  // as the card says — no matter how many teammates swing in between. (Falls back to round counting only if the owner
+  // is no longer in the living roster; monster domains keep counting party rounds.)
+  if (opts && opts.actor && d.side !== 'monster' && Array.isArray(d.ownerKeys) && d.ownerKeys.length) {
+    const key = String(opts.actor); const bare = key.split(':')[0].split('@')[0];
+    const isOwner = d.ownerKeys.some(k => String(k) === key || String(k).split(':')[0].split('@')[0] === bare);
+    const ownerAlive = !Array.isArray(opts.roster) || opts.roster.some(r => { const rb = String(r).split(':')[0].split('@')[0]; return d.ownerKeys.some(k => String(k) === String(r) || String(k).split(':')[0].split('@')[0] === rb); });
+    if (ownerAlive) {
+      if (!isOwner) return null;
+      d.turnsLeft -= 1;
+      if (d.turnsLeft <= 0) { arena.domain = null; return `🌫️ *${d.name}* fades — the field returns to normal.`; }
+      return `🌌 *${d.name}* — ${d.turnsLeft} turn${d.turnsLeft === 1 ? '' : 's'} left`;
+    }
+  }
   if (opts && opts.actor && Array.isArray(opts.roster) && opts.roster.length > 1) {
     const key = String(opts.actor); d._acted = Array.isArray(d._acted) ? d._acted : [];
     const repeat = d._acted.includes(key);
@@ -632,4 +656,4 @@ function findBattle(player, sender, db) {
   return null;
 }
 
-module.exports = { monsterWarn, DOMAIN_WARN_MS, reconDomain, SETUP_MARKERS, releaseShield, ownerFell, domainVariance, DOMAIN_TTL_MS, CASTER_REGEN_PCT, costFor, CLASS_KITS, kitFor, SKILL_DOMAINS, BREAK, splitMessages, sendDomain, FAMILY_DOMAINS, isShielded, shieldLine, monsterDomainInfo, MONSTER_DOMAINS, setupStep, setupPrompt, handleSetupReply, rename, pvpArena, endPvpArena, findBattle, CAST_ENERGY, MAX_LEVEL, UP_SHARE_CAP, ARCHETYPES, CLASS_DOMAINS, STAT_LABEL, effectFor, scale, turnsFor, costToNext, ensure, has, unlock, scaledEffect, describe, power, upgrade, arenaOf, active, shatter, tick, expand, monsterPower, monsterEligible, monsterTry, onLevelUp, shareUP };
+module.exports = { syncClass, monsterWarn, DOMAIN_WARN_MS, reconDomain, SETUP_MARKERS, releaseShield, ownerFell, domainVariance, DOMAIN_TTL_MS, CASTER_REGEN_PCT, costFor, CLASS_KITS, kitFor, SKILL_DOMAINS, BREAK, splitMessages, sendDomain, FAMILY_DOMAINS, isShielded, shieldLine, monsterDomainInfo, MONSTER_DOMAINS, setupStep, setupPrompt, handleSetupReply, rename, pvpArena, endPvpArena, findBattle, CAST_ENERGY, MAX_LEVEL, UP_SHARE_CAP, ARCHETYPES, CLASS_DOMAINS, STAT_LABEL, effectFor, scale, turnsFor, costToNext, ensure, has, unlock, scaledEffect, describe, power, upgrade, arenaOf, active, shatter, tick, expand, monsterPower, monsterEligible, monsterTry, onLevelUp, shareUP };

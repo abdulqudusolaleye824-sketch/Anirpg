@@ -29,7 +29,7 @@ let _SCk = null; try { _SCk = require('../../rpg/utils/SkillCatalog'); } catch (
 // Push #103c: kind tag — passives, buffs, debuffs, heals, summons and damage read differently at a glance.
 function kindTagOf(sk) { try { return require('../../rpg/data/SkillLore').TAG[require('../../rpg/data/SkillLore').kindOf(sk)]; } catch (e) { return '💥 DAMAGE'; } }
 function realCost(skill, player) { try { if (_SCk && player) return _SCk.effectiveCost(skill, player); } catch (e) {} return Math.max(5, (skill.energyCost || 20) - ((skill.level || 1) - 1) * 3); }
-function applySkillLevelBonus(skill) {
+function applySkillLevelBonus(skill, player = null) {
   // Each level: +8% flat damage, -3 energy cost, -1 cooldown (floored)
   const lv = skill.level || 1;
   // Push #103c: single source of truth = SkillCatalog.levelBonus (+12% DMG/lv, cost ×1.75/lv, −1 cd per 2 lv).
@@ -37,7 +37,7 @@ function applySkillLevelBonus(skill) {
   try { const b = _SCk.levelBonus(skill); dmgMult = b.dmgMult; cdReduction = b.cdReduction; costMult = b.costMult || costMult; } catch (e) {}
   const costReduction = 0;
   return {
-    damage: Math.floor((skill.damage || 0) * dmgMult),
+    damage: (() => { try { if (player && _SCk.previewDamage) { const d = _SCk.previewDamage(player, skill); if (d > 0) return d; } } catch (e) {} return Math.floor((skill.damage || 0) * dmgMult); })(), // Push #103g (BUG-112): one preview number everywhere
     energyCost: Math.max(5, (skill.energyCost || 20) - costReduction),
     cooldown: Math.max(0, (skill.cooldown || 0) - cdReduction),
     dmgMult, costReduction, cdReduction, costMult
@@ -81,7 +81,7 @@ function jobSkillBlock(player, FRAME) {
 function fmtSkillLine(skill, idx, player, compact=false) {
   const lv = skill.level || 1;
   const max = skill.maxLevel || 5;
-  const bonuses = applySkillLevelBonus(skill);
+  const bonuses = applySkillLevelBonus(skill, player);
   const bar = skillLevelBar(lv, max);
   const prefix = idx !== undefined ? `${idx+1}. ` : '';
   if (compact) {
@@ -135,6 +135,13 @@ module.exports = {
         library.forEach((s, i) => { txt += fmtSkillLine(s, i, player, true); });
       }
 
+      { // Push #103g (BUG-104/110): PASSIVES are part of the kit — show them on the main card (they never take a slot).
+        const passives = (player.skills && player.skills.passive) || [];
+        if (passives.length) {
+          txt += `${FRAME}\n🛡️ PASSIVES (${passives.length}) — always on, no slot needed\n${FRAME}\n`;
+          passives.forEach(p => { txt += `${p.isOrigin ? '🌟' : '⚡'} *${p.name}*${(p.level || 1) > 1 ? ` [Lv${p.level}]` : ''} — ${String(p.effect || p.description || '').split('\n')[0].replace(/^• Passive: /, '').slice(0, 90)}\n`; });
+        }
+      }
       txt += jobSkillBlock(player, FRAME);
       const nextUnlock = Math.ceil((player.level + 1) / 5) * 5;
       txt += `\n${FRAME}\n📌 COMMANDS\n${FRAME}\n/skills swap [slot#] [library#] — Hotswap skill\n/skills equip [library#] — Add to empty slot\n/skills remove [slot#] — Unequip to library\n/skills upgrade [slot#] — Level up a skill (gold)\n/skills info [slot# or name] — Full skill details\n/skills passives — View passive abilities\n${FRAME}\n${nextUnlock<=90?`💡 Next skill unlocks at Lv *${nextUnlock}*`:''}\n${player.pendingSkillChoice?'🌟 SKILL CHOICE PENDING! Use /choose':''}\n${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO LOADOUT* — ${equipped.length}/${maxSlots} slots` : `\n${UI.upsell()}`);
@@ -181,8 +188,9 @@ module.exports = {
         skill = [...equipped, ...library].find(s => s.name.toLowerCase().includes(query.toLowerCase()));
       }
       if (!skill) return sock.sendMessage(chatId, { text: `❌ Skill not found!\nUse /skills to see your skills.` }, { quoted: msg });
-      const info = (skill.description && !/A powerful combat ability/.test(skill.description)) ? skill : (SkillDescriptions.describeSkill ? SkillDescriptions.describeSkill(className, skill.name) : SkillDescriptions.getSkillDescription(className, skill.name));
-      const bonuses = applySkillLevelBonus(skill);
+      let info = (skill.description && !/A powerful combat ability/.test(skill.description)) ? skill : (SkillDescriptions.describeSkill ? SkillDescriptions.describeSkill(className, skill.name) : SkillDescriptions.getSkillDescription(className, skill.name));
+      try { const _r0 = _SCk && _SCk.resolveSkill ? _SCk.resolveSkill(player, skill.name, { allowLibrary: true }) : null; if (_r0 && _r0.ok && _r0.entry && _r0.entry.description) info = { ...info, description: _r0.entry.description, effect: _r0.entry.displayEffect || _r0.entry.effect || info.effect, animation: _r0.entry.animation || (info && info.animation) }; } catch (e) {} // Push #103g: words scale with the level
+      const bonuses = applySkillLevelBonus(skill, player);
       const lv = skill.level || 1;
       const max = skill.maxLevel || 5;
       const bar = skillLevelBar(lv, max);
@@ -221,7 +229,7 @@ module.exports = {
         try { require('../../rpg/utils/TransactionLog').logSpend(player, 'skill_upgrade', cost, 0); } catch (e) {}
       }
       skill.level = lv + 1;
-      const newBonuses = applySkillLevelBonus(skill);
+      const newBonuses = applySkillLevelBonus(skill, player);
       const bar = skillLevelBar(skill.level, max);
       saveDatabase();
       return sock.sendMessage(chatId, {
@@ -265,7 +273,7 @@ module.exports = {
       player.skills.active = equipped;
       player.availableSkills = library;
       saveDatabase();
-      const bonuses = applySkillLevelBonus(skill);
+      const bonuses = applySkillLevelBonus(skill, player);
       return sock.sendMessage(chatId, {
         text: (pro ? `${UI.PRO_BAR}\n✅ SKILL EQUIPPED! 💎\n${UI.PRO_BAR}\n\n🔮 *${skill.name}*` : `✅ SKILL EQUIPPED!\n${UI.FREE_BAR}\n\n🔮 *${skill.name}*`)+` → Slot ${equipped.length}/${maxSlots}\n💥 DMG: ${bonuses.damage} | ${player.energyColor||'💙'} ${bonuses.energyCost} | ⏰ ${bonuses.cooldown}t\n\nUse /skills to view your loadout.\n${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO LOADOUT* — ${equipped.length}/${maxSlots} slots` : `\n${UI.upsell()}`)
       }, { quoted: msg });

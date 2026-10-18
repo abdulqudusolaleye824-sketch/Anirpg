@@ -50,7 +50,7 @@ ${FRAME}\n`;
 
       menu += `\n📌 COMMANDS
 ${FRAME}
-${!ownedBank ? '🏦 /bank create [name] - Open your own bank\n   💵 $20 (paid outside the game) → Owner unlocks you with /ba\n\n' : ''}${!accountBank ? '💳 /bank register [bank] - Open account\n\n' : ''}`;
+${!ownedBank ? '🏦 /bank create [name] - Open your own bank\n   💵 ₦40,000 (paid outside the game) → Owner unlocks you with /ba\n\n' : ''}${!accountBank ? '💳 /bank register [bank] - Open account\n\n' : ''}`;
 
       if (accountBank) {
         menu += `💠 /bank deposit [amount] [nexus|mana] - Deposit (default Nexus)
@@ -72,7 +72,7 @@ ${!ownedBank ? '🏦 /bank create [name] - Open your own bank\n   💵 $20 (paid
 ${FRAME}
 💡 HOW IT WORKS
 ${FRAME}
-1️⃣ Hunters with Owner-granted access ($20, via /ba) open banks
+1️⃣ Hunters with Owner-granted access (₦40,000, via /ba) open banks
 2️⃣ Other players deposit Nexus safely
 3️⃣ Bank owner earns 10% on withdrawals
 4️⃣ Everyone's Nexus is protected!
@@ -101,13 +101,13 @@ ${FRAME}`;
         }, { quoted: msg });
       }
 
-      // Push #102f: bank creation is a PAID privilege ($20, paid outside the bot). An Owner unlocks it with /ba @user.
+      // Push #102f: bank creation is a PAID privilege (₦40,000, paid outside the bot). An Owner unlocks it with /ba @user.
       // No Nexus fee, no level gate — only the grant (Owners always may).
       const BA = require('../../rpg/utils/BankAccess');
       let _isOwnerBA = false; try { _isOwnerBA = require('../../utils/permissions').isBotOwner(db, sender); } catch (e) {}
       if (!_isOwnerBA && !BA.has(db, sender)) {
         return sock.sendMessage(chatId, {
-          text: `${FRAME}\n🏦 *BANK CREATION IS PAID*\n${FRAME}\n\n💵 Opening a bank costs *$20* (paid to the Owner, outside the game).\nOnce paid, an Owner unlocks you with */ba* and you run */bank create <name>*.\n\n📩 Contact an Owner to get started.`
+          text: `${FRAME}\n🏦 *BANK CREATION IS PAID*\n${FRAME}\n\n💵 Opening a bank costs *₦40,000* (paid to the Owner, outside the game).\nOnce paid, an Owner unlocks you with */ba* and you run */bank create <name>*.\n\n📩 Contact an Owner to get started.`
         }, { quoted: msg });
       }
 
@@ -130,7 +130,7 @@ ${FRAME}`;
         }
       }
 
-      const cost = 0; // Push #102f: no in-game fee — the $20 is paid outside the bot
+      const cost = 0; // Push #102f: no in-game fee — the ₦40,000 is paid outside the bot
 
       // Create bank
       const bank = BankingSystem.createBank(db, sender, bankName);

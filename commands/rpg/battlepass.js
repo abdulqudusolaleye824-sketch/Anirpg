@@ -1,6 +1,6 @@
 // ═══════════════════════════════════════════════════════════════
 // /battlepass (/bp alias) — Seasonal Battle Pass (40 Tiers, 30 Days)
-// Cost: 3,000 PC ($3) for Premium BP. — 30 Day Season
+// Cost: 3,000 PC (₦6,000) for Premium BP. — 30 Day Season
 // 4 levels grant Currency alone (Free: L1, L2, L3 | Prem: L7)
 // All other 36 levels grant Currency + Items / PC Refunds!
 // 20 levels are locked to Premium.
@@ -14,7 +14,7 @@ const TextMenu = (()=>{ try { return require('../../utils/textMenu'); } catch(e)
 const Buttons = (()=>{ try { return require('../../utils/buttons'); } catch(e){ return null; } })();
 
 const TOTAL_TIERS = 40;
-const BP_COST_PC = 3000; // Push #102f: $3
+const BP_COST_PC = 3000; // Push #102f: ₦6,000
 
 function isProPlayer(player) {
   if (!player) return false;
@@ -107,7 +107,7 @@ function addItemToInventory(player, item) {
 module.exports = {
   name: 'battlepass',
   aliases: ['bp'],
-  description: '🎖️ Seasonal Battle Pass (40 Tiers, 30 Days) — 3,000 PC ($3) to unlock Premium',
+  description: '🎖️ Seasonal Battle Pass (40 Tiers, 30 Days) — 3,000 PC (₦6,000) to unlock Premium',
 
   async execute(sock, msg, args, getDatabase, saveDatabase, sender) {
     const chatId = msg.key.remoteJid;
@@ -150,7 +150,7 @@ module.exports = {
           `• ⚡ *Your Current Rate:* **${expRate}**`,
           ``,
           `💰 *PREMIUM REFUND TRACK:*`,
-          `• Unlock Premium for **3,000 PC** ($3) (/bp buy)`,
+          `• Unlock Premium for **3,000 PC** (₦6,000) (/bp buy)`,
           `• Every premium tier returns **150 PC** (the full 3,000 PC back by Tier 40!) + **90,000 💠** and **14,000 💎** extra per tier.`,
         ],
         proLines: [`💎 *PRO TRACK*`, `  ⚡ Rate: **${expRate}** · ✅ ${claimedN}/${unlockedN} claimed`],
@@ -219,7 +219,7 @@ module.exports = {
         if (totalClaimed === 0) {
           const hasLockedUnclaimed = LOCKED_TIERS.some(t => t <= bp.level && !bp.claimed.includes(t));
           if (hasLockedUnclaimed && !bp.premium) {
-            return sock.sendMessage(chatId, { text: '🔒 Unclaimed levels are Premium-Locked! Use /bp buy to unlock Premium for 3,000 PC ($3).' }, { quoted: msg });
+            return sock.sendMessage(chatId, { text: '🔒 Unclaimed levels are Premium-Locked! Use /bp buy to unlock Premium for 3,000 PC (₦6,000).' }, { quoted: msg });
           }
           return sock.sendMessage(chatId, { text: '❌ No unclaimed Battle Pass rewards available.' }, { quoted: msg });
         }
@@ -249,7 +249,7 @@ module.exports = {
 
       const isLocked = LOCKED_TIERS.includes(targetLvl);
       if (isLocked && !bp.premium) {
-        return sock.sendMessage(chatId, { text: `🔒 Tier ${targetLvl} is locked to Premium Battle Pass! Use /bp buy to unlock for 3,000 PC ($3).` }, { quoted: msg });
+        return sock.sendMessage(chatId, { text: `🔒 Tier ${targetLvl} is locked to Premium Battle Pass! Use /bp buy to unlock for 3,000 PC (₦6,000).` }, { quoted: msg });
       }
 
       bp.claimed.push(targetLvl);
@@ -367,7 +367,7 @@ module.exports = {
       `📌 *COMMANDS:*`,
       `• /bp claim — Claim all available rewards`,
       `• /bp claim [num] — Claim specific tier`,
-      `• /bp buy — Unlock Premium (3,000 PC · $3)`,
+      `• /bp buy — Unlock Premium (3,000 PC · ₦6,000)`,
       `• /bp [page] — View Page 1–4 (10 tiers per page)`,
       ...(pro ? [FRAME] : [FRAME, UI.upsell()]),
     ];

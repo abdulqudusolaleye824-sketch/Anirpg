@@ -947,6 +947,26 @@ function computeDamage(player, skill, opts = {}) {
   return dmg;
 }
 
+// Push #103g (BUG-112): ONE preview number for /stats, /skills and the equip card — the same maths as a raid strike
+// (gear + title + aura + class-passive ATK, effective Magic Power, catalog damagePct, level bonus), minus live temp buffs.
+function previewDamage(player, skillOrName) {
+  try {
+    const res = resolveSkill(player, typeof skillOrName === 'string' ? skillOrName : (skillOrName && skillOrName.name), { allowLibrary: true });
+    const entry = res && res.ok ? (res.entry || res.skill) : (typeof skillOrName === 'object' ? skillOrName : null);
+    if (!entry) return 0;
+    if (typeof skillOrName === 'object' && skillOrName && skillOrName.level && entry !== skillOrName) entry.level = skillOrName.level;
+    let gearAtk = 0; try { const gb = require('./GearSystem').getEquippedBonuses(player) || {}; gearAtk = gb.atk || 0; } catch (e) {}
+    try { const tb = require('./TitleSystem').getEquippedBoost(player) || {}; gearAtk += tb.atk || 0; } catch (e) {}
+    let aura = 1; try { aura = require('./AuraSystem').AuraSystem.atkMult(player) || 1; } catch (e) {}
+    let pm = { atk: 0, atkFlat: 0, skillDmg: 0 }; try { pm = require('./ClassPower').passiveMultipliers(player) || pm; } catch (e) {}
+    const atk = Math.floor(((player.stats?.atk || 10) + gearAtk + (player.weapon?.attack || player.weapon?.bonus || 0) + (pm.atkFlat || 0)) * (1 + (pm.atk || 0) / 100) * aura);
+    let magicPower = player.stats?.magicPower || 0; try { magicPower = require('./GearSystem').effectiveMagicPower(player); } catch (e) {}
+    let dmg = computeDamage({ ...player, stats: { ...(player.stats || {}), atk, magicPower } }, entry, { includeMagic: magicPower > 0, crit: false });
+    if (pm.skillDmg) dmg = Math.max(1, Math.floor(dmg * (1 + (pm.skillDmg || 0) / 100)));
+    return Math.max(0, Math.floor(dmg));
+  } catch (e) { return 0; }
+}
+
 // ── Player-facing skill object ───────────────────────────────────────────────
 function toPlayerSkill(player, entry) {
   return {
@@ -1287,7 +1307,32 @@ function scaleEntry(entry, level) {
     immuneTurns: entry.immuneTurns ? entry.immuneTurns + (lv >= 5 ? 2 : lv >= 3 ? 1 : 0) : entry.immuneTurns,
   };
   out.effectScaled = scaledSummary(out);
+  // Push #103g: the WORDS grow with the level too — the 📝 spec sentence and the Mechanics line are rewritten with the
+  // scaled numbers (Hex Lv5: "Target DEF -35%" → "-50% for 5 turns"), so /skills info, /stats and battle agree.
+  try {
+    const desc = String(entry.description || '');
+    const baseSpec = entry.specText || ((desc.match(/📝 ([^\n]*?)(?:\s*Mechanics:|$)/) || [])[1] || '');
+    const spec = scaleSpecText(baseSpec, lv, entry);
+    if (spec) out.specText = spec;
+    const withSpec = spec && /📝 /.test(desc) ? desc.replace(/📝 [^\n]*?(?=\s*Mechanics:|\n|$)/, `📝 ${spec}`) : desc;
+    out.description = rebuildMechanics({ ...out, damagePct: out.damagePct ? Math.round(out.damagePct * levelBonus({ level: lv }).dmgMult) : out.damagePct, description: withSpec });
+    if (out.displayEffect) out.displayEffect = String(out.displayEffect).replace(/• [^\n]*$/, spec ? `• ${spec}` : '$&');
+  } catch (e) {}
   return out;
+}
+// Push #103g: scale the numbers inside a spec sentence. Damage % grows ×dmgMult, support % (+N% / -N% / N% max HP /
+// shields / chance) grows ×supportMult (chance capped 100), "N turns" gains +1 per 2 levels.
+function scaleSpecText(text, level, entry) {
+  const lv = Math.max(1, Math.min(MAX_SKILL_LEVEL, Number(level) || 1)); if (lv <= 1 || !text) return text;
+  const m = supportMult(lv), dm = levelBonus({ level: lv }).dmgMult, tb = Math.floor((lv - 1) / 2);
+  let t = String(text);
+  t = t.replace(/(\d+)%(\s+(?:of\s+)?(?:combined\s+)?(?:your\s+)?(?:ATK|Magic Power|DEF|attack|magic)\b[^.]*?\bdamage|\s+(?:ATK|Magic Power)\s+damage|\s+(?:physical|magic|true|bonus)\s+damage|\s+damage\b)/gi, (w, n, rest) => `${Math.round(parseInt(n, 10) * dm)}%${rest}`);
+  t = t.replace(/(\d+)%\s+of\s+(?:combined\s+)?ATK\s*\+\s*Magic Power/gi, (w, n) => w.replace(/^\d+/, String(Math.round(parseInt(n, 10) * dm))));
+  t = t.replace(/([+\-−])(\d+)%/g, (w, sign, n) => `${sign}${Math.min(sign === '+' ? 300 : 90, Math.round(parseInt(n, 10) * m))}%`);
+  t = t.replace(/(\d+)%\s+(chance|to inflict|crit)/gi, (w, n, rest) => `${Math.min(100, Math.round(parseInt(n, 10) * m))}% ${rest}`);
+  t = t.replace(/(\d+)%\s+(max(?:imum)?\s+HP|HP|shield|energy|lifesteal|damage reduction|less damage|more damage|bonus)/gi, (w, n, rest) => `${Math.min(100, Math.round(parseInt(n, 10) * m))}% ${rest}`);
+  if (tb > 0) t = t.replace(/(\d+)\s+(turns?|t)\b/gi, (w, n, u) => `${parseInt(n, 10) + tb} ${u}`);
+  return t;
 }
 // Push #97: the numbers a skill REALLY uses at its level, as display lines (so /skills shows growth on upgrade).
 function scaledSummary(e) {
@@ -1321,6 +1366,13 @@ function onCooldown(player, skill) {
   return { ready: true, msLeft: 0 };
 }
 
+// Push #103g: undo a cooldown that was set before the cast was refused (buff still active / party cost unaffordable).
+function clearCooldown(player, skill) {
+  const key = String(skill?.name || '').toLowerCase();
+  try { if (player.skillCooldowns) delete player.skillCooldowns[key]; } catch (e) {}
+  try { if (player.skills && player.skills.cooldowns) delete player.skills.cooldowns[skill.name]; if (player.lastSkillUse) delete player.lastSkillUse[skill.name]; } catch (e) {}
+  try { for (const s of [...((player.skills && player.skills.active) || []), ...(player.availableSkills || [])]) if (s && String(s.name || '').toLowerCase() === key) { delete s.cooldownUntil; delete s.lastUsed; } } catch (e) {}
+}
 function setCooldown(player, skill) {
   const ms = cooldownMs(skill);
   const key = String(skill?.name || '').toLowerCase();
@@ -1464,7 +1516,7 @@ function carrySkillProgress(player, snap) {
   }
   return { applied, count: now.length, wanted: snap.count };
 }
-module.exports = { CLASS_POWER, supportMult, scaleEntry, lockReason,
+module.exports = { previewDamage, clearCooldown, scaleSpecText, CLASS_POWER, supportMult, scaleEntry, lockReason,
   augmentContract,
   parseSupportFields, applySupportFields,
   snapshotSkillProgress, carrySkillProgress,

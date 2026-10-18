@@ -260,9 +260,9 @@ module.exports = {
       msg2 += `\n${FRAME}\n✨ *SKILLS* (${activeSkills.length})`;
       activeSkills.forEach(skill => {
         let cost = skill.energyCost || skill.manaCost || 10; try { cost = _SCs.effectiveCost(skill, player); } catch (e) {} // Push #103d: the real charged cost at this level
-        let dmg = skill.damage; try { dmg = Math.round((player.stats?.atk || 10) * ((skill.damagePct || 0) / 100) * (_SCs.levelBonus(skill).dmgMult || 1)) || skill.damage; } catch (e) {}
+        let dmg = skill.damage; try { dmg = _SCs.previewDamage(player, skill) || dmg; } catch (e) {} // Push #103g (BUG-112): same number as /skills
         msg2 += `\n🔮 *${skill.name}* [Lv.${skill.level || 1}/${skill.maxLevel || 5}] · ${_tag(skill)}`;
-        msg2 += `\n   💥 ${dmg} dmg | ${player.energyColor || '💙'} ${cost} | ⏰ ${skill.cooldown || 0}t`;
+        msg2 += `\n   💥 ${dmg} dmg | ${player.energyColor || '💙'} ${cost} | ⏰ ${(() => { try { return _SCs.effectiveCooldownTurns(skill); } catch (e) { return skill.cooldown || 0; } })()}t`;
       });
     }
 

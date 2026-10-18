@@ -1382,6 +1382,28 @@ function supportCast(caster, casterJid, target, targetJid, skillName, gate, db) 
     }
   }
   if (!targets.length) targets.push({ u: target, name: target.name });
+  // Push #103g: BUFF RULES — (1) a buff that is still running on a hunter cannot be re-cast on them (no stacking, no
+  // refresh-spam — the card says so); (2) a PARTY buff costs the skill's energy PER HUNTER it lands on.
+  if (isBuff && !isHeal && (entry.buffs || []).length) {
+    const still = (u) => { try { const tb = u.tempBuffs || {}; let left = 0; for (const b of entry.buffs) { const v = tb[`${skill.name}:${b.stat}`]; if (v && (v.duration || 0) > 1) left = Math.max(left, v.duration - 1); } return left; } catch (e) { return 0; } };
+    const fresh = [], skipped = [];
+    for (const t of targets) { const l = still(t.u); if (l > 0) skipped.push(`${t.name} (${l}t left)`); else fresh.push(t); }
+    if (!fresh.length) {
+      caster.stats.energy = Math.min(caster.stats.maxEnergy || 100, (caster.stats.energy || 0) + cost); try { SC.clearCooldown && SC.clearCooldown(caster, entry); } catch (e) {}
+      return { ok: false, error: `*${skill.name}* is still active on ${skipped.join(', ')} — buffs don't stack. Wait for it to fade, then cast again.` };
+    }
+    targets.length = 0; targets.push(...fresh);
+    if (party && targets.length > 1) {
+      const total = cost * targets.length, extra = total - cost;
+      if ((caster.stats.energy || 0) < extra) {
+        caster.stats.energy = Math.min(caster.stats.maxEnergy || 100, (caster.stats.energy || 0) + cost); try { SC.clearCooldown && SC.clearCooldown(caster, entry); } catch (e) {}
+        return { ok: false, error: `*${skill.name}* on ${targets.length} hunters costs ${cost} × ${targets.length} = *${total}* energy — you have ${(caster.stats.energy || 0)}. Buff one teammate instead: /skill ${skill.name} @name` };
+      }
+      caster.stats.energy = Math.max(0, (caster.stats.energy || 0) - extra); cost = total;
+      lines.push(`${caster.energyColor || '💙'} Party buff — ${targets.length} hunters × ${cost / targets.length} = *${total}* energy`);
+    }
+    if (skipped.length) lines.push(`⏳ Already active on ${skipped.join(', ')} — skipped (no charge).`);
+  }
   let healedTotal = 0;
   const effMax = (pl) => { try { return require('../utils/GearSystem').effectiveMaxHp(pl); } catch (e) { return (pl.stats && pl.stats.maxHp) || 100; } };
   for (const t of targets) {

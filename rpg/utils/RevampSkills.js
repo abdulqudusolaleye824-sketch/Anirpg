@@ -87,7 +87,7 @@ function damageOf(text, type) {
 
 // ── cost / cooldown by slot ────────────────────────────────────────────────
 // Push #103f-3: per-skill cost tuning (name → multiplier). Ancestral Wrath: damage 260% → 130% and cost halved.
-const COST_TUNE = { 'Ancestral Wrath': 0.5 };
+const COST_TUNE = {}; // Push #103g: Ancestral Wrath restored (260%, full cost) per owner
 function costFor(index, rank, type, name) {
   if (type === 'passive') return 0;
   const tune = COST_TUNE[name] || 1;

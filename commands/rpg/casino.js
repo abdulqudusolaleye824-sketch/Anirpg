@@ -507,7 +507,7 @@ ${message}
 ${FRAME}
 💠 Bet: ${betAmount} Nexus
 ${winAmount >= 0 ? `💵 Won: ${winAmount} Nexus` : `💸 Lost: ${Math.abs(winAmount)} Nexus · 🌀 Aura \u2212${_auraHit}`}
-💼 Balance: ${player.gold || 0} Nexus
+💼 Balance: ${(player.gold || 0).toLocaleString()} 💠 Nexus
 ${FRAME}${isJackpot ? '\n🏆 JACKPOT WINNER! 🏆' : ''}`;
 
       // ── Multi-message fan-out: header → spinning → reels → verdict ──
@@ -540,7 +540,7 @@ ${FRAME}${isJackpot ? '\n🏆 JACKPOT WINNER! 🏆' : ''}`;
               winAmount >= 0
                 ? `💵 Won: +${winAmount.toLocaleString()} Nexus`
                 : `💸 Lost: ${Math.abs(winAmount).toLocaleString()} Nexus · 🌀 Aura \u2212${_auraHit}`,
-              `💼 Balance: *${(player.gold || 0).toLocaleString()}* gold`,
+              `💼 Balance: *${(player.gold || 0).toLocaleString()}* 💠 Nexus`,
               ...(pro ? [`📊 Lifetime: +${UI.num(player.casino.totalWon)} / -${UI.num(player.casino.totalLost)}`] : []),
               isJackpot ? `\n🏆 *JACKPOT WINNER!* 🏆` : '',
               `${FRAME}`,
@@ -672,7 +672,7 @@ ${result}
 ${FRAME}
 💠 Bet: ${betAmount} Nexus
 ${winAmount > 0 ? `💵 Won: ${winAmount} Nexus` : winAmount < 0 ? `💸 Lost: ${Math.abs(winAmount)} Nexus · 🌀 Aura \u2212${_auraHit}` : `➖ No change`}
-💼 Balance: ${player.gold || 0} Nexus
+💼 Balance: ${(player.gold || 0).toLocaleString()} 💠 Nexus
 ${FRAME}`;
 
       // ── Multi-message fan-out: header → deal → reveal → verdict ──
@@ -709,7 +709,7 @@ ${FRAME}`;
                 : winAmount < 0
                   ? `💸 Lost: ${Math.abs(winAmount).toLocaleString()} Nexus · 🌀 Aura \u2212${_auraHit}`
                   : `➖ No change`,
-              `💼 Balance: *${(player.gold || 0).toLocaleString()}* gold`,
+              `💼 Balance: *${(player.gold || 0).toLocaleString()}* 💠 Nexus`,
               ...(pro ? [`📊 Lifetime: +${UI.num(player.casino.totalWon)} / -${UI.num(player.casino.totalLost)}`] : []),
               `${FRAME}`,
             ].join('\n'),
@@ -833,7 +833,7 @@ ${won ? `🎉 YOU WIN! ${multiplier}x payout! 🎉` : `❌ Better luck next time
 ${FRAME}
 💠 Bet: ${betAmount} Nexus
 ${winAmount > 0 ? `💵 Won: ${winAmount} Nexus` : `💸 Lost: ${Math.abs(winAmount)} Nexus · 🌀 Aura \u2212${_auraHit}`}
-💼 Balance: ${player.gold || 0} Nexus
+💼 Balance: ${(player.gold || 0).toLocaleString()} 💠 Nexus
 ${FRAME}`;
 
       // ── Multi-message fan-out: header → spin → ball drops → verdict ──
@@ -868,7 +868,7 @@ ${FRAME}`;
               winAmount > 0
                 ? `💵 Won: +${winAmount.toLocaleString()} Nexus`
                 : `💸 Lost: ${Math.abs(winAmount).toLocaleString()} Nexus · 🌀 Aura \u2212${_auraHit}`,
-              `💼 Balance: *${(player.gold || 0).toLocaleString()}* gold`,
+              `💼 Balance: *${(player.gold || 0).toLocaleString()}* 💠 Nexus`,
               ...(pro ? [`📊 Lifetime: +${UI.num(player.casino.totalWon)} / -${UI.num(player.casino.totalLost)}`] : []),
               `${FRAME}`,
             ].join('\n'),
@@ -982,7 +982,7 @@ ${FRAME}
 💠 Bet: ${betAmount} Nexus
 🎰 Multiplier: ${multiplier.toFixed(2)}x
 ${winAmount > 0 ? `💵 Won: ${winAmount} Nexus` : `💸 Lost: ${Math.abs(winAmount)} Nexus · 🌀 Aura \u2212${_auraHit}`}
-💼 Balance: ${player.gold || 0} Nexus
+💼 Balance: ${(player.gold || 0).toLocaleString()} 💠 Nexus
 ${FRAME}`;
 
       // ── Multi-message fan-out: header → roll suspense → result → payout ──
@@ -1026,7 +1026,7 @@ ${FRAME}`;
               winAmount > 0
                 ? `💵 Won: +${winAmount.toLocaleString()} Nexus`
                 : `💸 Lost: ${Math.abs(winAmount).toLocaleString()} Nexus · 🌀 Aura \u2212${_auraHit}`,
-              `💼 Balance: *${(player.gold || 0).toLocaleString()}* gold`,
+              `💼 Balance: *${(player.gold || 0).toLocaleString()}* 💠 Nexus`,
               ...(pro ? [`📊 Lifetime: +${UI.num(player.casino.totalWon)} / -${UI.num(player.casino.totalLost)}`] : []),
               `${FRAME}`,
             ].join('\n'),

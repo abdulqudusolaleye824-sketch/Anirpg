@@ -27,6 +27,10 @@ module.exports = {
 
     // Late unlock safety: a Lv.20+ hunter who levelled before this update.
     if (!DS.has(player) && (player.level || 1) >= 20) { DS.unlock(player); saveDatabase(); }
+    { // Push #103g: a domain still shaped by a PREVIOUS class (pre-#103a recon) is reshaped now and the hunter told once.
+      const _rc = DS.syncClass ? DS.syncClass(player) : null;
+      if (_rc) { saveDatabase(); try { await sock.sendMessage(chatId, { text: _rc.awakening }, { quoted: msg }); if (_rc.prompt) await sock.sendMessage(chatId, { text: _rc.prompt }); } catch (e) {} }
+    }
     // Push #102g (BUG-054): /domain effects works BEFORE the domain awakens — it exists to show what your class can get.
     if (sub === 'effects' || sub === 'list') {
       const d0 = player.domain || {};

@@ -1,3 +1,20 @@
+## 1.0.212 — Push #103g (2026-10-18) — BUG-103/104/110/112, party buffs, scaled skill words, domain turns, naira prices
+- BUG-112: /stats, /skills and the equip card now show the SAME skill damage (one preview = raid maths: gear/title/aura/
+  passive ATK, Magic Power, catalog %, level bonus). /stats cooldown = the real level-reduced value.
+- Skill words grow with the level: the 📝 sentence and Mechanics line are rewritten with the scaled numbers
+  (Hex Lv5 "Target DEF -52% for 5 turns"; Ancestral Wrath Lv5 "385%") — same numbers the battle uses.
+- Ancestral Wrath restored: 260% damage, full cost. Hex & other pure buffs/debuffs keep the 60% cost.
+- PARTY BUFFS: cost = skill energy × hunters buffed (shown); a buff still running on a hunter cannot be re-cast on them
+  (no stacking/refresh-spam) — refused with time left, no energy, no cooldown.
+- BUG-104/110: /skills main card lists PASSIVES (Hunger, Arcane Blade…) — always on, no slot.
+- DOMAINS: a hunter's domain counts turns by its OWNER's actions ("6 turns" = six of the caster's moves; teammates
+  don't burn them); the killing blow counts too (was skipped). A domain still shaped by a previous class (pre-#103a
+  recon, e.g. Necromancer → Monster) is reshaped on first touch and the hunter re-prompted for a name.
+- BUG-103: Zeref refunded 300,000 💠 (one-shot).
+- Casino payout card: "💠 Nexus" (was "gold").
+- Prices in naira everywhere (₦2,000 per 1,000 PC): Weekly ₦4,000 · Monthly ₦10,000 · Yearly ₦120,000 · Battle Pass
+  Premium ₦6,000 · bank access ₦40,000. No dollar mentions left.
+
 ## 1.0.211 — Push #103f-3 (2026-10-18) — utility skill costs, Ancestral Wrath halved
 - Buff / debuff casts (no stated damage %) now cost 60% — Hex Lv5 195 → 117 energy. Damage & rank skills unchanged.
 - A pure debuff (Hex…) is a 60% ATK tap instead of a full strike — the debuff is the point (cards & engines agree).

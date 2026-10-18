@@ -1,4 +1,4 @@
-// Push #102f: BANK CREATION IS A PAID (off-bot, $20) PRIVILEGE. An Owner grants it with /ba @user (or by reply);
+// Push #102f: BANK CREATION IS A PAID (off-bot, ₦40,000) PRIVILEGE. An Owner grants it with /ba @user (or by reply);
 // only granted hunters (and Owners) can /bank create — no in-game Nexus fee, no level gate.
 'use strict';
 const bare = j => String(j || '').split(':')[0].split('@')[0];

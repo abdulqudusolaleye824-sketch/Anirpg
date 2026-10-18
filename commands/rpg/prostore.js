@@ -61,7 +61,7 @@ const PASS_PRODUCTS = {
   battlepass: {
     aliases: ['bp', 'battle'],
     name: 'Battle Pass Premium',
-    cost: 3000, // Push #102g: $3 (1,000 PC = $1) — matches /bp buy
+    cost: 3000, // Push #102g: ₦6,000 (1,000 PC = ₦2,000) — matches /bp buy
     emoji: '🎖️',
     blurb: 'Premium track for the current season + 50% bonus EXP while active',
   },

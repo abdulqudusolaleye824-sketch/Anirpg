@@ -1107,6 +1107,7 @@ module.exports = {
       saveDatabase();
         try { if (_shadowOffer) { const SA = require('../../rpg/utils/ShadowArmy'); const B = require('../../utils/buttons'); const pr = SA.buttonFor(player); if (pr) setTimeout(() => B.sendButtons(sock, chatId, { text: `👤 *${player.name}* — the shadow awaits your word.`, buttons: B.quickReplies(pr) }).catch(() => {}), 1200); } } catch (e) {} // Push #96h-z19
         if (!_againOffer) _againOffer = 'attack'; // more monsters on this floor
+        try { const DS = require('../../rpg/utils/DomainSystem'); const _nj = (j) => { try { return GR.GKM.normaliseJid(j) || String(j); } catch (e) { return String(j); } }; const _tl = DS.tick(DS.arenaOf(gate), { actor: _nj(sender), roster: ((gate.raid && gate.raid.members) || []).filter(m => (m.hp || 0) > 0).map(m => _nj(m.id)) }); if (_tl) killLines.push(``, _tl); } catch (e) {} // Push #103g: a killing blow is a turn too
         return sock.sendMessage(chatId, { text: killLines.filter(Boolean).join('\n') }, { quoted: msg });
       }
 
