@@ -528,7 +528,7 @@ function monsterTry(arena, monster, hunters = [], ctx = {}) {
     if (info.law === 'slow') _applyBuffs(h, { speed: -Math.round(mag * 0.75) }, turns, 'domain', src);
     if (info.law === 'pierce') { const k = h.tempBuffs && h.tempBuffs['domain:def']; if (k) k.amount -= Math.round(mag * 0.5); }
     if (info.law === 'blind') { try { const l = require('./MonsterSkillFX').applyStatus(h, 'blind', turns, undefined, src); if (l) lawLines.push(l); } catch (e) {} } // Push #96h-j
-    if (info.law === 'drain' && h === _drainTarget && h.stats && typeof h.stats.energy === 'number') { const lost = Math.floor(h.stats.energy * Math.min(0.35, 0.10 + info.ri * 0.04)); h.stats.energy = Math.max(0, h.stats.energy - lost); if (lost) lawLines.push(`${h.name} −${lost} energy`); }
+    if (info.law === 'drain' && h === _drainTarget && h.stats && typeof h.stats.energy === 'number') { const lost = Math.floor(h.stats.energy * Math.min(0.35, 0.10 + info.ri * 0.04) * (() => { try { return require('./MagicResist').drainMult(h, monster); } catch (e) { return 0.5; } })()); /* Push #103f: halved + MR */ h.stats.energy = Math.max(0, h.stats.energy - lost); if (lost) lawLines.push(`${h.name} −${lost} energy`); }
     const burst = Math.max(1, Math.floor(_max(h) * info.burst / 100));
     h.stats.hp = Math.max(1, h.stats.hp - burst); // devastating, never a kill on its own
     hurt.push(`${h.name} −${burst}`);

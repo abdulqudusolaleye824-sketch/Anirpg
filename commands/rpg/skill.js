@@ -42,7 +42,12 @@ module.exports = {
           }
           if (!gk) {
             for (const g of Object.values(GateManager.gates || {})) {
-              if (g.raid?.status === 'active' && g.raid.members?.some(m => num(m.id) === sNum)) { gk = g.raid.key; break; }
+              if (g.raid?.status === 'active' && g.raid.members?.some(m => num(m.id) === sNum)) {
+                // Push #103f (BUG-102): a raid skill only fires in the raid's own chat — from any other chat it is refused (no energy spent).
+                const rc = g.raid.chatId || g.chatId || null;
+                if (rc && chatId && rc !== chatId) return sock.sendMessage(chatId, { text: `⚔️ You are mid-raid in another group — use your skills *there*. Nothing was spent.` }, { quoted: msg });
+                gk = g.raid.key; break;
+              }
             }
           }
           if (gk) {

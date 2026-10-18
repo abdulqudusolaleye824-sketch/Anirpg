@@ -131,7 +131,11 @@ ${FRAME}` + (pro ? '' : `\n${UI.upsell()}`)
       }
       if (!_gkey) {
         for (const gate of Object.values(GateManager.gates || {})) {
-          if (gate?.raid?.status === 'active' && gate.raid.members?.some(m => normaliseJidShort(m.id) === sNum)) { _gkey = gate.raid.key; break; }
+          if (gate?.raid?.status === 'active' && gate.raid.members?.some(m => normaliseJidShort(m.id) === sNum)) {
+            const rc = gate.raid.chatId || gate.chatId || null; // Push #103f (BUG-102): raid skills fire only in the raid's chat
+            if (rc && chatId && rc !== chatId) return sock.sendMessage(chatId, { text: `⚔️ You are mid-raid in another group — use your skills *there*. Nothing was spent.` }, { quoted: msg });
+            _gkey = gate.raid.key; break;
+          }
         }
       }
       if (_gkey) {
@@ -200,6 +204,14 @@ ${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO FOCUS* — ${skill.energyCost ||
 async function defaultHandler(sock, msg, player, skill, db, saveDatabase, getDatabase) {
   const chatId = msg.key.remoteJid;
   const FRAME = UI.isPro(player) ? UI.PRO_BAR : UI.FREE_BAR;
+  // Push #103f (BUG-102): OUTSIDE a battle a class skill is a PREVIEW — nothing fires, no energy, no cooldown.
+  // Before this, typing a skill in any chat "practice-cast" it and silently drained energy.
+  {
+    let cost = skill.energyCost || 15; try { cost = require('../../rpg/utils/SkillCatalog').effectiveCost(skill, player); } catch (e) {}
+    let tag = ''; try { const SL = require('../../rpg/data/SkillLore'); tag = SL.TAG[SL.kindOf(skill)]; } catch (e) {}
+    const spec = String(skill.description || '').replace(/\s*Mechanics:[\s\S]*$/, '').trim();
+    return sock.sendMessage(chatId, { text: `${FRAME}\n${skill.emoji || '🔮'} *${skill.name}* — ${tag} · Lv.${skill.level || 1}\n${FRAME}\n${spec}\n\n${player.energyColor || '💙'} ${cost} ${player.energyType || 'energy'} per cast · ⏰ ${skill.cooldown || 0}t\n\n⚔️ Skills only fire inside a raid, dungeon, instance or PvP battle. Nothing was spent.\n${FRAME}` }, { quoted: msg });
+  }
 
   // Energy check
   const energyCost = skill.energyCost || 15;

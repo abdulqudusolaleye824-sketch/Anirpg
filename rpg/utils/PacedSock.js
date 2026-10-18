@@ -2,7 +2,7 @@
 // with a ≥3 s gap after the previous one (strike → counter → statuses → buffs…),
 // so the group can actually read the fight. First message is immediate.
 'use strict';
-const GAP_MS = 3000;
+const GAP_MS = 2000;
 function paced(sock, gap = GAP_MS) {
   if (!sock || sock.__paced) return sock;
   let last = 0;

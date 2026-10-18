@@ -569,7 +569,7 @@ module.exports = {
     };
 
     if (action === 'attack' || action === 'skill') {
-      sock = require('../../rpg/utils/PacedSock').paced(sock); // Push #103b: 3 s between combat messages
+      sock = require('../../rpg/utils/PacedSock').paced(sock); // Push #103b/#103f: 2 s between combat messages
       if (!inRaid(gate, sender)) return sock.sendMessage(chatId, { text: '❌ You are not in this raid.' }, { quoted: msg });
       if (raidOver(gate)) return sock.sendMessage(chatId, { text: RAID_OVER_TEXT }, { quoted: msg });
       // Push #29: combat lock — one battle flow at a time per gate.
@@ -644,7 +644,7 @@ module.exports = {
               const _msgs = (_sm.messages || []).filter(Boolean);
               for (let i = 0; i < _msgs.length; i++) {
                 await sock.sendMessage(chatId, { text: (i === 0 && pro ? `${UI.PRO_BAR}\n` : '') + _msgs[i] + (i === _msgs.length - 1 ? `\n⚡ −${_sm.energyCost} energy · 🕊️ Summoning does not use your turn.` : '') }, i === 0 ? { quoted: msg } : {});
-                if (i < _msgs.length - 1) await new Promise(r => setTimeout(r, 3000));
+                if (i < _msgs.length - 1) await new Promise(r => setTimeout(r, 2000));
               }
               if (_curT && _sm.damage > 0 && _curT.hp <= 0) { try { await sock.sendMessage(chatId, { text: `💀 *${_curT.name}* is destroyed by the blast! Finish the floor with your next move.` }); } catch (e) {} }
               return;
@@ -871,7 +871,7 @@ module.exports = {
           const _MSFXi = require('../../rpg/utils/MonsterSkillFX');
           const _iPool = (Array.isArray(target.skills) && target.skills.length) ? target.skills : [{ name: '🔥 Flame Spurt', effect: 'burn', chance: 40 }, { name: '⚡ Volt Shock', effect: 'stun', chance: 25 }, { name: '🩸 Savage Bite', effect: 'bleed', chance: 40 }, { name: '😱 Terror Howl', effect: 'fear', chance: 30 }, { name: '🌀 Void Crush', effect: 'weaken', chance: 35 }];
           const _iPick = _MSFXi.pickMoves(_iPool);
-          if (_iPick.support) { try { const _ss = _MSFXi.supportStep(target, player, _iPick.support); for (const b of _ss.blocks) { await sock.sendMessage(chatId, { text: b }); await new Promise(r => setTimeout(r, 3000)); } } catch (e) {} }
+          if (_iPick.support) { try { const _ss = _MSFXi.supportStep(target, player, _iPick.support); for (const b of _ss.blocks) { await sock.sendMessage(chatId, { text: b }); await new Promise(r => setTimeout(r, 2000)); } } catch (e) {} }
           const _aDef = GR.effectiveDef(_iVictim, _iVictimJid); // Push #89: gear + title + pet
           const _hpBefore = _iVictim.stats.hp || 1;
           const _aRaw = GR.monsterDamage(target, _aDef, _iVictim);
@@ -1154,7 +1154,7 @@ module.exports = {
       const monsterSkill = _picked.attack;
       // Push #96h-m: a LEAKED beast regenerates 90% of its turns (free support move, like any other).
       if (_monCanAct.canAct && target.leaked && !_picked.support && target.hp < target.maxHp && Math.random() < 0.90) _picked.support = '💚 Regenerate';
-      if (_monCanAct.canAct && _picked.support) { try { const _ss = _MSFXc.supportStep(target, _victim, _picked.support); for (const b of _ss.blocks) { await sock.sendMessage(chatId, { text: b }); await new Promise(r => setTimeout(r, 3000)); } } catch (e) {} }
+      if (_monCanAct.canAct && _picked.support) { try { const _ss = _MSFXc.supportStep(target, _victim, _picked.support); for (const b of _ss.blocks) { await sock.sendMessage(chatId, { text: b }); await new Promise(r => setTimeout(r, 2000)); } } catch (e) {} }
       if (!_monCanAct.canAct && _monCanAct.reason === 'initiative') {
         await sock.sendMessage(chatId, { text: [
           ...(pro ? [UI.PRO_BAR, `⚡ *MONSTER SPENT* 💎`, UI.PRO_BAR] : [`⚡ *MONSTER SPENT*`, UI.FREE_BAR]),
@@ -1388,7 +1388,7 @@ module.exports = {
         const bossAtk = (typeof boss.atk === 'number' && boss.atk > 0) ? boss.atk : Math.floor(GATE_RANKS[gate.rank].monsterRange[1] * 0.20 * ((gate.calibrated && gate.calibrated.severity) || 1));
         // Push #74: boss hits go through the same dodge/passive/weaken maths.
         const _bossRegen = Math.random() < 0.25 && boss.hp < boss.maxHp; // Push #96d: bosses can Regenerate · Push #96h-l: it is a FREE support move (no damage, no turn) — the boss still strikes
-        if (_bossRegen) { try { const _ss = require('../../rpg/utils/MonsterSkillFX').supportStep(boss, _bVictim, '💚 Regenerate'); for (const b of _ss.blocks) { await sock.sendMessage(chatId, { text: b }); await new Promise(r => setTimeout(r, 3000)); } } catch (e) {} }
+        if (_bossRegen) { try { const _ss = require('../../rpg/utils/MonsterSkillFX').supportStep(boss, _bVictim, '💚 Regenerate'); for (const b of _ss.blocks) { await sock.sendMessage(chatId, { text: b }); await new Promise(r => setTimeout(r, 2000)); } } catch (e) {} }
         let dmg = GR.monsterDamage({ atk: bossAtk, speed: boss.speed || 14, statusEffects: boss.statusEffects || [], _raid: true, isBoss: true, rank: gate.rank }, def, _bVictim);
         if (_bGuard && _bGuard.aggro) await sock.sendMessage(chatId, { text: `🎯 *AGGRO!* *${boss.name}* turns on the healer *${_bGuard.guardianName}*!` });
         else if (_bGuard) await sock.sendMessage(chatId, { text: `🛡️ *GUARD!* *${_bGuard.guardianName}* steps in front of *${player.name}* and takes the boss's blow!` });

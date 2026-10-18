@@ -667,7 +667,7 @@ module.exports = {
     }
 
     // ── ATTACK ────────────────────────────────────────────────
-    if (TURN_SUBS.has(sub)) sock = require('../../rpg/utils/PacedSock').paced(sock); // Push #103b: 3 s between combat messages
+    if (TURN_SUBS.has(sub)) sock = require('../../rpg/utils/PacedSock').paced(sock); // Push #103b/#103f: 2 s between combat messages
     if (sub === 'attack') {
       // Push #88x: a BERSERK hunter does not choose — the beast picks an equipped pattern (or a wild strike).
       try {
@@ -1249,7 +1249,7 @@ module.exports = {
             if (!_r.ok) return sock.sendMessage(chatId, { text: `❌ ${_r.error}` }, { quoted: msg });
             saveDatabase();
             const _ms = (_r.messages || []).filter(Boolean);
-            for (let i = 0; i < _ms.length; i++) { await sock.sendMessage(chatId, { text: _ms[i] + (i === _ms.length - 1 ? `\n⚡ −${_r.energyCost} energy · 🕊️ Summoning does not use your turn.` : '') }, i === 0 ? { quoted: msg } : {}); if (i < _ms.length - 1) await new Promise(r => setTimeout(r, 3000)); }
+            for (let i = 0; i < _ms.length; i++) { await sock.sendMessage(chatId, { text: _ms[i] + (i === _ms.length - 1 ? `\n⚡ −${_r.energyCost} energy · 🕊️ Summoning does not use your turn.` : '') }, i === 0 ? { quoted: msg } : {}); if (i < _ms.length - 1) await new Promise(r => setTimeout(r, 2000)); }
             return;
           }
         } catch (e) { console.error('[dungeon] summon cast:', e.message); }
@@ -1393,7 +1393,7 @@ module.exports = {
             if (!_r.ok) return sock.sendMessage(chatId, { text: `❌ ${_r.error}` }, { quoted: msg });
             saveDatabase();
             const _ms = (_r.messages || []).filter(Boolean);
-            for (let i = 0; i < _ms.length; i++) { await sock.sendMessage(chatId, { text: _ms[i] + (i === _ms.length - 1 ? `\n⚡ −${_r.energyCost} energy · 🕊️ Summoning does not use your turn.` : '') }, i === 0 ? { quoted: msg } : {}); if (i < _ms.length - 1) await new Promise(r => setTimeout(r, 3000)); }
+            for (let i = 0; i < _ms.length; i++) { await sock.sendMessage(chatId, { text: _ms[i] + (i === _ms.length - 1 ? `\n⚡ −${_r.energyCost} energy · 🕊️ Summoning does not use your turn.` : '') }, i === 0 ? { quoted: msg } : {}); if (i < _ms.length - 1) await new Promise(r => setTimeout(r, 2000)); }
             return;
           }
         } catch (e) { console.error('[dungeon] summon cast:', e.message); }

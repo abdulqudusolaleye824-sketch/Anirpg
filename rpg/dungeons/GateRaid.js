@@ -62,6 +62,7 @@ function playerDamage(player, skillName = null, target = null) {
     // + passives), not bare stats.atk — a "+100% ATK" buff now doubles the hit.
     let dmg = SC.computeDamage({ ...player, stats: { ...(player.stats || {}), atk, magicPower } }, entry || skill, { includeMagic: magicPower > 0, crit: false, target, notes: synergyNotes });
     if (_pm74.skillDmg) dmg = Math.max(1, Math.floor(dmg * (1 + (_pm74.skillDmg || 0) / 100)));
+    try { const _lv = Number((entry || skill).level || 1); if (_lv > 1) synergyNotes.push(`⬆️ Lv.${_lv} +${Math.round((SC.levelBonus(entry || skill).dmgMult - 1) * 100)}% DMG`); } catch (e) {} // Push #103f (BUG-101): the level bonus is SHOWN
     let _tDefMult95 = 1, _tTaken95 = 1; try { const _UC95 = require('../utils/UnifiedCombat'); _tDefMult95 = Math.max(0.1, 1 + _UC95.tempBuffPct(target || {}, 'def') / 100); _tTaken95 = 1 + _UC95.tempBuffPct(target || {}, 'damageTaken') / 100; } catch (e) {} // Push #95: monster shells / domain debuffs are real
     if (target && typeof target.def === 'number' && target.def > 0) dmg = Math.max(1, dmg - Math.floor(target.def * _tDefMult95 * 0.35 * (1 - Math.min(0.6, (_pm74.armorPen || 0) / 100))));
     if (target && _tTaken95 !== 1) dmg = Math.max(1, Math.floor(dmg * _tTaken95));

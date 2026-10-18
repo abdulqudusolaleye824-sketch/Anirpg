@@ -1,3 +1,17 @@
+## 1.0.209 — Push #103f (2026-10-18) — Magic Resistance for everyone, drains halved, 2 s pacing, BUG-101/102
+- MAGIC RESISTANCE BASELINE: every hunter is granted MR = level × 2 + Hunter Rank (D 15 · C 30 · B 50 · A 75 · S 110) +
+  class affinity (casters/holy 25 · tanks 15 · hybrids 10 · physical 5 · Monster 20). Never lowers an existing value;
+  UP spent on MR stacks on top. MR now grows every level-up (+2, +1 per rank tier). One-shot migration.
+- MR ALWAYS ROLLS: statuses (blind, poison, freeze, curse, fear, stun…) and debuffs from monsters/domains/skills are
+  checked vs MR every time — when MR ≥ MP the resist chance is (MR−MP)/(MR+MP+40) (10–70%); when the caster's MP
+  overwhelms MR the target still keeps up to a 35% roll (and wards may be broken).
+- MANA/ENERGY DRAINS halved flat, and MR shaves up to half of the remainder (monster drain skills + domain drain law).
+- Combat message pacing back to 2 s (raids, dungeons, PvP).
+- BUG-101: dungeon skill damage used a lone +8%/level — now the same +12%/level as raids & PvP; raid strike lines show
+  "⬆️ Lv.N +X% DMG" so the bonus is visible.
+- BUG-102: class skill commands OUTSIDE a battle are a PREVIEW (card + cost) — nothing fires, no energy, no cooldown.
+  A raid skill typed in a different group than the raid's is refused ("use your skills there"), nothing spent.
+
 ## 1.0.208 — Push #103e (2026-10-18) — Battle Pass premium payback (not Astra Pass) + live stats card kit
 - ASTRA PASS reverted to its normal track (the 1.0.206 boost was applied to the wrong pass).
 - BATTLE PASS (/bp, bought for 3,000 PC): every one of the 20 PREMIUM tiers now returns 150 PC (3,000 PC — the full

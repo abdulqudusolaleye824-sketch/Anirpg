@@ -346,7 +346,7 @@ module.exports = {
 
     // ── IN-BATTLE ACTION SUBMISSION ──────────────────────────────
     if (sub === 'attack' || sub === 'skill') {
-      sock = require('../../rpg/utils/PacedSock').paced(sock); // Push #103b: 3 s between combat messages
+      sock = require('../../rpg/utils/PacedSock').paced(sock); // Push #103b/#103f: 2 s between combat messages
       if (!player.pvpBattle) {
         return sock.sendMessage(chatId, { text: '❌ You are not in a PvP battle! Challenge someone with /pvp challenge @user' }, { quoted: msg });
       }

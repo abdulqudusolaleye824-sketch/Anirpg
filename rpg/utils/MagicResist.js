@@ -39,10 +39,41 @@ function casterPower(caster) {
 function check(target, caster, rng = Math.random) {
   const mr = effective(target); const mp = casterPower(caster);
   if (!mr) return { resisted: false, overrides: mp > 0, chance: 0, mr, mp };
-  if (mp > mr) return { resisted: false, overrides: true, chance: 0, mr, mp };
-  const chance = Math.min(RESIST_CAP, (mr - mp) / (mr + mp + 40));
+  // Push #103f: MR ALWAYS gets a say. Overwhelming magic (MP > MR) still breaks wards, but the target keeps a
+  // resist roll of up to 35% (half-weight); when MR holds the line the roll is (MR − MP)/(MR + MP + 40), cap 70%.
+  if (mp > mr) { const c = Math.min(0.35, 0.5 * mr / (mr + mp + 40)); return { resisted: rng() < c, overrides: true, chance: Math.round(c * 100), mr, mp }; }
+  const chance = Math.min(RESIST_CAP, Math.max(0.10, (mr - mp) / (mr + mp + 40)));
   return { resisted: rng() < chance, overrides: false, chance: Math.round(chance * 100), mr, mp };
 }
 function line(res, who) { return res && res.resisted ? `🔰 ${who || 'Target'} RESISTED (MR ${res.mr} vs MP ${res.mp} — ${res.chance}%)` : ''; }
 
-module.exports = { RESIST_CAP, base, effective, casterPower, check, line };
+// ── Push #103f: BASELINE MR for every hunter — rank × class × level ──────────────────────────────
+//   level × 2  +  Hunter Rank (F/E 0 · D 15 · C 30 · B 50 · A 75 · S 110)  +  class affinity
+//   (casters/holy 25 · tanks 15 · hybrids 10 · physical 5 · Monster 20). Granted once (never lowers a stat) and
+//   topped up on every level-up (+2, +1 more per rank tier) — upgrade points on MR stack on top.
+const RANK_MR = { F: 0, E: 0, D: 15, C: 30, B: 50, A: 75, S: 110, SS: 140 };
+const CLASS_MR = { Mage: 25, Elementalist: 25, Chronomancer: 25, Necromancer: 25, Shaman: 25, Healer: 25, Paladin: 25, Druid: 20, Bard: 20, Summoner: 20, Spellblade: 15, Knight: 15, Warlord: 15, DragonKnight: 15, BloodKnight: 10, Phantom: 15, ShadowDancer: 10, Monk: 15, Senku: 15, Devourer: 10, Monster: 20, Warrior: 5, Berserker: 5, Archer: 5, Ranger: 5, Rogue: 5, Assassin: 5 };
+function rankOf(p) { const r = String(p.awakenRank || p.hunterRank || p.rank || 'E').toUpperCase().replace(/-?RANK$/, ''); return RANK_MR[r] != null ? r : 'E'; }
+function classOf(p) { try { return require('./SkillCatalog').canonicalClassName(p) || ''; } catch (e) { return typeof p.class === 'object' ? (p.class && p.class.name) || '' : String(p.class || ''); } }
+function baseline(p) {
+  if (!p) return 0;
+  const lvl = Math.max(1, Number(p.level) || 1);
+  return Math.round(lvl * 2 + (RANK_MR[rankOf(p)] || 0) + (CLASS_MR[classOf(p)] || (p.class ? 10 : 0)));
+}
+/** Raise stats.magicResist to the baseline if it is below it. Returns the amount added (0 if nothing changed). */
+function grantBaseline(p) {
+  if (!p || !p.stats) return 0;
+  const want = baseline(p); const cur = Number(p.stats.magicResist) || 0;
+  if (cur >= want) return 0;
+  p.stats.magicResist = want; if (p.baseStats && typeof p.baseStats === 'object') p.baseStats.magicResist = Math.max(Number(p.baseStats.magicResist) || 0, want);
+  return want - cur;
+}
+function perLevelGain(p) { return 2 + Math.max(0, ['F', 'E', 'D', 'C', 'B', 'A', 'S', 'SS'].indexOf(rankOf(p)) - 1); }
+/** Push #103f: how much of a mana/energy drain gets through — drains are halved flat, then MR shaves up to half of the rest. */
+function drainMult(target, caster) {
+  const mr = effective(target); const mp = casterPower(caster);
+  const shave = mr > 0 ? Math.min(0.5, mr / (mr + mp + 40)) : 0;
+  return 0.5 * (1 - shave);
+}
+
+module.exports = { RESIST_CAP, RANK_MR, CLASS_MR, base, effective, casterPower, check, line, baseline, grantBaseline, perLevelGain, drainMult };

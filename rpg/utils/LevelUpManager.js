@@ -68,6 +68,7 @@ class LevelUpManager {
         player.baseStats.maxEnergy = (player.baseStats.maxEnergy  || 0) + energyGain;
         player.baseStats.atk       = (player.baseStats.atk        || 0) + atkGain;
         player.baseStats.def       = (player.baseStats.def        || 0) + defGain;
+        try { const MRs = require('./MagicResist'); const g = MRs.perLevelGain(player); player.stats.magicResist = (Number(player.stats.magicResist) || 0) + g; player.baseStats.magicResist = (Number(player.baseStats.magicResist) || 0) + g; MRs.grantBaseline(player); } catch (e) {} // Push #103f: MR grows every level
 
         levelsGained++;
 

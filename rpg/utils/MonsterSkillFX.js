@@ -240,7 +240,8 @@ function apply(monster, player, ability, dmg, opts = {}) {
   // Push #102g (BUG-058): a dodged / absorbed move (dmg 0) drains nothing — you slipped clear of it.
   if (c.drainPct > 0 && player.stats && (dmg > 0 || opts.forceDrain)) {
     const maxE = player.stats.maxEnergy || 100;
-    const loss = Math.max(5, Math.floor(maxE * c.drainPct / 100));
+    let _dm = 0.5; try { _dm = require('./MagicResist').drainMult(player, monster); } catch (e) {} // Push #103f: drains halved, MR shaves more
+    const loss = Math.max(3, Math.floor(maxE * c.drainPct / 100 * _dm));
     const before = player.stats.energy || 0;
     player.stats.energy = Math.max(0, before - loss);
     if (before - player.stats.energy > 0) lines.push(`🌀 *${player.name}* loses *${before - player.stats.energy}* ${player.energyType || 'energy'} — drained by ${c.name}!`);

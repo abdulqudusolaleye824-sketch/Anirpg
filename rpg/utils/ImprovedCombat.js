@@ -178,7 +178,7 @@ class ImprovedCombat {
     // within a few points of a base attack — that is why "skills do nothing"
     // and why the boss chamber looked like it ignored them.
     const skillLevel = skill.level || 1;
-    const skillLevelMult = 1 + (skillLevel - 1) * 0.08; // +8% per level
+    const skillLevelMult = (() => { try { return SkillCatalog.levelBonus({ level: skillLevel }).dmgMult; } catch (e) { return 1 + (skillLevel - 1) * 0.12; } })(); // Push #103f (BUG-101): same +12%/level as raids & PvP (was a lonely 8%)
     const pctMult = (entry && entry.damagePct) ? (entry.damagePct / 100) : mult;
     const skillFlatDmg = (entry && entry.flatDamage) || skill.damage || 0;
     // Push #88: a BUFF skill (e.g. "+100% ATK") is not a wasted turn any more —
