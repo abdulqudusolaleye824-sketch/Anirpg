@@ -153,7 +153,7 @@ function getTierDisplay(t) {
 
 // Push #84: Premium tiers 1–15 grant Upgrade Points (2 UP each); Premium
 // tier 50 grants the season-based legendary title "Season N Astra Champion".
-const PREM_UP_TIERS = 15, PREM_UP_PER_TIER = 2;
+const PREM_UP_TIERS = 15, PREM_UP_PER_TIER = 4; // Push #103f: doubled
 function premUpFor(t) { return (t >= 1 && t <= PREM_UP_TIERS) ? PREM_UP_PER_TIER : 0; }
 function currentSeasonNumber(db) {
   try { return require('../../rpg/utils/Seasons').season('astra').number; } catch (e) {} // Push #102g: global seasons

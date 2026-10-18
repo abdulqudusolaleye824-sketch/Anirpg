@@ -163,8 +163,14 @@ module.exports = {
     if (totalCrit > 0) msg2 += `\n💥 CRIT:  *${totalCrit}%*${breakdown(player.stats.critChance||0, (gear.crit||0) + (titleBonus.crit||0))}`;
     if ((player.stats.critDamage||0) > 0) msg2 += `\n🔥 CRIT DMG: *${player.stats.critDamage}%*`;
     if ((player.stats.lifesteal||0) > 0)  msg2 += `\n💚 LIFESTEAL: *${player.stats.lifesteal}%*`;
-    { let _mp = player.stats.magicPower || 0; try { _mp = require('../../rpg/utils/GearSystem').effectiveMagicPower(player); } catch (e) {} if (_mp > 0) msg2 += `\n✨ MAGIC PWR: *${_mp}*${_mp !== (player.stats.magicPower || 0) ? ` _(base ${player.stats.magicPower || 0} + gear ${_mp - (player.stats.magicPower || 0)})_` : ''}`; } // Push #102h (BUG-081)
-    { let _mr = 0; try { _mr = require('../../rpg/utils/MagicResist').effective(player); } catch (e) { _mr = player.stats.magicResist || 0; } if (_mr > 0) msg2 += `\n🔰 MAGIC RES: *${_mr}*`; } // Push #103b
+    { // Push #103f: Magic Power & Magic Resistance ALWAYS shown — the exact numbers the MP-vs-MR checks use.
+      const MRs = require('../../rpg/utils/MagicResist');
+      const baseMp = Number(player.stats.magicPower) || 0; let gearMp = baseMp; try { gearMp = require('../../rpg/utils/GearSystem').effectiveMagicPower(player); } catch (e) {}
+      const useMp = MRs.casterPower(player);
+      msg2 += `\n✨ MAGIC PWR: *${useMp}*${gearMp !== baseMp ? ` _(base ${baseMp} + gear ${gearMp - baseMp})_` : (!gearMp && useMp ? ` _(force of ATK — no magic trained)_` : '')}`;
+      const baseMr = Number(player.stats.magicResist) || 0; const effMr = MRs.effective(player);
+      msg2 += `\n🔰 MAGIC RES: *${effMr}*${effMr !== baseMr ? ` _(base ${baseMr} + buffs ${effMr - baseMr})_` : ''}`;
+    }
 
     // ── Push #102d: WHERE THE EXTRAS COME FROM ───────────────────────
     try {

@@ -84,7 +84,7 @@ function getBPTierRewards(t) {
   if (item) str += ` | 🎁 *${item.name}*`;
 
   // Push #84: premium (locked) tiers 1–15 grant Upgrade Points
-  const up = (LOCKED_TIERS.includes(t) && t <= 15) ? 2 : 0;
+  const up = (LOCKED_TIERS.includes(t) && t <= 15) ? 4 : 0; // Push #103f: doubled
   if (up) str += ` | ✨ *+${up} UP*`;
   return { str, item, pc, up, gold: goldAmt, stones: stoneAmt };
 }

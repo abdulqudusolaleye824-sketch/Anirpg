@@ -127,14 +127,22 @@ function getEnergyRegenRate(rank) {
     default: return 1;
   }
 }
-// Push #103b: IN-RAID energy comes back per action, by rank — E 2% · D 3% · C 4% · B 5% · A 7% · S 9% of max.
-const RAID_TURN_ENERGY_PCT = { E: 2, D: 3, C: 4, B: 5, A: 7, S: 9, SS: 9, NATIONAL: 9, BEYOND: 9, F: 2 };
-function raidTurnEnergy(player) {
+// Push #103f: IN-BATTLE energy regen is TIME based, by Hunter Rank — per 10 s:  E 5 · D 7 · C 10 · B 12 · A 15 · S 30.
+// Credited whenever the hunter acts (attack / skill / item) from the seconds elapsed since their last battle action
+// (max 60 s per credit, fractional carry kept). Starts counting from the first action of the fight.
+const BATTLE_ENERGY_PER_10S = { E: 5, D: 7, C: 10, B: 12, A: 15, S: 30, SS: 30, NATIONAL: 30, BEYOND: 30, F: 5 };
+function battleEnergyRate(rank) { return BATTLE_ENERGY_PER_10S[String(rank || 'E').toUpperCase()] || 5; }
+function raidTurnEnergy(player, now = Date.now()) {
   if (!player || !player.stats) return 0;
-  const rank = String(player.awakenRank || 'E').toUpperCase();
-  const pct = RAID_TURN_ENERGY_PCT[rank] || 2;
+  const rate = battleEnergyRate(player.awakenRank);
+  const last = Number(player._battleEnergyAt) || 0;
+  player._battleEnergyAt = now;
+  if (!last || now <= last) return 0;
+  const secs = Math.min(60, (now - last) / 1000);
+  const raw = secs * rate / 10 + (Number(player._battleEnergyFrac) || 0);
+  const gain = Math.floor(raw); player._battleEnergyFrac = raw - gain;
+  if (gain <= 0) return 0;
   const maxEn = Number(player.stats.maxEnergy) || 100;
-  const gain = Math.max(1, Math.floor(maxEn * pct / 100));
   const before = Number(player.stats.energy) || 0;
   player.stats.energy = Math.min(maxEn, before + gain);
   return player.stats.energy - before;
@@ -167,6 +175,7 @@ function markCombatAction(player) {
  */
 function endCombat(player, ms) {
   if (!player) return;
+  delete player._battleEnergyAt; delete player._battleEnergyFrac; // Push #103f: battle regen clock resets per fight
   try { require('./ClassPower').clearBloodDebt(player); } catch (e) {} // Push #96h-t: Blood Debt is paid when the fight ends
   try { require('./Summons').clear(player); } catch (e) {} // Push #103b: summons/possession never outlive the fight
   try { require('./Transformation').clearFightUse(player); } catch (e) {} // Push #103b: one transformation per fight
@@ -241,7 +250,7 @@ function initAllPlayers(getDatabase, saveDatabase, sock) {
   } catch (_) {}
 }
 
-module.exports = { raidTurnEnergy, RAID_TURN_ENERGY_PCT,
+module.exports = { raidTurnEnergy, battleEnergyRate, BATTLE_ENERGY_PER_10S,
   checkInBattle,
   getRegenRate,
   getEnergyRegenRate,

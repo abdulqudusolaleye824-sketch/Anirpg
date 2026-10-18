@@ -116,7 +116,7 @@ function regularBonus(player) {
   if (eligibleJobs(player).length) pool.push('key');
   const kind = _pick(pool);
   let what = '';
-  if (kind === 'up') { const up = 1 + Math.floor(Math.random() * 7); player.upgradePoints = (player.upgradePoints || 0) + up; what = `📈 +${up} Upgrade Point${up === 1 ? '' : 's'}`; }
+  if (kind === 'up') { const up = 2 * (1 + Math.floor(Math.random() * 7)); player.upgradePoints = (player.upgradePoints || 0) + up; what = `📈 +${up} Upgrade Point${up === 1 ? '' : 's'}`; }
   else if (kind === 'nexus') { const g = Math.floor((3000 + lvl * 400) * (0.8 + Math.random() * 0.6)); player.gold = (player.gold || 0) + g; what = `💠 +${g.toLocaleString()} Nexus`; }
   else if (kind === 'stones') { const c = Math.floor((150 + lvl * 20) * (0.8 + Math.random() * 0.6)); player.manaCrystals = (player.manaCrystals || 0) + c; what = `💎 +${c.toLocaleString()} Mana Stones`; }
   else if (kind === 'key') { what = keyLine(grantKey(player)); }
@@ -173,7 +173,7 @@ function openBox(player, kind) {
     const r = Math.random();
     if (r < 0.15) { let w = null; try { w = require('./ArmoryStore').grantRandom(player, 'C', 'weapon', 'blessed_box'); } catch (e) {} if (w) out.push(`${w.emoji} *${w.name}* (C-Rank weapon) — in your bag`); else { inv.mendingStones = (inv.mendingStones || 0) + 1; out.push(`🪨 +1 Mending Stone`); } } // Push #96e
     else if (r < 0.30) { inv.mendingStones = (inv.mendingStones || 0) + 1; out.push(`🪨 +1 Mending Stone`); }
-    else if (r < 0.60) { const up = 2 + Math.floor(Math.random() * 4); player.upgradePoints = (player.upgradePoints || 0) + up; out.push(`📈 +${up} Upgrade Points`); }
+    else if (r < 0.60) { const up = 2 * (2 + Math.floor(Math.random() * 4)); player.upgradePoints = (player.upgradePoints || 0) + up; out.push(`📈 +${up} Upgrade Points`); }
     else if (r < 0.85) { inv.mediumHealthPotions = (inv.mediumHealthPotions || 0) + 2; out.push(`🧪 +2 Medium Health Potions`); }
     else { inv.higherHealthPotions = (inv.higherHealthPotions || 0) + 1; inv.reviveTokens = (inv.reviveTokens || 0) + 1; out.push(`🧪 +1 Higher Health Potion · ✨ +1 Revive Token`); }
     if (eligibleJobs(player).length && Math.random() < 0.12) { out.push(keyLine(grantKey(player))); }
@@ -184,7 +184,7 @@ function openBox(player, kind) {
   const r = Math.random();
   if (r < 0.15) { const rk = Math.random() < 0.5 ? 'B' : 'C'; let w = null; try { w = require('./ArmoryStore').grantRandom(player, rk, 'weapon', 'cursed_box'); } catch (e) {} if (w) out.push(`🗡️ Cursed armament: ${w.emoji} *${w.name}* (${rk}-Rank weapon) — in your bag`); else { const gold = Math.floor((25000 + lvl * 2500)); player.gold = (player.gold || 0) + gold; out.push(`🖤 Dark jackpot: +${gold.toLocaleString()} Nexus`); } } // Push #96e
   else if (r < 0.40) { const gold = Math.floor((25000 + lvl * 2500) * (0.8 + Math.random() * 0.8)); player.gold = (player.gold || 0) + gold; out.push(`🖤 Dark jackpot: +${gold.toLocaleString()} Nexus`); }
-  else if (r < 0.65) { const up = 6 + Math.floor(Math.random() * 6); player.upgradePoints = (player.upgradePoints || 0) + up; out.push(`🩸 Blood-bought power: +${up} Upgrade Points`); }
+  else if (r < 0.65) { const up = 2 * (6 + Math.floor(Math.random() * 6)); player.upgradePoints = (player.upgradePoints || 0) + up; out.push(`🩸 Blood-bought power: +${up} Upgrade Points`); }
   else if (r < 0.85) {
     const rank = lvl >= 60 ? 'S' : lvl >= 40 ? 'A' : lvl >= 25 ? 'B' : 'C';
     let mat = `${rank}-Rank Mana Essence`; try { const { rollBaseMaterial } = require('../data/MonsterDrops'); mat = rollBaseMaterial(rank) || mat; } catch (e) {}
@@ -326,7 +326,7 @@ async function act(player, skillQuery, hooks = null) {
     const reward = Math.floor((300 + inst.floor * 250 + (player.level || 1) * 20) * (m.isBoss ? 3 : 1));
     player.gold = (player.gold || 0) + reward; inst.gold += reward;
     const jx = JS.gainXp(player, JS.xpFor(m.isBoss ? 'boss' : 'floor'), 'instance'); if (jx) { inst.jobXp += jx.gained; if (jx.levelUp) { lines.push(`🧭 *JOB LEVEL UP!* ${jx.name} → Job Lv.${jx.to} — *${jx.title}*`); lines.push(...JS.runeLines(jx)); } }
-    if (m.isBoss) { player.upgradePoints = (player.upgradePoints || 0) + 1; lines.push(`📈 +1 Upgrade Point (floor ${inst.floor} boss)`); }
+    if (m.isBoss) { player.upgradePoints = (player.upgradePoints || 0) + 2; lines.push(`📈 +2 Upgrade Points (floor ${inst.floor} boss)`); }
     lines.push(`☠️ *${m.name} falls!* +${reward.toLocaleString()} 💠 Nexus${jx ? ` · +${jx.gained} Job XP` : ''} · floor ${inst.floor}: ${Math.min(PER_FLOOR, inst.slot)}/${PER_FLOOR} down`);
     try { player.statusEffects = []; } catch (e) {}
     inst.domain = null;

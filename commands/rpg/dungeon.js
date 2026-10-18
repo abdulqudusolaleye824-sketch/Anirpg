@@ -1290,6 +1290,7 @@ module.exports = {
 
         player.stats.hp      = pEnt.stats.hp;
         player.stats.energy  = pEnt.stats.energy;
+        try { require('../../rpg/utils/RegenManager').raidTurnEnergy(player); } catch (e) {} // Push #103f: in-battle rank regen (time based)
         player.statusEffects = pEnt.statusEffects;
         monster.stats        = mEnt.stats;
         monster.statusEffects = mEnt.statusEffects;
@@ -1456,6 +1457,7 @@ module.exports = {
 
       player.stats.hp     = pEnt.stats.hp;
       player.stats.energy = pEnt.stats.energy;
+      try { require('../../rpg/utils/RegenManager').raidTurnEnergy(player); } catch (e) {} // Push #103f: in-battle rank regen (time based)
       player.statusEffects = pEnt.statusEffects;
       monster.stats       = mEnt.stats;
       monster.statusEffects = mEnt.statusEffects;

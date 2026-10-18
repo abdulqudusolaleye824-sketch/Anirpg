@@ -211,6 +211,7 @@ function monsterCard(monster, gate, title = null) {
     `🏷️ Rank ${rank} · ❤️ ${hp.toLocaleString()}/${mhp.toLocaleString()}`,
     `⚔️ ATK ${atk.toLocaleString()} · 🛡️ DEF ${def.toLocaleString()} · 💨 SPD ${spd}`,
   ];
+  try { const MRs = require('../utils/MagicResist'); const mm = (monster.magicPower != null && monster.magicResist != null) ? { mp: monster.magicPower, mr: monster.magicResist } : MRs.monsterMagic(monster, rank); lines.push(`✨ MAGIC PWR ${Math.round(mm.mp)} · 🔰 MAGIC RES ${Math.round(MRs.effective({ magicResist: mm.mr, tempBuffs: monster.tempBuffs }))}`); } catch (e) {} // Push #103f
   if (skills.length) lines.push(`✨ Skills: ${skills.join(' · ')}`);
   if (fx.length) lines.push(`🌀 Status: ${fx.join(', ')}`);
   return lines.join('\n');
@@ -1214,6 +1215,7 @@ function applyMonsterScaling(gate) {
     mon.hp = Math.max(1, Math.floor(mon.maxHp * hpPct));
     mon.atk = Math.max(1, Math.floor(mon._base.atk * mult * MON_ATK_BUFF));
     mon.def = Math.floor(mon._base.def * mult * 0.8 * MON_DEF_BUFF);
+    try { const mm = require('../utils/MagicResist').monsterMagic(mon, mon.rank || gate.rank); mon.magicPower = mm.mp; mon.magicResist = mm.mr; } catch (e) {} // Push #103f
     mon.speed = Math.max(1, Math.round(mon._base.speed * (0.8 + Math.min(severity, 6) * 0.2) * MON_SPD_BUFF));
     // Push #96h: SPEED anchored to the party. Base roll was ~10 → ×3.5 = 35 while
     // hunters run 150–300, so beasts never out-paced anyone. Now a beast's speed

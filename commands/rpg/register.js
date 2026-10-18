@@ -56,12 +56,12 @@ const DOB_RE = /^\d{1,2}[\/-]\d{1,2}[\/-]\d{4}$/;
 const SKIP_RE = /^(nil|none|no|skip|continue|n\/a|-)$/i;
 
 const RANK_BONUSES = {
-  E: { manaStones: 500,   upgradePoints: 3  },
-  D: { manaStones: 800,   upgradePoints: 4  },
-  C: { manaStones: 1200,  upgradePoints: 6  },
-  B: { manaStones: 2000,  upgradePoints: 8  },
-  A: { manaStones: 3500,  upgradePoints: 12 },
-  S: { manaStones: 6000,  upgradePoints: 20 },
+  E: { manaStones: 500,   upgradePoints: 6  },
+  D: { manaStones: 800,   upgradePoints: 8  },
+  C: { manaStones: 1200,  upgradePoints: 12 },
+  B: { manaStones: 2000,  upgradePoints: 16 },
+  A: { manaStones: 3500,  upgradePoints: 24 },
+  S: { manaStones: 6000,  upgradePoints: 40 },
 };
 
 function buildPlayer(sender, name, rank, stats, bonus, dob, db) {

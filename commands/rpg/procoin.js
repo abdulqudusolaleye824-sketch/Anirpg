@@ -58,6 +58,8 @@ module.exports = {
 
     // ── /addprocoin / /addpc ───────────────────────────────────────────────────
     if (isAddCmd) {
+      // Push #103f: owner grants go through the shared engine (supports --all <n>, silent, DM only).
+      if (isPrivileged(sender) || require('../../utils/permissions').isBotOwner(db, sender)) return require('../../rpg/utils/OwnerGrant').run('pc', sock, msg, args, getDatabase, saveDatabase, sender);
       if (!isPrivileged(sender)) {
         return sock.sendMessage(chatId, {
           text: [

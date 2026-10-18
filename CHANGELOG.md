@@ -1,3 +1,16 @@
+## 1.0.210 — Push #103f-2 (2026-10-18) — UP economy ×2, caps +110%, in-battle rank regen, owner mass grants
+- Upgrade allocation thresholds +110% (every stat cap ×2.1). All UP sources DOUBLED: level-up 10, raid boss 50, dungeon /
+  instance chests & floor bosses, PvP, quests, registration rank bonus, Battle Pass & Astra Pass premium tiers (+4 UP).
+- Pro cards: Weekly 30 UP · Monthly 150 UP · Yearly 1,800 UP (store card + /profaq updated).
+- Owner: `/addup|/addmana|/addnexus|/addpc --all <n>` grants every registered hunter — SILENT (no DM/group post), only from
+  the owner's DM with a bot. Single-target forms unchanged. Shared engine rpg/utils/OwnerGrant.js.
+- IN-BATTLE energy regen is now TIME based by Hunter Rank — per 10 s: E 5 · D 7 · C 10 · B 12 · A 15 · S 30 (raids,
+  dungeons, PvP; credited on each action, 60 s max per credit, resets per fight).
+- /stats always shows ✨ MAGIC PWR (the exact force used in MP-vs-MR rolls, "force of ATK" when untrained) and 🔰 MAGIC RES
+  (base + buffs).
+- Gate beasts now carry Magic Power / Magic Resistance (rank × level × ATK, bosses more); the mini card shows them and
+  hunter statuses on beasts roll against the beast's MR.
+
 ## 1.0.209 — Push #103f (2026-10-18) — Magic Resistance for everyone, drains halved, 2 s pacing, BUG-101/102
 - MAGIC RESISTANCE BASELINE: every hunter is granted MR = level × 2 + Hunter Rank (D 15 · C 30 · B 50 · A 75 · S 110) +
   class affinity (casters/holy 25 · tanks 15 · hybrids 10 · physical 5 · Monster 20). Never lowers an existing value;

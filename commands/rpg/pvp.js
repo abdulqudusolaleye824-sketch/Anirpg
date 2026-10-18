@@ -438,7 +438,7 @@ module.exports = {
         player.stats.energy = Math.max(0, (player.stats?.energy || 0) - _cost);
         SCv.setCooldown(player, _entry);
         try { require('../../rpg/utils/ClassSnippets').noteHeal(player, _entry); } catch (e) {}
-        try { require('../../rpg/utils/RegenManager').markCombatAction(player); } catch (e) {}
+        try { const _RM = require('../../rpg/utils/RegenManager'); _RM.markCombatAction(player); _RM.raidTurnEnergy(player); } catch (e) {} // Push #103f
         _lockedSkill = { name: _entry.name, level: _res.skill.level || 1 };
       }
 

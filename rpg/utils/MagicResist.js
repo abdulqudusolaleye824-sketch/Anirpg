@@ -12,7 +12,7 @@
 // ═══════════════════════════════════════════════════════════════════════════
 const RESIST_CAP = 0.70;
 
-function base(entity) { return Math.max(0, Number(entity && entity.stats && entity.stats.magicResist) || 0); }
+function base(entity) { if (!entity) return 0; const v = entity.stats && entity.stats.magicResist != null ? entity.stats.magicResist : entity.magicResist; return Math.max(0, Number(v) || 0); } // Push #103f: raid beasts carry magicResist at top level
 function effective(entity) {
   if (!entity) return 0;
   let mr = base(entity);
@@ -33,6 +33,7 @@ function casterPower(caster) {
   let mp = Number(caster.stats && caster.stats.magicPower) || Number(caster.magicPower) || 0;
   try { const GS = require('./GearSystem'); if (GS.effectiveMagicPower && caster.stats) mp = GS.effectiveMagicPower(caster); } catch (e) {}
   if (!mp && caster.stats && caster.stats.atk) mp = Math.round(Number(caster.stats.atk) * 0.35); // physical casters still carry some force
+  if (!mp && !caster.stats && caster.atk) mp = Math.round(Number(caster.atk) * 0.35); // Push #103f: raid beasts (flat shape)
   return Math.max(0, mp);
 }
 /** @returns {{resisted:boolean, overrides:boolean, chance:number, mr:number, mp:number}} */
@@ -76,4 +77,13 @@ function drainMult(target, caster) {
   return 0.5 * (1 - shave);
 }
 
-module.exports = { RESIST_CAP, RANK_MR, CLASS_MR, base, effective, casterPower, check, line, baseline, grantBaseline, perLevelGain, drainMult };
+// Push #103f: beasts get Magic Power / Magic Resistance too — rank × level × ATK — so the mini card and every MP-vs-MR
+// roll (hunter statuses on beasts, beast statuses on hunters) use real numbers.
+function monsterMagic(mon, rank) {
+  const r = String(rank || mon.rank || 'E').toUpperCase(); const lvl = Math.max(1, Number(mon.level) || 1);
+  const atk = Number(mon.atk || (mon.stats && mon.stats.atk) || 10);
+  const mp = Math.round(atk * 0.45 + (RANK_MR[r] || 0) * 1.2 + lvl * 1.5 + (mon.isBoss || mon.boss ? 60 : 0));
+  const mr = Math.round((RANK_MR[r] || 0) * 0.8 + lvl * 1.5 + (mon.isBoss || mon.boss ? 40 : 0));
+  return { mp, mr };
+}
+module.exports = { monsterMagic, RESIST_CAP, RANK_MR, CLASS_MR, base, effective, casterPower, check, line, baseline, grantBaseline, perLevelGain, drainMult };

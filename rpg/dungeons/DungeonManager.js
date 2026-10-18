@@ -248,7 +248,7 @@ function calculateFloorRewards(floor, playerLevel, isBoss) {
     base.xp       = Math.floor(base.xp * 8);
     base.gold     = Math.floor(base.gold * 6);
     base.crystals = Math.floor(base.crystals * 5);
-    base.upgradePoints = floor === 20 ? 15 : floor === 15 ? 10 : floor === 10 ? 6 : 4;
+    base.upgradePoints = floor === 20 ? 30 : floor === 15 ? 20 : floor === 10 ? 12 : 8; // Push #103f: doubled
   }
   return base;
 }

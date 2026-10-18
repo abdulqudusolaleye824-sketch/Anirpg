@@ -13,7 +13,7 @@ const PRO_TIERS = {
     days: 7,
     nexus: 500000,
     crystals: 50000,
-    upgradePoints: 20,
+    upgradePoints: 30,
     emoji: '🎫'
   },
   monthly: {
@@ -22,7 +22,7 @@ const PRO_TIERS = {
     days: 30,
     nexus: 2000000,
     crystals: 200000,
-    upgradePoints: 100,
+    upgradePoints: 150,
     emoji: '📜'
   },
   yearly: {
@@ -31,7 +31,7 @@ const PRO_TIERS = {
     days: 365,
     nexus: 20000000,
     crystals: 2000000,
-    upgradePoints: 1200,
+    upgradePoints: 1800,
     emoji: '👑'
   }
 };

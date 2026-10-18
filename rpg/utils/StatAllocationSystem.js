@@ -2,15 +2,17 @@
 // STAT ALLOCATION SYSTEM - Balanced Progression
 // ═══════════════════════════════════════════════════════════════
 
+// Push #103f: every UP source DOUBLED (level-up 10, raid boss 50…) and allocation caps raised by 110%.
 const UP_REWARDS = {
-  dungeonClear: { easy: 3, medium: 5, hard: 8, nightmare: 12 },
-  bossDefeat: { miniBoss: 5, raidBoss: 25, legendaryBoss: 40 },
-  pvpWin: 4,
-  pvpRanked: 8,
-  levelUp: 5,
-  questComplete: { story: 3, side: 2, daily: 1, weekly: 5 },
-  achievement: 10
+  dungeonClear: { easy: 6, medium: 10, hard: 16, nightmare: 24 },
+  bossDefeat: { miniBoss: 10, raidBoss: 50, legendaryBoss: 80 },
+  pvpWin: 8,
+  pvpRanked: 16,
+  levelUp: 10,
+  questComplete: { story: 6, side: 4, daily: 2, weekly: 10 },
+  achievement: 20
 };
+const CAP_MULT = 2.1; // Push #103f: allocation thresholds +110%
 
 const STAT_CONFIG = {
   hp: {
@@ -85,7 +87,7 @@ function getMaxAllocations(statName, level = 1) {
   const config = STAT_CONFIG[statName];
   if (!config) return 0;
   const scale = STAT_SCALE_FACTOR[statName] || 1;
-  return config.baseMax + Math.floor(level * scale);
+  return Math.floor((config.baseMax + Math.floor(level * scale)) * CAP_MULT);
 }
 
 function initializeStatAllocations(player) {
@@ -113,7 +115,7 @@ function awardUpgradePoints(player, source, difficulty = null) {
     case 'levelUp': pointsAwarded = UP_REWARDS.levelUp; break;
     case 'quest': pointsAwarded = UP_REWARDS.questComplete[difficulty] || 2; break;
     case 'achievement': pointsAwarded = UP_REWARDS.achievement; break;
-    default: pointsAwarded = 1;
+    default: pointsAwarded = 2;
   }
   
   player.upgradePoints = (player.upgradePoints || 0) + pointsAwarded;
