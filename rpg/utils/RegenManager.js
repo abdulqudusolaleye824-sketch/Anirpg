@@ -135,7 +135,11 @@ function battleEnergyRate(rank) { return BATTLE_ENERGY_PER_10S[String(rank || 'E
 function raidTurnEnergy(player, now = Date.now()) {
   if (!player || !player.stats) return 0;
   const rate = battleEnergyRate(player.awakenRank);
-  const last = Number(player._battleEnergyAt) || 0;
+  let last = Number(player._battleEnergyAt) || 0;
+  // Push #103j (owner): a Domain Expansion pauses battle regen for 10 s — nothing accrues inside the pause.
+  const pause = Number(player._battleEnergyPauseUntil) || 0;
+  if (pause && now < pause) { player._battleEnergyAt = now; return 0; }
+  if (pause) { if (last && last < pause) last = pause; player._battleEnergyPauseUntil = 0; }
   player._battleEnergyAt = now;
   if (!last || now <= last) return 0;
   const secs = Math.min(60, (now - last) / 1000);
@@ -197,6 +201,9 @@ function applyPassiveRegen(player, db) {
   if (battle) {
     player.lastRegenTime = now;
     player.lastEnergyRegenTime = now;
+    // Push #103j (BUG-128/129): in-battle rank regen is CONTINUOUS — credited on every command, not only on strikes
+    // (PvP keeps its own maths). The clock starts the moment the fight is detected.
+    if (battle.type !== 'pvp' && battle.type !== 'teampvp') { try { if (!player._battleEnergyAt) player._battleEnergyAt = now; else raidTurnEnergy(player, now); } catch (e) {} }
     // PvP recovers NOTHING instantly: the duel's own maths owns HP/energy and
     // rank regen only resumes after the post-combat lock below.
     return;

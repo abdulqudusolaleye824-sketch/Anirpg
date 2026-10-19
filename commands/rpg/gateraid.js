@@ -756,6 +756,19 @@ module.exports = {
       // counter-hit or a status ailment ticking them out. Returns the send promise when the hunter fell.
       const _fallInGate = async () => {
         const deathLines = [];
+          // Push #103j (BUG-126): a Revive Token AUTO-fires the moment its owner falls (the shop promises "auto-revive once") —
+          // before, a solo/last hunter wiped the raid on death and could never use the token they bought.
+          try {
+            if ((player.inventory?.reviveTokens || 0) > 0 && (gate.revivesUsed || 0) < 1) {
+              player.inventory.reviveTokens--; gate.revivesUsed = 1;
+              const _mx = _effMax(player); player.stats.hp = Math.max(1, Math.floor(_mx * 0.5));
+              try { player.statusEffects = []; } catch (e) {}
+              try { const _rm = (gate.raid?.members || []).find(m => m.id === sender || GR.GKM.normaliseJid(m.id) === GR.GKM.normaliseJid(sender)); if (_rm) _rm.hp = player.stats.hp; } catch (e) {}
+              try { GR.saveGateState(db, gate); } catch (e) {}
+              saveDatabase();
+              return sock.sendMessage(chatId, { text: `🎫 *REVIVE TOKEN!* *${player.name}* falls — and rises again with ${player.stats.hp.toLocaleString()}/${_mx.toLocaleString()} HP!\n⚠️ Party Revive Cap Reached (1/1 used) · Tokens left: ${player.inventory.reviveTokens}` }, { quoted: msg });
+            }
+          } catch (e) {}
           const PetManager = require('../../rpg/utils/PetManager');
           const sac = PetManager.checkPetSacrifice(sender, player);
           if (sac && sac.sacrificed) {
@@ -1005,6 +1018,21 @@ module.exports = {
         tag: atkTitle, defenderBar: 'monster', gapMs: 600,
       });
       target.hp = Math.max(0, monWrap.stats.hp);
+      // Push #103j (BUG-130): AoE skills ("hits all enemies / every enemy / all monsters on the floor") strike EVERY other
+      // living beast on the floor for the same damage. Splash kills count as kills (no extra final-blow drop).
+      try {
+        const _su = result && result.skillUsed; const _sTxt = _su ? `${_su.name || ''} ${_su.effect || ''} ${_su.description || _su.desc || ''}` : '';
+        const _isAoe = _su && !result.missed && !result.blocked && (result.damage || 0) > 0 && (/\b(?:all|every)\s+(?:enemies|enemy|monsters?|foes?|targets?|beasts?)\b|\bon\s+the\s+(?:whole\s+)?floor\b|\baoe\b/i.test(_sTxt));
+        if (_isAoe && !_fightingBoss) {
+          const _fl = gate.currentFloor || 1; const _others = (gate.monsters || []).filter(mm => mm && mm !== target && !mm.defeated && (mm.hp || 0) > 0 && mm.floor === _fl && !(mm.elite && _fl >= gate.totalFloors));
+          if (_others.length) {
+            const _al = [`🌪️ *${_su.name}* sweeps the whole floor!`]; let _splashKills = 0;
+            for (const mm of _others) { const _b = mm.hp; mm.hp = Math.max(0, mm.hp - result.damage); _al.push(`   • *${mm.name}* −${(_b - mm.hp).toLocaleString()} → ${mm.hp.toLocaleString()}/${(mm.maxHp || _b).toLocaleString()}${mm.hp <= 0 ? ' 💀' : ''}`); if (mm.hp <= 0) { mm.defeated = true; mm.killedBy = sender; _splashKills++; } }
+            if (_splashKills) { player._runKills = (player._runKills || 0) + _splashKills; try { const _rm = (gate.raid?.members || []).find(m => m.id === sender); if (_rm) _rm.kills = (_rm.kills || 0) + _splashKills; } catch (e) {} _al.push(`💀 ${_splashKills} beast${_splashKills === 1 ? '' : 's'} felled by the storm`); }
+            await sock.sendMessage(chatId, { text: _al.join('\n') });
+          }
+        }
+      } catch (e) {}
       if (_leakAfter && target.hp > 0) { try { const _ml = GR.morphLeak(gate, target); if (_ml) await sock.sendMessage(chatId, { text: _ml }); } catch (e) {} } // Push #97: survived the hit → morphs
       // Push #93: Soul Drain (monster) heals half the damage; Curse of Ruin lasts 3 ROUNDS.
       try { const NX = require('../../rpg/utils/Necromancy'); const _su = result.skillUsed; const _nl = [];
@@ -1095,7 +1123,7 @@ module.exports = {
           else { killLines.push(``, `✅ *Floor ${floor} re-cleared!* Move on within 60s or it revives again (+30%).`, `/party advance — Floor ${floor + 1}`); }
         } else if (remaining <= 0) {
           gate.floorClearedAt = Date.now(); // Push #88w: 60s idle → floor revives
-          const _ft = GR.floorTreasure(gate, player); const fNexus = _ft.nexus, fCrystals = _ft.crystals; // Push #103i: shown = paid
+          const _ft = GR.floorTreasure(gate, player, floor); const fNexus = _ft.nexus, fCrystals = _ft.crystals; // Push #103i: shown = paid
           if (!gate.accumulatedTreasure) gate.accumulatedTreasure = { nexus: 0, crystals: 0 };
           gate.accumulatedTreasure.nexus += fNexus;
           gate.accumulatedTreasure.crystals += fCrystals;
@@ -1443,7 +1471,13 @@ module.exports = {
           }
         }
 
-        if (!_bGuard && player.stats.hp <= 0) {
+        let _tokenSaved = false; // Push #103j (BUG-126): Revive Token auto-fires on the boss floor too
+        if (!_bGuard && player.stats.hp <= 0 && (player.inventory?.reviveTokens || 0) > 0 && (gate.revivesUsed || 0) < 1) {
+          try { player.inventory.reviveTokens--; gate.revivesUsed = 1; const _mx = _effMax(player); player.stats.hp = Math.max(1, Math.floor(_mx * 0.5)); player.statusEffects = []; _tokenSaved = true;
+            try { const _rm = (gate.raid?.members || []).find(m => m.id === sender || GR.GKM.normaliseJid(m.id) === GR.GKM.normaliseJid(sender)); if (_rm) _rm.hp = player.stats.hp; } catch (e) {}
+            lines.push(``, `🎫 *REVIVE TOKEN!* *${player.name}* falls — and rises again with ${player.stats.hp.toLocaleString()}/${_mx.toLocaleString()} HP! (Party Revive Cap 1/1 used · Tokens left: ${player.inventory.reviveTokens})`); } catch (e) {}
+        }
+        if (!_bGuard && !_tokenSaved && player.stats.hp <= 0) {
           const PetManager = require('../../rpg/utils/PetManager');
           const sac = PetManager.checkPetSacrifice(sender, player);
           if (sac && sac.sacrificed) {

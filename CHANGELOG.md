@@ -1,3 +1,17 @@
+## 1.0.215 — Push #103j (2026-10-19) — bug batch 124–139: lifesteal buffs, tagged buffs, revive token, battle regen, AoE, owned gear ladder, raid speed/severity, floors
+- BUG-124: "+30% lifesteal" (and "lifesteal becomes N%") is now a real buff stat — read by lifesteal in raids/dungeons/PvP.
+- BUG-125/127: tagging a teammate with a party buff buffs ONLY them (one cost); Monster-class self buffs never spread to the party.
+- BUG-126: a Revive Token AUTO-fires when its owner falls (floor and boss fights) — a solo/last hunter no longer wipes with an unused token.
+- BUG-128/129 + owner: in-battle energy regen (E5 D7 C10 B12 A15 S30 per 10 s) is credited on EVERY command, not only strikes; a Domain Expansion pauses it for exactly 10 s.
+- BUG-130: AoE skills ("hits all enemies / every enemy / on the floor") strike every living beast on the floor for the same damage.
+- BUG-131: "Lifesteal becomes 100%; max HP increases by 20%" (Domain of the Endless Void and similar) now parses — lifesteal buff + 20% pool shield.
+- BUG-132/133 + owner: ONE-SHOT MIGRATION puts every owned weapon / gear piece (inventory, equipped, weapon slot) on the rank power ladder exactly like the store (×gearMult by rank; rarity→rank when no rank). Idempotent (band check + _ladder flag); new store/craft/pass items minted flagged.
+- BUG-136: Magic Power never drops below the 35% ATK floor when a few points are trained; /stats shows "force of ATK X > trained Y".
+- BUG-138: raid beast speed −10% (rank base), jitter 0.60–1.20, capped at 1.25× party average (boss 1.35×) — about half the beasts move after the party. Gate severity now follows the MEDIAN hunter, not the party sum.
+- Owner: floor count unchanged; floor XP +60% ramping 0.6→1.6; floor treasure +30% weighted by depth (0.6→1.4); monsters climb to 2.2× by the last floor (was 1.9×).
+- BUG-134: not a bug — level 15→16 needs 2,229,408 XP by the curve; the bar is rising (38% → 45%).
+- BUG-139: no self-HP cost on any Devourer skill — needs the exact message that preceded the 336→6 drop.
+
 ## 1.0.214 — Push #103i (2026-10-19) — monsters & gear on the rank ladder, economy +50/+75/+90%, floor treasure = payout
 - Monsters (gate raids, bosses, tower dungeons) climb the same rank ladder as hunters with 25% less of the buff:
   1 + (mult − 1) × 0.75 → E×1, D×1.75, C×3.25, B×5.5, A×9.4, S×32.4 (RankPower.monsterMult). Instance beasts already

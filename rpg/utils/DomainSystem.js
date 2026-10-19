@@ -348,6 +348,7 @@ function expand(arena, player, allies = [player], enemies = [], ctx = {}) {
   const myId = player.jid || player.id || player.name;
   if (cur && (cur.ownerId === myId || (Array.isArray(cur.ownerKeys) && _ownerKeys(player).some(k => cur.ownerKeys.includes(k))))) return { ok: false, error: `*${cur.name}* is already active (${cur.turnsLeft} turn${cur.turnsLeft === 1 ? '' : 's'} left).` };
   player.stats.energy = energy - _cost;
+  player._battleEnergyPauseUntil = Date.now() + 10 * 1000; // Push #103j (owner): energy regen pauses 10 s after a domain
   const myPow = power(player);
   if (cur) {
     // CLASH

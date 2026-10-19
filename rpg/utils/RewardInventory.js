@@ -127,7 +127,7 @@ function grantItem(player, item, source = 'reward', extra = {}) {
     durability: item.durability || 100,
     maxDurability: item.maxDurability || item.durability || 100,
     stats, lore: item.lore || item.desc || '',
-    source: item.source || source, acquiredAt: Date.now(),
+    source: item.source || source, acquiredAt: Date.now(), _ladder: true, // Push #103j: minted on the rank ladder (pass/BP gear is pre-scaled; others are store grade)
     ...extra,
   };
   inv.items.push(entry);

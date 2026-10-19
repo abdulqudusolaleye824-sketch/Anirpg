@@ -32,8 +32,9 @@ function casterPower(caster) {
   if (!caster) return 0;
   let mp = Number(caster.stats && caster.stats.magicPower) || Number(caster.magicPower) || 0;
   try { const GS = require('./GearSystem'); if (GS.effectiveMagicPower && caster.stats) mp = GS.effectiveMagicPower(caster); } catch (e) {}
-  if (!mp && caster.stats && caster.stats.atk) mp = Math.round(Number(caster.stats.atk) * 0.35); // physical casters still carry some force
-  if (!mp && !caster.stats && caster.atk) mp = Math.round(Number(caster.atk) * 0.35); // Push #103f: raid beasts (flat shape)
+  // Push #103j (BUG-136): the ATK floor (35%) ALWAYS holds — training a little Magic can never drop you below the force you had.
+  if (caster.stats && caster.stats.atk) mp = Math.max(mp, Math.round(Number(caster.stats.atk) * 0.35));
+  else if (!caster.stats && caster.atk) mp = Math.max(mp, Math.round(Number(caster.atk) * 0.35)); // Push #103f: raid beasts (flat shape)
   return Math.max(0, mp);
 }
 /** @returns {{resisted:boolean, overrides:boolean, chance:number, mr:number, mp:number}} */

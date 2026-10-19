@@ -1120,14 +1120,17 @@ function calibrateToParty(gate, raid, db) {
   // while a fresh party at the right rank sees ~1×. Every floor is stronger
   // than the last (see floorMultiplier).
   let sumAtk = 0, sumDef = 0, sumHp = 0, sumSpd = 0, sumLvl = 0, n = 0;
+  const _perTotal = [], _perLvl = []; // Push #103j (BUG-138): severity follows the party's MEDIAN hunter, not its strongest
   for (const m of raid.members) {
     const u = db && db.users ? db.users[m.id] : null;
     if (!u) continue;
     n++;
     const ts = totalStatsOf(u, m.id);
     sumAtk += ts.atk; sumDef += ts.def; sumHp += ts.maxHp; sumSpd += ts.speed; sumLvl += ts.level;
+    _perTotal.push(ts.atk + ts.def + ts.maxHp / 8 + ts.speed); _perLvl.push(ts.level);
   }
   if (!n) return null;
+  const _median = (arr) => { const a = arr.slice().sort((x, y) => x - y); const m = a.length >> 1; return a.length % 2 ? a[m] : (a.length === 2 ? a[0] * 0.6 + a[1] * 0.4 : (a[m - 1] + a[m]) / 2); };
   const rd = GATE_RANKS[gate.rank] || GATE_RANKS.E;
   const [lo, hi] = rd.monsterRange || [15, 45];
   const rankAtk = (lo + hi) / 2;                      // what the rank table assumes a monster hits for
@@ -1137,9 +1140,9 @@ function calibrateToParty(gate, raid, db) {
   const rankLevel = { E: 8, D: 18, C: 30, B: 45, A: 65, S: 85 }[gate.rank] || 8;
   const expectedPer = rankAtk * 2.5 + rankAtk * 6 + 20;
   const total = sumAtk + sumDef + sumHp / 8 + sumSpd;
-  const statRatio = total / Math.max(1, expectedPer * n);
+  const statRatio = _median(_perTotal) / Math.max(1, expectedPer); // Push #103j: median hunter vs the rank's baseline hunter
   const avgLvl = sumLvl / n;
-  const lvlRatio = avgLvl / rankLevel;
+  const lvlRatio = _median(_perLvl) / rankLevel;
   // Blend: stats carry most of the weight, level keeps high-rank hunters honest
   // even if they walk in under-geared. sqrt(n): more hunters → tougher gate.
   const ratio = (statRatio * 0.7 + lvlRatio * 0.3) * Math.sqrt(Math.max(n, 1.8)); // Push #97: a lone hunter is weighed like ~2 — soloing your own rank stays a real fight
@@ -1184,7 +1187,7 @@ function floorMultiplier(gate, floor) {
   // Push #97: gates run 7–40 floors — the climb is spread over the gate's real depth: the last floor is
   // always ≈1.9× the first (+25% more for the boss), however deep the gate rolled.
   const tf = Math.max(2, Number(gate && gate.totalFloors) || 5);
-  return 1 + 0.9 * (Math.min(f, tf) - 1) / (tf - 1);
+  return 1 + 1.2 * (Math.min(f, tf) - 1) / (tf - 1); // Push #103j (owner): last floor 2.2× the first (was 1.9×) — every floor strictly stronger
 }
 
 // Scale every live monster + the boss from their BASE stats using severity ×
@@ -1198,11 +1201,14 @@ function rankSoften(rank) { return RANK_SOFTEN[String(rank || '').toUpperCase()]
 const GATE_TUNE = 0.85, RED_GATE_TUNE = 1.15, LEAK_TUNE = 1.15; // Push #96h-z9
 const RAID_NEXUS_BOOST = 1.5; // Push #103i (owner): raid Nexus +50% (Mana Stones unchanged)
 // Push #103i: the treasure one floor banks — shown on the floor-clear card AND paid at the end (same number).
-function floorTreasure(gate, player) {
+function floorTreasure(gate, player, floor = null) {
   const floors = Math.max(1, Number(gate.totalFloors) || 1);
+  // Push #103j (owner): +30% raid treasure, weighted by depth — floor 1 banks 0.6× the average share, the last floor 1.4×.
+  const f = Math.max(1, Math.min(floors, Number(floor) || Number(gate.currentFloor) || 1));
+  const fw = 1.3 * (floors === 1 ? 1 : 0.6 + 0.8 * (f - 1) / (floors - 1));
   let lm = 1; if (gate.isDouble) lm = 1.5; else if (gate.redGate) lm = 1.5;
   let jm = 1; try { jm = 1 + (require('../utils/JobSystem').mod(player, 'nexusMult') || 0) / 100; } catch (e) {}
-  return { nexus: Math.floor((gate.nexusLoot || 1000) * RAID_NEXUS_BOOST * lm * jm / floors), crystals: Math.floor(Math.max(0, (gate.crystalLoot || 100) - (gate.minedCrystals || 0)) * lm / floors) }; // mined stones are banked separately by Mining.resolve
+  return { nexus: Math.floor((gate.nexusLoot || 1000) * RAID_NEXUS_BOOST * lm * jm * fw / floors), crystals: Math.floor(Math.max(0, (gate.crystalLoot || 100) - (gate.minedCrystals || 0)) * lm * fw / floors) }; // mined stones are banked separately by Mining.resolve
 }
 function _rankPow(rank) { try { return require('../utils/RankPower').monsterMult(rank); } catch (e) { return 1; } } // Push #103i
 const BEAST_HP_BUFF = 1.40, BEAST_ATK_BUFF = 1.20; // Push #102d: every raid monster & boss +40% HP, +20% ATK
@@ -1212,8 +1218,9 @@ const SPEED_RANK_FACTOR = { E: 0.55, D: 0.65, C: 0.75, B: 0.85, A: 0.95, S: 1.10
 function _types() { try { return require('../utils/MonsterTypes'); } catch (e) { return null; } }
 // Push #96h-n: SPEED RECOMPUTED — anchored to the party's average speed with a per-beast spread
 // (deterministic per monster), so on every floor SOME beasts out-pace the hunters and some don't.
-const SPEED_RANK_BASE = { E: 0.85, D: 0.90, C: 0.95, B: 1.00, A: 1.05, S: 1.15, SS: 1.25 };
-function _speedJitter(seed) { let h = 2166136261; for (const ch of String(seed || '')) { h ^= ch.charCodeAt(0); h = Math.imul(h, 16777619) >>> 0; } return 0.70 + (h % 1000) / 1000 * 0.65; } // 0.70 … 1.35
+const SPEED_RANK_BASE = { E: 0.75, D: 0.80, C: 0.85, B: 0.90, A: 0.95, S: 1.05, SS: 1.15 }; // Push #103j (BUG-138): −10% — about half the beasts now move AFTER the party
+const SPEED_PARTY_CAP = 1.25; // Push #103j: no regular beast faster than 1.25× the party's average speed (boss 1.35×)
+function _speedJitter(seed) { let h = 2166136261; for (const ch of String(seed || '')) { h ^= ch.charCodeAt(0); h = Math.imul(h, 16777619) >>> 0; } return 0.60 + (h % 1000) / 1000 * 0.60; } // Push #103j: 0.60 … 1.20 (was 0.70 … 1.35)
 function _anchorSpeed(gate, roleFactor = 1, boss = false, seed = '') {
   const avg = (gate && gate.calibrated && gate.calibrated.avgSpeed) || 0;
   if (!avg) return 0;
@@ -1249,6 +1256,7 @@ function applyMonsterScaling(gate) {
     try { const T = require('../data/Terrains'); const _t = T.get(gate.terrain); if (_t && T.isHome(_t, mon, GateManager.monsterFamily)) { const hb = _t.homeBoost || {}; if (hb.atk) mon.atk = Math.max(1, Math.floor(mon.atk * (1 + hb.atk / 100))); if (hb.def) mon.def = Math.floor(mon.def * (1 + hb.def / 100)); mon.homeGround = true; } else mon.homeGround = false; } catch (e) {}
     // Push #97: DEF is anchored to the party — no beast may shrug off a hunter's hit entirely (cap 55% of the party's average ATK).
     { const _pa = gate.calibrated && gate.calibrated.avgAtk; if (_pa > 0) mon.def = Math.min(mon.def, Math.floor(_pa * 0.55)); }
+    { const _ps = gate.calibrated && gate.calibrated.avgSpeed; if (_ps > 0 && !mon.leaked) mon.speed = Math.min(mon.speed, Math.round(_ps * SPEED_PARTY_CAP)); } // Push #103j (BUG-138): speed cap vs the party
     mon._raid = true; mon.rank = mon.rank || gate.rank; // Push #88q: raid ×2 package + initiative
   }
   // Push #88z: elites are ALWAYS exactly 2× the (scaled) monsters of the floor before them.
@@ -1286,6 +1294,7 @@ function applyMonsterScaling(gate) {
     { const TM = _types(); if (TM && !gate.boss._typedBoss) { const tm = TM.mults(gate.boss); gate.boss._typedBoss = true; gate.boss.typeLabel = tm.label; gate.boss.critBonus = tm.crit; gate.boss._typeMult = tm; }
       const tm = gate.boss._typeMult; if (tm) { gate.boss.maxHp = Math.floor(gate.boss.maxHp * tm.hp); gate.boss.hp = Math.max(1, Math.floor(gate.boss.maxHp * hpPct)); gate.boss.atk = Math.floor(gate.boss.atk * tm.atk); gate.boss.def = Math.floor(gate.boss.def * tm.def); gate.boss.speed = Math.round(gate.boss.speed * tm.speed); } }
       { const _gt = (gate.redGate ? RED_GATE_TUNE : GATE_TUNE) * _rankPow(gate.boss.rank || gate.rank); gate.boss.maxHp = Math.max(50, Math.floor(gate.boss.maxHp * _gt * BEAST_HP_BUFF)); gate.boss.hp = Math.max(1, Math.floor(gate.boss.maxHp * hpPct)); gate.boss.atk = Math.max(1, Math.floor(gate.boss.atk * _gt * BEAST_ATK_BUFF)); gate.boss.def = Math.floor(gate.boss.def * _gt); } // Push #96h-z9 · #102d buff
+    { const _ps = gate.calibrated && gate.calibrated.avgSpeed; if (_ps > 0) gate.boss.speed = Math.min(gate.boss.speed, Math.round(_ps * (SPEED_PARTY_CAP + 0.10))); } // Push #103j: boss speed cap 1.35× party
     { const _pa = gate.calibrated && gate.calibrated.avgAtk; if (_pa > 0) gate.boss.def = Math.min(gate.boss.def, Math.floor(_pa * 0.55)); } // Push #97: boss DEF anchored to the party (never a 0-damage wall)
   }
 }
@@ -1352,7 +1361,11 @@ function supportCast(caster, casterJid, target, targetJid, skillName, gate, db) 
   let party = false;
   // Push #94: a BUFF that says "party / all allies / AOE buff" buffs the whole
   // party for ANY class (heals stay Healer-gated below).
-  const partyBuffOnly = isBuff && !isHeal && (partyWorded || !!entry.party);
+  // Push #103j (BUG-125/127): TAGGING a teammate makes any party buff SINGLE-target (one recipient, one cost).
+  // Untagged party-worded buffs still reach everyone (cost × hunters). A Monster-class self buff is never a party buff.
+  const _tagged = !!(target && target !== caster && targetJid && casterJid && GKM.normaliseJid(targetJid) !== GKM.normaliseJid(casterJid));
+  const _monsterSelf = /^monster$/i.test(String((() => { try { return SC.canonicalClassName(caster); } catch (e) { return caster.class; } })() || '')) && !/\b(?:all\s+)?(?:allies|party|team(?:mates)?)\b/i.test(textForScope);
+  const partyBuffOnly = isBuff && !isHeal && !_tagged && !_monsterSelf && (partyWorded || !!entry.party);
   if (partyBuffOnly) party = true;
   if (isHeal) {
     if (!isHealerClass) {

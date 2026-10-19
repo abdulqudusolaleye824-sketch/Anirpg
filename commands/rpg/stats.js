@@ -167,7 +167,7 @@ module.exports = {
       const MRs = require('../../rpg/utils/MagicResist');
       const baseMp = Number(player.stats.magicPower) || 0; let gearMp = baseMp; try { gearMp = require('../../rpg/utils/GearSystem').effectiveMagicPower(player); } catch (e) {}
       const useMp = MRs.casterPower(player);
-      msg2 += `\n✨ MAGIC PWR: *${useMp}*${gearMp !== baseMp ? ` _(base ${baseMp} + gear ${gearMp - baseMp})_` : (!gearMp && useMp ? ` _(force of ATK — no magic trained)_` : '')}`;
+      msg2 += `\n✨ MAGIC PWR: *${useMp}*${gearMp !== baseMp ? ` _(base ${baseMp} + gear ${gearMp - baseMp})_` : (useMp > gearMp ? ` _(force of ATK ${useMp} > trained ${gearMp})_` : '')}`;
       const baseMr = Number(player.stats.magicResist) || 0; const effMr = MRs.effective(player);
       msg2 += `\n🔰 MAGIC RES: *${effMr}*${effMr !== baseMr ? ` _(base ${baseMr} + buffs ${effMr - baseMr})_` : ''}`;
     }

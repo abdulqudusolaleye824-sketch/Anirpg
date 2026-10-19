@@ -285,6 +285,8 @@ function parseSupportFields(effect, parsed) {
       else if (/^\W*buffs?\s+(?:all\s+)?(?:allies|party|all)\b|^\W*buffs?\s+allies/.test(l)) { for (const st of ['atk', 'def']) out.extraBuffs.push({ stat: st, amount: 15, duration: turnsIn(l, 3) }); }
       else if (/massive\s+defen[cs]e|impenetrable\s+(?:armou?r|defen[cs]e)|unbreakable\s+guard/.test(l)) out.extraBuffs.push({ stat: 'def', amount: 50, duration: turnsIn(l, 3) });
     }
+    // Push #103j (BUG-131): "max HP increases by 20%" / "+20% max HP" → a pool shield of that % of max HP (the only honest way to give temporary HP).
+    { const mh = l.match(/max(?:imum)?\s+hp\s+(?:increases?|rises?|raised|up|boosted|grows?)\s+by\s+(\d{1,3})\s*%|\+\s*(\d{1,3})\s*%\s*max(?:imum)?\s+hp/); if (mh && !aboutEnemy) { const v = parseInt(mh[1] || mh[2], 10); if (v > 0) { out.shieldPct = Math.max(out.shieldPct, Math.min(100, v)); out.shieldMode = 'pool'; out.shieldTurns = turnsIn(l, 3); } } }
     // shield / barrier / block
     if (/\bshield|barrier|\babsorbs?\b|blocks? (?:the )?next|\bward\b/.test(l) && !/breaks?\s+(?:enemy\s+)?shield|ignores?[^.]*shield|shield\s*(?:break|pierc|stance|bash|slam|charge|throw)|through\s+shield|bypass/.test(l) && !aboutEnemy) {
       const pct = pctIn(l);
@@ -425,7 +427,8 @@ function _lineStatuses(line, whole = '') {
 }
 const STAT_ALIAS = { atk: 'atk', attack: 'atk', 'magic damage': 'atk', damage: 'atk', dmg: 'atk', 'magic power': 'atk', 'magic pwr': 'atk', def: 'def', defense: 'def', defence: 'def', armor: 'def', armour: 'def', spd: 'speed', speed: 'speed', agility: 'speed', crit: 'crit', 'crit chance': 'crit', 'critical chance': 'crit', 'crit rate': 'crit', dodge: 'dodge', evasion: 'dodge', accuracy: 'accuracy', 'all stats': 'all', 'all enemy stats': 'all', 'max hp': 'maxhp' };
 for (const k of ['crit', 'crit chance', 'critical chance', 'crit rate']) STAT_ALIAS[k] = 'critChance'; // EffectParser's name for it
-const STAT_RX = 'atk|attack|magic damage|magic power|magic pwr|damage|dmg|def|defen[cs]e|armou?r|spd|speed|agility|crit(?: chance| rate)?|critical chance|dodge|evasion|accuracy|all (?:enemy )?stats';
+for (const k of ['lifesteal', 'life steal', 'leech']) STAT_ALIAS[k] = 'lifesteal'; // Push #103j (BUG-124): "+30% lifesteal" is a real buff stat
+const STAT_RX = 'atk|attack|magic damage|magic power|magic pwr|damage|dmg|def|defen[cs]e|armou?r|spd|speed|agility|crit(?: chance| rate)?|critical chance|dodge|evasion|accuracy|lifesteal|life steal|leech|all (?:enemy )?stats';
 function augmentContract(effect, parsed, statuses) {
   const addS = [], addB = [], addD = [];
   const has = (arr, stat) => (arr || []).some(x => x && x.stat === stat);
@@ -442,6 +445,11 @@ function augmentContract(effect, parsed, statuses) {
       const stat = STAT_ALIAS[m[2].toLowerCase().replace(/defence/, 'defense').replace(/armour/, 'armor')] || 'atk'; if (stat === 'maxhp') continue;
       const d = dur || (/next (?:attack|hit|strike)|this turn/i.test(l) ? 1 : 2);
       for (const s of (stat === 'all' ? ['atk', 'def', 'speed'] : [stat])) if (!has(parsed.buffs, s) && !has(addB, s)) addB.push({ stat: s, amount: Math.min(300, Number(m[1])), duration: d });
+    }
+    // Push #103j (BUG-131): "Lifesteal becomes 100%" / "ATK increases by 40%" are buffs too.
+    for (const m of l.matchAll(new RegExp(`\\b(${STAT_RX})\\s+(?:becomes?|increases?\\s+by|rises?\\s+by|raised\\s+by|is\\s+raised\\s+by|up\\s+by|boosted\\s+by)\\s*(\\d{1,3})\\s*%`, 'gi'))) {
+      const stat = STAT_ALIAS[m[1].toLowerCase().replace(/defence/, 'defense').replace(/armour/, 'armor')] || 'atk'; if (stat === 'maxhp') continue; if (/enemy|target|their/i.test(l.slice(Math.max(0, m.index - 24), m.index))) continue;
+      for (const s of (stat === 'all' ? ['atk', 'def', 'speed'] : [stat])) if (!has(parsed.buffs, s) && !has(addB, s)) addB.push({ stat: s, amount: Math.min(300, Number(m[2])), duration: dur || 2 });
     }
     for (const m of l.matchAll(new RegExp(`\\b(${STAT_RX})\\s*\\+\\s*(\\d{1,3})\\s*%`, 'gi'))) {
       const stat = STAT_ALIAS[m[1].toLowerCase()] || 'atk'; if (stat === 'maxhp') continue; if (/enemy|target|their/i.test(l.slice(Math.max(0, m.index - 24), m.index))) continue;

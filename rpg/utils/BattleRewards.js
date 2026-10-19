@@ -157,7 +157,7 @@ function floorXpSpread(floor, rank, totalFloors) {
   if (!tf) return floorXp(floor, rank);
   const classic = CLASSIC_FLOORS[r] || 3; let base = 0; for (let f = 1; f <= classic; f++) base += floorXp(f, rank);
   const pos = tf === 1 ? 1 : (Math.max(1, Math.min(tf, floor)) - 1) / (tf - 1);
-  return Math.max(1, Math.round(base / tf * (0.7 + 0.6 * pos)));
+  return Math.max(1, Math.round(base * 1.6 / tf * (0.6 + 1.0 * pos))); // Push #103j (owner): +60% floor XP, ramping harder — deeper floors pay far more
 }
 function grantFloorXp(player, floor, rank, totalFloors = null) {
   if (!player) return 0; let xp = totalFloors ? floorXpSpread(floor, rank, totalFloors) : floorXp(floor, rank);

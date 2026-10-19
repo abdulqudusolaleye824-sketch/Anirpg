@@ -213,7 +213,7 @@ function instantiate(stockItem, player) {
   const base = {
     id, name: stockItem.name, emoji: stockItem.emoji, rank: stockItem.rank, rarity: stockItem.rarity,
     lore: stockItem.lore, fromStore: true, storeDay: dayKey(), acquiredAt: Date.now(),
-    durability: maxDurability, maxDurability, transferable: true,
+    durability: maxDurability, maxDurability, transferable: true, _ladder: true, // Push #103j: minted on the rank ladder
   };
   const _fin = (o) => { try { require('./InventoryCompactor').attach(o); } catch (e) {} return o; }; // Push #96h-z15: lore → index + getter
   if (stockItem.kind === 'weapon') {
