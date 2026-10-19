@@ -11,8 +11,8 @@ const PRO_TIERS = {
     name: 'Weekly Pro Card',
     cost: 2000,
     days: 7,
-    nexus: 500000,
-    crystals: 50000,
+    nexus: 1000000, // Push #103j (owner): weekly 1M 💠 / 100k 💎
+    crystals: 100000,
     upgradePoints: 30,
     emoji: '🎫'
   },
@@ -20,8 +20,8 @@ const PRO_TIERS = {
     name: 'Monthly Pro Card',
     cost: 5000,
     days: 30,
-    nexus: 2000000,
-    crystals: 200000,
+    nexus: 4000000, // Push #103j (owner): monthly 4M 💠 / 2M 💎
+    crystals: 2000000,
     upgradePoints: 150,
     emoji: '📜'
   },
@@ -29,8 +29,8 @@ const PRO_TIERS = {
     name: 'Yearly Pro Card',
     cost: 60000,
     days: 365,
-    nexus: 20000000,
-    crystals: 2000000,
+    nexus: 40000000, // Push #103j (owner): yearly 40M 💠 / 10M 💎
+    crystals: 10000000,
     upgradePoints: 1800,
     emoji: '👑'
   }

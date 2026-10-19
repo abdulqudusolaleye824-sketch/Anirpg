@@ -1,3 +1,8 @@
+## 1.0.216 — Push #103j-b (2026-10-19) — keyring answers, Pro pass Nexus/Stones ×2+, BUG-140 allocations × rank
+- Guild keyring prompt: a key is posted ONLY when the hunter quote-replies the prompt with a bare letter (E/D/C/B/A/S) — ordinary chat ("Cuz I don't have a guild") is no longer read as "C". PlainPrompt gained accept/replyOnly options.
+- Pro passes: Weekly 1,000,000 💠 + 100,000 💎 · Monthly 4,000,000 💠 + 2,000,000 💎 · Yearly 40,000,000 💠 + 10,000,000 💎 (UP unchanged). /profaq updated.
+- BUG-140: allocated Upgrade Points on HP/ATK/DEF/Magic now ride the awakening-rank multiplier like the base stat (C-rank: 30 UP in ATK = +240, not +60). One-shot startup recompute for every hunter; the allocation card shows the real gain.
+
 ## 1.0.215 — Push #103j (2026-10-19) — bug batch 124–139: lifesteal buffs, tagged buffs, revive token, battle regen, AoE, owned gear ladder, raid speed/severity, floors
 - BUG-124: "+30% lifesteal" (and "lifesteal becomes N%") is now a real buff stat — read by lifesteal in raids/dungeons/PvP.
 - BUG-125/127: tagging a teammate with a party buff buffs ONLY them (one cost); Monster-class self buffs never spread to the party.

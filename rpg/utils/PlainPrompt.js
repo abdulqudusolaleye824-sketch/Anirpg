@@ -12,10 +12,12 @@ function bare(j) { return String(j || '').split(':')[0].split('@')[0].replace(/\
  * senderForms: every jid form the hunter may answer from (resolved jid, msg.key.participant, lid…).
  * handler(text, { cancelled }) -> { command } | { reply } | null   (null = consumed silently)
  */
-function expect(chatId, senderForms, handler, ttlMs = 60e3) {
+function expect(chatId, senderForms, handler, ttlMs = 60e3, opts = null) {
   const forms = new Set([].concat(senderForms || []).map(bare).filter(Boolean));
   if (!forms.size) return false;
-  const rec = { handler, until: Date.now() + Math.max(5e3, ttlMs), forms, chatId };
+  // Push #103j (owner): opts.accept (RegExp) — only a message matching it is an ANSWER; anything else is ordinary chat and
+  // leaves the prompt pending. opts.replyOnly — the answer must be a quote-reply (to the prompt) as well.
+  const rec = { handler, until: Date.now() + Math.max(5e3, ttlMs), forms, chatId, accept: opts && opts.accept instanceof RegExp ? opts.accept : null, replyOnly: !!(opts && opts.replyOnly) };
   for (const f of forms) _p.set(`${chatId}|${f}`, rec);
   return true;
 }
@@ -32,12 +34,14 @@ function cancel(chatId, senderForms) {
 }
 function pending(chatId, senderForms, db) { const r = _find(chatId, senderForms, db); return !!(r && r.until > Date.now()); }
 /** Returns null when nothing was pending; otherwise whatever the handler returned ({command}|{reply}|{}). */
-async function resolve(chatId, senderForms, text, db) {
+async function resolve(chatId, senderForms, text, db, meta = null) {
   const r = _find(chatId, senderForms, db);
   if (!r) return null;
   if (r.until < Date.now()) { for (const f of r.forms) _p.delete(`${chatId}|${f}`); return null; }
   const t = String(text || '').trim();
   if (!t) return null;
+  if (r.accept && !r.accept.test(t) && !CANCEL.test(t)) return null;            // Push #103j: not an answer — plain chat flows on, prompt stays open
+  if (r.replyOnly && !(meta && meta.isReply) && !CANCEL.test(t)) return null;  // Push #103j: must be a quote-reply
   for (const f of r.forms) _p.delete(`${chatId}|${f}`);
   try { return (await r.handler(t, { cancelled: CANCEL.test(t) })) || {}; } catch (e) { return { reply: `❌ ${e.message}` }; }
 }

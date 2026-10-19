@@ -120,4 +120,19 @@ function runGearLadder(db) {
   db.migrations[KEY3] = { at: Date.now(), scaled: n };
   return n;
 }
-module.exports = { run, runRankPower, runGearLadder, _upgradeOne, _ladderOne, KEY, KEY2, KEY3 };
+// Push #103j (BUG-140): allocated UP now ride the rank multiplier — recompute every hunter once more.
+const KEY4 = 'rank_power_alloc_103j';
+function runRankPowerAlloc(db) {
+  if (!db || !db.users) return 0;
+  db.migrations = db.migrations || {};
+  if (db.migrations[KEY4]) return 0;
+  const SAS = require('./StatAllocationSystem');
+  let n = 0;
+  for (const u of Object.values(db.users)) {
+    if (!u || !u.stats || !u.class) continue;
+    try { SAS.initializeStatAllocations(u); SAS.applyAllocationsToStats(u); n++; } catch (e) {}
+  }
+  db.migrations[KEY4] = { at: Date.now(), recomputed: n };
+  return n;
+}
+module.exports = { run, runRankPower, runGearLadder, runRankPowerAlloc, KEY4, _upgradeOne, _ladderOne, KEY, KEY2, KEY3 };

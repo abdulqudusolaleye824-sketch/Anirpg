@@ -214,9 +214,9 @@ module.exports = {
         PP.expect(chatId, forms, (text, { cancelled }) => {
           if (cancelled) return { reply: `🔒 Keyring closed.` };
           const r = String(text).trim().toUpperCase().replace(/[^A-Z]/g, '').slice(0, 1);
-          if (!GK.RANKS.includes(r)) return { reply: `❌ Reply with one letter: ${held.join(', ')} — or *nil*.` };
+          if (!GK.RANKS.includes(r)) return { reply: `❌ Reply to this message with ONE letter: ${held.join(', ')} — or *nil*.` };
           return { command: `/guild keys ${r}` };
-        }, 120e3);
+        }, 120e3, { accept: /^[a-z]$/i, replyOnly: true }); // Push #103j (owner): ONLY a quote-reply with a bare letter is an answer
         return B.sendButtons(sock, chatId, {
           text: `${prefix ? prefix + '\n\n' : ''}🔑 *${v.guildName.toUpperCase()} KEYRING* — ${keys.length} live key${keys.length === 1 ? '' : 's'} (${held.join(' · ')}).\n⚠️ No serf detected for your DM — *pick a rank* and the key of that rank lapsing soonest is posted here (just one).\nReply with a letter: *${held.join(' / ')}* — or *nil* to close.${hint}`,
           mentions: [sender],

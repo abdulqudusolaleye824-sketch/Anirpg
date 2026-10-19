@@ -3024,7 +3024,8 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
       const PP = require('../rpg/utils/PlainPrompt');
       const _forms = [sender, msg.key?.participant, msg.participant, msg.key?.participantAlt].filter(Boolean);
       if (PP.pending(chatId, _forms, getDatabase())) {
-        const r = await PP.resolve(chatId, _forms, messageText, getDatabase());
+        const _isReply = !!(msg.message?.extendedTextMessage?.contextInfo?.quotedMessage || msg.message?.extendedTextMessage?.contextInfo?.stanzaId);
+        const r = await PP.resolve(chatId, _forms, messageText, getDatabase(), { isReply: _isReply });
         if (r) {
           if (r.reply) { try { await sock.sendMessage(chatId, { text: r.reply, mentions: r.mentions || [] }, { quoted: msg }); } catch (e) {} }
           if (r.command && options.rpgCommandHandler) await options.rpgCommandHandler(sock, msg, r.command, config, getDatabase, saveDatabase);

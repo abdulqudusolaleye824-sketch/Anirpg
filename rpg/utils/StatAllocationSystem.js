@@ -155,7 +155,8 @@ function allocateStat(player, statName, amount = 1) {
   player.upgradePoints -= totalCost;
   player.statAllocations[statName] = currentAllocations + amount;
   
-  const statIncrease = statConfig.valuePerPoint * amount;
+  let statIncrease = statConfig.valuePerPoint * amount;
+  try { const RP = require('./RankPower'); if (RP.STATS.includes(statName)) statIncrease = Math.round(statIncrease * RP.mult(player)); } catch (e) {} // Push #103j (BUG-140): the card shows the real, rank-scaled gain
   applyAllocationsToStats(player);
   
   return {
@@ -204,7 +205,7 @@ function applyAllocationsToStats(player) {
     const bonus = allocations * config.valuePerPoint;
     
     if (statName === 'hp') {
-      player.stats.maxHp = _rk('hp', player.baseStats.hp || 100) + bonus;
+      player.stats.maxHp = _rk('hp', (player.baseStats.hp || 100) + bonus); // Push #103j (BUG-140): allocated points ride the rank multiplier too
       let _cap = player.stats.maxHp;
       try { _cap = require('./GearSystem').effectiveMaxHp(player); } catch (e) {}
       if (player.stats.hp > _cap) player.stats.hp = _cap;
@@ -215,7 +216,7 @@ function applyAllocationsToStats(player) {
         player.stats.energy = player.stats.maxEnergy;
       }
     } else {
-      player.stats[statName] = _rk(statName, player.baseStats[statName] || 0) + bonus;
+      player.stats[statName] = _rk(statName, (player.baseStats[statName] || 0) + bonus); // Push #103j (BUG-140): rank-scaled stats scale their allocations
     }
   }
 }
