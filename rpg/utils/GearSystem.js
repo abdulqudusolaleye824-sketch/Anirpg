@@ -199,6 +199,7 @@ function equipGear(player, gearItem) {
   const _newHp = Number((gearItem.stats && gearItem.stats.hp) || 0);
   // Push #101 (BUG-018): the replaced piece RETURNS to the bag at its current durability — never destroyed.
   const _old = player.equippedGear[slot];
+  let _emBefore = 0; try { _emBefore = effectiveMaxHp(player); } catch (e) {}
   player.equippedGear[slot] = gearItem;
   if (_old && typeof _old === 'object') {
     if (!player.inventory) player.inventory = {};
@@ -207,7 +208,8 @@ function equipGear(player, gearItem) {
     _old.isGear = true;
     if (!player.inventory.items.some(i => i && i.id === _old.id)) player.inventory.items.push(_old);
   }
-  try { if (player.stats && typeof player.stats.hp === 'number' && player.stats.hp > 0) { const delta = _newHp - _oldHp; if (delta > 0) player.stats.hp += delta; const em = effectiveMaxHp(player); if (player.stats.hp > em) player.stats.hp = em; } } catch (e) {}
+  // Push #103h (BUG-118): HP keeps its RATIO when max HP changes — equip/unequip loops can no longer heal mid-fight.
+  try { if (player.stats && typeof player.stats.hp === 'number' && player.stats.hp > 0 && _emBefore > 0) { const em = effectiveMaxHp(player); if (em !== _emBefore) player.stats.hp = Math.max(1, Math.min(em, Math.round(em * Math.min(1, player.stats.hp / _emBefore)))); if (player.stats.hp > em) player.stats.hp = em; } } catch (e) {}
   // Remove from inventory
   if (player.inventory?.items) {
     const idx = player.inventory.items.findIndex(i => i.id === gearItem.id);
@@ -220,8 +222,10 @@ function equipGear(player, gearItem) {
 function unequipGear(player, slot) {
   if (!player.equippedGear?.[slot]) return false;
   const piece = player.equippedGear[slot];
+  let _emBefore = 0; try { _emBefore = effectiveMaxHp(player); } catch (e) {}
   delete player.equippedGear[slot];
-  try { if (player.stats && typeof player.stats.hp === 'number') { const em = effectiveMaxHp(player); if (player.stats.hp > em) player.stats.hp = em; } } catch (e) {}
+  // Push #103h (BUG-118): ratio-preserving (see equipGear) — taking off HP gear scales HP down, putting it back scales up.
+  try { if (player.stats && typeof player.stats.hp === 'number') { const em = effectiveMaxHp(player); if (_emBefore > 0 && em !== _emBefore && player.stats.hp > 0) player.stats.hp = Math.max(1, Math.min(em, Math.round(em * Math.min(1, player.stats.hp / _emBefore)))); if (player.stats.hp > em) player.stats.hp = em; } } catch (e) {}
   return piece;
 }
 

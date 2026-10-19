@@ -193,6 +193,10 @@ function applyAllocationsToStats(player) {
     player.baseStats.maxEnergy = Math.max(1, (player.stats.maxEnergy || 100) - allocBonus);
   }
   
+  // Push #103h: awakening-rank power layer (E×1 … S×42.9) on base HP/ATK/DEF/Magic — see RankPower.js.
+  let _rm = 1; try { _rm = require('./RankPower').mult(player); } catch (e) { _rm = 1; }
+  const _rk = (k, v) => (_rm !== 1 && require('./RankPower').STATS.includes(k)) ? Math.round(v * _rm) : v;
+  for (const k of ['hp', 'atk', 'def', 'magicPower']) if (player.statAllocations[k] == null) player.statAllocations[k] = 0; // every rank-scaled stat is recomputed
   for (const [statName, allocations] of Object.entries(player.statAllocations)) {
     const config = STAT_CONFIG[statName];
     if (!config) continue;
@@ -200,7 +204,7 @@ function applyAllocationsToStats(player) {
     const bonus = allocations * config.valuePerPoint;
     
     if (statName === 'hp') {
-      player.stats.maxHp = (player.baseStats.hp || 100) + bonus;
+      player.stats.maxHp = _rk('hp', player.baseStats.hp || 100) + bonus;
       let _cap = player.stats.maxHp;
       try { _cap = require('./GearSystem').effectiveMaxHp(player); } catch (e) {}
       if (player.stats.hp > _cap) player.stats.hp = _cap;
@@ -211,7 +215,7 @@ function applyAllocationsToStats(player) {
         player.stats.energy = player.stats.maxEnergy;
       }
     } else {
-      player.stats[statName] = (player.baseStats[statName] || 0) + bonus;
+      player.stats[statName] = _rk(statName, player.baseStats[statName] || 0) + bonus;
     }
   }
 }

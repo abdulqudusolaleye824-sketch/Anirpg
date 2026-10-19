@@ -606,6 +606,7 @@ function normalise(className, raw, index) {
     }
   }
   const isPassive = type === 'passive' || /•\s*passive/i.test(effect);
+  shamanStatuses(className, { type, isPassive, statuses, index, noFill: true }); // Push #103h (owner): Shaman afflictions = blind/curse/poison
 
   const energyCost = Math.max(0, Number(
     raw.energyCost ?? raw.manaCost ?? raw.holyCost ?? raw.hungerCost ??
@@ -680,6 +681,10 @@ function normalise(className, raw, index) {
     energyCost: energyCostFinal,
     damagePct,
     flatDamage: Number(raw.damage ?? 0) || 0,
+    // Push #103h (BUG-122): "ignores N% DEF / armor penetration N% / ignoring (all) defense(s) / penetrating through
+    // defenses" and "ignores dodge / cannot be dodged / never misses / guaranteed hit" are CONTRACTS every engine honours.
+    armorPen: _armorPen(`${effect} ${desc}`),
+    undodgeable: /ignores?\s+(?:all\s+)?dodge|cannot\s+be\s+dodged|can(?:no|')t\s+(?:be\s+)?dodged|never\s+miss(?:es)?|cannot\s+miss|guaranteed\s+(?:to\s+)?hit|unavoidable|always\s+hits?/i.test(`${effect} ${desc}`),
     healingPct: _healingPct,
     // Push #88b: "% of HP" is a CONTRACT. drainPct = % of target max HP taken
     // (healed back to caster unless drainHeals=false); selfCostPct = % of own
@@ -710,13 +715,31 @@ function normalise(className, raw, index) {
 }
 
 // Push #103b: regenerate the trailing "Mechanics: …" summary from an entry's FINAL fields.
+// Push #103h: armour penetration % from the words (0–100).
+function _armorPen(t) {
+  const x = String(t || '');
+  let m = x.match(/ignor(?:es|ing)?\s+(\d{1,3})%\s*(?:of\s+)?(?:target\s+|enemy\s+)?(?:DEF|defen[cs]e|armou?r)/i) || x.match(/(?:armou?r|defen[cs]e)\s+penetration\s*(?:of\s+)?\+?(\d{1,3})%/i) || x.match(/(\d{1,3})%\s+(?:armou?r|defen[cs]e)\s+penetration/i) || x.match(/penetrat\w*\s+(\d{1,3})%\s+(?:of\s+)?(?:DEF|defen[cs]e|armou?r)/i);
+  if (m) return Math.min(100, parseInt(m[1], 10));
+  if (/ignor(?:es|ing)\s+(?:all\s+|the\s+)?(?:target\s+|enemy\s+)?(?:DEF|defen[cs]es?|armou?r)(?:\s+ratings?)?|penetrat(?:es|ing)\s+(?:through\s+)?(?:all\s+)?defen[cs]es?|true\s+damage|bypass(?:es|ing)?\s+(?:all\s+)?(?:DEF|defen[cs]e|armou?r)/i.test(x)) return 100;
+  return 0;
+}
+// Push #103h (owner): a Shaman's afflictions are BLIND, CURSE and POISON — every offensive Shaman skill carries one.
+const SHAMAN_STATUS_MAP = { burn: 'poison', bleed: 'poison', poison: 'poison', stun: 'blind', freeze: 'blind', paralyze: 'blind', trueslow: 'blind', silence: 'blind', fear: 'curse', weaken: 'curse', curse: 'curse', blind: 'blind' };
+function shamanStatuses(className, e) {
+  if (!/^shaman$/i.test(String(className || '')) || !e || e.isPassive || !Array.isArray(e.statuses)) return;
+  const statuses = e.statuses;
+  for (const st of statuses) st.type = SHAMAN_STATUS_MAP[st.type] || 'curse';
+  const seen = new Set(); for (let i = statuses.length - 1; i >= 0; i--) { if (seen.has(statuses[i].type)) statuses.splice(i, 1); else seen.add(statuses[i].type); }
+  if (!e.noFill && !statuses.length && e.type !== 'heal' && e.type !== 'buff') statuses.push({ type: ['poison', 'blind', 'curse'][(e.index || 0) % 3], chance: 100, duration: 3 });
+}
 function rebuildMechanics(e) {
   const base = String(e.description || '').replace(/\s*Mechanics:\s[\s\S]*$/, '').replace(/\s+$/, '');
   const m = [];
-  if (!e.isPassive && e.damagePct > 0 && e.type !== 'heal' && e.type !== 'buff') m.push(`${e.damagePct}% ${e.scaleStat === 'magic' ? 'Magic Power' : e.scaleStat === 'def' ? 'DEF' : 'ATK'}`);
+  if (!e.isPassive && e.damagePct > 0 && e.type !== 'heal' && e.type !== 'buff') m.push(`${e.damagePct}% ${e.scaleStat === 'magic' ? 'Magic Power' : e.scaleStat === 'def' ? 'DEF' : e.scaleStat === 'hybrid' ? 'hybrid (ATK/Magic)' : 'ATK'}`);
   for (const b of (e.buffs || [])) m.push(`${e.party && !e.isPassive ? 'party' : 'self'} ${String(b.stat).toUpperCase()} +${b.amount}% for ${b.duration || b.turns || 2} turns`);
   for (const d of (e.debuffs || [])) m.push(d.stat === 'damageTaken' ? `target takes +${d.amount}% damage for ${d.duration || 3} turns` : `target ${String(d.stat).toUpperCase()} -${d.amount}% for ${d.duration || 3} turns`);
   for (const st of (e.statuses || [])) m.push(`${st.chance}% to inflict ${String(st.type).toUpperCase()} (${st.duration}t)`);
+  if (e.armorPen) m.push(e.armorPen >= 100 ? 'ignores DEF' : `ignores ${e.armorPen}% DEF`); if (e.undodgeable) m.push('cannot be dodged');
   if (e.healingPct > 0) m.push(`heals ${e.healingPct}% max HP${e.party ? ' to the whole party' : ''}`);
   if (e.shieldPct) m.push(e.shieldMode === 'rate' ? `shield absorbs ${e.shieldPct}% of each hit for ${e.shieldTurns} turns` : `shield worth ${e.shieldPct}% max HP for ${e.shieldTurns} turns`);
   if (e.immuneTurns) m.push(`immune to damage for ${e.immuneTurns} turn${e.immuneTurns === 1 ? '' : 's'}`);
@@ -821,7 +844,7 @@ function buildRoster(className, variant = null) {
     if (r.rankReq) { e.rankReq = r.rankReq; e.unlocksAtLevel = null; }
     if (r.scaleStat) e.scaleStat = r.scaleStat;
     if (r.emoji) e.emoji = r.emoji;
-    if (r.revamp) { e.revamp = true; try { require('./RevampSkills').applyMechanics(e, r._spec || {}); } catch (err) {} if (r.displayEffect) e.effect = r.displayEffect;
+    if (r.revamp) { e.revamp = true; try { require('./RevampSkills').applyMechanics(e, r._spec || {}); } catch (err) {} try { shamanStatuses(e.className || className, e); } catch (err) {} if (r.displayEffect) e.effect = r.displayEffect;
       // Push #103b: the spec's cost is the contract (flavour text like "costs 0 energy" must not zero a cast) and the Mechanics summary is rebuilt from the FINAL contract.
       if (!e.isPassive && Number.isFinite(Number(r.energyCost))) e.energyCost = Math.max(0, Number(r.energyCost));
       try { const SMc = require('./Summons'); if (SMc.isSummonSkill(e)) { e.energyCost = SMc.costFor(e); e.summon = true; const sp = SMc.specFor(e); if (sp && sp.corpses) e.corpses = sp.corpses; } else if (SMc.isBurstSkill(e)) e.corpseBurst = true; } catch (err) {} // Push #103b: summoning drinks deep
@@ -930,6 +953,7 @@ function computeDamage(player, skill, opts = {}) {
   // low-roll caster still lands something).
   if (skill && skill.scaleStat === 'magic') base = Math.max(atk * 0.6, magic);
   else if (skill && skill.scaleStat === 'def') base = Math.max(atk * 0.6, Number(st.def || 0));
+  else if (skill && skill.scaleStat === 'hybrid') base = Math.max(atk, magic, atk * 0.7 + magic * 0.5); // Push #103h: "N% hybrid/mixed damage" — best of ATK, Magic, or the blend
   const pct = ((skill.damagePct || 100) / 100) * b.dmgMult;
   let dmg = base * pct + (skill.flatDamage || 0) * b.dmgMult;
   if (opts.crit) dmg = dmg * (1 + (Number(st.critDamage || 150) - 100) / 100);
@@ -940,7 +964,7 @@ function computeDamage(player, skill, opts = {}) {
     if (skill.executeBonus && tmax > 0 && thp / tmax <= 0.35) dmg *= 1 + skill.executeBonus / 100;
   }
   dmg = Math.max(1, Math.floor(dmg));
-  if (opts.def) dmg = Math.max(1, dmg - Math.floor(Number(opts.def) * (1 - Math.min(0.6, (Number(skill.armorPen) || 0) / 100)) * 0.35));
+  if (opts.def) dmg = Math.max(1, dmg - Math.floor(Number(opts.def) * (1 - Math.min(1, (Number(skill.armorPen) || 0) / 100)) * 0.35));
   if (opts.target) { // Push #72: status synergy
     try { const syn = require('./StatusSynergy').bonusFor(skill, opts.target); if (syn.mult !== 1) { dmg = Math.max(1, Math.floor(dmg * syn.mult)); if (opts.notes) opts.notes.push(...syn.notes); } } catch (e) {}
   }
@@ -1339,7 +1363,7 @@ function scaledSummary(e) {
   if (!e) return [];
   const L = [];
   const lv = Number(e.level) || 1;
-  if (e.damagePct) L.push(`💥 ${Math.round(e.damagePct * (1 + (lv - 1) * 0.12))}% ${e.scaleStat === 'magic' ? 'Magic Power' : e.scaleStat === 'def' ? 'DEF' : 'ATK'} damage`);
+  if (e.damagePct) L.push(`💥 ${Math.round(e.damagePct * (1 + (lv - 1) * 0.12))}% ${e.scaleStat === 'magic' ? 'Magic Power' : e.scaleStat === 'def' ? 'DEF' : e.scaleStat === 'hybrid' ? 'hybrid (ATK/Magic)' : 'ATK'} damage`);
   if (e.healingPct) L.push(`💚 Heals ${e.healingPct}% max HP`);
   if (e.drainPct) L.push(`🧛 Drains ${e.drainPct}% of target max HP${e.drainHealPct ? ` · recovers ${e.drainHealPct}%` : ''}`);
   if (e.lifestealPct) L.push(`🩸 Lifesteal ${e.lifestealPct}% of damage`);

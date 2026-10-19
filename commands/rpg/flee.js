@@ -43,6 +43,16 @@ module.exports = {
       const keyData = GKM.getKey(activeGateKey) || db.gateKeys?.[activeGateKey];
       const gate = keyData ? GateManager.getGate(keyData.gateId) : null;
       if (gate && gate.raid) {
+        // Push #103h (BUG-118, owner rule): the LAST living hunter in a gate cannot flee — fight or fall.
+        try {
+          const GR = require('../../rpg/dungeons/GateRaid');
+          const alive = GR.livingMembers(gate, db) || [];
+          const others = alive.filter(u => u !== player && u !== db.users[sender]);
+          const mine = (player.stats?.hp || 0) > 0;
+          if (mine && others.length === 0 && !gate.cleared && !gate.closed) {
+            return sock.sendMessage(chatId, { text: `⛔ *${player.name}* — you are the LAST hunter standing in Gate \`${activeGateKey}\`. No one flees a gate alone: fight or fall.` }, { quoted: msg });
+          }
+        } catch (e) {}
         gate.raid.members = (gate.raid.members || []).filter(m => m.id !== sender);
         gate.raiders = (gate.raiders || []).filter(r => r !== sender);
         saveDatabase();

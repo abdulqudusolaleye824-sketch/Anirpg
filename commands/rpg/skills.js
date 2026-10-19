@@ -126,6 +126,7 @@ module.exports = {
       if ((Number(player.skillUpgradeCredits) || 0) > 0) txt += `🎟️ Skill Upgrade Credits: *${player.skillUpgradeCredits}* — /skills upgrade [slot#] spends them before Nexus\n`; // Push #103c
       if (!equipped.length) {
         txt += '(None equipped)\n';
+        try { const _n = require('../../rpg/utils/SkillRunes').stonesOf(player).length; if (_n) txt += `🪨 *${_n} unread rune stone(s)* in your bag — */rune use all* learns them now!\n`; } catch (e) {} // Push #103h (BUG-116)
       } else {
         equipped.forEach((s, i) => { txt += fmtSkillLine(s, i, player, false) + '\n'; });
       }

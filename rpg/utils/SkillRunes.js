@@ -31,7 +31,9 @@ function rankOf(player) {
   const hit = _rankMemo.get(player); const now = Date.now();
   if (hit && now - hit.at < 1500) return hit.r;
   let r = 'F';
-  try { const R = require('../../commands/rpg/rank'); r = R.getRank(R.calcPower(player).total).cur.rank; } catch (e) { r = 'F'; }
+  // Push #103h (owner): the AWAKENING rank drives every rank-based mechanic — rank-locked skills included.
+  r = String(player.awakenRank || player.hunterRank || player.rank || '').toUpperCase().replace(/-?RANK$/, '').trim();
+  if (!RANK_ORDER.includes(r)) { try { const R = require('../../commands/rpg/rank'); r = R.getRank(R.calcPower(player).total).cur.rank; } catch (e) { r = 'E'; } } // unawakened legacy records only
   _rankMemo.set(player, { r, at: now });
   return r;
 }

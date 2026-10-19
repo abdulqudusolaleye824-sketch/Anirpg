@@ -64,7 +64,16 @@ function playerDamage(player, skillName = null, target = null) {
     if (_pm74.skillDmg) dmg = Math.max(1, Math.floor(dmg * (1 + (_pm74.skillDmg || 0) / 100)));
     try { const _lv = Number((entry || skill).level || 1); if (_lv > 1) synergyNotes.push(`⬆️ Lv.${_lv} +${Math.round((SC.levelBonus(entry || skill).dmgMult - 1) * 100)}% DMG`); } catch (e) {} // Push #103f (BUG-101): the level bonus is SHOWN
     let _tDefMult95 = 1, _tTaken95 = 1; try { const _UC95 = require('../utils/UnifiedCombat'); _tDefMult95 = Math.max(0.1, 1 + _UC95.tempBuffPct(target || {}, 'def') / 100); _tTaken95 = 1 + _UC95.tempBuffPct(target || {}, 'damageTaken') / 100; } catch (e) {} // Push #95: monster shells / domain debuffs are real
-    if (target && typeof target.def === 'number' && target.def > 0) dmg = Math.max(1, dmg - Math.floor(target.def * _tDefMult95 * 0.35 * (1 - Math.min(0.6, (_pm74.armorPen || 0) / 100))));
+    // Push #103h (BUG-117/120/122): DEF mitigation is PROPORTIONAL to the strike — a 220% skill is exactly 2.2× a basic hit
+    // against the same beast (both lose the same share), never below 25% of the raw roll; skill armour penetration
+    // ("ignores 30% DEF", "ignoring defense" = 100%) stacks with passive penetration.
+    if (target && typeof target.def === 'number' && target.def > 0) {
+      const _pen = Math.min(1, ((_pm74.armorPen || 0) + (Number((entry || skill).armorPen) || 0)) / 100);
+      const _mit = Math.floor(target.def * _tDefMult95 * 0.35 * (1 - _pen));
+      const _ratio = atk > 0 ? dmg / atk : 1;
+      dmg = Math.max(1, Math.max(Math.floor(dmg * 0.25), dmg - Math.floor(_mit * _ratio)));
+      if (_pen > 0) synergyNotes.push(_pen >= 1 ? `🗡️ ignores DEF` : `🗡️ ignores ${Math.round(_pen * 100)}% DEF`);
+    }
     if (target && _tTaken95 !== 1) dmg = Math.max(1, Math.floor(dmg * _tTaken95));
     if (target) { try { dmg = Math.max(1, Math.floor(dmg * require('../utils/UnifiedCombat').weakenTakenMult(target))); } catch (e) {} }
     if (target) { try { dmg = Math.max(1, Math.floor(dmg * require('../utils/JobSystem').targetMult(player, target, { boss: !!target.isBoss }))); } catch (e) {} } // Push #95: job prey/elite/pack bonuses
@@ -135,7 +144,7 @@ function playerDamage(player, skillName = null, target = null) {
   if (target && monsterDodges(target, player)) { try { require('../utils/JobSystem').noteHit(player, false); } catch (e) {} return { damage: 0, isCrit: false, dodged: true, missed: true, missWhy: (monsterDodges.last && monsterDodges.last.why) || null, synergyNotes: [], statuses: [] }; } // Push #88o
   let dmg = Math.max(5, atk * (0.85 + Math.random() * 0.30));
   let _tDefMult95 = 1, _tTaken95 = 1; try { const _UC95 = require('../utils/UnifiedCombat'); _tDefMult95 = Math.max(0.1, 1 + _UC95.tempBuffPct(target || {}, 'def') / 100); _tTaken95 = 1 + _UC95.tempBuffPct(target || {}, 'damageTaken') / 100; } catch (e) {} // Push #95: monster shells / domain debuffs are real
-  if (target && typeof target.def === 'number' && target.def > 0) dmg = Math.max(5, dmg - Math.floor(target.def * _tDefMult95 * 0.35 * (1 - Math.min(0.6, (_pm74.armorPen || 0) / 100))));
+  if (target && typeof target.def === 'number' && target.def > 0) dmg = Math.max(5, Math.max(Math.floor(dmg * 0.25), dmg - Math.floor(target.def * _tDefMult95 * 0.35 * (1 - Math.min(0.6, (_pm74.armorPen || 0) / 100))))); // Push #103h: never below 25% of the roll
   if (target && _tTaken95 !== 1) dmg = Math.max(5, Math.floor(dmg * _tTaken95));
   if (target) { try { dmg = Math.max(1, dmg * require('../utils/UnifiedCombat').weakenTakenMult(target)); } catch (e) {} }
   if (target) { try { dmg = Math.max(1, dmg * require('../utils/JobSystem').targetMult(player, target, { boss: !!target.isBoss })); } catch (e) {} } // Push #95

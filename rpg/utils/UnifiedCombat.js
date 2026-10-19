@@ -141,7 +141,7 @@ function calcMoveDamage(attacker, defender, move) {
   // Push #102f (BUG-040): a SKILL cast by a caster scales with Magic Power like it does in raids (atk×0.7 + magic×0.5) —
   // never below the plain ATK figure, so non-casters lose nothing.
   if (move && move.isSkill) { let _mg = Number(attacker.stats?.magicPower || 0); try { _mg = require('./GearSystem').effectiveMagicPower(attacker); } catch (e) {} /* Push #102h (BUG-081): gear/weapon magic counts */ if (_mg > 0) atkBase = Math.max(atkBase, atkBase * 0.7 + _mg * 0.5); }
-  const defBase = ((defender.stats?.def || defender.stats?.defense || 20) + _gearDef + _wpnDef + _tD + _cD + _ptD) * _gD * (1 - Math.min(0.6, ((_pmA && _pmA.armorPen) || 0) / 100));
+  const defBase = ((defender.stats?.def || defender.stats?.defense || 20) + _gearDef + _wpnDef + _tD + _cD + _ptD) * _gD * (1 - Math.min(1, (((_pmA && _pmA.armorPen) || 0) + (Number(move && move.armorPen) || 0)) / 100)); // Push #103h: skill armour penetration counts
 
   // Multipliers from attack pattern
   const atkMult = move.atkMult || 1;
@@ -275,6 +275,7 @@ function hitCheck(attacker, defender, move, opts = {}) {
   // Push #96h-o: while YOUR domain stands, your moves cannot miss (owner only — not teammates).
   let domainSure = false; try { const DS = require('./DomainSystem'); domainSure = !!DS.isShielded(attacker); } catch (e) {}
   try { if (domainSure && defender && require('./ClassSnippets').ignoresAlwaysHit(defender)) domainSure = false; } catch (e) {} // Push #103b: Shaman — Domain Immunity ("always hit" bypass)
+  if (move && move.undodgeable && !a.blind) { a.acc = 100; dodge = 0; } // Push #103h (BUG-122): "ignores dodge / never misses" — only BLIND can still make it miss
   if (domainSure) { a.acc = 100; a.blind = false; dodge = 0; }
   const hit = (held || domainSure) ? 100 : Math.max(5, Math.min(100, a.acc - dodge));
   const roll = Math.random() * 100;

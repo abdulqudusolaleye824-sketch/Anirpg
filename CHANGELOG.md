@@ -1,3 +1,30 @@
+## 1.0.213 — Push #103h (2026-10-19) — BUG-113…122, awakening-rank power, rank-locked skills by awakening rank
+- RANK POWER (owner): the AWAKENING rank multiplies base HP/ATK/DEF/Magic — E×1, D×2, C×4, B×7, A×12.25, S×42.9
+  (D=2×E, C=2×D, B=1.75×C, A=1.75×B, S=3.5×A). Layer in StatAllocationSystem (base untouched, idempotent); one-shot
+  recompute for every hunter (Migrations103h.runRankPower); re-applied after each level-up.
+- Rank-locked skills (and every rank mechanic in SkillRunes/ClassSnippets) now read the AWAKENING rank, not /rank power.
+- BUG-114: pre-#103 crafted gear (level-scaled, far below store grade) upgraded once to store grade for its scroll
+  rarity — stats only go up, extra stats kept, durability ratio kept (49 pieces live).
+- BUG-115: gear immunity is absolute — a beast's Magic Power never breaks "immune to X" gear.
+- BUG-119: hunters get a 90 s grace per status — the same status cannot be re-applied (nor extended) within it.
+- BUG-117/120: SpellBlade/DragonKnight/Druid/Phantom/Senku… "N% hybrid/mixed/fire/holy damage" skills were parsed as
+  0% (fell to the 100%+ default) — now the stated % (hybrid = best of ATK, Magic, blend). "ignoring 30% DEF" no
+  longer read as "30% DEF damage" (Void Edge 240%).
+- BUG-117/120: raid DEF mitigation is proportional to the strike (a 220% skill = 2.2× a basic hit vs the same beast),
+  never below 25% of the roll (basic hits too).
+- BUG-122: "ignores N% DEF / armor penetration N% / ignoring armor" and "ignores dodge / cannot be dodged / never
+  misses" are contracts (SkillCatalog armorPen/undodgeable) honoured by GateRaid, computeDamage and UnifiedCombat;
+  shown in the Mechanics line.
+- BUG-121: a beast finished by a teammate while your strike messages were going out no longer counter-attacks.
+- BUG-118: equip/unequip keeps the HP RATIO (no more heal loops in a dungeon); the LAST living hunter in a gate cannot
+  /flee (owner rule).
+- BUG-116: 25/57 hunters fight with an EMPTY bar because their rune stones were never read — /attack nudges once per
+  10 min and /skills shows the unread-stone line. Zeus: 100 UP in ATK did apply (+200); C-rank has no restriction.
+- Shaman afflictions are BLIND / CURSE / POISON only — every offensive Shaman skill carries one (others remapped).
+- Warriors are immune to EVERY status effect (domain effects excepted); boss Magic Power cannot break it.
+- Only B-rank+ beasts can BLIND or FEAR a hunter; every boss can.
+- BUG-113: Lamalita's −99 HP is the class revamp's Berserker profile (HP 198→99, ATK 54→63, SPD 18→27, DEF 7→0) — kept.
+
 ## 1.0.212 — Push #103g (2026-10-18) — BUG-103/104/110/112, party buffs, scaled skill words, domain turns, naira prices
 - BUG-112: /stats, /skills and the equip card now show the SAME skill damage (one preview = raid maths: gear/title/aura/
   passive ATK, Magic Power, catalog %, level bonus). /stats cooldown = the real level-reduced value.

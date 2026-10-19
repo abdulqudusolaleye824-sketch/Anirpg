@@ -50,7 +50,7 @@ function preventsBerserk(player) { return !!player && is(player, 'Monk'); }
 // ── Warrior: status immunity ladder (rolled per attempt; MR override still wins) ──
 function statusResist(player, type) {
   if (!player) return false;
-  if (is(player, 'Warrior')) { const c = WARRIOR_IMMUNE[rank(player)] || 40; return Math.random() * 100 < c; }
+  if (is(player, 'Warrior')) return true; // Push #103h (owner): Warriors are immune to EVERY status effect (domains excepted — they bypass this check)
   if (is(player, 'Druid') && /poison|disease|slow|weaken/.test(String(type))) return Math.random() < 0.5;
   if (is(player, 'Paladin') && /fear|curse|charm|silence/.test(String(type))) return true;
   return false;

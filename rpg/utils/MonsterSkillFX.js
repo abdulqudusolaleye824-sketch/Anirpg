@@ -215,6 +215,11 @@ function _max(p) { try { return require('./GearSystem').effectiveMaxHp(p) || p.s
 function applyStatus(player, type, duration, damage, source) {
   if (!player || !type) return null;
   const t = String(type).toLowerCase();
+  // Push #103h (owner): only B-rank+ beasts (and every boss) may BLIND or FEAR a hunter.
+  if ((t === 'blind' || t === 'fear') && source && typeof source === 'object' && !source.isBoss && !source.boss) {
+    const ri = ['F', 'E', 'D', 'C', 'B', 'A', 'S', 'SS'].indexOf(String(source.rank || source.tier || 'E').toUpperCase().replace(/[^A-Z]/g, ''));
+    if (ri >= 0 && ri < 4) return `🛡️ *${player.name}* is unshaken — a ${String(source.rank || 'low').toUpperCase()}-rank beast cannot ${t} a hunter.`;
+  }
   try {
     const JS = require('./JobSystem');
     if (t === 'fear' && JS.mod(player, 'fearImmune')) return `🐉 *${player.name}* is a Beast King — fear is beneath them.`;

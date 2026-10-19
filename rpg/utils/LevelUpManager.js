@@ -70,6 +70,7 @@ class LevelUpManager {
         player.baseStats.def       = (player.baseStats.def        || 0) + defGain;
         try { const MRs = require('./MagicResist'); const g = MRs.perLevelGain(player); player.stats.magicResist = (Number(player.stats.magicResist) || 0) + g; player.baseStats.magicResist = (Number(player.baseStats.magicResist) || 0) + g; MRs.grantBaseline(player); } catch (e) {} // Push #103f: MR grows every level
 
+        try { if (player.statAllocations) StatAllocationSystem.applyAllocationsToStats(player); } catch (e) {} // Push #103h: rank power layer stays exact after every level
         levelsGained++;
 
         // ── Award upgrade points (rank-scaled) ───────────────────

@@ -72,9 +72,10 @@ function norm(k) {
 
 // ── damage multiplier + scaling stat from the spec text ────────────────────
 function damageOf(text, type) {
-  const t = String(text || '');
+  // Push #103h (BUG-117): "ignoring 30% DEF" is penetration, not the damage stat — strip it before reading the %.
+  const t = String(text || '').replace(/(?:ignor\w*|penetrat\w*|bypass\w*)\s+\d{1,3}%\s*(?:of\s+)?(?:target\s+|enemy\s+)?(?:DEF|defen[cs]e|armou?r)/gi, '').replace(/(?:armou?r|defen[cs]e)\s+penetration\s*\d{1,3}%/gi, '');
   const m = t.match(/(\d{2,4})%\s*(?:of\s+)?(?:(?:current|total|max(?:imum)?)\s+)?(?:(?:mixed|combined|bonus)\s+)?(ATK|attack|Magic Power|MP|DEF|defen[cs]e|ATK\/MP|ATK\/Magic Power|HP)\b/i);
-  if (!m) return { pct: 0, stat: 'atk' };
+  if (!m) { const d = type === 'damage' && t.match(/(\d{2,4})%\s+(?:\w+\s+)?damage\b/i); return d ? { pct: parseInt(d[1], 10), stat: /hybrid|mixed|combined/i.test(t) ? 'hybrid' : 'atk' } : { pct: 0, stat: 'atk' }; } // Push #103h: "240% damage" = 240% ATK
   const stat = /HP/i.test(m[2]) ? 'hp' : /DEF|defen/i.test(m[2]) ? 'def' : /MP|Magic/i.test(m[2]) && !/ATK\//i.test(m[2]) ? 'magic' : 'atk';
   let pct = parseInt(m[1], 10);
   if (stat === 'hp') return { pct: 0, stat: 'atk' };

@@ -834,6 +834,15 @@ module.exports = {
         if (_fellDot) return _fellDot;
       }
       // ── Frozen / stunned players lose their turn (statuses already ticked above) ──
+      // Push #103h (BUG-116): nearly half the roster fights with an EMPTY skill bar because their rune stones were
+      // never read — nudge once per 10 minutes until they do.
+      try {
+        const SRn = require('../../rpg/utils/SkillRunes');
+        if (!(player.skills?.active || []).length && SRn.stonesOf(player).length && Date.now() - (player._runeNudgeAt || 0) > 10 * 60 * 1000) {
+          player._runeNudgeAt = Date.now();
+          await sock.sendMessage(chatId, { text: `🪨 *${player.name}* — your skill bar is EMPTY but you carry *${SRn.stonesOf(player).length}* unread rune stone(s)!\nType */rune use all* to learn your class skills, then */skills*.` });
+        }
+      } catch (e) {}
       let _grCanAct = { canAct: true, reason: null };
       try { _grCanAct = require('../../rpg/utils/UnifiedCombat').canAct(player); } catch(e){}
       // Batch-47: a stunned hunter loses their STRIKE, but the battle
@@ -1117,6 +1126,13 @@ module.exports = {
       let _monCanAct = { canAct: true, reason: null };
       try { _monCanAct = require('../../rpg/utils/UnifiedCombat').canAct({ statusEffects: target.statusEffects || [] }); } catch(e){}
       if (_monActedFirst && _monCanAct.canAct) _monCanAct = { canAct: false, reason: 'initiative' }; // Push #88t: one action per turn
+      // Push #103h (BUG-121): a teammate may have finished the beast while this hunter's strike messages were still
+      // going out — the dead never counter-attack.
+      if (!target || target.defeated || (Number(target.hp) || 0) <= 0) {
+        try { GR.saveGateState(db, gate); } catch (e) {}
+        saveDatabase();
+        return sock.sendMessage(chatId, { text: `💀 *${target?.name || 'The beast'}* is already down — nothing left to counter.` }, { quoted: msg });
+      }
       let _gDefGR = 0;
       try { _gDefGR = require('../../rpg/utils/GearSystem').getEquippedBonuses(player).def || 0; } catch (e) {}
       // Push #84: /guard — a teammate intercepts this hit; damage is recomputed

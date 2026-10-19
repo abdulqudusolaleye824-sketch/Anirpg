@@ -28,6 +28,8 @@ class StatusEffectManager {
   };
 
   // Push #103b: engines name the caster so Magic Resistance can be checked (StatusEffectManager.withCaster(att, () => ...)).
+  static get STATUS_GRACE_MS() { return 90 * 1000; }
+  static isHunter(e) { return !!(e && !e.isMonster && !e.isBoss && (e.jid || e.statAllocations || e.inventory || e.awakenRank)); }
   static withCaster(caster, fn) { const prev = StatusEffectManager._caster; StatusEffectManager._caster = caster || null; try { return fn(); } finally { StatusEffectManager._caster = prev; } }
   static applyEffect(entity, effectType, duration, caster = null) {
     const key = effectType.toLowerCase();
@@ -42,20 +44,30 @@ class StatusEffectManager {
     const { resisted } = checkEffectResistance(className, key);
     if (resisted && !_mrOverride) return false;
     // Push #103b: class snippet immunities (Warrior rank ladder · Druid nature · Paladin holy) — MR override still breaks through.
-    if (!_mrOverride && entity && entity.class) { try { if (require('./ClassSnippets').statusResist(entity, key)) { entity._lastStatusBlock = `${className || 'class'} resilience — shrugged off ${key.toUpperCase()}`; return false; } } catch (e) {} }
+    if (entity && entity.class && (!_mrOverride || /warrior/i.test(String(className || entity.class)))) { try { if (require('./ClassSnippets').statusResist(entity, key)) { entity._lastStatusBlock = `${className || 'class'} resilience — shrugged off ${key.toUpperCase()}`; return false; } } catch (e) {} }
     // Push #96g: the owner of an active domain is immune to NEW statuses inside it.
     try { const DS = require('./DomainSystem'); const d = DS.isShielded(entity); if (d) { entity._lastStatusBlock = `inside ${d.name} — immune to new status effects`; return false; } } catch (e) {}
     // Push #76: store gear immunity / resistance / turn reduction (skip if the
     // caller already ran it — UnifiedCombat.tryApplyEffect passes _armoryChecked).
-    if (!entity._armoryChecked && !_mrOverride) {
+    // Push #103h (BUG-115): gear immunity is ABSOLUTE — a beast's Magic Power never breaks "immune to blind" gear.
+    // Only the turn-reduction perk is skipped when the caster's MP overrides.
+    if (!entity._armoryChecked) {
       try {
         const sd = require('./ArmoryStore').statusDefense(entity, key);
         if (sd.blocked) { entity._lastStatusBlock = sd.reason; return false; }
-        if (sd.turnReduce) duration = Math.max(1, (duration || def.duration) - sd.turnReduce);
+        if (sd.turnReduce && !_mrOverride) duration = Math.max(1, (duration || def.duration) - sd.turnReduce);
       } catch (e) {}
     }
     entity.statusEffects = entity.statusEffects || [];
     const existing = entity.statusEffects.find(e => e.type === key);
+    // Push #103h (BUG-119): hunters get a GRACE window — the same status cannot be re-applied within STATUS_GRACE_MS of
+    // its last application (and an active one is not extended). 30 blinds in one raid is over.
+    if (_c && _c !== entity && StatusEffectManager.isHunter(entity) && !def.isPassive) {
+      entity._statusGrace = entity._statusGrace || {};
+      const last = Number(entity._statusGrace[key]) || 0;
+      if (Date.now() - last < StatusEffectManager.STATUS_GRACE_MS) { entity._lastStatusBlock = `shrugged off ${def.name} — recently afflicted`; return false; }
+      entity._statusGrace[key] = Date.now();
+    }
     if (existing) { existing.duration = Math.max(existing.duration, duration || def.duration); return true; }
     entity.statusEffects.push({
       type: key, name: def.name, emoji: def.emoji,
