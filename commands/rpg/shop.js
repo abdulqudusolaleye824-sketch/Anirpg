@@ -14,50 +14,50 @@ function validatePurchase(player, cost, currency) {
 }
 
 const weaponUpgrades = {
-  Warrior:      [{name:'Iron Sword',bonus:15,cost:40000,level:1},{name:'Steel Greatsword',bonus:30,cost:90000,level:10},{name:'Mithril Claymore',bonus:50,cost:150000,level:20},{name:'Dragon Slayer',bonus:80,cost:250000,level:35},{name:'Legendary Excalibur',bonus:120,cost:1000000,level:50}],
-  Mage:         [{name:'Wooden Staff',bonus:12,cost:40000,level:1},{name:'Mana Stone Wand',bonus:28,cost:90000,level:10},{name:'Arcane Scepter',bonus:45,cost:150000,level:20},{name:'Staff of the Magi',bonus:75,cost:220000,level:35},{name:'Cosmic Oracle Staff',bonus:115,cost:950000,level:50}],
-  Rogue:        [{name:'Iron Dagger',bonus:14,cost:40000,level:1},{name:'Shadow Blade',bonus:32,cost:90000,level:10},{name:'Venomous Kris',bonus:52,cost:150000,level:20},{name:"Assassin's Edge",bonus:85,cost:260000,level:35},{name:'Phantom Reaver',bonus:125,cost:1050000,level:50}],
-  Archer:       [{name:'Short Bow',bonus:13,cost:40000,level:1},{name:'Longbow',bonus:29,cost:90000,level:10},{name:'Elven Recurve',bonus:48,cost:150000,level:20},{name:'Dragon Bone Bow',bonus:78,cost:240000,level:35},{name:'Celestial Windrunner',bonus:118,cost:980000,level:50}],
-  Knight:       [{name:'Iron Lance',bonus:16,cost:40000,level:1},{name:'Steel Halberd',bonus:31,cost:90000,level:10},{name:'Holy Partisan',bonus:51,cost:150000,level:20},{name:"Paladin's Spear",bonus:82,cost:265000,level:35},{name:'Divine Judgement',bonus:122,cost:1020000,level:50}],
-  Tank:         [{name:'Iron Shield',bonus:10,defBonus:15,cost:40000,level:1},{name:'Steel Tower Shield',bonus:20,defBonus:30,cost:90000,level:10},{name:'Fortress Bulwark',bonus:35,defBonus:50,cost:150000,level:20},{name:"Titan's Aegis",bonus:55,defBonus:80,cost:280000,level:35},{name:'Impenetrable Wall',bonus:80,defBonus:120,cost:1100000,level:50}],
-  Assassin:     [{name:'Poison Needle',bonus:15,cost:40000,level:1},{name:'Twin Daggers',bonus:33,cost:90000,level:10},{name:'Night Whisper',bonus:54,cost:150000,level:20},{name:"Death's Kiss",bonus:88,cost:270000,level:35},{name:'Soul Reaper',bonus:128,cost:1080000,level:50}],
-  Paladin:      [{name:'Holy Mace',bonus:17,cost:40000,level:1},{name:'Blessed Hammer',bonus:32,cost:90000,level:10},{name:'Radiant Morningstar',bonus:52,cost:150000,level:20},{name:'Light Bringer',bonus:83,cost:275000,level:35},{name:"Heaven's Wrath",bonus:123,cost:1040000,level:50}],
-  Berserker:    [{name:'Heavy Axe',bonus:18,cost:40000,level:1},{name:'War Cleaver',bonus:35,cost:90000,level:10},{name:'Blood Reaver',bonus:56,cost:150000,level:20},{name:'Fury of the North',bonus:90,cost:285000,level:35},{name:'Ragnarok Destroyer',bonus:130,cost:1120000,level:50}],
-  Necromancer:  [{name:'Bone Wand',bonus:13,cost:40000,level:1},{name:'Skull Staff',bonus:27,cost:90000,level:10},{name:"Death's Embrace",bonus:46,cost:150000,level:20},{name:"Lich King's Scepter",bonus:76,cost:230000,level:35},{name:'Apocalypse Reaper',bonus:116,cost:960000,level:50}],
-  Devourer:     [{name:'Fang Blade',bonus:16,cost:40000,level:1},{name:'Void Ripper',bonus:34,cost:90000,level:10},{name:'Soul Eater',bonus:55,cost:150000,level:20},{name:'Abyssal Maw',bonus:89,cost:288000,level:35},{name:'Eternal Hunger',bonus:129,cost:1110000,level:50}],
-  DragonKnight: [{name:'Scaled Blade',bonus:17,cost:40000,level:1},{name:'Dragonfire Lance',bonus:33,cost:90000,level:10},{name:'Wyrmclaw Halberd',bonus:53,cost:150000,level:20},{name:"Dragon Lord's Glaive",bonus:86,cost:278000,level:35},{name:'Legendary Dragonbane',bonus:126,cost:1060000,level:50}],
-  'Dragon Knight':[{name:'Scaled Blade',bonus:17,cost:40000,level:1},{name:'Dragonfire Lance',bonus:33,cost:90000,level:10},{name:'Wyrmclaw Halberd',bonus:53,cost:150000,level:20},{name:"Dragon Lord's Glaive",bonus:86,cost:278000,level:35},{name:'Legendary Dragonbane',bonus:126,cost:1060000,level:50}],
-  Senku:        [{name:'Kingdom of Science Staff',bonus:20,cost:50000,level:1},{name:'Nitro Formula Flask',bonus:38,cost:100000,level:10},{name:'Revive Stone Cannon',bonus:58,cost:180000,level:20},{name:'Science Blaster Mk2',bonus:90,cost:300000,level:35},{name:'Perseus Reactor',bonus:135,cost:1200000,level:50}],
+  Warrior:      [{name:'Iron Sword',bonus:15,cost:76000,level:1},{name:'Steel Greatsword',bonus:52,cost:171000,level:10},{name:'Mithril Claymore',bonus:162,cost:285000,level:20},{name:'Dragon Slayer',bonus:440,cost:475000,level:35},{name:'Legendary Excalibur',bonus:1132,cost:1900000,level:50}],
+  Mage:         [{name:'Wooden Staff',bonus:12,cost:76000,level:1},{name:'Mana Stone Wand',bonus:49,cost:171000,level:10},{name:'Arcane Scepter',bonus:146,cost:285000,level:20},{name:'Staff of the Magi',bonus:412,cost:418000,level:35},{name:'Cosmic Oracle Staff',bonus:1085,cost:1805000,level:50}],
+  Rogue:        [{name:'Iron Dagger',bonus:14,cost:76000,level:1},{name:'Shadow Blade',bonus:56,cost:171000,level:10},{name:'Venomous Kris',bonus:169,cost:285000,level:20},{name:"Assassin's Edge",bonus:468,cost:494000,level:35},{name:'Phantom Reaver',bonus:1180,cost:1995000,level:50}],
+  Archer:       [{name:'Short Bow',bonus:13,cost:76000,level:1},{name:'Longbow',bonus:51,cost:171000,level:10},{name:'Elven Recurve',bonus:156,cost:285000,level:20},{name:'Dragon Bone Bow',bonus:429,cost:456000,level:35},{name:'Celestial Windrunner',bonus:1114,cost:1862000,level:50}],
+  Knight:       [{name:'Iron Lance',bonus:16,cost:76000,level:1},{name:'Steel Halberd',bonus:54,cost:171000,level:10},{name:'Holy Partisan',bonus:166,cost:285000,level:20},{name:"Paladin's Spear",bonus:451,cost:503500,level:35},{name:'Divine Judgement',bonus:1151,cost:1938000,level:50}],
+  Tank:         [{name:'Iron Shield',bonus:10,defBonus:15,cost:76000,level:1},{name:'Steel Tower Shield',bonus:35,defBonus:52,cost:171000,level:10},{name:'Fortress Bulwark',bonus:114,defBonus:162,cost:285000,level:20},{name:"Titan's Aegis",bonus:302,defBonus:440,cost:532000,level:35},{name:'Impenetrable Wall',bonus:755,defBonus:1132,cost:2090000,level:50}],
+  Assassin:     [{name:'Poison Needle',bonus:15,cost:76000,level:1},{name:'Twin Daggers',bonus:58,cost:171000,level:10},{name:'Night Whisper',bonus:176,cost:285000,level:20},{name:"Death's Kiss",bonus:484,cost:513000,level:35},{name:'Soul Reaper',bonus:1208,cost:2052000,level:50}],
+  Paladin:      [{name:'Holy Mace',bonus:17,cost:76000,level:1},{name:'Blessed Hammer',bonus:56,cost:171000,level:10},{name:'Radiant Morningstar',bonus:169,cost:285000,level:20},{name:'Light Bringer',bonus:456,cost:522500,level:35},{name:"Heaven's Wrath",bonus:1161,cost:1976000,level:50}],
+  Berserker:    [{name:'Heavy Axe',bonus:18,cost:76000,level:1},{name:'War Cleaver',bonus:61,cost:171000,level:10},{name:'Blood Reaver',bonus:182,cost:285000,level:20},{name:'Fury of the North',bonus:495,cost:541500,level:35},{name:'Ragnarok Destroyer',bonus:1227,cost:2128000,level:50}],
+  Necromancer:  [{name:'Bone Wand',bonus:13,cost:76000,level:1},{name:'Skull Staff',bonus:47,cost:171000,level:10},{name:"Death's Embrace",bonus:150,cost:285000,level:20},{name:"Lich King's Scepter",bonus:418,cost:437000,level:35},{name:'Apocalypse Reaper',bonus:1095,cost:1824000,level:50}],
+  Devourer:     [{name:'Fang Blade',bonus:16,cost:76000,level:1},{name:'Void Ripper',bonus:60,cost:171000,level:10},{name:'Soul Eater',bonus:179,cost:285000,level:20},{name:'Abyssal Maw',bonus:490,cost:547200,level:35},{name:'Eternal Hunger',bonus:1217,cost:2109000,level:50}],
+  DragonKnight: [{name:'Scaled Blade',bonus:17,cost:76000,level:1},{name:'Dragonfire Lance',bonus:58,cost:171000,level:10},{name:'Wyrmclaw Halberd',bonus:172,cost:285000,level:20},{name:"Dragon Lord's Glaive",bonus:473,cost:528200,level:35},{name:'Legendary Dragonbane',bonus:1189,cost:2014000,level:50}],
+  'Dragon Knight':[{name:'Scaled Blade',bonus:17,cost:76000,level:1},{name:'Dragonfire Lance',bonus:58,cost:171000,level:10},{name:'Wyrmclaw Halberd',bonus:172,cost:285000,level:20},{name:"Dragon Lord's Glaive",bonus:473,cost:528200,level:35},{name:'Legendary Dragonbane',bonus:1189,cost:2014000,level:50}],
+  Senku:        [{name:'Kingdom of Science Staff',bonus:20,cost:95000,level:1},{name:'Nitro Formula Flask',bonus:66,cost:190000,level:10},{name:'Revive Stone Cannon',bonus:188,cost:342000,level:20},{name:'Science Blaster Mk2',bonus:495,cost:570000,level:35},{name:'Perseus Reactor',bonus:1274,cost:2280000,level:50}],
 };
 
 const CONSUMABLES = [
-  {id:1,name:'Lower Health Potion',emoji:'🩹',desc:'Restores 10% HP',cost:800,key:'lowerHealthPotions'},
-  {id:2,name:'Medium Health Potion',emoji:'🧪',desc:'Restores 25% HP',cost:5000,key:'mediumHealthPotions'},
-  {id:3,name:'Higher Health Potion',emoji:'🍷',desc:'Restores 50% HP',cost:7000,key:'higherHealthPotions'},
-  {id:5,name:'Revive Token',emoji:'🎫',desc:'Auto-revive once in dungeon',cost:100000,key:'reviveTokens'},
-  {id:6,name:'Luck Potion',emoji:'🍀',desc:'+25% catch rate & casino odds',cost:2000,key:'luckPotion'},
+  {id:1,name:'Lower Health Potion',emoji:'🩹',desc:'Restores 10% HP',cost:1520,key:'lowerHealthPotions'},
+  {id:2,name:'Medium Health Potion',emoji:'🧪',desc:'Restores 25% HP',cost:9500,key:'mediumHealthPotions'},
+  {id:3,name:'Higher Health Potion',emoji:'🍷',desc:'Restores 50% HP',cost:13300,key:'higherHealthPotions'},
+  {id:5,name:'Revive Token',emoji:'🎫',desc:'Auto-revive once in dungeon',cost:190000,key:'reviveTokens'},
+  {id:6,name:'Luck Potion',emoji:'🍀',desc:'+25% catch rate & casino odds',cost:3800,key:'luckPotion'},
   // Push #87: XP Booster (#7) and Nexus Multiplier (#8) SCRAPPED — no more 2x EXP / 2x Nexus potions.
-  {id:9,name:'Shield Scroll',emoji:'🛡️',desc:'Absorbs one hit in next fight',cost:4000,key:'shieldScroll'},
-  {id:10,name:'Elixir of Might',emoji:'💪',desc:'+20 ATK for next 5 battles',cost:12000,key:'mightElixir'},
+  {id:9,name:'Shield Scroll',emoji:'🛡️',desc:'Absorbs one hit in next fight',cost:7600,key:'shieldScroll'},
+  {id:10,name:'Elixir of Might',emoji:'💪',desc:'+20 ATK for next 5 battles',cost:22800,key:'mightElixir'},
 ];
 
 const CRYSTAL_ITEMS = [
-  {id:1,name:'Power Ring',emoji:'💍',desc:'+5 ATK permanently',cost:500,stat:'atk',amount:5},
-  {id:2,name:'Guardian Amulet',emoji:'📿',desc:'+5 DEF permanently',cost:500,stat:'def',amount:5},
-  {id:3,name:'Vitality Orb',emoji:'❤️',desc:'+20 Max HP permanently',cost:600,stat:'hp',amount:20},
-  {id:4,name:'Energy Core',emoji:'⚡',desc:'+10 Max Energy permanently',cost:600,stat:'en',amount:10},
-  {id:5,name:'Swift Boots',emoji:'👟',desc:'+8 SPD permanently',cost:700,stat:'spd',amount:8},
-  {id:6,name:'Crit Gem',emoji:'💎',desc:'+3% Crit permanently',cost:800,stat:'crit',amount:3},
-  {id:7,name:'Summon Ticket',emoji:'🎟️',desc:'1 summon pull',cost:120,stat:'ticket',amount:1,hidden:true}, // Push #88p: gacha parked — not sold
-  {id:8,name:'Mana Stone x50',emoji:'🔮',desc:'Buy 50 Mana Stones with Nexus',cost:0,stat:'mcx50',amount:50,goldCost:40000},
+  {id:1,name:'Power Ring',emoji:'💍',desc:'+10 ATK permanently',cost:950,stat:'atk',amount:10},
+  {id:2,name:'Guardian Amulet',emoji:'📿',desc:'+10 DEF permanently',cost:950,stat:'def',amount:10},
+  {id:3,name:'Vitality Orb',emoji:'❤️',desc:'+38 Max HP permanently',cost:1140,stat:'hp',amount:38},
+  {id:4,name:'Energy Core',emoji:'⚡',desc:'+19 Max Energy permanently',cost:1140,stat:'en',amount:19},
+  {id:5,name:'Swift Boots',emoji:'👟',desc:'+15 SPD permanently',cost:1330,stat:'spd',amount:15},
+  {id:6,name:'Crit Gem',emoji:'💎',desc:'+6% Crit permanently',cost:1520,stat:'crit',amount:6},
+  {id:7,name:'Summon Ticket',emoji:'🎟️',desc:'1 summon pull',cost:228,stat:'ticket',amount:1,hidden:true}, // Push #103i: prices ×1.9, weapon bonuses on the rank ladder · Push #88p: gacha parked — not sold
+  {id:8,name:'Mana Stone x50',emoji:'🔮',desc:'Buy 50 Mana Stones with Nexus',cost:0,stat:'mcx50',amount:50,goldCost:76000},
 ];
 
 const BUNDLES = [
-  {id:1,name:'Starter Pack',emoji:'🎁',desc:'5 HP Pots + 1 Revive Token',cost:105000},
-  {id:2,name:'Dungeon Kit',emoji:'⚔️',desc:'10 HP Pots + 5 Revive Tokens + 2 Luck Potions',cost:500000},
-  {id:3,name:'PvP Bundle',emoji:'🏆',desc:'Elixir of Might + Shield Scroll + 2 Luck Potions',cost:20000},
-  {id:4,name:'Mana Stone Bundle',emoji:'💎',desc:'250 Mana Stones',cost:150000},
-  {id:5,name:'Mega Pack',emoji:'👑',desc:'20 HP Pots + 10 Revives + 5 Luck Potions + 500 Mana Stones',cost:1000000},
+  {id:1,name:'Starter Pack',emoji:'🎁',desc:'5 HP Pots + 1 Revive Token',cost:199500},
+  {id:2,name:'Dungeon Kit',emoji:'⚔️',desc:'10 HP Pots + 5 Revive Tokens + 2 Luck Potions',cost:950000},
+  {id:3,name:'PvP Bundle',emoji:'🏆',desc:'Elixir of Might + Shield Scroll + 2 Luck Potions',cost:38000},
+  {id:4,name:'Mana Stone Bundle',emoji:'💎',desc:'250 Mana Stones',cost:285000},
+  {id:5,name:'Mega Pack',emoji:'👑',desc:'20 HP Pots + 10 Revives + 5 Luck Potions + 500 Mana Stones',cost:1900000},
 ];
 
 module.exports = {

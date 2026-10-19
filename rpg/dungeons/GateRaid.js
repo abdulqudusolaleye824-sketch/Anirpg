@@ -1196,6 +1196,15 @@ const MON_ATK_BUFF = 1.7 * RAID_X2, MON_DEF_BUFF = 1.4 * RAID_X2 * 1.75 * 2.2, M
 const RANK_SOFTEN = { A: 0.75, B: 0.75, C: 0.75, D: 0.75, E: 0.75 };
 function rankSoften(rank) { return RANK_SOFTEN[String(rank || '').toUpperCase()] || 1; }
 const GATE_TUNE = 0.85, RED_GATE_TUNE = 1.15, LEAK_TUNE = 1.15; // Push #96h-z9
+const RAID_NEXUS_BOOST = 1.5; // Push #103i (owner): raid Nexus +50% (Mana Stones unchanged)
+// Push #103i: the treasure one floor banks — shown on the floor-clear card AND paid at the end (same number).
+function floorTreasure(gate, player) {
+  const floors = Math.max(1, Number(gate.totalFloors) || 1);
+  let lm = 1; if (gate.isDouble) lm = 1.5; else if (gate.redGate) lm = 1.5;
+  let jm = 1; try { jm = 1 + (require('../utils/JobSystem').mod(player, 'nexusMult') || 0) / 100; } catch (e) {}
+  return { nexus: Math.floor((gate.nexusLoot || 1000) * RAID_NEXUS_BOOST * lm * jm / floors), crystals: Math.floor(Math.max(0, (gate.crystalLoot || 100) - (gate.minedCrystals || 0)) * lm / floors) }; // mined stones are banked separately by Mining.resolve
+}
+function _rankPow(rank) { try { return require('../utils/RankPower').monsterMult(rank); } catch (e) { return 1; } } // Push #103i
 const BEAST_HP_BUFF = 1.40, BEAST_ATK_BUFF = 1.20; // Push #102d: every raid monster & boss +40% HP, +20% ATK
 const LEAK_MULT = 5; // Push #96h-m: 5× (silent — never stated in text)
 const LEAK_ATK_CUT = 0.30; // Push #96h-n: leaked ATK −70% (5× × 0.3 = 1.5× habitat ATK)
@@ -1235,7 +1244,7 @@ function applyMonsterScaling(gate) {
     // Push #96h-m: a LEAKED beast is 5× what it would be in its own habitat (kept silent in-chat).
     if (mon.leaked) { mon.maxHp = Math.floor(mon.maxHp * LEAK_MULT); mon.hp = Math.max(1, Math.floor(mon.maxHp * hpPct)); mon.atk = Math.floor(mon.atk * LEAK_MULT * LEAK_ATK_CUT); mon.def = Math.floor(mon.def * LEAK_MULT); mon.speed = Math.round(mon.speed * 1.5); } // Push #96h-n: ATK cut 70%
     // Push #96h-z9: tuning — regular gates −15%; RED gates +15%; a leaked beast a further +15% (HP/ATK/DEF).
-    { const _gt = (gate.redGate ? RED_GATE_TUNE : GATE_TUNE) * (mon.leaked ? LEAK_TUNE : 1); mon.maxHp = Math.max(5, Math.floor(mon.maxHp * _gt * BEAST_HP_BUFF)); mon.hp = Math.max(1, Math.floor(mon.maxHp * hpPct)); mon.atk = Math.max(1, Math.floor(mon.atk * _gt * BEAST_ATK_BUFF)); mon.def = Math.floor(mon.def * _gt); }
+    { const _gt = (gate.redGate ? RED_GATE_TUNE : GATE_TUNE) * (mon.leaked ? LEAK_TUNE : 1) * _rankPow(mon.rank || gate.rank); mon.maxHp = Math.max(5, Math.floor(mon.maxHp * _gt * BEAST_HP_BUFF)); mon.hp = Math.max(1, Math.floor(mon.maxHp * hpPct)); mon.atk = Math.max(1, Math.floor(mon.atk * _gt * BEAST_ATK_BUFF)); mon.def = Math.floor(mon.def * _gt); } // Push #103i: rank power ladder (×0.75 of the hunters')
     // Push #97: TERRAIN — a beast standing on home ground gets the terrain's boost (stated at raid start).
     try { const T = require('../data/Terrains'); const _t = T.get(gate.terrain); if (_t && T.isHome(_t, mon, GateManager.monsterFamily)) { const hb = _t.homeBoost || {}; if (hb.atk) mon.atk = Math.max(1, Math.floor(mon.atk * (1 + hb.atk / 100))); if (hb.def) mon.def = Math.floor(mon.def * (1 + hb.def / 100)); mon.homeGround = true; } else mon.homeGround = false; } catch (e) {}
     // Push #97: DEF is anchored to the party — no beast may shrug off a hunter's hit entirely (cap 55% of the party's average ATK).
@@ -1276,7 +1285,7 @@ function applyMonsterScaling(gate) {
     gate.boss.speed = Math.max(gate.boss.speed, Math.round(_anchorSpeed(gate, 1, true)));
     { const TM = _types(); if (TM && !gate.boss._typedBoss) { const tm = TM.mults(gate.boss); gate.boss._typedBoss = true; gate.boss.typeLabel = tm.label; gate.boss.critBonus = tm.crit; gate.boss._typeMult = tm; }
       const tm = gate.boss._typeMult; if (tm) { gate.boss.maxHp = Math.floor(gate.boss.maxHp * tm.hp); gate.boss.hp = Math.max(1, Math.floor(gate.boss.maxHp * hpPct)); gate.boss.atk = Math.floor(gate.boss.atk * tm.atk); gate.boss.def = Math.floor(gate.boss.def * tm.def); gate.boss.speed = Math.round(gate.boss.speed * tm.speed); } }
-      { const _gt = gate.redGate ? RED_GATE_TUNE : GATE_TUNE; gate.boss.maxHp = Math.max(50, Math.floor(gate.boss.maxHp * _gt * BEAST_HP_BUFF)); gate.boss.hp = Math.max(1, Math.floor(gate.boss.maxHp * hpPct)); gate.boss.atk = Math.max(1, Math.floor(gate.boss.atk * _gt * BEAST_ATK_BUFF)); gate.boss.def = Math.floor(gate.boss.def * _gt); } // Push #96h-z9 · #102d buff
+      { const _gt = (gate.redGate ? RED_GATE_TUNE : GATE_TUNE) * _rankPow(gate.boss.rank || gate.rank); gate.boss.maxHp = Math.max(50, Math.floor(gate.boss.maxHp * _gt * BEAST_HP_BUFF)); gate.boss.hp = Math.max(1, Math.floor(gate.boss.maxHp * hpPct)); gate.boss.atk = Math.max(1, Math.floor(gate.boss.atk * _gt * BEAST_ATK_BUFF)); gate.boss.def = Math.floor(gate.boss.def * _gt); } // Push #96h-z9 · #102d buff
     { const _pa = gate.calibrated && gate.calibrated.avgAtk; if (_pa > 0) gate.boss.def = Math.min(gate.boss.def, Math.floor(_pa * 0.55)); } // Push #97: boss DEF anchored to the party (never a 0-damage wall)
   }
 }
@@ -1569,8 +1578,12 @@ function clearGate(gate, key, keyData, db, saveDatabase, opts = {}) {
   // z28: Nexus + Mana Stones are GUARANTEED on every clear — only drop items are luck. If this gate somehow
   // reached payout with no money attached (rebuilt / free / legacy), roll the rank's standard payout now.
   if (!(Number(gate.nexusLoot) > 0) && !(Number(gate.crystalLoot) > 0)) { const g = GateManager.guaranteedLoot(gate.rank); gate.nexusLoot = g.nexusLoot; gate.crystalLoot = g.crystalLoot; _lootNotes.push('🛡️ guaranteed payout'); }
-  const nexus   = Math.floor((gate.nexusLoot || 0) * _lootMult);
-  const crystals = Math.floor((gate.crystalLoot || 0) * _lootMult);
+  // Push #103i (owner): what every floor SHOWED is what the raid PAYS — the pool is the banked floor treasure
+  // (floorTreasure already carries the +50% raid Nexus boost and the Double/Red +50%). Legacy gates with nothing
+  // banked fall back to the old whole-gate roll.
+  const _acc = gate.accumulatedTreasure || { nexus: 0, crystals: 0 };
+  const nexus   = (_acc.nexus > 0 || _acc.crystals > 0) ? Math.floor(_acc.nexus) : Math.floor((gate.nexusLoot || 0) * RAID_NEXUS_BOOST * _lootMult);
+  const crystals = (_acc.nexus > 0 || _acc.crystals > 0) ? Math.floor(_acc.crystals) : Math.floor((gate.crystalLoot || 0) * _lootMult);
 
   const guild = keyData?.guildName ? GKM.findGuild(db, keyData.guildName) : null;
   const participantIds = new Set(raiders.map(m => m.id));
@@ -2050,7 +2063,7 @@ try {
 module.exports = { _currentRaidTarget, currentTarget: _currentRaidTarget, raidIsGhost, expireGhostRaid, evictFromAllRaids, RECRUIT_TTL_MS, LEAK_MULT, LEAK_ATK_CUT, LEAK_REGEN_CHANCE: 0.90, LEAK_DOMAIN_CHANCE: 0.80,
   findOtherRaid,
   SEVERITY_BAND, dayFlex, rollRedExtra,
-  GATE_TUNE, RED_GATE_TUNE, LEAK_TUNE, BEAST_HP_BUFF, BEAST_ATK_BUFF, RED_GATE_CHANCE, DOUBLE_DUNGEON_CHANCE, LEAK_CHANCE, RED_GATE_TEXT, sealedReason, leakMonster, leakReveal, morphLeak, LEAK_EVADE, succeedLeader, takeLeaderNotice, doublePending, evolveDouble, grantDoubleBoxes, // Push #96d
+  floorTreasure, RAID_NEXUS_BOOST, GATE_TUNE, RED_GATE_TUNE, LEAK_TUNE, BEAST_HP_BUFF, BEAST_ATK_BUFF, RED_GATE_CHANCE, DOUBLE_DUNGEON_CHANCE, LEAK_CHANCE, RED_GATE_TEXT, sealedReason, leakMonster, leakReveal, morphLeak, LEAK_EVADE, succeedLeader, takeLeaderNotice, doublePending, evolveDouble, grantDoubleBoxes, // Push #96d
   livingMembers,
   calibrateToParty, partyLuck, RANK_EXPECTED_POWER, totalStatsOf,
   MAX_PARTY,

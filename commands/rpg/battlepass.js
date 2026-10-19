@@ -73,8 +73,8 @@ function getBPTierRewards(t) {
   // Push #103d: the PREMIUM (locked) tiers pay the 3,000 PC pass back and then some —
   //   every locked tier: +150 PC · +90,000 💠 · +14,000 💎 on top of the base (20 tiers → 3,000 PC · ~3.03M 💠 · ~296k 💎 over the track)
   const prem = LOCKED_TIERS.includes(t);
-  const goldAmt = t * 1500 + (prem ? PREM_GOLD_BONUS : 0);
-  const stoneAmt = t * 20 + (prem ? PREM_STONE_BONUS : 0);
+  const goldAmt = prem ? Math.round((t * 1500 + PREM_GOLD_BONUS) * 1.5) : t * 1500; // Push #103i (owner): premium tiers +50%
+  const stoneAmt = prem ? Math.round((t * 20 + PREM_STONE_BONUS) * 1.5) : t * 20;
   const item = BP_ITEMS[t] || null;
   const hasPC = prem;
   const pc = prem ? PREM_PC : 0;

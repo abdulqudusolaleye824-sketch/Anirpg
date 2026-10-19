@@ -14,12 +14,12 @@ const ATTEMPTS_PER_FLOOR = 3;
 
 // id → tool. nexus = 💠 price, mana = 💎 price (Mana Stones). min/max = 💎 mined on success.
 const TOOLS = {
-  weak_pickaxe:   { id: 'weak_pickaxe',   name: 'Weak Pickaxe',    emoji: '⛏️', nexus: 50000,     mana: 0,        durability: 20,  min: 150,  max: 2500,  chance: 0.55, rounds: 3, roundMs: 3300, essence: 0.06, desc: 'Chips at the rock. Up to 2,500 Mana Stones a swing.' },
-  strong_pickaxe: { id: 'strong_pickaxe', name: 'Strong Pickaxe',  emoji: '⚒️', nexus: 500000,    mana: 0,        durability: 50,  min: 800,  max: 10000, chance: 0.65, rounds: 3, roundMs: 3300, essence: 0.08, desc: 'Reinforced head. Up to 10,000 Mana Stones a swing.' },
-  mining_drill:   { id: 'mining_drill',   name: 'Mining Drill',    emoji: '🔩', nexus: 2500000,   mana: 500000,   durability: 80,  min: 2000, max: 20000, chance: 0.68, rounds: 3, roundMs: 4200, essence: 0.10, desc: 'Mana-powered drill. Up to 20,000 a swing, a little slower.' },
-  excavator:      { id: 'excavator',      name: 'Excavator',       emoji: '🚜', nexus: 10000000,  mana: 5000000,  durability: 150, min: 5000, max: 50000, chance: 0.72, rounds: 3, roundMs: 6000, essence: 0.12, desc: 'Heavy machinery. Up to 50,000 a round — but it takes ~18s.' },
-  miners_lantern: { id: 'miners_lantern', name: "Miner's Lantern", emoji: '🏮', nexus: 300000,    mana: 0,        durability: 100, accessory: true, chanceBonus: 0.10, essenceBonus: 0.04, desc: 'Worn alongside a tool: +10% mining success, +4% essence stone odds.' },
-  repair_kit:     { id: 'repair_kit',     name: 'Tool Repair Kit', emoji: '🧰', nexus: 150000,    mana: 0,        consumable: true, repair: 15, desc: 'Restores 15 durability to your best tool.' },
+  weak_pickaxe:   { id: 'weak_pickaxe',   name: 'Weak Pickaxe',    emoji: '⛏️', nexus: 95000,     mana: 0,        durability: 20,  min: 150,  max: 2500,  chance: 0.55, rounds: 3, roundMs: 3300, essence: 0.06, desc: 'Chips at the rock. Up to 2,500 Mana Stones a swing.' },
+  strong_pickaxe: { id: 'strong_pickaxe', name: 'Strong Pickaxe',  emoji: '⚒️', nexus: 950000,    mana: 0,        durability: 50,  min: 800,  max: 10000, chance: 0.65, rounds: 3, roundMs: 3300, essence: 0.08, desc: 'Reinforced head. Up to 10,000 Mana Stones a swing.' },
+  mining_drill:   { id: 'mining_drill',   name: 'Mining Drill',    emoji: '🔩', nexus: 4750000,   mana: 950000,   durability: 80,  min: 2000, max: 20000, chance: 0.68, rounds: 3, roundMs: 4200, essence: 0.10, desc: 'Mana-powered drill. Up to 20,000 a swing, a little slower.' },
+  excavator:      { id: 'excavator',      name: 'Excavator',       emoji: '🚜', nexus: 19000000,  mana: 9500000,  durability: 150, min: 5000, max: 50000, chance: 0.72, rounds: 3, roundMs: 6000, essence: 0.12, desc: 'Heavy machinery. Up to 50,000 a round — but it takes ~18s.' },
+  miners_lantern: { id: 'miners_lantern', name: "Miner's Lantern", emoji: '🏮', nexus: 570000,    mana: 0,        durability: 100, accessory: true, chanceBonus: 0.10, essenceBonus: 0.04, desc: 'Worn alongside a tool: +10% mining success, +4% essence stone odds.' },
+  repair_kit:     { id: 'repair_kit',     name: 'Tool Repair Kit', emoji: '🧰', nexus: 285000,    mana: 0,        consumable: true, repair: 15, desc: 'Restores 15 durability to your best tool.' },
 };
 const ORDER = ['weak_pickaxe', 'strong_pickaxe', 'mining_drill', 'excavator', 'miners_lantern', 'repair_kit'];
 const RANK_MULT = { E: 0.6, D: 0.8, C: 1.0, B: 1.2, A: 1.4, S: 1.7 }; // richer rock deeper in
@@ -109,6 +109,7 @@ function canMine(gate, player, jid) {
   return { ok: true, floor, tool, def: TOOLS[tool.id], used };
 }
 
+const MINE_BOOST = 1.75; // Push #103i
 function progressLines(def, name, floor) {
   return [
     `${def.emoji} *${name}* raises the *${def.name}* on Floor ${floor}…`,
@@ -138,7 +139,7 @@ function resolve(gate, player, jid, rng = Math.random) {
     out.success = true; m.stats.hits++;
     const rm = RANK_MULT[String(gate.rank || 'E').toUpperCase()] || 1;
     const raw = def.min + rng() * (def.max - def.min);
-    out.mana = Math.max(def.min, Math.min(def.max, Math.floor(raw * rm)));
+    out.mana = Math.floor(Math.max(def.min, Math.min(def.max, Math.floor(raw * rm))) * MINE_BOOST); // Push #103i (owner): mined Mana Stones +75%
     m.stats.mana += out.mana;
     gate.crystalLoot = (Number(gate.crystalLoot) || 0) + out.mana;              // paid out with the gate's loot
     if (!gate.accumulatedTreasure) gate.accumulatedTreasure = { nexus: 0, crystals: 0 };

@@ -42,12 +42,12 @@ function recipeCategoryOf(name) {
 }
 
 const SCROLL_RARITIES = {
-  Common:    { emoji: '⬜', cost: 875,    description: 'A worn scroll. Simple recipes inside.' },
-  Uncommon:  { emoji: '🟩', cost: 2625,   description: 'A sealed scroll. Moderate recipes await.' },
-  Rare:      { emoji: '🟦', cost: 8750,   description: 'A glowing scroll. Rare power sealed within.' },
-  Epic:      { emoji: '🟪', cost: 26250,  description: 'A pulsing scroll. Epic power radiates from it.' },
-  Legendary: { emoji: '🟨', cost: 87500,  description: 'A blazing scroll. Legendary weapons sleep within.' },
-  Mythic:    { emoji: '🔴', cost: 350000, description: 'A world-breaking scroll. Only legends dare read it.' },
+  Common:    { emoji: '⬜', cost: 1662, description: 'A worn scroll. Simple recipes inside.' },
+  Uncommon:  { emoji: '🟩', cost: 4988, description: 'A sealed scroll. Moderate recipes await.' },
+  Rare:      { emoji: '🟦', cost: 16625, description: 'A glowing scroll. Rare power sealed within.' },
+  Epic:      { emoji: '🟪', cost: 49875, description: 'A pulsing scroll. Epic power radiates from it.' },
+  Legendary: { emoji: '🟨', cost: 166250, description: 'A blazing scroll. Legendary weapons sleep within.' },
+  Mythic:    { emoji: '🔴', cost: 665000, description: 'A world-breaking scroll. Only legends dare read it.' },
 };
 
 const SCROLL_SHOP_ITEMS = Object.entries(SCROLL_RARITIES).map(([rarity, data], i) => ({

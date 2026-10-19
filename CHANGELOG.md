@@ -1,3 +1,16 @@
+## 1.0.214 — Push #103i (2026-10-19) — monsters & gear on the rank ladder, economy +50/+75/+90%, floor treasure = payout
+- Monsters (gate raids, bosses, tower dungeons) climb the same rank ladder as hunters with 25% less of the buff:
+  1 + (mult − 1) × 0.75 → E×1, D×1.75, C×3.25, B×5.5, A×9.4, S×32.4 (RankPower.monsterMult). Instance beasts already
+  scale off the hunter.
+- Gear on the same ladder: store + crafted (ArmoryStore bands × gearMult by rank), shop class weapons (by level tier),
+  Astra Pass / Battle Pass gear (by rarity) — relevant again next to ladder-scaled hunters.
+- Raid Nexus +50% (Mana Stones unchanged). Floor treasure card now shows exactly what the raid pays: the payout pool
+  IS the banked floor treasure (Double/Red +50% and Treasure Hunter included per floor); mined stones bank separately.
+- Mining: Mana Stones per hit +75% (rank multiplier no longer clamped away).
+- Prices +90%: /shop (weapons, consumables, permanents, bundles), /store, recipe scrolls, mining tools. Permanent
+  shop items give +90% too (descriptions updated).
+- Premium passes: Astra Pass premium Nexus & Stones +50% per tier; Battle Pass premium tiers +50% Nexus & Stones.
+
 ## 1.0.213 — Push #103h (2026-10-19) — BUG-113…122, awakening-rank power, rank-locked skills by awakening rank
 - RANK POWER (owner): the AWAKENING rank multiplies base HP/ATK/DEF/Magic — E×1, D×2, C×4, B×7, A×12.25, S×42.9
   (D=2×E, C=2×D, B=1.75×C, A=1.75×B, S=3.5×A). Layer in StatAllocationSystem (base untouched, idempotent); one-shot

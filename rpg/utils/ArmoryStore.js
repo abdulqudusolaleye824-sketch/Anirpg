@@ -118,20 +118,22 @@ const pick = (rng, arr) => arr[Math.floor(rng() * arr.length)];
 const lerp = (a, b, t) => Math.round(a + (b - a) * t);
 
 // ── Pricing ─────────────────────────────────────────────────────────────────
+const PRICE_MULT = 1.9; // Push #103i (owner): every price +90%
 function priceFor(rank, roll) {
   const b = BANDS[rank];
   const t = Math.max(0, Math.min(1, roll));
   const round = (v, step) => Math.round(v / step) * step;
-  const nexus = round(lerp(b.nexus[0], b.nexus[1], t), rank === 'S' ? 50_000 : 1_000);
-  const stones = b.stones[1] ? round(lerp(b.stones[0], b.stones[1], t), 5_000) : 0;
+  const nexus = round(lerp(b.nexus[0], b.nexus[1], t) * PRICE_MULT, rank === 'S' ? 50_000 : 1_000); // Push #103i: prices ×1.9
+  const stones = b.stones[1] ? round(lerp(b.stones[0], b.stones[1], t) * PRICE_MULT, 5_000) : 0;
   return { nexus, stones };
 }
 
+function _gearPow(rank) { try { return require('./RankPower').gearMult(rank); } catch (e) { return 1; } } // Push #103i
 // ── Generators ──────────────────────────────────────────────────────────────
 function genWeapon(rank, rng, idx) {
   const roll = rng();
   const [lo, hi] = WEAPON_ATK[rank];
-  const atk = lerp(lo, hi, roll);
+  const atk = Math.round(lerp(lo, hi, roll) * _gearPow(rank)); // Push #103i: rank power ladder
   const type = pick(rng, WEAPON_TYPES);
   const name = `${pick(rng, PREFIX[rank])} ${type} ${pick(rng, SUFFIX)}`;
   const effects = [];
@@ -154,7 +156,7 @@ function genGear(rank, rng, idx, forceSlot = null) {
   const slot = forceSlot && GEAR_SLOTS.includes(forceSlot) ? forceSlot : pick(rng, GEAR_SLOTS);
   const noun = pick(rng, SLOT_NOUN[slot]);
   const name = `${pick(rng, PREFIX[rank])} ${noun} ${pick(rng, SUFFIX)}`;
-  const stats = { def: lerp(...GEAR_DEF[rank], roll), hp: lerp(...GEAR_HP[rank], roll) };
+  const _gp = _gearPow(rank); const stats = { def: Math.round(lerp(...GEAR_DEF[rank], roll) * _gp), hp: Math.round(lerp(...GEAR_HP[rank], roll) * _gp) }; // Push #103i: rank power ladder
   if (slot === 'boots') stats.speed = lerp(...BOOT_SPD[rank], roll);
   if (slot === 'vambrace') stats.atk = Math.round(stats.def * 0.35);
   if (slot === 'cloak') stats.evasion = lerp(2, rank === 'S' ? 15 : rank === 'A' ? 10 : 6, roll);

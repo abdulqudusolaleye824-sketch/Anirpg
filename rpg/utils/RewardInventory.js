@@ -108,8 +108,19 @@ function grantItem(player, item, source = 'reward', extra = {}) {
     const v = item.stats?.[sk] ?? item.stats?.[k] ?? item[k];
     if (v) stats[sk] = v;
   }
+  // Push #103i (owner): pass / battle-pass gear climbs the rank ladder (×0.75 of the hunters' multiplier by rarity)
+  // so a Legendary pass blade is relevant next to store and crafted gear.
+  let _rank = null;
+  if (/^(pass|battlepass)$/i.test(String(source || '')) && !item._ladderApplied) {
+    try {
+      const RP = require('./RankPower'); const RR = { common: 'E', uncommon: 'D', rare: 'C', epic: 'B', legendary: 'A', mythic: 'S' };
+      _rank = RR[String(item.rarity || 'rare').toLowerCase()] || 'C'; const gm = RP.gearMult(_rank);
+      for (const k of ['atk', 'def', 'hp', 'magicPower']) if (stats[k]) stats[k] = Math.round(stats[k] * gm);
+    } catch (e) {}
+  }
   if (item.special || item.stats?.special) stats.special = item.special || item.stats.special;
   const entry = {
+    ...(_rank ? { rank: _rank } : {}),
     id: item.id || ('g' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8)),
     name: item.name, type: 'gear', isGear: true, slot,
     rarity: item.rarity || 'rare',

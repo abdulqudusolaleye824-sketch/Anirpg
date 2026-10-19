@@ -10,4 +10,8 @@ function rankOf(p) {
   return MULT[r] != null ? r : 'E';
 }
 function mult(p) { return MULT[rankOf(p)] || 1; }
-module.exports = { MULT, STATS, rankOf, mult };
+// Push #103i (owner): monsters AND gear climb the same ladder with 25% less of the buff: 1 + (mult − 1) × 0.75.
+function rankMult(rank) { const r = String(rank || 'E').toUpperCase().replace(/[^A-Z]/g, ''); return MULT[r] || 1; }
+function monsterMult(rank) { return 1 + (rankMult(rank) - 1) * 0.75; }
+function gearMult(rank) { return monsterMult(rank); }
+module.exports = { MULT, STATS, rankOf, mult, rankMult, monsterMult, gearMult };
