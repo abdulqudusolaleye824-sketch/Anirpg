@@ -1,3 +1,7 @@
+## 1.0.218 — Push #103k-b (2026-10-22) — /reawakening is lore only
+- /reawakening shows players lore only — no yearly count, caps or odds (owners still see the real numbers). The reawakening announcement no longer reveals how many are left.
+- /recon forces the new class's energy name/colour in the command itself.
+
 ## 1.0.217 — Push #103k (2026-10-22) — owner batch: domains, reawakening, suggestions, gate & instance balance, class-kit beasts, BUG-141…170
 - Nova: inbound command timeout 45 s → 75 s (long raid turns no longer time out). Nova still needs `/link nova` after its 403.
 - Domains: naming is instant (Rename Card, no approval). First description is free and instant; later changes: "set in stone" → ask the owner → *Send request* button; owner request card gains **Ban** for hunters who request without asking.

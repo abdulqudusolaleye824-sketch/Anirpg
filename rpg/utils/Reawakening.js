@@ -98,7 +98,7 @@ function tryOnDeath(db, jid, player, context = 'gate', opts = {}) {
     `${EMOJI[from]} *${from}-Rank* → ${EMOJI[to]} *${to}-Rank*`,
     `❤️ ${Number(before.hp || 0).toLocaleString()} → *${after.hp.toLocaleString()}* · ⚔️ ${before.atk} → *${after.atk}* · 🛡️ ${before.def} → *${after.def}* · 💨 ${before.speed} → *${after.speed}* · ⚡ ${before.en} → *${after.en}*`,
     ``,
-    `_A reawakening is one of the rarest events in Astra — ${left} left this year across the whole world._`,
+    `_A reawakening is one of the rarest events in Astra. It chose *${player.name}*._`,
     `✦ ━━━━━━━━━━━━━━ ✦`,
   ];
   return { from, to, lines, left };
@@ -111,7 +111,15 @@ function statusText(db, now = Date.now()) {
   const L = [`🌠 *REAWAKENING* — ${left}/${GLOBAL_CAP} left this year (world-wide)`];
   if (used.length) { L.push(''); for (const e of used) L.push(`• *${e.name || _bare(e.jid)}* ${EMOJI[e.from]} ${e.from} → ${EMOJI[e.to]} ${e.to} · ${new Date(e.at).toLocaleDateString('en-GB', { timeZone: 'Africa/Lagos', day: '2-digit', month: 'short', year: 'numeric' })} _(${e.context})_`); }
   if (left <= 0) L.push(``, `⏳ Next slot opens ${new Date(nextSlotAt(db, now)).toLocaleDateString('en-GB', { timeZone: 'Africa/Lagos', day: '2-digit', month: 'short', year: 'numeric' })}.`);
-  L.push(``, `It stirs only when a hunter FALLS (gate, instance or PvP). Never S. B at most — A only for a hunter already B. It only ever goes up.`);
+  L.push(``, `📜 *THE LIMITS*`,
+    `• 🌍 World cap: *${GLOBAL_CAP} per 365 days* — all of Astra shares them.`,
+    `• 👤 Hunter cap: *once per 365 days* each.`,
+    `• ☠️ Trigger: only when you *FALL* in a gate, instance or PvP. You still die — the rank comes after.`,
+    `• ⬆️ Only ever goes UP. Never S.`,
+    ``, `🎲 *CHANCE WHEN YOU FALL*`,
+    ...['E', 'D', 'C', 'B'].map(r => { const w = RESULT_W[r] || []; const tot = w.reduce((x, [, y]) => x + y, 0) || 1; return `• ${EMOJI[r]} ${r}: *${TRIGGER_PCT[r]}%* → ${w.map(([to, y]) => `${EMOJI[to]} ${to} ${Math.round(y / tot * 100)}%`).join(' · ')}`; }),
+    `• ${EMOJI.A} A / ${EMOJI.S} S: never.`,
+    ``, `_Lower ranks are favoured; a B reaching A is the rarest thing in Astra._`);
   return L.join('\n');
 }
 

@@ -2,14 +2,25 @@
 'use strict';
 module.exports = {
   name: 'reawakening', aliases: ['reawaken', 'rawaken'],
-  description: '🌠 Reawakening — the rare second awakening (3 per year, world-wide)',
+  description: '🌠 Reawakening — the rare second awakening',
   category: 'rpg', usage: '/reawakening',
   async execute(sock, msg, args, getDatabase, saveDatabase, sender) {
     const chatId = msg.key.remoteJid; const db = getDatabase();
     const RW = require('../../rpg/utils/Reawakening');
-    const me = db.users?.[sender];
-    const lines = [RW.statusText(db)];
-    if (me) { const e = RW.eligible(db, sender, me); lines.push('', e.ok ? `👤 You (${RW.rankOf(me)}-Rank) can still be chosen this year.` : e.why === 'rank' ? `👤 ${RW.rankOf(me)}-Rank hunters do not reawaken.` : e.why === 'player-cap' ? `👤 You already reawakened this year.` : e.why === 'global-cap' ? `👤 No slots left this year.` : ``); }
-    return sock.sendMessage(chatId, { text: lines.filter(l => l !== '').join('\n') }, { quoted: msg });
+    // Owner-only: the real numbers (cap, who got one, odds). Players get lore only — no counts, no caps, no odds.
+    let isOwner = false; try { isOwner = require('../../utils/permissions').isBotOwner(db, sender); } catch (e) {}
+    if (isOwner) {
+      return sock.sendMessage(chatId, { text: RW.statusText(db) }, { quoted: msg });
+    }
+    const lines = [
+      `🌠 *REAWAKENING*`,
+      ``,
+      `Some hunters who fall do not simply get back up.`,
+      `In the moment between the last breath and the next, the System has been known to stir — and a hunter rises with a rank they were never born to.`,
+      ``,
+      `It cannot be bought, farmed or forced. It chooses.`,
+      `_Most will never see it. Fight anyway._`,
+    ];
+    return sock.sendMessage(chatId, { text: lines.join('\n') }, { quoted: msg });
   },
 };
