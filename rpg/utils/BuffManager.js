@@ -19,14 +19,15 @@ function initBuffs(player) {
 function activateBuff(player, buffKey) {
   initBuffs(player);
   const inv = player.inventory || {};
-  if (!inv[buffKey] || inv[buffKey] <= 0) return { success: false, msg: `❌ You don't have ${BUFF_DEFINITIONS[buffKey]?.name || buffKey}!` };
-  
   const def = BUFF_DEFINITIONS[buffKey];
   if (!def) return { success: false, msg: '❌ Unknown buff!' };
-  
+  // Push #103k (BUG-145): the shop stores an XP Booster as an ITEM ({ isXpBooster, charges }) while /buff counted inventory.xpBooster — accept both.
+  let fromItems = -1;
+  if (buffKey === 'xpBooster' && !(inv[buffKey] > 0) && Array.isArray(inv.items)) fromItems = inv.items.findIndex(it => it && (it.isXpBooster || /^xp booster$/i.test(String(it.name || ''))));
+  if (!(inv[buffKey] > 0) && fromItems < 0) return { success: false, msg: `❌ You don't have ${def.name}!` };
+  if (player.activeBuffs[buffKey] && player.activeBuffs[buffKey].usesLeft > 0) return { success: false, msg: `⏳ *${def.name}* is already active (${player.activeBuffs[buffKey].usesLeft} uses left).` };
   player.activeBuffs[buffKey] = { usesLeft: def.maxUses, activated: Date.now() };
-  inv[buffKey]--;
-  if (inv[buffKey] <= 0) delete inv[buffKey];
+  if (fromItems >= 0) inv.items.splice(fromItems, 1); else { inv[buffKey]--; if (inv[buffKey] <= 0) delete inv[buffKey]; }
   
   return { success: true, msg: `${def.emoji} *${def.name}* activated! (${def.maxUses} uses)` };
 }
@@ -44,6 +45,13 @@ function hasBuff(player, buffKey) {
   return !!(player.activeBuffs?.[buffKey]?.usesLeft > 0);
 }
 
+// Push #103k: non-consuming look — gate floors use it per floor; one use is burned per gate clear (BattleRewards/GateRaid).
+function peekXpMultiplier(player) {
+  initBuffs(player);
+  let v = 1;
+  for (const k of ['gvcGold', 'gvcSilver', 'gvcBronze', 'xpBooster']) { const b = player.activeBuffs?.[k]; if (b && b.usesLeft > 0) v = Math.max(v, BUFF_DEFINITIONS[k].value); }
+  return v;
+}
 function getXpMultiplier(player) {
   initBuffs(player);
   // GVC EXP buffs take priority (highest tier wins), then regular XP Booster
@@ -53,7 +61,8 @@ function getXpMultiplier(player) {
     if (b && b.usesLeft > 0 && (!best || BUFF_DEFINITIONS[k].value > BUFF_DEFINITIONS[best].value)) best = k;
   }
   if (best) { consumeBuff(player, best); let au = 1; try { au = require('./AuraSystem').AuraSystem.expMult(player); } catch (e) {} return BUFF_DEFINITIONS[best].value * au; }
-  // Push #87: XP Booster scrapped — leftover stock is inert.
+  // Push #103k (BUG-145): XP Booster is REAL again — +50% XP for 3 battles (it is still sold in the shop and guild shop). Pro stacks on top.
+  if (player.activeBuffs?.xpBooster?.usesLeft > 0) { consumeBuff(player, 'xpBooster'); let au = 1; try { au = require('./AuraSystem').AuraSystem.expMult(player); } catch (e) {} return BUFF_DEFINITIONS.xpBooster.value * au; }
   // Push #96f: aura title EXP% rides on this multiplier (dungeon totals).
   try { return require('./AuraSystem').AuraSystem.expMult(player); } catch (e) { return 1.0; }
 }
@@ -87,4 +96,4 @@ function getActiveBuff_Display(player) {
   return lines.length ? lines.join('\n') : 'None';
 }
 
-module.exports = { activateBuff, consumeBuff, hasBuff, getXpMultiplier, getNexusMultiplier, getAtkBoost, hasShield, consumeShield, getActiveBuff_Display, BUFF_DEFINITIONS };
+module.exports = { peekXpMultiplier, activateBuff, consumeBuff, hasBuff, getXpMultiplier, getNexusMultiplier, getAtkBoost, hasShield, consumeShield, getActiveBuff_Display, BUFF_DEFINITIONS };

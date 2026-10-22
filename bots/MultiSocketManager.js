@@ -2405,7 +2405,7 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
   // Now: every message is handled; each chat has its own serial queue (order
   // kept per chat), chats run in parallel, and a command is cut off after
   // CMD_TIMEOUT_MS so a hung one can never wedge the queue.
-  const CMD_TIMEOUT_MS = Number(process.env.CMD_TIMEOUT_MS || 45 * 1000); // Push #92c: 90 s → 45 s
+  const CMD_TIMEOUT_MS = Number(process.env.CMD_TIMEOUT_MS || 75 * 1000); // Push #92c: 90 s → 45 s · Push #103k: 75 s (raid turns stream 8–12 messages at 2 s gaps; the race only logs, it never cancels)
   const _chatQueues = new Map(); // chatId -> Promise tail
   let _inflightCmds = 0;
   // Push #80: inbound trace — /botstats shows where the last messages went.
@@ -2431,7 +2431,9 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
           new Promise((_, rej) => { timer = setTimeout(() => rej(new Error(`inbound handler timed out after ${CMD_TIMEOUT_MS / 1000}s`)), CMD_TIMEOUT_MS); }),
         ]);
       } catch (e) {
-        console.error(`❌ [${displayName}] inbound error (${cid.split('@')[0]}):`, e && e.message);
+        // Push #103k: name the command — a 45 s+ raid turn (multi-message strike flow at 2 s gaps) is slow, not broken.
+        let _what = ''; try { const mm = msg?.message || {}; _what = String(mm.conversation || mm.extendedTextMessage?.text || mm.buttonsResponseMessage?.selectedButtonId || mm.templateButtonReplyMessage?.selectedId || '').slice(0, 60); } catch (e2) {}
+        console.error(`❌ [${displayName}] inbound error (${cid.split('@')[0]})${_what ? ` [${_what}]` : ''}:`, e && e.message);
       } finally { clearTimeout(timer); _inflightCmds--; }
     });
     _chatQueues.set(qkey, run);
@@ -2596,6 +2598,20 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
             BT.clearPending(db, sender);
             if (/^cancel$/i.test(messageText.trim())) { try { saveDatabase?.(); } catch (e) {} await sock.sendMessage(chatId, { text: `✖️ Reply to *${pend.id}* cancelled.` }, { quoted: msg }); return; }
             const r = await BT.sendReply(sock, db, sender, pend.id, messageText);
+            try { saveDatabase?.(); } catch (e) {}
+            await sock.sendMessage(chatId, { text: r.text }, { quoted: msg }); return;
+          }
+        } catch (e) {}
+      }
+      // Push #103k: owner typed a reply to a SUGGESTION (armed by its 💬 Reply button / `/suggestion reply <id>`).
+      if (!isGroup && db && messageText.trim()) {
+        try {
+          const ST = require('../rpg/utils/SuggestionTracker');
+          const pend = ST.pendingReply(db, sender);
+          if (pend && require('../utils/permissions').isBotOwner(db, sender)) {
+            ST.clearPending(db, sender);
+            if (/^cancel$/i.test(messageText.trim())) { try { saveDatabase?.(); } catch (e) {} await sock.sendMessage(chatId, { text: `✖️ Reply to *${pend.id}* cancelled.` }, { quoted: msg }); return; }
+            const r = await ST.sendReply(sock, db, sender, pend.id, messageText);
             try { saveDatabase?.(); } catch (e) {}
             await sock.sendMessage(chatId, { text: r.text }, { quoted: msg }); return;
           }

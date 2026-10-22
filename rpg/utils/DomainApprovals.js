@@ -45,10 +45,10 @@ function card(rec) {
     rec.name != null ? `✏️ Name: *${rec.name}*${rec.oldName && rec.oldName !== rec.name ? `  _(was ${rec.oldName})_` : ''}` : null,
     rec.desc != null ? `📜 Desc: _${rec.desc.length > 600 ? rec.desc.slice(0, 600) + '…' : rec.desc}_` : null,
     ``,
-    `✅ /domain approve ${rec.id}   ·   ❌ /domain reject ${rec.id} [reason]`,
+    `✅ /domain approve ${rec.id}   ·   ❌ /domain reject ${rec.id} [reason]   ·   ⛔ /domain ban ${rec.id}`,
   ].filter(x => x != null).join('\n');
 }
-function buttons(rec) { return [['✅ Approve', `/domain approve ${rec.id}`], ['❌ Reject', `/domain reject ${rec.id}`]]; }
+function buttons(rec) { return [['✅ Approve', `/domain approve ${rec.id}`], ['❌ Reject', `/domain reject ${rec.id}`], ['⛔ Ban', `/domain ban ${rec.id}`]]; } // Push #103k: Ban = hunter requested without asking
 
 /** DM every owner (phone JIDs, deduped) a card with buttons. Best effort. */
 async function notifyOwners(sock, db, rec) {

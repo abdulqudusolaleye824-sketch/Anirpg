@@ -219,6 +219,7 @@ function monsterCard(monster, gate, title = null) {
     `${title || `${monster.emoji || '👹'} *${monster.name}* steps forward!`}`,
     `🏷️ Rank ${rank} · ❤️ ${hp.toLocaleString()}/${mhp.toLocaleString()}`,
     `⚔️ ATK ${atk.toLocaleString()} · 🛡️ DEF ${def.toLocaleString()} · 💨 SPD ${spd}`,
+    ...(monster.kitClass ? [`🎓 Fights like a *${monster.kitClass}*`] : []), // Push #103k
   ];
   try { const MRs = require('../utils/MagicResist'); const mm = (monster.magicPower != null && monster.magicResist != null) ? { mp: monster.magicPower, mr: monster.magicResist } : MRs.monsterMagic(monster, rank); lines.push(`✨ MAGIC PWR ${Math.round(mm.mp)} · 🔰 MAGIC RES ${Math.round(MRs.effective({ magicResist: mm.mr, tempBuffs: monster.tempBuffs }))}`); } catch (e) {} // Push #103f
   if (skills.length) lines.push(`✨ Skills: ${skills.join(' · ')}`);
@@ -345,6 +346,14 @@ afterMonsterHit._inner = function (player, monster, dmg) {
   try { const UCc = require('../utils/UnifiedCombat'); const banked = UCc.noteDamageTaken(player, dmg); if (banked > 0) lines.push(`🩸 *${player.name}* banks ${banked} HP of that hit — it returns next turn (${player.tempBuffs.convert.source}).`); } catch (e) {}
   let pm = null; try { pm = require('../utils/ClassPower').passiveMultipliers(player); } catch (e) { return lines; }
   if (!pm) return lines;
+  // Push #103k (BUG-158): revive-on-death passives (Reincarnation Ritual…) — once per fight, cleared by RegenManager.endCombat.
+  if (pm.reviveOnDeath && (player.stats?.hp ?? 1) <= 0 && !player._reviveUsedFight) {
+    let mx = player.stats.maxHp || 100; try { mx = require('../utils/GearSystem').effectiveMaxHp(player); } catch (e) {}
+    player.stats.hp = Math.max(1, Math.floor(mx * pm.reviveOnDeath.pct / 100)); player._reviveUsedFight = Date.now();
+    if (pm.reviveOnDeath.energy) player.stats.energy = player.stats.maxEnergy || player.stats.energy || 100;
+    try { player.statusEffects = []; } catch (e) {}
+    lines.push(`🕊️ *REINCARNATION!* ${player.name} falls — and rises again at ${player.stats.hp.toLocaleString()}/${mx.toLocaleString()} HP${pm.reviveOnDeath.energy ? ' with full energy' : ''} (once per battle).`);
+  }
   if (pm.surviveLethal && (player.stats?.hp ?? 1) <= 0 && (!player._lethalUsedAt || Date.now() - player._lethalUsedAt > 2 * 3600e3)) {
     player.stats.hp = 1; player._lethalUsedAt = Date.now();
     lines.push(`🛡️ *Unbreakable!* ${player.name} refuses to fall — survives at 1 HP (once per fight).`);
@@ -470,7 +479,7 @@ function resolveCode(code, db = null) {
         raidStarted:false, raidStartTime:null,
         currentFloor:0, totalFloors, terrain: _terrainId || (() => { try { return require('../data/Terrains').pickFor((bossData && GateManager.monsterFamily(bossData.name)) || null).id; } catch (e) { return null; } })(),
         monsters,
-        boss: { name: bossData.name, baseName: bossData.baseName || bossData.name, family: _themed.theme || null, hp: bossHp, maxHp: bossHp, defeated:false }, theme: _themed.theme || null,
+        boss: (() => { const _b = { name: bossData.name, baseName: bossData.baseName || bossData.name, family: _themed.theme || null, hp: bossHp, maxHp: bossHp, defeated:false, isBoss: true }; try { require('../utils/BeastClassKit').assign(_b, rank, { boss: true }); } catch (e) {} return _b; })(), theme: _themed.theme || null, // Push #103k: every boss has a class kit
         bossLoot: [],
         lootDistributed:false,
         monstersKilled:0, damageDealt:{},
@@ -656,6 +665,9 @@ function findOtherRaid(sender, gate) {
     if (!r || !Array.isArray(r.members) || r.status === 'done') continue;
     if (r.status !== 'recruiting' && r.status !== 'active') continue;
     if (raidIsGhost(g)) continue; // Push #103a (BUG-093)
+    // Push #103k (BUG-151): a raid whose dungeon GC was suspended / unregistered (or whose key is no longer live) cannot hold anyone.
+    try { if (r.chatId && !GKM.isDungeonGC(r.chatId)) continue; } catch (e) {}
+    try { if ((g.code || g.keyCode) && !keyStillLive(g.code || g.keyCode)) continue; } catch (e) {}
     const hit = r.members.find(x => x.id === sender || (sNum && GKM.normaliseJid(x.id) === sNum));
     if (hit && (hit.hp === undefined || hit.hp > 0)) return g;
   }
@@ -1041,7 +1053,7 @@ function evolveDouble(gate, db) {
     rank, rankData: rd, hiddenRank: true, isDouble: true, doublePending: false, doubleFrom: prevRank,
     strengthPct, strengthLabel: GateManager.strengthLabel(strengthPct),
     currentFloor: 1, totalFloors: floors, monsters, terrain: (() => { try { return require('../data/Terrains').pickFor((themed && themed.theme) || null).id; } catch (e) { return null; } })(),
-    boss: { name: bossName, baseName: (bossData && bossData.baseName) || bossName, family: (themed && themed.theme) || null, hp: bossHp, maxHp: bossHp, defeated: false },
+    boss: (() => { const _b = { name: bossName, baseName: (bossData && bossData.baseName) || bossName, family: (themed && themed.theme) || null, hp: bossHp, maxHp: bossHp, defeated: false, isBoss: true }; try { require('../utils/BeastClassKit').assign(_b, rank, { boss: true }); } catch (e) {} return _b; })(), // Push #103k
     theme: (themed && themed.theme) || null,
     nexusLoot: Math.floor((gate.nexusLoot || 1000) * 2), crystalLoot: Math.floor((gate.crystalLoot || 100) * 2),
     accumulatedTreasure: { nexus: 0, crystals: 0 }, damageDealt: {}, monstersKilled: 0, calibrated: null, floorClearedAt: null, _wipeSalvaged: false,
@@ -1140,12 +1152,17 @@ function calibrateToParty(gate, raid, db) {
   const rankLevel = { E: 8, D: 18, C: 30, B: 45, A: 65, S: 85 }[gate.rank] || 8;
   const expectedPer = rankAtk * 2.5 + rankAtk * 6 + 20;
   const total = sumAtk + sumDef + sumHp / 8 + sumSpd;
-  const statRatio = _median(_perTotal) / Math.max(1, expectedPer); // Push #103j: median hunter vs the rank's baseline hunter
+  // Push #103k (owner call): the gate scales to the STRONGEST hunter in the party — an E and an A standing side by side meet
+  // the same beast and take the same hit (the median rule of #103j is retired).
+  const statRatio = Math.max(..._perTotal) / Math.max(1, expectedPer);
   const avgLvl = sumLvl / n;
-  const lvlRatio = _median(_perLvl) / rankLevel;
+  const lvlRatio = Math.max(..._perLvl) / rankLevel;
   // Blend: stats carry most of the weight, level keeps high-rank hunters honest
   // even if they walk in under-geared. sqrt(n): more hunters → tougher gate.
-  const ratio = (statRatio * 0.7 + lvlRatio * 0.3) * Math.sqrt(Math.max(n, 1.8)); // Push #97: a lone hunter is weighed like ~2 — soloing your own rank stays a real fight
+  // Push #103k (owner call): party SIZE no longer inflates the beasts' hits. Instead every gate silently needs a CREW
+  // (S: 4 easy … 7 tough; see CREW_NEED) — the beasts' HP is budgeted for that many hunters of the gate's rank, so a short
+  // crew fights a long, punishing raid and a full crew clears it. Never announced.
+  const ratio = (statRatio * 0.7 + lvlRatio * 0.3) * 1.35;
   const luck = partyLuck(raid, db);
   let severity = 0.3 + ratio * 0.8; // Push #97: a lone Lv.1 lands on the E floor (0.6); a right-rank party ≈1.1; strong parties climb to the cap
   // Push #97: every rank has a strength BAND (min…max). The party's stats decide where inside the band the
@@ -1171,6 +1188,17 @@ function calibrateToParty(gate, raid, db) {
 }
 
 const SEVERITY_BAND = { E: [0.6, 2.0], D: [0.8, 3.0], C: [1.0, 4.0], B: [1.2, 6.0], A: [1.5, 8.0], S: [2.0, 10.0], SS: [2.5, 10.0] }; // Push #97
+// Push #103k: silent crew requirement per rank [min, max] — rolled once per gate; HP budget = crewNeed hunters of that rank.
+const CREW_NEED = { E: [1, 2], D: [1, 3], C: [2, 4], B: [3, 5], A: [3, 6], S: [4, 7], SS: [5, 7] };
+function crewNeedFor(gate) {
+  if (!gate) return 1;
+  if (gate.crewNeed > 0) return gate.crewNeed;
+  const [lo, hi] = CREW_NEED[String(gate.rank || 'E').toUpperCase()] || CREW_NEED.E;
+  gate.crewNeed = lo + Math.floor(Math.random() * (hi - lo + 1));
+  return gate.crewNeed;
+}
+// HP budget multiplier for a crew of `need` hunters: 1 → ×1, 4 → ×3.2, 7 → ×5.1 (sub-linear so one hunter's hits still show).
+function crewHpMult(need) { return Math.pow(Math.max(1, Number(need) || 1), 0.84); }
 function dayFlex(rank) {
   const key = `${new Date().toISOString().slice(0, 10)}|${String(rank || 'E').toUpperCase()}`;
   let h = 2166136261; for (const ch of key) { h ^= ch.charCodeAt(0); h = Math.imul(h, 16777619) >>> 0; }
@@ -1236,7 +1264,7 @@ function applyMonsterScaling(gate) {
     const mult = severity * floorMultiplier(gate, mon.floor);
     const wasFull = !(typeof mon.hp === 'number' && typeof mon.maxHp === 'number' && mon.hp < mon.maxHp);
     const hpPct = wasFull ? 1 : Math.max(0, mon.hp / Math.max(1, mon.maxHp));
-    mon.maxHp = Math.max(5, Math.floor(mon._base.hp * mult * MON_HP_BUFF));
+    mon.maxHp = Math.max(5, Math.floor(mon._base.hp * mult * MON_HP_BUFF * crewHpMult(crewNeedFor(gate)))); // Push #103k: crew HP budget
     mon.hp = Math.max(1, Math.floor(mon.maxHp * hpPct));
     mon.atk = Math.max(1, Math.floor(mon._base.atk * mult * MON_ATK_BUFF));
     mon.def = Math.floor(mon._base.def * mult * 0.8 * MON_DEF_BUFF);
@@ -1264,7 +1292,7 @@ function applyMonsterScaling(gate) {
     const bossFloor = gate.totalFloors || 1;
     const prev = (gate.monsters || []).filter(m => m && m.floor === Math.max(1, bossFloor - 1) && !m.elite);
     if (prev.length) {
-      const avg = (k) => prev.reduce((a, m) => a + (Number(m[k]) || 0), 0) / prev.length;
+      const avg = (k) => prev.reduce((a, m) => a + (Number(m[k]) || 0) / (k === 'maxHp' ? (m.packScale || 1) : 1), 0) / prev.length; // Push #103k: elites ignore the pack HP budget
       for (const e of (gate.monsters || []).filter(m => m && m.elite && !m.defeated && !m.revived)) {
         const pct = (typeof e.hp === 'number' && typeof e.maxHp === 'number' && e.hp < e.maxHp) ? Math.max(0, e.hp / Math.max(1, e.maxHp)) : 1;
         e.maxHp = Math.max(5, Math.floor(avg('maxHp') * 2)); e.hp = Math.max(1, Math.floor(e.maxHp * pct));
@@ -1282,7 +1310,7 @@ function applyMonsterScaling(gate) {
     const mult = severity * floorMultiplier(gate, gate.totalFloors) * 1.25;
     const wasFull = !(typeof gate.boss.hp === 'number' && typeof gate.boss.maxHp === 'number' && gate.boss.hp < gate.boss.maxHp);
     const hpPct = wasFull ? 1 : Math.max(0, gate.boss.hp / Math.max(1, gate.boss.maxHp));
-    gate.boss.maxHp = Math.max(50, Math.floor(gate.boss._base.hp * mult * MON_HP_BUFF));
+    gate.boss.maxHp = Math.max(50, Math.floor(gate.boss._base.hp * mult * MON_HP_BUFF * crewHpMult(crewNeedFor(gate)))); // Push #103k: crew HP budget
     gate.boss.hp = Math.max(1, Math.floor(gate.boss.maxHp * hpPct));
     if (gate.boss._base.atk) gate.boss.atk = Math.max(1, Math.floor(gate.boss._base.atk * mult * MON_ATK_BUFF * Math.pow(Math.min(1, severity), 1.5))); // Push #97: below-par parties (band floor) meet a boss that hits softer, not a wall
     gate.boss.def = Math.floor((gate.boss._base.def || 0) * mult * 0.8 * MON_DEF_BUFF);
@@ -1330,7 +1358,7 @@ function pickAggroTarget(gate, attackerJid, db, isBoss) {
 // ── Push #88: SUPPORT CAST (heal / buff a teammate) — no turn spent ──────
 // Resolves a heal- or buff-type skill from `caster` onto `target` (a party
 // member, may be the caster). Returns { ok, lines, healed, error }.
-function supportCast(caster, casterJid, target, targetJid, skillName, gate, db) {
+function supportCast(caster, casterJid, target, targetJid, skillName, gate, db, opts = null) {
   const SC = require('../utils/SkillCatalog');
   const res = SC.resolveSkill(caster, skillName, { allowLibrary: true });
   if (!res.ok) return { ok: false, error: res.error };
@@ -1364,9 +1392,12 @@ function supportCast(caster, casterJid, target, targetJid, skillName, gate, db) 
   // Push #103j (BUG-125/127): TAGGING a teammate makes any party buff SINGLE-target (one recipient, one cost).
   // Untagged party-worded buffs still reach everyone (cost × hunters). A Monster-class self buff is never a party buff.
   const _tagged = !!(target && target !== caster && targetJid && casterJid && GKM.normaliseJid(targetJid) !== GKM.normaliseJid(casterJid));
-  const _monsterSelf = /^monster$/i.test(String((() => { try { return SC.canonicalClassName(caster); } catch (e) { return caster.class; } })() || '')) && !/\b(?:all\s+)?(?:allies|party|team(?:mates)?)\b/i.test(textForScope);
-  const partyBuffOnly = isBuff && !isHeal && !_tagged && !_monsterSelf && (partyWorded || !!entry.party);
-  if (partyBuffOnly) party = true;
+  // Push #103k (BUG-143/155/161/163/146): SCOPE IS DECIDED BY TAGS, never by the skill text alone —
+  //   no tag → yourself · one tag → that hunter · tag everyone (or 2+ hunters) → the whole party (party-worded skills only).
+  const _tagAll = !!(opts && (opts.tagAll || (Number(opts.tagCount) || 0) >= 2));
+  const _canParty = partyWorded || !!entry.party;
+  if (_tagAll && !_canParty) return { ok: false, error: `*${skill.name}* is not a party skill — cast it on yourself (/skill ${skill.name}) or on one hunter (@tag).` };
+  if (_tagAll && isBuff && !isHeal) party = true;
   if (isHeal) {
     if (!isHealerClass) {
       // Non-healers: self only, double energy.
@@ -1375,7 +1406,7 @@ function supportCast(caster, casterJid, target, targetJid, skillName, gate, db) 
       }
       target = caster; targetJid = casterJid;
       // Push #101 (BUG-017): effectiveCost() ALREADY doubles heals for non-Healers — doubling again here charged 4× base (52 for a 13-energy Last Breath).
-    } else if (partyWorded) {
+    } else if (partyWorded && _tagAll) { // Push #103k: party heal ONLY when the Healer tags everyone
       if (casterQuality < 70) return { ok: false, error: `*${skill.name}* is a party-wide heal — it needs a high-quality Healer (class quality ≥ 70%, yours is ${casterQuality}%). Heal one teammate instead: /skill ${skill.name} @teammate` };
       party = true;
     }
@@ -1580,6 +1611,7 @@ function clearGate(gate, key, keyData, db, saveDatabase, opts = {}) {
   const keepOpen = !!opts.keepOpen; // Push #96d: double dungeon — pay out floor 1 rewards but keep the gate alive
   const raid = gate.raid || {};
   const raiders = raid.members?.length ? raid.members : [];
+  try { const BM = require('../utils/BuffManager'); for (const m of raiders) { const u = db.users?.[m.id]; if (u) for (const k of ['gvcGold', 'gvcSilver', 'gvcBronze', 'xpBooster']) if (BM.hasBuff(u, k)) { BM.consumeBuff(u, k); break; } } } catch (e) {} // Push #103k (BUG-145): one XP-buff use per gate clear
   try { require('../utils/CombatReset').clearParty(db, raiders); } catch (e) {} // Push #92: battle over → clean slate
 
   // Push #96h-z20: LOOT MULTIPLIERS — Double Dungeon / Red Gate pay +50%. (Jackpot removed in z26.)
@@ -2073,7 +2105,7 @@ try {
   _laneSlot(monsterDamage, 'last', 'gr_mdLast'); _laneSlot(monsterDodges, 'last', 'gr_mdodgeLast');
   _laneSlot(playerDamage, 'lastMiss', 'gr_pdLastMiss'); _laneSlot(playerDamage, 'partyAllies', 'gr_pdAllies');
 } catch (e) {}
-module.exports = { _currentRaidTarget, currentTarget: _currentRaidTarget, raidIsGhost, expireGhostRaid, evictFromAllRaids, RECRUIT_TTL_MS, LEAK_MULT, LEAK_ATK_CUT, LEAK_REGEN_CHANCE: 0.90, LEAK_DOMAIN_CHANCE: 0.80,
+module.exports = { CREW_NEED, crewNeedFor, crewHpMult, _currentRaidTarget, currentTarget: _currentRaidTarget, raidIsGhost, expireGhostRaid, evictFromAllRaids, RECRUIT_TTL_MS, LEAK_MULT, LEAK_ATK_CUT, LEAK_REGEN_CHANCE: 0.90, LEAK_DOMAIN_CHANCE: 0.80,
   findOtherRaid,
   SEVERITY_BAND, dayFlex, rollRedExtra,
   floorTreasure, RAID_NEXUS_BOOST, GATE_TUNE, RED_GATE_TUNE, LEAK_TUNE, BEAST_HP_BUFF, BEAST_ATK_BUFF, RED_GATE_CHANCE, DOUBLE_DUNGEON_CHANCE, LEAK_CHANCE, RED_GATE_TEXT, sealedReason, leakMonster, leakReveal, morphLeak, LEAK_EVADE, succeedLeader, takeLeaderNotice, doublePending, evolveDouble, grantDoubleBoxes, // Push #96d

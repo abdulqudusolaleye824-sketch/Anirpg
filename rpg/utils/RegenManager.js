@@ -180,6 +180,7 @@ function markCombatAction(player) {
 function endCombat(player, ms) {
   if (!player) return;
   delete player._battleEnergyAt; delete player._battleEnergyFrac; // Push #103f: battle regen clock resets per fight
+  delete player._reviveUsedFight; // Push #103k (BUG-158): revive-on-death passive is per fight
   try { require('./ClassPower').clearBloodDebt(player); } catch (e) {} // Push #96h-t: Blood Debt is paid when the fight ends
   try { require('./Summons').clear(player); } catch (e) {} // Push #103b: summons/possession never outlive the fight
   try { require('./Transformation').clearFightUse(player); } catch (e) {} // Push #103b: one transformation per fight

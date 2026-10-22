@@ -104,12 +104,9 @@ class LevelUpManager {
           }
         }
         // Skill specialization choice at levels 20, 40, 60, 80
-        if ([20,40,60,80].includes(player.level)) {
-          try {
-            const SkillChoice = require('../../commands/rpg/skillchoice');
-            SkillChoice.triggerSkillChoice(player, player.level);
-          } catch(e) { console.error('SkillChoice error:', e.message); }
-        }
+        // Push #103k (BUG-144): the old 20/40/60/80 "skill specialization" handed out pre-revamp skills (Meteor Strike…) that no
+        // longer exist on the class rosters — retired. Growth is rune stones + /skill upgrade + domain levels now.
+        if (player.pendingSkillChoice) player.pendingSkillChoice = null;
       } else {
         break;
       }

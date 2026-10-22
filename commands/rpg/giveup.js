@@ -41,7 +41,7 @@ module.exports = {
     const amount = parseInt(amountArg, 10);
     const day = new Date().toISOString().slice(0, 10);
     const sentToday = player.upShare && player.upShare.day === day ? player.upShare.sent : 0;
-    if (!amountArg) return sock.sendMessage(chatId, { text: [FRAME, `🎁 *SHARE UPGRADE POINTS*`, FRAME, `/giveup @hunter <amount>`, `You have *${player.upgradePoints || 0} UP* · shared today: ${sentToday}/${DS.UP_SHARE_CAP}`].join('\n') }, { quoted: msg });
+    if (!amountArg) return sock.sendMessage(chatId, { text: [FRAME, `🎁 *SHARE UPGRADE POINTS*`, FRAME, `/giveup @hunter <amount>`, `You have *${player.upgradePoints || 0} UP* · shared today: ${sentToday}/${DS.UP_SHARE_CAP} · Lv.${DS.UP_SHARE_MIN_LEVEL}+ only`].join('\n') }, { quoted: msg });
     const target = findPlayer(db, args, ctx, sender);
     if (!target) return sock.sendMessage(chatId, { text: '❌ Tag the hunter: /giveup @hunter <amount>' }, { quoted: msg });
     const r = DS.shareUP(player, target.player, amount);

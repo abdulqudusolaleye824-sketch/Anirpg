@@ -1,3 +1,16 @@
+## 1.0.217 — Push #103k (2026-10-22) — owner batch: domains, reawakening, suggestions, gate & instance balance, class-kit beasts, BUG-141…170
+- Nova: inbound command timeout 45 s → 75 s (long raid turns no longer time out). Nova still needs `/link nova` after its 403.
+- Domains: naming is instant (Rename Card, no approval). First description is free and instant; later changes: "set in stone" → ask the owner → *Send request* button; owner request card gains **Ban** for hunters who request without asking.
+- UP sharing unlocks at Level 7.
+- **Reawakening**: when an E–B hunter dies in a gate, instance or PvP there is a tiny chance (E 1.2% · D 0.8% · C 0.45% · B 0.08%) of a reawakening to a higher rank — max B, A only from B (very rare), never S, only upward. Hard cap: 3 per 365 days across all of Astra, once per hunter per year. `/reawakening` shows the status.
+- Suggestions: `/suggest <text>` → owner DM card with Approve / Reject / Ban / Reply buttons; `/suggestions` lists pending; `/suggestion list` lists approved.
+- Gates scale to the STRONGEST hunter present (an E and an A take the same hits). Party size no longer inflates beasts; instead every gate silently needs a crew (E 1–2 … S 4–7 equal-rank hunters) and the beasts' HP is budgeted for that crew.
+- 1–10 beasts per floor, rolled fresh every floor; floor HP budgeted (a lone brute ×1.5, a pack of ten ×0.4 each). Boss floor ≤8 + 2 elites.
+- Instances: floor multiplier 1.22^(floor−1), final boss ×1.6 — floor 10 is meant to be almost impossible.
+- AoE skills cost ×1.5 energy and lose 6% per extra target struck (floor 60%); splash kills are fully rewarded.
+- B+ beasts and every boss now fight with a hunter **class kit** (24 classes, no Senku): attack + trick + signature — summons, Rage, Necromancy, Shadow Dance, Blood Pact lifesteal… capped (×1.35 / boss ×1.45, status ≤45%) and the card says `🎓 Fights like a <Class>`. Boss buffs/statuses tick down each turn.
+- Fixes BUG-141…170 (heal/buff targeting by tags, Berserker lifesteal buff, revive passives, recon energy type, guild payouts via GoldManager, raid combat reset, `/weapon unequip` store weapons, key pooling on merge, personal keys stay personal, and more). BUG-146 not reproducible; BUG-148 awaiting the exact message.
+
 ## 1.0.216 — Push #103j-b (2026-10-19) — keyring answers, Pro pass Nexus/Stones ×2+, BUG-140 allocations × rank
 - Guild keyring prompt: a key is posted ONLY when the hunter quote-replies the prompt with a bare letter (E/D/C/B/A/S) — ordinary chat ("Cuz I don't have a guild") is no longer read as "C". PlainPrompt gained accept/replyOnly options.
 - Pro passes: Weekly 1,000,000 💠 + 100,000 💎 · Monthly 4,000,000 💠 + 2,000,000 💎 · Yearly 40,000,000 💠 + 10,000,000 💎 (UP unchanged). /profaq updated.

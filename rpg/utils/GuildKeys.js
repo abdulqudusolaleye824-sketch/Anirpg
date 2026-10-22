@@ -16,10 +16,19 @@ function _guildOf(db, jid) { try { return require('./GuildContractManager').reso
 /** Stamp guild-less keys with the owner's guild (one-time per key). Returns how many were migrated. */
 function migrate(db) {
   let n = 0;
+  const _stamp = (k, name) => { k.guildName = name; k.migratedToGuildAt = Date.now(); n++; try { if (GKM.activeKeys && GKM.activeKeys[k.key]) GKM.activeKeys[k.key].guildName = name; } catch (e) {} };
   for (const k of Object.values(db?.gateKeys || {})) {
-    if (!k || k.guildName || !k.ownedBy) continue;
+    if (!k || !k.ownedBy) continue;
     const g = _guildOf(db, k.ownedBy) || (() => { const u = db.users?.[k.ownedBy]; return u && u.guild ? { name: u.guild } : null; })();
-    if (g && g.name) { k.guildName = g.name; k.migratedToGuildAt = Date.now(); n++; try { if (GKM.activeKeys && GKM.activeKeys[k.key]) GKM.activeKeys[k.key].guildName = g.name; } catch (e) {} }
+    if (!k.guildName) { if (g && g.name) _stamp(k, g.name); continue; }
+    if (!_live(k)) continue;
+    // Push #103k (BUG-141/149): a key bought from the buyer's OWN pocket follows the buyer (it is personal);
+    // a guild-paid key whose guild no longer exists (merged / disbanded / renamed) pools into the owner's new guild.
+    const same = g && g.name && String(g.name).toLowerCase() === String(k.guildName).toLowerCase();
+    if (same) continue;
+    if (k.paymentSource === 'personal' && !k.isAffiliate && g && g.name) { _stamp(k, g.name); continue; }
+    let exists = null; try { exists = GKM.findGuild(db, k.guildName); } catch (e) {}
+    if (!exists && g && g.name) _stamp(k, g.name);
   }
   return n;
 }

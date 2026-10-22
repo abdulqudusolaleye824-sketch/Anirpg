@@ -216,7 +216,7 @@ module.exports = {
       ``,
       `🏝️ *JEJU RAID:* /event /ejoin /einfo /estats /epoints /elb /eshop /eventafk /attack`,
       ``,
-      `🔧 *GEAR & PROGRESSION:* /store /equip /unequip /gear /weapon /swap /mend /find /use /buff /craft /recycle /scroll /mine /enchant /upgrade /giveup /class /skills /rune /job /jobskill /supplication /domain /awaken /artifact /aura /constellation /skin`,
+      `🔧 *GEAR & PROGRESSION:* /store /equip /unequip /gear /weapon /swap /mend /find /use /buff /craft /recycle /scroll /mine /enchant /upgrade /giveup /class /skills /rune /job /jobskill /supplication /domain /awaken /reawakening /artifact /aura /constellation /skin`,
       ``,
       `🐾 *PETS:* /pet /catch /petswap /eggs /food`,
       ``,
@@ -234,7 +234,7 @@ module.exports = {
     // Push #102f: MODERATION line — bot mods only (separate from group admins), shown only to mods/owners.
     try { const _P = require('../../utils/permissions'); if (_P.isBotMod(getDatabase(), sender) || _P.isBotOwner(getDatabase(), sender)) menuLines.push('', '⭐ *MODERATION (bot mods):* /announce /reset <@> /restart /spawnstatus /killspawn /closegate /burnkey /approveserf /setgroup /setpp /groupcmd /botstats /botid /cctv /maintenance /transactions <@> /gclist /joingc /leavegc /welcome /goodbye /antilink /antimention /aimode /prousers /mods /ytstatus /birthday'); } catch (e) {}
     // z25: owner-only block appended at runtime (never in the public menu source).
-    try { if (require('../../utils/permissions').isBotOwner(getDatabase(), sender)) menuLines.push(['👑 *OWNER:* /ba <@|reply> (bank access, ₦40,000) · /ba remove · /ba list · /bug list · /bug reply <id> [text] · /resetstrikes · /strikes @u · /domain pending · /domain approve|reject <id> · /broadcast <msg|resume|status> · /bugs · /bug delete <id> · /closeall /openall · /dbdump · /bots · /kill <bot> · /reset <bot> · /cooldowns set <cmd> <s> · /set --mod --false <serial> · /ver' + 'sion', '\n👑 *OWNER+:* /add' + 'xp · /addnexus · /addup <@|reply> <n> (Upgrade Points) · /addmana <@|reply> <n> (💎 Mana Stones) · /addpc <@|reply> <n> (PC) · /add{up|mana|nexus|pc} --all <n> (every hunter, silent, DM only) · /spawn <item|material|rarity> · /spawn essence <E–SS> [qty] · /exile <number> [reason] (DM) · /exile list · /exile lift <number>'].join('')); } catch (e) {}
+    try { if (require('../../utils/permissions').isBotOwner(getDatabase(), sender)) menuLines.push(['👑 *OWNER:* /ba <@|reply> (bank access, ₦40,000) · /ba remove · /ba list · /bug list · /bug reply <id> [text] · /resetstrikes · /strikes @u · /domain pending · /domain approve|reject <id> · /broadcast <msg|resume|status> · /bugs · /suggestions · /suggestion list|approve|reject|ban|reply <id> · /domain ban <id> · /bug delete <id> · /closeall /openall · /dbdump · /bots · /kill <bot> · /reset <bot> · /cooldowns set <cmd> <s> · /set --mod --false <serial> · /ver' + 'sion', '\n👑 *OWNER+:* /add' + 'xp · /addnexus · /addup <@|reply> <n> (Upgrade Points) · /addmana <@|reply> <n> (💎 Mana Stones) · /addpc <@|reply> <n> (PC) · /add{up|mana|nexus|pc} --all <n> (every hunter, silent, DM only) · /spawn <item|material|rarity> · /spawn essence <E–SS> [qty] · /exile <number> [reason] (DM) · /exile list · /exile lift <number>'].join('')); } catch (e) {}
     const message = UI.card(viewerH, {
       icon: '📋', title: '✦ 𝐀𝐬𝐭𝐫𝐚™ COMMAND MENU',
       lines: menuLines,

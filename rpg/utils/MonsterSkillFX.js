@@ -72,11 +72,12 @@ const FAMILY_TRICK_SKILL = {
   wild:      { name: 'Pack Howl',       trick: 'summon',  desc: 'A howl answered — the pack closes in. ATK +25% for 3 turns, bleeding bites.' },
 };
 function trickSkillFor(monster) { let f = 'wild'; try { f = require('./MonsterTypes').familyOf(monster); } catch (e) {} return { ...(FAMILY_TRICK_SKILL[f] || FAMILY_TRICK_SKILL.wild), effect: null, chance: 0 }; }
-function trickOf(ability) { const name = String(typeof ability === 'string' ? ability : (ability && ability.name) || '').replace(/^[^\w]+/, '').trim(); return Object.values(FAMILY_TRICK_SKILL).find(t => t.name === name) || null; }
+function trickOf(ability) { if (ability && typeof ability === 'object' && ability.trick) return { name: String(ability.name || '').replace(/^[^\w]+/, '').trim(), trick: ability.trick, desc: ability.desc || '' }; /* Push #103k: class-kit tricks */ const name = String(typeof ability === 'string' ? ability : (ability && ability.name) || '').replace(/^[^\w]+/, '').trim(); return Object.values(FAMILY_TRICK_SKILL).find(t => t.name === name) || null; }
 function trickStep(monster, victim, trick) {
   const lines = []; const mStats = monster.stats || monster; const em = monster.emoji || '👹';
   if (!monster.tempBuffs) monster.tempBuffs = {};
   const buff = (stat, amount, turns) => { monster.tempBuffs[`mskill:${stat}`] = { stat, amount, duration: turns + 1, source: trick.name }; lines.push(`📈 ${em} ${monster.name}'s ${stat.toUpperCase()} rises +${amount}% (${turns}t)`); };
+  if (!['stealth', 'summon', 'necro'].includes(trick.trick)) { try { return require('./BeastClassKit').trickStep(monster, victim, trick, { buff, applyStatus, lines }); } catch (e) { return lines; } } // Push #103k: rage / ward / focus / blood / shadowdance
   if (trick.trick === 'stealth') { lines.push(`🌫️ ${em} *${monster.name}* vanishes from sight!`); buff('speed', 50, 2); buff('def', 30, 2); if (victim && !monster.noStatus && Math.random() < 0.6) { const l = applyStatus(victim, 'blind', 2, undefined, monster); if (l) lines.push(l); } }
   else if (trick.trick === 'summon') { const n = 2 + Math.floor(Math.random() * 3); lines.push(`🜏 ${em} *${monster.name}* calls *${n}* lesser kin to its side!`); buff('atk', 25, 3); if (victim && !monster.noStatus && Math.random() < 0.45) { const l = applyStatus(victim, /construct/i.test(trick.name) || trick.name === 'Shard Sentinels' ? 'stun' : 'bleed', trick.name === 'Shard Sentinels' ? 1 : 3, undefined, monster); if (l) lines.push(l); } }
   else { const max = mStats.maxHp || mStats.hp || 0; const b = mStats.hp || 0; mStats.hp = Math.min(max, b + Math.floor(max * 0.20)); lines.push(`💀 ${em} *${monster.name}* raises the fallen and FEEDS!${mStats.hp > b ? ` Recovers *${mStats.hp - b}* HP` : ''}`); buff('atk', 15, 3); if (victim && !monster.noStatus && Math.random() < 0.45) { const l = applyStatus(victim, 'curse', 3, undefined, monster); if (l) lines.push(l); } }
@@ -169,6 +170,14 @@ function resolve(ability) {
     out.drainPct = Math.max(out.drainPct, d.drainPct); out.pierce = Math.max(out.pierce, d.pierce);
     if (d.status && (!out.status || out._statusSrc === 'name')) { out.status = { ...d.status, chance: Math.max(d.status.chance, (out.status && out.status.chance) || 0) }; out._statusSrc = 'desc'; } // the description outranks a guess from the name
   } catch (e) {}
+  // Push #103k: an explicit kit contract (BeastClassKit) states its own numbers — they win over text guesses.
+  if (ability && typeof ability === 'object' && ability.kit) {
+    if (ability.mult) out.mult = ability.mult; if (ability.pierce) out.pierce = Math.max(out.pierce, ability.pierce);
+    if (ability.healPct) out.healPct = Math.max(out.healPct, ability.healPct); if (ability.drainPct) out.drainPct = Math.max(out.drainPct, ability.drainPct);
+    out.status = ability.effect ? { type: EFFECT_ALIAS[String(ability.effect).toLowerCase()] || String(ability.effect).toLowerCase(), chance: Number(ability.chance) || 35, duration: 2 } : null;
+    out.selfBuffs = []; out.selfBuff = null; out.selfHealPct = 0;
+    if (ability.desc) out.desc = ability.desc;
+  }
   if (!out.selfBuff && out.selfBuffs.length) out.selfBuff = out.selfBuffs[0];
   return out;
 }

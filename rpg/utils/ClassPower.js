@@ -239,6 +239,9 @@ function _parsePassive(text, out, hpPct, q) {
   if (regen) out.regenFlat += Math.max(0, Math.floor(parseInt(regen[1], 10) * q / 100));
   // "Cannot be killed below 1 HP once per fight" → survive lethal
   if (/cannot be killed|survive(?:s)? (?:a )?lethal|last stand/.test(t)) out.surviveLethal = 1;
+  // Push #103k (BUG-158): "Upon fatal damage, revives at 60% HP with full energy (once per battle)" → revive-on-death passive
+  { const rv = t.match(/(?:upon|on)\s+(?:fatal|lethal|killing)\s+(?:damage|blow|hit)[^\n]*?reviv\w*\s+(?:at|with)\s+(\d{1,3})\s*%\s*(?:max\s+)?hp/) || t.match(/reviv\w*\s+(?:at|with)\s+(\d{1,3})\s*%\s*(?:max\s+)?hp[^\n]*?(?:once per (?:battle|fight|raid))/);
+    if (rv) out.reviveOnDeath = { pct: Math.max(10, Math.min(100, parseInt(rv[1], 10))), energy: /full\s+(?:energy|mana)/.test(t) }; }
   // "All physical attacks apply bleed: 15% ATK per turn" → on-hit status
   const onhit = t.match(/(?:all\s+)?(?:physical\s+)?(?:attacks|hits)\s+(?:apply|inflict)\s+(poison|burn|bleed|stun|freeze|weaken|fear|blind|paralyze|curse|silence)/);
   if (onhit) out.onHit.push({ type: onhit[1], chance: Math.round(60 * q / 100), duration: 3 });
@@ -353,6 +356,7 @@ function passiveMultipliers(player) {
     const JS = require('./JobSystem'); const jm = JS.mods(player);
     for (const k of ['atk', 'def', 'speed', 'crit', 'dodge', 'dmgTaken', 'skillDmg', 'lifesteal', 'armorPen', 'reflect', 'healPower']) if (jm[k]) out[k] += jm[k];
     if (jm.surviveLethal) out.surviveLethal = 1;
+    if (jm.reviveOnDeath && !out.reviveOnDeath) out.reviveOnDeath = jm.reviveOnDeath;
     if (jm.regenPct && player.stats && player.stats.maxHp) out.regenFlat += Math.floor(player.stats.maxHp * jm.regenPct / 100);
     if (jm.onHitStun) out.onHit.push({ type: 'stun', chance: jm.onHitStun, duration: 1 });
     if (jm.momentumPerHit) { const hits = Math.min(10, Number(player._comboHits || 0)); if (hits > 0) out.atk += jm.momentumPerHit * hits; }

@@ -163,6 +163,7 @@ function grantFloorXp(player, floor, rank, totalFloors = null) {
   if (!player) return 0; let xp = totalFloors ? floorXpSpread(floor, rank, totalFloors) : floorXp(floor, rank);
   try { xp = Math.floor(xp * require('./AuraSystem').AuraSystem.expMult(player)); } catch (e) {}
   try { const JS = require('./JobSystem'); const jm = JS.mods ? JS.mods(player) : {}; if (jm && jm.xpMult) xp = Math.floor(xp * (1 + jm.xpMult / 100)); } catch (e) {}
+  try { xp = Math.floor(xp * require('./BuffManager').peekXpMultiplier(player)); } catch (e) {} // Push #103k (BUG-145): XP Booster / GVC buffs on gate floors
   player.xp = (player.xp || 0) + xp; player.lifetimeXp = (player.lifetimeXp || 0) + xp; return xp;
 }
 module.exports = { floorXp, floorXpSpread, CLASSIC_FLOORS, grantFloorXp, FLOOR_RANK_MULT, giveBattleWinRewards, formatRewards, isPro, giveSharedExp, shareRaidExp };

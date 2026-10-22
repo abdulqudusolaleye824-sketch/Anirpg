@@ -286,7 +286,7 @@ function parseSupportFields(effect, parsed) {
       else if (/massive\s+defen[cs]e|impenetrable\s+(?:armou?r|defen[cs]e)|unbreakable\s+guard/.test(l)) out.extraBuffs.push({ stat: 'def', amount: 50, duration: turnsIn(l, 3) });
     }
     // Push #103j (BUG-131): "max HP increases by 20%" / "+20% max HP" → a pool shield of that % of max HP (the only honest way to give temporary HP).
-    { const mh = l.match(/max(?:imum)?\s+hp\s+(?:increases?|rises?|raised|up|boosted|grows?)\s+by\s+(\d{1,3})\s*%|\+\s*(\d{1,3})\s*%\s*max(?:imum)?\s+hp/); if (mh && !aboutEnemy) { const v = parseInt(mh[1] || mh[2], 10); if (v > 0) { out.shieldPct = Math.max(out.shieldPct, Math.min(100, v)); out.shieldMode = 'pool'; out.shieldTurns = turnsIn(l, 3); } } }
+    { const mh = l.match(/max(?:imum)?\s+hp\s+(?:increases?|rises?|raised|up|boosted|grows?)\s+by\s+(\d{1,3})\s*%|\+\s*(\d{1,3})\s*%\s*max(?:imum)?\s+hp|max(?:imum)?\s+hp\s*\+\s*(\d{1,3})\s*%/); if (mh && !aboutEnemy) { const v = parseInt(mh[1] || mh[2] || mh[3], 10); if (v > 0) { out.shieldPct = Math.max(out.shieldPct, Math.min(100, v)); out.shieldMode = 'pool'; out.shieldTurns = turnsIn(l, 3); } } }
     // shield / barrier / block
     if (/\bshield|barrier|\babsorbs?\b|blocks? (?:the )?next|\bward\b/.test(l) && !/breaks?\s+(?:enemy\s+)?shield|ignores?[^.]*shield|shield\s*(?:break|pierc|stance|bash|slam|charge|throw)|through\s+shield|bypass/.test(l) && !aboutEnemy) {
       const pct = pctIn(l);
@@ -446,6 +446,9 @@ function augmentContract(effect, parsed, statuses) {
       const d = dur || (/next (?:attack|hit|strike)|this turn/i.test(l) ? 1 : 2);
       for (const s of (stat === 'all' ? ['atk', 'def', 'speed'] : [stat])) if (!has(parsed.buffs, s) && !has(addB, s)) addB.push({ stat: s, amount: Math.min(300, Number(m[1])), duration: d });
     }
+    // Push #103k (BUG-154): "converts 100% damage dealt to health for 3 turns" on a BUFF = a lifesteal buff (the skill itself deals nothing).
+    { const cv = l.match(/converts?\s+(\d{1,3})\s*%\s*(?:of\s+)?(?:all\s+)?damage(?:\s+dealt)?\s+(?:to|into)\s+(?:health|hp|life)/i) || l.match(/(\d{1,3})\s*%\s*(?:of\s+)?damage(?:\s+dealt)?\s+(?:is\s+)?(?:returned|restored|healed)\s+(?:as|to)\s+(?:health|hp|life)\s+for\s+\d+\s+turns?/i);
+      if (cv && /\bfor\s+\d+\s+turns?\b/i.test(l) && !has(parsed.buffs, 'lifesteal') && !has(addB, 'lifesteal')) addB.push({ stat: 'lifesteal', amount: Math.min(100, Number(cv[1])), duration: dur || 3 }); }
     // Push #103j (BUG-131): "Lifesteal becomes 100%" / "ATK increases by 40%" are buffs too.
     for (const m of l.matchAll(new RegExp(`\\b(${STAT_RX})\\s+(?:becomes?|increases?\\s+by|rises?\\s+by|raised\\s+by|is\\s+raised\\s+by|up\\s+by|boosted\\s+by)\\s*(\\d{1,3})\\s*%`, 'gi'))) {
       const stat = STAT_ALIAS[m[1].toLowerCase().replace(/defence/, 'defense').replace(/armour/, 'armor')] || 'atk'; if (stat === 'maxhp') continue; if (/enemy|target|their/i.test(l.slice(Math.max(0, m.index - 24), m.index))) continue;
@@ -914,9 +917,24 @@ function levelBonus(skill) {
 }
 
 const UTILITY_COST_MULT = 0.6; // Push #103f-3
+// Push #103k (BUG-160/164): ONE AoE detector for every arena. Reads the skill's effect/description text.
+const AOE_RE = /\b(?:all|every|each)\s+(?:nearby\s+|surrounding\s+|living\s+|other\s+)?(?:enemies|enemy|monsters?|foes?|targets?|beasts?|opponents?|creatures?|hostiles?|units?)\b|\b(?:hits?|hitting|strikes?|striking|damages?|damaging|burns?|freezes?|pierces?|sweeps?|sweeping)\s+(?:all|every|everything|everyone)\b|\bon\s+the\s+(?:whole\s+|entire\s+)?floor\b|\b(?:whole|entire)\s+(?:floor|room|field|battlefield|arena)\b|\baoe\b|\barea[- ]of[- ]effect\b|\bin\s+(?:an?\s+)?(?:wide\s+|large\s+|small\s+)?(?:area|radius|cone|line|arc|zone)\b|\bmultiple\s+(?:enemies|targets|foes|monsters)\b|\benemies\s+(?:around|nearby|in\s+range|in\s+front)\b|\bchains?\s+(?:to|between|through)\s+(?:\d+\s+)?(?:enemies|targets|foes)\b|\bsplash\s+damage\b/i;
+const AOE_COST_MULT = 1.5;      // Push #103k (owner): AoE costs more energy
+const AOE_SPREAD_FALLOFF = 0.06; // Push #103k (owner): −6% per extra target struck (floor 60%)
+function isAoe(skill) {
+  if (!skill) return false;
+  if (skill.aoe === true || skill.isAoe === true) return true;
+  const t = `${skill.effect || ''} ${skill.description || skill.desc || ''} ${skill.text || ''}`;
+  if (!t.trim()) return false;
+  const ty = String(skill.type || '').toLowerCase();
+  if (ty === 'heal' || ty === 'buff') return false; // "all allies" is party, not AoE
+  return AOE_RE.test(t);
+}
+function aoeSpreadMult(extraTargets) { return Math.max(0.6, 1 - AOE_SPREAD_FALLOFF * Math.max(0, Number(extraTargets) || 0)); }
 function effectiveCost(skill, caster = null) {
   const b = levelBonus(skill);
   let c = Math.max(5, Math.round((skill.energyCost || 0) * (b.costMult || 1)));
+  if (isAoe(skill)) c = Math.round(c * AOE_COST_MULT); // Push #103k: AoE costs more
   // Push #103f-3: utility casts (buffs / debuffs with no stated damage %) cost 60% — Hex 195 → 117 at Lv5; damage skills unchanged.
   { const _t = String(skill && skill.type || '').toLowerCase(); if ((_t === 'buff' || _t === 'debuff') && !skill.rankReq) c = Math.max(5, Math.round(c * UTILITY_COST_MULT)); }
   if (caster) { try { const cm = require('./ClassSnippets').costMult(caster); if (cm !== 1) c = Math.max(5, Math.round(c * cm)); } catch (e) {} } // Push #103b: Mage/Shaman/Bard aggressive energy scaling
@@ -1548,7 +1566,7 @@ function carrySkillProgress(player, snap) {
   }
   return { applied, count: now.length, wanted: snap.count };
 }
-module.exports = { previewDamage, clearCooldown, scaleSpecText, CLASS_POWER, supportMult, scaleEntry, lockReason,
+module.exports = { isAoe, aoeSpreadMult, AOE_RE, AOE_COST_MULT, AOE_SPREAD_FALLOFF, previewDamage, clearCooldown, scaleSpecText, CLASS_POWER, supportMult, scaleEntry, lockReason,
   augmentContract,
   parseSupportFields, applySupportFields,
   snapshotSkillProgress, carrySkillProgress,

@@ -114,7 +114,7 @@ const CATALOG = {
       fx: (T) => ({ damagePct: t(185, 32)(T), statuses: [{ type: 'silence', chance: t(30, 8)(T), duration: 2 }] }) },
     { key: 'grand_imbuement', name: 'Grand Imbuement', kind: 'special', cost: 70, cd: 6,
       lore: 'Every rune you ever carved ignites at once. For four turns you ARE the enchanted weapon.',
-      text: (T) => `+${t(40, 10)(T)}% ATK, +${t(20, 6)(T)}% SPD for 4 turns, next hits ${t(30, 10)(T)}% likelier to CURSE`,
+      text: (T) => `${t(150, 25)(T)}% ATK strike that CURSES (${t(30, 10)(T)}%), then +${t(40, 10)(T)}% ATK, +${t(20, 6)(T)}% SPD for 4 turns`, // Push #103k (BUG-167): text matches the real effect
       fx: (T) => ({ buffs: [{ stat: 'atk', amount: t(40, 10)(T), duration: 4 }, { stat: 'speed', amount: t(20, 6)(T), duration: 4 }], damagePct: t(150, 25)(T), statuses: [{ type: 'curse', chance: t(30, 10)(T), duration: 3 }] }) },
   ],
   treasure_hunter: [

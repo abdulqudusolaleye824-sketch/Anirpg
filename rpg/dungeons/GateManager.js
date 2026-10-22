@@ -155,7 +155,16 @@ function buildGateMonsters(rank, floors, strengthPct = 100, bossName = null) {
     };
   };
   for (let floor = 1; floor <= floors; floor++) {
-    for (let j = 0; j < 3; j++) monsters.push(make(pickThemed(pool, strengthPct), floor, false));
+    // Push #103k (owner call): 1–10 beasts per floor, rolled fresh every floor. The floor's HP is BUDGETED — a lone beast
+    // is a brute (×1.5), a pack of ten are runts (×0.4 each) — so a crowded floor is longer, not a wall.
+    const packN = 1 + Math.floor(Math.random() * (floor === floors ? 8 : 10)); // last floor: ≤8 + 2 elites = never more than 10 beasts
+    const packScale = Math.max(0.4, Math.min(1.5, 3 / packN));
+    for (let j = 0; j < packN; j++) {
+      const m = make(pickThemed(pool, strengthPct), floor, false);
+      m.hp = m.maxHp = Math.max(5, Math.floor(m.hp * packScale)); m.packN = packN; m.packScale = packScale;
+      try { require('../utils/BeastClassKit').assign(m, rank); } catch (e) {} // Push #103k: B+ beasts fight with a class kit
+      monsters.push(m);
+    }
   }
   // Push #88t: the boss floor is guarded by 2 ELITE SOLDIERS.
   // Push #88z: elites carry exactly 2× the stats of the monsters on the floor
@@ -165,7 +174,7 @@ function buildGateMonsters(rank, floors, strengthPct = 100, bossName = null) {
   const eliteBase = pool.filter(m => (m.tier || 1) >= Math.max(1, topTier - 1));
   const prevFloor = Math.max(1, floors - 1);
   const prev = monsters.filter(m => m.floor === prevFloor && !m.elite);
-  const avg = (k) => prev.length ? prev.reduce((a, m) => a + (Number(m[k]) || 0), 0) / prev.length : 0;
+  const avg = (k) => prev.length ? prev.reduce((a, m) => a + (Number(m[k]) || 0) / (k === 'maxHp' ? (m.packScale || 1) : 1), 0) / prev.length : 0; // Push #103k: elites ignore the pack HP budget
   for (let j = 0; j < 2; j++) {
     const e = make(eliteBase[Math.floor(Math.random() * eliteBase.length)] || pool[0], floors, true);
     if (prev.length) {

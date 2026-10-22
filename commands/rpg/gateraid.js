@@ -724,7 +724,10 @@ module.exports = {
               tgtJid = inParty.id;
               if ((tgt.stats?.hp ?? 0) <= 0) { GR.releaseCombatLock(gate.id); return sock.sendMessage(chatId, { text: `💀 *${inParty.name || tgt.name}* is down — only a revive skill can help them.` }, { quoted: msg }); }
             }
-            const _sc = GR.supportCast(player, sender, tgt, tgtJid, _rawName, gate, db);
+            // Push #103k: tag everyone (or 2+) → party scope; one tag → that hunter; no tag → yourself.
+            const _livingN = (gate.raid?.members || []).filter(m => m && (m.hp == null || m.hp > 0)).length;
+            const _tagN = new Set(_mentioned.map(j => GR.GKM.normaliseJid(j))).size;
+            const _sc = GR.supportCast(player, sender, tgt, tgtJid, _rawName, gate, db, { tagCount: _tagN, tagAll: _tagN >= 2 && _tagN >= Math.max(2, _livingN - 1) });
             GR.releaseCombatLock(gate.id);
             if (!_sc.ok) return sock.sendMessage(chatId, { text: `❌ ${_sc.error}` }, { quoted: msg });
             const _self = tgtJid === sender && !_sc.party;
@@ -787,6 +790,7 @@ module.exports = {
             // stays banked. Only a full WIPE salvages 10% (to the guild treasury).
 
             deathLines.push(``, `💀 *YOU FELL IN THE GATE!*`, `Lost ${loss.toLocaleString()} 💎`, `You fled with 1 HP.`);
+            try { const _rw = require('../../rpg/utils/Reawakening').tryOnDeath(db, sender, player, 'gate'); if (_rw) { deathLines.push(``, ..._rw.lines); console.log(`[REAWAKEN] ${player.name} ${_rw.from}->${_rw.to} (gate)`); } } catch (e) {} // Push #103k
             // Push #29: JID-tolerant removal + wipe check (never re-persist a
             // wiped gate — wipeGate already dropped it from every registry).
             {
@@ -1022,13 +1026,29 @@ module.exports = {
       // living beast on the floor for the same damage. Splash kills count as kills (no extra final-blow drop).
       try {
         const _su = result && result.skillUsed; const _sTxt = _su ? `${_su.name || ''} ${_su.effect || ''} ${_su.description || _su.desc || ''}` : '';
-        const _isAoe = _su && !result.missed && !result.blocked && (result.damage || 0) > 0 && (/\b(?:all|every)\s+(?:enemies|enemy|monsters?|foes?|targets?|beasts?)\b|\bon\s+the\s+(?:whole\s+)?floor\b|\baoe\b/i.test(_sTxt));
+        // Push #103k (BUG-160/164): one shared AoE detector (SkillCatalog.isAoe) — "enemies in a wide area", "every nearby enemy",
+        // "chains to 3 enemies"… all count. (BUG-157) every splash kill now pays like a real kill (Nexus/EXP/drops/quests).
+        // (owner) AoE is slightly weaker when spread: −6% per extra beast struck, floor 60%.
+        const _SCa = require('../../rpg/utils/SkillCatalog');
+        const _isAoe = _su && !result.missed && !result.blocked && (result.damage || 0) > 0 && (_SCa.isAoe(_su) || /\b(?:all|every)\s+(?:enemies|enemy|monsters?|foes?|targets?|beasts?)\b|\bon\s+the\s+(?:whole\s+)?floor\b|\baoe\b/i.test(_sTxt));
         if (_isAoe && !_fightingBoss) {
           const _fl = gate.currentFloor || 1; const _others = (gate.monsters || []).filter(mm => mm && mm !== target && !mm.defeated && (mm.hp || 0) > 0 && mm.floor === _fl && !(mm.elite && _fl >= gate.totalFloors));
           if (_others.length) {
-            const _al = [`🌪️ *${_su.name}* sweeps the whole floor!`]; let _splashKills = 0;
-            for (const mm of _others) { const _b = mm.hp; mm.hp = Math.max(0, mm.hp - result.damage); _al.push(`   • *${mm.name}* −${(_b - mm.hp).toLocaleString()} → ${mm.hp.toLocaleString()}/${(mm.maxHp || _b).toLocaleString()}${mm.hp <= 0 ? ' 💀' : ''}`); if (mm.hp <= 0) { mm.defeated = true; mm.killedBy = sender; _splashKills++; } }
-            if (_splashKills) { player._runKills = (player._runKills || 0) + _splashKills; try { const _rm = (gate.raid?.members || []).find(m => m.id === sender); if (_rm) _rm.kills = (_rm.kills || 0) + _splashKills; } catch (e) {} _al.push(`💀 ${_splashKills} beast${_splashKills === 1 ? '' : 's'} felled by the storm`); }
+            const _spread = _SCa.aoeSpreadMult(_others.length); const _sd = Math.max(1, Math.floor(result.damage * _spread));
+            const _al = [`🌪️ *${_su.name}* sweeps the whole floor!${_spread < 1 ? ` _(spread over ${_others.length + 1} — ${Math.round(_spread * 100)}% to each)_` : ''}`]; let _splashKills = 0; const _killed = [];
+            for (const mm of _others) { const _b = mm.hp; mm.hp = Math.max(0, mm.hp - _sd); _al.push(`   • *${mm.name}* −${(_b - mm.hp).toLocaleString()} → ${mm.hp.toLocaleString()}/${(mm.maxHp || _b).toLocaleString()}${mm.hp <= 0 ? ' 💀' : ''}`); if (mm.hp <= 0) { mm.defeated = true; mm.killedBy = sender; _splashKills++; _killed.push(mm); } }
+            if (_splashKills) {
+              player._runKills = (player._runKills || 0) + _splashKills; gate.monstersKilled = (gate.monstersKilled || 0) + _splashKills;
+              try { const _rm = (gate.raid?.members || []).find(m => m.id === sender); if (_rm) _rm.kills = (_rm.kills || 0) + _splashKills; } catch (e) {}
+              if (!player.stats_history) player.stats_history = {}; player.stats_history.monstersKilled = (player.stats_history.monstersKilled || 0) + _splashKills;
+              try { require('../../rpg/utils/QuestDispatcher').trackAndNotify(player, 'kill', _splashKills, sock, sender, chatId); } catch (e) {}
+              _al.push(`💀 ${_splashKills} beast${_splashKills === 1 ? '' : 's'} felled by the storm`);
+              for (const mm of _killed) {
+                if (mm.revived) continue;
+                try { const BR = require('../../rpg/utils/BattleRewards'); const w = BR.giveBattleWinRewards(player, db, 'gate', player.level, sock, chatId, { lootMult: (gate.isDouble || gate.redGate) ? 1.5 : 1 }); if (w) { _al.push(`   💀 *${mm.name}* defeated!`, BR.formatRewards(w)); try { const _sx = BR.shareRaidExp(gate, sender, db, sock, chatId); if (_sx) _al.push(_sx); } catch (e) {} } } catch (e) {}
+                try { const _dl = GR.monsterKilledBy(gate, mm, sender, db); if (_dl && _dl.length) _al.push(..._dl); } catch (e) {}
+              }
+            }
             await sock.sendMessage(chatId, { text: _al.join('\n') });
           }
         }
@@ -1196,6 +1216,9 @@ module.exports = {
       const _MSFXc = require('../../rpg/utils/MonsterSkillFX');
       const _picked = _monCanAct.canAct ? _MSFXc.pickMoves(_pool71, skillPool[Math.floor(Math.random() * skillPool.length)]) : { support: null, attack: null };
       const monsterSkill = _picked.attack;
+      // Push #103k: class-kit moves carry their own (capped) multiplier / pierce; a Blood Pact drinks life from every hit.
+      let dmgK = dmg;
+      try { if (monsterSkill && monsterSkill.kit && dmg > 0) { let _km = Number(monsterSkill.mult) || 1; if (target._kitPierceNext) { _km *= 1.15; delete target._kitPierceNext; } dmgK = Math.max(1, Math.floor(dmg * _km)); } } catch (e) {}
       // Push #96h-m: a LEAKED beast regenerates 90% of its turns (free support move, like any other).
       if (_monCanAct.canAct && target.leaked && !_picked.support && target.hp < target.maxHp && Math.random() < 0.90) _picked.support = '💚 Regenerate';
       if (_monCanAct.canAct && _picked.support) { try { const _ss = _MSFXc.supportStep(target, _victim, _picked.support); for (const b of _ss.blocks) { await sock.sendMessage(chatId, { text: b }); await new Promise(r => setTimeout(r, 2000)); } } catch (e) {} }
@@ -1221,14 +1244,16 @@ module.exports = {
         const monAtk = { name: target.name, stats: { hp: target.hp, maxHp: target.maxHp }, statusEffects: target.statusEffects || [] };
         await UCgFlow.playTurn(sock, chatId, {
           attacker: monAtk, defender: _victim,
-          move: { name: monsterSkill.name, description: `A ferocious ${_skillBare} technique.`, cooldownMs: 0, effect: monsterSkill.effect ? { type: monsterSkill.effect, chance: Math.min(90, (monsterSkill.chance || 35) * GR.RAID_X2), duration: 2 } : null }, // Push #71: no more 100% status · Push #88q: raid status chance ×2
-          result: { damage: dmg, crit: !!(GR.monsterDamage.last && GR.monsterDamage.last.crit), missed: dmg <= 0, dodged: dmg <= 0, preAbsorbed: true, absorbedNote: (GR.monsterDamage.last && GR.monsterDamage.last.shieldLine) || null },
+          move: { name: monsterSkill.name, description: `A ferocious ${_skillBare} technique.`, cooldownMs: 0, effect: monsterSkill.effect ? { type: monsterSkill.effect, chance: Math.min(90, (monsterSkill.chance || 35) * (monsterSkill.kit ? 1 : GR.RAID_X2)), duration: 2 } : null }, // Push #71: no more 100% status · Push #88q: raid status chance ×2
+          result: { damage: dmgK, crit: !!(GR.monsterDamage.last && GR.monsterDamage.last.crit), missed: dmgK <= 0, dodged: dmgK <= 0, preAbsorbed: true, absorbedNote: (GR.monsterDamage.last && GR.monsterDamage.last.shieldLine) || null },
           tag: `💢 *MONSTER COUNTER-ATTACK*`, gapMs: 600,
         });
         // Push #88: passives that trigger on being hit (reflect / survive-lethal / regen).
-        try { const _pl = GR.afterMonsterHit(_victim, target, dmg); if (_pl.length) await sock.sendMessage(chatId, { text: _pl.join('\n') }); } catch (e) {}
+        try { const _pl = GR.afterMonsterHit(_victim, target, dmgK); if (_pl.length) await sock.sendMessage(chatId, { text: _pl.join('\n') }); } catch (e) {}
         // Push #95: the move does what it says — Mana Drain drains energy, Life Drain heals the monster, Roars buff it.
-        try { const _fx = require('../../rpg/utils/MonsterSkillFX').apply(target, _victim, monsterSkill, dmg, { skipStatus: true }); if (_fx.lines.length) await sock.sendMessage(chatId, { text: _fx.lines.join('\n') }); } catch (e) {}
+        try { const _fx = require('../../rpg/utils/MonsterSkillFX').apply(target, _victim, monsterSkill, dmgK, { skipStatus: true }); if (_fx.lines.length) await sock.sendMessage(chatId, { text: _fx.lines.join('\n') }); } catch (e) {}
+        // Push #103k: Blood Pact — the beast drinks from every hit while the pact lasts.
+        try { const _bp = target._kitLifesteal; if (_bp && dmgK > 0 && _bp.turns > 0) { const _h = Math.max(1, Math.floor(dmgK * _bp.pct / 100)); const _b0 = target.hp; target.hp = Math.min(target.maxHp || target.hp, target.hp + _h); _bp.turns--; if (_bp.turns <= 0) delete target._kitLifesteal; if (target.hp > _b0) await sock.sendMessage(chatId, { text: `🩸 *Blood Pact* — *${target.name}* drinks *${target.hp - _b0}* HP from the wound.` }); } } catch (e) {}
       }
       // Push #95: DOMAINS — bosses / B-rank+ monsters may expand a domain over the party.
       try { const DS = require('../../rpg/utils/DomainSystem'); const _hunters = GR.livingMembers ? GR.livingMembers(gate, db) : [player]; const _nj = (j) => { try { return GR.GKM.normaliseJid(j) || String(j); } catch (e) { return String(j); } }; const _tl = DS.tick(DS.arenaOf(gate), { actor: _nj(sender), roster: ((gate.raid && gate.raid.members) || []).filter(m => (m.hp || 0) > 0).map(m => _nj(m.id)) }); if (_tl) await sock.sendMessage(chatId, { text: _tl }); const _ctxD = { boss: !!_fightingBoss, rank: gate.rank }; const _warn = DS.monsterWarn(DS.arenaOf(gate), target, _hunters, _ctxD); if (_warn) { await sock.sendMessage(chatId, { text: _warn, mentions: _hunters.map(h => h.jid).filter(Boolean) }).catch(() => {}); await new Promise(r => setTimeout(r, DS.DOMAIN_WARN_MS)); if ((target.hp || 0) > 0) { const _dl = DS.monsterTry(DS.arenaOf(gate), target, _hunters, { ..._ctxD, armed: true }); if (_dl) await DS.sendDomain(sock, chatId, _dl); } } } catch (e) {} // Push #103b: 10 s warning before a monster domain
@@ -1341,7 +1366,7 @@ module.exports = {
       if (_bossTickLogs.length) { try { await sock.sendMessage(chatId, { text: `🩺 *${player.name}* — ${_bossTickLogs.join(' · ')}` }); } catch (e) {} }
       if ((player.stats?.hp || 0) <= 0) { let _fl = []; try { _fl = GR.hunterFalls(gate, sender, player, db) || []; GR.saveGateState(db, gate); } catch (e) {} GR.releaseCombatLock(gate.id); saveDatabase(); return sock.sendMessage(chatId, { text: [`💀 *${player.name}* succumbs to their wounds before reaching the boss.`, ..._fl].join('\n') }, { quoted: msg }); }
       // Push #93: boss statuses (Curse of Ruin) count down one per hunter turn.
-      try { if ((boss.statusEffects || []).length) { const _bt = { name: boss.name, statusEffects: boss.statusEffects, stats: { hp: boss.hp, maxHp: boss.maxHp } }; const _bl = require('../../rpg/utils/UnifiedCombat').tickStatuses(_bt); boss.hp = Math.max(0, _bt.stats.hp); if (_bl.some(l => /ruin wore off/.test(l))) await sock.sendMessage(chatId, { text: `✨ *Curse of Ruin* on *${boss.name}* has worn off.` }); } } catch (e) {}
+      try { if ((boss.statusEffects || []).length || (boss.tempBuffs && Object.keys(boss.tempBuffs).length)) { if (!boss.tempBuffs) boss.tempBuffs = {}; const _bt = { name: boss.name, statusEffects: (boss.statusEffects = boss.statusEffects || []), tempBuffs: boss.tempBuffs, stats: { hp: boss.hp, maxHp: boss.maxHp } }; const _bl = require('../../rpg/utils/UnifiedCombat').tickStatuses(_bt); /* Push #103k: boss kit buffs tick down too */ boss.hp = Math.max(0, _bt.stats.hp); if (_bl.some(l => /ruin wore off/.test(l))) await sock.sendMessage(chatId, { text: `✨ *Curse of Ruin* on *${boss.name}* has worn off.` }); } } catch (e) {}
       try { GR.playerDamage.partyAllies = (gate.raid?.members || []).map(m => db.users[m.id] || Object.values(db.users || {}).find(x => x && x.jid && GR.GKM.normaliseJid(x.jid) === GR.GKM.normaliseJid(m.id))).filter(Boolean); } catch (e) { GR.playerDamage.partyAllies = []; } // Push #94
       const _drainBoss = { name: boss.name, statusEffects: (boss.statusEffects = boss.statusEffects || []), stats: { hp: Number(boss.hp) || 0, maxHp: Number(boss.maxHp) || Number(boss.hp) || 100 } };
       const result = GR.playerDamage(player, skillArg || null, _drainBoss); // Push #97 (BUG-012): drains land on the boss too
@@ -1433,17 +1458,23 @@ module.exports = {
         // Push #74: boss hits go through the same dodge/passive/weaken maths.
         const _bossRegen = Math.random() < 0.25 && boss.hp < boss.maxHp; // Push #96d: bosses can Regenerate · Push #96h-l: it is a FREE support move (no damage, no turn) — the boss still strikes
         if (_bossRegen) { try { const _ss = require('../../rpg/utils/MonsterSkillFX').supportStep(boss, _bVictim, '💚 Regenerate'); for (const b of _ss.blocks) { await sock.sendMessage(chatId, { text: b }); await new Promise(r => setTimeout(r, 2000)); } } catch (e) {} }
-        let dmg = GR.monsterDamage({ atk: bossAtk, speed: boss.speed || 14, statusEffects: boss.statusEffects || [], _raid: true, isBoss: true, rank: gate.rank }, def, _bVictim);
+        // Push #103k: every boss fights with a CLASS KIT — a free trick (rage / summon / necromancy / shadow dance / blood pact…) some turns, then a kit strike.
+        let _bMove = null; let _bKitMult = 1;
+        try { const BCK = require('../../rpg/utils/BeastClassKit'); if (!boss.kitClass) BCK.assign(boss, gate.rank, { boss: true }); const _km = BCK.kitMoves(boss); if (_km.length) { const _MS = require('../../rpg/utils/MonsterSkillFX'); const _pk = _MS.pickMoves(_km); if (_pk.support && !_bossRegen) { const _ss = _MS.supportStep(boss, _bVictim, _pk.support); for (const b of _ss.blocks) { await sock.sendMessage(chatId, { text: b }); await new Promise(r => setTimeout(r, 2000)); } } _bMove = _pk.attack; if (_bMove && _bMove.kit) { _bKitMult = Number(_bMove.mult) || 1; if (boss._kitPierceNext) { _bKitMult *= 1.15; delete boss._kitPierceNext; } } } } catch (e) {}
+        let dmg = GR.monsterDamage({ atk: bossAtk, speed: boss.speed || 14, statusEffects: boss.statusEffects || [], _raid: true, isBoss: true, rank: gate.rank, tempBuffs: boss.tempBuffs }, def, _bVictim);
+        if (_bKitMult !== 1 && dmg > 0) dmg = Math.max(1, Math.floor(dmg * _bKitMult));
         if (_bGuard && _bGuard.aggro) await sock.sendMessage(chatId, { text: `🎯 *AGGRO!* *${boss.name}* turns on the healer *${_bGuard.guardianName}*!` });
         else if (_bGuard) await sock.sendMessage(chatId, { text: `🛡️ *GUARD!* *${_bGuard.guardianName}* steps in front of *${player.name}* and takes the boss's blow!` });
         const bossAtkW = { name: boss.name, stats: { hp: boss.hp, maxHp: boss.maxHp }, statusEffects: [] };
         await UCgBoss.playTurn(sock, chatId, {
           attacker: bossAtkW, defender: _bVictim,
-          move: { name: 'Retaliation', description: 'The boss lashes out with overwhelming force.', cooldownMs: 0 },
+          move: _bMove ? { name: _bMove.name, description: _bMove.desc || `A ${boss.kitClass || ''} technique.`, cooldownMs: 0, effect: _bMove.effect ? { type: _bMove.effect, chance: Math.min(90, (_bMove.chance || 35)), duration: 2 } : null } : { name: 'Retaliation', description: 'The boss lashes out with overwhelming force.', cooldownMs: 0 },
           result: { damage: dmg, crit: !!(GR.monsterDamage.last && GR.monsterDamage.last.crit), missed: dmg <= 0, dodged: dmg <= 0, preAbsorbed: true, absorbedNote: (GR.monsterDamage.last && GR.monsterDamage.last.shieldLine) || null },
           tag: `💢 *BOSS COUNTER*`, gapMs: 600,
         });
         try { const _pl = GR.afterMonsterHit(_bVictim, boss, dmg); if (_pl.length) lines.push(..._pl); } catch (e) {}
+        try { if (_bMove) { const _fx = require('../../rpg/utils/MonsterSkillFX').apply(boss, _bVictim, _bMove, dmg, { skipStatus: true }); if (_fx.lines.length) lines.push(..._fx.lines); } } catch (e) {} // Push #103k: kit drains / life-drinks
+        try { const _bp = boss._kitLifesteal; if (_bp && dmg > 0 && _bp.turns > 0) { const _h = Math.max(1, Math.floor(dmg * _bp.pct / 100)); const _b0 = boss.hp; boss.hp = Math.min(boss.maxHp || boss.hp, boss.hp + _h); _bp.turns--; if (_bp.turns <= 0) delete boss._kitLifesteal; if (boss.hp > _b0) lines.push(`🩸 *Blood Pact* — *${boss.name}* drinks *${boss.hp - _b0}* HP from the wound.`); } } catch (e) {}
         const heal = GR.lifeSteal(player, result.damage);
         if (heal > 0) player.stats.hp = Math.min(_effMax(player), player.stats.hp + heal);
         if (heal > 0) lines.push(`💚 Lifesteal: +${heal} HP`);

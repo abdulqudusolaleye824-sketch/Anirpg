@@ -1720,6 +1720,7 @@ ${FRAME}\n`;
           playerGuild.treasury -= amount;
           player.gold = (player.gold || 0) + netN;
           if (player.inventory) player.inventory.gold = player.gold;
+          try { require('../../rpg/utils/DailyQuestSystem').trackQuestProgress(player, 'goldEarn', netN); } catch (e) {} // Push #103k (BUG-166)
           try { require('../../rpg/utils/TransactionLog').logCredit(player, 'guild_withdraw', netN, 0, playerGuild.name); } catch (e) {}
           saveDatabase();
           return sock.sendMessage(chatId, { text: `✅ *Withdrew* 💠 ${amount.toLocaleString()} Nexus — 🧾 15% tax ${taxN.toLocaleString()} → you receive *${netN.toLocaleString()}*.\n🏰 Treasury now: ${(playerGuild.treasury || 0).toLocaleString()} Nexus` });

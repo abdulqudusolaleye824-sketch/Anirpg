@@ -54,6 +54,7 @@ module.exports = {
         });
       } finally { player._instBusy = 0; }
       if (!r.ok) return sock.sendMessage(chatId, { text: `❌ ${r.error}` }, { quoted: msg });
+      if (r.died) { try { const _rw = require('../../rpg/utils/Reawakening').tryOnDeath(db, sender, player, 'instance'); if (_rw) { r.lines = [...(r.lines || []), ``, ..._rw.lines]; console.log(`[REAWAKEN] ${player.name} ${_rw.from}->${_rw.to} (instance)`); } } catch (e) {} } // Push #103k
       if (r.floorCleared || (r.lines || []).some(l => /falls!/.test(l))) { try { const QD = require('../../rpg/utils/QuestDispatcher'); QD.trackAndNotify(player, 'kill', 1, sock, sender, chatId); if (r.bossKill) QD.trackAndNotify(player, 'boss', 1, sock, sender, chatId); if (r.floorCleared) { QD.trackAndNotify(player, 'floor', 1, sock, sender, chatId); QD.trackAndNotify(player, 'deepest', floorNo, sock, sender, chatId); } } catch (e) {} }
       saveDatabase();
       const live = player.instance && player.instance.active;

@@ -1160,10 +1160,13 @@ function handlePvpVictory(sock, chatId, winner, loser, wId, lId, db, saveDatabas
     `${FRAME}`,
   ].join('\n');
 
+  // Push #103k: the fallen duelist may REAWAKEN (global 3/year; never S; B max, A only from B).
+  let _rwText = null; try { const _rw = require('../../rpg/utils/Reawakening').tryOnDeath(db, lId, loser, 'pvp'); if (_rw) { _rwText = _rw.lines.join('\n'); saveDatabase(); console.log(`[REAWAKEN] ${loserName} ${_rw.from}->${_rw.to} (pvp)`); } } catch (e) {}
   return sock.sendMessage(chatId, {
     sections: [
       { text: lastTurnText, mentions: [wId, lId] },
-      { text: victoryMsg, mentions: [wId, lId] }
+      { text: victoryMsg, mentions: [wId, lId] },
+      ...(_rwText ? [{ text: _rwText, mentions: [lId] }] : []),
     ]
   });
 }

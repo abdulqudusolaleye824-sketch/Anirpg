@@ -218,7 +218,9 @@ function makeMonster(player, floor, slot = 1) {
   let def = null; try { def = require('../data/SoloLevelingMonsters').pickForStrength(rank, 100); } catch (e) {}
   const lvl = Math.max(1, player.level || 1);
   const isBoss = slot >= PER_FLOOR; const finalBoss = isBoss && floor >= FLOORS;
-  const fm = (1 + (floor - 1) * 0.09 + (slot - 1) * 0.02) * (finalBoss ? 1.3 : 1); // Push #96h-z9: 10-floor curve (50 kills in < 2 h)
+  // Push #103k (owner call): the ladder now climbs EXPONENTIALLY — floors 1–3 stay fair (×1 → ×1.5), floor 7 is ×3.3, floor 10 is
+  // ×5.9 and its final boss ×9.5. Floor 10 is meant to be almost impossible.
+  const fm = Math.pow(1.22, floor - 1) * (1 + (slot - 1) * 0.02) * (finalBoss ? 1.6 : 1);
   const pAtk = (player.stats && player.stats.atk) || 50, pHp = _max(player), pDef = (player.stats && player.stats.def) || 20;
   // Scaled to the hunter: ~3–4 hits per floor, ~25–35% of their HP lost per
   // floor at Lv.1 of the ladder; deeper floors (and bosses) climb steadily.
@@ -226,8 +228,10 @@ function makeMonster(player, floor, slot = 1) {
   const atk = Math.floor((pDef * 0.5 + pHp * 0.025 + lvl * 1.5) * fm * (isBoss ? 1.2 : 1));
   const dfn = Math.floor((pAtk * 0.1 + lvl * 1.2) * fm);
   const name = (def && def.name) || _pick(['Shade', 'Ghoul', 'Warg', 'Imp', 'Sentinel']);
-  return { id: `inst_${floor}_${slot}`, name: finalBoss ? ((player.instance && player.instance.bossName) || bossFor(player.instance && player.instance.job).boss) : isBoss ? `${name} Alpha` : name, emoji: isBoss ? '👑' : '👹', level: lvl + floor, rank, isBoss, finalBoss, floor, slot,
-    abilities: (def && def.skills && def.skills.length) ? def.skills : ['Strike', 'Rend'],
+  // Push #103k: B+ floors and every floor boss fight with a hunter class kit (BeastClassKit).
+  let _kit = []; let _kitClass = null; try { const BCK = require('./BeastClassKit'); const _tmp = { isBoss, rank }; if (BCK.assign(_tmp, rank, { boss: isBoss })) { _kit = BCK.kitMoves(_tmp); _kitClass = _tmp.kitClass; } } catch (e) {}
+  return { kitClass: _kitClass, id: `inst_${floor}_${slot}`, name: finalBoss ? ((player.instance && player.instance.bossName) || bossFor(player.instance && player.instance.job).boss) : isBoss ? `${name} Alpha` : name, emoji: isBoss ? '👑' : '👹', level: lvl + floor, rank, isBoss, finalBoss, floor, slot,
+    abilities: [...((def && def.skills && def.skills.length) ? def.skills : ['Strike', 'Rend']), ..._kit],
     stats: { hp, maxHp: hp, atk, def: dfn, speed: Math.round((90 + floor * 3) * 1.4) /* Push #96h-c: +40% */ }, statusEffects: [], tempBuffs: {} };
 }
 
@@ -388,7 +392,7 @@ async function act(player, skillQuery, hooks = null) {
   if ((player.stats.hp || 0) <= 0) {
     player.stats.hp = 1; // the instance is a trial, not a grave
     const summary = end(player, false, { died: true });
-    return { ok: true, lines: [...lines, `💀 *You fall on floor ${summary.floor}.*`, ...summary.lines], ended: true, passed: summary.passed };
+    return { ok: true, lines: [...lines, `💀 *You fall on floor ${summary.floor}.*`, ...summary.lines], ended: true, passed: summary.passed, died: true }; // Push #103k: died flag → reawakening roll in the command
   }
   return { ok: true, lines, ended: false };
 }

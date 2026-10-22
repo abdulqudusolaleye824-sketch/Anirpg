@@ -134,6 +134,10 @@ module.exports = {
     const pro = UI.isPro(player);
     const FRAME = pro ? UI.PRO_BAR : UI.FREE_BAR;
 
+    // Push #103k (BUG-144): specialization retired with the #103 class revamp — explain instead of dangling a choice that never comes.
+    if (player.pendingSkillChoice) { player.pendingSkillChoice = null; saveDatabase(); }
+    return sock.sendMessage(chatId, { text: `${FRAME}\n🌟 *SKILL SPECIALIZATION — RETIRED*\n${FRAME}\n\nSince the class revamp every class grows through its own roster instead of a two-way fork:\n• 🪨 */rune use all* — learn the skills your rune stones unlock (one drops every level)\n• ⬆️ */skill upgrade <name>* — raise a skill's power with Upgrade Points\n• 🌌 */domain* — your domain gains +1 level on every level-up\n\nNothing is missing from your account — there is no choice to make at Lv.20/40/60/80 any more.` }, { quoted: msg });
+    // eslint-disable-next-line no-unreachable
     const pick = args[0]?.toLowerCase();
 
     if (!pick || pick==='status') {

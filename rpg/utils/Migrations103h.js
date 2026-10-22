@@ -135,4 +135,23 @@ function runRankPowerAlloc(db) {
   db.migrations[KEY4] = { at: Date.now(), recomputed: n };
   return n;
 }
-module.exports = { run, runRankPower, runGearLadder, runRankPowerAlloc, KEY4, _upgradeOne, _ladderOne, KEY, KEY2, KEY3 };
+// Push #103k (BUG-147): energy name/colour re-synced from the class for every hunter (recon'd hunters kept the old label).
+const KEY5 = 'energy_name_103k';
+function runEnergyNames(db) {
+  if (!db || !db.users) return 0;
+  db.migrations = db.migrations || {};
+  if (db.migrations[KEY5]) return 0;
+  let n = 0;
+  try {
+    const defs = require('../player/PlayerManager').classDefinitions || {};
+    for (const u of Object.values(db.users)) {
+      if (!u || !u.class) continue;
+      const base = u.classBase || (typeof u.class === 'object' ? u.class.name : u.class);
+      const cd = defs[base]; if (!cd || !cd.energyType) continue;
+      if (u.energyType !== cd.energyType || u.energyColor !== cd.energyColor) { u.energyType = cd.energyType; u.energyColor = cd.energyColor; n++; }
+    }
+  } catch (e) {}
+  db.migrations[KEY5] = { at: Date.now(), fixed: n };
+  return n;
+}
+module.exports = { run, runRankPower, runGearLadder, runRankPowerAlloc, runEnergyNames, KEY5, KEY4, _upgradeOne, _ladderOne, KEY, KEY2, KEY3 };

@@ -129,6 +129,8 @@ module.exports = {
     const res = CS.reconClass(player, { className: pinClass || undefined, quality: pinQuality != null ? pinQuality : (keepQ || undefined), db, jid });
     if (!res.success) { if (_prevUndo) player._reconUndo = _prevUndo; else delete player._reconUndo; return sock.sendMessage(chatId, { text: `❌ ${res.error}` }, { quoted: msg }); }
 
+    // Push #103k (BUG-147, owner re-report): the energy NAME / colour / cap always follow the NEW class, whatever path reconClass took.
+    try { const PMe = require('../../rpg/player/PlayerManager'); const _nn = res.className || player.classBase || (typeof player.class === 'string' ? player.class : player.class?.name); const cd = (PMe.classDefinitions || {})[_nn]; if (cd && cd.energyType) { player.energyType = cd.energyType; if (cd.energyColor) player.energyColor = cd.energyColor; } if (player.stats) player.stats.energy = Math.min(Number(player.stats.energy) || 0, Number(player.stats.maxEnergy) || 100); } catch (e) {}
     // Rebuild derived skill state so /skills and combat read the new class.
     // Push #88f: skill COUNT + LEVELS carry over (old #1 Lv5 → new #1 Lv5).
     let _carry = null;

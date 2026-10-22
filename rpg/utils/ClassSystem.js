@@ -431,6 +431,8 @@ function applyClassToPlayer(player, className) {
 
   player.classBonusApplied = { cls: className, quality, bonuses: _applied74, at: Date.now(), base: true };
   player.classPowerV74 = true;
+  // Push #103k (BUG-147): the class's energy NAME/colour follow the class (a recon'd Necromancer → Monster kept "Mana"; it is "Primal").
+  try { const PMc = require('../player/PlayerManager'); const cd = (PMc.classDefinitions || {})[className]; if (cd && cd.energyType) { player.energyType = cd.energyType; player.energyColor = cd.energyColor || player.energyColor; } } catch (e) {}
 
   // Assign class skills scaled by quality
   player.classSkills = (data.skills || []).map(skill => ({

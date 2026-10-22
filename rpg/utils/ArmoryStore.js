@@ -317,7 +317,9 @@ function equipWeapon(player, inst) {
 }
 function unequipWeapon(player) {
   const w = player.weapon;
-  if (!w || !w.fromStore) return { ok: false, error: 'No store weapon equipped.' };
+  // Push #103k (BUG-150): ANY removable weapon unequips — store, crafted, gate/red-gate drops, pass weapons. Only the class weapon (no durability) stays.
+  if (!w || !(w.fromStore || w.isWeapon || w.crafted || w.maxDurability != null)) return { ok: false, error: 'No removable weapon equipped — your class weapon cannot be taken off.' };
+  if (!w.isWeapon) w.isWeapon = true;
   if (!player.inventory) player.inventory = {};
   if (!Array.isArray(player.inventory.items)) player.inventory.items = [];
   { const c = { ...w }; try { require('./InventoryCompactor').attach(c); } catch (e) {} player.inventory.items.push(c); }

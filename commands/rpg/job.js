@@ -44,6 +44,8 @@ module.exports = {
         lines.push(...JS.describeMods(job, lv));
         lines.push('');
       }
+      // Push #103k (BUG-167): the job's three skills ride on /job info too (tier-1 effect + unlock level), straight from the live catalog.
+      try { const JSk = require('../../rpg/utils/JobSkills'); const defs = JSk.defsFor(job.key); if (defs.length) { lines.push(`🧭 *JOB SKILLS*`); defs.forEach((d, i) => lines.push(`  J${i + 1}. ${JSk.KIND_ICON[d.kind] || '✨'} *${d.name}* — Job Lv.${JSk.UNLOCKS[i]} · ⚡${d.cost} · ${d.cd}t cd`, `     ${d.text(1)} _(tier 1 → grows to tier 5)_`)); lines.push(''); } } catch (e) {}
       lines.push(`📈 Job XP to reach Lv.2–5: ${JS.JOB_XP_PER_LEVEL.slice(1).join(' / ')} (earned from raid, dungeon, PvP and instance wins).`);
       lines.push(FRAME);
       return sock.sendMessage(chatId, { text: lines.join('\n') }, { quoted: msg });

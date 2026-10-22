@@ -292,6 +292,7 @@ function creditKickPayout(db, guildRef, playerJid, saveDatabase) {
     user.gold = (user.gold || 0) + res.payout.nexus;
     user.manaCrystals = (user.manaCrystals || 0) + res.payout.mana;
     if (user.inventory) user.inventory.gold = user.gold;
+    try { if ((res.payout.nexus || 0) > 0) require('./DailyQuestSystem').trackQuestProgress(user, 'goldEarn', Math.floor(res.payout.nexus)); } catch (e) {} // Push #103k (BUG-166)
     credited = true;
     try { require('./TransactionLog').logCredit(user, 'kick_severance', res.payout.nexus, res.payout.mana, 'x2 remaining contract'); } catch (e) {}
   }
@@ -446,6 +447,7 @@ function payOneWeek(db, guild, bare, c, now = Date.now()) {
   if (user) {
     user.gold = (user.gold || 0) + reqNexus;
     user.manaCrystals = (user.manaCrystals || 0) + reqMana;
+    try { if (reqNexus > 0) require('./DailyQuestSystem').trackQuestProgress(user, 'goldEarn', Math.floor(reqNexus)); } catch (e) {} // Push #103k (BUG-166)
     if (user.inventory) user.inventory.gold = user.gold;
     try { require('./TransactionLog').logCredit(user, 'wage', reqNexus, reqMana, guild.name); } catch (e) {}
   }

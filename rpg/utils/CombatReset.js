@@ -13,6 +13,8 @@ function clearForBattle(player, opts = {}) {
   try {
     // End a running transformation cleanly (stats revert, no aftermath statuses).
     try { const TF = require('./Transformation'); if (player.transform) TF.end(player, false, false); } catch (e) {}
+    // Push #103k (BUG-168): belt and braces — if the revert above threw half-way, strip whatever the transformation added so no ×mult stats leak out of a lost instance/raid.
+    try { if (player.transform) { const a = player.transform.applied || {}; for (const k of Object.keys(a)) { const v = Number(player.stats[k]) || 0; player.stats[k] = Math.max(k === 'maxHp' ? 1 : 0, v - (Number(a[k]) || 0)); } if (player.stats.maxHp && player.stats.hp > player.stats.maxHp) player.stats.hp = player.stats.maxHp; delete player.transform; } } catch (e) { try { delete player.transform; } catch (e2) {} }
     try { require('./DomainSystem').releaseShield(player); } catch (e) {} // Push #96h-z19: domain immunity never outlives the fight
     player.statusEffects = [];
     player.tempBuffs = {};

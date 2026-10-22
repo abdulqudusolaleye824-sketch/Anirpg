@@ -176,14 +176,17 @@ function handleSetupReply(player, text, opts = {}) {
     if (t.toLowerCase() === 'keep') { d.setup = 'desc'; return { reply: `✨ *${d.name}* it stays.\n\n${setupPrompt(player)}`, done: false }; }
     if (t.length < 3 || t.length > 40) return { reply: '❌ 3–40 characters please. Reply again with *name: …*, or *name: keep*.', done: false };
     d.setupName = t; d.setup = 'desc';
-    return { reply: `✨ *${t}* — noted (goes live once an owner approves).\n\n${setupPrompt(player)}`, done: false };
+    return { reply: `✨ *${t}* — noted.\n\n${setupPrompt(player)}`, done: false };
   }
   if (d.setup === 'desc') {
     let desc = null;
     if (t.toLowerCase() !== 'skip') { if (t.length > 2000) return { reply: '❌ Up to 2000 characters please. Reply again with *desc: …*, or *desc: skip*.', done: false }; desc = t; }
     const name = d.setupName || null; delete d.setupName; delete d.setup;
     if (name == null && desc == null) return { reply: [`🌌 *${d.name}*`, `Your domain is sealed in the records. See it any time with /domain.`].join('\n'), done: true };
-    return { reply: [`🌌 *${name || d.name}*${desc ? ` — _${desc}_` : ''}`, `📨 Sent to the owners for approval — until then your domain shows as *${d.name}*. You will be told the verdict here.`].join('\n'), done: true, submit: { name, desc } };
+    // Push #103k (owner call): the first name + description are FREE and go live at once — no owner approval.
+    if (name != null) d.name = name;
+    if (desc != null) { d.desc = desc; d.descEdited = true; d.descCount = (Number(d.descCount) || 0) + 1; }
+    return { reply: [`🌌 *${d.name}*${d.desc ? ` — _${d.desc}_` : ''}`, `✅ Sealed in the records — see it any time with /domain.`, desc != null ? `📜 A description is written once; changing it later needs the owner's blessing.` : `📜 You can still write its description once, free: /domain desc <text>.`].join('\n'), done: true, applied: true };
   }
   return null;
 }
@@ -193,7 +196,8 @@ function rename(player, name) {
   const n = _clean(name); if (n.length < 3 || n.length > 40) return { ok: false, error: 'Give a name of 3–40 characters.' };
   if (!player.cards || (Number(player.cards.namechange) || 0) < 1) return { ok: false, error: 'Renaming a domain costs 1 🃏 Rename Card — /prostore buy namechange' };
   player.cards.namechange -= 1; const old = d.name;
-  return { ok: true, old, name: n, left: player.cards.namechange, needsApproval: true };
+  d.name = n; // Push #103k (owner call): a Rename Card renames on the spot — no owner approval.
+  return { ok: true, old, name: n, left: player.cards.namechange, needsApproval: false };
 }
 /** Push #103a (BUG-100): after /recon the domain follows the NEW class — new effect of that class, same level/UP,
  *  and the hunter is prompted again (DM) for a name + description (owner-approved). Returns the prompt text or null. */
@@ -592,11 +596,13 @@ function onLevelUp(player, sock, chatId) {
 }
 
 // ── UP sharing (/giveup) ───────────────────────────────────────────────────
+const UP_SHARE_MIN_LEVEL = 7; // Push #103k: only Lv.7+ hunters may share UP (alt-account farming)
 function shareUP(from, to, amount) {
   const n = Math.floor(Number(amount) || 0);
   if (!from || !to) return { ok: false, error: 'Hunter not found.' };
   if (n < 1) return { ok: false, error: 'Send at least 1 UP.' };
   if ((from.jid || from.id) === (to.jid || to.id)) return { ok: false, error: 'You cannot send UP to yourself.' };
+  if ((Number(from.level) || 1) < UP_SHARE_MIN_LEVEL) return { ok: false, error: `Sharing UP unlocks at *Level ${UP_SHARE_MIN_LEVEL}* (you are Lv.${from.level || 1}).` }; // Push #103k (owner call)
   const day = new Date().toISOString().slice(0, 10);
   if (!from.upShare || from.upShare.day !== day) from.upShare = { day, sent: 0 };
   const left = UP_SHARE_CAP - from.upShare.sent;
@@ -657,4 +663,4 @@ function findBattle(player, sender, db) {
   return null;
 }
 
-module.exports = { syncClass, monsterWarn, DOMAIN_WARN_MS, reconDomain, SETUP_MARKERS, releaseShield, ownerFell, domainVariance, DOMAIN_TTL_MS, CASTER_REGEN_PCT, costFor, CLASS_KITS, kitFor, SKILL_DOMAINS, BREAK, splitMessages, sendDomain, FAMILY_DOMAINS, isShielded, shieldLine, monsterDomainInfo, MONSTER_DOMAINS, setupStep, setupPrompt, handleSetupReply, rename, pvpArena, endPvpArena, findBattle, CAST_ENERGY, MAX_LEVEL, UP_SHARE_CAP, ARCHETYPES, CLASS_DOMAINS, STAT_LABEL, effectFor, scale, turnsFor, costToNext, ensure, has, unlock, scaledEffect, describe, power, upgrade, arenaOf, active, shatter, tick, expand, monsterPower, monsterEligible, monsterTry, onLevelUp, shareUP };
+module.exports = { UP_SHARE_MIN_LEVEL, syncClass, monsterWarn, DOMAIN_WARN_MS, reconDomain, SETUP_MARKERS, releaseShield, ownerFell, domainVariance, DOMAIN_TTL_MS, CASTER_REGEN_PCT, costFor, CLASS_KITS, kitFor, SKILL_DOMAINS, BREAK, splitMessages, sendDomain, FAMILY_DOMAINS, isShielded, shieldLine, monsterDomainInfo, MONSTER_DOMAINS, setupStep, setupPrompt, handleSetupReply, rename, pvpArena, endPvpArena, findBattle, CAST_ENERGY, MAX_LEVEL, UP_SHARE_CAP, ARCHETYPES, CLASS_DOMAINS, STAT_LABEL, effectFor, scale, turnsFor, costToNext, ensure, has, unlock, scaledEffect, describe, power, upgrade, arenaOf, active, shatter, tick, expand, monsterPower, monsterEligible, monsterTry, onLevelUp, shareUP };
