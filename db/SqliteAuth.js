@@ -75,7 +75,25 @@ function init(dataDir, opts = {}) {
       bot TEXT NOT NULL, key TEXT NOT NULL, value TEXT NOT NULL, PRIMARY KEY (bot, key)
     );
   `);
+  try { const r = slimAll(); if (r.rows) console.log(`🧬 SqliteAuth: slimmed ${r.rows} oversized Signal record(s) — ${(r.bytesSaved / 1048576).toFixed(1)} MB of dead skipped-message keys dropped`); } catch (e) {} // Push #103k-c
   return _file;
+}
+/** Push #103k-c: one pass over every oversized session / sender-key row (boot + /dbstatus). */
+function slimAll() {
+  _assert();
+  const rows = _db.prepare(`SELECT bot, type, id, data FROM auth_keys WHERE type IN ('session','sender-key') AND length(data) > ?`).all(Math.floor(SLIM_AT_BYTES * 1.3));
+  const up = _db.prepare('UPDATE auth_keys SET data = ? WHERE bot = ? AND type = ? AND id = ?');
+  let n = 0, saved = 0;
+  const tx = _db.transaction(() => {
+    for (const r of rows) {
+      let v; try { v = _de(r.data); } catch { continue; }
+      const sv = slimKey(r.type, v); if (sv === v) continue;
+      const out = _ser(sv); saved += Math.max(0, r.data.length - out.length);
+      up.run(out, r.bot, r.type, r.id); n++;
+    }
+  });
+  tx();
+  return { rows: n, bytesSaved: saved, scanned: rows.length };
 }
 function isAvailable() { return !!_db; }
 function _assert() { if (!_db) throw new Error('SqliteAuth not initialised — call init(dataDir) first'); }
@@ -83,6 +101,70 @@ function _assert() { if (!_db) throw new Error('SqliteAuth not initialised — c
 // ── serialisation ──────────────────────────────────────────────
 function _ser(v) { const { BufferJSON } = _loadDeps(); return JSON.stringify(v, BufferJSON.replacer); }
 function _de(s) { const { BufferJSON } = _loadDeps(); return JSON.parse(s, BufferJSON.reviver); }
+// ── Push #103k-c: SLIM the Signal records that make the bots slow ───────────────
+// Live 10-22 profile (90 s): 4.9 s inside SenderKeyRecord.deserialize + 2.8 s roughSizeOfObject + sqlite writes —
+// 33 sender-key records of ~450 KB (2000 skipped message keys each) and 1:1 sessions of up to 1.6 MB. Every message
+// from such a sender makes EVERY bot parse + revive 2000 Buffers + re-serialise + walk the object for the cache.
+// Skipped message keys only matter for out-of-order delivery; keeping the newest MSG_KEYS_KEEP is more than WhatsApp
+// itself tolerates. Applied on READ and WRITE, so the file shrinks as records are touched.
+const MSG_KEYS_KEEP = Number(process.env.SIGNAL_MSG_KEYS_KEEP || 120);
+const SLIM_AT_BYTES = 24 * 1024;
+const _slimStats = { senderKey: 0, session: 0, bytesSaved: 0 };
+function _toJsonString(v) {
+  if (typeof v === 'string') return v;
+  if (v && (Buffer.isBuffer(v) || v instanceof Uint8Array)) return Buffer.from(v).toString('utf8');
+  return null;
+}
+function _slimSenderKey(v) {
+  const str = _toJsonString(v); if (!str || str.length < SLIM_AT_BYTES) return v;
+  let arr; try { arr = JSON.parse(str); } catch { return v; }
+  if (!Array.isArray(arr)) return v;
+  let changed = false;
+  for (const st of arr) {
+    const mk = st && st.senderMessageKeys;
+    if (Array.isArray(mk) && mk.length > MSG_KEYS_KEEP) {
+      mk.sort((x, y) => (Number(x.iteration) || 0) - (Number(y.iteration) || 0));
+      st.senderMessageKeys = mk.slice(mk.length - MSG_KEYS_KEEP);
+      changed = true;
+    }
+  }
+  if (!changed) return v;
+  const out = Buffer.from(JSON.stringify(arr), 'utf8');
+  _slimStats.senderKey++; _slimStats.bytesSaved += Math.max(0, str.length - out.length);
+  return out;
+}
+function _slimSession(v) {
+  const str = _toJsonString(v); if (!str || str.length < SLIM_AT_BYTES) return v;
+  let obj; try { obj = JSON.parse(str); } catch { return v; }
+  const sessions = obj && (obj._sessions || obj.sessions); if (!sessions || typeof sessions !== 'object') return v;
+  let changed = false;
+  for (const sid of Object.keys(sessions)) {
+    const chains = sessions[sid] && (sessions[sid]._chains || sessions[sid].chains); if (!chains) continue;
+    for (const ck of Object.keys(chains)) {
+      const mk = chains[ck] && chains[ck].messageKeys; if (!mk || typeof mk !== 'object') continue;
+      const ids = Object.keys(mk);
+      if (ids.length > MSG_KEYS_KEEP) {
+        ids.sort((x, y) => Number(x) - Number(y));
+        for (const drop of ids.slice(0, ids.length - MSG_KEYS_KEEP)) delete mk[drop];
+        changed = true;
+      }
+    }
+  }
+  if (!changed) return v;
+  const out = Buffer.from(JSON.stringify(obj), 'utf8');
+  _slimStats.session++; _slimStats.bytesSaved += Math.max(0, str.length - out.length);
+  return out;
+}
+function slimKey(type, v) {
+  try {
+    if (v === null || v === undefined) return v;
+    if (type === 'sender-key') return _slimSenderKey(v);
+    if (type === 'session') return _slimSession(v);
+  } catch (e) {}
+  return v;
+}
+function slimStats() { return { ..._slimStats, keep: MSG_KEYS_KEEP }; }
+
 function _credsLooksValid(c) { return !!(c && typeof c === 'object' && c.noiseKey && c.signedIdentityKey); }
 function _credsRegistered(c) { return !!(c && (c.registered || (c.me && c.me.id))); }
 
@@ -145,6 +227,7 @@ function getKeys(bot, type, ids) {
     if (!row) { out[id] = undefined; continue; }
     let v = null;
     try { v = _de(row.data); } catch { v = null; }
+    v = slimKey(type, v); // Push #103k-c
     if (type === 'app-state-sync-key' && v && proto?.Message?.AppStateSyncKeyData?.fromObject) {
       v = proto.Message.AppStateSyncKeyData.fromObject(v);
     }
@@ -164,7 +247,7 @@ function setKeys(bot, data) {
       for (const id in bucket) {
         const v = bucket[id];
         if (v === null || v === undefined) del.run(bot, type, String(id));
-        else up.run(bot, type, String(id), _ser(v), now);
+        else up.run(bot, type, String(id), _ser(slimKey(type, v)), now); // Push #103k-c: slim before it hits disk
         writes++;
       }
     }
@@ -330,7 +413,7 @@ function credsRegistered(bot, botAuthDir) {
 
 function close() { try { _db && _db.close(); } catch {} _db = null; _file = null; }
 
-module.exports = {
+module.exports = { slimKey, slimStats, slimAll,
   init, isAvailable, close, useSqliteAuthState, importLegacyDir,
   loadCreds, saveCreds, getKeys, setKeys, countKeys, prunePreKeys, purgeSessions, wipe, stats, listBots, credsRegistered,
   PREKEY_KEEP, PREKEY_PRUNE_AT, CREDS_BACKUPS,

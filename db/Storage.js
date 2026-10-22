@@ -92,6 +92,7 @@ function load() {
  * Top-level keys are stored as rows, so a partially-corrupted file can
  * never wipe the whole database. Returns true on success.
  */
+const _lastWritten = new Map(); // Push #103k-c: last JSON written per collection
 function save(obj) {
   if (!isAvailable() || !obj || typeof obj !== 'object') return false;
   try {
@@ -104,11 +105,14 @@ function save(obj) {
       for (const n of names) {
         const v = obj[n];
         if (v === undefined) continue; // JSON.stringify(undefined) is not a string
-        upsert.run(n, JSON.stringify(v), now);
+        const str = JSON.stringify(v);
+        if (_lastWritten.get(n) === str) continue; // Push #103k-c: unchanged collection → no SQLite rewrite (string compare is a memcmp)
+        upsert.run(n, str, now);
+        _lastWritten.set(n, str);
       }
       const inMem = new Set(names);
       for (const r of _db.prepare('SELECT name FROM collections').all()) {
-        if (!inMem.has(r.name)) del.run(r.name);
+        if (!inMem.has(r.name)) { del.run(r.name); _lastWritten.delete(r.name); }
       }
       setMeta.run('last_saved_at', String(now));
     });
