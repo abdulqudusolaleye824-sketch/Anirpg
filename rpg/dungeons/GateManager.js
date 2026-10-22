@@ -264,7 +264,9 @@ class GateManager {
     // Push #71: Solo Leveling bestiary + gate strength %.
     const strengthPct = rollGateStrength();
     const _floors = rollFloors(); // Push #97: 7–40 floors per gate
-    const monsters = buildGateMonsters(rank, _floors, strengthPct, bossName); // Push #88t: themed to the boss
+    // Push #103k-d (owner call): beasts are rolled when the RAID STARTS, not at spawn — 184 stocked keyring gates were
+    // carrying ~100 pre-rolled beasts each (6 MB of the document, every save). See GateRaid.ensureMonsters.
+    const monsters = [];
     const bossHp = Math.floor(rankData.bossHp * Math.max(0.6, strengthPct / 100));
 
     const loot = this.generateBossLoot(rank, 6);
@@ -280,7 +282,7 @@ class GateManager {
       raiders: [], guildRaiders: [], externalRaiders: [], pendingApplicants: [],
       raidStarted: false, raidStartTime: null,
       strengthPct, strengthLabel: strengthLabel(strengthPct),
-      currentFloor: 0, totalFloors: _floors, monsters,
+      currentFloor: 0, totalFloors: _floors, monsters, monstersPending: true,
       boss: { name: bossName, baseName: bossData.baseName || bossName, family: themed.theme || null, hp: bossHp, maxHp: bossHp, defeated: false },
       theme: themed.theme || null,
       terrain: (() => { try { return require('../data/Terrains').pickFor(themed.theme || null).id; } catch (e) { return null; } })(), // Push #97: 20 terrains
@@ -491,6 +493,16 @@ class GateManager {
       try { const c = g.chatId; if (c && this.gatesByChat[c]) this.gatesByChat[c] = this.gatesByChat[c].filter(x => x !== id); } catch (e) {}
       n++;
     }
+    // Push #103k-d: gates that never started a raid drop their pre-rolled beasts (re-rolled at raid start).
+    let slimmed = 0;
+    for (const g of Object.values(this.activeGates)) {
+      try {
+        if (!g || g.raidStarted || g.cleared || g.broken) continue;
+        if (g.raid && g.raid.status && g.raid.status !== 'recruiting') continue;
+        if (Array.isArray(g.monsters) && g.monsters.length) { g.monsters = []; g.monstersPending = true; slimmed++; }
+      } catch (e) {}
+    }
+    if (slimmed) console.log(`[GATE] ${slimmed} unraided gate(s) shed their pre-rolled beasts (rolled at raid start)`);
     if (n) console.log(`[GATE] swept ${n} stale gate(s) — ${Object.keys(this.activeGates).length} remain`);
     return n;
   }

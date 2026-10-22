@@ -1,3 +1,6 @@
+## 1.0.220 — Push #103k-d (2026-10-22) — beasts rolled at raid start
+- Gates no longer pre-roll their beasts at spawn/purchase. The floors are rolled the moment the raid starts (solo or party) with the same builder, then calibrated to the party as before. Stocked keyring gates shed their pre-rolled beasts at boot/sweep — about 6 MB off every save.
+
 ## 1.0.219 — Push #103k-c (2026-10-22) — "bots are slow": Signal record bloat
 - Live CPU profile (90 s): the event loop froze 2–5 s about once a minute. Cause: 33 group sender-key records of ~450 KB (2,000 skipped message keys each — dead weight, rc14 cannot even use them after a reload) and 1:1 sessions up to 1.6 MB. Every message from such a sender made all 13 bots parse, revive and re-serialise the whole record.
 - SqliteAuth now keeps only the newest 120 skipped keys per chain, on read and on write, and sweeps every oversized row at boot (`SIGNAL_MSG_KEYS_KEEP` to tune).

@@ -827,6 +827,8 @@ function enter(sender, name, key, keyData, gate, db) {
     raid.mode = 'solo';
     raid.leader = sender;
     raid.status = 'active'; raid.lastTurnAt = Date.now(); // Push #88q
+    try { ensureMonsters(gate); } catch (e) {} // Push #103k-d
+    gate.raidStarted = true;
     raid.startedAt = Date.now();
     try { require('../utils/CombatReset').clearParty(db, [sender]); } catch (e) {} // Push #92: fresh battle state
     // Single-use: solo raids launch instantly, so the key is consumed here
@@ -905,6 +907,7 @@ function start(sender, keyData, gate, db) {
   raid.status = 'active'; raid.lastTurnAt = Date.now(); // Push #88q
   raid.startedAt = Date.now();
   gate.raidStarted = true;
+  try { ensureMonsters(gate); } catch (e) { console.error('ensureMonsters:', e.message); } // Push #103k-d: roll the beasts now
   try { require('../utils/CombatReset').clearParty(db, raid.members); } catch (e) {} // Push #92: no statuses/buffs/recoil carry in
   // Push #74: monster SEVERITY is calibrated to the party, not random.
   try { calibrateToParty(gate, raid, db); } catch (e) { console.error('calibrateToParty:', e.message); }
@@ -1122,8 +1125,18 @@ function totalStatsOf(u, jid) {
   return { atk, def: Math.floor(def * (1 + (pm.def || 0) / 100)), maxHp, speed: Math.floor(speed * (1 + (pm.speed || 0) / 100)), hp: Math.min(st.hp || maxHp, maxHp), level: Number(u.level) || 1 };
 }
 
+/** Push #103k-d: beasts are rolled the moment a raid actually starts (spawn/purchase keep the gate light). */
+function ensureMonsters(gate) {
+  if (!gate) return false;
+  if (Array.isArray(gate.monsters) && gate.monsters.length && !gate.monstersPending) return false;
+  const floors = gate.totalFloors || 5;
+  const built = GateManager.buildGateMonsters(gate.rank, floors, gate.preRollStrengthPct || gate.strengthPct || 100, gate.boss && gate.boss.name) || [];
+  gate.monsters = built; gate.monstersPending = false; gate.calibrated = null;
+  return true;
+}
 function calibrateToParty(gate, raid, db) {
   if (!gate || !raid || !Array.isArray(raid.members) || !raid.members.length) return null;
+  try { ensureMonsters(gate); } catch (e) {} // Push #103k-d
   if (gate.calibrated) return gate.calibrated;
   // Push #88: monsters are calibrated to the party's TOTAL accumulated stats
   // (ATK + DEF + HP + SPD across every hunter, with gear/titles/pets/passives)
@@ -2110,7 +2123,7 @@ module.exports = { CREW_NEED, crewNeedFor, crewHpMult, _currentRaidTarget, curre
   SEVERITY_BAND, dayFlex, rollRedExtra,
   floorTreasure, RAID_NEXUS_BOOST, GATE_TUNE, RED_GATE_TUNE, LEAK_TUNE, BEAST_HP_BUFF, BEAST_ATK_BUFF, RED_GATE_CHANCE, DOUBLE_DUNGEON_CHANCE, LEAK_CHANCE, RED_GATE_TEXT, sealedReason, leakMonster, leakReveal, morphLeak, LEAK_EVADE, succeedLeader, takeLeaderNotice, doublePending, evolveDouble, grantDoubleBoxes, // Push #96d
   livingMembers,
-  calibrateToParty, partyLuck, RANK_EXPECTED_POWER, totalStatsOf,
+  calibrateToParty, ensureMonsters, partyLuck, RANK_EXPECTED_POWER, totalStatsOf,
   MAX_PARTY,
   playerDamage,
   monsterDamage,
