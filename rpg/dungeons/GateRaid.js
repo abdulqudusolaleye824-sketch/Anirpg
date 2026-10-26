@@ -1599,19 +1599,14 @@ function monsterKilledBy(gate, monster, sender, db) {
 
   // Material drop from monster — single commit to items (no more double-push
   // into the legacy bucket, which also duplicated the /inv display).
-  const drop = GateManager.rollMonsterKillDrop(gate.rank, monster.name, player);
+  let drop = GateManager.rollMonsterKillDrop(gate.rank, monster.name, player);
+  if (drop && Math.random() < 0.10) drop = { ...drop, name: `${gate.rank || 'E'}-Rank Mana Essence`, rarity: 'common' }; // SL recipe binder lives INSIDE the 40% roll
   if (drop) {
     RI.grantItem(player, { name: drop.name, type: 'material', rarity: drop.rarity || (gate.rank === 'S' || gate.rank === 'A' ? 'rare' : 'common'), fromGate: gate.id }, 'gate');
     lines.push(`🎁 *DROP → ${player.name}* (final blow): *${drop.name}*`);
-  } else {
-    const { rollBaseMaterial } = require('../data/MonsterDrops');
-    // Push #71: 1-in-4 misses become the rank's Mana Essence (SL recipe binder).
-    const baseMat = Math.random() < 0.25 ? `${gate.rank || 'E'}-Rank Mana Essence` : rollBaseMaterial(gate.rank || 'E');
-    if (baseMat) {
-      RI.grantItem(player, { name: baseMat, type: 'material', rarity: 'common', fromGate: gate.id }, 'gate');
-      lines.push(`🎁 *DROP → ${player.name}*: *${baseMat}*`);
-    }
   }
+  // Fix (10-26, owner): NO consolation drop on a miss. A kill drops loot 40% of the time (60% Pro) — the rest is
+  // silent. (The old Push #71 fallback handed out a base material / Mana Essence on EVERY miss, so every kill dropped something.)
 
   // Push #88e: Pet Food and Health Potions are NO LONGER raid drops (shop-only).
   // Push #97: Essence Stones — the crafting binder of this gate's rank (small chance per final blow).

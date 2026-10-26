@@ -137,11 +137,36 @@ function _s2aMap() {
   } catch (e) {}
   return _S2A;
 }
+// Fix (10-26, owner): MYTHIC sheets named 25 materials that no beast, boss or gate drops (God Corpse Fragment, World-Tree
+// Branch…). Any material that is not obtainable anywhere is swapped for a real S-rank / Disaster drop (deterministic by name).
+let _OBTAINABLE = null, _S_POOL = null;
+function _obtainable() {
+  if (_OBTAINABLE) return _OBTAINABLE;
+  _OBTAINABLE = new Set(); _S_POOL = [];
+  const add = (n) => { if (n) _OBTAINABLE.add(String(n).toLowerCase()); };
+  try {
+    const { MONSTER_DROPS, BASE_MATERIALS } = require('../data/MonsterDrops');
+    for (const [r, blk] of Object.entries(MONSTER_DROPS || {})) for (const k of ['monsters', 'bosses']) for (const m of (blk && blk[k]) || []) for (const d of [...(m.drops || []), m.primary, m.secondary].filter(Boolean)) { add(d); if (r === 'S' || r === 'DISASTER') _S_POOL.push(String(d)); }
+    for (const [r, list] of Object.entries(BASE_MATERIALS || {})) for (const d of list || []) { add(d); if (r === 'S' || r === 'DISASTER') _S_POOL.push(String(d)); }
+  } catch (e) {}
+  try { const SL = require('../data/SoloLevelingMonsters').SL_MONSTERS || {}; for (const [r, arr] of Object.entries(SL)) for (const m of arr || []) for (const d of m.drops || []) { add(d); if (String(r).toUpperCase() === 'S') _S_POOL.push(String(d)); } } catch (e) {}
+  for (const r of ['E', 'D', 'C', 'B', 'A', 'S']) add(`${r}-Rank Mana Essence`);
+  return _OBTAINABLE;
+}
+function _hash(str) { let h = 0; for (const c of String(str)) h = (h * 31 + c.charCodeAt(0)) >>> 0; return h; }
 function normalizeRecipeMaterials(recipe, rarity) {
   try {
-    if (!recipe || !recipe.materials || String(rarity || '').toLowerCase() !== 'legendary' || recipe._matsNormalized) return recipe;
-    const map = _s2aMap(); const out = {};
-    for (const [m, q] of Object.entries(recipe.materials)) { const to = map.get(m) || m; out[to] = (out[to] || 0) + (Number(q) || 0); }
+    if (!recipe || !recipe.materials || recipe._matsNormalized) return recipe;
+    const rar = String(rarity || '').toLowerCase();
+    if (rar !== 'legendary' && rar !== 'mythic') return recipe;
+    const out = {};
+    if (rar === 'legendary') {
+      const map = _s2aMap();
+      for (const [m, q] of Object.entries(recipe.materials)) { const to = map.get(m) || m; out[to] = (out[to] || 0) + (Number(q) || 0); }
+    } else {
+      const ok = _obtainable(); const pool = _S_POOL || [];
+      for (const [m, q] of Object.entries(recipe.materials)) { const to = (ok.has(String(m).toLowerCase()) || !pool.length) ? m : pool[_hash(m) % pool.length]; out[to] = (out[to] || 0) + (Number(q) || 0); }
+    }
     recipe.materials = out; recipe._matsNormalized = true;
   } catch (e) {}
   return recipe;
