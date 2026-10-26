@@ -373,7 +373,8 @@ afterMonsterHit._inner = function (player, monster, dmg) {
 
 function lifeSteal(player, dmg) {
   let pls = 0; try { pls = require('../utils/ClassPower').passiveMultipliers(player).lifesteal || 0; } catch (e) {}
-  const ls = ((player.stats?.lifesteal || 0) + pls) / 100;
+  let tls = 0; try { for (const v of Object.values(player.tempBuffs || {})) if (v && v.stat === 'lifesteal' && (v.duration || 0) > 0) tls += Number(v.amount) || 0; } catch (e) {} // Fix (10-26): lifesteal BUFFS count in raids
+  const ls = Math.min(100, (player.stats?.lifesteal || 0) + pls + tls) / 100;
   return ls > 0 ? Math.floor(dmg * ls) : 0;
 }
 

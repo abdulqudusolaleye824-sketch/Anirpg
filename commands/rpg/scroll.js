@@ -141,7 +141,7 @@ module.exports = {
     saveDatabase();
 
     // Check materials
-    const matCheck = checkMaterials(player, scroll.recipe);
+    const matCheck = checkMaterials(player, scroll.recipe, scroll.rarity);
     const matStatus = matCheck.map(m =>
       `${m.ok ? '✅' : '❌'} ${m.mat} (${m.have}/${m.need})`
     ).join('\n');

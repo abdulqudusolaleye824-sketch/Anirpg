@@ -339,6 +339,8 @@ ${player.energyColor || '💙'} ${player.energyType || 'Energy'}: ${player.stats
 // ── Healer-specific handler: zero-damage, heal allies ───────────────────
 async function healerHandler(sock, msg, player, skill, db, saveDatabase, getDatabase) {
   const chatId = msg.key.remoteJid;
+  // Fix (10-23 crash 'sender is not defined'): resolve the caster's jid from the db entry we were handed.
+  const sender = player.jid || Object.keys(db.users || {}).find(k => db.users[k] === player) || (msg.key.participant || msg.key.remoteJid);
 
   // Energy check
   const energyCost = skill.energyCost || 15;
@@ -371,6 +373,22 @@ async function healerHandler(sock, msg, player, skill, db, saveDatabase, getData
     if (!targetPlayer) {
       return sock.sendMessage(chatId, { text: '❌ That player is not registered.' }, { quoted: msg });
     }
+    // Fix (10-26, BUG-210): an out-of-battle heal cannot reach a hunter who is mid-fight somewhere else (instance, gate
+    // raid, dungeon, duel). Only their own party/engine heals them.
+    {
+      const _busy = (() => {
+        try {
+          if (targetPlayer.instance && targetPlayer.instance.active) return 'inside an instance';
+          if (checkInBattle(targetPlayer, db)) return 'in a battle';
+          const { GateManager } = require('../../rpg/dungeons/GateManager'); const tn = normaliseJidShort(mentioned);
+          for (const g of Object.values(GateManager.gates || {})) if (g?.raid?.status === 'active' && g.raid.members?.some(m => normaliseJidShort(m.id) === tn)) return 'in a gate raid';
+          const DPM = require('../../rpg/dungeons/DungeonPartyManager'); const pt = DPM.getPartyByPlayer && DPM.getPartyByPlayer(mentioned); if (pt && pt.dungeon) return 'in a dungeon';
+          if (db.soloDungeons && db.soloDungeons[mentioned]) return 'in a dungeon';
+        } catch (e) {}
+        return null;
+      })();
+      if (_busy) return sock.sendMessage(chatId, { text: `❌ *${targetPlayer.name || 'That hunter'}* is ${_busy} right now — only their own party can heal them from inside that fight.` }, { quoted: msg });
+    }
     targetJid = mentioned;
     targetName = targetPlayer.name;
   }
@@ -381,8 +399,25 @@ async function healerHandler(sock, msg, player, skill, db, saveDatabase, getData
   player.stats.energy = Math.max(0, player.stats.energy - energyCost);
   player.lastSkillUse[skill.name] = Date.now();
 
-  if (skill.effect) {
-    const e = skill.effect;
+  // Fix (10-23): catalog skills carry `effect` as a TEXT line, not an object — the old `e.type?.…` checks all failed
+  // silently and /heal restored nothing. Build the effect object from the catalog fields instead.
+  let _eff = skill.effect;
+  if (_eff && typeof _eff !== 'object') {
+    const _txt = `${skill.effect || ''} ${skill.description || ''}`;
+    const _pm = _txt.match(/(\d+)%\s*(?:of\s*)?max\s*HP/i);
+    const _ty = String(skill.type || '').toLowerCase();
+    _eff = {
+      type: _ty || 'heal',
+      target: /whole party|all allies|party-wide|every ally/i.test(_txt) ? 'party' : 'single',
+      healPercent: _pm ? Math.min(1, Number(_pm[1]) / 100) : 0.20,
+    };
+    if (/cleanse|purif|debuffs? (?:are )?(?:cleared|removed)/i.test(_txt) && !_ty.includes('cleanse')) _eff.type = 'heal_cleanse';
+    if (/resurrect|revive/i.test(_txt) && !_ty.includes('heal')) _eff.type = 'resurrect';
+    if (/shield/i.test(_txt) && !_ty.includes('heal')) { _eff.buffType = 'shield'; const _sp = _txt.match(/(\d+)%/); _eff.shieldPercent = _sp ? Number(_sp[1]) / 100 : 0.4; }
+    if (!_ty.includes('heal') && /energy|mana/i.test(_txt) && /restor/i.test(_txt)) { _eff.type = 'energy_restore'; const _ep = _txt.match(/(\d+)%/); _eff.energyPercent = _ep ? Number(_ep[1]) / 100 : 0.3; }
+  }
+  if (_eff) {
+    const e = _eff;
     const isAoe = e.target === 'party';
     const isCleanse = e.type?.includes('cleanse') || e.type?.includes('heal_cleanse');
     const isEnergy = e.type === 'energy_restore' || e.type?.includes('energy');

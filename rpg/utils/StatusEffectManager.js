@@ -31,10 +31,42 @@ class StatusEffectManager {
   static get STATUS_GRACE_MS() { return 90 * 1000; }
   static isHunter(e) { return !!(e && !e.isMonster && !e.isBoss && (e.jid || e.statAllocations || e.inventory || e.awakenRank)); }
   static withCaster(caster, fn) { const prev = StatusEffectManager._caster; StatusEffectManager._caster = caster || null; try { return fn(); } finally { StatusEffectManager._caster = prev; } }
+  // Fix (10-26, BUG-183/189/199): ABSOLUTE blocks that no Magic Power breaks, shared by every status path
+  // (UnifiedCombat.tryApplyEffect, MonsterSkillFX.applyStatus, EffectParser, ImprovedCombat, domains):
+  //   • passives / class text that say "immune to <status>" (e.g. "immune to fear") — the hunter's own kit is law;
+  //   • only B-rank+ beasts (and every boss) may BLIND or FEAR a hunter (owner rule, Push #103h).
+  // Returns a reason string when blocked, else null.
+  static hardBlock(entity, effectType, caster = null) {
+    const key = String(effectType || '').toLowerCase();
+    if (!entity || !key) return null;
+    const _c = caster || StatusEffectManager._caster;
+    try {
+      if (StatusEffectManager.isHunter(entity)) {
+        const ALIAS = { fear: /\bfear(?:ed)?\b|terror|frighten/, blind: /\bblind(?:ed|ness)?\b/, stun: /\bstun(?:ned|s)?\b/, freeze: /\bfreez|frozen/, poison: /\bpoison/, burn: /\bburn(?:ing|ed|s)?\b/, bleed: /\bbleed/, curse: /\bcurse/, silence: /\bsilence/, paralyze: /\bparaly/, weaken: /\bweaken/, slow: /\bslow/, confuse: /\bconfus/, charm: /\bcharm/, petrify: /\bpetrif/ };
+        const re = ALIAS[key] || new RegExp(`\\b${key}`);
+        const srcs = [...((entity.skills && entity.skills.passive) || []), ...((entity.skills && entity.skills.active) || []).filter(x => x && x.isPassive)];
+        for (const p of srcs) {
+          const t = String((p && (p.effect || p.description || p.text)) || '');
+          for (const seg of t.split(/[.;\n•]/)) {
+            const l = seg.toLowerCase();
+            if (!/immun|cannot be|can't be|unaffected by/.test(l)) continue;
+            if (/enemy|enemies|target|foe|monster|beast/.test(l) && !/you|self|the (?:hunter|caster|wielder)/.test(l)) continue; // talks about the target, not the owner
+            if (/all status|every status|any status|all debuff|crowd control|\bcc\b/.test(l) || re.test(l)) return `${(p && p.name) || 'passive'} — immune to ${key}`;
+          }
+        }
+        if ((key === 'blind' || key === 'fear') && _c && typeof _c === 'object' && _c !== entity && !StatusEffectManager.isHunter(_c) && !_c.isBoss && !_c.boss) {
+          const ri = ['F', 'E', 'D', 'C', 'B', 'A', 'S', 'SS'].indexOf(String(_c.rank || _c.tier || 'E').toUpperCase().replace(/[^A-Z]/g, ''));
+          if (ri >= 0 && ri < 4) return `a ${String(_c.rank || _c.tier || 'low').toUpperCase()}-rank beast cannot ${key} a hunter`;
+        }
+      }
+    } catch (e) {}
+    return null;
+  }
   static applyEffect(entity, effectType, duration, caster = null) {
     const key = effectType.toLowerCase();
     const def = this.EFFECTS[key] || this.EFFECTS[key.replace('trueslow','trueSlow')];
     if (!def) return false;
+    { const hb = StatusEffectManager.hardBlock(entity, key, caster); if (hb) { entity._lastStatusBlock = hb; return false; } }
     const className = getClassName(entity);
     let _mrOverride = false;
     const _c = caster || StatusEffectManager._caster;

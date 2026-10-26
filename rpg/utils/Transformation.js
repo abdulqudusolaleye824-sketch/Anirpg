@@ -64,11 +64,11 @@ function apply(player, tier, source = 'cast') {
   }
   const mult = Number(tier.mult) || 1;
   const hpMult = HP_MULT; // Push #96h-z20: offence ×mult, but max HP only ×2 (+ a regen pulse every turn instead)
-  const applied = {};
+  const applied = {}; const pre = {};
   for (const k of STATS) {
     const v = Number(player.stats[k]) || 0;
     const add = Math.floor(v * ((k === 'maxHp' ? hpMult : mult) - 1));
-    applied[k] = add;
+    applied[k] = add; pre[k] = v;
     player.stats[k] = v + add;
   }
   const hpBefore = Math.max(0, Number(player.stats.hp) || 0);
@@ -76,7 +76,7 @@ function apply(player, tier, source = 'cast') {
   const berserk = source === 'passive' && (player.level || 1) < BERSERK_LEVEL;
   player.transform = {
     key: tier.key, name: skillName(tier, player), tierName: tier.name, mult, hpMult, regenPct: REGEN_PCT, turnsLeft: tier.turns + 1, // +1: the casting turn's tick
-    variant: variantName(player), startedAt: Date.now(), applied, source, berserk,
+    variant: variantName(player), startedAt: Date.now(), applied, pre, source, berserk,
   };
   const lines = [
     `🧬 *${player.name || 'Hunter'}* transforms — *${player.transform.name}*! ${source === 'passive' ? '(innate surge) ' : ''}×${mult} ATK/DEF/SPD · ×${hpMult} HP · 💚 +${REGEN_PCT}% HP regen/turn for ${tier.turns} turns`,
@@ -102,18 +102,47 @@ function end(player, aftermath = false, fromTick = false) {
   if (!t) return null;
   const mult = Number(t.mult) || 1;
   try {
-    const a = t.applied || {};
+    // Fix (10-26, BUG-196/208/212): stats may have been REBUILT from base while the form was up (/stats, /addup, level-up,
+    // gear, class refresh all call applyAllocationsToStats). Blindly subtracting the ×5 bonus from already-normal numbers
+    // left hunters at 1/1 HP and double-digit ATK. Revert per stat against the snapshot instead.
+    const a = t.applied || {}; const pre = t.pre || {};
+    const maxBefore = Math.max(1, Number(player.stats.maxHp) || 1);
+    const hpFrac = Math.min(1, Math.max(0, (Number(player.stats.hp) || 0) / maxBefore));
     for (const k of STATS) {
-      const v = Number(player.stats[k]) || 0;
-      player.stats[k] = Math.max(k === 'maxHp' ? 1 : 0, v - (Number(a[k]) || 0));
+      const cur = Number(player.stats[k]) || 0; const add = Number(a[k]) || 0; const base = pre[k] != null ? Number(pre[k]) : null;
+      let v;
+      if (base == null) v = (cur - add) >= (add / Math.max(1, (k === 'maxHp' ? (Number(t.hpMult) || HP_MULT) : mult) - 1)) * 0.9 ? cur - add : cur; // legacy form (no snapshot): only subtract if the bonus is clearly still on
+      else if (Math.abs(cur - (base + add)) <= 1) v = base;              // untouched since apply → exact revert
+      else if (cur <= base + Math.floor(add / 2)) v = cur;               // already rebuilt (normal numbers) → leave it
+      else v = Math.max(base, cur - add);                                // grew during the form (level-up etc.) → strip the bonus only
+      player.stats[k] = Math.max(k === 'maxHp' ? 1 : 0, v);
     }
-    const hp = Number(player.stats.hp) || 0;
-    player.stats.hp = Math.max(hp > 0 ? 1 : 0, Math.min(require('./GearSystem').effectiveMaxHp(player), Math.ceil(hp / (Number(t.hpMult) || mult))));
+    const newMax = require('./GearSystem').effectiveMaxHp(player);
+    const hpWas = Number(player.stats.hp) || 0;
+    player.stats.hp = hpWas > 0 ? Math.max(1, Math.min(newMax, Math.ceil(newMax * hpFrac))) : 0; // keep the same HP fraction, never a stray 1
   } catch (e) {}
   delete player.transform;
   let line = `🧬 *${player.name || 'Hunter'}*'s ${t.tierName || 'transformation'} fades — back to normal form.`;
   if (aftermath) { try { line += '\n' + applyAftermath(player, fromTick ? 1 : 0); } catch (e) {} } // +1: this same tick counts the statuses down once
   return line;
+}
+
+// Fix (10-26): called after any stat rebuild (StatAllocationSystem.applyAllocationsToStats). If a form is up, re-lay the
+// bonus on top of the fresh base so the hunter stays transformed and the later revert is exact.
+function reapply(player) {
+  const t = player && player.transform; if (!t || !player.stats) return false;
+  const mult = Number(t.mult) || 1, hpMult = Number(t.hpMult) || HP_MULT;
+  t.applied = t.applied || {}; t.pre = t.pre || {};
+  let changed = false;
+  for (const k of STATS) {
+    const cur = Number(player.stats[k]) || 0; const add = Number(t.applied[k]) || 0; const base = t.pre[k] != null ? Number(t.pre[k]) : null;
+    if (base != null && Math.abs(cur - (base + add)) <= 1) continue;   // still transformed — nothing to do
+    if (base != null && cur > base + Math.floor(add / 2)) continue;    // grew while transformed (buffs) — leave it
+    const nb = cur; const na = Math.floor(nb * ((k === 'maxHp' ? hpMult : mult) - 1));
+    t.pre[k] = nb; t.applied[k] = na; player.stats[k] = nb + na; changed = true;
+  }
+  if (changed) { try { const cap = require('./GearSystem').effectiveMaxHp(player); if ((player.stats.hp || 0) > cap) player.stats.hp = cap; } catch (e) {} }
+  return changed;
 }
 
 // Called once per combat turn for the entity (UnifiedCombat.tickStatuses).
@@ -253,4 +282,4 @@ function rosterEntries(variant) {
   }));
 }
 
-module.exports = { HP_MULT, usedThisFight, markUsed, clearFightUse, cooldownLeftMs, cooldownMsFor, TF_COOLDOWN_MS, PACK_CHANCE_MULT, PACK_COMBO_MULT, withPack, packmates, TIERS, PASSIVE_CHANCE, BERSERK_CHANCE, BERSERK_LEVEL, AFTERMATH, MAX_AGE_MS, isBerserk, BERSERK_TEXT, berserkPick, applyAftermath, isMonster, variantName, skillName, tierByName, isTransformSkill, active, apply, end, tick, cast, sweep, rosterEntries };
+module.exports = { reapply, HP_MULT, usedThisFight, markUsed, clearFightUse, cooldownLeftMs, cooldownMsFor, TF_COOLDOWN_MS, PACK_CHANCE_MULT, PACK_COMBO_MULT, withPack, packmates, TIERS, PASSIVE_CHANCE, BERSERK_CHANCE, BERSERK_LEVEL, AFTERMATH, MAX_AGE_MS, isBerserk, BERSERK_TEXT, berserkPick, applyAftermath, isMonster, variantName, skillName, tierByName, isTransformSkill, active, apply, end, tick, cast, sweep, rosterEntries };

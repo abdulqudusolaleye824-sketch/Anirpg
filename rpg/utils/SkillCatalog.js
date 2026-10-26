@@ -918,9 +918,23 @@ function levelBonus(skill) {
 
 const UTILITY_COST_MULT = 0.6; // Push #103f-3
 // Push #103k (BUG-160/164): ONE AoE detector for every arena. Reads the skill's effect/description text.
-const AOE_RE = /\b(?:all|every|each)\s+(?:nearby\s+|surrounding\s+|living\s+|other\s+)?(?:enemies|enemy|monsters?|foes?|targets?|beasts?|opponents?|creatures?|hostiles?|units?)\b|\b(?:hits?|hitting|strikes?|striking|damages?|damaging|burns?|freezes?|pierces?|sweeps?|sweeping)\s+(?:all|every|everything|everyone)\b|\bon\s+the\s+(?:whole\s+|entire\s+)?floor\b|\b(?:whole|entire)\s+(?:floor|room|field|battlefield|arena)\b|\baoe\b|\barea[- ]of[- ]effect\b|\bin\s+(?:an?\s+)?(?:wide\s+|large\s+|small\s+)?(?:area|radius|cone|line|arc|zone)\b|\bmultiple\s+(?:enemies|targets|foes|monsters)\b|\benemies\s+(?:around|nearby|in\s+range|in\s+front)\b|\bchains?\s+(?:to|between|through)\s+(?:\d+\s+)?(?:enemies|targets|foes)\b|\bsplash\s+damage\b/i;
+const AOE_RE = /\b(?:all|every|each)\s+(?:nearby\s+|surrounding\s+|living\s+|other\s+)?(?:enemies|enemy|monsters?|foes?|targets?|beasts?|opponents?|creatures?|hostiles?|units?)\b|\b(?:hits?|hitting|strikes?|striking|damages?|damaging|burns?|freezes?|pierces?|sweeps?|sweeping)\s+(?:all|every|everything|everyone)\b|\bon\s+the\s+(?:whole\s+|entire\s+)?floor\b|\b(?:whole|entire)\s+(?:floor|room|field|battlefield|arena)\b|\baoe\b|\barea[- ]of[- ]effect\b|\bin\s+(?:an?\s+)?(?:wide\s+|large\s+|small\s+)?(?:area|radius|cone|line|arc|zone)\b|\bmultiple\s+(?:enemies|targets|foes|monsters)\b|\benemies\s+(?:around|nearby|in\s+range|in\s+front)\b|\bchains?\s+(?:to|between|through)\s+(?:\d+\s+)?(?:enemies|targets|foes)\b|\bsplash\s+damage\b|\bacross\s+(?:the\s+)?(?:enemy\s+)?(?:lines|ranks|field|battlefield|front|floor|room)\b|\benemy\s+(?:lines|ranks)\b|\b(?:all|every)\s+(?:enemy\s+)?(?:in\s+)?(?:sight|range)\b|\bevery(?:thing|one)\s+(?:in|on)\s+(?:the\s+)?(?:field|floor|room|battlefield)\b/i; // Fix (10-26, BUG-179/200): "across enemy lines" etc.
 const AOE_COST_MULT = 1.5;      // Push #103k (owner): AoE costs more energy
 const AOE_SPREAD_FALLOFF = 0.06; // Push #103k (owner): −6% per extra target struck (floor 60%)
+// Fix (10-26, BUG-188): passives like Master of the Bow — "arrows ricochet to hit secondary targets for 50% damage".
+// Returns the % of the main hit that bounces to ONE extra living enemy (0 = no such passive).
+function ricochetPct(player) {
+  try {
+    const srcs = [...((player && player.skills && player.skills.passive) || []), ...((player && player.skills && player.skills.active) || []).filter(x => x && x.isPassive)];
+    for (const p of srcs) {
+      const t = String((p && (p.effect || p.description || p.text)) || '').toLowerCase();
+      if (/ricochet|secondary targets?|bounc\w*\s+to\s+(?:a|an|one|another)\s+(?:nearby\s+)?(?:enemy|target|foe)|chains?\s+to\s+(?:a|an|one|another)\s+(?:nearby\s+)?(?:enemy|target)/.test(t)) {
+        const m = t.match(/(\d{1,3})%\s*(?:of\s+(?:the\s+)?)?(?:damage|dmg)/); return Math.max(10, Math.min(100, m ? parseInt(m[1], 10) : 50));
+      }
+    }
+  } catch (e) {}
+  return 0;
+}
 function isAoe(skill) {
   if (!skill) return false;
   if (skill.aoe === true || skill.isAoe === true) return true;
@@ -1389,16 +1403,16 @@ function scaledSummary(e) {
   if (!e) return [];
   const L = [];
   const lv = Number(e.level) || 1;
-  if (e.damagePct) L.push(`💥 ${Math.round(e.damagePct * (1 + (lv - 1) * 0.12))}% ${e.scaleStat === 'magic' ? 'Magic Power' : e.scaleStat === 'def' ? 'DEF' : e.scaleStat === 'hybrid' ? 'hybrid (ATK/Magic)' : 'ATK'} damage`);
+  if (e.damagePct && !(['buff', 'heal', 'debuff', 'passive', 'support'].includes(String(e.type || '').toLowerCase()) && !/\d+%\s*(?:atk|attack|magic power)\b/i.test(String(e.effect || '')))) L.push(`💥 ${Math.round(e.damagePct * (1 + (lv - 1) * 0.12))}% ${e.scaleStat === 'magic' ? 'Magic Power' : e.scaleStat === 'def' ? 'DEF' : e.scaleStat === 'hybrid' ? 'hybrid (ATK/Magic)' : 'ATK'} damage`);
   if (e.healingPct) L.push(`💚 Heals ${e.healingPct}% max HP`);
   if (e.drainPct) L.push(`🧛 Drains ${e.drainPct}% of target max HP${e.drainHealPct ? ` · recovers ${e.drainHealPct}%` : ''}`);
-  if (e.lifestealPct) L.push(`🩸 Lifesteal ${e.lifestealPct}% of damage`);
+  if (e.lifestealPct && !(e.buffs || []).some(b => b && b.stat === 'lifesteal')) L.push(`🩸 Lifesteal ${e.lifestealPct}% of damage`);
   if (e.shieldPct) L.push(`🛡️ Shield ${e.shieldPct}% max HP`);
   if (e.regen && e.regen.pct) L.push(`💞 Regen ${e.regen.pct}%/turn${e.regen.turns ? ` × ${e.regen.turns}t` : ''}`);
   if (e.damageTakenPct) L.push(`🧱 Damage taken −${e.damageTakenPct}%`);
   if (e.reflectPct) L.push(`🔁 Reflect ${e.reflectPct}%`);
   if (e.energyPct) L.push(`⚡ Restores ${e.energyPct}% energy`);
-  for (const b of (e.buffs || [])) if (b && b.stat) L.push(`📈 ${String(b.stat).toUpperCase()} +${Math.abs(Number(b.amount) || 0)}%${b.turns ? ` (${b.turns}t)` : ''}${e.party ? ' · whole party' : ''}`);
+  for (const b of (e.buffs || [])) if (b && b.stat) L.push(`📈 ${b.stat === 'lifesteal' ? 'Lifesteal' : b.stat === 'maxHp' ? 'Max HP' : String(b.stat).toUpperCase()} +${Math.abs(Number(b.amount) || 0)}%${b.stat === 'lifesteal' ? ' of damage dealt' : ''}${b.turns ? ` (${b.turns}t)` : ''}${e.party ? ' · whole party' : ''}`);
   for (const d of (e.debuffs || [])) if (d && d.stat) L.push(`📉 Enemy ${String(d.stat).toUpperCase()} −${Math.abs(Number(d.amount) || 0)}%${d.turns ? ` (${d.turns}t)` : ''}`);
   if (e.immuneTurns) L.push(`✨ Status immunity ${e.immuneTurns}t`);
   return L;
@@ -1537,15 +1551,48 @@ function applyHpPercents(entry, caster, target, effMaxOf) {
 function snapshotSkillProgress(player) {
   const owned = [...(player?.skills?.active || []), ...(player?.availableSkills || [])].filter(s => s && s.name);
   owned.sort((a, b) => (Number(a.unlocksAtLevel) || 0) - (Number(b.unlocksAtLevel) || 0));
-  return { count: owned.length, levels: owned.map(s => Math.max(1, Number(s.level) || 1)) };
+  // Push #103k-e (BUG-186): remember WHICH skills were learned (+ their levels) and the class, so a quality-only
+  // recon restores the exact same kit, and a class change carries count + levels by ladder position.
+  const byName = {}; for (const s of owned) byName[String(s.name).toLowerCase()] = Math.max(1, Number(s.level) || 1);
+  let learned = []; try { learned = (player?.skills?.learned || []).slice(); } catch (e) {}
+  const passives = (player?.skills?.passive || []).filter(s => s && s.name).map(s => s.name);
+  return { count: owned.length, levels: owned.map(s => Math.max(1, Number(s.level) || 1)), byName, learned, passives,
+    classBase: player?.classBase || (typeof player?.class === 'string' ? player.class : player?.class?.name) || null };
 }
 function carrySkillProgress(player, snap) {
   if (!player || !snap) return { applied: 0 };
   syncPlayerSkills(player);
+  let SR = null; try { SR = require('./SkillRunes'); } catch (e) {}
   const roster = getRoster(player).filter(e => !e.isPassive);
+  const nowClass = player.classBase || (typeof player.class === 'string' ? player.class : player.class?.name) || null;
+  const sameClass = !!(snap.classBase && nowClass && String(snap.classBase).toLowerCase() === String(nowClass).toLowerCase());
   player.skills = player.skills || {}; player.skills.unlockedOverrides = player.skills.unlockedOverrides || [];
+  const _learnByName = (name) => {
+    if (!SR) return false;
+    const e = roster.find(x => String(x.name).toLowerCase() === String(name).toLowerCase()) || getRoster(player).find(x => String(x.name).toLowerCase() === String(name).toLowerCase());
+    if (!e) return false;
+    if (e.rankReq && !SR.rankMeets(player, e.rankReq)) return false;
+    if (SR.isLearned(player, e.name)) return true;
+    // eat the matching stone if it is in the bag (reset just dropped it there), learn regardless — they had it before.
+    try { const st = SR.stonesOf(player).find(x => String(x.skill).toLowerCase() === String(e.name).toLowerCase()); if (st) SR.removeStone(player, st); } catch (err) {}
+    SR.learn(player, e.name); return true;
+  };
+  if (sameClass && Array.isArray(snap.learned) && snap.learned.length) {
+    // Quality-only recon: same class → the same skills AND passives come back exactly as they were.
+    for (const n of snap.learned) _learnByName(n);
+    for (const n of (snap.passives || [])) _learnByName(n);
+    syncPlayerSkills(player);
+  } else {
+    // Class change: learn the first `count` skills on the new ladder (lowest unlock level first) + every passive the
+    // hunter is entitled to, then carry levels by position.
+    const ladder = roster.slice().sort((a, b) => (Number(a.unlocksAtLevel) || 0) - (Number(b.unlocksAtLevel) || 0));
+    let got = 0;
+    for (const e of ladder) { if (got >= (snap.count || 0)) break; if ((Number(e.unlocksAtLevel) || 0) > (Number(player.level) || 1)) continue; if (_learnByName(e.name)) got++; }
+    try { if (SR) SR.learnEntitled && SR.learnEntitled(player); } catch (e) {}
+    syncPlayerSkills(player);
+  }
   // top-up count: unlock the next locked (non-class-file) skills until counts match
-  let owned = [...player.skills.active, ...player.availableSkills].length;
+  let owned = [...(player.skills.active || []), ...(player.availableSkills || [])].length;
   if (owned < snap.count) {
     const locked = (player.skills.locked || []).slice().sort((a, b) => (Number(a.unlocksAtLevel) || 0) - (Number(b.unlocksAtLevel) || 0));
     for (const l of locked) {
@@ -1557,16 +1604,19 @@ function carrySkillProgress(player, snap) {
     }
     syncPlayerSkills(player);
   }
-  const now = [...player.skills.active, ...player.availableSkills].filter(s => s && s.name);
+  const now = [...(player.skills.active || []), ...(player.availableSkills || [])].filter(s => s && s.name);
   now.sort((a, b) => (Number(a.unlocksAtLevel) || 0) - (Number(b.unlocksAtLevel) || 0));
   let applied = 0;
-  for (let i = 0; i < now.length && i < snap.levels.length; i++) {
-    const lv = Math.min(MAX_SKILL_LEVEL || 5, Math.max(1, snap.levels[i]));
+  for (let i = 0; i < now.length; i++) {
+    const byName = snap.byName && snap.byName[String(now[i].name).toLowerCase()];
+    const src = sameClass && byName ? byName : (i < (snap.levels || []).length ? snap.levels[i] : null);
+    if (src == null) continue;
+    const lv = Math.min(MAX_SKILL_LEVEL || 5, Math.max(1, src));
     if (Number(now[i].level || 1) !== lv) { now[i].level = lv; applied++; }
   }
-  return { applied, count: now.length, wanted: snap.count };
+  return { applied, count: now.length, wanted: snap.count, sameClass };
 }
-module.exports = { isAoe, aoeSpreadMult, AOE_RE, AOE_COST_MULT, AOE_SPREAD_FALLOFF, previewDamage, clearCooldown, scaleSpecText, CLASS_POWER, supportMult, scaleEntry, lockReason,
+module.exports = { ricochetPct, isAoe, aoeSpreadMult, AOE_RE, AOE_COST_MULT, AOE_SPREAD_FALLOFF, previewDamage, clearCooldown, scaleSpecText, CLASS_POWER, supportMult, scaleEntry, lockReason,
   augmentContract,
   parseSupportFields, applySupportFields,
   snapshotSkillProgress, carrySkillProgress,

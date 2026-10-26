@@ -56,7 +56,7 @@ const SCROLL_SHOP_ITEMS = Object.entries(SCROLL_RARITIES).map(([rarity, data], i
   rarity,
   emoji: data.emoji,
   desc: data.description,
-  cost: data.cost,
+  cost: Math.round(data.cost * 1.15), // Push #103k-e: +15%
   type: 'scroll',
 }));
 
@@ -117,11 +117,40 @@ function findScroll(key, db) {
 }
 
 // Everything the craft screen / image needs: materials (have/need), essence stones, Nexus, success odds.
+// Fix (10-26, BUG-202/203 — owner): LEGENDARY gear is A-rank gear, so its recipe asks for A-rank parts (the sheet listed
+// S-rank beast/boss parts). Deterministic remap S→A by drop-list position (same monster/boss family slot), applied to
+// every recipe the moment it is read/previewed/crafted — scrolls already in bags included. Mythic (S) stays S.
+let _S2A = null;
+function _s2aMap() {
+  if (_S2A) return _S2A;
+  _S2A = new Map();
+  try {
+    const { MONSTER_DROPS, BASE_MATERIALS } = require('../data/MonsterDrops');
+    const flat = (r, k) => ((MONSTER_DROPS[r] && MONSTER_DROPS[r][k]) || []).flatMap(m => [...(m.drops || []), m.primary, m.secondary].filter(Boolean).map(String));
+    for (const k of ['monsters', 'bosses']) { const S = flat('S', k), A = flat('A', k); if (!A.length) continue; S.forEach((n, i) => { if (!_S2A.has(n)) _S2A.set(n, A[i % A.length]); }); }
+    { const S = (BASE_MATERIALS && BASE_MATERIALS.S) || [], A = (BASE_MATERIALS && BASE_MATERIALS.A) || []; if (A.length) S.forEach((n, i) => { if (!_S2A.has(n)) _S2A.set(n, A[i % A.length]); }); }
+  } catch (e) {}
+  try { // Solo Leveling gate beasts (the bulk of the Legendary sheet)
+    const SL = require('../data/SoloLevelingMonsters').SL_MONSTERS || {};
+    const fl = (r) => (SL[r] || []).flatMap(m => (m.drops || []).map(String));
+    const S = fl('S'), A = fl('A'); if (A.length) S.forEach((n, i) => { if (!_S2A.has(n)) _S2A.set(n, A[i % A.length]); });
+  } catch (e) {}
+  return _S2A;
+}
+function normalizeRecipeMaterials(recipe, rarity) {
+  try {
+    if (!recipe || !recipe.materials || String(rarity || '').toLowerCase() !== 'legendary' || recipe._matsNormalized) return recipe;
+    const map = _s2aMap(); const out = {};
+    for (const [m, q] of Object.entries(recipe.materials)) { const to = map.get(m) || m; out[to] = (out[to] || 0) + (Number(q) || 0); }
+    recipe.materials = out; recipe._matsNormalized = true;
+  } catch (e) {}
+  return recipe;
+}
 function craftPreview(player, itemName, key, db) {
   const hit = findScroll(key, db);
   if (!hit) return { ok: false, reason: '❌ Invalid or already used craft key.' };
   const { scroll, ownerJid } = hit;
-  const recipe = scroll.recipe;
+  const recipe = normalizeRecipeMaterials(scroll.recipe, scroll.rarity);
   if (itemName && recipe.output.toLowerCase() !== String(itemName).toLowerCase())
     return { ok: false, reason: `❌ Key *${key}* is for *${recipe.output}*, not *${itemName}*.` };
   try { RI.migrateLegacy(player); } catch (e) {}
@@ -246,7 +275,8 @@ async function tick(db, saveDatabase) {
   return n;
 }
 
-function checkMaterials(player, recipe) {
+function checkMaterials(player, recipe, rarity) {
+  if (rarity) normalizeRecipeMaterials(recipe, rarity);
   // Push #84: same detector crafting uses (items + legacy + counters).
   try { RI.migrateLegacy(player); } catch (e) {}
   const mats = recipe?.materials || {};
@@ -259,7 +289,7 @@ function checkMaterials(player, recipe) {
 function formatScrollRead(scroll, player = null) {
   const scrollPro = UI.isPro(player || {});
   const FRAME = scrollPro ? UI.PRO_BAR : UI.FREE_BAR;
-  const recipe = scroll.recipe || {};
+  const recipe = normalizeRecipeMaterials(scroll.recipe || {}, scroll.rarity);
   const mainType = recipe.type ? (recipe.type.charAt(0).toUpperCase() + recipe.type.slice(1)) : 'Equipment';
   const subTypeStr = recipe.subtype ? ` (${recipe.subtype.charAt(0).toUpperCase() + recipe.subtype.slice(1)})` : '';
   const typeDisplay = `${mainType}${subTypeStr}`;
@@ -280,7 +310,15 @@ function formatScrollRead(scroll, player = null) {
     const tail = s ? (mat.endsWith('Mana Essence') ? `  _(any ${s.rank}-rank gate monster)_` : `  _(${s.rank}-gate: ${s.from.join(', ')})_`) : '';
     return `  • ${mat} ×${qty}${have !== null ? ` (have ${have})` : ''}${tail}`;
   }).join('\n');
-  const statLines = Object.entries(recipe.stats || {}).filter(([, v]) => v).map(([k, v]) => `${k}: ${v > 0 ? '+' : ''}${v}`).join(' | ');
+  // Fix (10-26, BUG-217/203): the scroll shows the stats the forge will ACTUALLY produce — the /store ladder for the
+  // rarity's rank (Legendary = A-rank store numbers), not the old sheet numbers.
+  let statLines = '';
+  try {
+    const Armory = require('./ArmoryStore'); const inst = Armory.craftInstance(recipe, scroll.rarity, player || { level: 1, stats: {}, inventory: { items: [] } });
+    const st = inst.isWeapon ? { atk: inst.attack } : (inst.stats || {});
+    statLines = Object.entries(st).filter(([, v]) => v).map(([k, v]) => `${k === 'hp' ? 'HP' : k.toUpperCase()}: +${Math.round(Number(v))}`).join(' | ');
+    if (inst.rank) statLines += `  _(${inst.rank}-rank store grade)_`;
+  } catch (e) { statLines = Object.entries(recipe.stats || {}).filter(([, v]) => v).map(([k, v]) => `${k}: ${v > 0 ? '+' : ''}${v}`).join(' | '); }
   return [
     ...(scrollPro ? [UI.PRO_BAR, `${scroll.emoji || '📜'} *${(scroll.rarity || 'Common').toUpperCase()} RECIPE SCROLL* 💎`, UI.PRO_BAR] : [`${scroll.emoji || '📜'} *${(scroll.rarity || 'Common').toUpperCase()} RECIPE SCROLL*`, UI.FREE_BAR]),
     ``,
@@ -312,6 +350,7 @@ function formatScrollRead(scroll, player = null) {
 }
 
 module.exports = {
+  normalizeRecipeMaterials,
   CRAFT_TIME_MS, QUALITY_MULT, QUANTITY_TIME, craftModes, craftDurationMs, fmtDur, jobsOf, finishCraft, dueJobs, finishedLines, tick,
   recipeCategoryOf,
   RECIPES, SCROLL_RARITIES, SCROLL_SHOP_ITEMS,

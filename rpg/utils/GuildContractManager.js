@@ -270,9 +270,14 @@ function kickPayout(db, guildId, playerJid, saveDatabase) {
   const c = getContract(db, guildId, playerJid);
   if (!c) return { success: false, error: 'No contract on file.' };
   const rem = remainingBalance(db, guildId, playerJid);
-  const payout = { nexus: rem.nexus * 2, mana: rem.mana * 2 };
   const g = findGuild(db, guildId);
   const realId = g?.id || guildId;
+  // Fix (10-26, owner): severance is PAID BY THE GUILD — capped at what the treasury actually holds and deducted
+  // from it. The old code minted ×2 of a 9999-week contract out of thin air (199 B Nexus) and took nothing from the guild.
+  const wantN = Math.max(0, Math.floor(rem.nexus * 2)), wantM = Math.max(0, Math.floor(rem.mana * 2));
+  const haveN = Math.max(0, Math.floor(Number(g?.treasury) || 0)), haveM = Math.max(0, Math.floor(Number(g?.manaTreasury) || 0));
+  const payout = { nexus: Math.min(wantN, haveN), mana: Math.min(wantM, haveM), owed: { nexus: wantN, mana: wantM }, capped: wantN > haveN || wantM > haveM };
+  if (g) { g.treasury = haveN - payout.nexus; g.manaTreasury = haveM - payout.mana; }
   delete _contracts(db, realId)[normaliseJid(playerJid)];
   if (saveDatabase) saveDatabase();
   return { success: true, payout, contract: c };

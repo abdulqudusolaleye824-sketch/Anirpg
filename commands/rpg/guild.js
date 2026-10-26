@@ -81,6 +81,7 @@ const REGULAR_SHOP_POOL = [
   { id: 'scroll_common', name: 'Common Recipe Scroll', category: 'Scrolls', type: 'scroll', currency: 'crystals', basePrice: 875, description: 'Unlocks Common craft recipe', rarity: 'common' },
   { id: 'scroll_rare', name: 'Rare Recipe Scroll', category: 'Scrolls', type: 'scroll', currency: 'crystals', basePrice: 3500, description: 'Unlocks Rare craft recipe', rarity: 'rare' }
 ];
+for (const it of REGULAR_SHOP_POOL) if (it && it.basePrice != null) it.basePrice = Math.round(it.basePrice * 1.15); // Push #103k-e (owner): +15%
 
 function ensureGuildShopFresh(guild) {
   const todayKey = new Date(Date.now() + 3600000).toISOString().slice(0, 10);
@@ -333,6 +334,15 @@ module.exports = {
         return sock.sendMessage(chatId, { text: `❌ That guild is full (${guild.members.length}/${maxCap} members).` }, { quoted: msg });
       }
 
+      // Fix (10-26): re-check the treasury at signing time (funds may have moved since the offer).
+      {
+        const tN = Math.floor(Number(guild.treasury) || 0), tM = Math.floor(Number(guild.manaTreasury) || 0);
+        if (tN < (offer.weeklyNexus || 0) || tM < (offer.weeklyMana || 0)) {
+          delete db.pendingGuildHires[_offerKey];
+          saveDatabase();
+          return sock.sendMessage(chatId, { text: `❌ Contract void — *${guild.name}*'s treasury (*${tN.toLocaleString()} 💠* · *${tM.toLocaleString()} 💎*) can no longer cover the weekly wage (*${(offer.weeklyNexus||0).toLocaleString()} 💠* · *${(offer.weeklyMana||0).toLocaleString()} 💎*). Ask the Guild Master to re-offer.` }, { quoted: msg });
+        }
+      }
       // Add to guild members
       guild.members.push({
         id: sender,
@@ -1518,7 +1528,7 @@ ${FRAME}\n`;
 
       const kName = kicked?.name || ('@' + targetId.split('@')[0]);
       const sevLine = (kickSev && kickSev.success && ((kickSev.payout.nexus || 0) > 0 || (kickSev.payout.mana || 0) > 0))
-        ? `\n💸 *Kick Severance:* +${(kickSev.payout.nexus || 0).toLocaleString()} 💠 Nexus, +${(kickSev.payout.mana || 0).toLocaleString()} 💎 Mana Stones _(×2 remaining contract)_`
+        ? `\n💸 *Kick Severance (paid by the guild treasury):* +${(kickSev.payout.nexus || 0).toLocaleString()} 💠 Nexus, +${(kickSev.payout.mana || 0).toLocaleString()} 💎 Mana Stones _(×2 remaining contract${kickSev.payout.capped ? ' — capped at what the treasury held' : ''})_`
         : '';
       return sock.sendMessage(chatId, {
         text: `${FRAME}\n🪓 *GUILD KICK!*\n${FRAME}\n🏰 Guild: *${playerGuild.name}*\n👤 Removed: *${kName}*\n${sevLine}${FRAME}`,
@@ -1640,6 +1650,17 @@ ${FRAME}\n`;
         if (nums.length >= 1 && !isNaN(nums[0])) weeklyNexus = nums[0];
         if (nums.length >= 2 && !isNaN(nums[1])) weeklyMana = nums[1];
         if (nums.length >= 3 && !isNaN(nums[2])) weeks = nums[2];
+      }
+
+      // Fix (10-26, owner): sane contract bounds + the guild must be able to pay. Weeks 1–52; the treasury must hold
+      // at least the FIRST week's wage in both currencies, or the offer is refused outright.
+      weeks = Math.max(1, Math.min(52, weeks));
+      weeklyNexus = Math.max(0, Math.min(1e12, weeklyNexus)); weeklyMana = Math.max(0, Math.min(1e12, weeklyMana));
+      {
+        const tN = Math.floor(Number(playerGuild.treasury) || 0), tM = Math.floor(Number(playerGuild.manaTreasury) || 0);
+        if (tN < weeklyNexus || tM < weeklyMana) {
+          return sock.sendMessage(chatId, { text: `❌ *${playerGuild.name}* cannot afford that contract.\n\n💼 Treasury: *${tN.toLocaleString()} 💠* · *${tM.toLocaleString()} 💎*\n📜 Weekly wage offered: *${weeklyNexus.toLocaleString()} 💠* · *${weeklyMana.toLocaleString()} 💎*\n\nThe treasury must cover at least one week's wage. Deposit with */guild deposit* or lower the offer.` }, { quoted: msg });
+        }
       }
 
       const targetUser = db.users?.[targetId];

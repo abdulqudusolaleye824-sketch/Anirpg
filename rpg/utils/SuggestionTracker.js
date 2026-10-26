@@ -147,7 +147,19 @@ function listText(db) {
 }
 function pendingList(db) { return Object.values(table(db)).filter(r => r.status === STATUS.PENDING).sort((a, b) => a.at - b.at); }
 
-async function notifyReporter(sock, db, rec) { const via = await _deliver(sock, db, rec, reporterFeedback(rec)); return { via }; }
+async function notifyReporter(sock, db, rec) {
+  const via = await _deliver(sock, db, rec, reporterFeedback(rec));
+  // Fix (10-26, BUG-185 — owner): the GC the suggestion came from ALWAYS hears the verdict too (even when the serf DM
+  // reached the suggester). Short public line, no ban wording beyond the status.
+  try {
+    if (rec.chatId && String(rec.chatId).endsWith('@g.us') && via && via !== 'group') {
+      const lbl = rec.status === STATUS.APPROVED ? '✅ APPROVED — it is on the build list' : rec.status === STATUS.REJECTED ? '❌ not added for now' : rec.status === STATUS.BANNED ? '🚫 closed' : 'reviewed';
+      const txt = `💡 *Suggestion ${rec.id}* from @${_bare(rec.reporter)} — ${lbl}.\n📝 _"${rec.text.length > 140 ? rec.text.slice(0, 137) + '…' : rec.text}"_`;
+      await sock.sendMessage(rec.chatId, { text: txt, mentions: [rec.reporter] });
+    }
+  } catch (e) {}
+  return { via };
+}
 
 /** Owners' DM targets (phone JIDs, deduped). */
 function ownerTargets(db) {

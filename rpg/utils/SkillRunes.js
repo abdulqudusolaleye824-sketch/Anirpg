@@ -128,4 +128,4 @@ function useAll(player) {
   return out;
 }
 
-module.exports = { learnEntitled, RANK_ORDER, PAIR_CHANCE, isLearned, learn, forget, rankOf, rankIdx, rankMeets, hasStone, grantStone, stonesOf, entitled, grantEntitled, onLevel, syncRank, useStone, useAll, entryByName };
+module.exports = { learnEntitled, RANK_ORDER, PAIR_CHANCE, isLearned, learn, forget, rankOf, rankIdx, rankMeets, hasStone, grantStone, stonesOf, removeStone, entitled, grantEntitled, onLevel, syncRank, useStone, useAll, entryByName };

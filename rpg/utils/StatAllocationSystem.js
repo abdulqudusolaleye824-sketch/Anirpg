@@ -195,6 +195,7 @@ function applyAllocationsToStats(player) {
   }
   
   // Push #103h: awakening-rank power layer (E×1 … S×42.9) on base HP/ATK/DEF/Magic — see RankPower.js.
+  const _hp0 = Number(player.stats.hp); // Fix (10-26): re-cap HP only AFTER an active transformation is re-laid (else the form's HP pool is lost)
   let _rm = 1; try { _rm = require('./RankPower').mult(player); } catch (e) { _rm = 1; }
   const _rk = (k, v) => (_rm !== 1 && require('./RankPower').STATS.includes(k)) ? Math.round(v * _rm) : v;
   for (const k of ['hp', 'atk', 'def', 'magicPower']) if (player.statAllocations[k] == null) player.statAllocations[k] = 0; // every rank-scaled stat is recomputed
@@ -219,6 +220,7 @@ function applyAllocationsToStats(player) {
       player.stats[statName] = _rk(statName, (player.baseStats[statName] || 0) + bonus); // Push #103j (BUG-140): rank-scaled stats scale their allocations
     }
   }
+  try { if (player.transform && require('./Transformation').reapply(player) && Number.isFinite(_hp0)) { let cap = player.stats.maxHp; try { cap = require('./GearSystem').effectiveMaxHp(player); } catch (e) {} player.stats.hp = Math.min(_hp0, cap); } } catch (e) {} // Fix (10-26): keep an active form's bonus after a rebuild
 }
 
 function resetAllocations(player) {

@@ -121,6 +121,22 @@ module.exports = {
       }, { quoted: msg });
     }
 
+    // Push #103k-e (owner): slots full → say it BEFORE taking the fee. No silent escapes, no wasted Nexus.
+    try {
+      const _pd = PetManager.getPlayerData(sender); const _cap = PetManager.slotCap(sender);
+      if ((_pd.pets || []).length >= _cap) {
+        const _exp = (wildRecord && wildRecord.expiresAt) || (party && party.dungeon && party.dungeon.pendingPet && party.dungeon.pendingPet.expiresAt) || (now + 60000);
+        const _secsLeft = Math.max(0, Math.round((_exp - now) / 1000));
+        return sock.sendMessage(chatId, { text: [
+          ...(pro ? [UI.PRO_BAR, `🪤 *PET SLOTS FULL!* 💎`, UI.PRO_BAR] : [`🪤 *PET SLOTS FULL!*`, UI.FREE_BAR]),
+          `${petTemplate.emoji} The *${petTemplate.name}* is right there… but you have no room (*${_cap}* slots used).`,
+          `If you catch it now it would just slip away — so nothing was charged.`,
+          ``,
+          `🔓 */pet release <#>* to free a slot${pro ? '' : ' (or 💎 Pro for more slots)'}, then */catch* again — ${_secsLeft}s left.`,
+        ].join('\n') }, { quoted: msg });
+      }
+    } catch (e) {}
+
     // Deduct cost immediately (failing costs as much as success)
     player.gold = (player.gold || 0) - cost.gold;
     player.manaCrystals = (player.manaCrystals || 0) - cost.crystals;
@@ -159,6 +175,21 @@ module.exports = {
 
     if (success) {
       const catchRes = PetManager.attemptCatch(sender, petId, luckBonus, true);
+
+      // Push #103k-e (owner): slots full → the beast was never stored. Say so LOUDLY instead of printing "caught"
+      // and leaving the hunter hunting their own pet. The wild pet stays in the encounter for a party-mate / after release.
+      if (!catchRes || catchRes.success === false) {
+        const cap = (() => { try { return PetManager.slotCap(sender); } catch (e) { return '?'; } })();
+        const why = (catchRes && catchRes.message) ? catchRes.message : '❌ Could not store the pet.';
+        return sock.sendMessage(chatId, { text: [
+          ...(pro ? [UI.PRO_BAR, `💨 *IT SLIPPED AWAY!* 💎`, UI.PRO_BAR] : [`💨 *IT SLIPPED AWAY!*`, UI.FREE_BAR]),
+          `${petTemplate.emoji} You had the *${petTemplate.name}* in your hands… but your pet slots are *FULL* (*${cap}*) — it wriggled free and escaped.`,
+          why.replace(/^❌\s*/, 'ℹ️ '),
+          ``,
+          `🔓 Free a slot with */pet release <#>* (or upgrade with 💎 Pro), then catch again.`,
+          `🚫 This pet was *NOT* added to your collection.`,
+        ].join('\n'), mentions: [sender] });
+      }
 
       // Clean up wild pet
       if (isDungeonPet && party?.dungeon) {

@@ -118,7 +118,7 @@ const pick = (rng, arr) => arr[Math.floor(rng() * arr.length)];
 const lerp = (a, b, t) => Math.round(a + (b - a) * t);
 
 // ── Pricing ─────────────────────────────────────────────────────────────────
-const PRICE_MULT = 1.9; // Push #103i (owner): every price +90%
+const PRICE_MULT = 1.9 * 1.15; // Push #103i (owner): every price +90% · Push #103k-e: +15% on top
 function priceFor(rank, roll) {
   const b = BANDS[rank];
   const t = Math.max(0, Math.min(1, roll));

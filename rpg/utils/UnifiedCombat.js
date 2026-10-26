@@ -71,8 +71,17 @@ function applyMoveBuffs(move, attacker, defender) {
     if (!bf || !bf.stat) continue;
     if (!attacker.tempBuffs) attacker.tempBuffs = {};
     try { require('./DailyQuestSystem').creditBuff(attacker); } catch (e) {} // Push #96h: buff quest
+    if (bf.stat === 'maxHp') { // Fix (10-26, BUG-173): real temporary max-HP boost (added to current HP too), reverted when it wears off
+      const key = `${tag}:maxHp`; const prev = attacker.tempBuffs[key];
+      if (prev && prev.hpAdded && attacker.stats) { attacker.stats.maxHp = Math.max(1, (attacker.stats.maxHp || 1) - prev.hpAdded); attacker.stats.hp = Math.min(attacker.stats.hp || 0, attacker.stats.maxHp); }
+      const pctv = Math.min(100, Math.abs(Number(bf.amount) || 0)); const add = attacker.stats ? Math.floor((attacker.stats.maxHp || 100) * pctv / 100) : 0;
+      if (attacker.stats && add > 0) { attacker.stats.maxHp = (attacker.stats.maxHp || 100) + add; attacker.stats.hp = (attacker.stats.hp || 0) + add; }
+      attacker.tempBuffs[key] = { stat: 'maxHp', amount: pctv, hpAdded: add, duration: Math.max(1, Number(bf.duration) || 3) + 1 };
+      notes.push(`❤️ ${attacker.name || 'Caster'} MAX HP +${pctv}% (+${add}) for ${bf.duration || 3}t`);
+      continue;
+    }
     attacker.tempBuffs[`${tag}:${bf.stat}`] = { stat: bf.stat, amount: Math.abs(Number(bf.amount) || 0), duration: Math.max(1, Number(bf.duration) || 2) + 1 };
-    notes.push(`⬆️ ${attacker.name || 'Caster'} ${String(bf.stat).toUpperCase()} +${Math.abs(Number(bf.amount) || 0)}% (${bf.duration || 2}t)`);
+    notes.push(bf.stat === 'lifesteal' ? `🩸 ${attacker.name || 'Caster'} LIFESTEAL ${Math.abs(Number(bf.amount) || 0)}% of damage dealt (${bf.duration || 2}t)` : `⬆️ ${attacker.name || 'Caster'} ${String(bf.stat).toUpperCase()} +${Math.abs(Number(bf.amount) || 0)}% (${bf.duration || 2}t)`);
   }
   for (const db of (move.debuffs || [])) {
     if (!db || !db.stat) continue;
@@ -337,6 +346,8 @@ function tryApplyEffect(attack, attacker, defender) {
   // Push #97: TERRAIN nudges the odds both ways (burn in a snowfield, poison in a swamp…) — hunters and beasts alike.
   try { const _ter = require('./BotLane').scratch().terrain; if (_ter) chance = chance * require('../data/Terrains').statusMult(_ter, attack.effect.type); } catch (e) {}
   if (Math.random() * 100 > chance) return null;
+  // Fix (10-26): absolute blocks (passive 'immune to X', B-rank+ blind/fear rule) — see StatusEffectManager.hardBlock.
+  try { const hb = require('./StatusEffectManager').hardBlock(defender, attack.effect.type, attacker); if (hb) { defender._lastStatusBlock = hb; return null; } } catch (e) {}
   // Push #103b: MAGIC RESISTANCE — MR above the caster's Magic Power can shrug the effect off; MP above MR
   // breaks through gear/class immunities.
   let _mrOverride = false;
@@ -406,6 +417,7 @@ function tickStatuses(entity) {
         if (entity.stats.hp > before) logs.push(`💞 ${entity.name || 'Hunter'} regenerates +${entity.stats.hp - before} HP (${v.source || 'Regen'})`);
       }
       v.duration = (v.duration || 0) - 1;
+      if (v.duration <= 0 && v.stat === 'maxHp' && v.hpAdded && entity.stats) { entity.stats.maxHp = Math.max(1, (entity.stats.maxHp || 1) - v.hpAdded); if ((entity.stats.hp || 0) > entity.stats.maxHp) entity.stats.hp = entity.stats.maxHp; } // Fix (10-26): temporary max HP comes back off
       if (v.duration <= 0) { delete entity.tempBuffs[k]; if (v.stat) logs.push(`✨ ${String(v.stat).toUpperCase()} ${(v.amount || 0) >= 0 ? 'buff' : 'debuff'} wore off`); else if (k === 'shield' && v.immune) logs.push(`🛡️ Immunity faded`); else if (k === 'shield') logs.push(`🛡️ ${v.source || 'Shield'} faded`); else if (k === 'regen') logs.push(`💞 Regeneration ended`); else if (k === 'reflect') logs.push(`🪞 Reflect faded`); }
     }
   } catch (e) {}
@@ -590,6 +602,16 @@ async function playTurn(sock, chatId, o) {
     if (defender.stats) defender.stats.hp = Math.max(0, (defender.stats.hp || 0) - result.damage);
     // Push #96h-z20: LIFESTEAL contract on the move (PvP / dungeon moves carry entry.lifestealPct) — paid on the HP that was actually there.
     try { if ((Number(move.lifestealPct) || 0) > 0 && !o.lifestealHandled) { const _ls = require('./SkillCatalog').applyLifesteal({ name: moveName, lifestealPct: move.lifestealPct }, attacker, Math.min(result.damage, _defHpBefore), (u) => { try { return require('./GearSystem').effectiveMaxHp(u); } catch (e) { return u.stats.maxHp; } }); if (_ls.line) _buffNotes.push(_ls.line); } } catch (e) {}
+    // Fix (10-26, BUG-172/173/213): LIFESTEAL BUFFS (Crimson Immortality, Vampiric Overlord…) ride every strike while up.
+    try {
+      let _lsb = 0; for (const v of Object.values(attacker.tempBuffs || {})) if (v && v.stat === 'lifesteal' && (v.duration || 0) > 0) _lsb += Number(v.amount) || 0;
+      _lsb = Math.min(100, _lsb);
+      if (_lsb > 0 && result.damage > 0 && attacker.stats && (attacker.stats.hp || 0) > 0) {
+        let _mx = attacker.stats.maxHp || 100; try { _mx = require('./GearSystem').effectiveMaxHp(attacker) || _mx; } catch (e) {}
+        const _b = attacker.stats.hp || 0; attacker.stats.hp = Math.min(_mx, _b + Math.max(1, Math.floor(Math.min(result.damage, _defHpBefore) * _lsb / 100)));
+        if (attacker.stats.hp > _b) _buffNotes.push(`🩸 ${attacker.name || 'Attacker'} drinks *${attacker.stats.hp - _b}* HP (${_lsb}% lifesteal) → ${attacker.stats.hp}/${_mx}`);
+      }
+    } catch (e) {}
     // Push #94: reflect — the defender's mirror sends part of the hit back.
     try { const _rf = reflectDamage(defender, attacker, result.damage); if (_rf) _buffNotes.push(_rf.line); } catch (e) {}
     try { statusApplied = tryApplyEffect(move, attacker, defender); } catch (e) { statusApplied = null; }

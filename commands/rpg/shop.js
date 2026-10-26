@@ -60,6 +60,11 @@ const BUNDLES = [
   {id:5,name:'Mega Pack',emoji:'👑',desc:'20 HP Pots + 10 Revives + 5 Luck Potions + 500 Mana Stones',cost:1900000},
 ];
 
+// Push #103k-e (owner): every store price +15% (weapons, consumables, crystal items, bundles).
+const _PX = 1.15; const _px = (n) => Math.round((Number(n) || 0) * _PX);
+for (const arr of Object.values(weaponUpgrades)) for (const w of arr) w.cost = _px(w.cost);
+for (const it of [...CONSUMABLES, ...CRYSTAL_ITEMS, ...BUNDLES]) if (it && it.cost != null) it.cost = _px(it.cost);
+
 module.exports = {
   name: 'shop',
   description: '🏪 Hunter Shop',

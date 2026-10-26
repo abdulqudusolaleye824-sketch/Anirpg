@@ -219,6 +219,8 @@ function tryTurnLock(partyId, holder, name) {
 }
 function releaseTurnLock(partyId, holder) { const cur = _turnLocks.get(partyId); if (cur && cur.holder === holder) _turnLocks.delete(partyId); }
 
+const _tlsOf = (pl) => { let t = 0; try { for (const v of Object.values(pl.tempBuffs || {})) if (v && v.stat === 'lifesteal' && (v.duration || 0) > 0) t += Number(v.amount) || 0; } catch (e) {} return Math.min(100, t) / 100; }; // Fix (10-26): lifesteal buffs
+
 module.exports = {
   name: 'dungeon',
   description: 'Tower Dungeon System — Party of 2-5, 20 floors, boss every 5 floors',
@@ -972,7 +974,7 @@ module.exports = {
         const playerDmg  = Math.max(1, Math.floor(effAtkSolo * (isCritSolo ? critMSolo : 1.0)) - Math.floor(monster.stats.def * 0.4));
 
         // Lifesteal
-        const lsPctSolo = (player.statAllocations?.lifesteal || 0) * 0.5 / 100;
+        const lsPctSolo = (player.statAllocations?.lifesteal || 0) * 0.5 / 100 + _tlsOf(player);
         if (lsPctSolo > 0) {
           const healLS = Math.floor(playerDmg * lsPctSolo);
           if (healLS > 0) { player.stats.hp = Math.min(_effMax(player), player.stats.hp + healLS); log += `💚 Lifesteal: +${healLS} HP\n`; }
@@ -1058,6 +1060,7 @@ module.exports = {
                 const PetManager = require('../../rpg/utils/PetManager');
                 const r = PetManager.giveEgg(sender, rollEggType());
                 if (r.success) log += `\n🥚 *${r.egg.name}* found in the boss chamber!`;
+                else log += `\n🥚 An egg was in the boss chamber… but it slipped away — ${String((r && r.message) || 'no room').replace(/^❌\s*/, '')}`; // Push #103k-e: never silent
               } catch(e) {}
             }
           }
@@ -1152,7 +1155,7 @@ module.exports = {
       let dmg       = Math.max(1, Math.floor(effAtk * (isCrit ? critM : 1.0)) - Math.floor(monster.stats.def * 0.4));
 
       // Lifesteal
-      const lsPct = (player.statAllocations?.lifesteal || 0) * 0.5 / 100;
+      const lsPct = (player.statAllocations?.lifesteal || 0) * 0.5 / 100 + _tlsOf(player);
       if (lsPct > 0) {
         const heal = Math.floor(dmg * lsPct);
         if (heal > 0) { player.stats.hp = Math.min(_effMax(player), player.stats.hp + heal); log += `💚 Lifesteal: +${heal} HP\n`; }

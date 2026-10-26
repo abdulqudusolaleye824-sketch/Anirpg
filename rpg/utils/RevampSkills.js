@@ -246,6 +246,15 @@ function mechanics(sk) {
   if (/immun\w*\s+to\s+(?:all\s+)?(?:debuffs?|status|slows?|stuns?|cc|crowd)|debuff\s+immunity|status\s+immunity/.test(t)) { m.cleanse = true; buff('def', 15, turns(2)); }
   if (/\breflect\w*\s+(\d+)%/.test(t)) m.reflectPct = pct(/reflect\w*\s+(\d+)%/, 20);
   if (/heals?\s+(?:for\s+)?(\d+)%\s+of\s+(?:the\s+)?damage|lifesteal\w*\s+(?:of\s+|for\s+)?(\d+)%|(\d+)%\s+lifesteal/.test(t)) m.lifestealPct = pct(/(\d+)%\s+of\s+(?:the\s+)?damage|lifesteal\w*\s+(?:of\s+|for\s+)?(\d+)%|(\d+)%\s+lifesteal/, 20);
+  // Fix (10-26, BUG-172/173/213): on a NON-damage cast, lifesteal is a SELF BUFF that rides every strike for the stated
+  // turns ("all strikes gain extreme lifesteal for 2 turns" → lifesteal buff 40% × 2t; "converts 100% damage dealt to
+  // health for 3 turns" → 100% × 3t). "Max HP +N%" is a real temporary max-HP boost, not a shield.
+  if (type !== 'damage') {
+    if (/extreme\s+lifesteal|all\s+strikes\s+gain\s+lifesteal|strikes\s+gain\s+(?:\w+\s+)?lifesteal/.test(t) && !m.lifestealPct) m.lifestealPct = 40;
+    if (/converts?\s+(\d+)%\s+(?:of\s+)?damage\s+dealt\s+(?:to|into)\s+(?:health|hp)/.test(t)) m.lifestealPct = Math.max(m.lifestealPct || 0, pct(/converts?\s+(\d+)%\s+(?:of\s+)?damage\s+dealt/, 50));
+    if (m.lifestealPct && !enemyOnly(t)) { buff('lifesteal', Math.min(100, m.lifestealPct), turns(2)); m.lifestealPct = 0; }
+    { const x = t.match(/max(?:imum)?\s+hp\s*(?:pool\s*)?(?:\+|increased?\s+by\s+|up\s+by\s+|boost\w*\s+by\s+)(\d+)%/) || t.match(/\+(\d+)%\s+max(?:imum)?\s+hp/); if (x && !enemyOnly(t)) buff('maxHp', Math.min(100, parseInt(x[1], 10)), turns(3)); }
+  }
   // summons: a conjured ally hits for the stated (or 170%) Magic Power and shields its master
   if (type === 'summon' || (/\b(conjures?|deploys?|raises?\s+(?:a|an|\d+)\s+(?:skeleton|minion|spirit)|reanimat\w+|summons?\s+(?:a|an|\d+)\s+\w+)\b/.test(t) && type !== 'passive' && !/all\s+(?:active\s+)?summons|and\s+summons\b/.test(t))) {
     m.summon = true;

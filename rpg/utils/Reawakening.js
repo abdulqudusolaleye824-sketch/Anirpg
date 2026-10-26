@@ -59,8 +59,9 @@ function recalibrate(player, newRank) {
   delete player.classBonusApplied;
   if (!player.baseStats) player.baseStats = { hp: player.stats.maxHp || 100, atk: player.stats.atk || 10, def: player.stats.def || 5, speed: player.stats.speed || 100, maxEnergy: player.stats.maxEnergy || 100 };
   for (const key of ['hp', 'atk', 'def', 'speed', 'maxEnergy']) {
-    player.baseStats[key] = floorNow[key];
-    if (key === 'hp') player.stats.maxHp = floorNow[key]; else player.stats[key] = floorNow[key];
+    const _v = Math.max(Number(player.baseStats[key]) || 0, floorNow[key]); // Push #103k-e: reawakening only ever lifts the base
+    player.baseStats[key] = _v;
+    if (key === 'hp') player.stats.maxHp = _v; else player.stats[key] = _v;
   }
   player.awakenRank = newRank;
   try { CP.ensureClassBonuses(player); } catch (e) {}

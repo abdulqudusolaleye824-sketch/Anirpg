@@ -1051,6 +1051,26 @@ module.exports = {
             }
             await sock.sendMessage(chatId, { text: _al.join('\n') });
           }
+        } else if (!_fightingBoss && !result.missed && !result.blocked && (result.damage || 0) > 0) {
+          // Fix (10-26, BUG-188): RICOCHET passives (Master of the Bow) — one extra living beast takes N% of the hit.
+          const _rp = _SCa.ricochetPct(player);
+          if (_rp > 0) {
+            const _fl = gate.currentFloor || 1; const _others = (gate.monsters || []).filter(mm => mm && mm !== target && !mm.defeated && (mm.hp || 0) > 0 && mm.floor === _fl && !(mm.elite && _fl >= gate.totalFloors));
+            if (_others.length) {
+              const mm = _others[Math.floor(Math.random() * _others.length)]; const _rd = Math.max(1, Math.floor(result.damage * _rp / 100)); const _b = mm.hp; mm.hp = Math.max(0, mm.hp - _rd);
+              const _rl = [`🏹 *Ricochet!* The shot bounces into *${mm.name}* −${(_b - mm.hp).toLocaleString()} (${_rp}%) → ${mm.hp.toLocaleString()}/${(mm.maxHp || _b).toLocaleString()}`];
+              if (mm.hp <= 0 && !mm.defeated) {
+                mm.defeated = true; mm.killedBy = sender; _rl.push(`💀 *${mm.name}* falls to the stray arrow!`);
+                player._runKills = (player._runKills || 0) + 1; gate.monstersKilled = (gate.monstersKilled || 0) + 1;
+                try { const _rm = (gate.raid?.members || []).find(m => m.id === sender); if (_rm) _rm.kills = (_rm.kills || 0) + 1; } catch (e) {}
+                if (!player.stats_history) player.stats_history = {}; player.stats_history.monstersKilled = (player.stats_history.monstersKilled || 0) + 1;
+                try { require('../../rpg/utils/QuestDispatcher').trackAndNotify(player, 'kill', 1, sock, sender, chatId); } catch (e) {}
+                try { const BR = require('../../rpg/utils/BattleRewards'); const w = BR.giveBattleWinRewards(player, db, 'gate', player.level, sock, chatId, { lootMult: (gate.isDouble || gate.redGate) ? 1.5 : 1 }); if (w) { _rl.push(BR.formatRewards(w)); try { const _sx = BR.shareRaidExp(gate, sender, db, sock, chatId); if (_sx) _rl.push(_sx); } catch (e) {} } } catch (e) {}
+                try { const _dl = GR.monsterKilledBy(gate, mm, sender, db); if (_dl && _dl.length) _rl.push(..._dl); } catch (e) {}
+              }
+              await sock.sendMessage(chatId, { text: _rl.join('\n') });
+            }
+          }
         }
       } catch (e) {}
       if (_leakAfter && target.hp > 0) { try { const _ml = GR.morphLeak(gate, target); if (_ml) await sock.sendMessage(chatId, { text: _ml }); } catch (e) {} } // Push #97: survived the hit → morphs

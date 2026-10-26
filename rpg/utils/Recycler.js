@@ -43,6 +43,13 @@ function materialRanks() {
     }
     for (const [rank, list] of Object.entries(MD.BASE_MATERIALS || {})) { const r = RMAP[String(rank).toUpperCase()] || 'E'; for (const d of list || []) { const k = norm(d); if (!_rankMap[k]) _rankMap[k] = { rank: r, name: d }; } }
   } catch (e) {}
+  // Fix (10-26, BUG-192/195): any material a recipe sheet asks for counts as a crafting material even when no beast
+  // drops it yet — ranked by the sheet it appears on (Common=E … Mythic=S), lowest sheet wins.
+  try {
+    const { RECIPES } = require('./CraftingSystem');
+    const RR = { common: 'E', uncommon: 'D', rare: 'C', epic: 'B', legendary: 'A', mythic: 'S' };
+    for (const [rar, cats] of Object.entries(RECIPES || {})) { const r = RR[String(rar).toLowerCase()] || 'E'; for (const arr of Object.values(cats || {})) for (const rc of arr || []) for (const d of Object.keys((rc && rc.materials) || {})) { const k = norm(d); if (!_rankMap[k] || RANK_ORDER.indexOf(r) < RANK_ORDER.indexOf(_rankMap[k].rank)) _rankMap[k] = { rank: r, name: d }; } }
+  } catch (e) {}
   return _rankMap;
 }
 function norm(n) { return String(n || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim(); }

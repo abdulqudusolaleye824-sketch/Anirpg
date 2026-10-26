@@ -86,6 +86,33 @@ module.exports = {
       return sock.sendMessage(chatId, { text: '❌ Bot owner only.' }, { quoted: msg });
     }
 
+    // Push #103k-e (owner repair): /bleep setbase @p hp=897 atk=168 def=135 speed=183 [maxEnergy=328]
+    // Restores pure base stats lost to the old promotion overwrite (values are in the old BLEEP message), then
+    // lays class bonuses + upgrade points + rank power back on top. Only ever RAISES a base stat.
+    if (String(args[0] || '').toLowerCase() === 'setbase') {
+      const mentionedSB = require('../../utils/target').resolve(msg, []);
+      const kv = args.slice(1).filter(a => /^[a-z]+=\d+$/i.test(a));
+      const rest = args.slice(1).filter(a => !/^[a-z]+=\d+$/i.test(a));
+      const foundSB = findPlayer(db, rest, mentionedSB);
+      if (!foundSB || !kv.length) return sock.sendMessage(chatId, { text: '❌ Usage: */bleep setbase @player hp=897 atk=168 def=135 speed=183*' }, { quoted: msg });
+      const tp = foundSB.player; tp.baseStats = tp.baseStats || {}; tp.stats = tp.stats || {};
+      const CPs = require('../../rpg/utils/ClassPower'); const SASs = require('../../rpg/utils/StatAllocationSystem');
+      const recS = tp.classBonusApplied; if (recS && recS.bonuses && !recS.legacy) { try { CPs._remove(tp, recS.bonuses); } catch (e) {} } delete tp.classBonusApplied;
+      const lines = [];
+      for (const pair of kv) {
+        let [k, v] = pair.split('='); k = k.toLowerCase(); if (k === 'maxhp') k = 'hp'; if (k === 'maxenergy' || k === 'energy') k = 'maxEnergy';
+        if (!['hp', 'atk', 'def', 'speed', 'maxEnergy'].includes(k)) continue;
+        const before = Number(tp.baseStats[k]) || 0; const after = Math.max(before, Math.round(Number(v)));
+        tp.baseStats[k] = after; if (k === 'hp') tp.stats.maxHp = after; else tp.stats[k] = after;
+        lines.push(`  ${k === 'hp' ? 'maxHp' : k}: base *${before.toLocaleString()} → ${after.toLocaleString()}*`);
+      }
+      try { CPs.ensureClassBonuses(tp); } catch (e) {} try { SASs.applyAllocationsToStats(tp); } catch (e) {}
+      let capS = tp.stats.maxHp; try { capS = require('../../rpg/utils/GearSystem').effectiveMaxHp(tp); } catch (e) {}
+      tp.stats.hp = Math.min(Math.max(1, tp.stats.hp || 1), capS);
+      saveDatabase();
+      return sock.sendMessage(chatId, { text: `🛠️ *BASE STATS RESTORED* — ${tp.name}\n${lines.join('\n') || '  (nothing raised)'}\n⚔️ Now: ❤️ ${tp.stats.maxHp} · ⚔️ ${tp.stats.atk} · 🛡️ ${tp.stats.def} · 💨 ${tp.stats.speed} · ⚡ ${tp.stats.maxEnergy}`, mentions: [foundSB.jid] }, { quoted: msg });
+    }
+
     const rankArg = (args[0] || '').toUpperCase();
     if (!VALID_RANKS.includes(rankArg)) {
       return sock.sendMessage(chatId, {
@@ -129,17 +156,23 @@ module.exports = {
     const rec = player.classBonusApplied;
     if (rec && rec.bonuses && !rec.legacy) { try { CPb._remove(player, rec.bonuses); } catch (e) {} }
     delete player.classBonusApplied;
+    player._bleepPrevBase = { at: Date.now(), rank: oldRank, baseStats: { ...(player.baseStats || {}) } }; // Push #103k-e: undo trail
     // 2) pure floor → baseStats (allocation-free base)
     if (!player.baseStats) player.baseStats = { hp: player.stats.maxHp || 100, atk: player.stats.atk || 10, def: player.stats.def || 5, speed: player.stats.speed || 100, maxEnergy: player.stats.maxEnergy || 100 };
     const _alloc = (k) => { try { const a = (player.statAllocations || {})[k === 'maxEnergy' ? 'energy' : k] || 0; const cfg = SASb.STAT_CONFIG ? SASb.STAT_CONFIG[k === 'maxEnergy' ? 'energy' : k] : null; return a * ((cfg && cfg.valuePerPoint) || 0); } catch (e) { return 0; } };
     for (const key of ['hp', 'atk', 'def', 'speed', 'maxEnergy']) {
       const before = Number(player.baseStats[key]) || 0;
-      const after = floorNow[key];
+      // Push #103k-e (owner): a PROMOTION never lowers a base stat — level-ups, class quality and Stat Orbs the hunter
+      // earned stay underneath; the new rank's power comes from the rank multiplier. The floor only ever lifts.
+      const _up = VALID_RANKS.indexOf(rankArg) > VALID_RANKS.indexOf(oldRank);
+      const after = _up ? Math.max(before, floorNow[key]) : floorNow[key];
       if (before !== after) statLines.push(`  ${key === 'hp' ? 'maxHp' : key}: base *${before.toLocaleString()} → ${after.toLocaleString()}*${_alloc(key) ? ` (+${_alloc(key)} from upgrade points kept)` : ''}`);
       player.baseStats[key] = after;
       if (key === 'hp') player.stats.maxHp = after; else player.stats[key] = after;
     }
-    // 3) class bonuses back on, 4) upgrade-point allocations back on
+    // 3) class bonuses back on, 4) upgrade-point allocations back on — with the NEW rank already set, so the rank
+    // power layer (RankPower.mult) multiplies with the new rank, not the old one (Push #103k-e).
+    player.awakenRank = rankArg;
     try { CPb.ensureClassBonuses(player); } catch (e) {}
     try { SASb.applyAllocationsToStats(player); } catch (e) {}
     let _cap = player.stats.maxHp; try { _cap = require('../../rpg/utils/GearSystem').effectiveMaxHp(player); } catch (e) {}
@@ -167,7 +200,7 @@ module.exports = {
       `${oldRd.emoji} *${oldRank}-Rank* → ${rd.emoji} *${rankArg}-Rank*`,
       ``,
       statLines.length
-        ? `${promoted ? '📈 *PROMOTED — pure stats set to the ' : '📉 *DEMOTED — pure stats set to the '}${rankArg}-rank Lv.${level} floor:*\n${statLines.join('\n')}`
+        ? `${promoted ? '📈 *PROMOTED — base stats lifted to the ' : '📉 *DEMOTED — pure stats set to the '}${rankArg}-rank Lv.${level} floor${promoted ? ' (everything earned above it is kept)' : ''}:*\n${statLines.join('\n')}`
         : `📊 Pure stats already match the ${rankArg}-rank Lv.${level} floor.`,
       `⚔️ Now: ❤️ ${player.stats.maxHp} · ⚔️ ${player.stats.atk} · 🛡️ ${player.stats.def} · 💨 ${player.stats.speed} · ⚡ ${player.stats.maxEnergy} (class bonuses + upgrade points re-applied)`,
       manaDelta > 0 ? `💎 +${manaDelta.toLocaleString()} Mana Stones` : null,

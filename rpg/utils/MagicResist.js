@@ -44,7 +44,10 @@ function check(target, caster, rng = Math.random) {
   // Push #103f: MR ALWAYS gets a say. Overwhelming magic (MP > MR) still breaks wards, but the target keeps a
   // resist roll of up to 35% (half-weight); when MR holds the line the roll is (MR − MP)/(MR + MP + 40), cap 70%.
   if (mp > mr) { const c = Math.min(0.35, 0.5 * mr / (mr + mp + 40)); return { resisted: rng() < c, overrides: true, chance: Math.round(c * 100), mr, mp }; }
-  const chance = Math.min(RESIST_CAP, Math.max(0.10, (mr - mp) / (mr + mp + 40)));
+  // Fix (10-26, BUG-178/182): when MR holds the line it means something — MR at least DOUBLE the caster's MP is a
+  // guaranteed resist; in between, the roll is 2×(MR−MP)/MR (e.g. MR 300 vs MP 200 → 67%), never below 10%.
+  if (mr >= 2 * mp) return { resisted: true, overrides: false, chance: 100, mr, mp };
+  const chance = Math.min(1, Math.max(0.10, 2 * (mr - mp) / mr));
   return { resisted: rng() < chance, overrides: false, chance: Math.round(chance * 100), mr, mp };
 }
 function line(res, who) { return res && res.resisted ? `🔰 ${who || 'Target'} RESISTED (MR ${res.mr} vs MP ${res.mp} — ${res.chance}%)` : ''; }
