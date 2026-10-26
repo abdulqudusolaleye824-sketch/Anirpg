@@ -210,7 +210,7 @@ async function defaultHandler(sock, msg, player, skill, db, saveDatabase, getDat
     let cost = skill.energyCost || 15; try { cost = require('../../rpg/utils/SkillCatalog').effectiveCost(skill, player); } catch (e) {}
     let tag = ''; try { const SL = require('../../rpg/data/SkillLore'); tag = SL.TAG[SL.kindOf(skill)]; } catch (e) {}
     const spec = String(skill.description || '').replace(/\s*Mechanics:[\s\S]*$/, '').trim();
-    return sock.sendMessage(chatId, { text: `${FRAME}\n${skill.emoji || '🔮'} *${skill.name}* — ${tag} · Lv.${skill.level || 1}\n${FRAME}\n${spec}\n\n${player.energyColor || '💙'} ${cost} ${player.energyType || 'energy'} per cast · ⏰ ${skill.cooldown || 0}t\n\n⚔️ Skills only fire inside a raid, dungeon, instance or PvP battle. Nothing was spent.\n${FRAME}` }, { quoted: msg });
+    return sock.sendMessage(chatId, { text: `${FRAME}\n${skill.emoji || '🔮'} *${skill.name}* — ${tag} · Lv.${skill.level || 1}\n${FRAME}\n${spec}\n\n${player.energyColor || '💙'} ${cost} ${player.energyType || 'energy'} per cast · ⏰ ${skill.cooldown || 0}t\n\n⚔️ Skills only fire inside a raid, dungeon, instance or PvP battle. Nothing was spent.${/^(buff|heal)$/i.test(String(skill.type || '')) ? '\n🎯 In battle: no tag = cast on yourself · tag one hunter = them · tag everyone = whole party.' : ''}\n${FRAME}` }, { quoted: msg });
   }
 
   // Energy check

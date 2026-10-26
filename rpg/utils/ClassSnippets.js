@@ -86,7 +86,7 @@ function damageMods(player, entry, target) {
   // DragonKnight: fear inducement on every strike
   if (is(player, 'DragonKnight') && entry.type === 'damage') r.statuses.push({ type: 'fear', chance: 25, duration: 2 });
   // Devourer: consume enemy max HP permanently (this fight), feed the caster
-  if (is(player, 'Devourer') && /consume|devour|eat|feast|gorge|swallow/.test(t) && target) {
+  if (is(player, 'Devourer') && /\b(consume|consuming|devour|devouring|eat|eats|eating|feast|feasting|gorge|gorging|swallow|swallowing)\b/.test(t) && target) { // Fix (10-26, BUG-175): whole words only — 'eat' used to match beat/heat/death/creature, so EVERY skill ate max HP
     const tst = target.stats && Number.isFinite(target.stats.maxHp) ? target.stats : target;
     const bite = Math.floor((tst.maxHp || 0) * 0.05);
     if (bite > 0) { tst.maxHp = Math.max(1, tst.maxHp - bite); tst.hp = Math.min(tst.hp, tst.maxHp); let mx = player.stats.maxHp || 100; try { mx = require('./GearSystem').effectiveMaxHp(player); } catch (e) {} player.stats.hp = Math.min(mx, (player.stats.hp || 0) + bite); r.lines.push(`🕳️ *CONSUMED* — ${bite.toLocaleString()} of *${tname}*'s max HP is gone for good; ${player.name} feeds on it.`); }

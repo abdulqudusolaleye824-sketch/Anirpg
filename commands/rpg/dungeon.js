@@ -1281,8 +1281,8 @@ module.exports = {
           def: (player.stats.def || 0) + (_artStats.def || 0) + (_gearB.def || 0),
           critChance: (player.stats.critChance || 0) + (_artStats.critChance || 0) + (_gearB.crit || 0)
         };
-        const pEnt = { name: player.name, stats: pStats, skills: player.skills, class: { name: className }, energyType: player.energyType || 'Energy', statusEffects: player.statusEffects || [], weapon: player.weapon };
-        const mEnt = { name: monster.name, stats: monster.stats, skills: {}, abilities: monster.abilities || [], statusEffects: monster.statusEffects || [] };
+        const pEnt = { name: player.name, stats: pStats, skills: player.skills, class: { name: className }, awakenRank: player.awakenRank, hunterRank: player.hunterRank, rank: player.rank, level: player.level, inventory: player.inventory, jid: player.jid || sender, tempBuffs: (player.tempBuffs = player.tempBuffs || {}), energyType: player.energyType || 'Energy', /* Fix (10-26, BUG-176): rank-locked skills read the hunter's awakening rank; self-buffs land on the REAL player (shared tempBuffs) */ statusEffects: player.statusEffects || [], weapon: player.weapon };
+        const mEnt = { name: monster.name, stats: monster.stats, skills: {}, abilities: monster.abilities || [], statusEffects: monster.statusEffects || [], tempBuffs: (monster.tempBuffs = monster.tempBuffs || {}) };
 
         let _burstD = null; // Push #103b: corpse-burst skills eat REAL corpses
         try { const SMb = require('../../rpg/utils/Summons'); const _pb = require('../../rpg/utils/SkillCatalog').resolveSkill(player, skillName, { allowLibrary: true }); if (_pb.ok && SMb.isBurstSkill(_pb.entry || _pb.skill)) { _burstD = SMb.corpseBurst(player, _pb.entry || _pb.skill, sd); if (!_burstD.ok) return sock.sendMessage(chatId, { text: `❌ ${_burstD.error}` }, { quoted: msg }); } } catch (e) { _burstD = null; }
@@ -1448,8 +1448,8 @@ module.exports = {
       if (!fx.canUseSkills) { log += `🤐 ${player.name} is SILENCED — skills locked!`; return sock.sendMessage(chatId, { text: log }, { quoted: msg }); }
 
       const className = typeof player.class === 'string' ? player.class : player.class?.name  || 'Awaiting';
-      const pEnt = { name: player.name, stats: player.stats, skills: player.skills, class: { name: className }, energyType: player.energyType || 'Energy', statusEffects: player.statusEffects || [] };
-      const mEnt = { name: monster.name, stats: monster.stats, skills: {}, abilities: monster.abilities || [], statusEffects: monster.statusEffects || [] };
+      const pEnt = { name: player.name, stats: player.stats, skills: player.skills, class: { name: className }, awakenRank: player.awakenRank, hunterRank: player.hunterRank, rank: player.rank, level: player.level, inventory: player.inventory, jid: player.jid || sender, tempBuffs: (player.tempBuffs = player.tempBuffs || {}), energyType: player.energyType || 'Energy', /* Fix (10-26, BUG-176): rank-locked skills read the hunter's awakening rank; self-buffs land on the REAL player (shared tempBuffs) */ statusEffects: player.statusEffects || [] };
+      const mEnt = { name: monster.name, stats: monster.stats, skills: {}, abilities: monster.abilities || [], statusEffects: monster.statusEffects || [], tempBuffs: (monster.tempBuffs = monster.tempBuffs || {}) };
 
       let _burstD = null; // Push #103b: corpse-burst skills eat REAL corpses
       try { const SMb = require('../../rpg/utils/Summons'); const _pb = require('../../rpg/utils/SkillCatalog').resolveSkill(player, skillName, { allowLibrary: true }); if (_pb.ok && SMb.isBurstSkill(_pb.entry || _pb.skill)) { _burstD = SMb.corpseBurst(player, _pb.entry || _pb.skill, dungeon); if (!_burstD.ok) return sock.sendMessage(chatId, { text: `❌ ${_burstD.error}` }, { quoted: msg }); } } catch (e) { _burstD = null; }
