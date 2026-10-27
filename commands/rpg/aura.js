@@ -61,7 +61,8 @@ module.exports = {
       player.cooldowns.auraFarm = now;
 
       const has100Pct = isPro && player.auraFarmBoostUntil && Date.now() <= player.auraFarmBoostUntil;
-      const success = has100Pct || Math.random() < 0.35;
+      const _ss = String(player.awakenRank || '').toUpperCase() === 'SS'; // 10-26 (owner): SS-rank hunters farm aura 30% more successfully
+      const success = has100Pct || Math.random() < (0.35 + (_ss ? 0.30 : 0));
       const Lines = require('../../rpg/data/AuraFarmLines');
       const wouldGain = has100Pct ? 50 : Math.floor(Math.random() * 20) + 10;
 

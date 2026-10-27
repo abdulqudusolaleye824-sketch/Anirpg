@@ -9,7 +9,7 @@ module.exports = {
     const db = getDatabase();
     const proS = UI.isPro(db.users[sender]);
 
-    const BOT_OWNER = '221951679328499@lid';
+    const BOT_OWNER = '194592469209292@lid';
     const isGroup = chatId.endsWith('@g.us');
 
     if (!isGroup) {

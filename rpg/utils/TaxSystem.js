@@ -1,4 +1,4 @@
-const BOT_OWNER_ID = '221951679328499@lid'; // ✅ YOUR ID HERE!
+const BOT_OWNER_ID = '194592469209292@lid'; // ✅ YOUR ID HERE!
 
 class TaxSystem {
   static TAX_RATE = 0.05; // 5% tax on Nexus purchases

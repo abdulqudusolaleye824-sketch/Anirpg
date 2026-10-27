@@ -16,7 +16,7 @@ function normaliseJid(jid) {
 }
 
 function isOwnerOrCoOwner(sender) {
-  const ownerNum   = normaliseJid(process.env.OWNER_JID   || '221951679328499@lid');
+  const ownerNum   = normaliseJid(process.env.OWNER_JID   || '194592469209292@lid');
   const coOwnerNum = normaliseJid(process.env.COOWNER_JID || '194592469209292@lid');
   const sNum       = normaliseJid(sender);
   return sNum === ownerNum || sNum === coOwnerNum;

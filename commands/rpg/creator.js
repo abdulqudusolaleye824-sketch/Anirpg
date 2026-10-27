@@ -22,7 +22,7 @@ module.exports = {
     }
 
     const config = JSON.parse(require('fs').readFileSync('./config.json', 'utf-8'));
-    const creatorId = '221951679328499@lid';
+    const creatorId = '194592469209292@lid';
 
     const action = args[0]?.toLowerCase();
 

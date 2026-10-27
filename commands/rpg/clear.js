@@ -7,7 +7,7 @@ module.exports = {
     const db = getDatabase();
 
     const senderId = sender.split('@')[0];
-    const ADMIN_NUMBER = '221951679328499';
+    const ADMIN_NUMBER = '194592469209292';
     const CO_OWNER = '194592469209292';
     if (senderId !== ADMIN_NUMBER && senderId !== CO_OWNER) {
       return sock.sendMessage(chatId, { 
@@ -133,7 +133,7 @@ To cancel, just don't type anything.
       db.affiliates      = {};
       db.gateSpawns      = {};
       db.pendingGuildHires = {};
-      db.botMods = ['221951679328499@lid', '194592469209292@lid'];
+      db.botMods = ['194592469209292@lid'];
 
       // FIX: clear in-memory GateKeyManager & GateManager state (fixes /clear not clearing gate keys)
       try {

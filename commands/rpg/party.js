@@ -473,7 +473,7 @@ module.exports = {
       saveDatabase();
 
       // Batch-47: ready button rides the join message.
-      const _joinTxt = `✅ *${player.name}* joined the party!\n👥 Members: ${res.raid.members.length}/${GR.MAX_PARTY}\n\n📌 Tap Ready when set — leader launches with */party raid*.`;
+      const _joinTxt = `✅ *${player.name}* joined the party!\n👥 Members: ${res.raid.members.length}/${GR.MAX_PARTY}\n\n📌 Tap Ready when set — leader launches with */party raid*.${(() => { try { const l = require('../../rpg/utils/SSRank').joinLine(player, 'party'); return l ? `\n\n${l}` : ''; } catch (e) { return ''; } })()}`; // 10-26: SS entrance
       try {
         if (Buttons?.sendButtons && pro) { // Push #102b: the Ready button is a Pro perk and belongs to the joiner
           await Buttons.sendButtons(sock, chatId, {

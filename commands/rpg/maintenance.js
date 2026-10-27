@@ -7,7 +7,7 @@ module.exports = {
     const db = getDatabase();
 
     // ===== BOT OWNER =====
-    const BOT_OWNER = '221951679328499@lid';
+    const BOT_OWNER = '194592469209292@lid';
 
     // ===== Ensure database structure =====
     if (!db.system) db.system = {};

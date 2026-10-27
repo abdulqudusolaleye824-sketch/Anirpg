@@ -7,7 +7,7 @@ module.exports = {
     const db = getDatabase();
 
     const ALLOWED = [
-      '221951679328499@lid',
+      '194592469209292@lid',
       '194592469209292@lid'
     ];
 

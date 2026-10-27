@@ -8,7 +8,7 @@
 const fs   = require('fs');
 const path = require('path');
 
-const BOT_OWNER = '221951679328499@lid';
+const BOT_OWNER = '194592469209292@lid';
 const ALLOWED   = [BOT_OWNER, '194592469209292@lid'];
 
 module.exports = {

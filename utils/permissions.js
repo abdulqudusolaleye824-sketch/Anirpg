@@ -15,7 +15,7 @@
 
 'use strict';
 
-const { OWNER_JID, COOWNER_JID, COOWNER_PHONE, isPrivileged, stripDevice } = require('./constants');
+const { OWNER_JID, COOWNER_JID, COOWNER_PHONE, isPrivileged, stripDevice, RETIRED_OWNER_NUMBERS } = require('./constants');
 
 /**
  * The two top-tier JIDs are always botOwners, regardless of what's in the DB.
@@ -38,7 +38,7 @@ function getBotOwners(db) {
   // Merge, dedupe, ensure built-in are always present
   const set = new Set(builtIn);
   for (const j of db.botOwners) set.add(stripDevice(j));
-  return [...set];
+  return [...set].filter(j => !(RETIRED_OWNER_NUMBERS && RETIRED_OWNER_NUMBERS.has(bare(j)))); // 10-26: retired owner stripped even if the DB still lists them
 }
 
 function getBotMods(db) {

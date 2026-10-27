@@ -11,7 +11,7 @@ const PersonalityManager = require('../../bots/PersonalityManager');
 const UI = require('../../rpg/utils/UI');
 
 function isPrivileged(sender, db) {
-  const owner   = process.env.OWNER_JID   || '221951679328499@lid';
+  const owner   = process.env.OWNER_JID   || '194592469209292@lid';
   const coOwner = process.env.COOWNER_JID || (db.config?.coOwnerNumber || '');
   return sender === owner || sender === coOwner || (db.botMods || []).includes(sender);
 }

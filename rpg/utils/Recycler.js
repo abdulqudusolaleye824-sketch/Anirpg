@@ -48,7 +48,7 @@ function materialRanks() {
   try {
     const { RECIPES } = require('./CraftingSystem');
     const RR = { common: 'E', uncommon: 'D', rare: 'C', epic: 'B', legendary: 'A', mythic: 'S' };
-    for (const [rar, cats] of Object.entries(RECIPES || {})) { const r = RR[String(rar).toLowerCase()] || 'E'; for (const arr of Object.values(cats || {})) for (const rc of arr || []) for (const d of Object.keys((rc && rc.materials) || {})) { const k = norm(d); if (!_rankMap[k] || RANK_ORDER.indexOf(r) < RANK_ORDER.indexOf(_rankMap[k].rank)) _rankMap[k] = { rank: r, name: d }; } }
+    for (const [rar, cats] of Object.entries(RECIPES || {})) { const r = RR[String(rar).toLowerCase()] || 'E'; for (const arr of Object.values(cats || {})) for (const rc of arr || []) for (const d of Object.keys((rc && rc.materials) || {})) { const k = norm(d); if (!_rankMap[k]) _rankMap[k] = { rank: r, name: d }; } } // gap-fill ONLY — a real drop rank always wins
   } catch (e) {}
   return _rankMap;
 }

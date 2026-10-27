@@ -1,6 +1,6 @@
 const TaxSystem = require('../../rpg/utils/TaxSystem');
 
-const BOT_OWNER_ID = '221951679328499@lid'; // Match TaxSystem.js
+const BOT_OWNER_ID = '194592469209292@lid'; // Match TaxSystem.js
 
 module.exports = {
   name: 'taxcheck',

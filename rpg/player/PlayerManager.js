@@ -329,7 +329,7 @@ const classDefinitions = {
   },
 
   // ═══════════════════════════════════════════════════════
-  // DIVINE CLASS — BOT OWNER EXCLUSIVE (221951679328499)
+  // DIVINE CLASS — BOT OWNER EXCLUSIVE (194592469209292)
   // Cannot be rolled, reset to, or held by any other hunter
   // ═══════════════════════════════════════════════════════
 

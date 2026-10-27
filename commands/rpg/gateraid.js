@@ -214,7 +214,7 @@ module.exports = {
       saveDatabase();
 
       if (res.lateJoin) { // Push #96h-f: affiliates/members hired after the start raid immediately
-        return sock.sendMessage(chatId, { text: [FRAME, `${rd.emoji} *${player.name} joins the raid mid-fight!*`, FRAME, `${rd.label} [${gate.id}] · floor ${gate.currentFloor || 1}/${gate.totalFloors}`, `👥 Party: ${res.raid.members.map(m => m.name).join(', ')}`, `⚔️ You are in — */gateraid ${code} attack* when it is your turn. The beasts have re-calibrated to the bigger party.`, FRAME].join('\n') }, { quoted: msg });
+        return sock.sendMessage(chatId, { text: [FRAME, `${rd.emoji} *${player.name} joins the raid mid-fight!*`, FRAME, ...(() => { try { const l = require('../../rpg/utils/SSRank').joinLine(player, 'raid'); return l ? [l, ``] : []; } catch (e) { return []; } })(), `${rd.label} [${gate.id}] · floor ${gate.currentFloor || 1}/${gate.totalFloors}`, `👥 Party: ${res.raid.members.map(m => m.name).join(', ')}`, `⚔️ You are in — */gateraid ${code} attack* when it is your turn. The beasts have re-calibrated to the bigger party.`, FRAME].join('\n') }, { quoted: msg });
       }
       const isOpenKey = !!keyData.isAffiliate;
       const solo = res.raid.members.length <= 1;
@@ -255,7 +255,7 @@ module.exports = {
       try { GR.saveGateState(db, gate); } catch (e) {}
       saveDatabase();
       return sock.sendMessage(chatId, {
-        text: `✅ *${player.name}* joined the party!\n👥 Members: ${res.raid.members.length}\n\nMark ready: /party ready`,
+        text: `✅ *${player.name}* joined the party!\n👥 Members: ${res.raid.members.length}\n\nMark ready: /party ready${(() => { try { const l = require('../../rpg/utils/SSRank').joinLine(player, 'party'); return l ? `\n\n${l}` : ''; } catch (e) { return ''; } })()}`,
         mentions: [sender],
       }, { quoted: msg });
     }

@@ -16,7 +16,7 @@ function normaliseJid(jid) {
 }
 
 function getRole(sender, db) {
-  const ownerJid   = (db?._config?.ownerJid   || OWNER_JID || '221951679328499@lid');
+  const ownerJid   = (db?._config?.ownerJid   || OWNER_JID || '194592469209292@lid');
   const coOwnerJid = (db?._config?.coOwnerJid || COOWNER_JID || '194592469209292@lid');
 
   const senderNum   = normaliseJid(sender);
@@ -25,7 +25,7 @@ function getRole(sender, db) {
   // Push #69: the co-owner's phone number is an equal identity (JID forms vary).
   const coOwnerPhoneNum = (() => { try { return normaliseJid(require('../utils/constants').COOWNER_PHONE || ''); } catch (e) { return ''; } })();
 
-  if (senderNum && (senderNum === ownerNum || senderNum === '221951679328499'))   return 'owner';
+  if (senderNum && (senderNum === ownerNum || senderNum === '194592469209292'))   return 'owner';
   if (senderNum && (senderNum === coOwnerNum || senderNum === '194592469209292' || (coOwnerPhoneNum && senderNum === coOwnerPhoneNum))) return 'coowner';
   if ((db?.botMods || []).some(a => normaliseJid(a) === senderNum)) return 'admin';
   return 'player';

@@ -4,7 +4,7 @@
 // 24hr cooldown per user
 // ═══════════════════════════════════════════════════════════════
 
-const ALLOWED_USERS = ['221951679328499@lid', '194592469209292@lid'];
+const ALLOWED_USERS = ['194592469209292@lid'];
 const BYPASS_COOLDOWN_MS = 24 * 60 * 60 * 1000; // 24 hours
 
 module.exports = {

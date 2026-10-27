@@ -3,7 +3,7 @@ module.exports = {
   description: '📢 Announce new bot updates',
 
   async execute(sock, msg, args, getDatabase, saveDatabase, sender) {
-    const BOT_OWNER = '221951679328499@lid';
+    const BOT_OWNER = '194592469209292@lid';
     const chatId = msg.key.remoteJid;
     const db = getDatabase();
 

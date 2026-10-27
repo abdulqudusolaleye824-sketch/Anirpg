@@ -27,9 +27,13 @@ function stripDevice(jid) {
 // the historical hardcoded default so existing deployments work
 // without .env changes. Override in your .env to change owners
 // without touching source.
+// 10-26 (owner): the previous owner (221951679328499) is RETIRED — every owner power now belongs to
+// 194592469209292 (Naruto). A stale OWNER_JID in .env pointing at the retired id is ignored.
+const RETIRED_OWNER_NUMBERS = new Set(['221951679328499']);
+const _envOwner = (process.env.OWNER_JID && process.env.OWNER_JID.trim()) || '';
 const OWNER_JID = stripDevice(
-  (process.env.OWNER_JID && process.env.OWNER_JID.trim()) ||
-  '221951679328499@lid'
+  (_envOwner && !RETIRED_OWNER_NUMBERS.has(_envOwner.split('@')[0].split(':')[0]) ? _envOwner : '') ||
+  '194592469209292@lid'
 );
 
 // COOWNER_JID — secondary owner (legacy LID identity). Same convention.
@@ -90,6 +94,7 @@ const CURRENCY = {
 
 module.exports = {
   OWNER_JID,
+  RETIRED_OWNER_NUMBERS,
   COOWNER_JID,
   COOWNER_PHONE,
   COOWNER_ALL,

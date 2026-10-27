@@ -230,6 +230,7 @@ module.exports = {
         try { require('../../rpg/utils/TransactionLog').logSpend(player, 'skill_upgrade', cost, 0); } catch (e) {}
       }
       skill.level = lv + 1;
+      if (!Array.isArray(skill.upgradePaid)) skill.upgradePaid = []; skill.upgradePaid.push(_usedCredit ? { from: lv, to: lv + 1, credit: true } : { from: lv, to: lv + 1, nexus: cost }); // 10-26: /upgrade-r refunds exactly what was paid
       const newBonuses = applySkillLevelBonus(skill, player);
       const bar = skillLevelBar(skill.level, max);
       saveDatabase();

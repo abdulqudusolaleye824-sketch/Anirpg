@@ -61,6 +61,18 @@ const AWAKENING_RANKS = {
     description: 'The pinnacle of human potential. Feared by all. Known by few.',
     xpMultiplier: 2.0,
   },
+  // 10-26 (owner): SS-RANK — above S, 50% stronger. NEVER rolled by awakening or Reawakening (spawnChance 0);
+  // granted only by the owner via /bleep SS. Comes with the legendary title PINNACLE OF EVOLUTION.
+  SS: {
+    label: 'SS-Rank', emoji: '💠', color: 'prismatic',
+    gateAccess: ['F', 'E', 'D', 'C', 'B', 'A', 'S', 'SS'],
+    statMultiplier: 6.0,
+    spawnChance: 0,
+    baseStats: { hp: 630, atk: 93, def: 68, speed: 160, maxEnergy: 330 },
+    description: 'Beyond the pinnacle. There is no ceiling here — only the owner\'s hand can lift a hunter this high.',
+    xpMultiplier: 2.5,
+    ownerOnly: true,
+  },
 };
 
 // ─── XP REQUIREMENTS ──────────────────────────────────────────────
@@ -274,9 +286,8 @@ const CLASS_POOL = {
 // ─── HARDCODED CLASS ASSIGNMENTS ──────────────────────────────────
 // Players in this map always get the assigned class on awakening.
 // Used for special roles: owner, co-owner, and a few specific players.
-// 'Senku' is the divine class — only the owner (221951679328499@lid) can hold it.
+// 'Senku' is the divine class — owner-only. (10-26: previous owner retired; the owner is 194592469209292 — Naruto — who keeps his Berserker.)
 const ASSIGNED_CLASSES = {
-  '221951679328499@lid': 'Senku',   // Owner (Senku) — divine class
   '194592469209292@lid': 'Berserker',// Co-owner (Naruto)
   // The 3 player JIDs that were previously hardcoded in dead code —
   // now properly mapped so they actually get their class on awakening.

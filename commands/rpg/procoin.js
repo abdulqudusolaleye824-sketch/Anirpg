@@ -4,7 +4,7 @@
  *
  * Procoin (PC) is a premium currency:
  *   • Not earnable by players through any normal means
- *   • Only owner (221951679328499@lid) or co-owner (194592469209292@lid) can grant
+ *   • Only owner (194592469209292@lid) or co-owner (194592469209292@lid) can grant
  *   • Grant target: @mention or replied-to message author
  *
  * Usage:
@@ -18,7 +18,7 @@
 
 const config = require('../../config.json');
 
-const OWNER_JID    = config.ownerNumber   || '221951679328499@lid';
+const OWNER_JID    = config.ownerNumber   || '194592469209292@lid';
 const CO_OWNER_JID = config.coOwnerNumber || '194592469209292@lid';
 
 // Normalise a JID (strip :XX device suffix, keep @lid or @s.whatsapp.net)

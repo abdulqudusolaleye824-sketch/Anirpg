@@ -21,7 +21,7 @@ const EMOJI = { E: '⚪', D: '🟢', C: '🔵', B: '🟣', A: '🟠', S: '🔴' 
 
 function _table(db) { if (!db.reawakening || typeof db.reawakening !== 'object') db.reawakening = { log: [] }; if (!Array.isArray(db.reawakening.log)) db.reawakening.log = []; return db.reawakening; }
 function _bare(j) { return String(j || '').split('@')[0].split(':')[0]; }
-function rankOf(p) { const r = String((p && p.awakenRank) || 'E').toUpperCase().replace(/[^A-Z]/g, ''); return RANKS.includes(r) ? r : 'E'; }
+function rankOf(p) { const r = String((p && p.awakenRank) || 'E').toUpperCase().replace(/[^A-Z]/g, ''); return RANKS.includes(r) ? r : (r === 'SS' ? 'SS' : 'E'); } // 10-26: SS is never treated as E (would have been 'reawakened' downward)
 
 /** Reawakenings used in the last 365 days (global). */
 function usedThisYear(db, now = Date.now()) { return _table(db).log.filter(e => e && now - (e.at || 0) < YEAR_MS); }

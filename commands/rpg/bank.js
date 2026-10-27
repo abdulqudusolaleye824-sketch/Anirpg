@@ -195,7 +195,7 @@ ${FRAME}`
         }, { quoted: msg });
       }
 
-      const BOT_OWNER = '221951679328499@lid';
+      const BOT_OWNER = '194592469209292@lid';
       const CO_OWNER  = '194592469209292@lid';
       // Push #69: match on bare numbers (any JID form) and include the
       // co-owner's phone number.

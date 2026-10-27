@@ -221,6 +221,14 @@ const TITLES = {
     boostDesc: '+30 ATK, +20 DEF, +20 SPD, +150 HP',
   },
 
+  // 10-26 (owner): SS-RANK legendary title — auto-granted the moment a hunter holds SS (only /bleep SS can do that).
+  'Pinnacle of Evolution': {
+    display: '💠 PINNACLE OF EVOLUTION', rarity: 'legendary',
+    desc: 'An SS-rank hunter. Evolution has nothing left to offer.',
+    condition: (p) => String(p && p.awakenRank || '').toUpperCase() === 'SS',
+    boost: { atk: 60, def: 60, speed: 40, maxHp: 400 },
+    boostDesc: '+60 ATK, +60 DEF, +40 SPD, +400 HP',
+  },
   // ── SHOP — Legendary (gold) ────────────────────────────────
   'Phoenix Knight': {
     display: '🔥 Phoenix Knight', rarity: 'legendary',

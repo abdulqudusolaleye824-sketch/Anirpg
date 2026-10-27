@@ -4,7 +4,7 @@ module.exports = {
 
   async execute(sock, msg, args, getDatabase, saveDatabase, sender) {
     const chatId = msg.key.remoteJid;
-    const BOT_OWNER = '221951679328499@lid';
+    const BOT_OWNER = '194592469209292@lid';
 
     if (sender !== BOT_OWNER) {
       return sock.sendMessage(chatId, {

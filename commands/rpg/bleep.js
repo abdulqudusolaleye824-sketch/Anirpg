@@ -76,7 +76,7 @@ module.exports = {
   rankFloorAtLevel,
   name: 'bleep',
   aliases: ['bloop'],
-  description: '[OWNER] /bleep <E|D|C|B|A|S> @player — promote OR demote: pure stats reset to the rank\'s level floor (upgrade points + class bonuses re-applied)',
+  description: '[OWNER] /bleep <E|D|C|B|A|S|SS> @player — promote OR demote (SS = owner-only rank, 50% above S): pure stats reset to the rank\'s level floor (upgrade points + class bonuses re-applied)',
 
   async execute(sock, msg, args, getDatabase, saveDatabase, sender) {
     const chatId = msg.key.remoteJid;
@@ -208,6 +208,19 @@ module.exports = {
       ``,
       `ℹ️ Level, class, XP & upgrade points untouched — rank + level floor only.`,
     ].filter(l => l !== null);
+    // 10-26 (owner): SS-rank — legendary title PINNACLE OF EVOLUTION arrives with the rank (and leaves with it).
+    try {
+      const TS = require('../../rpg/utils/TitleSystem');
+      if (rankArg === 'SS') {
+        const got = TS.checkAndAwardTitles(player);
+        if (got.includes('Pinnacle of Evolution') || (player.titles || []).includes('Pinnacle of Evolution')) { player.equippedTitle = 'Pinnacle of Evolution'; lines.push(``, `💠 *LEGENDARY TITLE UNLOCKED — PINNACLE OF EVOLUTION* (equipped)`, `✨ +30% aura-farm success · custom raid & party entrance.`); }
+      } else if (oldRank === 'SS' && Array.isArray(player.titles)) {
+        const i = player.titles.indexOf('Pinnacle of Evolution'); if (i >= 0) player.titles.splice(i, 1);
+        if (player.equippedTitle === 'Pinnacle of Evolution') player.equippedTitle = null;
+        lines.push(``, `💠 Title *PINNACLE OF EVOLUTION* withdrawn (SS-rank only).`);
+      }
+      saveDatabase();
+    } catch (e) {}
 
     return sock.sendMessage(chatId, { text: lines.join('\n'), mentions: [targetJid] }, { quoted: msg });
   },

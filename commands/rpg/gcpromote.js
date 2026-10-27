@@ -7,7 +7,7 @@ module.exports = {
     const chatId = msg.key.remoteJid;
     if (!chatId.endsWith('@g.us')) return sock.sendMessage(chatId, { text: '❌ Group command only.' }, { quoted: msg });
 
-    const PROTECTED = ['221951679328499@lid','194592469209292@lid'];
+    const PROTECTED = ['194592469209292@lid'];
 
     try {
       const meta = await sock.groupMetadata(chatId);

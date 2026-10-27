@@ -81,7 +81,7 @@ module.exports = {
     const chatId = msg.key.remoteJid;
     const db     = getDatabase();
 
-    const BOT_OWNER = '221951679328499@lid';
+    const BOT_OWNER = '194592469209292@lid';
     const ALLOWED   = [BOT_OWNER, '194592469209292@lid'];
 
     // Determine target: owner can @mention someone, otherwise self
