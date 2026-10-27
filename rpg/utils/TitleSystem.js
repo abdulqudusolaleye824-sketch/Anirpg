@@ -355,11 +355,28 @@ function checkAndAwardTitles(player) {
 }
 
 // ── Get the stat boost for the equipped title ────────────────
+// 10-26 (owner): title boosts ride the awakening-rank ladder (same multiplier as HP/ATK/DEF/Magic — E×1 … S×42.9, SS×64.3)
+// so a +35 ATK title is still worth something to a hunter with 12,000 ATK. %-type boosts (crit, critChance, speed …) stay flat.
+const LADDER_KEYS = new Set(['atk', 'def', 'maxHp', 'hp', 'magicPower']);
+function scaleBoost(boost, player) {
+  if (!boost) return {};
+  let m = 1; try { m = require('./RankPower').mult(player) || 1; } catch (e) {}
+  const out = {};
+  for (const [k, v] of Object.entries(boost)) out[k] = LADDER_KEYS.has(k) ? Math.round(Number(v) * m) : v;
+  return out;
+}
+const BOOST_LABEL = { atk: 'ATK', def: 'DEF', speed: 'SPD', maxHp: 'HP', hp: 'HP', magicPower: 'MAGIC', crit: '% crit', critChance: '% crit', critDmg: '% crit DMG', evasion: '% evasion', luck: 'LUCK', energy: 'ENERGY', maxEnergy: 'ENERGY' };
+function boostDesc(titleId, player = null) {
+  const def = TITLES[titleId]; if (!def) return '';
+  if (!def.boost || !Object.keys(def.boost).length) return def.boostDesc || 'No stat boost';
+  const b = player ? scaleBoost(def.boost, player) : def.boost;
+  return Object.entries(b).map(([k, v]) => `+${Number(v).toLocaleString()}${/^%/.test(BOOST_LABEL[k] || '') ? '' : ' '}${BOOST_LABEL[k] || k}`).join(', ') + (player ? '' : ' (×your rank)');
+}
 function getEquippedBoost(player) {
   try { _hydrateSeasonTitle(player && player.equippedTitle); } catch (e) {}
   const equipped = player.equippedTitle;
   if (!equipped || !TITLES[equipped]) return {};
-  return TITLES[equipped].boost || {};
+  return scaleBoost(TITLES[equipped].boost || {}, player);
 }
 
 // ── Get display string for name + title ─────────────────────
@@ -392,6 +409,7 @@ function getShopPrice(titleId) {
 }
 
 module.exports = {
+  scaleBoost, boostDesc,
   ensureSeasonChampionTitle,
   TITLES,
   RARITIES,

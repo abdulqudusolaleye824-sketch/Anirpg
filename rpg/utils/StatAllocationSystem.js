@@ -14,35 +14,37 @@ const UP_REWARDS = {
 };
 const CAP_MULT = 2.1; // Push #103f: allocation thresholds +110%
 
+// 10-26 (owner): per-point values ×2.5 (HP 10→25, ATK/DEF 2→5, MAGIC/MR 3→7, SPD 1→2) to match the rank ladder;
+// HP/ATK/DEF/MAGIC points also ride the awakening-rank multiplier (Push #103j).
 const STAT_CONFIG = {
   hp: {
     name: 'HP', emoji: '❤️', description: 'Maximum Health Points',
-    costPerPoint: 1, valuePerPoint: 10, baseMax: 50,
+    costPerPoint: 1, valuePerPoint: 25, baseMax: 50,
     recommended: 'Tank, Paladin'
   },
   atk: {
     name: 'ATK', emoji: '⚔️', description: 'Physical Attack Power',
-    costPerPoint: 1, valuePerPoint: 2, baseMax: 40,
+    costPerPoint: 1, valuePerPoint: 5, baseMax: 40,
     recommended: 'Warrior, Berserker, Assassin'
   },
   def: {
     name: 'DEF', emoji: '🛡️', description: 'Physical Defense',
-    costPerPoint: 1, valuePerPoint: 2, baseMax: 40,
+    costPerPoint: 1, valuePerPoint: 5, baseMax: 40,
     recommended: 'Paladin, Warrior'
   },
   magicPower: {
     name: 'MAGIC', emoji: '✨', description: 'Magic Attack Power',
-    costPerPoint: 1, valuePerPoint: 3, baseMax: 30,
+    costPerPoint: 1, valuePerPoint: 7, baseMax: 30,
     recommended: 'Mage, Necromancer'
   },
   magicResist: { // Push #103b
     name: 'MAGIC RES', emoji: '🔰', description: 'Magic Resistance — resists statuses/debuffs when above the caster\'s Magic Power',
-    costPerPoint: 1, valuePerPoint: 3, baseMax: 30,
+    costPerPoint: 1, valuePerPoint: 7, baseMax: 30,
     recommended: 'Knight, Paladin, Druid, Monk'
   },
   speed: {
     name: 'SPEED', emoji: '💨', description: 'Attack Speed & Dodge',
-    costPerPoint: 2, valuePerPoint: 1, baseMax: 25,
+    costPerPoint: 2, valuePerPoint: 2, baseMax: 25,
     recommended: 'Assassin, Archer'
   },
   critChance: {
@@ -311,7 +313,7 @@ function getStatGuide(playerClass, player = null) {
     if (config) {
       display += `${index + 1}. ${config.emoji} ${config.name}\n`;
       display += `   ${config.description}\n`;
-      display += `   Cost: ${config.costPerPoint} UP = +${config.valuePerPoint} ${config.name}\n\n`;
+      display += `   Cost: ${config.costPerPoint} UP = +${(() => { try { const RP = require('./RankPower'); return RP.STATS.includes(stat) ? Math.round(config.valuePerPoint * RP.mult(player)) : config.valuePerPoint; } catch (e) { return config.valuePerPoint; } })()} ${config.name}\n\n`;
     }
   });
   

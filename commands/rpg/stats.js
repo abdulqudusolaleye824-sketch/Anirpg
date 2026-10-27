@@ -297,7 +297,7 @@ module.exports = {
         msg2 += `\n${FRAME}\n🎖️ *TITLES* (${owned.length})`;
         if (equipped && TS.TITLES[equipped]) {
           const td = TS.TITLES[equipped];
-          msg2 += `\n✅ *${td.display}* ← EQUIPPED\n   ⚡ ${td.boostDesc}`;
+          msg2 += `\n✅ *${td.display}* ← EQUIPPED\n   ⚡ ${TS.boostDesc(player.equippedTitle, player)}`;
         }
         const others = owned.filter(t => t !== equipped).slice(0, 3);
         if (others.length) msg2 += '\n' + others.map(t => `🎖️ ${TS.TITLES[t]?.display||t}`).join('\n');

@@ -2,6 +2,7 @@
 // Uses TitleSystem v2 (rarity-tiered, color-coded)
 
 const { TITLES, RARITIES, getRarityBadge, checkAndAwardTitles, getTitleDisplay } = require('../../rpg/utils/TitleSystem');
+const _TSb = require('../../rpg/utils/TitleSystem'); // 10-26: live, rank-scaled boost text
 
 module.exports = {
   name: 'title',
@@ -83,7 +84,7 @@ module.exports = {
           const eq   = equipped === t.id;
           const icon = eq ? '✅' : have ? '🔓' : '🔒';
           const shopTag = t.shop ? ' 🛒' : (t.grant === 'owner-only' ? ' 👑' : '');
-          txt += `${icon}${shopTag} ${t.display}\n   _${t.desc}_\n   ⚡ ${t.boostDesc}\n`;
+          txt += `${icon}${shopTag} ${t.display}\n   _${t.desc}_\n   ⚡ ${_TSb.boostDesc(t.id, player)}\n`;
         }
       }
       txt += `\n${FRAME}\n✅ = Equipped  🔓 = Owned  🔒 = Locked\n🛒 = Shop  👑 = Owner-grant\n${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO SHOWCASE* — ${owned.length}/${Object.keys(TITLES).length} collected` : `\n${UI.upsell()}`);
@@ -102,7 +103,7 @@ module.exports = {
         const eq   = equipped === id;
         const icon = eq ? '✅' : have ? '🔓' : '🔒';
         const shopTag = def.shop ? ' 🛒' : (def.grant === 'owner-only' ? ' 👑' : '');
-        txt += `${icon}${shopTag} ${def.display}\n   _${def.desc}_\n   ⚡ ${def.boostDesc}\n`;
+        txt += `${icon}${shopTag} ${def.display}\n   _${def.desc}_\n   ⚡ ${_TSb.boostDesc(id, player)}\n`;
       }
       txt += `\n${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO SHOWCASE* — ${owned.length} collected` : `\n${UI.upsell()}`);
       return sock.sendMessage(chatId, { text: txt }, { quoted: msg });
@@ -128,7 +129,7 @@ module.exports = {
       const isEquipped = equipped === id;
       const badge = getRarityBadge(id);
       txt += `${isEquipped ? '✅' : '🎖️'} ${badge.code} *${def.display}*${isEquipped ? ' ← EQUIPPED' : ''}\n`;
-      txt += `   ${badge.label} | ⚡ ${def.boostDesc}\n\n`;
+      txt += `   ${badge.label} | ⚡ ${_TSb.boostDesc(id, player)}\n\n`;
     }
 
     if (newTitles.length) {

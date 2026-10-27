@@ -208,6 +208,7 @@ module.exports = {
       try { const _r = _SCk && _SCk.resolveSkill ? _SCk.resolveSkill(player, skill.name) : null; const _e = _r && _r.ok ? _r.entry : null; const _L = _e ? (_e.effectScaled || _SCk.scaledSummary(_e)) : []; if (_L.length) txt += `\n📐 AT LEVEL ${lv}${lv > 1 ? ` (×${(_SCk.supportMult(lv)).toFixed(2)} support · +${Math.round((lv - 1) * 12)}% damage)` : ''}:\n${_L.join('\n')}\n`; } catch (e) {}
       if (info?.animation) txt += `\n🎬 ANIMATION:\n${info.animation.split('\n')[0]}\n`;
       if (upgradeCost) txt += `\n${FRAME}\n⬆️ Upgrade to Lv ${lv+1}: 💠 ${upgradeCost.toLocaleString()} Nexus\n/skills upgrade [slot#]\n`;
+      if (lv > 1) { try { const _fee = require('./upgrade-r').resetFee(player); txt += `♻️ Upgrade reset (owner, /upgrade-r): refunds what you paid · fee 💠 ${_fee.toLocaleString()} (reset #${(Number(player.upgradeResetsUsed) || 0) + 1}, ×1.5 each time)\n`; } catch (e) {} } // 10-26
       txt += `${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO LOADOUT* — Lv.${lv} ${skill.name}` : `\n${UI.upsell()}`);
       return sock.sendMessage(chatId, { text: txt }, { quoted: msg });
     }

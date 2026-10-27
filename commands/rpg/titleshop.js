@@ -4,6 +4,7 @@
 // ═══════════════════════════════════════════════════════════════
 
 const { TITLES, RARITIES, getShopPrice, getRarityBadge } = require('../../rpg/utils/TitleSystem');
+const _TSb = require('../../rpg/utils/TitleSystem'); // 10-26: live, rank-scaled boost text
 const Perms = require('../../utils/permissions');
 
 module.exports = {
@@ -86,7 +87,7 @@ module.exports = {
       let txt = (pro ? `${UI.PRO_BAR}\n${rarity.code} *${def.display}* ${eq ? '← EQUIPPED' : ''} 💎\n${UI.PRO_BAR}\n\n` : `${rarity.code} *${def.display}* ${eq ? '← EQUIPPED' : ''}\n${UI.FREE_BAR}\n\n`);
       txt += `📜 ${def.desc}\n\n`;
       txt += `${rarity.code} Rarity: *${rarity.label}*\n`;
-      txt += `⚡ Stat Boost: ${def.boostDesc}\n`;
+      txt += `⚡ Stat Boost: ${_TSb.boostDesc(titleId, player)}\n`;
       if (owned) txt += `✅ Status: OWNED\n`;
       else if (price) txt += `💠 Price: ${price.gold.toLocaleString()} 💠 + ${price.crystals} 💎\n`;
       else if (def.grant === 'owner-only') txt += `👑 Status: Owner-grant only\n`;
@@ -117,11 +118,11 @@ module.exports = {
           txt += `${owned ? '✅' : '🛒'} ${t.display}\n`;
           txt += `   _${t.desc}_\n`;
           txt += `   💠 ${t.shop.price.gold.toLocaleString()} 💠 + ${t.shop.price.crystals} 💎\n`;
-          txt += `   ⚡ ${t.boostDesc}\n`;
+          txt += `   ⚡ ${_TSb.boostDesc(t.id, player)}\n`;
         } else if (t.grant === 'owner-only') {
           txt += `👑 ${t.display}  _[owner-grant]_\n`;
           txt += `   _${t.desc}_\n`;
-          txt += `   ⚡ ${t.boostDesc}\n`;
+          txt += `   ⚡ ${_TSb.boostDesc(t.id, player)}\n`;
         }
         txt += `\n`;
       }

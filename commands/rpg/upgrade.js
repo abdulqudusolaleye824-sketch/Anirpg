@@ -149,7 +149,7 @@ module.exports = {
       for (const [statName, config] of Object.entries(StatAllocationSystem.STAT_CONFIG)) {
         const baseStat = totalStats.base[statName] || 0;
         const allocations = totalStats.allocated[statName] || 0;
-        const bonus = allocations * config.valuePerPoint;
+        const bonus = (() => { try { const RP = require('../../rpg/utils/RankPower'); return Math.round(allocations * config.valuePerPoint * (RP.STATS.includes(statName) ? RP.mult(player) : 1)); } catch (e) { return allocations * config.valuePerPoint; } })(); // 10-26: card shows the rank-scaled value
         const current = totalStats.current[statName] || 0;
         
         display += `${config.emoji} ${config.name}\n`;
@@ -204,7 +204,7 @@ module.exports = {
       const dynamicMax = StatAllocationSystem.getMaxAllocations ? 
         StatAllocationSystem.getMaxAllocations(actualStatName, player.level || 1) :
         (config.baseMax + Math.floor((player.level || 1) * (StatAllocationSystem.STAT_SCALE_FACTOR?.[actualStatName] || 1)));
-      const bonus = allocations * config.valuePerPoint;
+      const bonus = (() => { try { const RP = require('../../rpg/utils/RankPower'); return Math.round(allocations * config.valuePerPoint * (RP.STATS.includes(actualStatName) ? RP.mult(player) : 1)); } catch (e) { return allocations * config.valuePerPoint; } })();
       const percentage = Math.floor((allocations / dynamicMax) * 100);
       
       let info = pro ? `${UI.PRO_BAR}\n${config.emoji} ${config.name} INFO 💎\n${UI.PRO_BAR}\n\n📝 ${config.description}\n\n${UI.PRO_BAR}\n📊 YOUR ALLOCATIONS\n${UI.PRO_BAR}\nAllocated: ${allocations}/${dynamicMax} (${percentage}%)\nCurrent Bonus: +${bonus}${actualStatName.includes('Chance') || actualStatName.includes('Damage') || actualStatName === 'lifesteal' ? '%' : ''}\n\n${UI.PRO_BAR}\n💎 COST & VALUE\n${UI.PRO_BAR}\nCost: ${config.costPerPoint} UP per allocation\nGain: +${config.valuePerPoint} ${config.name} per allocation\nMax Allocations: ${dynamicMax} (scales with level)\n\n${UI.PRO_BAR}\n🎯 RECOMMENDED FOR\n${UI.PRO_BAR}\n${config.recommended}\n\n${UI.PRO_BAR}\n💡 TO ALLOCATE:\n/upgrade allocate ${statName} <amount>\n${UI.PRO_BAR}\n${UI.PRO_MINI}\n💎 *PRO STATS* — ${allocations}/${dynamicMax} ${config.name}` : `${config.emoji} ${config.name} INFO\n${UI.FREE_BAR}\n\n📝 ${config.description}\n\n${UI.FREE_BAR}\n📊 YOUR ALLOCATIONS\n${UI.FREE_BAR}\nAllocated: ${allocations}/${dynamicMax} (${percentage}%)\nCurrent Bonus: +${bonus}${actualStatName.includes('Chance') || actualStatName.includes('Damage') || actualStatName === 'lifesteal' ? '%' : ''}\n\n${UI.FREE_BAR}\n💎 COST & VALUE\n${UI.FREE_BAR}\nCost: ${config.costPerPoint} UP per allocation\nGain: +${config.valuePerPoint} ${config.name} per allocation\nMax Allocations: ${dynamicMax} (scales with level)\n\n${UI.FREE_BAR}\n🎯 RECOMMENDED FOR\n${UI.FREE_BAR}\n${config.recommended}\n\n${UI.FREE_BAR}\n💡 TO ALLOCATE:\n/upgrade allocate ${statName} <amount>\n${UI.FREE_BAR}\n${UI.upsell()}`;
