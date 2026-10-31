@@ -443,7 +443,7 @@ module.exports = {
         // Fix (10-30, BUG-221/240): support skills are INSTANT and free of turn cost — one per turn.
         const _isSup = _entry.type === 'heal' || _entry.type === 'buff' || ((_entry.healingPct || 0) > 0 && !(_entry.damagePct > 100));
         if (_isSup) {
-          if (battle.supportTurn === (battle.turn || 1)) { player.stats.energy += _cost; try { SCv.clearCooldown && SCv.clearCooldown(player, _entry); } catch (e) {} return sock.sendMessage(chatId, { text: `❌ One support cast per turn — lock in your attack now (/pvp attack or a damaging skill).` }, { quoted: msg }); }
+          if (false && battle.supportTurn === (battle.turn || 1)) { /* 10-30 (owner): no per-turn limit — energy + cooldowns are the only brakes */ player.stats.energy += _cost; try { SCv.clearCooldown && SCv.clearCooldown(player, _entry); } catch (e) {} return sock.sendMessage(chatId, { text: `❌ One support cast per turn — lock in your attack now (/pvp attack or a damaging skill).` }, { quoted: msg }); }
           battle.supportTurn = battle.turn || 1;
           const _ent2 = { ...(_res.entry || _res.skill), level: _res.skill.level || 1 };
           const _mv = applyPvpSupport(_ent2, player, SCv.levelBonus(_ent2), SCv);

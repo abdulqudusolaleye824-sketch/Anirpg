@@ -206,6 +206,7 @@ function openBox(player, kind) {
 // walked away does not stay "not on this realm" forever). Score + exit bonus scale with the floor reached.
 const FLOORS = 10, PER_FLOOR = 5, TIME_LIMIT_MS = 0, IDLE_LIMIT_MS = 30 * 60e3;
 const RANK_BY_FLOOR = (f) => f >= 10 ? 'S' : f >= 8 ? 'A' : f >= 6 ? 'B' : f >= 4 ? 'C' : f >= 2 ? 'D' : 'E';
+const RAGE_CHANCE = 0.80; // 10-30 (owner): final boss rage form
 function targetFloorFor(job) { return FLOORS; }
 function timeLeftMs(inst) { return inst && inst.active ? Math.max(0, (inst.lastActAt || inst.startedAt || 0) + IDLE_LIMIT_MS - Date.now()) : 0; }
 // Auto-close an instance idle for 30 min. Returns the summary (or null if still open).
@@ -300,6 +301,11 @@ async function act(player, skillQuery, hooks = null) {
       try { for (const n of UC.applyMoveBuffs({ name: e.name, buffs: e.buffs || [], debuffs: [], selfDebuffs: e.selfDebuffs || [] }, player, player)) lines.push(n); } catch (er) {}
       try { const sf = SC.applySupportFields(e, player, player, { name: player.name }); lines.push(...sf.lines); } catch (er) {}
       try { const TF = require('./Transformation'); if (TF.isTransformSkill(e)) { const tr = TF.cast(player, e); lines.push(...(tr.ok ? tr.lines : [`❌ ${tr.error}`])); } } catch (er) {}
+      // 10-30 (owner): buffs / heals are INSTANT in the instance — the beast does not get a turn for them.
+      // Energy and cooldowns still apply, so you cannot chain-stack for free.
+      inst.turn = Math.max(0, (inst.turn || 1) - 1);
+      lines.push(`⚡ _Instant cast — no turn spent. ${m.emoji} ${m.name} waits for your move._`);
+      return { ok: true, lines, ended: false, free: true };
     } else {
       // Push #96h-z9: with hooks.strike the command layer plays the strike through UnifiedCombat.playTurn
       // (the same multi-message detail flow as regular dungeons) — damage/statuses are applied there.
@@ -357,6 +363,20 @@ async function act(player, skillQuery, hooks = null) {
   try { const st = UC.tickStatuses(m); if (st && st.length) lines.push(...st); } catch (e) {}
   try { const tl = DS.tick(inst); if (tl) lines.push(tl); } catch (e) {}
   if (m.stats.hp <= 0) return { ok: true, lines: [...lines, `☠️ ${m.name} succumbs to its wounds — strike again to claim the floor.`], ended: false };
+  // 10-30 (owner): FINAL BOSS RAGE FORM — the moment the floor-10 Overlord drops to half HP it rolls ONCE (80%):
+  // it heals a quarter of its HP, ATK ×1.6, DEF ×1.3, SPD ×1.2, and its name carries the rage. One-off, no cure.
+  try {
+    if (m.finalBoss && !m._rageRolled && (m.stats.hp || 0) > 0 && m.stats.hp <= (m.stats.maxHp || 1) * 0.5) {
+      m._rageRolled = true;
+      if (Math.random() < RAGE_CHANCE) {
+        m.raged = true; const heal = Math.floor((m.stats.maxHp || 0) * 0.25);
+        m.stats.hp = Math.min(m.stats.maxHp || m.stats.hp, m.stats.hp + heal);
+        m.stats.atk = Math.floor((m.stats.atk || 1) * 1.6); m.stats.def = Math.floor((m.stats.def || 0) * 1.3); m.stats.speed = Math.floor((m.stats.speed || 10) * 1.2);
+        m.statusEffects = []; const old = m.name; m.name = `${old} ⟪RAGE FORM⟫`;
+        lines.push(`🔥🔥 *${old} ENTERS RAGE FORM!* 🔥🔥`, `The Overlord's wounds knit shut (+${heal.toLocaleString()} HP → ${m.stats.hp}/${m.stats.maxHp}) and every ailment burns away.`, `⚔️ ATK ×1.6 · 🛡️ DEF ×1.3 · 💨 SPD ×1.2 — *this is the real fight.*`);
+      } else lines.push(`😤 ${m.emoji} ${m.name} staggers — its rage fails to take hold.`);
+    }
+  } catch (e) {}
   if (mc && mc.canAct === false) lines.push(`🧊 ${m.emoji} ${m.name} is ${mc.reason || 'held'} and cannot move!`);
   else if ((player.stats.hp || 0) > 0) {
     const _pk = Math.random() < 0.7 && m.abilities.length ? MSFX.pickMoves(m.abilities, null) : { support: null, attack: null }; // Push #96h-l: support moves are free
