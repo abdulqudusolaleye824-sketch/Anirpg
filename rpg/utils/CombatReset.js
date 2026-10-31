@@ -9,6 +9,7 @@
 function clearForBattle(player, opts = {}) {
   if (!player || typeof player !== 'object') return false;
   try { require('./Summons').clear(player); } catch (e) {} // Push #103b
+  try { require('./SkillUseCap').reset(player); } catch (e) {} // 10-30: per-raid skill use counters start fresh
   try { require('./Transformation').clearFightUse(player); } catch (e) {} // Push #103b: one transformation per fight
   try {
     // End a running transformation cleanly (stats revert, no aftermath statuses).

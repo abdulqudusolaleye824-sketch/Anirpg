@@ -158,7 +158,7 @@ function allocateStat(player, statName, amount = 1) {
   player.statAllocations[statName] = currentAllocations + amount;
   
   let statIncrease = statConfig.valuePerPoint * amount;
-  try { const RP = require('./RankPower'); if (RP.STATS.includes(statName)) statIncrease = Math.round(statIncrease * RP.mult(player)); } catch (e) {} // Push #103j (BUG-140): the card shows the real, rank-scaled gain
+  try { const RP = require('./RankPower'); if (RP.STATS.includes(statName)) statIncrease = Math.round(statIncrease * RP.upMult(player)); } catch (e) {} // Push #103j (BUG-140): the card shows the real, rank-scaled gain
   applyAllocationsToStats(player);
   
   return {
@@ -171,7 +171,8 @@ function allocateStat(player, statName, amount = 1) {
 }
 
 function applyAllocationsToStats(player) {
-  if (!player.statAllocations) return;
+  if (!player || !player.stats) return;
+  if (!player.statAllocations) { try { initializeStatAllocations(player); } catch (e) {} if (!player.statAllocations) player.statAllocations = { hp: 0, atk: 0, def: 0, speed: 0, energy: 0 }; } // Fix (10-30): older records had no allocation table → the whole rank layer was skipped (/bleep S/SS changed nothing)
   
   // ✅ FIX: Only set baseStats if it doesn't exist yet - never overwrite existing
   if (!player.baseStats) {
@@ -199,7 +200,9 @@ function applyAllocationsToStats(player) {
   // Push #103h: awakening-rank power layer (E×1 … S×42.9) on base HP/ATK/DEF/Magic — see RankPower.js.
   const _hp0 = Number(player.stats.hp); // Fix (10-26): re-cap HP only AFTER an active transformation is re-laid (else the form's HP pool is lost)
   let _rm = 1; try { _rm = require('./RankPower').mult(player); } catch (e) { _rm = 1; }
+  let _um = _rm; try { _um = require('./RankPower').upMult(player); } catch (e) { _um = _rm; } // 10-30: SS allocations +10%
   const _rk = (k, v) => (_rm !== 1 && require('./RankPower').STATS.includes(k)) ? Math.round(v * _rm) : v;
+  const _rkAlloc = (k, base, bonus) => (require('./RankPower').STATS.includes(k)) ? Math.round(base * _rm + bonus * _um) : base + bonus; // base × rank, allocations × rank (SS +10%)
   for (const k of ['hp', 'atk', 'def', 'magicPower']) if (player.statAllocations[k] == null) player.statAllocations[k] = 0; // every rank-scaled stat is recomputed
   for (const [statName, allocations] of Object.entries(player.statAllocations)) {
     const config = STAT_CONFIG[statName];
@@ -208,7 +211,7 @@ function applyAllocationsToStats(player) {
     const bonus = allocations * config.valuePerPoint;
     
     if (statName === 'hp') {
-      player.stats.maxHp = _rk('hp', (player.baseStats.hp || 100) + bonus); // Push #103j (BUG-140): allocated points ride the rank multiplier too
+      player.stats.maxHp = _rkAlloc('hp', (player.baseStats.hp || 100), bonus); // Push #103j (BUG-140): allocated points ride the rank multiplier too
       let _cap = player.stats.maxHp;
       try { _cap = require('./GearSystem').effectiveMaxHp(player); } catch (e) {}
       if (player.stats.hp > _cap) player.stats.hp = _cap;
@@ -219,12 +222,14 @@ function applyAllocationsToStats(player) {
         player.stats.energy = player.stats.maxEnergy;
       }
     } else {
-      player.stats[statName] = _rk(statName, (player.baseStats[statName] || 0) + bonus); // Push #103j (BUG-140): rank-scaled stats scale their allocations
+      player.stats[statName] = _rkAlloc(statName, (player.baseStats[statName] || 0), bonus); // Push #103j (BUG-140): rank-scaled stats scale their allocations
     }
   }
   try { if (player.transform && require('./Transformation').reapply(player) && Number.isFinite(_hp0)) { let cap = player.stats.maxHp; try { cap = require('./GearSystem').effectiveMaxHp(player); } catch (e) {} player.stats.hp = Math.min(_hp0, cap); } } catch (e) {} // Fix (10-26): keep an active form's bonus after a rebuild
 }
 
+const STAT_RESET_BASE = 1000000, STAT_RESET_GROWTH = 1.5;
+function statResetFee(player) { return Math.round(STAT_RESET_BASE * Math.pow(STAT_RESET_GROWTH, Math.max(0, Number(player && player.statResetsUsed) || 0))); }
 function resetAllocations(player) {
   initializeStatAllocations(player);
   const UI = require('./UI');
@@ -241,12 +246,14 @@ function resetAllocations(player) {
     return { success: false, message: '❌ You have no stat allocations to reset!' };
   }
   
-  const resetCost = 200000; // Push #88e: flat 200k Nexus
+  // 10-30 (owner): 1,000,000 💠, rising ×1.5 every reset this hunter has done (1M → 1.5M → 2.25M …), like /upgrade-r.
+  const resetCost = statResetFee(player);
   if ((player.gold || 0) < resetCost) {
-    return { success: false, message: `❌ Not enough Nexus to reset stats!\n\nCost: ${resetCost.toLocaleString()} 💠\nYou have: ${player.gold || 0} 💠` };
+    return { success: false, message: `❌ Not enough Nexus to reset stats!\n\nCost: ${resetCost.toLocaleString()} 💠 (reset #${(Number(player.statResetsUsed) || 0) + 1} — the fee rises ×1.5 each time)\nYou have: ${(player.gold || 0).toLocaleString()} 💠` };
   }
   
   player.gold -= resetCost;
+  player.statResetsUsed = (Number(player.statResetsUsed) || 0) + 1;
   try { require('./TransactionLog').logSpend(player, 'stat_reset', resetCost, 0); } catch (e) {}
   player.upgradePoints = (player.upgradePoints || 0) + totalPointsSpent;
   player.statAllocations = { hp: 0, atk: 0, def: 0, magicPower: 0, magicResist: 0, speed: 0, critChance: 0, critDamage: 0, lifesteal: 0, energy: 0 };
@@ -255,7 +262,7 @@ function resetAllocations(player) {
   
   return {
     success: true,
-    message: (rPro ? `${UI.PRO_BAR}\n♻️ STATS RESET! 💎\n${UI.PRO_BAR}\n\n💠 Cost: ${resetCost} 💠\n💎 Refunded: ${totalPointsSpent} UP\n\n${UI.PRO_BAR}\nAll stat allocations have been reset!\nYou can now re-allocate your points.\n\n💎 Upgrade Points: ${player.upgradePoints} UP\n💠 Remaining Nexus: ${player.gold} 💠\n${UI.PRO_BAR}\n${UI.PRO_MINI}\n💎 *PRO STATS* — ${totalPointsSpent} UP refunded` : `♻️ STATS RESET!\n${UI.FREE_BAR}\n\n💠 Cost: ${resetCost} 💠\n💎 Refunded: ${totalPointsSpent} UP\n\n${UI.FREE_BAR}\nAll stat allocations have been reset!\nYou can now re-allocate your points.\n\n💎 Upgrade Points: ${player.upgradePoints} UP\n💠 Remaining Nexus: ${player.gold} 💠\n${UI.FREE_BAR}\n${UI.upsell()}`),
+    message: (rPro ? `${UI.PRO_BAR}\n♻️ STATS RESET! 💎\n${UI.PRO_BAR}\n\n💠 Cost: ${resetCost.toLocaleString()} 💠 (next reset: ${statResetFee(player).toLocaleString()} 💠)\n💎 Refunded: ${totalPointsSpent} UP\n\n${UI.PRO_BAR}\nAll stat allocations have been reset!\nYou can now re-allocate your points.\n\n💎 Upgrade Points: ${player.upgradePoints} UP\n💠 Remaining Nexus: ${player.gold} 💠\n${UI.PRO_BAR}\n${UI.PRO_MINI}\n💎 *PRO STATS* — ${totalPointsSpent} UP refunded` : `♻️ STATS RESET!\n${UI.FREE_BAR}\n\n💠 Cost: ${resetCost.toLocaleString()} 💠 (next reset: ${statResetFee(player).toLocaleString()} 💠)\n💎 Refunded: ${totalPointsSpent} UP\n\n${UI.FREE_BAR}\nAll stat allocations have been reset!\nYou can now re-allocate your points.\n\n💎 Upgrade Points: ${player.upgradePoints} UP\n💠 Remaining Nexus: ${player.gold} 💠\n${UI.FREE_BAR}\n${UI.upsell()}`),
     pointsRefunded: totalPointsSpent,
     goldSpent: resetCost
   };
@@ -282,7 +289,7 @@ function getStatAllocationDisplay(player) {
     display += `   Cost: ${config.costPerPoint} UP per point\n\n`;
   }
   
-  display += `${FRAME}\n📜 COMMANDS\n${FRAME}\n/upgrade allocate <stat> <amount>\n  Example: /upgrade allocate atk 5\n\n/upgrade reset\n  Reset all allocations (costs 200,000 💠)\n\n/upgrade guide\n  See stat recommendations\n${FRAME}` + (dPro ? `\n${UI.PRO_MINI}\n💎 *PRO STATS* — ${player.upgradePoints} UP banked` : `\n${UI.upsell()}`);
+  display += `${FRAME}\n📜 COMMANDS\n${FRAME}\n/upgrade allocate <stat> <amount>\n  Example: /upgrade allocate atk 5\n\n/upgrade reset\n  Reset all allocations — ${statResetFee(player).toLocaleString()} 💠 (1,000,000 base, ×1.5 every reset)\n\n/upgrade guide\n  See stat recommendations\n${FRAME}` + (dPro ? `\n${UI.PRO_MINI}\n💎 *PRO STATS* — ${player.upgradePoints} UP banked` : `\n${UI.upsell()}`);
 
   return display;
 }
@@ -313,7 +320,7 @@ function getStatGuide(playerClass, player = null) {
     if (config) {
       display += `${index + 1}. ${config.emoji} ${config.name}\n`;
       display += `   ${config.description}\n`;
-      display += `   Cost: ${config.costPerPoint} UP = +${(() => { try { const RP = require('./RankPower'); return RP.STATS.includes(stat) ? Math.round(config.valuePerPoint * RP.mult(player)) : config.valuePerPoint; } catch (e) { return config.valuePerPoint; } })()} ${config.name}\n\n`;
+      display += `   Cost: ${config.costPerPoint} UP = +${(() => { try { const RP = require('./RankPower'); return RP.STATS.includes(stat) ? Math.round(config.valuePerPoint * RP.upMult(player)) : config.valuePerPoint; } catch (e) { return config.valuePerPoint; } })()} ${config.name}\n\n`;
     }
   });
   
@@ -414,7 +421,7 @@ function fixAllocations(player) {
   return { refunded, log };
 }
 
-module.exports = {
+module.exports = { statResetFee, STAT_RESET_BASE, STAT_RESET_GROWTH,
   UP_REWARDS,
   STAT_CONFIG,
   getMaxAllocations,

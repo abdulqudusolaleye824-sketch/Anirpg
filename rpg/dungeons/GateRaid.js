@@ -15,6 +15,9 @@
 'use strict';
 
 const RI = require('../utils/RewardInventory');
+
+// Fix (10-30, BUG-233): energy refusals now say how fast energy comes back in battle, so "regen doesn't work" is answered on the spot.
+function _regenHint(p) { try { const RM = require('../utils/RegenManager'); return `⚡ In-battle regen: +${RM.battleEnergyRate(p && p.awakenRank)} energy / 10 s (${String((p && p.awakenRank) || 'E').toUpperCase()}-rank).`; } catch (e) { return ''; } }
 const GKM = require('./GateKeyManager');
 const { GateManager, GATE_RANKS } = require('./GateManager');
 
@@ -52,7 +55,8 @@ function playerDamage(player, skillName = null, target = null) {
     const cd = SC.onCooldown(player, entry || skill);
     if (!cd.ready) return { damage: 0, blocked: true, reason: `*${skill.name}* is on cooldown! (${Math.ceil(cd.msLeft / 1000)}s)` };
     const cost = entry ? SC.effectiveCost(entry, player) : (skill.energyCost || 0);
-    if ((player.stats?.energy || 0) < cost) return { damage: 0, blocked: true, reason: `Not enough energy for *${skill.name}*! Need ${cost}.` };
+    { let _capMsg = null; try { _capMsg = require('../utils/SkillUseCap').use(player, entry || skill, false); } catch (e) {} if (_capMsg) return { damage: 0, blocked: true, reason: _capMsg, capSpent: true }; } // 10-30 (owner): per-raid use cap
+    if ((player.stats?.energy || 0) < cost) return { damage: 0, blocked: true, reason: `Not enough energy for *${skill.name}*! Need ${cost} (you have ${Math.floor(player.stats?.energy || 0)}). ${_regenHint(player)}` };
 
     // Skills are a multiplier of ATK (plus magic power for casters), not the
     // old flat `skill.damage || 20` — that flat number is why a Lv.90 skill
@@ -85,6 +89,7 @@ function playerDamage(player, skillName = null, target = null) {
     if (target) { try { require('../utils/JobSystem').noteHit(player, true); target.lastHitBy = player.jid || player.id || target.lastHitBy; } catch (e) {} } // Push #95
 
     player.stats.energy = Math.max(0, (player.stats.energy || 0) - cost);
+    try { require('../utils/SkillUseCap').use(player, entry || skill, true); } catch (e) {} // 10-30: count this raid use
     SC.setCooldown(player, entry || skill);
     try { require('../utils/RegenManager').markCombatAction(player); } catch (e) {}
     // Push #88o: the monster may DODGE a damaging skill — cooldown + energy are
@@ -925,8 +930,12 @@ function start(sender, keyData, gate, db) {
   // leaves), may hide a second dungeon behind its boss, and a stronger beast may leak in.
   const notes = [];
   try { const T = require('../data/Terrains'); if (!gate.terrain) gate.terrain = T.pickFor(gate.theme || null).id; const _tt = T.entryText(gate.terrain, gate.monsters, GateManager.monsterFamily); if (_tt) notes.push(_tt); } catch (e) {} // Push #97: terrain stated at entry
+  // 10-30 (owner): UNDERSTAFFED PARTY (<3 raiders) — 90%: the gate turns RED, hides a DOUBLE dungeon, THREE
+  // leaks are planted and every beast is silently ×4 (+300%). Nothing in chat says why; the System warned them.
+  const _crew = (raid.members || []).length;
+  if (_crew < UNDERSTAFF_MIN && !gate.isDouble && Math.random() < UNDERSTAFF_CHANCE) { gate.understaffed = true; gate.silentBuff = UNDERSTAFF_MULT; }
   if (!gate.isDouble) {
-    if (Math.random() < RED_GATE_CHANCE) {
+    if (gate.understaffed || Math.random() < RED_GATE_CHANCE) {
       gate.redGate = true; notes.push(RED_GATE_TEXT);
       // Push #96h: a Red Gate runs 10 floors DEEPER — extra floors are built from the same pool/theme.
       try {
@@ -940,9 +949,10 @@ function start(sender, keyData, gate, db) {
         notes.push(`🟥 The red light stretches the gate — *${_redExtra} extra floor${_redExtra === 1 ? '' : 's'}* (${newTop} in total).`);
       } catch (e) {}
     }
-    if (Math.random() < DOUBLE_DUNGEON_CHANCE) gate.doubleRoll = true; // revealed only when the boss falls
+    if (gate.understaffed || Math.random() < DOUBLE_DUNGEON_CHANCE) gate.doubleRoll = true; // revealed only when the boss falls
   }
-  try { const leak = leakMonster(gate); if (leak) notes.push(leak); } catch (e) {}
+  try { const leak = leakMonster(gate, gate.understaffed ? { force: true, count: UNDERSTAFF_LEAKS } : {}); if (leak) notes.push(leak); } catch (e) {}
+  if (gate.understaffed) { try { applyMonsterScaling(gate); } catch (e) {} } // re-scale now that silentBuff is set
   return { ok: true, raid, notes };
 }
 
@@ -950,6 +960,25 @@ function start(sender, keyData, gate, db) {
 const RED_GATE_EXTRA_FLOORS = 10; // Push #96h (legacy constant) · Push #97: a Red Gate now adds 1–30 extra floors (rollRedExtra)
 function rollRedExtra() { const r = Math.random(); return r < 0.5 ? 1 + Math.floor(Math.random() * 10) : r < 0.85 ? 11 + Math.floor(Math.random() * 10) : 21 + Math.floor(Math.random() * 10); }
 const RED_GATE_CHANCE = 0.06; // Push #96h-m: −60% (was 0.15)
+// 10-30 (owner): understaffed-party penalty.
+const UNDERSTAFF_MIN = 3, UNDERSTAFF_CHANCE = 0.90, UNDERSTAFF_LEAKS = 3, UNDERSTAFF_MULT = 4; // ×4 = +300%
+// Varied System-style warnings shown on the FIRST /party start with fewer than 3 raiders (the second start goes ahead).
+const UNDERSTAFF_WARNINGS = [
+  (n) => `⚠️ *[SYSTEM]* Scan complete. Party size: *${n}*. Recommended: *3+*.\nThe gate's pressure is not tuned for so few hunters. Are you sure you wish to proceed?\n\nRun */party start* again to enter anyway.`,
+  (n) => `🩸 *[SYSTEM]* Your party is not fully prepared — only *${n}* hunter${n === 1 ? '' : 's'} stand${n === 1 ? 's' : ''} before the gate.\nHunters have gone missing in understaffed breaches. Proceed?\n\n*/party start* once more to confirm.`,
+  (n) => `📡 *[SYSTEM]* Notice: entering a gate with fewer than *3* hunters is… *inadvisable*.\nThe Association will not be held responsible for what the gate does to a party of *${n}*.\n\nType */party start* again if you insist.`,
+  (n) => `🕯️ *[SYSTEM]* Readiness check failed: *${n}/3* minimum crew.\nSomething on the other side has noticed how few of you there are. Still going in?\n\n*/party start* again to confirm.`,
+  (n) => `☠️ *[SYSTEM]* Hunter, your party of *${n}* is thin. Gates feed on thin parties.\nAre you certain this is a fight you want? *3 or more* is the safe number.\n\nRepeat */party start* to proceed regardless.`,
+];
+function understaffWarning(n) { return UNDERSTAFF_WARNINGS[Math.floor(Math.random() * UNDERSTAFF_WARNINGS.length)](Number(n) || 0); }
+// Returns a warning text when the leader must confirm first (and arms the confirmation for 3 minutes); null = go ahead.
+function understaffGate(raid) {
+  if (!raid || (raid.members || []).length >= UNDERSTAFF_MIN) return null;
+  const now = Date.now();
+  if (raid.understaffWarnedAt && now - raid.understaffWarnedAt < 3 * 60 * 1000) return null;
+  raid.understaffWarnedAt = now;
+  return understaffWarning((raid.members || []).length);
+}
 const DOUBLE_DUNGEON_CHANCE = 0.05;
 const LEAK_CHANCE = 0.05; // Push #97: much rarer (was 0.17)
 const RED_GATE_TEXT = '🟥 *THE GATE TURNS RED!* The entrance seals behind you — *nobody can enter or leave* this raid until the gate is cleared or the party falls.';
@@ -992,7 +1021,8 @@ function leakMonster(gate, opts = {}) {
     planted++; return true;
   };
   plantOne();
-  for (const p of LEAK_MORE) { if (Math.random() < p) plantOne(); else break; }
+  if (opts.count > 1) { for (let k = 1; k < opts.count; k++) plantOne(); } // 10-30: understaffed parties get a fixed number of leaks
+  else for (const p of LEAK_MORE) { if (Math.random() < p) plantOne(); else break; }
   return planted ? null : null; // silent — nothing is announced at raid start
 }
 // Called with the hunter's strike result BEFORE damage is applied. Returns null (not a sleeper / nothing
@@ -1252,7 +1282,8 @@ function floorTreasure(gate, player, floor = null) {
   let jm = 1; try { jm = 1 + (require('../utils/JobSystem').mod(player, 'nexusMult') || 0) / 100; } catch (e) {}
   return { nexus: Math.floor((gate.nexusLoot || 1000) * RAID_NEXUS_BOOST * lm * jm * fw / floors), crystals: Math.floor(Math.max(0, (gate.crystalLoot || 100) - (gate.minedCrystals || 0)) * lm * fw / floors) }; // mined stones are banked separately by Mining.resolve
 }
-function _rankPow(rank) { try { return require('../utils/RankPower').monsterMult(rank); } catch (e) { return 1; } } // Push #103i
+function _rankPow(rank) { try { return require('../utils/RankPower').monsterMult(rank); } catch (e) { return 1; } } // Push #103i · 10-30: full ladder for B+
+function _rankHpPow(rank) { try { return require('../utils/RankPower').monsterHpMult(rank); } catch (e) { return 1; } } // 10-30 (owner): B+ beast HP ×2 on top
 const BEAST_HP_BUFF = 1.40, BEAST_ATK_BUFF = 1.20; // Push #102d: every raid monster & boss +40% HP, +20% ATK
 const LEAK_MULT = 5; // Push #96h-m: 5× (silent — never stated in text)
 const LEAK_ATK_CUT = 0.30; // Push #96h-n: leaked ATK −70% (5× × 0.3 = 1.5× habitat ATK)
@@ -1271,7 +1302,7 @@ function _anchorSpeed(gate, roleFactor = 1, boss = false, seed = '') {
   return avg * rb * role * (boss ? 1.2 : _speedJitter(seed));
 }
 function applyMonsterScaling(gate) {
-  const severity = ((gate.calibrated && gate.calibrated.severity) || 1) * rankSoften(gate.rank);
+  const severity = ((gate.calibrated && gate.calibrated.severity) || 1) * rankSoften(gate.rank) * (Number(gate.silentBuff) > 1 ? Number(gate.silentBuff) : 1); // 10-30: silent understaffed ×4
   for (const mon of gate.monsters || []) {
     if (!mon || mon.defeated) continue;
     if (!mon._base) mon._base = { hp: mon.maxHp || mon.hp || 10, atk: mon.atk || 5, def: mon.def || 0, speed: mon.speed || 10 };
@@ -1293,7 +1324,7 @@ function applyMonsterScaling(gate) {
     // Push #96h-m: a LEAKED beast is 5× what it would be in its own habitat (kept silent in-chat).
     if (mon.leaked) { mon.maxHp = Math.floor(mon.maxHp * LEAK_MULT); mon.hp = Math.max(1, Math.floor(mon.maxHp * hpPct)); mon.atk = Math.floor(mon.atk * LEAK_MULT * LEAK_ATK_CUT); mon.def = Math.floor(mon.def * LEAK_MULT); mon.speed = Math.round(mon.speed * 1.5); } // Push #96h-n: ATK cut 70%
     // Push #96h-z9: tuning — regular gates −15%; RED gates +15%; a leaked beast a further +15% (HP/ATK/DEF).
-    { const _gt = (gate.redGate ? RED_GATE_TUNE : GATE_TUNE) * (mon.leaked ? LEAK_TUNE : 1) * _rankPow(mon.rank || gate.rank); mon.maxHp = Math.max(5, Math.floor(mon.maxHp * _gt * BEAST_HP_BUFF)); mon.hp = Math.max(1, Math.floor(mon.maxHp * hpPct)); mon.atk = Math.max(1, Math.floor(mon.atk * _gt * BEAST_ATK_BUFF)); mon.def = Math.floor(mon.def * _gt); } // Push #103i: rank power ladder (×0.75 of the hunters')
+    { const _gt = (gate.redGate ? RED_GATE_TUNE : GATE_TUNE) * (mon.leaked ? LEAK_TUNE : 1) * _rankPow(mon.rank || gate.rank); const _gtHp = (gate.redGate ? RED_GATE_TUNE : GATE_TUNE) * (mon.leaked ? LEAK_TUNE : 1) * _rankHpPow(mon.rank || gate.rank); mon.maxHp = Math.max(5, Math.floor(mon.maxHp * _gtHp * BEAST_HP_BUFF)); mon.hp = Math.max(1, Math.floor(mon.maxHp * hpPct)); mon.atk = Math.max(1, Math.floor(mon.atk * _gt * BEAST_ATK_BUFF)); mon.def = Math.floor(mon.def * _gt); } // Push #103i: rank power ladder (×0.75 of the hunters')
     // Push #97: TERRAIN — a beast standing on home ground gets the terrain's boost (stated at raid start).
     try { const T = require('../data/Terrains'); const _t = T.get(gate.terrain); if (_t && T.isHome(_t, mon, GateManager.monsterFamily)) { const hb = _t.homeBoost || {}; if (hb.atk) mon.atk = Math.max(1, Math.floor(mon.atk * (1 + hb.atk / 100))); if (hb.def) mon.def = Math.floor(mon.def * (1 + hb.def / 100)); mon.homeGround = true; } else mon.homeGround = false; } catch (e) {}
     // Push #97: DEF is anchored to the party — no beast may shrug off a hunter's hit entirely (cap 55% of the party's average ATK).
@@ -1335,7 +1366,7 @@ function applyMonsterScaling(gate) {
     gate.boss.speed = Math.max(gate.boss.speed, Math.round(_anchorSpeed(gate, 1, true)));
     { const TM = _types(); if (TM && !gate.boss._typedBoss) { const tm = TM.mults(gate.boss); gate.boss._typedBoss = true; gate.boss.typeLabel = tm.label; gate.boss.critBonus = tm.crit; gate.boss._typeMult = tm; }
       const tm = gate.boss._typeMult; if (tm) { gate.boss.maxHp = Math.floor(gate.boss.maxHp * tm.hp); gate.boss.hp = Math.max(1, Math.floor(gate.boss.maxHp * hpPct)); gate.boss.atk = Math.floor(gate.boss.atk * tm.atk); gate.boss.def = Math.floor(gate.boss.def * tm.def); gate.boss.speed = Math.round(gate.boss.speed * tm.speed); } }
-      { const _gt = (gate.redGate ? RED_GATE_TUNE : GATE_TUNE) * _rankPow(gate.boss.rank || gate.rank); gate.boss.maxHp = Math.max(50, Math.floor(gate.boss.maxHp * _gt * BEAST_HP_BUFF)); gate.boss.hp = Math.max(1, Math.floor(gate.boss.maxHp * hpPct)); gate.boss.atk = Math.max(1, Math.floor(gate.boss.atk * _gt * BEAST_ATK_BUFF)); gate.boss.def = Math.floor(gate.boss.def * _gt); } // Push #96h-z9 · #102d buff
+      { const _gt = (gate.redGate ? RED_GATE_TUNE : GATE_TUNE) * _rankPow(gate.boss.rank || gate.rank); const _gtHp = (gate.redGate ? RED_GATE_TUNE : GATE_TUNE) * _rankHpPow(gate.boss.rank || gate.rank); gate.boss.maxHp = Math.max(50, Math.floor(gate.boss.maxHp * _gtHp * BEAST_HP_BUFF)); gate.boss.hp = Math.max(1, Math.floor(gate.boss.maxHp * hpPct)); gate.boss.atk = Math.max(1, Math.floor(gate.boss.atk * _gt * BEAST_ATK_BUFF)); gate.boss.def = Math.floor(gate.boss.def * _gt); } // Push #96h-z9 · #102d buff
     { const _ps = gate.calibrated && gate.calibrated.avgSpeed; if (_ps > 0) gate.boss.speed = Math.min(gate.boss.speed, Math.round(_ps * (SPEED_PARTY_CAP + 0.10))); } // Push #103j: boss speed cap 1.35× party
     { const _pa = gate.calibrated && gate.calibrated.avgAtk; if (_pa > 0) gate.boss.def = Math.min(gate.boss.def, Math.floor(_pa * 0.55)); } // Push #97: boss DEF anchored to the party (never a 0-damage wall)
   }
@@ -1425,7 +1456,7 @@ function supportCast(caster, casterJid, target, targetJid, skillName, gate, db, 
       party = true;
     }
   }
-  if ((caster.stats?.energy || 0) < cost) return { ok: false, error: `Not enough energy for *${skill.name}*! Need ${cost}${!isHealerClass && isHeal ? ' (self-heals cost double for non-Healers)' : ''}.` };
+  if ((caster.stats?.energy || 0) < cost) return { ok: false, error: `${_regenHint(caster)} Not enough energy for *${skill.name}*! Need ${cost}${!isHealerClass && isHeal ? ' (self-heals cost double for non-Healers)' : ''}.` };
   // Push #91: HEALER BACKLASH — healing ANOTHER hunter costs the Healer HP
   // (single 12% · party 8%+0.4%/heal%), cut by skill level (Lv5 = −80%).
   // Self-heals are free. Checked before the heal so the caster feels it.
@@ -1442,6 +1473,7 @@ function supportCast(caster, casterJid, target, targetJid, skillName, gate, db, 
     // (deducted AFTER the heal loop — on a party heal the caster is a target
     //  too, so paying first would just be healed back by their own cast.)
   }
+  { let _capMsg = null; try { _capMsg = require('../utils/SkillUseCap').use(caster, entry || skill, true); } catch (e) {} if (_capMsg) return { ok: false, error: _capMsg }; } // 10-30 (owner): per-raid use cap (support skills too)
   let severeHealed = null;
   caster.stats.energy = Math.max(0, (caster.stats.energy || 0) - cost);
   SC.setCooldown(caster, entry);
@@ -1803,7 +1835,7 @@ function clearGate(gate, key, keyData, db, saveDatabase, opts = {}) {
           const { awardXP } = require('../utils/SilentXP');
           awardXP(p, 'gate_complete', saveDatabase, null, null);
         } catch (e) {}
-        if (QD) { try { QD.trackAndNotify(p, 'clear', 1, null, p.id, gate.chatId); } catch (e) {} }
+        if (QD) { try { QD.trackAndNotify(p, 'clear', 1, opts.sock || null, p.jid || p.id || m.id, gate.chatId); } catch (e) {} } // Fix (10-30, BUG-243): sock passed → quest reward is announced
       }
     }
     const pm = raid.members?.find(x => x.id === m.id);
@@ -1819,13 +1851,14 @@ function clearGate(gate, key, keyData, db, saveDatabase, opts = {}) {
   const leaderAlive = (leaderUser?.stats?.hp || 0) > 0 || (leaderMember?.hp || 0) > 0;
   const totalGP = 300;
 
-  if (leaderAlive && leaderId) {
-    try { WeeklyGuildWar.addGP(db, leaderId, totalGP, saveDatabase); } catch(e) {}
-  } else if (survivorIds.length > 0) {
-    const shareGP = Math.max(1, Math.floor(totalGP / survivorIds.length));
-    for (const sid of survivorIds) {
-      try { WeeklyGuildWar.addGP(db, sid, shareGP, saveDatabase); } catch(e) {}
-    }
+  // Fix (10-30, BUG-219): EVERY surviving raider earns GP — leader 300, each other survivor 150 (members used to get
+  // nothing unless the leader died, so non-leaders saw their GP frozen across dozens of raids).
+  const _gpDone = new Set();
+  const _bareGP = (j) => String(j || '').split(':')[0].split('@')[0];
+  if (leaderAlive && leaderId) { try { WeeklyGuildWar.addGP(db, leaderId, totalGP, saveDatabase); _gpDone.add(_bareGP(leaderId)); } catch(e) {} }
+  for (const sid of survivorIds) {
+    if (_gpDone.has(_bareGP(sid))) continue;
+    try { WeeklyGuildWar.addGP(db, sid, Math.floor(totalGP / 2), saveDatabase); _gpDone.add(_bareGP(sid)); } catch(e) {}
   }
 
   if (keepOpen) {
@@ -1905,12 +1938,13 @@ function reviveFloor(gate, floor) {
   }
   return mons;
 }
-function reviveStaleFloors(db, now = Date.now()) {
+function reviveStaleFloors(db, now = Date.now(), canAct = null) {
   const out = [];
   for (const gate of Object.values(GateManager.activeGates || {})) {
     try {
       const raid = gate && gate.raid;
       if (!raid || raid.status !== 'active' || gate.cleared || gate.broken || gate.doublePending) continue;
+      if (typeof canAct === 'function' && !canAct(raid.chatId || gate.chatId)) { gate.floorClearedAt = now; continue; } // 10-30: paused group (/stop) — clock restarts
       if (!gate.floorClearedAt || now - gate.floorClearedAt < FLOOR_REVIVE_MS) continue;
       const floor = gate.currentFloor || 1;
       const alive = (gate.monsters || []).some(m => m && m.floor === floor && !m.defeated && (m.hp || 0) > 0);
@@ -2114,7 +2148,7 @@ try {
   _laneSlot(monsterDamage, 'last', 'gr_mdLast'); _laneSlot(monsterDodges, 'last', 'gr_mdodgeLast');
   _laneSlot(playerDamage, 'lastMiss', 'gr_pdLastMiss'); _laneSlot(playerDamage, 'partyAllies', 'gr_pdAllies');
 } catch (e) {}
-module.exports = { CREW_NEED, crewNeedFor, crewHpMult, _currentRaidTarget, currentTarget: _currentRaidTarget, raidIsGhost, expireGhostRaid, evictFromAllRaids, RECRUIT_TTL_MS, LEAK_MULT, LEAK_ATK_CUT, LEAK_REGEN_CHANCE: 0.90, LEAK_DOMAIN_CHANCE: 0.80,
+module.exports = { understaffGate, understaffWarning, UNDERSTAFF_MIN, UNDERSTAFF_MULT, CREW_NEED, crewNeedFor, crewHpMult, _currentRaidTarget, currentTarget: _currentRaidTarget, raidIsGhost, expireGhostRaid, evictFromAllRaids, RECRUIT_TTL_MS, LEAK_MULT, LEAK_ATK_CUT, LEAK_REGEN_CHANCE: 0.90, LEAK_DOMAIN_CHANCE: 0.80,
   findOtherRaid,
   SEVERITY_BAND, dayFlex, rollRedExtra,
   floorTreasure, RAID_NEXUS_BOOST, GATE_TUNE, RED_GATE_TUNE, LEAK_TUNE, BEAST_HP_BUFF, BEAST_ATK_BUFF, RED_GATE_CHANCE, DOUBLE_DUNGEON_CHANCE, LEAK_CHANCE, RED_GATE_TEXT, sealedReason, leakMonster, leakReveal, morphLeak, LEAK_EVADE, succeedLeader, takeLeaderNotice, doublePending, evolveDouble, grantDoubleBoxes, // Push #96d

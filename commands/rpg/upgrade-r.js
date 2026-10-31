@@ -1,5 +1,5 @@
 /**
- * /upgrade-r <skill slot> @hunter   — OWNER ONLY (10-26, owner)
+ * /upgrade-r <skill slot> @hunter   — MOD + OWNER (10-26 owner · 10-30: mods too)
  * Resets the skill in that slot back to Lv.1 and REFUNDS what the upgrades cost:
  *   • levels bought with Nexus  → Nexus back (exact formula cost per level: 45,000 × 1.7^(lv−1))
  *   • levels bought with skill-upgrade credits (the "upgrade tickets" refunded by the revamp) → credits back
@@ -19,11 +19,11 @@ module.exports = {
   description: '👑 Owner: reset a hunter\'s skill slot back to Lv.1 and refund the Nexus / upgrade credits spent (fee: 1,000,000 Nexus, ×1.5 per reset)',
   usage: '/upgrade-r <slot#> @hunter',
   category: 'admin',
-  ownerOnly: true,
+  modOnly: true,
   async execute(sock, msg, args, getDatabase, saveDatabase, sender) {
     const chatId = msg.key.remoteJid;
     const db = getDatabase();
-    if (!Perms.isBotOwner(db, sender)) return; // OWNER ONLY — silent for everyone else
+    if (!Perms.isBotOwner(db, sender) && !Perms.isBotMod(db, sender)) return; // MOD/OWNER — silent for everyone else (10-30)
     const slot = parseInt(String(args[0] || '').replace(/^#/, ''), 10);
     const T = require('../../utils/target'); const OG = require('../../rpg/utils/OwnerGrant');
     const targetJid = T.resolve(msg, args.slice(1));

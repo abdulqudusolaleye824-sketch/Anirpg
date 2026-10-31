@@ -79,7 +79,7 @@ function serialList(player) {
     for (const it of arr) {
       if (!m[it.name]) { m[it.name] = { kind, name: it.name, rarity: it.rarity || 'common', count: 0, acquiredAt: 0, ref: it }; order.push(it.name); }
       const e = m[it.name];
-      e.count++;
+      e.count += Math.max(1, Number(it.count || it.qty || it.quantity || 1) || 1); // Fix (10-30, BUG-239/225): honour stacked counts (recycle/craft grant {count:n})
       e.acquiredAt = Math.max(e.acquiredAt, it.acquiredAt || 0);
       if ((it.acquiredAt || 0) >= e.acquiredAt) e.ref = it;
     }
@@ -93,6 +93,7 @@ function serialList(player) {
   try { for (const t of require('../../rpg/utils/PotionTiers').listForInventory(player)) entries.push({ kind: 'potion', name: t.name, rarity: t.rarity, count: t.count, acquiredAt: 0, ref: null }); } catch (e) {}
   // Push #91: energy potions scrapped — never listed.
   if ((inv.reviveTokens || 0) > 0) entries.push({ kind: 'potion', name: 'Revive Token', rarity: 'uncommon', count: inv.reviveTokens, acquiredAt: 0, ref: null });
+  if ((inv.mendingStones || 0) > 0) entries.push({ kind: 'potion', name: 'Mending Stone', rarity: 'uncommon', count: inv.mendingStones, acquiredAt: 0, ref: null }); // Fix (10-30, BUG-229)
   // Materials stored as counters
   const mats = player.materials || {};
   for (const k of Object.keys(mats)) {
@@ -230,6 +231,7 @@ module.exports = {
           else if (entry.name === 'Medium Health Potion') detail += `\n💚 Restores 25% HP (rare). Use: /use hp medium\n`;
           else if (entry.name === 'Higher Health Potion') detail += `\n💚 Restores 50% HP (EPIC). Use: /use hp higher\n`;
           else if (entry.name === 'Revive Token') detail += `\n💿 Auto-used on death in dungeons.\n`;
+          else if (entry.name === 'Mending Stone') detail += `\n🛠️ Restores gear durability. Use: /use mending stone · Gift: /equip gift <#> @hunter\n`;
         } else {
           // Cross-reference the /items serial for use/gift
           let useHint = '';

@@ -1616,7 +1616,31 @@ function carrySkillProgress(player, snap) {
   }
   return { applied, count: now.length, wanted: snap.count, sameClass };
 }
-module.exports = { ricochetPct, isAoe, aoeSpreadMult, AOE_RE, AOE_COST_MULT, AOE_SPREAD_FALLOFF, previewDamage, clearCooldown, scaleSpecText, CLASS_POWER, supportMult, scaleEntry, lockReason,
+
+// Fix (10-30, BUG-235): what a NON-damage skill does, in a few words, for list cards (replaces the misleading "N dmg").
+// Returns null for damaging skills.
+function supportLabel(player, skill) {
+  try {
+    if (!skill) return null;
+    let e = skill; try { const r = resolveSkill(player, skill.name, { allowLibrary: true }); if (r.ok && r.entry) e = r.entry; } catch (x) {}
+    const t = String(e.type || skill.type || '').toLowerCase();
+    if (t === 'damage' || (Number(e.damagePct) > 100 && t !== 'buff' && t !== 'heal')) return null;
+    if (t === 'passive' || e.isPassive) return '🧬 passive';
+    const bits = [];
+    if (Number(e.healingPct) > 0) bits.push(`💚 heal ${e.healingPct}%`);
+    for (const b of (e.buffs || []).slice(0, 2)) if (b && b.stat) bits.push(`⬆️ ${String(b.stat).toUpperCase()} +${b.amount}%`);
+    for (const d of (e.debuffs || []).slice(0, 2)) if (d && d.stat) bits.push(`⬇️ foe ${String(d.stat).toUpperCase()} −${d.amount}%`);
+    if (Number(e.shieldPct) > 0) bits.push(`🛡️ shield ${e.shieldPct}%`);
+    if (Number(e.immuneTurns) > 0) bits.push(`🛡️ immune ${e.immuneTurns}t`);
+    if (e.cleanse) bits.push('✨ cleanse');
+    if (Number(e.energyPct) > 0) bits.push(`⚡ +${e.energyPct}% energy`);
+    if (e.regen && e.regen.pct) bits.push(`💞 regen ${e.regen.pct}%/t`);
+    for (const st of (e.statuses || []).slice(0, 2)) if (st && st.type) bits.push(`${st.type} ${st.duration || 2}t`);
+    if (!bits.length) bits.push(t === 'heal' ? '💚 heal' : t === 'debuff' ? '⬇️ debuff' : '✨ buff');
+    return bits.join(' · ');
+  } catch (e) { return null; }
+}
+module.exports = { supportLabel,  ricochetPct, isAoe, aoeSpreadMult, AOE_RE, AOE_COST_MULT, AOE_SPREAD_FALLOFF, previewDamage, clearCooldown, scaleSpecText, CLASS_POWER, supportMult, scaleEntry, lockReason,
   augmentContract,
   parseSupportFields, applySupportFields,
   snapshotSkillProgress, carrySkillProgress,

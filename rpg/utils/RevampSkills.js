@@ -290,8 +290,11 @@ function applyMechanics(entry, sk) {
   if (entry.type !== 'passive' && entry.type !== 'damage') {
     const any = entry.buffs.length || entry.debuffs.length || entry.statuses.length || entry.healingPct || entry.energyPct || entry.regen || entry.shieldPct || entry.damageTakenPct || entry.immuneTurns || entry.cleanse || entry.reflectPct || entry.lifestealPct;
     if (!any) {
-      if (entry.type === 'debuff') { entry.debuffs.push({ stat: 'atk', amount: 20, duration: 2 }, { stat: 'def', amount: 20, duration: 2 }); }
-      else { entry.buffs.push({ stat: 'atk', amount: 20, duration: 2 }, { stat: 'def', amount: 20, duration: 2 }); }
+      // Fix (10-30, BUG-231): the fallback takes the % the text actually promises (e.g. "+25%") instead of a flat 20.
+      const _pm = String(sk.text || '').match(/[+\-−](\d{1,3})%/); const _amt = _pm ? Math.max(5, Math.min(100, parseInt(_pm[1], 10))) : 20;
+      const _dur = (String(sk.text || '').match(/(\d+)\s+turns?/i) || [])[1]; const _d = _dur ? Math.max(1, parseInt(_dur, 10)) : 2;
+      if (entry.type === 'debuff') { entry.debuffs.push({ stat: 'atk', amount: _amt, duration: _d }, { stat: 'def', amount: _amt, duration: _d }); }
+      else { entry.buffs.push({ stat: 'atk', amount: _amt, duration: _d }, { stat: 'def', amount: _amt, duration: _d }); }
     }
   }
   // "(MP vs MR check)" marks a resistible effect

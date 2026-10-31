@@ -346,6 +346,7 @@ module.exports = async (sock, msg, messageText, config, getDatabase, saveDatabas
   console.log(`[COMMAND] ${resolvedCommand}${resolvedCommand !== commandName ? ` (alias: ${commandName})` : ''} | Sender: ${sender} | Chat: ${chatId}`);
 
   const db = getDatabase();
+  try { require('../rpg/utils/CommandLog').record(db, { cmd: resolvedCommand, alias: commandName, args, sender, chatId, sock }); } catch (e) {} // 10-30 (owner): /ucmd — last 50 uses per command
 
   // ── Referral safety net: settle any pending Lv.3 payout for the sender ──
   // (Battle sites celebrate it loudly; this silent settle guarantees the

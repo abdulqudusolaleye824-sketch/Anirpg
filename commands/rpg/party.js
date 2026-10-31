@@ -558,6 +558,9 @@ module.exports = {
         }, { quoted: msg });
       }
 
+      { // 10-30 (owner): fewer than 3 raiders → the System asks once; the next /party start goes ahead (leader only).
+        try { if (gate.raid && gate.raid.leader === sender && gate.raid.status === 'recruiting') { const _uw = GR.understaffGate(gate.raid); if (_uw) { try { GR.saveGateState(db, gate); } catch (e) {} saveDatabase(); return sock.sendMessage(chatId, { text: _uw }, { quoted: msg }); } } } catch (e) {}
+      }
       const res = GR.start(sender, keyData, gate, db);
       if (!res.ok) return sock.sendMessage(chatId, { text: `❌ ${res.error}` }, { quoted: msg });
 
@@ -603,7 +606,7 @@ module.exports = {
       if (GR.doublePending(gate)) {
         if (!_isPartyLeader(raid, sender, db)) return sock.sendMessage(chatId, { text: `⛔ *Hard block.* Only the current party leader${_leaderName(raid, db)} decides whether the party proceeds into the Double Dungeon or leaves.` }, { quoted: msg });
         gate.doublePending = false; gate.doubleRoll = false;
-        try { GR.clearGate(gate, activeKey, keyData, db, saveDatabase); } catch (e) {}
+        try { GR.clearGate(gate, activeKey, keyData, db, saveDatabase, { sock }); } catch (e) {}
         saveDatabase();
         return sock.sendMessage(chatId, { text: `🚪 *${player.name}* leads the party out. The second gate seals shut behind you — *GATE ${gate.id} CLEARED*.`, mentions: raid.members.map(m => m.id) }, { quoted: msg });
       }

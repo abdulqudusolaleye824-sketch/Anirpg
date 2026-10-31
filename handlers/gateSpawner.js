@@ -297,6 +297,8 @@ class GateSpawner {
 
   static async spawnGate(sock, chatId, getDatabase, saveDatabase) {
     const db = getDatabase();
+    // 10-30 (owner): a /stop-ped group is paused — no gate spawns until /start or /switch (the schedule simply skips this tick).
+    try { if (require('../bots/PersonalityManager').isStopped(chatId)) { console.log(`[GATE] ${chatId} is stopped — spawn skipped`); return; } } catch (e) {}
     sock = this.liveSocket(sock);
 
     if (this.checkUnboughtLock(chatId, db)) {

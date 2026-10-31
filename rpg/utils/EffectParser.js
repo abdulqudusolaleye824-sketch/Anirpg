@@ -194,7 +194,7 @@ class EffectParser {
       // ATK buff
       // Push #76: also accept "ATK +50%" / "DEF +50% for 3 turns" (class-file phrasing)
       // Push #88: also "Boosts/Increases/Raises ATK by 30%" and "Party ATK +20%"
-      const atkM = line.match(/\+(\d+)%\s+(?:all\s+stats?|atk|attack)/i) || line.match(/\b(?:atk|attack|all\s+stats?)\s*\+(\d+)%/i) || line.match(/(?:boosts?|increases?|raises?|gains?)\s+(?:your\s+|party\s+|all\s+)?(?:atk|attack|all\s+stats?)\s+by\s+(\d+)%/i);
+      const atkM = line.match(/\+(\d+)%\s+(?:physical\s+|melee\s+|weapon\s+|base\s+|bonus\s+)?(?:all\s+stats?|atk|attack)/i) || line.match(/\b(?:physical\s+)?(?:atk|attack|all\s+stats?)\s*\+(\d+)%/i) || line.match(/(?:boosts?|increases?|raises?|gains?)\s+(?:your\s+|party\s+|all\s+)?(?:physical\s+)?(?:atk|attack|all\s+stats?)\s+by\s+(\d+)%/i); // Fix (10-30, BUG-231): "+35% physical ATK" used to miss → generic +20 fallback
       if (atkM) {
         const dur = (line.match(/(?:(\d+)\s+turn)/i)||[])[1] || 3;
         // avoid adding duplicate
@@ -203,11 +203,19 @@ class EffectParser {
         }
       }
       // DEF buff — only "+" not "-"
-      const defM = line.match(/\+(\d+)%\s+(?:all\s+stats?|def(?:ense)?)/i) || line.match(/\b(?:def(?:ense)?|all\s+stats?)\s*\+(\d+)%/i) || line.match(/(?:boosts?|increases?|raises?|gains?)\s+(?:your\s+|party\s+|all\s+)?(?:def(?:ense)?|all\s+stats?)\s+by\s+(\d+)%/i);
+      const defM = line.match(/\+(\d+)%\s+(?:physical\s+|bonus\s+)?(?:all\s+stats?|def(?:ense|ence)?)/i) || line.match(/\b(?:def(?:ense|ence)?|all\s+stats?)\s*\+(\d+)%/i) || line.match(/(?:boosts?|increases?|raises?|gains?)\s+(?:your\s+|party\s+|all\s+)?(?:def(?:ense)?|all\s+stats?)\s+by\s+(\d+)%/i);
       if (defM) {
         const dur = (line.match(/(\d+)\s+turn/i)||[])[1] || 3;
         if (!effects.buffs.find(b => b.stat === 'def' && b.amount === parseInt(defM[1]))) {
           effects.buffs.push({ stat: 'def', amount: parseInt(defM[1]), duration: parseInt(dur) });
+        }
+      }
+      // Fix (10-30, BUG-231): Magic Power buffs ("Magic Power +50%", "+40% magic power") were never parsed.
+      const mpM = line.match(/\+(\d+)%\s+(?:magic(?:al)?\s+power|magic\s+attack|spell\s+power)/i) || line.match(/\b(?:magic(?:al)?\s+power|spell\s+power)\s*\+(\d+)%/i) || line.match(/(?:boosts?|increases?|raises?)\s+(?:your\s+|party\s+)?magic(?:al)?\s+power\s+by\s+(\d+)%/i);
+      if (mpM && !/enemy|enemies|target|foe/i.test(lLine)) {
+        if (!effects.buffs.find(b => b.stat === 'magicPower')) {
+          const dur = (line.match(/(\d+)\s+turn/i)||[])[1] || 3;
+          effects.buffs.push({ stat: 'magicPower', amount: parseInt(mpM[1]), duration: parseInt(dur) });
         }
       }
       // SPD buff
@@ -295,10 +303,10 @@ class EffectParser {
     }
 
     // Armor penetration
-    const armorPen = text.match(/ignores?\s+(\d+)%\s+(?:defense|armor|magic resistance)/i);
+    const armorPen = text.match(/ignor(?:es|ing)?\s+(\d+)%\s+(?:of\s+)?(?:target\s+|enemy\s+)?(?:defen[cs]e|def\b|armou?r|magic resistance)/i) || text.match(/(?:armou?r|defen[cs]e)\s+penetration\s*(?:of\s+)?\+?(\d+)%/i);
     if (armorPen) {
       effects.special.push({ type: 'armorPenetration', amount: parseInt(armorPen[1]) });
-    } else if (/pierce all|bypasses? all|pierces all defenses|ignores all/i.test(text)) {
+    } else if (/pierce all|bypasses? all|pierces all defenses|ignores all|ignor(?:es|ing)\s+(?:all\s+|the\s+)?(?:target\s+|enemy\s+)?(?:def\b|defen[cs]es?|armou?r)|true damage|bypass(?:es|ing)?\s+(?:all\s+)?(?:def\b|defen[cs]e|armou?r)/i.test(text)) { // Fix (10-30, BUG-244): "ignoring defense" = 100%
       effects.special.push({ type: 'armorPenetration', amount: 100 });
     }
 

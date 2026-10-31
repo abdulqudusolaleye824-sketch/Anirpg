@@ -147,11 +147,17 @@ function ensureDailyQuests(player) {
   const prevQuests   = player.dailyQuests.quests || [];
   const allCompleted = prevQuests.length > 0 && prevQuests.every(q => q.completed);
 
-  if (allCompleted && player.dailyQuests.dayKey && player.dailyQuests.dayKey !== dayKey) {
-    player.dailyQuests.streak = (player.dailyQuests.streak || 0) + 1;
-  } else if (player.dailyQuests.dayKey && player.dailyQuests.dayKey !== dayKey) {
-    // Missed a day (didn't complete all 4) → reset streak
-    player.dailyQuests.streak = 0;
+  // Fix (10-30, BUG-187/230 + owner): the streak is counted the DAY you finish all 4 (see creditStreakDay) — it used to be
+  // added only on the next day's first command, so the "All 4 done — Streak: 0 days" line looked broken. Here we only
+  // RESET when a full day was really missed (last full-clear day is neither today nor yesterday).
+  {
+    const tz = playerTz(player) || undefined;
+    const yKey = _timeDayKey(tz, Date.now() - 86400000);
+    const lastFull = player.dailyQuests.lastFullDay || (allCompleted ? player.dailyQuests.dayKey : null);
+    if (allCompleted && !player.dailyQuests.lastFullDay && player.dailyQuests.dayKey) { // legacy record: yesterday's clear was never credited
+      player.dailyQuests.lastFullDay = player.dailyQuests.dayKey; if (player.dailyQuests.dayKey === yKey) player.dailyQuests.streak = (player.dailyQuests.streak || 0) + 1;
+    }
+    if (lastFull !== dayKey && lastFull !== yKey) player.dailyQuests.streak = 0;
   }
 
   // Seeded pick of 4 quests for today
@@ -191,10 +197,21 @@ function autoClaimIfReady(player) {
 // Push #102f (BUG-036): the all-4-done box is awarded HERE, on every completion path (tracker, notify, pool
 // re-sync, market sell) — it used to live only in the chat-notify path, so a 4th quest finished elsewhere gave
 // "nothing, not even one box". Returns the award lines (or null when nothing new).
+// Fix (10-30): credit today's full clear to the streak immediately (once per day).
+function creditStreakDay(player) {
+  try {
+    const dq = player.dailyQuests; if (!dq) return;
+    const tz = playerTz(player) || undefined; const today = _timeDayKey(tz); const yKey = _timeDayKey(tz, Date.now() - 86400000);
+    if (dq.lastFullDay === today) return;
+    dq.streak = (dq.lastFullDay === yKey) ? (Number(dq.streak) || 0) + 1 : 1;
+    dq.lastFullDay = today;
+  } catch (e) {}
+}
 function awardDailyDone(player) {
   try {
     const qs = player.dailyQuests && player.dailyQuests.quests;
     if (!qs || qs.length < 4 || !qs.every(q => q.claimed)) return null;
+    creditStreakDay(player);
     const dk = player.dailyQuests.dayKey;
     if (player._dailyDoneRewarded === dk) return null;
     const r = require('./InstanceDungeon').onDailyComplete(player, null, null, null);

@@ -82,6 +82,8 @@ function buildList(player, opts = {}) {
   // is visible AND transferable.
   for (let i = 0; i < (inv.mediumHealthPotions || 0); i++) synthetic.push({ name: 'Medium Health Potion', type: 'Potion', rarity: 'rare', _synthetic: 'mediumHealthPotions' });
   for (let i = 0; i < (inv.higherHealthPotions || 0); i++) synthetic.push({ name: 'Higher Health Potion', type: 'Potion', rarity: 'epic', _synthetic: 'higherHealthPotions' });
+  // Fix (10-30, BUG-229): Mending Stones are a counter too — list them so they can be seen AND gifted.
+  for (let i = 0; i < (inv.mendingStones || 0); i++) synthetic.push({ name: 'Mending Stone', type: 'Consumable', rarity: 'uncommon', _synthetic: 'mendingStones' });
   const _cards48 = player.cards || {};
   for (let i = 0; i < (_cards48.namechange || 0); i++) synthetic.push({ name: 'Rename Card', type: 'Card', rarity: 'legendary', _synthetic: 'card:namechange' });
   for (let i = 0; i < (_cards48.seticon || 0); i++) synthetic.push({ name: 'Seticon Token', type: 'Card', rarity: 'legendary', _synthetic: 'card:seticon' });
@@ -108,7 +110,7 @@ function buildList(player, opts = {}) {
   const stacked = {};
   for (const item of combined) {
     if (!stacked[item.name]) stacked[item.name] = { ...item, count: 0, _synthetic: item._synthetic };
-    stacked[item.name].count++;
+    stacked[item.name].count += item._synthetic ? 1 : Math.max(1, Number(item.count || item.qty || item.quantity || 1) || 1); // Fix (10-30, BUG-239/225)
   }
   return Object.values(stacked).sort((a, b) => {
     const ra = RARITY_ORDER[(a.rarity||'').toLowerCase()] ?? 6;
@@ -156,7 +158,7 @@ module.exports = {
       if (_ix === -1) {
         return sock.sendMessage(chatId, { text: `❌ *${p.itemName}* is no longer in your inventory — gift cancelled.` }, { quoted: msg });
       }
-      const [_item] = _pool.splice(_ix, 1);
+      const _item = require('../../rpg/utils/RewardInventory').takeOne(_pool, _ix);
       if (!target.inventory) target.inventory = {};
       if (!target.inventory.items) target.inventory.items = [];
       target.inventory.items.push({ ..._item, acquiredAt: Date.now() });
@@ -253,7 +255,7 @@ module.exports = {
           item: _giveItem, recipientId: mentioned, recipientName: target.name || 'them', cmd: '/items', itemNum,
         });
       }
-      const [item] = allItems.splice(idx, 1);
+      const item = require('../../rpg/utils/RewardInventory').takeOne(allItems, idx);
 
       // Add to target
       if (!target.inventory) target.inventory = {};

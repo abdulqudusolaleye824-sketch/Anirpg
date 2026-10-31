@@ -173,6 +173,8 @@ function calcMoveDamage(attacker, defender, move) {
   try { _tbAtk *= require('./Necromancy').ruinAtkMult(attacker); } catch (e) {} // Push #93: Curse of Ruin −70% ATK
   const _tbDef = 1 + tempBuffPct(defender, 'def') / 100;
   const _tbTaken = 1 + tempBuffPct(defender, 'damageTaken') / 100;
+  // Fix (10-30, BUG-231): Magic Power buffs (Ancestral Avatar "Magic Power +50%") scale SKILL damage.
+  if (move && move.isSkill) { try { const _mpB = tempBuffPct(attacker, 'magicPower'); if (_mpB) _tbAtk *= Math.max(0.1, 1 + _mpB / 100); } catch (e) {} }
   const effectiveAtk = atkBase * atkMult * _passAtk * Math.max(0.1, _tbAtk);
   const effectiveDef = (defBase * _passDef * Math.max(0, _tbDef)) / Math.max(0.1, defMult);
 

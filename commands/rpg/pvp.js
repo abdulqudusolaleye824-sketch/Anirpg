@@ -440,6 +440,17 @@ module.exports = {
         try { require('../../rpg/utils/ClassSnippets').noteHeal(player, _entry); } catch (e) {}
         try { const _RM = require('../../rpg/utils/RegenManager'); _RM.markCombatAction(player); _RM.raidTurnEnergy(player); } catch (e) {} // Push #103f
         _lockedSkill = { name: _entry.name, level: _res.skill.level || 1 };
+        // Fix (10-30, BUG-221/240): support skills are INSTANT and free of turn cost — one per turn.
+        const _isSup = _entry.type === 'heal' || _entry.type === 'buff' || ((_entry.healingPct || 0) > 0 && !(_entry.damagePct > 100));
+        if (_isSup) {
+          if (battle.supportTurn === (battle.turn || 1)) { player.stats.energy += _cost; try { SCv.clearCooldown && SCv.clearCooldown(player, _entry); } catch (e) {} return sock.sendMessage(chatId, { text: `❌ One support cast per turn — lock in your attack now (/pvp attack or a damaging skill).` }, { quoted: msg }); }
+          battle.supportTurn = battle.turn || 1;
+          const _ent2 = { ...(_res.entry || _res.skill), level: _res.skill.level || 1 };
+          const _mv = applyPvpSupport(_ent2, player, SCv.levelBonus(_ent2), SCv);
+          saveDatabase();
+          const _lines = [`✨ *${player.name}* casts *${_entry.name}* — instant, no turn spent.`, ...(_mv._supportLines || []), ``, `⚡ −${_cost} energy · now lock in your move: /pvp attack or /pvp skill <damaging skill>`];
+          return sock.sendMessage(chatId, { text: _lines.join('\n'), mentions: [sender] }, { quoted: msg });
+        }
       }
 
       // Lock in player's action
@@ -517,6 +528,31 @@ function pvpFrame(p1, p2) {
   catch (e) { return UI.FREE_BAR; }
 }
 
+
+// Fix (10-30, BUG-221/240): support casts (heal / buff / transformation / cleanse / shield) resolve the moment they are
+// sent — they no longer wait for the opponent and no longer spend the duelist's turn. Shared by the instant path
+// (command handler) and the legacy in-turn path. Returns the move descriptor used by resolveTurn.
+function applyPvpSupport(entry, player, _b, SCm) {
+        const _sl = [];
+  if (entry.type === 'heal' || (entry.healingPct || 0) > 0) {
+    const amt = Math.floor(_effMax(player) * ((entry.healingPct || 20) / 100) * (_b.healMult || 1));
+    const before = player.stats.hp || 0;
+    player.stats.hp = Math.min(_effMax(player), before + amt);
+    _sl.push(`💚 *${player.name}* +${player.stats.hp - before} HP → ${player.stats.hp}/${_effMax(player)}`);
+  }
+  const _txt = String(entry.effect || '').toLowerCase();
+  if (/remov|clear|cleanse|purif/.test(_txt) && Array.isArray(player.statusEffects) && player.statusEffects.length) { const n = player.statusEffects.length; player.statusEffects = []; _sl.push(`✨ *${player.name}* cleansed (${n} effect${n === 1 ? '' : 's'})`); }
+  // Push #88w: Monster-class transformations (×5/×10/×15 all stats) work in duels too.
+  try { const TF = require('../../rpg/utils/Transformation'); if (TF.isTransformSkill(entry)) { const _tr = TF.cast(player, entry); _sl.push(...(_tr.ok ? _tr.lines : [`❌ ${_tr.error}`])); } } catch (e) {}
+  try { for (const n of UC.applyMoveBuffs({ name: entry.name, buffs: entry.buffs || [], debuffs: [], selfDebuffs: entry.selfDebuffs || [] }, player, player)) _sl.push(n); } catch (e) {}
+  try { const _sf = SCm.applySupportFields(entry, player, player, { name: player.name }); _sl.push(..._sf.lines); } catch (e) {}
+  const _sh = !entry.shieldPct && _txt.match(/shield[^.]*?(\d+)%/);
+  if (_sh) { const amt = Math.floor(_effMax(player) * parseInt(_sh[1], 10) / 100); player.tempBuffs = player.tempBuffs || {}; player.tempBuffs.shield = { amount: amt, duration: 4 }; _sl.push(`🛡️ *${player.name}* shielded for ${amt} HP`); }
+  return { id: 0, name: entry.name, _support: true, _supportLines: _sl, isHeal: entry.type === 'heal' || (entry.healingPct || 0) > 0,
+       description: entry.description, effectText: entry.effect, dmgMult: 0, buffs: [], debuffs: [], statuses: [],
+       energyCost: SCm ? SCm.effectiveCost(entry, player) : 0, cooldownMs: SCm ? SCm.cooldownMs(entry) : 15000, cooldownSec: entry.cooldown || 2 };
+  }
+
 async function resolveTurn(sock, chatId, p1, p2, db, saveDatabase) {
   const FRAME = pvpFrame(p1, p2);
   if (!db) db = {};
@@ -592,30 +628,12 @@ async function resolveTurn(sock, chatId, p1, p2, db, saveDatabase) {
       // Push #88f: heal / buff skills are SUPPORT casts in the duel too — they
       // heal / buff / cleanse the caster and deal NO damage (same as dungeons).
       const _isSupport = entry.type === 'heal' || entry.type === 'buff' || ((entry.healingPct || 0) > 0 && !(entry.damagePct > 100));
-      if (_isSupport && player.stats) {
-        const _sl = [];
-        if (entry.type === 'heal' || (entry.healingPct || 0) > 0) {
-          const amt = Math.floor(_effMax(player) * ((entry.healingPct || 20) / 100) * (_b.healMult || 1));
-          const before = player.stats.hp || 0;
-          player.stats.hp = Math.min(_effMax(player), before + amt);
-          _sl.push(`💚 *${player.name}* +${player.stats.hp - before} HP → ${player.stats.hp}/${_effMax(player)}`);
-        }
-        const _txt = String(entry.effect || '').toLowerCase();
-        if (/remov|clear|cleanse|purif/.test(_txt) && Array.isArray(player.statusEffects) && player.statusEffects.length) { const n = player.statusEffects.length; player.statusEffects = []; _sl.push(`✨ *${player.name}* cleansed (${n} effect${n === 1 ? '' : 's'})`); }
-        // Push #88w: Monster-class transformations (×5/×10/×15 all stats) work in duels too.
-        try { const TF = require('../../rpg/utils/Transformation'); if (TF.isTransformSkill(entry)) { const _tr = TF.cast(player, entry); _sl.push(...(_tr.ok ? _tr.lines : [`❌ ${_tr.error}`])); } } catch (e) {}
-        try { for (const n of UC.applyMoveBuffs({ name: entry.name, buffs: entry.buffs || [], debuffs: [], selfDebuffs: entry.selfDebuffs || [] }, player, player)) _sl.push(n); } catch (e) {}
-        try { const _sf = SCm.applySupportFields(entry, player, player, { name: player.name }); _sl.push(..._sf.lines); } catch (e) {}
-        const _sh = !entry.shieldPct && _txt.match(/shield[^.]*?(\d+)%/);
-        if (_sh) { const amt = Math.floor(_effMax(player) * parseInt(_sh[1], 10) / 100); player.tempBuffs = player.tempBuffs || {}; player.tempBuffs.shield = { amount: amt, duration: 4 }; _sl.push(`🛡️ *${player.name}* shielded for ${amt} HP`); }
-        return { id: 0, name: entry.name, _support: true, _supportLines: _sl, isHeal: entry.type === 'heal' || (entry.healingPct || 0) > 0,
-                 description: entry.description, effectText: entry.effect, dmgMult: 0, buffs: [], debuffs: [], statuses: [],
-                 energyCost: SCm ? SCm.effectiveCost(entry, player) : 0, cooldownMs: SCm ? SCm.cooldownMs(entry) : 15000, cooldownSec: entry.cooldown || 2 };
-      }
+      if (_isSupport && player.stats) return applyPvpSupport(entry, player, _b, SCm);
       // Push #76: buffs/debuffs/statuses ride on the move; UnifiedCombat.playTurn applies them.
       return {
         buffs: entry.buffs || [], debuffs: entry.debuffs || [], statuses: entry.statuses || [], lifestealPct: entry.lifestealPct || 0, // Push #96h-z20
         isSkill: true, // Push #102f: Magic Power scaling in UnifiedCombat
+        armorPen: Number(entry.armorPen) || 0, // Fix (10-30, BUG-244): "ignoring defense" counts in duels too
         id: 0,
         rank: pct >= 3 ? 'S' : pct >= 2.4 ? 'A' : pct >= 1.8 ? 'B' : pct >= 1.2 ? 'C' : 'D',
         name: entry.name,

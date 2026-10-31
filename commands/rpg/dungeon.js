@@ -736,13 +736,21 @@ module.exports = {
         if (player._dngBusyUntil > Date.now()) {
           return sock.sendMessage(chatId, { text: `⏳ *Your last move is still resolving!* Wait for the turn to finish before attacking again.` }, { quoted: msg });
         }
+        // Fix (10-30, BUG-227): a cooldown refusal is NOT a turn — no status/transform tick, no monster counter (raid parity).
+        if (!_dngStunSkip && _cdChk.onCd) {
+          const _UCr = require('../../rpg/utils/UnifiedCombat');
+          return sock.sendMessage(chatId, { text: `⏳ *That attack is still on cooldown* — ${_UCr.formatCd(_cdChk.remaining)} left. Pick another equipped attack; your turn was not spent.` }, { quoted: msg });
+        }
         player._dngBusyUntil = Date.now() + 20000;
         try { // Push #85: released in finally
         if (_dngStunSkip || _cdChk.onCd) {
           finalDmg = 0; isCrit = false; _dungeonUnified = { missed:false, crit:false, effective:'skipped' };
-          try { UCd2.tickStatuses(player); } catch(e){}
-          try { UCd2.tickStatuses(monster); } catch(e){}
-          const _skipMsg = _dngStunSkip || `⏳ *attack failed — still on cooldown ${UCd2.formatCd(_cdChk.remaining)} remaining* — turn skipped (0 dmg, status -1)`;
+          // Fix (10-30, BUG-227): a stunned hunter was ticked TWICE (once above, once here) and an attack refused for
+          // cooldown ticked too — so a 3-turn transformation burned out while the hunter "did nothing". Cooldown
+          // refusals now cost no turn (same as raids); stun skips tick exactly once (already done above).
+          if (!_dngStunSkip) { /* cooldown refusal: no status/transform tick */ }
+          else { try { UCd2.tickStatuses(monster); } catch(e){} }
+          const _skipMsg = _dngStunSkip || `⏳ *attack failed — still on cooldown ${UCd2.formatCd(_cdChk.remaining)} remaining* — no turn spent. Pick another equipped attack.`;
           // store for intro patching
           player._dungeonSkipMsg = _skipMsg;
           // do not damage monster

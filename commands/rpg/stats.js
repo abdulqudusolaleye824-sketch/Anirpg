@@ -262,7 +262,8 @@ module.exports = {
         let cost = skill.energyCost || skill.manaCost || 10; try { cost = _SCs.effectiveCost(skill, player); } catch (e) {} // Push #103d: the real charged cost at this level
         let dmg = skill.damage; try { dmg = _SCs.previewDamage(player, skill) || dmg; } catch (e) {} // Push #103g (BUG-112): same number as /skills
         msg2 += `\n🔮 *${skill.name}* [Lv.${skill.level || 1}/${skill.maxLevel || 5}] · ${_tag(skill)}`;
-        msg2 += `\n   💥 ${dmg} dmg | ${player.energyColor || '💙'} ${cost} | ⏰ ${(() => { try { return _SCs.effectiveCooldownTurns(skill); } catch (e) { return skill.cooldown || 0; } })()}t`;
+        let _supS = null; try { _supS = _SCs.supportLabel(player, skill); } catch (e) {} // Fix (10-30, BUG-235)
+        msg2 += `\n   ${_supS ? _supS : `💥 ${dmg} dmg`} | ${player.energyColor || '💙'} ${cost} | ⏰ ${(() => { try { return _SCs.effectiveCooldownTurns(skill); } catch (e) { return skill.cooldown || 0; } })()}t`;
       });
     }
 

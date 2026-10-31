@@ -146,7 +146,12 @@ function addGuildGP(db, playerId, points, reason, opts = {}) {
   try {
     if (!db || !playerId || !points) return 0;
     try { require('./WeeklyGuildWar').checkWeeklyReset(db, opts.saveDatabase || null); } catch(e){}
-    const player = db.users?.[playerId];
+    let player = db.users?.[playerId];
+    if (!player) { // Fix (10-30, BUG-219): raid member ids arrive as @lid / :device / bare numbers — resolve like everywhere else
+      const b = String(playerId).split(':')[0].split('@')[0];
+      player = db.users?.[`${b}@s.whatsapp.net`] || db.users?.[`${b}@lid`] || Object.values(db.users || {}).find(u => u && u.jid && String(u.jid).split(':')[0].split('@')[0] === b) || null;
+      if (player && player.jid) playerId = player.jid;
+    }
     // Push #90: Guild-War GP boost (from victory cards) multiplies every positive GP gain.
     if (points > 0 && player && !opts.raw) {
       try { const m = require('./GuildWarRewards').gpMultiplier(player); if (m > 1) points = Math.floor(points * m); } catch (e) {}

@@ -645,6 +645,8 @@ function canAutoAct(chatId, jids = []) {
 function chatHealthy(chatId, windowMs = 90 * 1000) {
   try {
     const now = Date.now();
+    // 10-30 (owner): a /stop-ped group is PAUSED — no idle strikes, no auto-turns, no timers fire there until /start or /switch.
+    try { if (require('./PersonalityManager').isStopped(chatId)) return false; } catch (e) {}
     if (_badMacHits.filter(t => now - t < 60 * 1000).length >= 20) return false; // decrypt storm in progress
     // Push #96h-z12: judge the bot that SERVES this chat, not the fleet. Live on 10-04 a hearing peer kept
     // _chatInboundAt fresh while the serving bot was deaf → "the gate attacks us but ignores our commands".
@@ -2410,7 +2412,7 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
   let _inflightCmds = 0;
   // Push #80: inbound trace — /botstats shows where the last messages went.
   const _trace = (_inboundTrace[personalityKey] = _inboundTrace[personalityKey] || { received: 0, commands: 0, handled: 0, drops: {}, last: [] });
-  const _dropped = (why, msg) => { _trace.drops[why] = (_trace.drops[why] || 0) + 1; _trace.last.push(`${new Date().toISOString().slice(11, 19)} ${String(msg?.key?.remoteJid || '').split('@')[0].slice(-6)} ✗ ${why}`); if (_trace.last.length > 12) _trace.last.shift(); };
+  const _dropped = (why, msg) => { try { const _mm = msg && msg.message || {}; const _tx = String(_mm.conversation || (_mm.extendedTextMessage && _mm.extendedTextMessage.text) || ''); if (_tx.startsWith('/') && !/^stale|^fromMe|^ownEcho/.test(why)) console.log(`🗑️ [${personalityKey}] dropped command ${_tx.slice(0, 40)} — ${why} (${String(msg?.key?.participant || '').split('@')[0]} in ${String(msg?.key?.remoteJid || '').split('@')[0].slice(-6)})`); } catch (e) {} _trace.drops[why] = (_trace.drops[why] || 0) + 1; _trace.last.push(`${new Date().toISOString().slice(11, 19)} ${String(msg?.key?.remoteJid || '').split('@')[0].slice(-6)} ✗ ${why}`); if (_trace.last.length > 12) _trace.last.shift(); };
   const _enqueueInbound = (msg) => {
     _trace.received++;
     const cid = String(msg?.key?.remoteJid || 'x');
@@ -2802,6 +2804,7 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
     }
 
     // ── AFK MENTION OR REPLY CHECK (Active bot only) ───────────────────
+    const _afkDeferred = []; // 10-30: AFK notices for command messages go out after the command
     if (isGroup && isActive && db.afkUsers) {
       const contextInfo =
         msg.message?.extendedTextMessage?.contextInfo ||
@@ -2823,15 +2826,11 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
         const [, afk] = afkEntry;
         const awayStr = _fmtHMS(Date.now() - (afk.since || Date.now()));
         const afkMention = `@${bareNumber}`;
-        try {
-          await sock.sendMessage(chatId, {
-            text:
-              `⏳ ${afkMention} is AFK.` + String.fromCharCode(10) +
-              `📝 Reason: ${afk.reason || 'AFK'}` + String.fromCharCode(10) +
-              `🕒 Away:  ${awayStr}`,
-            mentions: [String(mj)],
-          }, { quoted: msg });
-        } catch (e) { /* best effort */ }
+        // 10-30 (owner, AFK bug): a COMMAND that replies to / mentions an AFK hunter (/send, /ban, /reset, /profile, /rob …)
+        // must still RUN — AFK only means "they're away", it never hides the hunter. The notice is sent AFTER the command.
+        const _afkNotice = { text: `⏳ ${afkMention} is AFK.` + String.fromCharCode(10) + `📝 Reason: ${afk.reason || 'AFK'}` + String.fromCharCode(10) + `🕒 Away:  ${awayStr}`, mentions: [String(mj)] };
+        if (isCommand) { _afkDeferred.push(_afkNotice); continue; }
+        try { await sock.sendMessage(chatId, _afkNotice, { quoted: msg }); } catch (e) { /* best effort */ }
       }
       // Push #97: a hunter deep inside an INSTANCE dungeon / the LABYRINTH is "not on this realm" — tagging them
       // gets the AFK-style notice (they cannot be pulled into raids or duels either).
@@ -2988,6 +2987,7 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
         _trace.handled++; _trace.last.push(`${new Date().toISOString().slice(11, 19)} ${String(chatId).split('@')[0].slice(-6)} ✓ ${commandName}`); if (_trace.last.length > 12) _trace.last.shift();
         try {
           await options.rpgCommandHandler(sock, msg, messageText, config, getDatabase, saveDatabase);
+          for (const n of _afkDeferred) { try { await sock.sendMessage(chatId, n, { quoted: msg }); } catch (e) {} } // 10-30: AFK notice after the command ran
         } catch (e) {
           console.error(`❌ [${displayName}] command handler error:`, e.message);
           try {
@@ -3164,6 +3164,8 @@ async function sendAttachment(sock, chatId, attachment, opts = {}) {
 async function sendAs(personalityKey, chatId, content, opts = {}) {
   const isGroup = chatId?.endsWith?.('@g.us');
   if (isGroup) {
+    // 10-30 (owner): nothing automated (spawns, strikes, timers, notices) is posted into a /stop-ped group.
+    try { if (require('./PersonalityManager').isStopped(chatId) && !(opts && opts.evenIfStopped)) return { dropped: true, reason: 'group-stopped' }; } catch (e) {}
     const activeKey = PersonalityManager.getActiveBot(chatId);
     const targetKey = activeKey || personalityKey;
     const sock = (targetKey && isBotUsable(targetKey) ? botSockets[targetKey] : null) || getActiveSocket(chatId);

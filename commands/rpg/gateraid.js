@@ -275,6 +275,9 @@ module.exports = {
 
     // ── START (party) ───────────────────────────────────────────
     if (action === 'start') {
+      { // 10-30 (owner): fewer than 3 raiders → the System asks once; the next /party start goes ahead (leader only).
+        try { if (gate.raid && gate.raid.leader === sender && gate.raid.status === 'recruiting') { const _uw = GR.understaffGate(gate.raid); if (_uw) { try { GR.saveGateState(db, gate); } catch (e) {} saveDatabase(); return sock.sendMessage(chatId, { text: _uw }, { quoted: msg }); } } } catch (e) {}
+      }
       const res = GR.start(sender, keyData, gate, db);
       if (!res.ok) return sock.sendMessage(chatId, { text: `❌ ${res.error}` }, { quoted: msg });
       try { GR.saveGateState(db, gate); } catch (e) {}
@@ -471,8 +474,15 @@ module.exports = {
         } catch (e) {}
         try {
           const QD = require('../../rpg/utils/QuestDispatcher');
-          QD.trackAndNotify(player, 'boss', 1, sock, sender, chatId);
-          QD.trackAndNotify(player, 'clear', 1, sock, sender, chatId);
+          // Fix (10-30, BUG-243): EVERY raider gets boss-quest credit + the completion notice in the GC — only the
+          // hunter who landed the last hit used to be tracked; the rest earned nothing and saw no message.
+          const _bn2 = require('../../rpg/dungeons/GateKeyManager').normaliseJid;
+          const _done = new Set(); const _mids = [sender, ...Object.keys(gate.damageDealt || {}), ...((gate.raid && gate.raid.members) || []).map(m => m && m.id)].filter(Boolean);
+          for (const _id of _mids) { const _k = _bn2(_id) || _id; if (_done.has(_k)) continue; _done.add(_k);
+            const _u = (_id === sender) ? player : (db.users?.[_id] || Object.values(db.users || {}).find(x => _bn2(x.id || x.jid || '') === _k)); if (!_u) continue;
+            if ((_u.stats?.hp || 0) <= 0 && _id !== sender) continue; // the fallen don't get boss credit
+            try { QD.trackAndNotify(_u, 'boss', 1, sock, _u.jid || _u.id || _id, chatId); } catch (e) {}
+          }
         } catch(e){}
         // Push #87: /weekly "Defeat 3 World Bosses" — every raid member who hit the boss gets credit.
         try {
@@ -506,7 +516,7 @@ module.exports = {
 
         // Distribute full loot: gold→guild treasury, drops→final-blow, recovery
         const _double = !!(gate.doubleRoll && !gate.isDouble); // Push #96d: a second gate hides behind this boss
-        const loot = GR.clearGate(gate, key, keyData, db, saveDatabase, { keepOpen: _double });
+        const loot = GR.clearGate(gate, key, keyData, db, saveDatabase, { keepOpen: _double, sock });
 
         out.push(``, `💀 *${boss.name}* HAS BEEN DEFEATED!`, ``);
         out.push(`🔥 Aura gained!`);

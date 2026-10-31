@@ -50,8 +50,16 @@ module.exports = {
           let ix = -1;
           if (entry.ref && entry.ref.id) ix = il.findIndex(e => e.id === entry.ref.id);
           if (ix < 0) ix = il.findIndex(e => e.name === entry.name);
+          // Fix (10-30, BUG-223/229): /inv and the gift list name a few stacks differently (Lower Health Potion ↔ Health
+          // Potion, cards by key) — map them; and if the entry still has no gift index, REFUSE instead of falling through
+          // with the raw /inv serial (which pointed at a different item and gifted the wrong thing).
+          const _alias = { 'Lower Health Potion': 'Health Potion' };
+          if (ix < 0 && _alias[entry.name]) ix = il.findIndex(e => e.name === _alias[entry.name]);
+          if (ix < 0 && entry.ref && entry.ref.cardKey) ix = il.findIndex(e => e._synthetic === 'card:' + entry.ref.cardKey);
+          if (ix < 0 && entry.kind === 'stack') ix = il.findIndex(e => e._synthetic === 'mat:' + entry.name);
           if (ix >= 0) args[1] = String(ix + 1);
-        } catch (e) {}
+          else return sock.sendMessage(chatId, { text: `❌ *${entry.name}* (/inv #${_invSerial}) can't be gifted this way — it isn't a transferable item.` }, { quoted: msg });
+        } catch (e) { if (e && e.message && /can't be gifted/.test(e.message)) throw e; }
         // fall through to the gift block below
       } else if (entry.kind === 'weapon' && entry.ref) {
         const Armory = require('../../rpg/utils/ArmoryStore');
@@ -458,7 +466,7 @@ module.exports = {
           item: _giftItem, recipientId, recipientName: recipient.name || 'them', cmd: '/equip', itemNum,
         });
       }
-      const item = allItems.splice(idx, 1)[0];
+      const item = require('../../rpg/utils/RewardInventory').takeOne(allItems, idx);
       if (!recipient.inventory) recipient.inventory = { items: [] };
       if (!recipient.inventory.items) recipient.inventory.items = [];
       recipient.inventory.items.push(item);

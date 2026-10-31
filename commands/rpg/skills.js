@@ -84,10 +84,13 @@ function fmtSkillLine(skill, idx, player, compact=false) {
   const bonuses = applySkillLevelBonus(skill, player);
   const bar = skillLevelBar(lv, max);
   const prefix = idx !== undefined ? `${idx+1}. ` : '';
+  let _sup = null; try { _sup = _SCk.supportLabel(player, skill); } catch (e) {} // Fix (10-30, BUG-235): buffs/heals show their effect, not "dmg"
+  let _cap = null; try { _cap = require('../../rpg/utils/SkillUseCap').capFor(skill); } catch (e) {} // 10-30 (owner): per-raid use cap
+  const _capS = _cap ? ` | 🔁${_cap}×/raid` : '';
   if (compact) {
-    return `${prefix}*${skill.name}* [Lv${lv}/${max}] ${bar} · ${kindTagOf(skill)}\n   💥${bonuses.damage} | ${player.energyColor||'💙'}${realCost(skill, player)} | ⏰${bonuses.cooldown}t\n`;
+    return `${prefix}*${skill.name}* [Lv${lv}/${max}] ${bar} · ${kindTagOf(skill)}\n   ${_sup ? _sup : `💥${bonuses.damage}`} | ${player.energyColor||'💙'}${realCost(skill, player)} | ⏰${bonuses.cooldown}t${_capS}\n`;
   }
-  return `${prefix}*${skill.name}*\nLv ${lv}/${max}: ${bar}\n💥 DMG: ${bonuses.damage} | ${player.energyColor||'💙'} ${realCost(skill, player)} | ⏰ ${bonuses.cooldown}t\n`;
+  return `${prefix}*${skill.name}*\nLv ${lv}/${max}: ${bar}\n${_sup ? _sup : `💥 DMG: ${bonuses.damage}`} | ${player.energyColor||'💙'} ${realCost(skill, player)} | ⏰ ${bonuses.cooldown}t${_capS}\n`;
 }
 
 module.exports = {
@@ -199,16 +202,17 @@ module.exports = {
       let txt = pro ? `${UI.PRO_BAR}\n🔮 *${skill.name}* 💎\n${UI.PRO_BAR}\n` : `🔮 *${skill.name}*\n${UI.FREE_BAR}\n`;
       txt += `🏷️ ${kindTagOf(skill)}${skill.rankReq ? ` · ${skill.rankReq}-Rank` : ''}\n${info?.description || 'A powerful skill.'}\n\n`;
       txt += `📊 STATS (Level ${lv}/${max})\n${bar}\n`;
-      if (isHealerHealSkill(player, skill)) txt += `${healerUpgradeLine(skill)}\n`; else txt += `💥 Damage: ${bonuses.damage}\n`;
+      if (isHealerHealSkill(player, skill)) txt += `${healerUpgradeLine(skill)}\n`; else { let _sup2 = null; try { _sup2 = _SCk.supportLabel(player, skill); } catch (e) {} txt += _sup2 ? `✨ Effect: ${_sup2}\n` : `💥 Damage: ${bonuses.damage}\n`; }
       txt += `${player.energyColor||'💙'} Cost: ${realCost(skill, player)} ${player.energyType||'Energy'}\n`;
       txt += `⏰ Cooldown: ${bonuses.cooldown}t\n`;
+      try { const _UC = require('../../rpg/utils/SkillUseCap'); const _cl = _UC.label(skill); if (_cl) txt += `${_cl} — fixed by potency, upgrades never change it; refused once spent for that raid\n`; } catch (e) {} // 10-30 (owner)
       if (lv > 1) txt += isHealerHealSkill(player, skill) ? `⬆️ Level bonus: −${require('../../rpg/utils/HealerBacklash').reductionPct(lv)}% backlash · cost ×${bonuses.costMult.toFixed(2)}\n` : `⬆️ Level bonus: +${Math.round((bonuses.dmgMult-1)*100)}% DMG · cost ×${bonuses.costMult.toFixed(2)} (stronger casts drain more)\n`;
       if (info?.effect) txt += `\n💡 EFFECTS:\n${info.effect}\n`;
       // Push #97: what the skill REALLY does at its current level (support numbers grow with every upgrade).
       try { const _r = _SCk && _SCk.resolveSkill ? _SCk.resolveSkill(player, skill.name) : null; const _e = _r && _r.ok ? _r.entry : null; const _L = _e ? (_e.effectScaled || _SCk.scaledSummary(_e)) : []; if (_L.length) txt += `\n📐 AT LEVEL ${lv}${lv > 1 ? ` (×${(_SCk.supportMult(lv)).toFixed(2)} support · +${Math.round((lv - 1) * 12)}% damage)` : ''}:\n${_L.join('\n')}\n`; } catch (e) {}
       if (info?.animation) txt += `\n🎬 ANIMATION:\n${info.animation.split('\n')[0]}\n`;
       if (upgradeCost) txt += `\n${FRAME}\n⬆️ Upgrade to Lv ${lv+1}: 💠 ${upgradeCost.toLocaleString()} Nexus\n/skills upgrade [slot#]\n`;
-      if (lv > 1) { try { const _fee = require('./upgrade-r').resetFee(player); txt += `♻️ Upgrade reset (owner, /upgrade-r): refunds what you paid · fee 💠 ${_fee.toLocaleString()} (reset #${(Number(player.upgradeResetsUsed) || 0) + 1}, ×1.5 each time)\n`; } catch (e) {} } // 10-26
+      if (lv > 1) { try { const _fee = require('./upgrade-r').resetFee(player); txt += `♻️ Upgrade reset (mod/owner, /upgrade-r): refunds what you paid · fee 💠 ${_fee.toLocaleString()} (reset #${(Number(player.upgradeResetsUsed) || 0) + 1}, ×1.5 each time)\n`; } catch (e) {} } // 10-26
       txt += `${FRAME}` + (pro ? `\n${UI.PRO_MINI}\n💎 *PRO LOADOUT* — Lv.${lv} ${skill.name}` : `\n${UI.upsell()}`);
       return sock.sendMessage(chatId, { text: txt }, { quoted: msg });
     }

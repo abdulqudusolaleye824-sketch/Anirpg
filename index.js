@@ -1440,10 +1440,11 @@ setInterval(() => {
     // Push #88u: never strike from a deaf socket — GateRaid restarts the idle clock instead.
     const hits = GRi.autoStrikeIdleRaids(database, Date.now(), (chatId, jids) => (typeof MSMi.canAutoAct === 'function' ? MSMi.canAutoAct(chatId, jids) : (typeof MSMi.chatHealthy === 'function' ? MSMi.chatHealthy(chatId) : true)));
     // Push #88w: cleared floors nobody advances from within 60 s revive (+30%, no rewards).
-    try { if (typeof GRi.reviveStaleFloors === 'function') hits.push(...GRi.reviveStaleFloors(database, Date.now())); } catch (e) { console.error('floor-revive tick:', e.message); }
+    try { if (typeof GRi.reviveStaleFloors === 'function') hits.push(...GRi.reviveStaleFloors(database, Date.now(), (cid) => { try { return !require('./bots/PersonalityManager').isStopped(cid); } catch (e) { return true; } })); } catch (e) { console.error('floor-revive tick:', e.message); }
     if (!hits.length) return;
     for (const h of hits) {
       if (!h.chatId) continue;
+      try { if (require('./bots/PersonalityManager').isStopped(h.chatId)) continue; } catch (e) {} // 10-30: stopped group = paused
       const sk = MSMi.getActiveSocket(h.chatId);
       if (sk) sk.sendMessage(h.chatId, { text: h.text, mentions: h.mentions || [] }).catch(() => {});
     }

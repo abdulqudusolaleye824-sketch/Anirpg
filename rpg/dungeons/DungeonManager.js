@@ -195,7 +195,7 @@ function scaleMonsterForFloor(baseMonster, playerLevel, floor, severity = 1) {
   const floorMult  = 1 + (floor - 1) * 0.15;  // Push #88: steeper climb per floor
   const levelMult  = 1 + (playerLevel - 1) * 0.05; // Push #96h-f: hunter LEVEL drives the tower harder (was 3%/lvl)
   const combined   = floorMult * levelMult * Math.max(1, Number(severity) || 1);
-  let _rp = 1; try { _rp = require('../utils/RankPower').monsterMult(_getRankByFloor(floor)); } catch (e) { _rp = 1; } // Push #103i: rank power ladder
+  let _rp = 1, _rpHp = 1; try { const _RP = require('../utils/RankPower'); _rp = _RP.monsterMult(_getRankByFloor(floor)); _rpHp = _RP.monsterHpMult(_getRankByFloor(floor)); } catch (e) { _rp = 1; _rpHp = 1; } // Push #103i · 10-30: full ladder + HP ×2 for B+
   return {
     name: baseMonster.name,
     emoji: baseMonster.emoji,
@@ -205,8 +205,8 @@ function scaleMonsterForFloor(baseMonster, playerLevel, floor, severity = 1) {
     isElite: false,
     isBoss: false,
     stats: {
-      hp:    Math.floor(baseMonster.baseHp  * combined * 0.5 * MON_HP_BUFF * _rp),
-      maxHp: Math.floor(baseMonster.baseHp  * combined * 0.5 * MON_HP_BUFF * _rp),
+      hp:    Math.floor(baseMonster.baseHp  * combined * 0.5 * MON_HP_BUFF * _rpHp),
+      maxHp: Math.floor(baseMonster.baseHp  * combined * 0.5 * MON_HP_BUFF * _rpHp),
       atk:   Math.floor(baseMonster.baseAtk * combined * 0.5 * MON_ATK_BUFF * _rp),
       def:   Math.floor(baseMonster.baseDef * combined * 0.5 * MON_DEF_BUFF * _rp),
       speed: Math.round((80 + floor * 2) * MON_SPD_BUFF)

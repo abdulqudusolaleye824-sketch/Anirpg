@@ -246,4 +246,13 @@ function consumeMaterial(player, name, qty) {
   return remaining === 0;
 }
 
-module.exports = { ensureInventory, grantItem, migrateLegacy, countMaterial, consumeMaterial, repairGearSlots, SLOT_MAP, VALID_SLOTS };
+
+// Fix (10-30, BUG-239): gifting from a STACKED item object ({count:n}) used to splice the whole stack and hand all n
+// units over while the card said "×1". Take exactly one unit: decrement the stack, return a single-unit copy.
+function takeOne(items, idx) {
+  const it = items[idx]; if (!it) return null;
+  const c = Math.max(1, Number(it.count || it.qty || it.quantity || 1) || 1);
+  if (c > 1) { it.count = c - 1; delete it.qty; delete it.quantity; const one = { ...it, count: 1 }; delete one.qty; delete one.quantity; return one; }
+  return items.splice(idx, 1)[0];
+}
+module.exports = { takeOne,  ensureInventory, grantItem, migrateLegacy, countMaterial, consumeMaterial, repairGearSlots, SLOT_MAP, VALID_SLOTS };
