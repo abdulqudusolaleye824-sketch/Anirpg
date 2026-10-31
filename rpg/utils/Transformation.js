@@ -19,8 +19,8 @@ const TIERS = [
   { key: 'full_full',     level: 60, name: 'Complete Full Transformation',    mult: 5, turns: 10 },
 ];
 const PASSIVE_CHANCE = 0.08;          // per combat turn, when not transformed (Lv.10+)
-const BERSERK_CHANCE = 0.47;          // per combat turn for Monsters below Lv.10 — they go BERSERK
-const BERSERK_LEVEL = 10;
+const BERSERK_CHANCE = 0.47;          // per combat turn below Lv.15; BERSERK is 0% from Lv.15 onward
+const BERSERK_LEVEL = 15;
 // Aftermath when ANY transformation ends: the body pays for it.
 const AFTERMATH = [{ type: 'weaken', duration: 10 }, { type: 'stun', duration: 2 }, { type: 'bleed', duration: 7 }];
 const MAX_AGE_MS = 20 * 60 * 1000;    // safety: no form outlives 20 minutes
@@ -163,7 +163,7 @@ function tick(player) {
     return lines;
   }
   // Innate passive: random Quarter Transformation for any Monster-class hunter.
-  // Below Lv.10 it is a 47%/turn BERSERK surge; from Lv.10 an 8%/turn controlled one.
+  // Below Lv.15 it is a 47%/turn BERSERK surge; from Lv.15 an 8%/turn controlled one.
   let chance = (player.level || 1) < BERSERK_LEVEL ? BERSERK_CHANCE : PASSIVE_CHANCE;
   // Push #92: PACK RULE — with another living Monster on the team the surge
   // chance is HALVED, but when it fires the whole pack rampages TOGETHER with

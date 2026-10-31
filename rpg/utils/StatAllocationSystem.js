@@ -228,7 +228,7 @@ function applyAllocationsToStats(player) {
   try { if (player.transform && require('./Transformation').reapply(player) && Number.isFinite(_hp0)) { let cap = player.stats.maxHp; try { cap = require('./GearSystem').effectiveMaxHp(player); } catch (e) {} player.stats.hp = Math.min(_hp0, cap); } } catch (e) {} // Fix (10-26): keep an active form's bonus after a rebuild
 }
 
-const STAT_RESET_BASE = 1000000, STAT_RESET_GROWTH = 1.5;
+const STAT_RESET_BASE = 200000, STAT_RESET_GROWTH = 1;
 function statResetFee(player) { return Math.round(STAT_RESET_BASE * Math.pow(STAT_RESET_GROWTH, Math.max(0, Number(player && player.statResetsUsed) || 0))); }
 function resetAllocations(player) {
   initializeStatAllocations(player);
@@ -246,10 +246,10 @@ function resetAllocations(player) {
     return { success: false, message: '❌ You have no stat allocations to reset!' };
   }
   
-  // 10-30 (owner): 1,000,000 💠, rising ×1.5 every reset this hunter has done (1M → 1.5M → 2.25M …), like /upgrade-r.
+  // Owner request: /upgrade reset is a flat 200,000 💠 each time.
   const resetCost = statResetFee(player);
   if ((player.gold || 0) < resetCost) {
-    return { success: false, message: `❌ Not enough Nexus to reset stats!\n\nCost: ${resetCost.toLocaleString()} 💠 (reset #${(Number(player.statResetsUsed) || 0) + 1} — the fee rises ×1.5 each time)\nYou have: ${(player.gold || 0).toLocaleString()} 💠` };
+    return { success: false, message: `❌ Not enough Nexus to reset stats!\n\nCost: ${resetCost.toLocaleString()} 💠 (fixed fee)\nYou have: ${(player.gold || 0).toLocaleString()} 💠` };
   }
   
   player.gold -= resetCost;
@@ -262,7 +262,7 @@ function resetAllocations(player) {
   
   return {
     success: true,
-    message: (rPro ? `${UI.PRO_BAR}\n♻️ STATS RESET! 💎\n${UI.PRO_BAR}\n\n💠 Cost: ${resetCost.toLocaleString()} 💠 (next reset: ${statResetFee(player).toLocaleString()} 💠)\n💎 Refunded: ${totalPointsSpent} UP\n\n${UI.PRO_BAR}\nAll stat allocations have been reset!\nYou can now re-allocate your points.\n\n💎 Upgrade Points: ${player.upgradePoints} UP\n💠 Remaining Nexus: ${player.gold} 💠\n${UI.PRO_BAR}\n${UI.PRO_MINI}\n💎 *PRO STATS* — ${totalPointsSpent} UP refunded` : `♻️ STATS RESET!\n${UI.FREE_BAR}\n\n💠 Cost: ${resetCost.toLocaleString()} 💠 (next reset: ${statResetFee(player).toLocaleString()} 💠)\n💎 Refunded: ${totalPointsSpent} UP\n\n${UI.FREE_BAR}\nAll stat allocations have been reset!\nYou can now re-allocate your points.\n\n💎 Upgrade Points: ${player.upgradePoints} UP\n💠 Remaining Nexus: ${player.gold} 💠\n${UI.FREE_BAR}\n${UI.upsell()}`),
+    message: (rPro ? `${UI.PRO_BAR}\n♻️ STATS RESET! 💎\n${UI.PRO_BAR}\n\n💠 Cost: ${resetCost.toLocaleString()} 💠 (fixed each reset)\n💎 Refunded: ${totalPointsSpent} UP\n\n${UI.PRO_BAR}\nAll stat allocations have been reset!\nYou can now re-allocate your points.\n\n💎 Upgrade Points: ${player.upgradePoints} UP\n💠 Remaining Nexus: ${player.gold} 💠\n${UI.PRO_BAR}\n${UI.PRO_MINI}\n💎 *PRO STATS* — ${totalPointsSpent} UP refunded` : `♻️ STATS RESET!\n${UI.FREE_BAR}\n\n💠 Cost: ${resetCost.toLocaleString()} 💠 (fixed each reset)\n💎 Refunded: ${totalPointsSpent} UP\n\n${UI.FREE_BAR}\nAll stat allocations have been reset!\nYou can now re-allocate your points.\n\n💎 Upgrade Points: ${player.upgradePoints} UP\n💠 Remaining Nexus: ${player.gold} 💠\n${UI.FREE_BAR}\n${UI.upsell()}`),
     pointsRefunded: totalPointsSpent,
     goldSpent: resetCost
   };
@@ -289,7 +289,7 @@ function getStatAllocationDisplay(player) {
     display += `   Cost: ${config.costPerPoint} UP per point\n\n`;
   }
   
-  display += `${FRAME}\n📜 COMMANDS\n${FRAME}\n/upgrade allocate <stat> <amount>\n  Example: /upgrade allocate atk 5\n\n/upgrade reset\n  Reset all allocations — ${statResetFee(player).toLocaleString()} 💠 (1,000,000 base, ×1.5 every reset)\n\n/upgrade guide\n  See stat recommendations\n${FRAME}` + (dPro ? `\n${UI.PRO_MINI}\n💎 *PRO STATS* — ${player.upgradePoints} UP banked` : `\n${UI.upsell()}`);
+  display += `${FRAME}\n📜 COMMANDS\n${FRAME}\n/upgrade allocate <stat> <amount>\n  Example: /upgrade allocate atk 5\n\n/upgrade reset\n  Reset all allocations — ${statResetFee(player).toLocaleString()} 💠 (fixed each reset)\n\n/upgrade guide\n  See stat recommendations\n${FRAME}` + (dPro ? `\n${UI.PRO_MINI}\n💎 *PRO STATS* — ${player.upgradePoints} UP banked` : `\n${UI.upsell()}`);
 
   return display;
 }
