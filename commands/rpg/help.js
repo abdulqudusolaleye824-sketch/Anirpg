@@ -229,7 +229,7 @@ module.exports = {
       `🌍 *SOCIAL & MEDIA:* /steal /sticker /quote /retrieve /seticon /setbio /afk /friend /leaderboard /ranking /top /mods /community /support /gclink /gcmart /rules /subscribe /suggest /bug`,
       `  /imagine /ai /lyrics /play /ytmp3 /ytmp4 /tt /facebook /insta /pinterest /pindl`,
       ``,
-      `🛡️ *GROUP ADMIN:* /kick /promote /demote /pm /mute /unmute /ban /unban /tagall /antilink /antimention /slowmode /chatbot /welcome /goodbye /close /open /delete /disable /enable /groupcmd /announce /setgroup /sub /gclist /joingc /leavegc /spawnstatus /killspawn /closegate /reset /restart /start /switch /aimode /setserf /approveserf /bots`,
+      `🛡️ *GROUP ADMIN:* /kick /promote /demote /pm /mute /unmute /ban /unban /tagall /antilink /antimention /slowmode /chatbot /welcome /goodbye /close /open /delete /disable /enable /groupcmd /announce /setgroup /sub /spawnstatus /killspawn /closegate /reset /restart /start /switch /aimode /setserf /approveserf /bots`,
     ];
     // Push #102f: MODERATION line — bot mods only (separate from group admins), shown only to mods/owners.
     try { const _P = require('../../utils/permissions'); if (_P.isBotMod(getDatabase(), sender) || _P.isBotOwner(getDatabase(), sender)) menuLines.push('', '⭐ *MODERATION (bot mods):* /announce /upgrade-r <slot#> @hunter (skill reset; 1M fee ×1.5) /reset <@> /restart /spawnstatus /killspawn /closegate /burnkey /approveserf /setgroup /setpp /groupcmd /botstats /botid /cctv /maintenance /transactions <@> /gclist /joingc /leavegc /welcome /goodbye /antilink /antimention /aimode /prousers /mods /ytstatus /birthday'); } catch (e) {}

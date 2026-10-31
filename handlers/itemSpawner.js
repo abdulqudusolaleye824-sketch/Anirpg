@@ -53,8 +53,15 @@ class DailyItemSpawner {
       return;
     }
 
-    // Select random group chat
-    const targetChatId = candidateChats[Math.floor(Math.random() * candidateChats.length)];
+    // 10-30 (owner, "no global item spawn"): the drop used to be MARKED as spawned before anything was sent, and the
+    // message went out through "the first online socket" — a bot that was often not even in the chosen group, so the
+    // send failed silently and the next try was 24 h away. Now: only groups the bot can actually post in (active,
+    // not /stop-ped, with a live member socket) are candidates, we try them in random order until one send SUCCEEDS,
+    // and the 24 h clock starts only then.
+    const PM = (() => { try { return require('../bots/PersonalityManager'); } catch (e) { return null; } })();
+    const pool = candidateChats.filter(cid => !(PM && PM.isStopped && PM.isStopped(cid)));
+    for (let i = pool.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [pool[i], pool[j]] = [pool[j], pool[i]]; }
+    if (!pool.length) { console.log('[ITEM SPAWN] no eligible group (all stopped) — retry next tick'); return; }
 
     // Push #88f: recipe-material bundle (Mending Stone 15%) — what /craft needs.
     let item;
@@ -67,50 +74,36 @@ class DailyItemSpawner {
       item = { name: `${tier === 'epic' ? 'Epic' : tier === 'rare' ? 'Rare' : 'Common'} Material Cache`, rarity: tier, bundle,
                description: bundle.map(b => `${b.emoji} ${b.name} ×${b.qty}`).join(', ') };
     }
+    const emoji = RARITY_EMOJI[item.rarity] || '📦';
+    const text = [
+      `╭━━━━━━━「 📦 DAILY SYSTEM ITEM DROP 」━━━━━━━╮`,
+      `A rare supply drop has materialized in this realm!`,
+      ``,
+      `📦 Item: *${item.name}* (${emoji} ${item.rarity.toUpperCase()})`,
+      ...(item.bundle ? [`📦 Contents:`, ...item.bundle.map(b => `  ${b.emoji} *${b.name}* ×${b.qty}`)] : [`📖 Description: _${item.description}_`]),
+      ``,
+      `🛒 CLAIM COMMAND: Type /claim or reply to this message with /claim!`,
+      `╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━╯`
+    ].join('\n');
 
-    db.dailyGlobalSpawn.lastSpawnTime = now;
-    db.dailyGlobalSpawn.activeSpawn = {
-      chatId: targetChatId,
-      item,
-      spawnTime: now,
-      claimed: false,
-      claimedBy: null
-    };
-    saveDatabase();
-
-    // Get active socket
-    let sock = null;
-    if (multiSocketManager) {
-      const targetBotKey = db.botActive?.[targetChatId];
-      if (targetBotKey) {
-        sock = multiSocketManager.getSocket(targetBotKey);
-      }
-      if (!sock) {
-        const firstKey = multiSocketManager.getFirstOnlineSocketKey();
-        if (firstKey) sock = multiSocketManager.getSocket(firstKey);
-      }
-    }
-
-    if (sock && sock.ws && sock.ws.readyState === 1) {
+    for (const targetChatId of pool) {
+      let sock = null;
+      try { if (multiSocketManager && typeof multiSocketManager.getActiveSocket === 'function') sock = multiSocketManager.getActiveSocket(targetChatId); } catch (e) {}
+      if (!sock && multiSocketManager) { const k = db.botActive?.[targetChatId]; if (k) sock = multiSocketManager.getSocket(k); }
+      if (!sock || !sock.user || !sock.user.id) { console.log(`[ITEM SPAWN] ${targetChatId}: no live bot in this group — trying another`); continue; }
       try {
-        const emoji = RARITY_EMOJI[item.rarity] || '📦';
-        const msg = [
-          `╭━━━━━━━「 📦 DAILY SYSTEM ITEM DROP 」━━━━━━━╮`,
-          `A rare supply drop has materialized in this realm!`,
-          ``,
-          `📦 Item: *${item.name}* (${emoji} ${item.rarity.toUpperCase()})`,
-          ...(item.bundle ? [`📦 Contents:`, ...item.bundle.map(b => `  ${b.emoji} *${b.name}* ×${b.qty}`)] : [`📖 Description: _${item.description}_`]),
-          ``,
-          `🛒 CLAIM COMMAND: Type /claim or reply to this message with /claim!`,
-          `╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━╯`
-        ].join('\n');
-
-        await sock.sendMessage(targetChatId, { text: msg });
+        const r = await sock.sendMessage(targetChatId, { text });
+        if (r && r.dropped) throw new Error(r.reason || 'dropped');
+        db.dailyGlobalSpawn.lastSpawnTime = now;
+        db.dailyGlobalSpawn.activeSpawn = { chatId: targetChatId, item, spawnTime: now, claimed: false, claimedBy: null };
+        saveDatabase();
         console.log(`[ITEM SPAWN] Daily global item spawned in ${targetChatId}: ${item.name}`);
+        return;
       } catch (err) {
-        console.error('[ITEM SPAWN] Failed to send daily item drop:', err?.message || err);
+        console.error(`[ITEM SPAWN] ${targetChatId}: send failed (${err?.message || err}) — trying another group`);
       }
     }
+    console.error('[ITEM SPAWN] could not deliver the daily drop to any group — retry in 15 min');
   }
 
   static claimItem(chatId, sender, db, saveDatabase) {
