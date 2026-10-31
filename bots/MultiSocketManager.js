@@ -2651,7 +2651,10 @@ async function connectBot(personalityKey, authDir, getDatabase, saveDatabase, op
       'start', 'switch', 'stopbot', 'bots', 'setainame', 'hi',
       'link', 'unlink', 'help', 'menu', 'restart', 'groupstatus', 'gstatus', 'set', 'setgroup'
     ]);
-    const isBootstrap = BOOTSTRAP_COMMANDS.has(commandName);
+    // 10-30 (owner): in a /stop-ped group ONLY /start, /switch and /bots are heard (the way back in). /help, /menu, /hi… stay silent.
+    const STOPPED_OK = new Set(['start', 'switch', 'bots']);
+    const _stoppedNow = isGroup && PersonalityManager.isStopped && PersonalityManager.isStopped(chatId);
+    const isBootstrap = BOOTSTRAP_COMMANDS.has(commandName) && (!_stoppedNow || STOPPED_OK.has(commandName));
 
     // Active bot determination with strict /start and /switch handling
     // Push #55: the "active bot" is now whoever can ACTUALLY reply, not

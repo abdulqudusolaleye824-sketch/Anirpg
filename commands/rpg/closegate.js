@@ -38,6 +38,18 @@ function resolveGate(args, chatId, db) {
     const r = GR.resolveCode(explicit, db);
     return r.ok ? { ...r, key: explicit } : { error: r.error };
   }
+  // 10-30 (owner): the LIVE raid in this chat comes first. The old order (GC's "active key" → first gate bound to
+  // the chat) closed a stale/unused gate while the party's real raid — and its idle strikes — kept running.
+  try {
+    const live = Object.values(GateManager.activeGates || {}).filter(g => g && !g.cleared && !g.broken && g.raid && (g.raid.chatId || g.chatId) === chatId && /^(active|recruiting)$/.test(String(g.raid.status || '')));
+    live.sort((x, y) => (x.raid.status === 'active' ? 0 : 1) - (y.raid.status === 'active' ? 0 : 1) || (Number(y.raid.lastTurnAt || y.raid.startedAt || 0) - Number(x.raid.lastTurnAt || x.raid.startedAt || 0)));
+    if (live.length) {
+      const g = live[0];
+      const key = g.raid?.key || Object.keys(db.gateKeys || {}).find(k => db.gateKeys[k]?.gateId === g.id) || null;
+      const keyData = key ? (GKM.getKey(key, db) || db.gateKeys?.[key]) : null;
+      return { ok: true, gate: g, key, keyData };
+    }
+  } catch (e) {}
   const gc = GKM.getDungeonGC(chatId);
   if (gc?.activeKeyId) {
     const r = GR.resolveCode(gc.activeKeyId, db);

@@ -188,12 +188,20 @@ ${(proB ? UI.PRO_BAR : UI.FREE_BAR)}`;
     try {
       const MSM = require('../../bots/MultiSocketManager');
       const tr = MSM.getInboundTrace ? MSM.getInboundTrace() : {};
-      const L = ['', '📡 *INBOUND TRACE (since boot)*'];
-      for (const [k, t] of Object.entries(tr)) {
-        const drops = Object.entries(t.drops || {}).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([w, n]) => `${w}×${n}`).join(', ') || 'none';
-        L.push(`*${k}*: recv ${t.received} · cmds ${t.commands} · handled ${t.handled}`, `  drops: ${drops}`);
-        for (const l of (t.last || []).slice(-6)) L.push(`  ${l}`);
+      // 10-30 (owner): COMPACT — one line per bot, drop reasons collapsed to their name (no present= lists, no per-message log).
+      // Full detail: /botstats trace [bot].
+      const _short = (w) => String(w).replace(/\(.*$/, '');
+      const wantTrace = /^trace$/i.test(String(args[0] || ''));
+      const only = wantTrace && args[1] ? String(args[1]).toLowerCase() : null;
+      const L = ['', wantTrace ? '📡 *INBOUND TRACE — detail (since boot)*' : '📡 *INBOUND (since boot)* — _/botstats trace [bot] for detail_'];
+      const rows = Object.entries(tr).filter(([k]) => !only || k.toLowerCase() === only).sort((a, b) => (b[1].handled || 0) - (a[1].handled || 0));
+      for (const [k, t] of rows) {
+        const agg = {}; for (const [w, n] of Object.entries(t.drops || {})) { const sw = _short(w); agg[sw] = (agg[sw] || 0) + n; }
+        const drops = Object.entries(agg).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([w, n]) => `${w} ${n}`).join(' · ') || '—';
+        L.push(`*${k}* · heard ${t.received} · cmds ${t.commands} · answered ${t.handled} · skipped: ${drops}`);
+        if (wantTrace) for (const l of (t.last || []).slice(-8)) L.push(`  ${String(l).replace(/\(active=([^,]+),present=[^)]*\)/, '($1 active)')}`);
       }
+      if (!wantTrace) L.push('_skipped = messages this bot saw but another bot answered (normal with several bots per GC)_');
       out += '\n' + L.join('\n');
     } catch (e) {}
     await sock.sendMessage(chatId, { text: out }, { quoted: msg });
