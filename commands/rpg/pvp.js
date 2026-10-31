@@ -767,6 +767,17 @@ async function resolveTurn(sock, chatId, p1, p2, db, saveDatabase) {
                         : [{p:p2,opp:p1,move:m2,res:res2,name:name2,oppName:name1,skipped:p2Skipped,skipMsg:skipMsg2},
                            {p:p1,opp:p2,move:m1,res:res1,name:name1,oppName:name2,skipped:p1Skipped,skipMsg:skipMsg1}];
 
+  // Domain opening burst resolves before queued actions. A hunter killed by it cannot still execute a locked move.
+  const _dead1 = (p1.stats?.hp || 0) <= 0, _dead2 = (p2.stats?.hp || 0) <= 0;
+  if (_dead1 || _dead2) {
+    if (_dead1 && _dead2) {
+      const _winner = p1First ? p2 : p1, _loser = p1First ? p1 : p2;
+      return handlePvpVictory(sock, chatId, _winner, _loser, p1First ? id2 : id1, p1First ? id1 : id2, db, saveDatabase, turnNum, '💥 Both fighters fell to the domain burst — the faster fighter takes the duel.');
+    }
+    const _winner = _dead1 ? p2 : p1, _loser = _dead1 ? p1 : p2;
+    return handlePvpVictory(sock, chatId, _winner, _loser, _dead1 ? id2 : id1, _dead1 ? id1 : id2, db, saveDatabase, turnNum, `💥 ${_loser.name || 'Hunter'} fell to the domain opening burst and could not act.`);
+  }
+
   let accumulated = '';
   let battleEnded = false;
   if (_domFirst) { try { await sock.sendMessage(chatId, { text: `🌌 *${_domFirst}*'s domain stands — the caster moves first.` }); } catch (e) {} }
@@ -842,7 +853,7 @@ async function resolveTurn(sock, chatId, p1, p2, db, saveDatabase) {
     if ((target.stats?.hp || 0) <= 0) {
       const PetManager = require('../../rpg/utils/PetManager');
       const oppJid = (o.opp === p1 ? id1 : id2);
-      const sac = PetManager.checkPetSacrifice(oppJid, target);
+      const sac = o.res?.domainStrike ? null : PetManager.checkPetSacrifice(oppJid, target); // Domain hit is final: no pet/skill death-prevention proc
       if (sac && sac.sacrificed) {
         segment += `\n\n${sac.message}`;
         accumulated += (accumulated ? '\n\n' : '') + segment;

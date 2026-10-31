@@ -377,16 +377,32 @@ function expand(arena, player, allies = [player], enemies = [], ctx = {}) {
   const _fxLines = [];
   try {
     const atk = Number(player.stats.atk || 10); let _gb = 0; try { _gb = require('./GearSystem').getEquippedBonuses(player).atk || 0; } catch (e2) {}
-    const burst = Math.max(1, Math.floor((atk + _gb) * (e.burst / 100)));
+    const burstBase = Math.max(1, Math.floor((atk + _gb) * (e.burst / 100)));
     for (const f of enemies) {
       if (!f) continue;
       const hit = [];
       if (!Array.isArray(f.statusEffects)) f.statusEffects = [];
       for (const st of (e.statuses || [])) { if (Math.random() * 100 < st.chance) { const ex = f.statusEffects.find(x => x && String(x.type).toLowerCase() === st.type); if (ex) ex.duration = Math.max(ex.duration || 0, st.duration); else f.statusEffects.push({ type: st.type, duration: st.duration, source: src }); hit.push(STATUS_LABEL[st.type] || st.type.toUpperCase()); } }
       let dealt = 0;
-      if (f.stats && typeof f.stats.hp === 'number') { dealt = Math.min(burst, Math.max(0, f.stats.hp - 1)); f.stats.hp -= dealt; }
-      else if (typeof f.hp === 'number') { dealt = Math.min(burst, Math.max(0, f.hp - 1)); f.hp -= dealt; }
-      _fxLines.push(`💥 *${f.name || 'Enemy'}* — ${dealt.toLocaleString()} burst${hit.length ? ` · ${hit.join(' + ')}` : ''}`);
+      if (arena.kind === 'pvp') {
+        // PvP domain burst is lethal and cannot be prevented by skill shields/immunity.
+        // DEF is still real: base + gear, weapon, titles, pets, and active DEF buffs.
+        let gd = 0, td = 0, pd = 0;
+        try { gd = require('./GearSystem').getEquippedBonuses(f).def || 0; } catch (e2) {}
+        try { td = require('./TitleSystem').getEquippedBoost(f).def || 0; } catch (e2) {}
+        try { pd = require('./PetCombat').defBonus(f.jid || f.id) || 0; } catch (e2) {}
+        let dstat = Number(f.stats?.def || f.stats?.defense || 0) + gd + Number(f.weapon?.defense || 0) + td + pd;
+        try { for (const v of Object.values(f.tempBuffs || {})) if (v && v.stat === 'def' && (v.duration || 0) > 0) dstat *= Math.max(0, 1 + Number(v.amount || 0) / 100); } catch (e2) {}
+        const mitigation = Math.min(0.70, Math.max(0, dstat) / (Math.max(1, atk + _gb) + Math.max(0, dstat)));
+        const burst = Math.max(1, Math.floor(burstBase * (1 - mitigation)));
+        if (f.stats && typeof f.stats.hp === 'number') { dealt = Math.min(burst, Math.max(0, f.stats.hp)); f.stats.hp = Math.max(0, f.stats.hp - dealt); }
+        else if (typeof f.hp === 'number') { dealt = Math.min(burst, Math.max(0, f.hp)); f.hp = Math.max(0, f.hp - dealt); }
+      } else {
+        const burst = burstBase;
+        if (f.stats && typeof f.stats.hp === 'number') { dealt = Math.min(burst, Math.max(0, f.stats.hp - 1)); f.stats.hp -= dealt; }
+        else if (typeof f.hp === 'number') { dealt = Math.min(burst, Math.max(0, f.hp - 1)); f.hp -= dealt; }
+      }
+      _fxLines.push(`💥 *${f.name || 'Enemy'}* — ${dealt.toLocaleString()} burst${arena.kind === 'pvp' && (f.stats?.hp || f.hp || 0) <= 0 ? ' · ☠️ KNOCKOUT' : ''}${hit.length ? ` · ${hit.join(' + ')}` : ''}`);
     }
   } catch (e3) {}
   arena.domain = { ownerId: myId, ownerKeys: _ownerKeys(player), ownerName: player.name, side: 'hunter', name: e.shown, expiresAt: Date.now() + DOMAIN_TTL_MS, effectName: e.name, level: e.level, turnsLeft: e.turns, power: myPow, quality: _quality(player), className: player.domain.class };

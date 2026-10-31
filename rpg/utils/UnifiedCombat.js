@@ -114,6 +114,7 @@ function calcMoveDamage(attacker, defender, move) {
   let _pmA = null, _pmD = null;
   try { const CP = require('./ClassPower'); _pmA = CP.passiveMultipliers(attacker); _pmD = CP.passiveMultipliers(defender); } catch (e) {}
   const _hc = hitCheck(attacker, defender, { ...move, accuracy: move.accuracy != null ? move.accuracy : 85 }, { pmD: _pmD });
+  let _domainStrike = false; try { _domainStrike = !!require('./DomainSystem').isShielded(attacker); } catch (e) {}
   if (!_hc.hit) {
     const _wasDodge = !_hc.blind && _hc.dodge > 0 && /dodged/.test(_hc.why || '');
     return { damage: 0, missed: true, dodged: _wasDodge, crit: false, effective: 'missed', capability: 1, dodgeChance: _hc.dodge, hitChance: _hc.chance, missWhy: _hc.why };
@@ -248,12 +249,12 @@ function calcMoveDamage(attacker, defender, move) {
   // It now eats the first hit that lands on its holder — PvP and raid alike.
   try {
     const BM = require('./BuffManager');
-    if (raw > 0 && defender && defender.inventory && BM.hasShield(defender)) { BM.consumeShield(defender); synergyNotes = [...synergyNotes, `🛡️ *${defender.name || 'Target'}'s Shield Scroll* absorbed the whole hit (${raw} dmg → 0)`]; raw = 0; }
+    if (raw > 0 && !_domainStrike && defender && defender.inventory && BM.hasShield(defender)) { BM.consumeShield(defender); synergyNotes = [...synergyNotes, `🛡️ *${defender.name || 'Target'}'s Shield Scroll* absorbed the whole hit (${raw} dmg → 0)`]; raw = 0; }
   } catch (e) {}
   // Determine effectiveness for longer description
   const effectiveness = raw > 200 ? 'devastating' : raw > 120 ? 'powerful' : raw > 60 ? 'solid' : 'light';
 
-  return { damage: raw, missed: false, crit: isCrit, effective: effectiveness, capability, variance, atkMult, defMult, speedMult, critMult, accuracy: _hc.acc, hitChance: _hc.chance, synergyNotes };
+  return { damage: raw, missed: false, crit: isCrit, effective: effectiveness, capability, variance, atkMult, defMult, speedMult, critMult, accuracy: _hc.acc, hitChance: _hc.chance, synergyNotes, domainStrike: _domainStrike };
 }
 
 // Process status effect application
@@ -285,7 +286,6 @@ function hitCheck(attacker, defender, move, opts = {}) {
   if (!held && !(move && move.undodgeable)) { try { dodge = Math.min(opts.dodgeCap != null ? opts.dodgeCap : DODGE_CAP_VS_ACC, dodgeChance(attacker, defender, opts.pmD || null)); } catch (e) {} }
   // Push #96h-o: while YOUR domain stands, your moves cannot miss (owner only — not teammates).
   let domainSure = false; try { const DS = require('./DomainSystem'); domainSure = !!DS.isShielded(attacker); } catch (e) {}
-  try { if (domainSure && defender && require('./ClassSnippets').ignoresAlwaysHit(defender)) domainSure = false; } catch (e) {} // Push #103b: Shaman — Domain Immunity ("always hit" bypass)
   if (move && move.undodgeable && !a.blind) { a.acc = 100; dodge = 0; } // Push #103h (BUG-122): "ignores dodge / never misses" — only BLIND can still make it miss
   if (domainSure) { a.acc = 100; a.blind = false; dodge = 0; }
   const hit = (held || domainSure) ? 100 : Math.max(5, Math.min(100, a.acc - dodge));
@@ -598,7 +598,7 @@ async function playTurn(sock, chatId, o) {
     // Push #93: shields (Bone Wall …) really absorb now.
     try {
       if (result.preAbsorbed) { if (result.absorbedNote) _buffNotes.push(result.absorbedNote); }
-      else { const NX = require('./Necromancy'); const _ab = NX.absorb(defender, result.damage); if (_ab.absorbed) { result.damage = _ab.dmg; result.absorbed = _ab.absorbed; _buffNotes.push(NX.shieldLine(_ab, defender.name || 'Target')); } }
+      else if (!result.domainStrike) { const NX = require('./Necromancy'); const _ab = NX.absorb(defender, result.damage); if (_ab.absorbed) { result.damage = _ab.dmg; result.absorbed = _ab.absorbed; _buffNotes.push(NX.shieldLine(_ab, defender.name || 'Target')); } }
     } catch (e) {}
     const _defHpBefore = defender.stats ? (defender.stats.hp || 0) : result.damage;
     if (defender.stats) defender.stats.hp = Math.max(0, (defender.stats.hp || 0) - result.damage);
