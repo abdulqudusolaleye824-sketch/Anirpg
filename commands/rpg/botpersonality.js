@@ -112,7 +112,7 @@ const start = {
       }
     }
 
-    const result = PersonalityManager.activateBot(chatId, target);
+    const result = PersonalityManager.activateBot(chatId, target, { unstop: true }); // /start explicitly un-stops
     if (!result.success) {
       return sock.sendMessage(chatId, {
         text: `❌ ${result.error}\n\nUse /bots to see available personalities.`,
@@ -173,7 +173,7 @@ const switchBot = {
       }, { quoted: msg });
     }
 
-    const result = PersonalityManager.switchBot(chatId, target);
+    const result = PersonalityManager.switchBot(chatId, target, { unstop: true }); // /switch explicitly un-stops
     if (!result.success) {
       return sock.sendMessage(chatId, {
         text: `❌ ${result.error}\n\nUse /bots to see available personalities.`,

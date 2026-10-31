@@ -460,10 +460,13 @@ function anyActive(personalityKey) {
   return false;
 }
 
-function activateBot(chatId, nameOrKey) {
+function activateBot(chatId, nameOrKey, opts = {}) {
   const key = resolvePersonality(nameOrKey);
   if (!key) return { success: false, error: `No personality found for: ${nameOrKey}` };
-  delete stoppedBots[chatId]; // /start + /switch always un-stop the group
+  // 10-30 (owner): /stop is PERMANENT until an explicit /start or /switch (opts.unstop). The bootstrap dispatcher and
+  // failover used to call activateBot too — a stray /help or /bots in a stopped group quietly woke the bot back up.
+  if (stoppedBots[chatId] && !opts.unstop) return { success: false, error: 'Group is stopped — /start <bot> or /switch <bot> first.', stopped: true };
+  delete stoppedBots[chatId];
   activeBots[chatId] = key;
   if (!activeBots.__lastTouch) activeBots.__lastTouch = {};
   activeBots.__lastTouch[chatId] = Date.now();
@@ -472,8 +475,8 @@ function activateBot(chatId, nameOrKey) {
   return { success: true, personalityKey: key, displayName: getDisplayName(key) };
 }
 
-function switchBot(chatId, nameOrKey) {
-  return activateBot(chatId, nameOrKey);
+function switchBot(chatId, nameOrKey, opts = {}) {
+  return activateBot(chatId, nameOrKey, opts);
 }
 
 function deactivateAll(chatId) {
