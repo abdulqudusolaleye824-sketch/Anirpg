@@ -55,7 +55,6 @@ function playerDamage(player, skillName = null, target = null) {
     const cd = SC.onCooldown(player, entry || skill);
     if (!cd.ready) return { damage: 0, blocked: true, reason: `*${skill.name}* is on cooldown! (${Math.ceil(cd.msLeft / 1000)}s)` };
     const cost = entry ? SC.effectiveCost(entry, player) : (skill.energyCost || 0);
-    { let _capMsg = null; try { _capMsg = require('../utils/SkillUseCap').use(player, entry || skill, false); } catch (e) {} if (_capMsg) return { damage: 0, blocked: true, reason: _capMsg, capSpent: true }; } // 10-30 (owner): per-raid use cap
     if ((player.stats?.energy || 0) < cost) return { damage: 0, blocked: true, reason: `Not enough energy for *${skill.name}*! Need ${cost} (you have ${Math.floor(player.stats?.energy || 0)}). ${_regenHint(player)}` };
 
     // Skills are a multiplier of ATK (plus magic power for casters), not the
@@ -89,7 +88,6 @@ function playerDamage(player, skillName = null, target = null) {
     if (target) { try { require('../utils/JobSystem').noteHit(player, true); target.lastHitBy = player.jid || player.id || target.lastHitBy; } catch (e) {} } // Push #95
 
     player.stats.energy = Math.max(0, (player.stats.energy || 0) - cost);
-    try { require('../utils/SkillUseCap').use(player, entry || skill, true); } catch (e) {} // 10-30: count this raid use
     SC.setCooldown(player, entry || skill);
     try { require('../utils/RegenManager').markCombatAction(player); } catch (e) {}
     // Push #88o: the monster may DODGE a damaging skill — cooldown + energy are
@@ -1473,7 +1471,6 @@ function supportCast(caster, casterJid, target, targetJid, skillName, gate, db, 
     // (deducted AFTER the heal loop — on a party heal the caster is a target
     //  too, so paying first would just be healed back by their own cast.)
   }
-  { let _capMsg = null; try { _capMsg = require('../utils/SkillUseCap').use(caster, entry || skill, true); } catch (e) {} if (_capMsg) return { ok: false, error: _capMsg }; } // 10-30 (owner): per-raid use cap (support skills too)
   let severeHealed = null;
   caster.stats.energy = Math.max(0, (caster.stats.energy || 0) - cost);
   SC.setCooldown(caster, entry);

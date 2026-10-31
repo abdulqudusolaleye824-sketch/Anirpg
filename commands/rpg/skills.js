@@ -85,12 +85,10 @@ function fmtSkillLine(skill, idx, player, compact=false) {
   const bar = skillLevelBar(lv, max);
   const prefix = idx !== undefined ? `${idx+1}. ` : '';
   let _sup = null; try { _sup = _SCk.supportLabel(player, skill); } catch (e) {} // Fix (10-30, BUG-235): buffs/heals show their effect, not "dmg"
-  let _cap = null; try { _cap = require('../../rpg/utils/SkillUseCap').capFor(skill); } catch (e) {} // 10-30 (owner): per-raid use cap
-  const _capS = _cap ? ` | 🔁${_cap}×/raid` : '';
   if (compact) {
-    return `${prefix}*${skill.name}* [Lv${lv}/${max}] ${bar} · ${kindTagOf(skill)}\n   ${_sup ? _sup : `💥${bonuses.damage}`} | ${player.energyColor||'💙'}${realCost(skill, player)} | ⏰${bonuses.cooldown}t${_capS}\n`;
+    return `${prefix}*${skill.name}* [Lv${lv}/${max}] ${bar} · ${kindTagOf(skill)}\n   ${_sup ? _sup : `💥${bonuses.damage}`} | ${player.energyColor||'💙'}${realCost(skill, player)} | ⏰${bonuses.cooldown}t\n`;
   }
-  return `${prefix}*${skill.name}*\nLv ${lv}/${max}: ${bar}\n${_sup ? _sup : `💥 DMG: ${bonuses.damage}`} | ${player.energyColor||'💙'} ${realCost(skill, player)} | ⏰ ${bonuses.cooldown}t${_capS}\n`;
+  return `${prefix}*${skill.name}*\nLv ${lv}/${max}: ${bar}\n${_sup ? _sup : `💥 DMG: ${bonuses.damage}`} | ${player.energyColor||'💙'} ${realCost(skill, player)} | ⏰ ${bonuses.cooldown}t\n`;
 }
 
 module.exports = {
@@ -205,7 +203,6 @@ module.exports = {
       if (isHealerHealSkill(player, skill)) txt += `${healerUpgradeLine(skill)}\n`; else { let _sup2 = null; try { _sup2 = _SCk.supportLabel(player, skill); } catch (e) {} txt += _sup2 ? `✨ Effect: ${_sup2}\n` : `💥 Damage: ${bonuses.damage}\n`; }
       txt += `${player.energyColor||'💙'} Cost: ${realCost(skill, player)} ${player.energyType||'Energy'}\n`;
       txt += `⏰ Cooldown: ${bonuses.cooldown}t\n`;
-      try { const _UC = require('../../rpg/utils/SkillUseCap'); const _cl = _UC.label(skill); if (_cl) txt += `${_cl} — fixed by potency, upgrades never change it; refused once spent for that raid\n`; } catch (e) {} // 10-30 (owner)
       if (lv > 1) txt += isHealerHealSkill(player, skill) ? `⬆️ Level bonus: −${require('../../rpg/utils/HealerBacklash').reductionPct(lv)}% backlash · cost ×${bonuses.costMult.toFixed(2)}\n` : `⬆️ Level bonus: +${Math.round((bonuses.dmgMult-1)*100)}% DMG · cost ×${bonuses.costMult.toFixed(2)} (stronger casts drain more)\n`;
       if (info?.effect) txt += `\n💡 EFFECTS:\n${info.effect}\n`;
       // Push #97: what the skill REALLY does at its current level (support numbers grow with every upgrade).
